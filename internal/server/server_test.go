@@ -140,7 +140,9 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 	defer cancel()
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events/ws"
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://steamloopback.host"}},
+	})
 	if err != nil {
 		body := ""
 		if resp != nil && resp.Body != nil {

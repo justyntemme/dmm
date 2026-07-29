@@ -1,9 +1,12 @@
 import {
   ButtonItem,
+  Focusable,
   Navigation,
   PanelSection,
   PanelSectionRow,
+  Router,
   TextField,
+  Tabs,
   ToggleField,
   staticClasses
 } from "@decky/ui";
@@ -15,6 +18,9 @@ declare const SteamClient:
   | {
       Apps?: {
         SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
+      };
+      GameSessions?: {
+        RegisterForAppLifetimeNotifications?: (callback: (notification: { unAppID: number; bRunning: boolean }) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
       };
     }
   | undefined;
@@ -71,11 +77,25 @@ type Job = {
   updated_at?: string;
 };
 
+type DomainEvent = {
+  id: number;
+  type: string;
+  app_id?: string;
+  job_id?: string;
+  payload?: unknown;
+  created_at?: string;
+};
+
 type ManagedGame = {
   app_id: string;
   name: string;
   state: string;
   nexus_domains?: string[];
+};
+
+type RunningGame = {
+  app_id: string;
+  name: string;
 };
 
 type Profile = {
@@ -160,9 +180,45 @@ function showLaunchToast(title: string, body: string, failed = false) {
 const notifiedInstallJobStates = new Map<string, string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
-let backgroundMonitorInterval: number | null = null;
+const DMM_EVENT_NAME = "dmm-domain-event";
+const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
+let eventMonitorSocket: WebSocket | null = null;
+let eventMonitorReconnectTimer: number | null = null;
+let eventMonitorReconnectDelay = 1000;
+let eventMonitorLastID = 0;
+let backgroundMonitorsStarted = false;
 
 type LaunchResultSink = (message: string) => void;
+
+function steamHeaderImage(appID: string) {
+  return `https://cdn.cloudflare.steamstatic.com/steam/apps/${appID}/header.jpg`;
+}
+
+function currentRunningGame(): RunningGame | null {
+  try {
+    const router = Router as unknown as { MainRunningApp?: { appid?: string; display_name?: string }; RunningApps?: { appid?: string; display_name?: string }[] };
+    const app = router?.MainRunningApp ?? router?.RunningApps?.[0];
+    const appID = String(app?.appid ?? "").trim();
+    if (!appID) return null;
+    return { app_id: appID, name: String(app?.display_name ?? appID) };
+  } catch (_err) {
+    return null;
+  }
+}
+
+function eventMatchesAppID(event: DomainEvent, appID: string) {
+  return !event.app_id || event.app_id === appID;
+}
+
+function unregisterSteamCallback(registration: unknown) {
+  if (typeof registration === "function") {
+    registration();
+    return;
+  }
+  const value = registration as { unregister?: () => void; Unregister?: () => void } | null | undefined;
+  if (typeof value?.unregister === "function") value.unregister();
+  if (typeof value?.Unregister === "function") value.Unregister();
+}
 
 async function logFrontendEvent(message: string, detail: Record<string, string | number | boolean> = {}) {
   try {
@@ -176,6 +232,23 @@ function isInstallNotificationJob(job: Job) {
   return job.type === "pending-import" || job.type === "installer-choice";
 }
 
+function isJob(value: unknown): value is Job {
+  return Boolean(value && typeof value === "object" && typeof (value as Job).id === "string" && typeof (value as Job).type === "string");
+}
+
+async function maybeShowInstallToast(job: Job, { seed = false, source = "event" } = {}) {
+  if (!isInstallNotificationJob(job)) return;
+  const stateKey = `${job.status}:${job.message || ""}`;
+  const previous = notifiedInstallJobStates.get(job.id);
+  notifiedInstallJobStates.set(job.id, stateKey);
+  const updatedAt = Date.parse(job.updated_at || "");
+  const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
+  if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+    await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
+    showInstallToast(job);
+  }
+}
+
 async function pollInstallJobs({ seed = false } = {}) {
   try {
     const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
@@ -184,16 +257,7 @@ async function pollInstallJobs({ seed = false } = {}) {
       return;
     }
     for (const job of result.jobs) {
-      if (!isInstallNotificationJob(job)) continue;
-      const stateKey = `${job.status}:${job.message || ""}`;
-      const previous = notifiedInstallJobStates.get(job.id);
-      notifiedInstallJobStates.set(job.id, stateKey);
-      const updatedAt = Date.parse(job.updated_at || "");
-      const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
-      if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
-        await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type });
-        showInstallToast(job);
-      }
+      await maybeShowInstallToast(job, { seed, source: "poll" });
     }
   } catch (_err) {
     await logFrontendEvent("install job poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
@@ -270,21 +334,94 @@ async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResult
   }
 }
 
+async function handleDeckyDomainEvent(event: DomainEvent) {
+  if (event.id > eventMonitorLastID) eventMonitorLastID = event.id;
+  if (event.type === "jobs.snapshot" && Array.isArray(event.payload)) {
+    for (const item of event.payload) {
+      if (isJob(item)) await maybeShowInstallToast(item, { seed: true, source: "event-snapshot" });
+    }
+  }
+  if (event.type === "job.updated" && isJob(event.payload)) {
+    await maybeShowInstallToast(event.payload, { source: "event" });
+  }
+  if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type)) {
+    await pollLaunchActions();
+  }
+  window.dispatchEvent(new CustomEvent(DMM_EVENT_NAME, { detail: event }));
+}
+
+function connectEventMonitor() {
+  if (eventMonitorSocket && (eventMonitorSocket.readyState === WebSocket.CONNECTING || eventMonitorSocket.readyState === WebSocket.OPEN)) return;
+  if (eventMonitorReconnectTimer !== null) {
+    window.clearTimeout(eventMonitorReconnectTimer);
+    eventMonitorReconnectTimer = null;
+  }
+  const after = eventMonitorLastID > 0 ? `?after=${eventMonitorLastID}` : "";
+  try {
+    const socket = new WebSocket(`${DMM_BACKEND_WS_URL}${after}`);
+    eventMonitorSocket = socket;
+    socket.onopen = () => {
+      eventMonitorReconnectDelay = 1000;
+      logFrontendEvent("event monitor connected");
+    };
+    socket.onmessage = (message) => {
+      if (typeof message.data !== "string") return;
+      try {
+        void handleDeckyDomainEvent(JSON.parse(message.data) as DomainEvent);
+      } catch (err) {
+        void logFrontendEvent("event monitor message failed", { error: err instanceof Error ? err.message : String(err) });
+      }
+    };
+    socket.onerror = () => {
+      void logFrontendEvent("event monitor socket error");
+      socket.close();
+    };
+    socket.onclose = () => {
+      if (eventMonitorSocket !== socket) return;
+      eventMonitorSocket = null;
+      scheduleEventMonitorReconnect();
+    };
+  } catch (err) {
+    void logFrontendEvent("event monitor connect failed", { error: err instanceof Error ? err.message : String(err) });
+    scheduleEventMonitorReconnect();
+  }
+}
+
+function scheduleEventMonitorReconnect() {
+  if (eventMonitorReconnectTimer !== null || !backgroundMonitorsStarted) return;
+  const delay = eventMonitorReconnectDelay;
+  eventMonitorReconnectDelay = Math.min(eventMonitorReconnectDelay * 2, 15000);
+  eventMonitorReconnectTimer = window.setTimeout(() => {
+    eventMonitorReconnectTimer = null;
+    connectEventMonitor();
+  }, delay);
+}
+
+function closeEventMonitor() {
+  if (eventMonitorReconnectTimer !== null) {
+    window.clearTimeout(eventMonitorReconnectTimer);
+    eventMonitorReconnectTimer = null;
+  }
+  if (eventMonitorSocket) {
+    const socket = eventMonitorSocket;
+    eventMonitorSocket = null;
+    socket.close();
+  }
+}
+
 function startBackgroundMonitors() {
-  if (backgroundMonitorInterval !== null) return;
+  if (backgroundMonitorsStarted) return;
+  backgroundMonitorsStarted = true;
   logFrontendEvent("background monitors started");
   pollInstallJobs({ seed: true });
   pollLaunchActions();
-  backgroundMonitorInterval = window.setInterval(() => {
-    pollInstallJobs();
-    pollLaunchActions();
-  }, 4000);
+  connectEventMonitor();
 }
 
 function stopBackgroundMonitors() {
-  if (backgroundMonitorInterval === null) return;
-  window.clearInterval(backgroundMonitorInterval);
-  backgroundMonitorInterval = null;
+  if (!backgroundMonitorsStarted) return;
+  backgroundMonitorsStarted = false;
+  closeEventMonitor();
   logFrontendEvent("background monitors stopped");
 }
 
@@ -300,10 +437,12 @@ function Content() {
   const [error, setError] = useState<string>("");
   const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
   const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>("");
+  const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [modsResult, setModsResult] = useState<string>("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [focusedModID, setFocusedModID] = useState<number | null>(null);
 
   async function refresh() {
     try {
@@ -353,7 +492,10 @@ function Content() {
       setError("");
       setModsResult("");
       const games = await loadDeckyGames();
-      const selected = appID || selectedDeckyGameID;
+      const running = currentRunningGame();
+      setRunningGame(running);
+      const runningSupported = running && games.some((game) => game.app_id === running.app_id);
+      const selected = runningSupported ? running.app_id : appID || selectedDeckyGameID;
       const nextID = selected && games.some((game) => game.app_id === selected) ? selected : "";
       setSelectedDeckyGameID(nextID);
       await loadDeckyGameState(nextID);
@@ -429,6 +571,9 @@ function Content() {
       if (method === "start_server") {
         await pollInstallJobs({ seed: true });
         await pollLaunchActions();
+        connectEventMonitor();
+      } else {
+        closeEventMonitor();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -560,313 +705,371 @@ function Content() {
     };
   }, []);
 
-  return (
-    <PanelSection title="Decky Mod Manager">
+  useEffect(() => {
+    const listener = (rawEvent: Event) => {
+      const event = (rawEvent as CustomEvent<DomainEvent>).detail;
+      if (!event || tab !== "mods" || !selectedDeckyGameID || !status?.running) return;
+      if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
+        void loadDeckyGameState(selectedDeckyGameID);
+      }
+    };
+    window.addEventListener(DMM_EVENT_NAME, listener);
+    return () => window.removeEventListener(DMM_EVENT_NAME, listener);
+  }, [tab, selectedDeckyGameID, status?.running]);
+
+  useEffect(() => {
+    const syncRunningGame = () => {
+      const running = currentRunningGame();
+      setRunningGame(running);
+      if (!running || tab !== "mods" || !managedGames.some((game) => game.app_id === running.app_id) || selectedDeckyGameID === running.app_id) return;
+      setSelectedDeckyGameID(running.app_id);
+      void loadDeckyGameState(running.app_id);
+    };
+    syncRunningGame();
+    const sessions = typeof SteamClient !== "undefined" ? SteamClient?.GameSessions : undefined;
+    const registration = sessions?.RegisterForAppLifetimeNotifications?.(() => syncRunningGame());
+    return () => unregisterSteamCallback(registration);
+  }, [tab, managedGames, selectedDeckyGameID]);
+
+  const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
+  const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
+  const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
+
+  const mainContent = (
+    <>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("main")}>
-          Manage
+        <ButtonItem layout="below" onClick={toggleServer}>
+          {status?.running ? "Stop Server" : "Start Server"}
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => {
-            setTab("mods");
-            refreshDeckyMods();
+        <ButtonItem layout="below" onClick={retryLaunchSetup} disabled={!status?.running}>
+          Retry Launch Setup
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <a
+          href="https://www.nexusmods.com"
+          onClick={(event) => {
+            event.preventDefault();
+            openNexus();
           }}
+          style={{ color: "#7dd3fc", display: "block", fontWeight: 800, padding: "10px 0", textDecoration: "underline" }}
         >
-          Mods
-        </ButtonItem>
+          Open Nexus Mods
+        </a>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("settings")}>
-          Settings
-        </ButtonItem>
+        <div>
+          <div>Status: {status?.running ? "Running" : "Stopped"}</div>
+          {status?.pid && <div>PID: {status.pid}</div>}
+          <div>URL: {status?.url ?? "Unavailable"}</div>
+          {status?.backend && <div>Games: {status.backend.game_count}</div>}
+          {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
+          {launchResult && <div style={{ color: "#72e0a2", marginTop: "8px", overflowWrap: "anywhere" }}>{launchResult}</div>}
+          {error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{error}</div>}
+          {status?.error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{status.error}</div>}
+        </div>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("debug")}>
-          Debug
-        </ButtonItem>
+        <div style={{ display: "grid", gap: "10px", width: "100%" }}>
+          <TextField label="Nexus URL" value={importUrl} bShowClearAction description="Paste a Nexus mod page URL or nxm:// link." onChange={(event) => setImportUrl(event.currentTarget.value)} />
+          <ButtonItem layout="below" onClick={addPendingImport}>
+            Add Install Request
+          </ButtonItem>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Adds the URL to Install Requests for phone or tablet approval.</div>
+          {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
+        </div>
       </PanelSectionRow>
+    </>
+  );
 
-      {tab === "main" && (
-        <>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={toggleServer}>
-              {status?.running ? "Stop Server" : "Start Server"}
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={retryLaunchSetup} disabled={!status?.running}>
-              Retry Launch Setup
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <a
-              href="https://www.nexusmods.com"
-              onClick={(event) => {
-                event.preventDefault();
-                openNexus();
-              }}
-              style={{ color: "#7dd3fc", display: "block", fontWeight: 800, padding: "10px 0", textDecoration: "underline" }}
-            >
-              Open Nexus Mods
-            </a>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <div>
-              <div>Status: {status?.running ? "Running" : "Stopped"}</div>
-              {status?.pid && <div>PID: {status.pid}</div>}
-              <div>URL: {status?.url ?? "Unavailable"}</div>
-              {status?.backend && <div>Games: {status.backend.game_count}</div>}
-              {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
-              {launchResult && <div style={{ color: "#72e0a2", marginTop: "8px", overflowWrap: "anywhere" }}>{launchResult}</div>}
-              {error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{error}</div>}
-              {status?.error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{status.error}</div>}
-            </div>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <div style={{ display: "grid", gap: "10px", width: "100%" }}>
-              <TextField
-                label="Nexus URL"
-                value={importUrl}
-                bShowClearAction
-                description="Paste a Nexus mod page URL or nxm:// link."
-                onChange={(event) => setImportUrl(event.currentTarget.value)}
-              />
-              <ButtonItem layout="below" onClick={addPendingImport}>
-                Add Install Request
-              </ButtonItem>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
-                Adds the URL to Install Requests for phone or tablet approval.
-              </div>
-              {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
-            </div>
-          </PanelSectionRow>
-        </>
+  const modsContent = (
+    <>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={() => refreshDeckyMods()} disabled={!status?.running}>
+          Refresh Mods
+        </ButtonItem>
+      </PanelSectionRow>
+      {!status?.running && (
+        <PanelSectionRow>
+          <div style={{ color: "#fbbf24", overflowWrap: "anywhere" }}>Start the server before managing profile mods from Decky.</div>
+        </PanelSectionRow>
       )}
-
-      {tab === "mods" && (
+      {status?.running && runningGame && (
+        <PanelSectionRow>
+          <div style={{ alignItems: "center", display: "flex", gap: "10px", width: "100%" }}>
+            <img src={steamHeaderImage(runningGame.app_id)} style={{ borderRadius: "5px", height: "42px", objectFit: "cover", width: "74px" }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: runningSupported ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{runningSupported ? "Running game selected" : "Running game not supported yet"}</div>
+              <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{runningGame.name}</div>
+            </div>
+          </div>
+        </PanelSectionRow>
+      )}
+      {status?.running && !selectedDeckyGameID && (
+        <PanelSectionRow>
+          <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+            <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
+            {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
+            {managedGames.map((game) => (
+              <Focusable
+                key={game.app_id}
+                onActivate={() => selectDeckyGame(game.app_id)}
+                style={{
+                  background: "#1f2937",
+                  border: "1px solid #374151",
+                  borderRadius: "6px",
+                  color: "#f8fafc",
+                  fontWeight: 800,
+                  marginBottom: "8px",
+                  padding: "10px",
+                  width: "100%"
+                }}
+              >
+                {game.name}
+              </Focusable>
+            ))}
+          </div>
+        </PanelSectionRow>
+      )}
+      {status?.running && selectedDeckyGameID && (
         <>
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => refreshDeckyMods()} disabled={!status?.running}>
-              Refresh Mods
+            <div style={{ alignItems: "center", display: "flex", gap: "10px", width: "100%" }}>
+              <img src={steamHeaderImage(selectedDeckyGameID)} style={{ borderRadius: "5px", height: "42px", objectFit: "cover", width: "74px" }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{selectedProfile ? `Profile: ${selectedProfile.name}` : "No profile"}</div>
+                <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedDeckyGame?.name ?? selectedDeckyGameID}</div>
+              </div>
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => setSelectedDeckyGameID("")}>
+              Change Game
             </ButtonItem>
           </PanelSectionRow>
-          {!status?.running && (
+          {deckyProfiles.length > 1 && (
             <PanelSectionRow>
-              <div style={{ color: "#fbbf24", overflowWrap: "anywhere" }}>Start the server before managing profile mods from Decky.</div>
-            </PanelSectionRow>
-          )}
-          {status?.running && !selectedDeckyGameID && (
-            <PanelSectionRow>
-              <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
-                <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
-                {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
-                {managedGames.map((game) => (
-                  <button
-                    key={game.app_id}
-                    type="button"
-                    onClick={() => selectDeckyGame(game.app_id)}
+              <div style={{ maxHeight: "150px", overflowY: "auto", width: "100%" }}>
+                <div style={{ fontWeight: 800, marginBottom: "8px" }}>Profile</div>
+                {deckyProfiles.map((profile) => (
+                  <Focusable
+                    key={profile.id}
+                    onActivate={() => selectDeckyProfile(profile)}
                     style={{
-                      background: "#1f2937",
+                      background: profile.is_default ? "#0f766e" : "#1f2937",
                       border: "1px solid #374151",
                       borderRadius: "6px",
                       color: "#f8fafc",
-                      display: "block",
                       fontWeight: 800,
                       marginBottom: "8px",
                       padding: "10px",
-                      textAlign: "left",
                       width: "100%"
                     }}
                   >
-                    {game.name}
-                  </button>
+                    {profile.name}
+                  </Focusable>
                 ))}
               </div>
             </PanelSectionRow>
           )}
-          {status?.running && selectedDeckyGameID && (
-            <>
-              <PanelSectionRow>
-                <div>
-                  <div style={{ fontWeight: 800 }}>{managedGames.find((game) => game.app_id === selectedDeckyGameID)?.name ?? selectedDeckyGameID}</div>
-                  <div style={{ color: "#a1a1aa" }}>Changes apply to the selected profile. Restart the game for a running session to pick them up.</div>
-                </div>
-              </PanelSectionRow>
-              <PanelSectionRow>
-                <ButtonItem layout="below" onClick={() => setSelectedDeckyGameID("")}>
-                  Change Game
-                </ButtonItem>
-              </PanelSectionRow>
-              {deckyProfiles.length > 1 && (
-                <PanelSectionRow>
-                  <div style={{ maxHeight: "180px", overflowY: "auto", width: "100%" }}>
-                    <div style={{ fontWeight: 800, marginBottom: "8px" }}>Profile</div>
-                    {deckyProfiles.map((profile) => (
-                      <button
-                        key={profile.id}
-                        type="button"
-                        onClick={() => selectDeckyProfile(profile)}
+          {deckyMods.length === 0 && (
+            <PanelSectionRow>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add Nexus downloads from the Decky paste field or phone/tablet UI.</div>
+            </PanelSectionRow>
+          )}
+          {deckyMods.length > 0 && (
+            <PanelSectionRow>
+              <div style={{ display: "grid", gap: "8px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+                {deckyMods.map((mod) => {
+                  const focused = focusedModID === mod.id;
+                  return (
+                    <Focusable
+                      key={mod.id}
+                      onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                      onGamepadFocus={() => setFocusedModID(mod.id)}
+                      onGamepadBlur={() => setFocusedModID((current) => (current === mod.id ? null : current))}
+                      style={{
+                        alignItems: "center",
+                        background: focused ? "#27364a" : "#161b22",
+                        border: `1px solid ${focused ? "#7dd3fc" : "#303741"}`,
+                        borderRadius: "6px",
+                        display: "flex",
+                        gap: "10px",
+                        minHeight: "58px",
+                        opacity: busyModID === mod.id ? 0.65 : 1,
+                        padding: "10px",
+                        width: "100%"
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: "#f8fafc", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mod.name}</div>
+                        <div style={{ color: "#a1a1aa", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {mod.enabled ? "Enabled" : "Disabled"} · Priority {mod.priority} · {mod.status}
+                        </div>
+                      </div>
+                      <div
                         style={{
-                          background: profile.is_default ? "#0f766e" : "#1f2937",
-                          border: "1px solid #374151",
-                          borderRadius: "6px",
-                          color: "#f8fafc",
-                          display: "block",
-                          fontWeight: 800,
-                          marginBottom: "8px",
-                          padding: "10px",
-                          textAlign: "left",
-                          width: "100%"
+                          alignItems: "center",
+                          background: mod.enabled ? "#0f766e" : "#3f3f46",
+                          borderRadius: "999px",
+                          display: "flex",
+                          height: "22px",
+                          justifyContent: mod.enabled ? "flex-end" : "flex-start",
+                          padding: "2px",
+                          width: "42px"
                         }}
                       >
-                        {profile.name}
-                      </button>
-                    ))}
-                  </div>
-                </PanelSectionRow>
-              )}
-              {deckyMods.length === 0 && (
-                <PanelSectionRow>
-                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add and approve Nexus downloads from the phone/tablet UI or the Decky paste field.</div>
-                </PanelSectionRow>
-              )}
-              {deckyMods.map((mod) => (
-                <PanelSectionRow key={mod.id}>
-                  <ToggleField
-                    label={mod.name}
-                    description={`${mod.enabled ? "Enabled" : "Disabled"} · Priority ${mod.priority} · ${mod.source_game_domain}/mods/${mod.source_mod_id}/files/${mod.source_file_id}`}
-                    checked={mod.enabled}
-                    disabled={busyModID === mod.id}
-                    onChange={(checked) => toggleDeckyMod(mod, checked)}
-                  />
-                </PanelSectionRow>
-              ))}
-              {modsResult && (
-                <PanelSectionRow>
-                  <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{modsResult}</div>
-                </PanelSectionRow>
-              )}
-              {error && (
-                <PanelSectionRow>
-                  <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>
-                </PanelSectionRow>
-              )}
-            </>
+                        <div style={{ background: "#f8fafc", borderRadius: "999px", height: "18px", width: "18px" }} />
+                      </div>
+                    </Focusable>
+                  );
+                })}
+              </div>
+            </PanelSectionRow>
+          )}
+          {modsResult && (
+            <PanelSectionRow>
+              <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{modsResult}</div>
+            </PanelSectionRow>
+          )}
+          {error && (
+            <PanelSectionRow>
+              <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>
+            </PanelSectionRow>
           )}
         </>
       )}
+    </>
+  );
 
-      {tab === "settings" && (
-        <>
-          <PanelSectionRow>
-            <div>
-              <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
-              <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
-              <div>Install captured downloads: {status?.backend?.install.auto_install_captured_downloads ? "Automatic" : "Approval required"}</div>
-              <div>Enable installed mods: {status?.backend?.install.auto_enable_installed_mods ? "Automatic" : "Manual"}</div>
-              <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
+  const settingsContent = (
+    <>
+      <PanelSectionRow>
+        <div>
+          <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
+          <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
+          <div>Install captured downloads: {status?.backend?.install.auto_install_captured_downloads ? "Automatic" : "Approval required"}</div>
+          <div>Enable installed mods: {status?.backend?.install.auto_enable_installed_mods ? "Automatic" : "Manual"}</div>
+          <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
+        </div>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label="Auto-install captured downloads"
+          description="NXM links always download immediately. This skips phone approval for the local install step."
+          checked={status?.backend?.install.auto_install_captured_downloads ?? false}
+          disabled={!status?.running}
+          onChange={setAutoInstallCapturedDownloads}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label="Auto-enable installed mods"
+          description="New installs are enabled and deployed automatically when there are no conflicts."
+          checked={status?.backend?.install.auto_enable_installed_mods ?? false}
+          disabled={!status?.running}
+          onChange={setAutoEnableInstalledMods}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={() => setLanOnly(true)}>
+          Enable LAN Only
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={() => setLanOnly(false)}>
+          Allow Trusted Tunnel
+        </ButtonItem>
+      </PanelSectionRow>
+    </>
+  );
+
+  const debugContent = (
+    <>
+      <PanelSectionRow>
+        <div style={{ maxHeight: "320px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+          <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
+          {dependencies.map((dep) => (
+            <div key={dep.command} style={{ marginBottom: "10px", borderBottom: "1px solid #303741", paddingBottom: "8px" }}>
+              <div style={{ color: dep.installed ? "#72e0a2" : "#f87171", fontWeight: 800 }}>
+                {dep.name}: {dep.installed ? "Installed" : "Missing"}
+              </div>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere", lineHeight: 1.25 }}>{dep.path ?? dep.command}</div>
             </div>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ToggleField
-              label="Auto-install captured downloads"
-              description="NXM links always download immediately. This skips phone approval for the local install step."
-              checked={status?.backend?.install.auto_install_captured_downloads ?? false}
-              disabled={!status?.running}
-              onChange={setAutoInstallCapturedDownloads}
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ToggleField
-              label="Auto-enable installed mods"
-              description="New installs are enabled and deployed automatically when there are no conflicts."
-              checked={status?.backend?.install.auto_enable_installed_mods ?? false}
-              disabled={!status?.running}
-              onChange={setAutoEnableInstalledMods}
-            />
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setLanOnly(true)}>
-              Enable LAN Only
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setLanOnly(false)}>
-              Allow Trusted Tunnel
-            </ButtonItem>
-          </PanelSectionRow>
-        </>
-      )}
-
-      {tab === "debug" && (
-        <>
-          <PanelSectionRow>
-            <div style={{ maxHeight: "320px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
-              <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
-              {dependencies.map((dep) => (
-                <div key={dep.command} style={{ marginBottom: "10px", borderBottom: "1px solid #303741", paddingBottom: "8px" }}>
-                  <div style={{ color: dep.installed ? "#72e0a2" : "#f87171", fontWeight: 800 }}>
-                    {dep.name}: {dep.installed ? "Installed" : "Missing"}
-                  </div>
-                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere", lineHeight: 1.25 }}>
-                    {dep.path ?? dep.command}
-                  </div>
+          ))}
+        </div>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={registerNXM}>
+          Register NXM Handler
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={loadDiagnostics}>
+          Load Diagnostics
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={testNXM}>
+          Test Handler Direct
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={testNXMDispatch}>
+          Test NXM Dispatch
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <div>
+          <div>Registered: {nxm?.registered ? "Yes" : "No"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Current: {nxm?.current_handler || "None"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Protocol: {nxm?.protocol_handler || "None"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>xdg-mime: {nxm?.xdg_handler || "Unknown"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>File: {nxm?.desktop_path || "Unknown"}</div>
+          {status?.logs && (
+            <>
+              <div style={{ color: "#a1a1aa", marginTop: "8px", overflowWrap: "anywhere" }}>Plugin log: {status.logs.plugin}</div>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Backend log: {status.logs.backend}</div>
+            </>
+          )}
+          {diagnostics && (
+            <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "420px", overflowY: "auto", width: "100%" }}>
+              {Object.entries(diagnostics.logs).map(([name, log]) => (
+                <div key={name} style={{ borderTop: "1px solid #303741", paddingTop: "8px" }}>
+                  <div style={{ fontWeight: 800 }}>{name}</div>
+                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{log.path}</div>
+                  <pre style={{ color: "#d4d4d8", fontSize: "10px", maxWidth: "100%", overflowX: "auto", whiteSpace: "pre-wrap" }}>{log.tail || "No log entries."}</pre>
                 </div>
               ))}
             </div>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={registerNXM}>
-              Register NXM Handler
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={loadDiagnostics}>
-              Load Diagnostics
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={testNXM}>
-              Test Handler Direct
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={testNXMDispatch}>
-              Test NXM Dispatch
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <div>
-              <div>Registered: {nxm?.registered ? "Yes" : "No"}</div>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Current: {nxm?.current_handler || "None"}</div>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Protocol: {nxm?.protocol_handler || "None"}</div>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>xdg-mime: {nxm?.xdg_handler || "Unknown"}</div>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>File: {nxm?.desktop_path || "Unknown"}</div>
-              {status?.logs && (
-                <>
-                  <div style={{ color: "#a1a1aa", marginTop: "8px", overflowWrap: "anywhere" }}>Plugin log: {status.logs.plugin}</div>
-                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Backend log: {status.logs.backend}</div>
-                </>
-              )}
-              {diagnostics && (
-                <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "420px", overflowY: "auto", width: "100%" }}>
-                  {Object.entries(diagnostics.logs).map(([name, log]) => (
-                    <div key={name} style={{ borderTop: "1px solid #303741", paddingTop: "8px" }}>
-                      <div style={{ fontWeight: 800 }}>{name}</div>
-                      <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{log.path}</div>
-                      <pre style={{ color: "#d4d4d8", fontSize: "10px", maxWidth: "100%", overflowX: "auto", whiteSpace: "pre-wrap" }}>{log.tail || "No log entries."}</pre>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </PanelSectionRow>
-        </>
-      )}
+          )}
+        </div>
+      </PanelSectionRow>
+    </>
+  );
 
+  return (
+    <PanelSection title="Decky Mod Manager">
+      <Tabs
+        activeTab={tab}
+        autoFocusContents
+        onShowTab={(nextTab: string) => {
+          const next = nextTab as Tab;
+          setTab(next);
+          if (next === "mods") refreshDeckyMods();
+        }}
+        tabs={[
+          { id: "main", title: "Manage", content: mainContent },
+          { id: "mods", title: "Mods", content: modsContent },
+          { id: "settings", title: "Settings", content: settingsContent },
+          { id: "debug", title: "Debug", content: debugContent }
+        ]}
+      />
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={refresh}>
           Refresh

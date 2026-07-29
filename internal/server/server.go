@@ -1682,7 +1682,14 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 		afterID = parsed
 	}
 
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{
+			"steamloopback.host",
+			"*.steamloopback.host",
+			"localhost",
+			"127.0.0.1",
+		},
+	})
 	if err != nil {
 		s.logger.Warn("event websocket accept failed", "remote", r.RemoteAddr, "error", err)
 		return
