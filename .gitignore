@@ -1,0 +1,9 @@
+bin/
+dist/
+web/dist/
+web/node_modules/
+decky/dist/
+decky/node_modules/
+*.log
+.DS_Store
+notes.md
