@@ -787,6 +787,12 @@ func (s *Server) publishGameEvent(eventType, appID string, payload any) {
 	})
 }
 
+func (s *Server) autoEnableInstalledMods() bool {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg.Install.AutoEnableInstalledMods
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
 	s.cfgMu.RLock()
@@ -1201,7 +1207,10 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
 		s.logger.Warn("installer candidate cleanup failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
 	}
-	job, _ = s.jobs.Complete(job.ID, "Added "+mod.Name+" to the profile disabled; enable it to deploy")
+	s.completeInstalledModJob(r.Context(), job.ID, mod, nil)
+	if finalJob, ok := s.jobs.Get(job.ID); ok {
+		job = finalJob
+	}
 	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
 }
@@ -1325,6 +1334,8 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
+	autoEnable := s.autoEnableInstalledMods()
+	defaultEnabled := autoEnable
 	resolved := catalog.ResolvedDownload{
 		Catalog:    candidate.Catalog,
 		SourceURL:  candidate.ArchivePath,
@@ -1333,22 +1344,25 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		FileID:     candidate.SourceFileID,
 	}
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
-		SteamAppID:    candidate.SteamAppID,
-		Resolved:      resolved,
-		Name:          candidate.Name,
-		Version:       candidate.SourceFileID,
-		ArchivePath:   candidate.ArchivePath,
-		ArchiveSHA256: candidate.ChecksumSHA256,
-		StagingPath:   stagingPath,
-		ManifestJSON:  manifest,
+		SteamAppID:     candidate.SteamAppID,
+		Resolved:       resolved,
+		Name:           candidate.Name,
+		Version:        candidate.SourceFileID,
+		ArchivePath:    candidate.ArchivePath,
+		ArchiveSHA256:  candidate.ChecksumSHA256,
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifest,
+		DefaultEnabled: &defaultEnabled,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	disabled := false
-	staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &disabled, nil)
-	if err != nil {
-		return storage.InstalledMod{}, err
+	if autoEnable && !staged.Enabled {
+		enabled := true
+		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
+		if err != nil {
+			return storage.InstalledMod{}, err
+		}
 	}
 	s.logger.Info(
 		"installer candidate staged",
@@ -2403,71 +2417,103 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 		s.jobs.Fail(jobID, err.Error())
 		return
 	}
-	s.cfgMu.RLock()
-	autoEnable := s.cfg.Install.AutoEnableInstalledMods
-	s.cfgMu.RUnlock()
-	if autoEnable {
-		plan, err := s.buildGameDeployPlan(ctx, staged.SteamAppID)
-		if err != nil {
-			s.logger.Warn("auto-enable deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deploy preview failed: "+err.Error())
-			s.forgetPendingImport(jobID)
-			return
-		}
-		if len(plan.Conflicts) > 0 {
-			s.logger.Info("auto-enable deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
-			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deployment has conflicts to review")
-			s.forgetPendingImport(jobID)
-			return
-		}
-		if !hasDeployableActions(plan) {
-			s.logger.Info("auto-enable deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
-			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deployment is already up to date")
-			s.forgetPendingImport(jobID)
-			return
-		}
-		deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Deploying enabled mod"))
-		if err != nil {
-			s.logger.Warn("auto-enable deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-			s.jobs.Fail(jobID, err.Error())
-			s.forgetPendingImport(jobID)
-			return
-		}
-		applied := deployment.Files
-		if err := deploy.Verify(applied); err != nil {
-			s.logger.Warn("auto-enable deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-				s.logger.Warn("auto-enable deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
-			}
-			s.jobs.Fail(jobID, err.Error())
-			s.forgetPendingImport(jobID)
-			return
-		}
-		deploymentID, err := s.db.RecordDeployment(context.Background(), staged.SteamAppID, plan.Strategy, applied)
-		if err != nil {
-			s.logger.Warn("auto-enable deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-				s.logger.Warn("auto-enable deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
-			}
-			s.jobs.Fail(jobID, err.Error())
-			s.forgetPendingImport(jobID)
-			return
-		}
-		deployment.Commit()
-		s.logger.Info("auto-enable deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
-		message := "Installed, enabled, and deployed " + staged.Name
-		launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, staged.SteamAppID, jobID)
-		if launchErr != nil {
-			s.logger.Warn("auto-enable deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
-		} else if launchStatus != nil && launchStatus.Action != nil {
-			message += "; launch tool setup pending"
-		}
-		s.jobs.Complete(jobID, message)
+	s.completeInstalledModJob(ctx, jobID, staged, func() {
 		s.forgetPendingImport(jobID)
+	})
+}
+
+func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, staged storage.InstalledMod, cleanup func()) {
+	finish := func() {
+		if cleanup != nil {
+			cleanup()
+		}
+	}
+	publishInstalled := func(enabled bool, message string) {
+		s.publishGameEvent(events.TypeInstallChanged, staged.SteamAppID, map[string]any{
+			"action":           "installed",
+			"installed_mod_id": staged.ID,
+			"name":             staged.Name,
+			"enabled":          enabled,
+			"message":          message,
+		})
+	}
+	if !s.autoEnableInstalledMods() {
+		message := "Installed " + staged.Name + " disabled; enable it to deploy"
+		s.jobs.Complete(jobID, message)
+		publishInstalled(false, message)
+		finish()
 		return
 	}
-	s.jobs.Complete(jobID, "Installed "+staged.Name+" disabled; enable it to deploy")
-	s.forgetPendingImport(jobID)
+	plan, err := s.buildGameDeployPlan(ctx, staged.SteamAppID)
+	if err != nil {
+		message := "Installed " + staged.Name + " enabled; deploy preview failed: " + err.Error()
+		s.logger.Warn("auto-enable deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
+		finish()
+		return
+	}
+	if len(plan.Conflicts) > 0 {
+		message := "Installed " + staged.Name + " enabled; deployment has conflicts to review"
+		s.logger.Info("auto-enable deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
+		finish()
+		return
+	}
+	if !hasDeployableActions(plan) {
+		message := "Installed " + staged.Name + " enabled; deployment is already up to date"
+		s.logger.Info("auto-enable deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
+		finish()
+		return
+	}
+	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Deploying enabled mod"))
+	if err != nil {
+		s.logger.Warn("auto-enable deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+		s.jobs.Fail(jobID, err.Error())
+		finish()
+		return
+	}
+	applied := deployment.Files
+	if err := deploy.Verify(applied); err != nil {
+		s.logger.Warn("auto-enable deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("auto-enable deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+		}
+		s.jobs.Fail(jobID, err.Error())
+		finish()
+		return
+	}
+	deploymentID, err := s.db.RecordDeployment(context.Background(), staged.SteamAppID, plan.Strategy, applied)
+	if err != nil {
+		s.logger.Warn("auto-enable deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("auto-enable deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+		}
+		s.jobs.Fail(jobID, err.Error())
+		finish()
+		return
+	}
+	deployment.Commit()
+	s.logger.Info("auto-enable deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
+	s.publishGameEvent(events.TypeDeploymentChanged, staged.SteamAppID, map[string]any{
+		"action":        "deployed",
+		"deployment_id": deploymentID,
+		"files":         len(applied),
+		"source":        "auto-enable",
+	})
+	message := "Installed, enabled, and deployed " + staged.Name
+	launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, staged.SteamAppID, jobID)
+	if launchErr != nil {
+		s.logger.Warn("auto-enable deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
+	} else if launchStatus != nil && launchStatus.Action != nil {
+		message += "; launch tool setup pending"
+	}
+	s.jobs.Complete(jobID, message)
+	publishInstalled(true, message)
+	finish()
 }
 
 func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string) (int, int, error) {
@@ -2738,9 +2784,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		return storage.InstalledMod{}, err
 	}
 	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
-	s.cfgMu.RLock()
-	autoEnable := s.cfg.Install.AutoEnableInstalledMods
-	s.cfgMu.RUnlock()
+	autoEnable := s.autoEnableInstalledMods()
 	defaultEnabled := autoEnable
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID:     appID,

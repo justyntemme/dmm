@@ -267,6 +267,35 @@ class Plugin:
             return {"ok": True, "mods": result}
         return {"ok": False, "error": "Unexpected mods response.", "mods": []}
 
+    async def game_install_candidates(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "candidates": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "candidates": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load installer choices.", "candidates": []}
+        if isinstance(result, list):
+            return {"ok": True, "candidates": result}
+        return {"ok": False, "error": "Unexpected installer choices response.", "candidates": []}
+
+    async def apply_install_candidate(self, app_id, candidate_id, selections):
+        app_id = str(app_id or "").strip()
+        candidate_id = str(candidate_id or "").strip()
+        if not app_id or not candidate_id:
+            return {"ok": False, "error": "app_id and candidate_id are required."}
+        if not isinstance(selections, dict):
+            selections = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"selections": selections}).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates/{urllib.parse.quote(candidate_id)}/apply", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to apply installer choices."}
+        self._log(f"installer choices applied app_id={app_id} candidate_id={candidate_id}")
+        return {"ok": True, "result": result}
+
     async def set_default_profile(self, profile_id):
         profile_id = str(profile_id or "").strip()
         if not profile_id:

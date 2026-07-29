@@ -1,5 +1,6 @@
 import {
   ButtonItem,
+  ConfirmModal,
   Focusable,
   Navigation,
   PanelSection,
@@ -8,6 +9,7 @@ import {
   TextField,
   Tabs,
   ToggleField,
+  showModal,
   staticClasses
 } from "@decky/ui";
 import { call, definePlugin, toaster } from "@decky/api";
@@ -115,6 +117,43 @@ type ManagedMod = {
   source_file_id: string;
 };
 
+type InstallCandidate = {
+  id: number;
+  steam_app_id: string;
+  name: string;
+  status: string;
+  reason: string;
+  installer_json?: string;
+  source_game_domain: string;
+  source_mod_id: string;
+  source_file_id: string;
+};
+
+type FomodInstaller = {
+  name: string;
+  steps?: FomodStep[];
+};
+
+type FomodStep = {
+  id: string;
+  name: string;
+  groups?: FomodGroup[];
+};
+
+type FomodGroup = {
+  id: string;
+  name: string;
+  type: string;
+  plugins?: FomodPlugin[];
+};
+
+type FomodPlugin = {
+  id: string;
+  name: string;
+  description?: string;
+  type?: string;
+};
+
 type LaunchAction = {
   type: string;
   app_id: string;
@@ -178,6 +217,7 @@ function showLaunchToast(title: string, body: string, failed = false) {
 }
 
 const notifiedInstallJobStates = new Map<string, string>();
+const shownInstallerChoiceModals = new Set<string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
 const DMM_EVENT_NAME = "dmm-domain-event";
@@ -234,6 +274,51 @@ function isInstallNotificationJob(job: Job) {
 
 function isJob(value: unknown): value is Job {
   return Boolean(value && typeof value === "object" && typeof (value as Job).id === "string" && typeof (value as Job).type === "string");
+}
+
+function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
+  if (!candidate.installer_json) return null;
+  try {
+    return JSON.parse(candidate.installer_json) as FomodInstaller;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function preferredFomodType(type: string | undefined) {
+  const normalized = (type ?? "").trim().toLowerCase();
+  return normalized === "required" || normalized === "recommended";
+}
+
+function fomodGroupType(group: FomodGroup) {
+  return (group.type ?? "").trim().toLowerCase();
+}
+
+function fomodGroupInputType(group: FomodGroup) {
+  const type = fomodGroupType(group);
+  return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
+}
+
+function defaultFomodSelections(installer: FomodInstaller): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const step of installer.steps ?? []) {
+    for (const group of step.groups ?? []) {
+      const plugins = group.plugins ?? [];
+      const type = fomodGroupType(group);
+      if (type === "selectall") {
+        out[group.id] = plugins.map((plugin) => plugin.id);
+        continue;
+      }
+      const preferred = plugins.find((plugin) => preferredFomodType(plugin.type)) ?? plugins[0];
+      if (!preferred) continue;
+      if (type === "selectexactlyone" || type === "selectatleastone" || type === "") {
+        out[group.id] = [preferred.id];
+        continue;
+      }
+      out[group.id] = plugins.filter((plugin) => preferredFomodType(plugin.type)).map((plugin) => plugin.id);
+    }
+  }
+  return out;
 }
 
 async function maybeShowInstallToast(job: Job, { seed = false, source = "event" } = {}) {
@@ -334,15 +419,169 @@ async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResult
   }
 }
 
+function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; closeModal: () => void; onApplied: () => void }) {
+  const installer = installerForCandidate(props.candidate);
+  const [selections, setSelections] = useState<Record<string, string[]>>(() => (installer ? defaultFomodSelections(installer) : {}));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  function pluginSelected(group: FomodGroup, plugin: FomodPlugin) {
+    return (selections[group.id] ?? []).includes(plugin.id);
+  }
+
+  function setPluginSelection(group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
+    const type = fomodGroupType(group);
+    if (type === "selectall") return;
+    setSelections((current) => {
+      const next = { ...current };
+      if (type === "selectexactlyone" || type === "selectatmostone") {
+        next[group.id] = checked ? [plugin.id] : [];
+        return next;
+      }
+      const selected = new Set(next[group.id] ?? []);
+      if (checked) selected.add(plugin.id);
+      else selected.delete(plugin.id);
+      next[group.id] = Array.from(selected);
+      return next;
+    });
+  }
+
+  async function applyChoices() {
+    if (!installer || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>(
+        "apply_install_candidate",
+        props.appID,
+        props.candidate.id,
+        selections
+      );
+      if (!result.ok) {
+        setMessage(result.error || "Unable to apply installer choices.");
+        await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: props.candidate.id, error: result.error || "" });
+        return;
+      }
+      if (result.result?.job) showInstallToast(result.result.job);
+      await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: props.candidate.id });
+      props.onApplied();
+      props.closeModal();
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      setMessage(error);
+      await logFrontendEvent("installer choice modal apply threw", { app_id: props.appID, candidate_id: props.candidate.id, error });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ConfirmModal
+      strTitle={props.candidate.name}
+      strDescription={
+        <div style={{ display: "grid", gap: "12px", maxHeight: "62vh", overflowY: "auto", paddingRight: "4px" }}>
+          <div style={{ color: "#a1a1aa" }}>{props.candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
+          {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this request.</div>}
+          {installer?.steps?.map((step) => (
+            <section key={step.id} style={{ display: "grid", gap: "8px" }}>
+              <div style={{ fontWeight: 800 }}>{step.name}</div>
+              {step.groups?.map((group) => (
+                <fieldset key={group.id} style={{ border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "8px", margin: 0, padding: "10px" }}>
+                  <legend style={{ color: "#7dd3fc", fontWeight: 800, padding: "0 4px" }}>{group.name}</legend>
+                  {group.plugins?.map((plugin) => (
+                    <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
+                      <input
+                        type={fomodGroupInputType(group)}
+                        name={`candidate-${props.candidate.id}-${group.id}`}
+                        checked={pluginSelected(group, plugin)}
+                        disabled={busy || fomodGroupType(group) === "selectall"}
+                        onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
+                      />
+                      <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                        <strong>{plugin.name}</strong>
+                        {plugin.type && <small style={{ color: "#a1a1aa" }}>{plugin.type}</small>}
+                        {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+            </section>
+          ))}
+          {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
+        </div>
+      }
+      strOKButtonText={busy ? "Applying..." : "Apply Choices"}
+      strCancelButtonText="Later"
+      bOKDisabled={busy || !installer}
+      onOK={() => void applyChoices()}
+      onCancel={props.closeModal}
+      closeModal={props.closeModal}
+    />
+  );
+}
+
+async function maybeShowInstallerChoiceModal(job: Job) {
+  if (job.type !== "installer-choice" || job.status !== "waiting") return;
+  const appID = String(job.payload?.app_id ?? "").trim();
+  const candidateID = Number.parseInt(String(job.payload?.candidate_id ?? ""), 10);
+  if (!appID || !Number.isFinite(candidateID)) return;
+  const key = String(candidateID);
+  if (shownInstallerChoiceModals.has(key)) return;
+  shownInstallerChoiceModals.add(key);
+  try {
+    const result = await call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID);
+    if (!result.ok) {
+      shownInstallerChoiceModals.delete(key);
+      await logFrontendEvent("installer choice candidates load failed", { app_id: appID, candidate_id: candidateID, error: result.error || "" });
+      return;
+    }
+    const candidate = result.candidates.find((item) => item.id === candidateID);
+    if (!candidate || !installerForCandidate(candidate)) {
+      shownInstallerChoiceModals.delete(key);
+      await logFrontendEvent("installer choice candidate missing installer json", { app_id: appID, candidate_id: candidateID });
+      return;
+    }
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => {
+      modal?.Close();
+    };
+    modal = showModal(
+      <InstallerChoiceModal
+        appID={appID}
+        candidate={candidate}
+        closeModal={closeModal}
+        onApplied={() => {
+          shownInstallerChoiceModals.delete(key);
+          void pollInstallJobs({ seed: true });
+          void pollLaunchActions();
+        }}
+      />,
+      window,
+      { strTitle: "DMM Installer Choices", bNeverPopOut: true, popupWidth: 520, popupHeight: 720 }
+    );
+    await logFrontendEvent("installer choice modal opened", { app_id: appID, candidate_id: candidateID });
+  } catch (err) {
+    shownInstallerChoiceModals.delete(key);
+    await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidateID, error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 async function handleDeckyDomainEvent(event: DomainEvent) {
   if (event.id > eventMonitorLastID) eventMonitorLastID = event.id;
   if (event.type === "jobs.snapshot" && Array.isArray(event.payload)) {
     for (const item of event.payload) {
-      if (isJob(item)) await maybeShowInstallToast(item, { seed: true, source: "event-snapshot" });
+      if (!isJob(item)) continue;
+      await maybeShowInstallToast(item, { seed: true, source: "event-snapshot" });
+      await maybeShowInstallerChoiceModal(item);
     }
   }
   if (event.type === "job.updated" && isJob(event.payload)) {
     await maybeShowInstallToast(event.payload, { source: "event" });
+    if (event.payload.type === "installer-choice" && event.payload.status !== "waiting" && event.payload.payload?.candidate_id) {
+      shownInstallerChoiceModals.delete(event.payload.payload.candidate_id);
+    }
+    await maybeShowInstallerChoiceModal(event.payload);
   }
   if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type)) {
     await pollLaunchActions();

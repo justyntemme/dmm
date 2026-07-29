@@ -1635,6 +1635,102 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	}
 }
 
+func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Install.AutoEnableInstalledMods = true
+	srv.cfgMu.Unlock()
+
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="Mods/Choice/base.txt" /></requiredInstallFiles>
+</config>`,
+		"Core/base.txt":  "base",
+		"fomod/info.xml": "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerJSON, err := json.Marshal(installer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		Name:          "Choice Mod",
+		ArchivePath:   archivePath,
+		ArchiveSHA256: "sum",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: string(installerJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Status != jobs.StatusCompleted || !strings.Contains(body.Job.Message, "enabled, and deployed") {
+		t.Fatalf("job = %+v", body.Job)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || !mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+	target := filepath.Join(gamePath, "Mods", "Choice", "base.txt")
+	if _, err := os.Readlink(target); err != nil {
+		t.Fatalf("expected auto-deployed symlink: %v", err)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidate was not removed = %+v", candidates)
+	}
+}
+
 func TestDeleteGameModRemovesInstalledRowAndStaging(t *testing.T) {
 	srv := newTestServer(t)
 	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
