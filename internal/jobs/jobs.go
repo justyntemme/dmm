@@ -229,10 +229,14 @@ func (m *Manager) ServeEvents(w http.ResponseWriter, r *http.Request) {
 	ch := make(chan Job, 16)
 	m.mu.Lock()
 	m.subscribers[ch] = struct{}{}
+	snapshot := make([]Job, 0, len(m.jobs))
 	for _, job := range m.jobs {
-		ch <- job
+		snapshot = append(snapshot, job)
 	}
 	m.mu.Unlock()
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].UpdatedAt.After(snapshot[j].UpdatedAt)
+	})
 
 	defer func() {
 		m.mu.Lock()
@@ -241,17 +245,28 @@ func (m *Manager) ServeEvents(w http.ResponseWriter, r *http.Request) {
 		close(ch)
 	}()
 
+	for _, job := range snapshot {
+		if r.Context().Err() != nil {
+			return
+		}
+		writeJobEvent(w, job)
+	}
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case job := <-ch:
-			b, _ := json.Marshal(job)
-			_, _ = fmt.Fprintf(w, "event: job\ndata: %s\n\n", b)
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			writeJobEvent(w, job)
 		}
+	}
+}
+
+func writeJobEvent(w http.ResponseWriter, job Job) {
+	b, _ := json.Marshal(job)
+	_, _ = fmt.Fprintf(w, "event: job\ndata: %s\n\n", b)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
 	}
 }
 

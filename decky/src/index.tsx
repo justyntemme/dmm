@@ -200,35 +200,6 @@ async function pollInstallJobs({ seed = false } = {}) {
   }
 }
 
-async function applyLaunchActionThroughBackend(action: LaunchAction, source: string, sink?: LaunchResultSink): Promise<boolean> {
-  try {
-    await logFrontendEvent("backend launch action requested", { app_id: action.app_id, tool_id: action.tool_id, source });
-    const result = await call<
-      [string],
-      { ok: boolean; error?: string; result?: { applied?: boolean; status?: LaunchStatus; job?: Job } }
-    >("apply_launch_action", action.app_id);
-    if (!result.ok) {
-      const message = result.error || "Backend launch setup did not complete.";
-      sink?.(message);
-      showLaunchToast("DMM launch tool failed", message, true);
-      await logFrontendEvent("backend launch action failed", { app_id: action.app_id, tool_id: action.tool_id, source, error: message });
-      return false;
-    }
-    const configured = Boolean(result.result?.applied || result.result?.status?.configured);
-    const message = configured ? "Launch tool configured." : "Launch setup ran, but DMM still sees it as pending.";
-    sink?.(message);
-    showLaunchToast(configured ? "DMM launch tool configured" : "DMM launch tool needs review", message, !configured);
-    await logFrontendEvent("backend launch action completed", { app_id: action.app_id, tool_id: action.tool_id, source, configured });
-    return configured;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    sink?.(message);
-    showLaunchToast("DMM launch tool failed", message, true);
-    await logFrontendEvent("backend launch action threw", { app_id: action.app_id, tool_id: action.tool_id, source, error: message });
-    return false;
-  }
-}
-
 async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResultSink } = {}) {
   try {
     const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
@@ -261,9 +232,6 @@ async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResult
           error: message,
           source: "decky-auto"
         });
-        if (await applyLaunchActionThroughBackend(action, "steam-api-unavailable", options.sink)) {
-          completedLaunchActions.add(actionKey);
-        }
         continue;
       }
 
@@ -285,9 +253,6 @@ async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResult
           continue;
         }
         await logFrontendEvent("launch action still pending after steam api call", { app_id: action.app_id, tool_id: action.tool_id });
-        if (await applyLaunchActionThroughBackend(action, "steam-api-not-verified", options.sink)) {
-          completedLaunchActions.add(actionKey);
-        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         options.sink?.(message);

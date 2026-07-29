@@ -17,13 +17,14 @@ const (
 )
 
 type FileMapping struct {
-	SourceRelative string `json:"source_relative"`
-	SourcePath     string `json:"source_path,omitempty"`
-	TargetRelative string `json:"target_relative"`
-	TargetPolicy   string `json:"target_policy,omitempty"`
-	ModID          string `json:"mod_id,omitempty"`
-	Priority       int    `json:"priority"`
-	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
+	SourceRelative string   `json:"source_relative"`
+	SourcePath     string   `json:"source_path,omitempty"`
+	TargetRelative string   `json:"target_relative"`
+	TargetPolicy   string   `json:"target_policy,omitempty"`
+	Strategy       Strategy `json:"strategy,omitempty"`
+	ModID          string   `json:"mod_id,omitempty"`
+	Priority       int      `json:"priority"`
+	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
 }
 
 type Action struct {
@@ -115,7 +116,7 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 			SourcePath:     sourcePath,
 			TargetPath:     filepath.Join(targetRoot, targetRel),
 			TargetRelative: filepath.ToSlash(targetRel),
-			Strategy:       strategy,
+			Strategy:       mappingStrategy(mapping, strategy),
 			Operation:      "add",
 			ChecksumSHA256: mapping.ChecksumSHA256,
 		}
@@ -176,6 +177,13 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 		return plan.Conflicts[i].TargetRelative < plan.Conflicts[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {
+	if mapping.Strategy != "" {
+		return mapping.Strategy
+	}
+	return fallback
 }
 
 func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error) {

@@ -74,6 +74,36 @@ func TestApplySkipsConflicts(t *testing.T) {
 	}
 }
 
+func TestApplyCopyPreservesExecutableMode(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	if err := os.MkdirAll(filepath.Join(staging, "mod"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "mod", "launcher"), []byte("mod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, target, StrategyCopy, []FileMapping{{
+		SourceRelative: "mod/launcher",
+		TargetRelative: "launcher",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(plan); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(target, "launcher"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("mode = %v, want 0755", got)
+	}
+}
+
 func TestApplyRestoresReplacedTargetOnFailure(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source.txt")

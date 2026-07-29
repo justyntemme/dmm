@@ -16,7 +16,7 @@ MVP vertical slice in active testing:
 - Import URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP import handlers; Nexus remains the only MVP download provider.
 - Pending install requests and active pending-import downloads/extractions can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped request and activity filtering after backend restarts.
-- Download approval is required by default. The Decky plugin Settings tab exposes "Auto-accept download requests" for faster Deck-only flows.
+- Decky Settings exposes "Auto-accept download requests" and "Auto-deploy staged mods"; both default on for MVP Deck-only flows, while newly installed mods still remain disabled until the user enables them.
 - The Decky plugin shows Gaming Mode notifications for Nexus install request and download job transitions while it is loaded.
 - Stardew Valley (`413150`) is the first supported deploy target.
 - Install planning uses Vortex-modeled metadata specs: the current Stardew slice handles manifest-based mods, root-folder `Content/` archives, and SMAPI installer archives with Linux embedded-payload extraction.
@@ -126,6 +126,21 @@ Backend app data:
 ```text
 /home/deck/.local/share/decky-mod-manager/
 ```
+
+## Decky Launch-Action Bridge
+
+Some Steam client operations are only available from the Decky frontend JavaScript context, not from the Go backend. Setting Steam launch options for a specific app is one of those operations.
+
+DMM handles this through an explicit action bridge:
+
+1. Game extensions describe required primary launch tools through extension metadata. Stardew's extension can therefore request that Steam launch Stardew through SMAPI without putting Stardew-specific logic in the generic Decky code.
+2. The Go backend evaluates installed/enabled mods and extension metadata, then exposes pending launch actions from `GET /api/launch/actions`.
+3. The Decky Python bridge exposes `launch_actions` and `record_launch_action` methods to the Decky frontend.
+4. The Decky frontend starts module-level background monitors when the plugin is loaded, outside the React panel component. Closing the Decky sidebar does not stop those monitors.
+5. The monitor polls pending launch actions and, when available, calls `SteamClient.Apps.SetAppLaunchOptions(appid, desiredOptions)`.
+6. After the Steam API call, Decky reports the result back to the backend with `POST /api/games/{appID}/launch/configure`, so diagnostics and the phone/tablet UI can show whether the action is configured.
+
+This means the Decky panel does not need to be open for launch-option actions to be applied. Decky Loader must still have the DMM plugin loaded, and the DMM backend must be running. If the Steam frontend API is unavailable, Decky records that failure and leaves the action pending for retry through the Steam client API. The Go backend does not patch Steam's `localconfig.vdf` as a product path.
 
 ## Firefox Flatpak Notes
 

@@ -2537,7 +2537,7 @@ func TestGameLaunchStatusPublishesExtensionLaunchAction(t *testing.T) {
 	}
 }
 
-func TestApplyGameLaunchUsesExtensionActionAndBacksUpSteamConfig(t *testing.T) {
+func TestApplyGameLaunchRequestsDeckySteamAPIAction(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
 	for _, rel := range []string{
@@ -2592,38 +2592,31 @@ func TestApplyGameLaunchUsesExtensionActionAndBacksUpSteamConfig(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Applied bool                      `json:"applied"`
-		Job     jobs.Job                  `json:"job"`
-		Status  gameLaunchStatusResponse  `json:"status"`
-		Steam   steam.LaunchOptionsStatus `json:"steam"`
+		Applied bool                     `json:"applied"`
+		Queued  bool                     `json:"queued"`
+		Status  gameLaunchStatusResponse `json:"status"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	desired := steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI")
-	if !body.Applied || body.Job.Type != "launch-config" || !body.Status.Configured || body.Status.CurrentOptions != desired {
+	if body.Applied || !body.Queued || body.Status.Configured || body.Status.Action == nil || body.Status.Action.DesiredOptions != desired {
 		t.Fatalf("apply response = %+v", body)
-	}
-	if body.Steam.UpdatedConfigPath == "" || body.Steam.BackupPath == "" {
-		t.Fatalf("steam status missing paths = %+v", body.Steam)
-	}
-	if _, err := os.Stat(body.Steam.BackupPath); err != nil {
-		t.Fatalf("backup was not written: %v", err)
 	}
 	status, err := steam.LaunchOptionsStatusForApp(context.Background(), "413150", desired)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Configured || status.CurrentOptions != desired {
-		t.Fatalf("launch options were not configured = %+v", status)
+	if status.Configured || status.CurrentOptions != "" {
+		t.Fatalf("launch options were changed by backend = %+v", status)
 	}
 }
 
-func TestDeployAutoAppliesLowRiskLaunchAction(t *testing.T) {
+func TestDeployReturnsPendingDeckyLaunchAction(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
 	for _, rel := range []string{
@@ -2685,22 +2678,22 @@ func TestDeployAutoAppliesLowRiskLaunchAction(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Job    jobs.Job                 `json:"job"`
-		Launch *applyGameLaunchResponse `json:"launch"`
+		Job    jobs.Job                  `json:"job"`
+		Launch *gameLaunchStatusResponse `json:"launch"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	desired := steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI")
-	if body.Job.Status != jobs.StatusCompleted || body.Launch == nil || !body.Launch.Applied || !body.Launch.Status.Configured {
+	if body.Job.Status != jobs.StatusCompleted || body.Launch == nil || body.Launch.Configured || body.Launch.Action == nil || body.Launch.Action.DesiredOptions != desired {
 		t.Fatalf("deploy response = %+v", body)
 	}
 	status, err := steam.LaunchOptionsStatusForApp(context.Background(), "413150", desired)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Configured || status.CurrentOptions != desired {
-		t.Fatalf("launch options were not configured = %+v", status)
+	if status.Configured || status.CurrentOptions != "" {
+		t.Fatalf("launch options were changed by backend = %+v", status)
 	}
 }
 
@@ -3046,6 +3039,7 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 			StagingRelative: "LookupAnything/manifest.json",
 			TargetRelative:  "Mods/LookupAnything/manifest.json",
 			TargetPolicy:    installplan.TargetPolicyKeepExisting,
+			DeployStrategy:  installplan.DeployStrategyCopy,
 		}},
 	})
 	if err != nil {
@@ -3061,7 +3055,7 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 	if len(manifest.Metadata) != 1 || manifest.Metadata[0].UniqueID != "Pathoschild.LookupAnything" || len(manifest.Metadata[0].Dependencies) != 1 {
 		t.Fatalf("manifest metadata = %+v", manifest.Metadata)
 	}
-	if len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Mods/LookupAnything/manifest.json" || manifest.Files[0].TargetPolicy != installplan.TargetPolicyKeepExisting {
+	if len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Mods/LookupAnything/manifest.json" || manifest.Files[0].TargetPolicy != installplan.TargetPolicyKeepExisting || manifest.Files[0].DeployStrategy != installplan.DeployStrategyCopy {
 		t.Fatalf("manifest files = %+v", manifest.Files)
 	}
 }

@@ -36,6 +36,7 @@ type Instruction struct {
 	StagingRelative          string `json:"staging_relative"`
 	TargetRelative           string `json:"target_relative"`
 	TargetPolicy             string `json:"target_policy,omitempty"`
+	DeployStrategy           string `json:"deploy_strategy,omitempty"`
 }
 
 type ModMetadata struct {
@@ -131,6 +132,7 @@ type GeneratedFileSpec struct {
 type TargetPolicySpec struct {
 	TargetRelative string
 	Policy         string
+	DeployStrategy string
 }
 
 type MetadataExtractorSpec struct {
@@ -163,6 +165,10 @@ const MetadataKindJSONManifest = "json-manifest"
 
 const (
 	TargetPolicyKeepExisting = "keep-existing"
+)
+
+const (
+	DeployStrategyCopy = "copy"
 )
 
 const (
@@ -339,6 +345,7 @@ func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot s
 				StagingRelative: stagingRel,
 				TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel)),
 				TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
+				DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
 			})
 			return nil
 		})
@@ -386,6 +393,7 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 			StagingRelative: rel,
 			TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)),
 			TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
+			DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
 		})
 		return nil
 	})
@@ -435,6 +443,7 @@ func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 			StagingRelative: rel,
 			TargetRelative:  targetRel,
 			TargetPolicy:    targetPolicyFor(installer, targetRel),
+			DeployStrategy:  targetDeploymentStrategyFor(installer, targetRel),
 		})
 		return nil
 	})
@@ -453,6 +462,7 @@ func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 			StagingRelative:          destination,
 			TargetRelative:           filepath.ToSlash(filepath.Join(installer.TargetRoot, destination)),
 			TargetPolicy:             targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, destination))),
+			DeployStrategy:           targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, destination))),
 		})
 	}
 	sort.Slice(plan.Instructions, func(i, j int) bool {
@@ -877,6 +887,16 @@ func targetPolicyFor(installer InstallerSpec, targetRelative string) string {
 	for _, policy := range installer.TargetPolicies {
 		if strings.EqualFold(filepath.ToSlash(strings.TrimSpace(policy.TargetRelative)), targetRelative) {
 			return strings.TrimSpace(policy.Policy)
+		}
+	}
+	return ""
+}
+
+func targetDeploymentStrategyFor(installer InstallerSpec, targetRelative string) string {
+	targetRelative = filepath.ToSlash(strings.TrimSpace(targetRelative))
+	for _, policy := range installer.TargetPolicies {
+		if strings.EqualFold(filepath.ToSlash(strings.TrimSpace(policy.TargetRelative)), targetRelative) {
+			return strings.TrimSpace(policy.DeployStrategy)
 		}
 	}
 	return ""

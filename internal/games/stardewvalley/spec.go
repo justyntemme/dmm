@@ -131,6 +131,30 @@ func InstallPlanSpec() installplan.GameSpec {
 						TargetRelative: "steam_appid.txt",
 						Policy:         installplan.TargetPolicyKeepExisting,
 					},
+					{
+						TargetRelative: "StardewModdingAPI",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
+					{
+						TargetRelative: "StardewModdingAPI.dll",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
+					{
+						TargetRelative: "StardewModdingAPI.deps.json",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
+					{
+						TargetRelative: "StardewModdingAPI.runtimeconfig.json",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
+					{
+						TargetRelative: "StardewModdingAPI.xml",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
+					{
+						TargetRelative: "unix-launcher.sh",
+						DeployStrategy: installplan.DeployStrategyCopy,
+					},
 				},
 				MetadataExtractors: []installplan.MetadataExtractorSpec{
 					smapiManifestExtractor(),

@@ -379,15 +379,21 @@ func copyFile(source, target string) error {
 		return err
 	}
 	defer in.Close()
-
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	info, err := in.Stat()
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	if _, err := io.Copy(out, in); err != nil {
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
 		return err
 	}
-	return out.Sync()
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(target, info.Mode().Perm())
 }

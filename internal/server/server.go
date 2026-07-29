@@ -207,7 +207,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
-	mux.HandleFunc("GET /api/jobs/events", s.jobs.ServeEvents)
+	mux.HandleFunc("GET /api/jobs/events", s.handleJobEvents)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
@@ -324,10 +324,9 @@ type applyInstallCandidateRequest struct {
 }
 
 type applyGameLaunchResponse struct {
-	Applied bool                      `json:"applied"`
-	Job     *jobs.Job                 `json:"job,omitempty"`
-	Status  gameLaunchStatusResponse  `json:"status"`
-	Steam   steam.LaunchOptionsStatus `json:"steam,omitempty"`
+	Applied bool                     `json:"applied"`
+	Queued  bool                     `json:"queued"`
+	Status  gameLaunchStatusResponse `json:"status"`
 }
 
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
@@ -492,21 +491,29 @@ func (s *Server) handleApplyGameLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
-	resp, err := s.applyGameLaunch(r.Context(), appID)
+	resp, err := s.requestGameLaunchAction(r.Context(), appID)
 	if err != nil {
 		writeError(w, launchApplyErrorStatus(err), err)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	status := http.StatusOK
+	if resp.Queued {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, resp)
 }
 
-func (s *Server) applyGameLaunch(ctx context.Context, appID string) (applyGameLaunchResponse, error) {
+func (s *Server) requestGameLaunchAction(ctx context.Context, appID string) (applyGameLaunchResponse, error) {
 	status, err := s.gameLaunchStatus(ctx, appID)
 	if err != nil {
 		return applyGameLaunchResponse{}, err
 	}
 	resp := applyGameLaunchResponse{Status: status}
-	if !status.Required || status.Configured {
+	if !status.Required {
+		return resp, nil
+	}
+	if status.Configured {
+		resp.Applied = true
 		return resp, nil
 	}
 	if !status.CanConfigure || status.Action == nil {
@@ -515,18 +522,9 @@ func (s *Server) applyGameLaunch(ctx context.Context, appID string) (applyGameLa
 	if status.Action.Type != "set-steam-launch-options" {
 		return resp, fmt.Errorf("unsupported launch action type %q", status.Action.Type)
 	}
-
-	job := s.jobs.CreateWithPayload("launch-config", "Configure launch tool", jobs.JobPayload{
-		"app_id":           appID,
-		"action_type":      status.Action.Type,
-		"tool_id":          status.Action.ToolID,
-		"source_extension": status.Action.SourceExtension,
-	})
-	resp.Job = &job
-	s.jobs.Run(job.ID, "Configuring Steam launch options")
+	resp.Queued = true
 	s.logger.Info(
-		"launch action backend apply started",
-		"job_id", job.ID,
+		"launch action requested for Decky steam api",
 		"app_id", appID,
 		"action_type", status.Action.Type,
 		"tool_id", status.Action.ToolID,
@@ -534,72 +532,6 @@ func (s *Server) applyGameLaunch(ctx context.Context, appID string) (applyGameLa
 		"risk", status.Action.Risk,
 		"current_options", status.CurrentOptions,
 		"desired_options", status.DesiredOptions,
-	)
-
-	s.cfgMu.RLock()
-	backupDir := filepath.Join(s.cfg.DataDir, "backups", "steam")
-	s.cfgMu.RUnlock()
-	steamStatus, err := steam.SetLaunchOptions(ctx, appID, status.Action.DesiredOptions, backupDir)
-	resp.Steam = steamStatus
-	if err != nil {
-		failed, _ := s.jobs.Fail(job.ID, "Steam launch options were not updated: "+err.Error())
-		resp.Job = &failed
-		s.logger.Error(
-			"launch action backend apply failed",
-			"job_id", job.ID,
-			"app_id", appID,
-			"tool_id", status.Action.ToolID,
-			"source_extension", status.Action.SourceExtension,
-			"error", err,
-		)
-		return resp, err
-	}
-
-	updatedStatus, err := s.gameLaunchStatus(ctx, appID)
-	if err != nil {
-		failed, _ := s.jobs.Fail(job.ID, "Steam launch options were updated but could not be verified: "+err.Error())
-		resp.Job = &failed
-		s.logger.Error(
-			"launch action backend verification failed",
-			"job_id", job.ID,
-			"app_id", appID,
-			"tool_id", status.Action.ToolID,
-			"source_extension", status.Action.SourceExtension,
-			"updated_config_path", steamStatus.UpdatedConfigPath,
-			"backup_path", steamStatus.BackupPath,
-			"error", err,
-		)
-		return resp, err
-	}
-	resp.Status = updatedStatus
-	if !updatedStatus.Configured {
-		err := errors.New("Steam launch options were updated but still do not match the extension launch tool")
-		failed, _ := s.jobs.Fail(job.ID, err.Error())
-		resp.Job = &failed
-		s.logger.Error(
-			"launch action backend apply did not configure tool",
-			"job_id", job.ID,
-			"app_id", appID,
-			"tool_id", status.Action.ToolID,
-			"source_extension", status.Action.SourceExtension,
-			"updated_config_path", steamStatus.UpdatedConfigPath,
-			"backup_path", steamStatus.BackupPath,
-			"current_options", updatedStatus.CurrentOptions,
-			"desired_options", updatedStatus.DesiredOptions,
-		)
-		return resp, err
-	}
-	resp.Applied = true
-	completed, _ := s.jobs.Complete(job.ID, "Launch tool configured")
-	resp.Job = &completed
-	s.logger.Info(
-		"launch action backend apply completed",
-		"job_id", job.ID,
-		"app_id", appID,
-		"tool_id", status.Action.ToolID,
-		"source_extension", status.Action.SourceExtension,
-		"updated_config_path", steamStatus.UpdatedConfigPath,
-		"backup_path", steamStatus.BackupPath,
 	)
 	return resp, nil
 }
@@ -1467,22 +1399,22 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	deployment.Commit()
 	s.logger.Info("deployment completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "applied", len(applied))
 	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(applied))+" files")
-	launchApply, launchErr := s.autoApplyLowRiskLaunchAction(r.Context(), appID, job.ID)
+	launchStatus, launchErr := s.postDeploymentLaunchStatus(r.Context(), appID, job.ID)
 	if launchErr != nil {
-		s.logger.Warn("post-deployment launch action failed", "job_id", job.ID, "app_id", appID, "error", launchErr)
+		s.logger.Warn("post-deployment launch action status failed", "job_id", job.ID, "app_id", appID, "error", launchErr)
 	}
 	response := map[string]any{
 		"job":     job,
 		"plan":    plan,
 		"applied": applied,
 	}
-	if launchApply != nil {
-		response["launch"] = launchApply
+	if launchStatus != nil {
+		response["launch"] = launchStatus
 	}
 	writeJSON(w, http.StatusAccepted, response)
 }
 
-func (s *Server) autoApplyLowRiskLaunchAction(ctx context.Context, appID, parentJobID string) (*applyGameLaunchResponse, error) {
+func (s *Server) postDeploymentLaunchStatus(ctx context.Context, appID, parentJobID string) (*gameLaunchStatusResponse, error) {
 	status, err := s.gameLaunchStatus(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -1502,18 +1434,17 @@ func (s *Server) autoApplyLowRiskLaunchAction(ctx context.Context, appID, parent
 		)
 		return nil, nil
 	}
-	if len(status.Details) == 0 {
-		s.logger.Warn(
-			"post-deployment launch action skipped because no Steam localconfig was found",
-			"parent_job_id", parentJobID,
-			"app_id", appID,
-			"tool_id", status.Action.ToolID,
-			"source_extension", status.Action.SourceExtension,
-		)
-		return nil, nil
-	}
-	resp, err := s.applyGameLaunch(ctx, appID)
-	return &resp, err
+	s.logger.Info(
+		"post-deployment launch action waiting for Decky steam api",
+		"parent_job_id", parentJobID,
+		"app_id", appID,
+		"tool_id", status.Action.ToolID,
+		"source_extension", status.Action.SourceExtension,
+		"risk", status.Action.Risk,
+		"current_options", status.CurrentOptions,
+		"desired_options", status.DesiredOptions,
+	)
+	return &status, nil
 }
 
 func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
@@ -1655,6 +1586,12 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.jobs.List())
+}
+
+func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("job events stream opened", "remote", r.RemoteAddr)
+	s.jobs.ServeEvents(w, r)
+	s.logger.Info("job events stream closed", "remote", r.RemoteAddr, "error", r.Context().Err())
 }
 
 func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
@@ -2249,11 +2186,11 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		deployment.Commit()
 		s.logger.Info("auto deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
 		message := "Added and deployed " + staged.Name
-		launchApply, launchErr := s.autoApplyLowRiskLaunchAction(ctx, staged.SteamAppID, jobID)
+		launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, staged.SteamAppID, jobID)
 		if launchErr != nil {
-			s.logger.Warn("auto deploy launch action failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
-		} else if launchApply != nil && launchApply.Applied {
-			message += "; configured launch tool"
+			s.logger.Warn("auto deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
+		} else if launchStatus != nil && launchStatus.Action != nil {
+			message += "; launch tool setup pending"
 		}
 		s.jobs.Complete(jobID, message)
 		s.forgetPendingImport(jobID)
@@ -2708,6 +2645,7 @@ type stagedManifestFile struct {
 	Path           string `json:"path"`
 	TargetRelative string `json:"target_relative,omitempty"`
 	TargetPolicy   string `json:"target_policy,omitempty"`
+	DeployStrategy string `json:"deploy_strategy,omitempty"`
 	Size           int64  `json:"size"`
 	SHA256         string `json:"sha256"`
 }
@@ -2748,6 +2686,7 @@ func stagedManifestJSON(stagingPath string) (string, error) {
 func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (string, error) {
 	targets := make(map[string]string, len(plan.Instructions))
 	targetPolicies := make(map[string]string, len(plan.Instructions))
+	deployStrategies := make(map[string]string, len(plan.Instructions))
 	for _, instruction := range plan.Instructions {
 		if instruction.StagingRelative == "" || instruction.TargetRelative == "" {
 			continue
@@ -2755,6 +2694,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 		stagingRel := filepath.ToSlash(instruction.StagingRelative)
 		targets[stagingRel] = filepath.ToSlash(instruction.TargetRelative)
 		targetPolicies[stagingRel] = strings.TrimSpace(instruction.TargetPolicy)
+		deployStrategies[stagingRel] = strings.TrimSpace(instruction.DeployStrategy)
 	}
 	files := []stagedManifestFile{}
 	if err := filepath.WalkDir(stagingPath, func(path string, d os.DirEntry, err error) error {
@@ -2781,6 +2721,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 			Path:           rel,
 			TargetRelative: targets[rel],
 			TargetPolicy:   targetPolicies[rel],
+			DeployStrategy: deployStrategies[rel],
 			Size:           info.Size(),
 			SHA256:         sum,
 		})
@@ -2987,6 +2928,7 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 				SourcePath:     filepath.Join(stagingPath, filepath.FromSlash(file.Path)),
 				TargetRelative: filepath.ToSlash(targetRelative),
 				TargetPolicy:   strings.TrimSpace(file.TargetPolicy),
+				Strategy:       deploy.Strategy(strings.TrimSpace(file.DeployStrategy)),
 				ModID:          mod.SourceModID,
 				Priority:       mod.Priority,
 				ChecksumSHA256: file.SHA256,

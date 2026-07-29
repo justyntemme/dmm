@@ -2,24 +2,19 @@ package steam
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type LaunchOptionsStatus struct {
-	AppID             string   `json:"app_id"`
-	Configured        bool     `json:"configured"`
-	CurrentOptions    string   `json:"current_options,omitempty"`
-	DesiredOptions    string   `json:"desired_options,omitempty"`
-	LocalConfigPaths  []string `json:"local_config_paths,omitempty"`
-	UpdatedConfigPath string   `json:"updated_config_path,omitempty"`
-	BackupPath        string   `json:"backup_path,omitempty"`
+	AppID            string   `json:"app_id"`
+	Configured       bool     `json:"configured"`
+	CurrentOptions   string   `json:"current_options,omitempty"`
+	DesiredOptions   string   `json:"desired_options,omitempty"`
+	LocalConfigPaths []string `json:"local_config_paths,omitempty"`
 }
 
 func DefaultUserdataRoot() (string, error) {
@@ -116,84 +111,6 @@ func LaunchOptionsStatusForApp(ctx context.Context, appID, desired string) (Laun
 	return status, nil
 }
 
-func SetLaunchOptions(ctx context.Context, appID, desired, backupDir string) (LaunchOptionsStatus, error) {
-	paths, err := LocalConfigPaths(ctx, "")
-	if err != nil {
-		return LaunchOptionsStatus{}, err
-	}
-	if len(paths) == 0 {
-		return LaunchOptionsStatus{}, errors.New("no Steam localconfig.vdf files were found")
-	}
-	if strings.TrimSpace(desired) == "" {
-		return LaunchOptionsStatus{}, errors.New("desired launch options are required")
-	}
-	for _, path := range paths {
-		if ctx.Err() != nil {
-			return LaunchOptionsStatus{}, ctx.Err()
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		patched, changed, err := SetLaunchOptionsInVDF(string(body), appID, desired)
-		if err != nil {
-			continue
-		}
-		if !changed {
-			status, _ := LaunchOptionsStatusForApp(ctx, appID, desired)
-			status.UpdatedConfigPath = path
-			return status, nil
-		}
-		backupPath, err := backupLocalConfig(path, backupDir)
-		if err != nil {
-			return LaunchOptionsStatus{}, err
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return LaunchOptionsStatus{}, err
-		}
-		if err := os.WriteFile(path, []byte(patched), info.Mode().Perm()); err != nil {
-			return LaunchOptionsStatus{}, err
-		}
-		status, err := LaunchOptionsStatusForApp(ctx, appID, desired)
-		if err != nil {
-			return LaunchOptionsStatus{}, err
-		}
-		status.UpdatedConfigPath = path
-		status.BackupPath = backupPath
-		return status, nil
-	}
-	return LaunchOptionsStatus{}, errors.New("Steam localconfig.vdf did not contain a patchable apps block")
-}
-
-func backupLocalConfig(path, backupDir string) (string, error) {
-	if strings.TrimSpace(backupDir) == "" {
-		backupDir = filepath.Dir(path)
-	}
-	if err := os.MkdirAll(backupDir, 0o700); err != nil {
-		return "", err
-	}
-	backupPath := filepath.Join(backupDir, fmt.Sprintf("localconfig.%s.vdf", time.Now().UTC().Format("20060102T150405Z")))
-	source, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer source.Close()
-	target, err := os.OpenFile(backupPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", err
-	}
-	_, copyErr := io.Copy(target, source)
-	closeErr := target.Close()
-	if copyErr != nil {
-		return "", copyErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	return backupPath, nil
-}
-
 func launchOptionsFromVDF(text, appID string) (string, bool) {
 	appBlock, ok := appBlockRange(text, appID)
 	if !ok {
@@ -204,28 +121,6 @@ func launchOptionsFromVDF(text, appID string) (string, bool) {
 		return "", true
 	}
 	return value, true
-}
-
-func SetLaunchOptionsInVDF(text, appID, desired string) (string, bool, error) {
-	appsBlock, ok := steamAppsBlock(text)
-	if !ok {
-		return "", false, errors.New("apps block was not found")
-	}
-	appBlock, ok := blockInRange(text, appsBlock, appID)
-	escaped := escapeVDFString(desired)
-	if ok {
-		_, start, end, hasValue := stringValueInBlock(text, appBlock, "LaunchOptions")
-		if hasValue {
-			if text[start:end] == escaped {
-				return text, false, nil
-			}
-			return text[:start] + escaped + text[end:], true, nil
-		}
-		insert := "\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"" + escaped + "\""
-		return text[:appBlock.end-1] + insert + "\n\t\t\t\t\t" + text[appBlock.end-1:], true, nil
-	}
-	insert := "\n\t\t\t\t\t\"" + strings.TrimSpace(appID) + "\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"" + escaped + "\"\n\t\t\t\t\t}"
-	return text[:appsBlock.end-1] + insert + "\n\t\t\t\t" + text[appsBlock.end-1:], true, nil
 }
 
 type byteRange struct {
@@ -286,7 +181,7 @@ func blockInRange(text string, bounds byteRange, wantKey string) (byteRange, boo
 			if !ok {
 				return byteRange{}, false
 			}
-			offset = valueEnd
+			offset = valueEnd + 1
 			continue
 		}
 		offset = afterKey + 1
@@ -399,10 +294,4 @@ func skipWhitespace(text string, start int, limit int) int {
 		}
 	}
 	return start
-}
-
-func escapeVDFString(value string) string {
-	value = strings.ReplaceAll(value, "\\", "\\\\")
-	value = strings.ReplaceAll(value, "\"", "\\\"")
-	return value
 }

@@ -36,13 +36,17 @@ Backend responsibilities:
 - Produce a desired launch action with app ID, extension ID, tool ID, executable path, desired launch options, current diagnostics, and user-facing explanation.
 - Persist the action result and logs.
 - Re-read game/Steam state after the action to verify it.
+- Honor extension-declared per-file deployment strategy for launch/runtime files, such as copying launcher-root files that cannot safely resolve through staging symlinks.
 
 Decky frontend responsibilities:
 
 - Present the action in a Decky settings/debug/runtime view.
+- Run a plugin-level background monitor while Decky Loader has DMM loaded; this monitor is started outside the React panel component, so it continues when the Decky sidebar panel is closed.
 - Read current launch options through Steam frontend state when available.
 - Apply launch options through `SteamClient.Apps.SetAppLaunchOptions`.
 - Report success, failure, and observed launch options to the backend.
+
+The Decky panel does not need to be open for launch actions to run, but the DMM Decky plugin must remain loaded and the Go backend must be running. If Decky Loader is stopped or the plugin is unloaded, the Steam frontend API bridge is unavailable and pending actions remain queued for retry.
 
 Out of scope for the Decky frontend:
 
@@ -58,7 +62,7 @@ Out of scope for the Decky frontend:
 - Vortex Stardew registers SMAPI as a supported/default primary tool.
 - Vortex Stardew chooses `StardewModdingAPI.exe` on Windows and `StardewModdingAPI` on Linux/macOS.
 - Vortex SMAPI installer support uses platform-specific payload metadata.
-- Decky launch option changes should prefer verified Steam frontend APIs over direct Steam config edits.
+- Decky launch option changes must use verified Steam frontend APIs; direct Steam config edits are not a normal runtime path.
 
 ## Remaining Stardew Extension Steps
 

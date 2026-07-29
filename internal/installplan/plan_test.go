@@ -242,9 +242,16 @@ func TestStardewPlannerBuildsSMAPIInstallerPayloadFromVortexMetadata(t *testing.
 		"StardewModdingAPI.deps.json":        false,
 		"steam_appid.txt":                    false,
 	}
+	copyTargets := map[string]bool{
+		"StardewModdingAPI":           true,
+		"StardewModdingAPI.deps.json": true,
+	}
 	for _, instruction := range plan.Instructions {
 		if _, ok := wantTargets[instruction.TargetRelative]; ok {
 			wantTargets[instruction.TargetRelative] = true
+		}
+		if copyTargets[instruction.TargetRelative] && instruction.DeployStrategy != DeployStrategyCopy {
+			t.Fatalf("copy strategy missing for %+v", instruction)
 		}
 		if instruction.TargetRelative == "StardewModdingAPI.deps.json" && instruction.Kind != InstructionKindGenerateFromGameFile {
 			t.Fatalf("generated deps instruction = %+v", instruction)

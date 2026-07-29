@@ -105,7 +105,8 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Staging, deployment preview, purge, repair, conflict details, blocked install internals, and file-level controls should live behind an advanced view unless they need immediate user attention.
 - The primary mod-management surface should be a profile mod list with clear enabled/disabled state, profile-scoped priority when relevant, pending/apply-needed state, and a simple apply action.
 - Avoid exposing backend pipeline terms such as "staged", "manifest", "install plan", or "target mapping" in primary user flows. Use them only in advanced/debug views and logs.
-- Download approval is required by default. A Decky Settings checkbox named "Auto-accept download requests" may allow automatic download approval for faster Deck-only flows, but the setting must be explicit and easy to disable.
+- Decky Settings should expose "Auto-accept download requests" and "Auto-deploy staged mods"; both default on for MVP Deck-only flows, but both must be explicit and easy to disable.
+- Auto-deploy may download, inspect, stage, and deploy files, but it must not auto-enable a newly installed mod in the profile.
 - The phone/tablet web app should not expose the auto-accept download setting. That belongs in the Steam Deck plugin because it changes the Deck-side capture behavior.
 - Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
 - FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI and, for Deck-only flows, in a Decky modal rather than a crowded sidebar view.
@@ -150,7 +151,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Decky frontend reads the action, shows the user what will change, invokes the Steam client capability, then reports the observed result back to the backend.
   - Backend stores the result and re-runs diagnostics from Steam/game state instead of blindly trusting the UI response.
 - Prefer a verified Steam client API for Steam launch options over editing Steam config files directly.
-- Direct `localconfig.vdf` mutation is a fallback only. If used, it requires backup, restore, drift detection, and clear logs because Steam owns and may rewrite that file.
+- Direct `localconfig.vdf` mutation is not a product/runtime path before release. If we ever need a developer rescue tool, it must live outside normal app flow and must not be wired as an automatic fallback.
 - If a community Decky plugin already exposes a stable integration point for a Steam capability, verify its source and decide whether to integrate rather than duplicating behavior.
 
 ## Network And Security Guidelines

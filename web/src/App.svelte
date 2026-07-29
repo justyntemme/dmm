@@ -247,7 +247,7 @@
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: filteredGames = games.filter((game) => {
@@ -279,14 +279,12 @@
   async function refresh() {
     error = "";
     try {
-      const [nextStatus, nextGames, nextJobs] = await Promise.all([
+      const [nextStatus, nextGames] = await Promise.all([
         getJSON<Status>("/api/status"),
-        getJSON<Game[]>("/api/games"),
-        getJSON<Job[]>("/api/jobs")
+        getJSON<Game[]>("/api/games")
       ]);
       status = nextStatus;
       games = nextGames;
-      jobs = nextJobs;
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
       if (selectedGame) await loadGameState(selectedGame);
@@ -295,6 +293,11 @@
     } finally {
       loading = false;
       initialRefreshComplete = true;
+    }
+    try {
+      jobs = await getJSON<Job[]>("/api/jobs");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -870,7 +873,7 @@
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
+    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null);
     }
   }
@@ -1021,7 +1024,7 @@
     events.addEventListener("job", (event) => {
       const job = JSON.parse((event as MessageEvent).data) as Job;
       upsertJob(job);
-      if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
+      if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type)) {
         void refreshJobsAndSelectedGame();
       }
     });

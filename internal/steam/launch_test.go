@@ -1,11 +1,8 @@
 package steam
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestSetLaunchOptionsInVDFInsertsIntoSoftwareAppsBlock(t *testing.T) {
+func TestLaunchOptionsFromVDFReadsSoftwareAppsBlock(t *testing.T) {
 	input := `"UserLocalConfigStore"
 {
 	"apps"
@@ -22,60 +19,65 @@ func TestSetLaunchOptionsInVDFInsertsIntoSoftwareAppsBlock(t *testing.T) {
 				{
 					"413150"
 					{
-						"LastPlayed"		"1785334263"
+						"LastPlayed"		"1785361913"
+						"LaunchOptions"		"\"/home/deck/.local/share/Steam/steamapps/common/Stardew Valley/StardewModdingAPI\" %command%"
+						"PlaytimeDisconnected"		"650"
 					}
 				}
 			}
 		}
 	}
 }`
-	desired := `"/home/deck/.local/share/Steam/steamapps/common/Stardew Valley/StardewModdingAPI" %command%`
+	want := `"/home/deck/.local/share/Steam/steamapps/common/Stardew Valley/StardewModdingAPI" %command%`
 
-	got, changed, err := SetLaunchOptionsInVDF(input, "413150", desired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !changed {
-		t.Fatal("expected VDF to change")
-	}
-	current, ok := launchOptionsFromVDF(got, "413150")
+	got, ok := launchOptionsFromVDF(input, "413150")
 	if !ok {
 		t.Fatal("expected app block")
 	}
-	if current != desired {
-		t.Fatalf("launch options = %q", current)
-	}
-	if strings.Contains(got, `"413150"		"binary-cache"`+"\n\t\t\"LaunchOptions\"") {
-		t.Fatal("patched unrelated top-level apps cache")
+	if got != want {
+		t.Fatalf("launch options = %q, want %q", got, want)
 	}
 }
 
-func TestSetLaunchOptionsInVDFReplacesExistingValue(t *testing.T) {
-	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LaunchOptions"		"old" } } } } }`
-	desired := `"/tmp/StardewModdingAPI" %command%`
+func TestLaunchOptionsFromVDFReportsAppWithoutLaunchOptions(t *testing.T) {
+	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LastPlayed" "1785361913" } } } } }`
 
-	got, changed, err := SetLaunchOptionsInVDF(input, "413150", desired)
-	if err != nil {
-		t.Fatal(err)
+	got, ok := launchOptionsFromVDF(input, "413150")
+	if !ok {
+		t.Fatal("expected app block")
 	}
-	if !changed {
-		t.Fatal("expected VDF to change")
-	}
-	current, ok := launchOptionsFromVDF(got, "413150")
-	if !ok || current != desired {
-		t.Fatalf("launch options = %q, %v", current, ok)
+	if got != "" {
+		t.Fatalf("launch options = %q, want empty", got)
 	}
 }
 
-func TestSetLaunchOptionsInVDFNoopsWhenAlreadyCurrent(t *testing.T) {
-	desired := `"/tmp/StardewModdingAPI" %command%`
-	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LaunchOptions"		"\"/tmp/StardewModdingAPI\" %command%" } } } } }`
-
-	_, changed, err := SetLaunchOptionsInVDF(input, "413150", desired)
-	if err != nil {
-		t.Fatal(err)
+func TestLaunchOptionsFromVDFIgnoresTopLevelAppsCache(t *testing.T) {
+	input := `"UserLocalConfigStore"
+{
+	"apps"
+	{
+		"413150"		"binary-cache"
 	}
-	if changed {
-		t.Fatal("expected no change")
+	"Software"
+	{
+		"Valve"
+		{
+			"Steam"
+			{
+				"apps"
+				{
+					"999999"
+					{
+						"LaunchOptions"		"wrong"
+					}
+				}
+			}
+		}
+	}
+}`
+
+	_, ok := launchOptionsFromVDF(input, "413150")
+	if ok {
+		t.Fatal("expected cache entry to be ignored")
 	}
 }

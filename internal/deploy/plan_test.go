@@ -73,6 +73,30 @@ func TestBuildPlanSkipsExistingTargetWhenPolicyKeepsExisting(t *testing.T) {
 	}
 }
 
+func TestBuildPlanUsesMappingStrategyOverride(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	if err := os.MkdirAll(filepath.Join(staging, "mod"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "mod", "launcher"), []byte("mod"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, target, StrategySymlink, []FileMapping{{
+		SourceRelative: "mod/launcher",
+		TargetRelative: "launcher",
+		Strategy:       StrategyCopy,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Strategy != StrategyCopy {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+}
+
 func TestBuildPlanJSONUsesEmptyArrays(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")
