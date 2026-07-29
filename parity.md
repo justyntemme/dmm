@@ -11,11 +11,12 @@ Sources checked:
 
 ## 1. Interactive Installer Support
 
-- Vortex capability: FOMOD and other installer flows can present choices, automate selected paths, and participate in collections.
-- DMM status: detects FOMOD and fails safely with a clear unsupported-installer message. FOMOD/installer-choice support is now MVP-required immediately after Stardew extension-framework parity.
+- Vortex capability: FOMOD and other installer flows can present choices, automate selected paths, persist `installerChoices` attributes, and reuse saved choices for unattended collection installs. Current Vortex source delegates FOMOD parsing/planning to `@nexusmods/fomod-installer-native`, queues one installer dialog at a time, passes game stop-pattern/plugin-path metadata into the native engine, and stores the final choices as mod attributes.
+- DMM status: detects FOMOD, persists paused install candidates, parses simple `fomod/ModuleConfig.xml` files, presents choice groups in the phone/tablet UI, stages selected files through the normal install-plan pipeline, and keeps the resulting mod disabled until the user enables it in a profile. This is enough for basic FOMODs but not Vortex parity.
 - User impact: critical. Many Nexus "Mod Manager Download" archives are not plain copy/extract installs.
-- Architectural fit: add an installer stage between archive inspection and staging. Jobs must pause, persist installer state, and resume after UI choices.
-- Decision needed: implement a native Go FOMOD parser, bind an existing parser/runtime, or make installer parsing part of game-handler modules.
+- Current gaps: conditional visibility and dependency evaluation, `NotUsable`/`CouldBeUsable` state handling, condition messages/images, game-specific stop patterns/plugin path normalization, file priority/conflict behavior beyond basic target sorting, saved choice presets, unattended repeat installs, and Decky modal/no-phone flow.
+- Architectural fit: keep installer choices as a backend-owned stage between archive inspection and staging. Jobs must pause, persist installer state, and resume after UI choices. Decky modal and phone/tablet UI should consume the same backend choice-session API.
+- Decision needed after the MVP slice: continue growing the native Go FOMOD evaluator, bind/reuse Nexus' native installer runtime, or support both with a compatibility boundary.
 
 ## 2. Install Instructions And Mod Types
 

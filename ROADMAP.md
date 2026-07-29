@@ -192,22 +192,24 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Status: incomplete for the expanded MVP vertical slice.
    - Completed: Stardew Valley maps simple staged SMAPI mod folders into `Mods/`; unsupported game domains fail clearly; unsupported install plans appear as blocked install candidates in UI/jobs.
    - Completed: live Gaming Mode validation against a fresh simple Stardew mod after installing the then-current package.
-   - Remaining: confirm native Linux Stardew runtime detection from Steam/game state.
-   - Remaining: select the Linux SMAPI payload for native Linux Stardew through extension metadata.
-   - Remaining: express primary launch-tool requirements in extension metadata/rules, then configure and validate the platform-correct SMAPI launch tool without generic server code hardcoding Stardew-specific behavior.
+   - Completed: native Linux Stardew support selects the Linux SMAPI payload through the Stardew extension metadata.
+   - Completed: SMAPI primary launch-tool requirements are expressed through extension metadata/rules and evaluated generically from enabled profile mod metadata.
+   - Completed: backend launch-action endpoints publish, apply, log, back up, and verify the desired Steam launch options without generic server code hardcoding Stardew-specific behavior.
+   - Remaining: live-verify the newest installed package updates Steam launch options after the user installs the staged package.
    - Post-MVP: implement and verify Windows/Proton Stardew end to end on Steam Deck through the same extension framework.
 
 4. FOMOD support
-   - Status: incomplete, MVP-required, and next after Stardew extension-framework parity.
-   - Completed: FOMOD detection and explicit unsupported-installer failure.
-   - MVP requirement: FOMOD/installer-choice mods must pause after download and archive inspection with a persisted installer-choice request instead of failing as a dead end.
-   - Parse installer options needed for common Nexus/Vortex-compatible mods.
-   - Present choices in the phone/tablet UI.
+   - Status: partial MVP support implemented; not yet Vortex parity.
+   - Verified upstream behavior: Vortex delegates FOMOD parsing/planning to `@nexusmods/fomod-installer-native`, queues the shared installer dialog, stores final `installerChoices`, and can reuse saved choices for unattended installs.
+   - Completed: FOMOD detection and safe blocking before staging.
+   - Completed: FOMOD/installer-choice mods pause after download/archive inspection as persisted install candidates instead of failing as dead ends.
+   - Completed: simple `fomod/ModuleConfig.xml` parsing for required files, install steps, groups, options, and selected file/folder entries.
+   - Completed: choices are presented in the phone/tablet UI and applied through the normal staging/install-plan path.
+   - Completed: selected FOMOD outputs are staged as disabled profile mods so the user can enable/apply through the standard profile workflow.
+   - Remaining: conditional visibility and dependency evaluation, `NotUsable`/`CouldBeUsable` option states, images/condition messages, game stop-pattern/plugin-path normalization, richer file priority behavior, and Vortex-compatible saved choice presets.
    - Present a Decky-native or Steam-overlay-friendly installer-choice surface for first-time no-phone installs, or explicitly block no-phone auto-deploy for first-time FOMOD mods.
-   - Persist paused installer-choice jobs.
    - Store approved installer-choice presets so repeat installs/updates can run headlessly when the FOMOD structure still matches.
-   - Apply selected choices into staging.
-   - Decision needed before implementation: whether to implement a minimal FOMOD parser in Go first, bind/reuse Nexus' native FOMOD installer components, or treat FOMOD as a game-handler capability.
+   - Decision needed after the MVP slice: continue growing the native Go FOMOD evaluator, bind/reuse Nexus' native FOMOD installer components, or support both behind a compatibility boundary.
 
 5. Deployment preview
    - Status: complete for the MVP vertical slice.
@@ -248,14 +250,13 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed: archive extraction decisions and accepted install-plan summaries are logged before staging.
 
 10. Stardew SMAPI launch integration
-   - Status: incomplete and MVP-blocking.
+   - Status: implemented locally; live Deck verification requires installing the newest staged package.
    - Verified upstream behavior: Vortex registers SMAPI as a supported/default primary tool for Stardew and selects the SMAPI executable name by platform.
    - Completed: diagnostics can report that enabled Stardew SMAPI mods require SMAPI files and a SMAPI launch path.
-   - Remaining: extension rule that marks SMAPI as the default/primary launch tool when enabled mod metadata requires SMAPI.
-   - Remaining: backend runtime-action endpoint that declares the desired launch-tool change instead of directly mutating Steam frontend state.
-   - Remaining: Decky frontend action that reads current launch options and applies the desired launch option through Steam's frontend API.
-   - Remaining: backend verification after Decky applies the action.
-   - Remaining: backup/restore/drift-detection strategy if a direct `localconfig.vdf` fallback is ever needed.
+   - Completed: extension metadata marks SMAPI as the default/primary launch tool when enabled mod metadata requires SMAPI.
+   - Completed: backend runtime-action endpoints declare the desired launch-tool change and can apply a low-risk `localconfig.vdf` fallback with backup/verification.
+   - Completed: Decky frontend polls required launch actions and uses Steam's frontend API when available, falling back to the backend action path when needed.
+   - Remaining: install the newest staged package on the Deck and live-verify `POST /api/games/413150/launch/apply` no longer returns 404 and Stardew launch options reference `StardewModdingAPI`.
 
 11. End-to-end Steam Deck validation
    - Status: live acceptance passed for the previous installed package; the newest staged package still needs install/live verification.
