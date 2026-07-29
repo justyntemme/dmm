@@ -340,30 +340,30 @@ async function maybeShowInstallToast(job: Job, { seed = false, source = "event" 
   }
 }
 
-async function pollInstallJobs({ seed = false } = {}) {
+async function seedInstallNotifications({ seed = false } = {}) {
   try {
     const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
     if (!result.ok) {
-      await logFrontendEvent("install job poll returned not ok", { error: result.error || "" });
+      await logFrontendEvent("install job seed returned not ok", { error: result.error || "" });
       return;
     }
     for (const job of result.jobs) {
-      await maybeShowInstallToast(job, { seed, source: "poll" });
+      await maybeShowInstallToast(job, { seed, source: "seed" });
     }
   } catch (_err) {
-    await logFrontendEvent("install job poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
+    await logFrontendEvent("install job seed failed", { error: _err instanceof Error ? _err.message : String(_err) });
   }
 }
 
-async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResultSink } = {}) {
+async function syncLaunchActions(options: { force?: boolean; sink?: LaunchResultSink } = {}) {
   try {
     const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
     if (!result.ok) {
-      await logFrontendEvent("launch action poll returned not ok", { error: result.error || "" });
+      await logFrontendEvent("launch action sync returned not ok", { error: result.error || "" });
       return;
     }
     if (result.actions.length > 0) {
-      await logFrontendEvent("launch action poll found actions", { count: result.actions.length });
+      await logFrontendEvent("launch action sync found actions", { count: result.actions.length });
     }
     for (const launchStatus of result.actions) {
       const action = launchStatus.action;
@@ -421,7 +421,7 @@ async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResult
       }
     }
   } catch (_err) {
-    await logFrontendEvent("launch action poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
+    await logFrontendEvent("launch action sync failed", { error: _err instanceof Error ? _err.message : String(_err) });
   }
 }
 
@@ -559,8 +559,8 @@ async function maybeShowInstallerChoiceModal(job: Job) {
         closeModal={closeModal}
         onApplied={() => {
           shownInstallerChoiceModals.delete(key);
-          void pollInstallJobs({ seed: true });
-          void pollLaunchActions();
+          void seedInstallNotifications({ seed: true });
+          void syncLaunchActions();
         }}
       />,
       window,
@@ -590,7 +590,7 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
     await maybeShowInstallerChoiceModal(event.payload);
   }
   if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type)) {
-    await pollLaunchActions();
+    await syncLaunchActions();
   }
   window.dispatchEvent(new CustomEvent(DMM_EVENT_NAME, { detail: event }));
 }
@@ -658,8 +658,8 @@ function startBackgroundMonitors() {
   if (backgroundMonitorsStarted) return;
   backgroundMonitorsStarted = true;
   logFrontendEvent("background monitors started");
-  pollInstallJobs({ seed: true });
-  pollLaunchActions();
+  seedInstallNotifications({ seed: true });
+  syncLaunchActions();
   connectEventMonitor();
 }
 
@@ -821,8 +821,8 @@ function Content() {
       setStatus(await call<[], BackendStatus>(method));
       await refresh();
       if (method === "start_server") {
-        await pollInstallJobs({ seed: true });
-        await pollLaunchActions();
+        await seedInstallNotifications({ seed: true });
+        await syncLaunchActions();
         connectEventMonitor();
       } else {
         closeEventMonitor();
@@ -945,7 +945,7 @@ function Content() {
   async function retryLaunchSetup() {
     completedLaunchActions.clear();
     launchActionAttempts.clear();
-    await pollLaunchActions({ force: true, sink: setLaunchResult });
+    await syncLaunchActions({ force: true, sink: setLaunchResult });
     await refresh();
   }
 

@@ -2,7 +2,7 @@
 
 Decky Mod Manager is a Steam Deck-first mod manager for Nexus/Vortex-compatible mods.
 
-The MVP is a Decky plugin that starts a bundled Go backend and shows a URL for a phone or tablet browser. The backend owns mod-management logic; the Svelte + Vite web UI displays state, collects choices, and calls REST/SSE APIs.
+The MVP is a Decky plugin that starts a bundled Go backend and shows a URL for a phone or tablet browser. The backend owns mod-management logic; the Svelte + Vite web UI displays state, collects choices, calls REST APIs, and receives live updates over WebSocket.
 
 ## Current Status
 
@@ -10,8 +10,8 @@ MVP vertical slice in active testing:
 
 - Decky plugin starts/stops a bundled Go backend and shows the phone/tablet URL.
 - User-level `nxm://` registration captures Nexus Mod Manager Download links from the Deck browser.
-- Svelte + Vite phone/tablet UI shows games, install requests, staged mods, profiles, deploy preview, jobs, and settings.
-- SQLite persistence covers games, profiles, jobs, pending imports, staged mods, downloads, checksums, and deployment manifests.
+- Svelte + Vite phone/tablet UI shows games, install requests, profile mods, profiles, advanced deploy preview, jobs, and settings.
+- SQLite persistence covers games, profiles, jobs, pending imports, installed profile mods, downloads, checksums, and deployment manifests.
 - Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
 - Import URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP import handlers; Nexus remains the only MVP download provider.
 - Pending install requests and active pending-import downloads/extractions can be canceled from the phone/tablet UI.
@@ -22,8 +22,8 @@ MVP vertical slice in active testing:
 - Stardew Valley (`413150`) is the first supported deploy target.
 - Install planning uses Vortex-modeled metadata specs: the current Stardew slice handles manifest-based mods, root-folder `Content/` archives, and SMAPI installer archives with Linux embedded-payload extraction.
 - Installer selection, mod type deployment roots, metadata extraction, and deployment eligibility are separate spec-owned concerns. Staged manifests preserve Vortex-style planner evidence plus manifest attributes such as logical file names, unique IDs, versions, content-pack targets, and dependencies.
-- Repeated downloads/restaging of the same Nexus file are de-duplicated in the staged plugin list.
-- Staged mods can be removed from the Plugins pane without deleting the cached download.
+- Repeated downloads/restaging of the same Nexus file are de-duplicated in the profile mod list.
+- Profile mods can be removed from the Mods pane without deleting the cached download.
 - Older raw-staged records without install-plan target mappings are shown as `needs_recovery` and skipped by deployment; use Recover Downloads to restage supported archives with the current planner, or Remove the staged row.
 - ZIP extraction is handled in-process with path-traversal checks.
 - Extensionless Nexus CDN archive paths are detected by file signature.
@@ -32,7 +32,7 @@ MVP vertical slice in active testing:
 - Game diagnostics and the mobile Review tab surface handler-derived runtime requirements from enabled mod metadata. For example, staged mods with a Stardew SMAPI mod type are reported separately from whether SMAPI itself is present to load them.
 - The Review tab can also report missing required Stardew framework/dependency mods derived from staged manifest metadata.
 - 7z/RAR extraction is supported through external helper tools.
-- FOMOD archives are detected and currently fail with a clear unsupported-installer message; interactive FOMOD choice UI is still pending.
+- FOMOD archives pause as installer-choice requests; the phone/tablet UI and Decky modal flow can apply selected files through the normal profile install path.
 - Deployment uses a Vortex-style staging/manifest model with symlink deployment, conflict detection, profile-aware keep/add/replace/remove planning, verification, repair, purge, and apply-time rollback for DMM-owned files.
 - Profile-scoped mod priority can be changed from the Plugins pane; lower priority numbers win duplicate target conflicts.
 - Profile switching can deploy an empty profile to remove the previously deployed profile's DMM-owned links.
