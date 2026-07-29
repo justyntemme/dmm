@@ -282,7 +282,7 @@ To verify the core profile enable/disable workflow against live DMM-managed file
 ~/.testing/live_profile_toggle_check.sh
 ```
 
-The script picks one enabled staged mod with unique deployment targets, disables it through the same profile-mod API used by the web UI, applies the profile, verifies its DMM-managed files are removed from the live game folder, re-enables it, reapplies the profile, and verifies the restored symlinks point back into DMM storage. It attempts to restore the mod if the check fails before completion.
+The script picks one enabled profile mod with unique deployment targets, disables it through the same profile-mod API used by the web UI, applies the profile, verifies its DMM-managed files are removed from the live game folder, re-enables it, reapplies the profile, and verifies the restored symlinks point back into DMM storage. It attempts to restore the mod if the check fails before completion.
 
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
 
@@ -307,7 +307,7 @@ REQUIRE_SMAPI_ROOT=1 REQUIRE_RUNTIME=1 ~/.testing/live_stardew_mod_files_check.s
 After installing the latest package and starting the server from Decky, use this script to verify the `Auto-install captured downloads` setting with a real Nexus capture:
 
 ```sh
-~/.testing/live_auto_approval_check.sh
+~/.testing/live_auto_install_check.sh
 ```
 
 The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual install approval and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.

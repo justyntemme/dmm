@@ -86,7 +86,7 @@ preview_error = preview.get("error") or ""
 if profiles < 1:
     failures.append("no profile exists for the selected game")
 if staged < 1:
-    failures.append("no staged mods are available")
+    failures.append("no installed profile mods are available")
 if enabled < 1:
     failures.append("no enabled mods are available")
 if active_install:

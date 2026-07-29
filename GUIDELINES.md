@@ -317,7 +317,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Support common Nexus archive formats needed by Vortex-compatible downloads, starting with `.zip` and adding `.7z`/`.rar` as needed.
 - FOMOD detection and a clear unsupported-installer failure are part of the current MVP slice.
 - Interactive FOMOD installer support is required for complete no-phone modding and must not silently stage archives that need user choices before that UI exists.
-- Auto-deploy may proceed only for installers that can produce a complete plan without user choices, or for installer-choice mods with a saved preset/headless choice set that was previously approved by the user.
+- Auto-enable may proceed only for installers that can produce a complete plan without user choices, or for installer-choice mods with a saved preset/headless choice set that was previously approved by the user.
 - First-time FOMOD installs must pause as an installer-choice request until the user completes the options either in a phone/tablet web UI or a Decky-native choice surface.
 - Persist pending installer-choice jobs after the post-MVP installer architecture is selected, so the user can disconnect and resume choosing options later.
 - Prefer safe Go libraries for archive handling where practical.

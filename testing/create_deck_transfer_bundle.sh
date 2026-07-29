@@ -36,7 +36,7 @@ FILES=(
   "${ROOT_DIR}/testing/deck_rehearsal.sh"
   "${ROOT_DIR}/testing/live_status.sh"
   "${ROOT_DIR}/testing/mvp_live_check.sh"
-  "${ROOT_DIR}/testing/live_auto_approval_check.sh"
+  "${ROOT_DIR}/testing/live_auto_install_check.sh"
   "${ROOT_DIR}/testing/live_profile_toggle_check.sh"
   "${ROOT_DIR}/testing/live_stardew_mod_files_check.sh"
   "${ROOT_DIR}/testing/live_web_asset_check.sh"
@@ -101,7 +101,7 @@ Or run the individual checks:
 
 For auto-install validation, start the server from Decky, run:
 
-  ~/.testing/live_auto_approval_check.sh
+  ~/.testing/live_auto_install_check.sh
 
 Then click a fresh Nexus Mod Manager Download link from the Deck browser while the script is waiting.
 TEXT

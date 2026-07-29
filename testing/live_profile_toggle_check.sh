@@ -115,7 +115,7 @@ if not deployment.get("deployed"):
 
 enabled_mods = [mod for mod in mods if mod.get("enabled") and mod.get("status") == "staged"]
 if not enabled_mods:
-    raise RuntimeError("no enabled staged mods are available to toggle")
+    raise RuntimeError("no enabled profile mods are available to toggle")
 
 target_counts = {}
 targets_by_mod = {}

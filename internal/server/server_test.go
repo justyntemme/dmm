@@ -131,7 +131,7 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 
 func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("deploy", "Deploy staged mods")
+	job := srv.jobs.Create("deploy", "Apply profile changes")
 
 	update := srv.deployProgressUpdater(job.ID, "Applying profile changes")
 	update(1, 3, deploy.Action{
@@ -3269,7 +3269,7 @@ func TestLegacyManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testing
 	}
 
 	_, err := srv.buildGameDeployPlan(context.Background(), "413150")
-	if err == nil || !strings.Contains(err.Error(), "no enabled staged files") {
+	if err == nil || !strings.Contains(err.Error(), "no enabled mod files") {
 		t.Fatalf("error = %v", err)
 	}
 }

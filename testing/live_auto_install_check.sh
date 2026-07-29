@@ -133,7 +133,7 @@ try:
         status_name = job.get("status")
         validate_job_payload(job)
         if status_name == "waiting":
-            print("\nFAIL: captured request is waiting for manual approval even though auto-approval is enabled.", file=sys.stderr)
+            print("\nFAIL: captured request is waiting for manual install approval even though auto-install is enabled.", file=sys.stderr)
             exit_code = 1
             break
         if status_name in ("queued", "running"):
@@ -141,7 +141,7 @@ try:
             continue
         if status_name == "completed":
             diagnostics = request("GET", f"/api/games/{app_id}/diagnostics")
-            print("\nPASS: request completed without manual approval.")
+            print("\nPASS: request completed without manual install approval.")
             print(
                 "summary: "
                 f"staged={diagnostics.get('staged_mods')} "

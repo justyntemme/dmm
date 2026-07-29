@@ -667,10 +667,10 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 		warnings = append(warnings, "no profiles are available")
 	}
 	if resp.StagedMods == 0 {
-		warnings = append(warnings, "no staged mods are available")
+		warnings = append(warnings, "no installed profile mods are available")
 	}
 	if resp.NeedsRecovery > 0 {
-		warnings = append(warnings, strconv.Itoa(resp.NeedsRecovery)+" staged mods need recovery before deployment")
+		warnings = append(warnings, strconv.Itoa(resp.NeedsRecovery)+" installed mods need recovery before deployment")
 	}
 	if resp.BlockedCandidates > 0 {
 		warnings = append(warnings, strconv.Itoa(resp.BlockedCandidates)+" downloaded archives are blocked by unsupported install planning")
@@ -1377,8 +1377,8 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "deployment has no changes to apply", http.StatusConflict)
 		return
 	}
-	job := s.jobs.CreateWithPayload("deploy", "Deploy staged mods", gameJobPayload(appID))
-	job, _ = s.jobs.Run(job.ID, "Deploying staged mods for "+appID)
+	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
 	s.logger.Info("deployment approved", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(job.ID, "Applying profile changes"))
 	if err != nil {
@@ -3043,9 +3043,9 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
 		}
 		if len(mods) == 0 {
-			return deploy.Plan{}, errors.New("no staged mods are available to deploy")
+			return deploy.Plan{}, errors.New("no installed profile mods are available to apply")
 		}
-		return deploy.Plan{}, errors.New("no enabled staged files are available to deploy")
+		return deploy.Plan{}, errors.New("no enabled mod files are available to apply")
 	}
 	return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
 }

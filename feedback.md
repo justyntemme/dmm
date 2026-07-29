@@ -34,10 +34,10 @@
 - The two-column Allow Tunnel row appears to be the main Decky navigation/layout culprit.
 - Decky dependencies must remain reachable/navigable from controller input.
 - In Decky Mod Manager, dependency status should live in the Debug tab, not Settings.
-- Add "Auto-accept download requests" as a Decky Settings checkbox.
-- Add "Auto-deploy staged mods" as a Decky Settings checkbox.
-- Both Decky fast-install settings should default on for MVP, but auto-deploy must not auto-enable the mod.
-- Remove the auto-accept download control from the phone/tablet web app.
+- Keep "Auto-install captured downloads" as a Decky Settings checkbox.
+- Keep "Auto-enable installed mods" as a Decky Settings checkbox.
+- Auto-install should default on for MVP Deck-only flow; auto-enable should default off for safety.
+- Remove automation controls from the phone/tablet web app; those Deck behavior switches belong in Decky Settings.
 - The existing Decky Mods UI looks strong visually; keep the design direction and focus on interaction polish.
 - Make Mods a tab-level surface if possible instead of a button that opens into a nested view.
 - Mod rows currently require pointer clicks and cannot be selected with D-pad focus; make rows focusable, visibly highlighted, and scrollable with controller navigation.
@@ -58,16 +58,16 @@
 - The install approval screen should hide staging details and explain the user-facing result: ready to install, needs choices, blocked, installed disabled, or failed.
 - The primary mod-management surface should be a selected profile's mod list, not a staging/deployment dashboard.
 - Default profile should be selected by default, and profile switching should make it obvious which mod list is being edited.
-- Simple users should download a mod, approve the download when approval is required, see the mod in the selected profile, and enable/disable it with a straightforward toggle.
-- Add a setting for automatic download approval. For MVP Deck-only flow it should default on, be easy to disable, and still keep newly installed mods disabled until the user explicitly enables them.
+- Simple users should capture a mod, let DMM download/cache it immediately, approve local install when approval is required, see the mod in the selected profile, and enable/disable it with a straightforward toggle.
+- Keep the Decky setting for automatic install approval. For MVP Deck-only flow it should default on, be easy to disable, and still keep newly installed mods disabled unless auto-enable is explicitly enabled.
 - Add Decky notifications for Nexus request capture and install/download transitions. After Nexus says a download is starting, the user must get visible DMM feedback in Gaming Mode instead of silence.
 - Decky download toast notifications are appearing in current manual testing; keep this out of the active blocker list unless logs show a specific missing toast path.
-- Auto-deploy should pause on FOMOD/installer-choice mods unless the user has already approved a compatible saved preset.
+- Auto-install/auto-enable should pause on FOMOD/installer-choice mods unless the user has already approved a compatible saved preset.
 - Hide staging, install planning, target mappings, manifests, deployment transactions, purge, repair, and file-level preview behind advanced/power-user controls unless a conflict or error requires attention.
 - Deployment should not feel like a raw file-operation debug page. It should show profile state and "Apply profile changes" first, with file-level detail available as an advanced drill-down.
 - The UI should explain whether changes are already applied to the game or pending, without forcing the user to understand how symlinks/staging work.
 - Overall mod management should prioritize user confidence: clear state labels, obvious next actions, safe defaults, and no ambiguous buttons that can mutate the game folder without context.
-- A larger mobile/deck UI redesign is required before MVP approval, but the immediate work should focus first on install approval/hiding staging, Decky Mods controller navigation/search, fast Deck settings, and mobile favorites/sort.
+- A larger mobile/deck UI redesign is required before MVP approval, but the immediate work should focus first on realtime events, install approval/hiding staging, Decky Mods controller navigation, Decky tabs/running-game selection, and mobile favorites/sort.
 - MVP blocker: the phone/tablet UI must update after clicks, job changes, and backend events without requiring a manual browser refresh.
 - Approving a download must immediately update that request state so the user cannot click Approve again for the same in-flight request.
 - Pre-MVP design discussion required: choose the event-driven UI update model for incoming requests, job transitions, install completion, profile changes, deployment status, and runtime/launch-tool actions.

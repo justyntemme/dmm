@@ -81,7 +81,7 @@ Out of scope for the Decky frontend:
 - FOMOD support must use the shared install pipeline: download, inspect, pause for choices, persist the choice request, produce install instructions, stage outputs, and then deploy according to profile settings.
 - Deck-only FOMOD flows should use Decky modals, not the sidebar as the primary option UI.
 - Phone/tablet FOMOD flows should use the same backend choice-state API as Decky modals.
-- Auto-deploy may open a Decky modal for first-time installer choices, but it must not silently choose options.
+- Auto-enable may open a Decky modal for first-time installer choices, but it must not silently choose options.
 - Saved installer-choice presets may enable future headless reinstall/update flows only when the FOMOD structure still matches the stored preset.
 
 ## Future Extension Work

@@ -19,7 +19,7 @@ TESTING_SCRIPTS=(
   "${ROOT_DIR}/testing/deck_rehearsal.sh"
   "${ROOT_DIR}/testing/live_status.sh"
   "${ROOT_DIR}/testing/mvp_live_check.sh"
-  "${ROOT_DIR}/testing/live_auto_approval_check.sh"
+  "${ROOT_DIR}/testing/live_auto_install_check.sh"
   "${ROOT_DIR}/testing/live_profile_toggle_check.sh"
   "${ROOT_DIR}/testing/live_stardew_mod_files_check.sh"
   "${ROOT_DIR}/testing/live_web_asset_check.sh"
