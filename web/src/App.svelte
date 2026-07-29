@@ -630,6 +630,7 @@
       }
       const result = await response.json();
       upsertJob(result.job);
+      await refreshJobsAndSelectedGame();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -649,6 +650,7 @@
       }
       const result = await response.json();
       upsertJob(result.job);
+      await refreshJobsAndSelectedGame();
       if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -669,6 +671,7 @@
       }
       const result = await response.json();
       upsertJob(result.job);
+      await refreshJobsAndSelectedGame();
       if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -1257,12 +1260,15 @@
 	                {:else if deployableActions.length === 0}
 	                  <p class="deploy-message">This profile is already applied.</p>
 	                {:else}
-	                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"} waiting for automatic apply.</p>
+	                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"} ready to apply.</p>
 	                {/if}
 	              {:else}
 	                <p class="deploy-message">Enable or disable mods to apply the selected profile to the game.</p>
 	              {/if}
 	              <div class="deploy-actions primary-actions profile-actions">
+	                {#if deployPlan && deployableActions.length > 0 && !hasDeployConflicts}
+	                  <button type="button" on:click={askDeployStagedMods}>Apply Changes</button>
+	                {/if}
 	                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Check Profile Changes</button>
 	              </div>
             </div>

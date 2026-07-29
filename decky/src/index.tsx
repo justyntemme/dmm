@@ -307,6 +307,10 @@ function Content() {
       const method = status?.running ? "stop_server" : "start_server";
       setStatus(await call<[], BackendStatus>(method));
       await refresh();
+      if (method === "start_server") {
+        await pollInstallJobs({ seed: true });
+        await pollLaunchActions();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -403,6 +407,7 @@ function Content() {
         const stateKey = `${job.status}:${job.message || ""}`;
         seenJobStates.current.set(job.id, stateKey);
         notifiedInstallJobStates.set(job.id, stateKey);
+        await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, source: "decky-add-import" });
         showInstallToast(job as Job);
       }
       await refresh();
@@ -414,7 +419,10 @@ function Content() {
   async function pollInstallJobs({ seed = false } = {}) {
     try {
       const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
-      if (!result.ok) return;
+      if (!result.ok) {
+        await logFrontendEvent("install job poll returned not ok", { error: result.error || "" });
+        return;
+      }
       for (const job of result.jobs) {
         if (job.type !== "pending-import") continue;
         const stateKey = `${job.status}:${job.message || ""}`;
@@ -424,6 +432,7 @@ function Content() {
         const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
         if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
           notifiedInstallJobStates.set(job.id, stateKey);
+          await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent });
           showInstallToast(job);
         }
       }
