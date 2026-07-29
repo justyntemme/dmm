@@ -686,6 +686,7 @@ function Content() {
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [modsResult, setModsResult] = useState<string>("");
+  const [modSearch, setModSearch] = useState<string>("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
 
@@ -753,6 +754,7 @@ function Content() {
     try {
       setError("");
       setModsResult("");
+      setModSearch("");
       setSelectedDeckyGameID(appID);
       await loadDeckyGameState(appID);
     } catch (err) {
@@ -984,6 +986,13 @@ function Content() {
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
+  const normalizedModSearch = modSearch.trim().toLowerCase();
+  const visibleDeckyMods = normalizedModSearch
+    ? deckyMods.filter((mod) =>
+        [mod.name, mod.status, mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
+          .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
+      )
+    : deckyMods;
 
   const mainContent = (
     <>
@@ -1102,6 +1111,11 @@ function Content() {
               Change Game
             </ButtonItem>
           </PanelSectionRow>
+          {deckyMods.length > 0 && (
+            <PanelSectionRow>
+              <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
+            </PanelSectionRow>
+          )}
           {deckyProfiles.length > 1 && (
             <PanelSectionRow>
               <div style={{ maxHeight: "150px", overflowY: "auto", width: "100%" }}>
@@ -1132,10 +1146,15 @@ function Content() {
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add Nexus downloads from the Decky paste field or phone/tablet UI.</div>
             </PanelSectionRow>
           )}
-          {deckyMods.length > 0 && (
+          {deckyMods.length > 0 && visibleDeckyMods.length === 0 && (
             <PanelSectionRow>
-              <div style={{ display: "grid", gap: "8px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
-                {deckyMods.map((mod) => {
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No mods match this search.</div>
+            </PanelSectionRow>
+          )}
+          {visibleDeckyMods.length > 0 && (
+            <PanelSectionRow>
+              <Focusable flow-children="column" style={{ display: "grid", gap: "8px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+                {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
                     <Focusable
@@ -1179,7 +1198,7 @@ function Content() {
                     </Focusable>
                   );
                 })}
-              </div>
+              </Focusable>
             </PanelSectionRow>
           )}
           {modsResult && (
