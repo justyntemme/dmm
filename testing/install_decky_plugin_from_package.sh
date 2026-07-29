@@ -11,6 +11,37 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/${PLUGIN_NAME}-${STAMP}"
 INSTALL_DIR="${PLUGIN_PARENT}/.${PLUGIN_NAME}.install-${STAMP}"
 
+usage() {
+  cat <<USAGE
+Usage: ${0##*/} [--help]
+
+Installs ${PLUGIN_NAME} from:
+  ${PACKAGE}
+
+Environment overrides:
+  PACKAGE=/path/to/decky-mod-manager.tar.gz
+  DECK_PLUGIN_DIR=/home/deck/homebrew/plugins/decky-mod-manager
+  BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
+
+The install requires sudo because Decky plugin files are root-owned and the
+Decky plugin loader must be restarted.
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    echo "Unknown argument: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
 if [[ ! -f "${PACKAGE}" ]]; then
   echo "Package not found: ${PACKAGE}" >&2
   exit 1
