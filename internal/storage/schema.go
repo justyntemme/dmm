@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS install_candidates (
 	checksum_sha256 TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL,
 	reason TEXT NOT NULL DEFAULT '',
+	installer_json TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(game_id, catalog, source_mod_id, source_file_id)

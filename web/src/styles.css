@@ -587,6 +587,55 @@ h2 {
   padding: 8px 12px;
 }
 
+.installer-choices {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.installer-choices section,
+.installer-choices fieldset {
+  display: grid;
+  gap: 8px;
+}
+
+.installer-choices h4,
+.installer-choices legend {
+  color: #f4f4f5;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.installer-choices fieldset {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin: 0;
+  padding: 10px;
+}
+
+.installer-choices label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.installer-choices input {
+  margin-top: 3px;
+}
+
+.installer-choices label span {
+  display: grid;
+  gap: 2px;
+}
+
+.installer-choices em {
+  color: #d4d4d8;
+  font-size: 0.82rem;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
 .requirement-list > article > span {
   border: 1px solid #365244;
   border-radius: 999px;

@@ -27,6 +27,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/deps"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
@@ -70,6 +71,18 @@ type nexusClient interface {
 type nexusClientFactory func(apiKey string) nexusClient
 
 var errLegacyStagedMod = errors.New("staged mod lacks install-plan target mappings")
+
+type installerChoiceRequiredError struct {
+	Kind      string
+	Installer fomod.Installer
+}
+
+func (e installerChoiceRequiredError) Error() string {
+	if strings.TrimSpace(e.Kind) == "" {
+		return "installer choices are required"
+	}
+	return e.Kind + " installer choices are required"
+}
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err := config.EnsureDataDirs(cfg.DataDir); err != nil {
@@ -179,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
 	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
+	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/apply", s.handleApplyInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
@@ -303,6 +317,10 @@ type configureGameLaunchRequest struct {
 	CurrentOptions string `json:"current_options,omitempty"`
 	Error          string `json:"error,omitempty"`
 	Source         string `json:"source,omitempty"`
+}
+
+type applyInstallCandidateRequest struct {
+	Selections map[string][]string `json:"selections"`
 }
 
 type applyGameLaunchResponse struct {
@@ -1145,6 +1163,153 @@ func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
+func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	candidateID, err := strconv.ParseInt(r.PathValue("candidateID"), 10, 64)
+	if appID == "" || err != nil || candidateID <= 0 {
+		http.Error(w, "valid appID and candidateID are required", http.StatusBadRequest)
+		return
+	}
+	var req applyInstallCandidateRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	candidate, err := s.db.InstallCandidateForSteamApp(r.Context(), appID, candidateID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "install candidate was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if candidate.Status != "needs_choices" {
+		http.Error(w, "install candidate does not require choices", http.StatusConflict)
+		return
+	}
+	payload := gameJobPayload(appID)
+	payload["candidate_id"] = strconv.FormatInt(candidate.ID, 10)
+	payload["game_domain"] = candidate.SourceGameDomain
+	payload["mod_id"] = candidate.SourceModID
+	payload["file_id"] = candidate.SourceFileID
+	job := s.jobs.CreateWithPayload("installer-choice", "Apply installer choices: "+candidate.Name, payload)
+	job, _ = s.jobs.Run(job.ID, "Applying installer choices for "+candidate.Name)
+	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status)
+
+	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, req.Selections)
+	if err != nil {
+		s.logger.Warn("installer candidate apply failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
+		s.logger.Warn("installer candidate cleanup failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+	}
+	job, _ = s.jobs.Complete(job.ID, "Added "+mod.Name+" to the profile disabled; enable it to deploy")
+	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+}
+
+func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate, selections map[string][]string) (storage.InstalledMod, error) {
+	if strings.TrimSpace(candidate.ArchivePath) == "" {
+		return storage.InstalledMod{}, errors.New("install candidate archive path is missing")
+	}
+	s.cfgMu.RLock()
+	dataDir := s.cfg.DataDir
+	s.cfgMu.RUnlock()
+	extractPath := filepath.Join(dataDir, "tmp", "install-candidates", strconv.FormatInt(candidate.ID, 10))
+	stagingPath := filepath.Join(
+		dataDir,
+		"staging",
+		candidate.Catalog,
+		candidate.SourceGameDomain,
+		"mods",
+		candidate.SourceModID,
+		"files",
+		candidate.SourceFileID,
+	)
+	if err := os.RemoveAll(extractPath); err != nil {
+		return storage.InstalledMod{}, err
+	}
+	defer func() {
+		if cleanupErr := os.RemoveAll(extractPath); cleanupErr != nil {
+			s.logger.Warn("installer candidate workspace cleanup failed", "job_id", jobID, "extract_path", extractPath, "error", cleanupErr)
+		}
+	}()
+	inspection, err := archive.ExtractContext(ctx, candidate.ArchivePath, extractPath)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	if inspection.InstallerKind != "fomod" {
+		return storage.InstalledMod{}, errors.New("only FOMOD installer candidates are supported")
+	}
+	var installer fomod.Installer
+	if strings.TrimSpace(candidate.InstallerJSON) != "" {
+		if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
+			return storage.InstalledMod{}, err
+		}
+	} else {
+		installer, err = fomod.Parse(extractPath)
+		if err != nil {
+			return storage.InstalledMod{}, err
+		}
+	}
+	plan, err := fomod.BuildPlan(candidate.SteamAppID, extractPath, installer, selections)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	if err := applyInstallPlan(plan, stagingPath, ""); err != nil {
+		if cleanupErr := os.RemoveAll(stagingPath); cleanupErr != nil {
+			s.logger.Warn("failed installer candidate staging cleanup failed", "job_id", jobID, "staging_path", stagingPath, "error", cleanupErr)
+		}
+		return storage.InstalledMod{}, err
+	}
+	manifest, err := stagedManifestJSONWithPlan(stagingPath, plan)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    candidate.Catalog,
+		SourceURL:  candidate.ArchivePath,
+		GameDomain: candidate.SourceGameDomain,
+		ModID:      candidate.SourceModID,
+		FileID:     candidate.SourceFileID,
+	}
+	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:    candidate.SteamAppID,
+		Resolved:      resolved,
+		Name:          candidate.Name,
+		Version:       candidate.SourceFileID,
+		ArchivePath:   candidate.ArchivePath,
+		ArchiveSHA256: candidate.ChecksumSHA256,
+		StagingPath:   stagingPath,
+		ManifestJSON:  manifest,
+	})
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	disabled := false
+	staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &disabled, nil)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	s.logger.Info(
+		"installer candidate staged",
+		"job_id", jobID,
+		"app_id", candidate.SteamAppID,
+		"candidate_id", candidate.ID,
+		"mod_type", plan.ModType,
+		"planner_id", plan.PlannerID,
+		"instructions", len(plan.Instructions),
+		"installed_mod_id", staged.ID,
+	)
+	return staged, nil
+}
+
 func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
@@ -1913,6 +2078,25 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 			"file_id", pending.Resolved.FileID,
 			"error", err,
 		)
+		var choice installerChoiceRequiredError
+		if errors.As(err, &choice) {
+			installerJSON, _ := json.Marshal(choice.Installer)
+			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+				SteamAppID:    s.appIDForPending(pending),
+				Resolved:      pending.Resolved,
+				Name:          modNameFromArchive(result.Path, pending.Resolved),
+				ArchivePath:   result.Path,
+				ArchiveSHA256: result.SHA256,
+				Status:        "needs_choices",
+				Reason:        choice.Error(),
+				InstallerJSON: string(installerJSON),
+			}); recordErr != nil {
+				s.logger.Warn("record installer choice candidate failed", "job_id", jobID, "error", recordErr)
+			}
+			s.jobs.Complete(jobID, "Downloaded "+modNameFromArchive(result.Path, pending.Resolved)+"; installer choices required")
+			s.forgetPendingImport(jobID)
+			return
+		}
 		var unsupported installplan.UnsupportedError
 		if errors.As(err, &unsupported) {
 			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
@@ -2084,6 +2268,26 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 				result.BytesWritten = info.Size()
 			}
 			if _, err := s.stagePendingImport(ctx, jobID, pending, result); err != nil {
+				var choice installerChoiceRequiredError
+				if errors.As(err, &choice) {
+					installerJSON, _ := json.Marshal(choice.Installer)
+					if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+						SteamAppID:    appID,
+						Resolved:      pending.Resolved,
+						Name:          modNameFromArchive(archivePath, pending.Resolved),
+						ArchivePath:   archivePath,
+						ArchiveSHA256: sum,
+						Status:        "needs_choices",
+						Reason:        choice.Error(),
+						InstallerJSON: string(installerJSON),
+					}); recordErr != nil {
+						s.logger.Warn("record installer choice recovery candidate failed", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "error", recordErr)
+						return staged, skipped, recordErr
+					}
+					s.logger.Info("download recovery recorded installer choice candidate", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "reason", choice.Error())
+					skipped++
+					continue
+				}
 				var unsupported installplan.UnsupportedError
 				if errors.As(err, &unsupported) {
 					if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
@@ -2199,6 +2403,16 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 	)
 	if inspection.RequiresInstaller {
 		s.logger.Info("pending import requires installer UI", "job_id", jobID, "installer_kind", inspection.InstallerKind, "extract_path", extractPath)
+		if inspection.InstallerKind == "fomod" {
+			installer, err := fomod.Parse(extractPath)
+			if err != nil {
+				return storage.InstalledMod{}, installplan.Unsupported("fomod installer could not be parsed: " + err.Error())
+			}
+			return storage.InstalledMod{}, installerChoiceRequiredError{
+				Kind:      "fomod",
+				Installer: installer,
+			}
+		}
 		if inspection.InstallerKind == "" {
 			return storage.InstalledMod{}, installplan.Unsupported("archive requires an installer UI that is not implemented yet")
 		}

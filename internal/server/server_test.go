@@ -22,6 +22,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
@@ -1197,6 +1198,112 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	}
 	if strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Fatalf("empty body = %s", rec.Body.String())
+	}
+}
+
+func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><folder source="Options/High" destination="textures" /></files>
+            </plugin>
+            <plugin name="Low">
+              <typeDescriptor><type name="Optional" /></typeDescriptor>
+              <files><folder source="Options/Low" destination="textures" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"Core/base.txt":            "base",
+		"Options/High/variant.txt": "high",
+		"Options/Low/variant.txt":  "low",
+		"fomod/info.xml":           "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerJSON, err := json.Marshal(installer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		Name:          "Choice Mod",
+		ArchivePath:   archivePath,
+		ArchiveSHA256: "sum",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: string(installerJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Enabled || mods[0].Name != "Choice Mod" {
+		t.Fatalf("mods = %+v", mods)
+	}
+	for _, rel := range []string{"base.txt", "textures/variant.txt"} {
+		if _, err := os.Stat(filepath.Join(mods[0].StagingPath, rel)); err != nil {
+			t.Fatalf("missing staged file %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "Options", "Low", "variant.txt")); !os.IsNotExist(err) {
+		t.Fatalf("unselected option was staged: %v", err)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidate was not removed = %+v", candidates)
 	}
 }
 

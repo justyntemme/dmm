@@ -96,6 +96,32 @@
     archive_path: string;
     status: string;
     reason: string;
+    installer_json?: string;
+  };
+
+  type FomodInstaller = {
+    name: string;
+    steps?: FomodStep[];
+  };
+
+  type FomodStep = {
+    id: string;
+    name: string;
+    groups?: FomodGroup[];
+  };
+
+  type FomodGroup = {
+    id: string;
+    name: string;
+    type: string;
+    plugins?: FomodPlugin[];
+  };
+
+  type FomodPlugin = {
+    id: string;
+    name: string;
+    description?: string;
+    type?: string;
   };
 
   type DeployAction = {
@@ -205,9 +231,11 @@
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
   let busyJobs: Record<string, boolean> = {};
+  let busyInstallCandidates: Record<number, boolean> = {};
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
+  let candidateSelections: Record<number, Record<string, string[]>> = {};
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
@@ -490,6 +518,106 @@
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
 
+  function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
+    if (!candidate.installer_json) return null;
+    try {
+      return JSON.parse(candidate.installer_json) as FomodInstaller;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function defaultCandidateSelections(installer: FomodInstaller): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const step of installer.steps ?? []) {
+      for (const group of step.groups ?? []) {
+        const plugins = group.plugins ?? [];
+        const type = group.type.toLowerCase();
+        if (type === "selectall") {
+          out[group.id] = plugins.map((plugin) => plugin.id);
+          continue;
+        }
+        const preferred = plugins.find((plugin) => preferredFomodType(plugin.type)) ?? plugins[0];
+        if (!preferred) continue;
+        if (type === "selectexactlyone" || type === "selectatleastone" || type === "") {
+          out[group.id] = [preferred.id];
+          continue;
+        }
+        out[group.id] = plugins.filter((plugin) => preferredFomodType(plugin.type)).map((plugin) => plugin.id);
+      }
+    }
+    return out;
+  }
+
+  function preferredFomodType(type: string | undefined) {
+    const normalized = (type ?? "").trim().toLowerCase();
+    return normalized === "required" || normalized === "recommended";
+  }
+
+  function fomodGroupType(group: FomodGroup) {
+    return (group.type ?? "").trim().toLowerCase();
+  }
+
+  function fomodGroupInputType(group: FomodGroup) {
+    const type = fomodGroupType(group);
+    return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
+  }
+
+  function candidateCurrentSelections(candidate: InstallCandidate, installer: FomodInstaller) {
+    return candidateSelections[candidate.id] ?? defaultCandidateSelections(installer);
+  }
+
+  function isCandidatePluginSelected(candidate: InstallCandidate, installer: FomodInstaller, group: FomodGroup, plugin: FomodPlugin) {
+    return (candidateCurrentSelections(candidate, installer)[group.id] ?? []).includes(plugin.id);
+  }
+
+  function setCandidatePluginSelection(candidate: InstallCandidate, installer: FomodInstaller, group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
+    const current = candidateCurrentSelections(candidate, installer);
+    const next = { ...current };
+    const type = group.type.toLowerCase();
+    if (type === "selectall") return;
+    if (type === "selectexactlyone" || type === "selectatmostone") {
+      next[group.id] = checked ? [plugin.id] : [];
+    } else {
+      const selected = new Set(next[group.id] ?? []);
+      if (checked) selected.add(plugin.id);
+      else selected.delete(plugin.id);
+      next[group.id] = Array.from(selected);
+    }
+    candidateSelections = { ...candidateSelections, [candidate.id]: next };
+  }
+
+  async function applyInstallCandidate(candidate: InstallCandidate) {
+    if (!selectedGame) return;
+    const installer = installerForCandidate(candidate);
+    if (!installer) {
+      error = "Installer choices are not available for this candidate.";
+      return;
+    }
+    error = "";
+    setInstallCandidateBusy(candidate.id, true);
+    try {
+      const selections = candidateCurrentSelections(candidate, installer);
+      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selections })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+      candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
+      await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setInstallCandidateBusy(candidate.id, false);
+    }
+  }
+
   async function cancelJob(job: Job) {
     if (!canCancelJob(job)) return;
     error = "";
@@ -726,7 +854,7 @@
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["pending-import", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
+    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null);
     }
   }
@@ -743,6 +871,20 @@
 
   function isJobBusy(job: Job) {
     return Boolean(busyJobs[job.id]);
+  }
+
+  function setInstallCandidateBusy(candidateID: number, busy: boolean) {
+    if (busy) {
+      busyInstallCandidates = { ...busyInstallCandidates, [candidateID]: true };
+      return;
+    }
+    const next = { ...busyInstallCandidates };
+    delete next[candidateID];
+    busyInstallCandidates = next;
+  }
+
+  function isInstallCandidateBusy(candidate: InstallCandidate) {
+    return Boolean(busyInstallCandidates[candidate.id]);
   }
 
   function canCancelJob(job: Job) {
@@ -1288,14 +1430,50 @@
               <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Blocked</button>
               <div class="request-list">
                 {#each installCandidates as candidate}
+                  {@const installer = installerForCandidate(candidate)}
                   <article class="failed-request">
                     <div>
                       <strong>{candidate.name}</strong>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
+                      {#if installer}
+                        <div class="installer-choices">
+                          {#each installer.steps ?? [] as step}
+                            <section>
+                              <h4>{step.name}</h4>
+                              {#each step.groups ?? [] as group}
+                                <fieldset>
+                                  <legend>{group.name}</legend>
+                                  {#each group.plugins ?? [] as plugin}
+                                    <label>
+                                      <input
+                                        type={fomodGroupInputType(group)}
+                                        name={`candidate-${candidate.id}-${group.id}`}
+                                        checked={isCandidatePluginSelected(candidate, installer, group, plugin)}
+                                        disabled={fomodGroupType(group) === "selectall" || isInstallCandidateBusy(candidate)}
+                                        on:change={(event) => setCandidatePluginSelection(candidate, installer, group, plugin, event.currentTarget.checked)}
+                                      />
+                                      <span>
+                                        <strong>{plugin.name}</strong>
+                                        {#if plugin.type}<small>{plugin.type}</small>{/if}
+                                        {#if plugin.description}<em>{plugin.description}</em>{/if}
+                                      </span>
+                                    </label>
+                                  {/each}
+                                </fieldset>
+                              {/each}
+                            </section>
+                          {/each}
+                        </div>
+                      {/if}
                     </div>
                     <div class="request-actions">
                       <span>{candidate.status}</span>
+                      {#if installer}
+                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
+                          {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
+                        </button>
+                      {/if}
                     </div>
                   </article>
                 {/each}

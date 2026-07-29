@@ -1,0 +1,444 @@
+package fomod
+
+import (
+	"bytes"
+	"encoding/binary"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode/utf16"
+
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+)
+
+type Installer struct {
+	Name          string      `json:"name"`
+	ModuleConfig  string      `json:"module_config"`
+	RequiredFiles []FileEntry `json:"required_files,omitempty"`
+	Steps         []Step      `json:"steps"`
+}
+
+type Step struct {
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Groups []Group `json:"groups"`
+}
+
+type Group struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Plugins []Plugin `json:"plugins"`
+}
+
+type Plugin struct {
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Type        string      `json:"type,omitempty"`
+	Files       []FileEntry `json:"files,omitempty"`
+}
+
+type FileEntry struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination,omitempty"`
+	Priority    int    `json:"priority,omitempty"`
+	IsFolder    bool   `json:"is_folder,omitempty"`
+}
+
+type configXML struct {
+	ModuleName           string           `xml:"moduleName"`
+	RequiredInstallFiles fileContainerXML `xml:"requiredInstallFiles"`
+	InstallSteps         installStepsXML  `xml:"installSteps"`
+}
+
+type installStepsXML struct {
+	Steps []installStepXML `xml:"installStep"`
+}
+
+type installStepXML struct {
+	Name               string                `xml:"name,attr"`
+	OptionalFileGroups optionalFileGroupsXML `xml:"optionalFileGroups"`
+}
+
+type optionalFileGroupsXML struct {
+	Groups []groupXML `xml:"group"`
+}
+
+type groupXML struct {
+	Name    string     `xml:"name,attr"`
+	Type    string     `xml:"type,attr"`
+	Plugins pluginsXML `xml:"plugins"`
+}
+
+type pluginsXML struct {
+	Plugins []pluginXML `xml:"plugin"`
+}
+
+type pluginXML struct {
+	Name           string            `xml:"name,attr"`
+	Description    string            `xml:"description"`
+	TypeDescriptor typeDescriptorXML `xml:"typeDescriptor"`
+	Files          fileContainerXML  `xml:"files"`
+}
+
+type typeDescriptorXML struct {
+	Type typeXML `xml:"type"`
+}
+
+type typeXML struct {
+	Name string `xml:"name,attr"`
+}
+
+type fileContainerXML struct {
+	Files   []fileXML `xml:"file"`
+	Folders []fileXML `xml:"folder"`
+}
+
+type fileXML struct {
+	Source      string `xml:"source,attr"`
+	Destination string `xml:"destination,attr"`
+	Priority    string `xml:"priority,attr"`
+}
+
+func Parse(root string) (Installer, error) {
+	moduleConfig, err := findModuleConfig(root)
+	if err != nil {
+		return Installer{}, err
+	}
+	data, err := os.ReadFile(moduleConfig)
+	if err != nil {
+		return Installer{}, err
+	}
+	text, err := decodeXML(data)
+	if err != nil {
+		return Installer{}, err
+	}
+	var cfg configXML
+	decoder := xml.NewDecoder(strings.NewReader(text))
+	if err := decoder.Decode(&cfg); err != nil {
+		return Installer{}, err
+	}
+	rel, err := filepath.Rel(root, moduleConfig)
+	if err != nil {
+		return Installer{}, err
+	}
+	installer := Installer{
+		Name:          strings.TrimSpace(cfg.ModuleName),
+		ModuleConfig:  filepath.ToSlash(rel),
+		RequiredFiles: cfg.RequiredInstallFiles.entries(),
+		Steps:         []Step{},
+	}
+	if installer.Name == "" {
+		installer.Name = "FOMOD installer"
+	}
+	for stepIndex, stepXML := range cfg.InstallSteps.Steps {
+		step := Step{
+			ID:     fmt.Sprintf("step-%d", stepIndex+1),
+			Name:   strings.TrimSpace(stepXML.Name),
+			Groups: []Group{},
+		}
+		if step.Name == "" {
+			step.Name = fmt.Sprintf("Step %d", stepIndex+1)
+		}
+		for groupIndex, groupXML := range stepXML.OptionalFileGroups.Groups {
+			group := Group{
+				ID:      fmt.Sprintf("%s-group-%d", step.ID, groupIndex+1),
+				Name:    strings.TrimSpace(groupXML.Name),
+				Type:    normalizeGroupType(groupXML.Type),
+				Plugins: []Plugin{},
+			}
+			if group.Name == "" {
+				group.Name = fmt.Sprintf("Group %d", groupIndex+1)
+			}
+			for pluginIndex, pluginXML := range groupXML.Plugins.Plugins {
+				name := strings.TrimSpace(pluginXML.Name)
+				if name == "" {
+					name = fmt.Sprintf("Option %d", pluginIndex+1)
+				}
+				group.Plugins = append(group.Plugins, Plugin{
+					ID:          fmt.Sprintf("%s-plugin-%d", group.ID, pluginIndex+1),
+					Name:        name,
+					Description: strings.TrimSpace(pluginXML.Description),
+					Type:        strings.TrimSpace(pluginXML.TypeDescriptor.Type.Name),
+					Files:       pluginXML.Files.entries(),
+				})
+			}
+			step.Groups = append(step.Groups, group)
+		}
+		installer.Steps = append(installer.Steps, step)
+	}
+	return installer, nil
+}
+
+func DefaultSelections(installer Installer) map[string][]string {
+	out := map[string][]string{}
+	for _, step := range installer.Steps {
+		for _, group := range step.Groups {
+			switch strings.ToLower(group.Type) {
+			case "selectall":
+				for _, plugin := range group.Plugins {
+					out[group.ID] = append(out[group.ID], plugin.ID)
+				}
+			case "selectexactlyone", "selectatleastone":
+				if plugin, ok := preferredPlugin(group.Plugins); ok {
+					out[group.ID] = []string{plugin.ID}
+				}
+			case "selectatmostone", "selectany":
+				for _, plugin := range group.Plugins {
+					if isPreferredPluginType(plugin.Type) {
+						out[group.ID] = append(out[group.ID], plugin.ID)
+					}
+				}
+			default:
+				if plugin, ok := preferredPlugin(group.Plugins); ok {
+					out[group.ID] = []string{plugin.ID}
+				}
+			}
+		}
+	}
+	return out
+}
+
+func BuildPlan(gameID, root string, installer Installer, selections map[string][]string) (installplan.Plan, error) {
+	if strings.TrimSpace(gameID) == "" {
+		return installplan.Plan{}, errors.New("game id is required")
+	}
+	if strings.TrimSpace(root) == "" {
+		return installplan.Plan{}, errors.New("extracted root is required")
+	}
+	if selections == nil {
+		selections = DefaultSelections(installer)
+	}
+	plan := installplan.Plan{
+		GameID:       strings.TrimSpace(gameID),
+		ModType:      "fomod",
+		PlannerID:    "fomod",
+		NameSource:   installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{Kind: "fomod-module-config", Path: installer.ModuleConfig, Reason: "FOMOD ModuleConfig.xml parsed"}},
+		Instructions: []installplan.Instruction{},
+	}
+	for _, entry := range installer.RequiredFiles {
+		if err := appendEntryInstructions(&plan, root, entry); err != nil {
+			return installplan.Plan{}, err
+		}
+	}
+	for _, step := range installer.Steps {
+		for _, group := range step.Groups {
+			selected, err := selectedPlugins(group, selections[group.ID])
+			if err != nil {
+				return installplan.Plan{}, err
+			}
+			for _, plugin := range selected {
+				for _, entry := range plugin.Files {
+					if err := appendEntryInstructions(&plan, root, entry); err != nil {
+						return installplan.Plan{}, err
+					}
+				}
+			}
+		}
+	}
+	sort.SliceStable(plan.Instructions, func(i, j int) bool {
+		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
+	})
+	return plan, nil
+}
+
+func selectedPlugins(group Group, ids []string) ([]Plugin, error) {
+	selected := map[string]struct{}{}
+	for _, id := range ids {
+		selected[strings.TrimSpace(id)] = struct{}{}
+	}
+	var out []Plugin
+	for _, plugin := range group.Plugins {
+		if _, ok := selected[plugin.ID]; ok {
+			out = append(out, plugin)
+		}
+	}
+	switch strings.ToLower(group.Type) {
+	case "selectall":
+		if len(out) != len(group.Plugins) {
+			return nil, fmt.Errorf("group %q requires all options", group.Name)
+		}
+	case "selectexactlyone":
+		if len(out) != 1 {
+			return nil, fmt.Errorf("group %q requires exactly one option", group.Name)
+		}
+	case "selectatleastone":
+		if len(out) < 1 {
+			return nil, fmt.Errorf("group %q requires at least one option", group.Name)
+		}
+	case "selectatmostone":
+		if len(out) > 1 {
+			return nil, fmt.Errorf("group %q allows at most one option", group.Name)
+		}
+	}
+	return out, nil
+}
+
+func appendEntryInstructions(plan *installplan.Plan, root string, entry FileEntry) error {
+	sourceRel, err := cleanRel(entry.Source)
+	if err != nil {
+		return err
+	}
+	sourcePath := filepath.Join(root, filepath.FromSlash(sourceRel))
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return err
+	}
+	destRel := strings.TrimSpace(filepath.ToSlash(entry.Destination))
+	if destRel == "" {
+		destRel = sourceRel
+	}
+	destRel, err = cleanRel(destRel)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() || entry.IsFolder {
+		return filepath.WalkDir(sourcePath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, err := filepath.Rel(sourcePath, path)
+			if err != nil {
+				return err
+			}
+			targetRel := filepath.ToSlash(filepath.Join(destRel, rel))
+			plan.Instructions = append(plan.Instructions, installplan.Instruction{
+				Kind:            installplan.InstructionKindCopy,
+				SourcePath:      path,
+				StagingRelative: targetRel,
+				TargetRelative:  targetRel,
+			})
+			return nil
+		})
+	}
+	plan.Instructions = append(plan.Instructions, installplan.Instruction{
+		Kind:            installplan.InstructionKindCopy,
+		SourcePath:      sourcePath,
+		StagingRelative: destRel,
+		TargetRelative:  destRel,
+	})
+	return nil
+}
+
+func findModuleConfig(root string) (string, error) {
+	var found string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" || d.IsDir() {
+			return err
+		}
+		if !strings.EqualFold(filepath.Base(path), "ModuleConfig.xml") {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Base(filepath.Dir(path)), "fomod") {
+			return nil
+		}
+		found = path
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if found == "" {
+		return "", errors.New("fomod/ModuleConfig.xml was not found")
+	}
+	return found, nil
+}
+
+func (c fileContainerXML) entries() []FileEntry {
+	var out []FileEntry
+	for _, file := range c.Files {
+		out = append(out, file.entry(false))
+	}
+	for _, folder := range c.Folders {
+		out = append(out, folder.entry(true))
+	}
+	return out
+}
+
+func (f fileXML) entry(isFolder bool) FileEntry {
+	priority, _ := strconv.Atoi(strings.TrimSpace(f.Priority))
+	return FileEntry{
+		Source:      strings.TrimSpace(filepath.ToSlash(f.Source)),
+		Destination: strings.TrimSpace(filepath.ToSlash(f.Destination)),
+		Priority:    priority,
+		IsFolder:    isFolder,
+	}
+}
+
+func preferredPlugin(plugins []Plugin) (Plugin, bool) {
+	for _, plugin := range plugins {
+		if isPreferredPluginType(plugin.Type) {
+			return plugin, true
+		}
+	}
+	if len(plugins) == 0 {
+		return Plugin{}, false
+	}
+	return plugins[0], true
+}
+
+func isPreferredPluginType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "required", "recommended":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeGroupType(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "SelectAny"
+	}
+	return value
+}
+
+func cleanRel(value string) (string, error) {
+	value = strings.TrimSpace(filepath.ToSlash(value))
+	if value == "" {
+		return "", errors.New("relative path is required")
+	}
+	if strings.HasPrefix(value, "/") {
+		return "", errors.New("absolute paths are not allowed")
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", errors.New("path traversal is not allowed")
+	}
+	return cleaned, nil
+}
+
+func decodeXML(data []byte) (string, error) {
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	if len(data) >= 2 {
+		switch {
+		case data[0] == 0xFF && data[1] == 0xFE:
+			return decodeUTF16(data[2:], binary.LittleEndian)
+		case data[0] == 0xFE && data[1] == 0xFF:
+			return decodeUTF16(data[2:], binary.BigEndian)
+		}
+	}
+	return string(data), nil
+}
+
+func decodeUTF16(data []byte, order binary.ByteOrder) (string, error) {
+	if len(data)%2 != 0 {
+		return "", errors.New("invalid UTF-16 XML length")
+	}
+	words := make([]uint16, len(data)/2)
+	for i := range words {
+		words[i] = order.Uint16(data[i*2:])
+	}
+	return string(utf16.Decode(words)), nil
+}

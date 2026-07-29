@@ -68,6 +68,7 @@ type InstallCandidate struct {
 	ChecksumSHA256   string `json:"checksum_sha256"`
 	Status           string `json:"status"`
 	Reason           string `json:"reason"`
+	InstallerJSON    string `json:"installer_json,omitempty"`
 }
 
 type PendingImport struct {
@@ -117,6 +118,7 @@ func (db *DB) applyCompatibilityMigrations(ctx context.Context) error {
 		{table: "mod_versions", name: "metadata_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "downloads", name: "checksum_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "installed_mods", name: "checksum_manifest_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
+		{table: "install_candidates", name: "installer_json", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "pending_imports", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
@@ -580,6 +582,7 @@ type RecordInstallCandidateParams struct {
 	ArchiveSHA256 string
 	Status        string
 	Reason        string
+	InstallerJSON string
 }
 
 func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCandidateParams) (InstallCandidate, error) {
@@ -588,6 +591,7 @@ func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCa
 	params.ArchivePath = strings.TrimSpace(params.ArchivePath)
 	params.Status = strings.TrimSpace(params.Status)
 	params.Reason = strings.TrimSpace(params.Reason)
+	params.InstallerJSON = strings.TrimSpace(params.InstallerJSON)
 	if params.SteamAppID == "" {
 		return InstallCandidate{}, errors.New("steam app id is required")
 	}
@@ -606,16 +610,17 @@ func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCa
 		return InstallCandidate{}, err
 	}
 	_, err := db.conn.ExecContext(ctx, `
-INSERT INTO install_candidates (game_id, catalog, source_game_domain, source_mod_id, source_file_id, name, archive_path, checksum_sha256, status, reason, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO install_candidates (game_id, catalog, source_game_domain, source_mod_id, source_file_id, name, archive_path, checksum_sha256, status, reason, installer_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(game_id, catalog, source_mod_id, source_file_id) DO UPDATE SET
 	name = excluded.name,
 	archive_path = excluded.archive_path,
 	checksum_sha256 = excluded.checksum_sha256,
 	status = excluded.status,
 	reason = excluded.reason,
+	installer_json = excluded.installer_json,
 	updated_at = CURRENT_TIMESTAMP
-`, gameID, params.Resolved.Catalog, params.Resolved.GameDomain, params.Resolved.ModID, params.Resolved.FileID, params.Name, params.ArchivePath, params.ArchiveSHA256, params.Status, params.Reason)
+`, gameID, params.Resolved.Catalog, params.Resolved.GameDomain, params.Resolved.ModID, params.Resolved.FileID, params.Name, params.ArchivePath, params.ArchiveSHA256, params.Status, params.Reason, params.InstallerJSON)
 	if err != nil {
 		return InstallCandidate{}, err
 	}
@@ -625,7 +630,7 @@ ON CONFLICT(game_id, catalog, source_mod_id, source_file_id) DO UPDATE SET
 func (db *DB) InstallCandidatesForSteamApp(ctx context.Context, appID string) ([]InstallCandidate, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 WHERE g.steam_app_id = ?
@@ -646,6 +651,17 @@ ORDER BY ic.updated_at DESC, ic.created_at DESC
 	return out, rows.Err()
 }
 
+func (db *DB) InstallCandidateForSteamApp(ctx context.Context, appID string, candidateID int64) (InstallCandidate, error) {
+	row := db.conn.QueryRowContext(ctx, `
+SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json
+FROM install_candidates ic
+JOIN games g ON g.id = ic.game_id
+WHERE g.steam_app_id = ? AND ic.id = ?
+`, appID, candidateID)
+	return scanInstallCandidate(row)
+}
+
 func (db *DB) DeleteInstallCandidatesForSteamApp(ctx context.Context, appID string) (int64, error) {
 	result, err := db.conn.ExecContext(ctx, `
 DELETE FROM install_candidates
@@ -659,10 +675,15 @@ WHERE game_id IN (
 	return result.RowsAffected()
 }
 
+func (db *DB) DeleteInstallCandidate(ctx context.Context, candidateID int64) error {
+	_, err := db.conn.ExecContext(ctx, `DELETE FROM install_candidates WHERE id = ?`, candidateID)
+	return err
+}
+
 func (db *DB) installCandidate(ctx context.Context, gameID int64, catalog, modID, fileID string) (InstallCandidate, error) {
 	row := db.conn.QueryRowContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 WHERE ic.game_id = ? AND ic.catalog = ? AND ic.source_mod_id = ? AND ic.source_file_id = ?
@@ -1015,6 +1036,7 @@ func scanInstallCandidate(scanner installedModScanner) (InstallCandidate, error)
 		&candidate.ChecksumSHA256,
 		&candidate.Status,
 		&candidate.Reason,
+		&candidate.InstallerJSON,
 	); err != nil {
 		return InstallCandidate{}, err
 	}

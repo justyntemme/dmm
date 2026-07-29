@@ -490,10 +490,11 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 			ModID:      "2400",
 			FileID:     "160380",
 		},
-		Name:        "SMAPI installer",
-		ArchivePath: "/downloads/smapi.zip",
-		Status:      "blocked",
-		Reason:      "archive requires an installer",
+		Name:          "SMAPI installer",
+		ArchivePath:   "/downloads/smapi.zip",
+		Status:        "blocked",
+		Reason:        "archive requires an installer",
+		InstallerJSON: `{"name":"SMAPI installer"}`,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -503,7 +504,7 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" {
+	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" || candidates[0].InstallerJSON == "" {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 
