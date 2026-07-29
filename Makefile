@@ -1,7 +1,7 @@
 GO ?= go
 NPM ?= npm
 
-.PHONY: test build web decky package clean
+.PHONY: test build web decky package mvp-audit deck-transfer mvp-release clean
 
 test:
 	$(GO) test ./...
@@ -37,6 +37,15 @@ package:
 	chmod +x dist/decky-mod-manager/bin/dmm-server dist/decky-mod-manager/bin/dmm-nxm-handler
 	COPYFILE_DISABLE=1 tar --no-xattrs -C dist -czf dist/decky-mod-manager.tar.gz decky-mod-manager 2>/dev/null || COPYFILE_DISABLE=1 tar -C dist -czf dist/decky-mod-manager.tar.gz decky-mod-manager
 	cd dist && COPYFILE_DISABLE=1 zip -qr decky-mod-manager.zip decky-mod-manager
+
+mvp-audit:
+	./testing/mvp_audit.sh
+
+deck-transfer: package
+	./testing/create_deck_transfer_bundle.sh
+
+mvp-release: mvp-audit
+	./testing/create_deck_transfer_bundle.sh
 
 clean:
 	rm -rf bin dist web/dist decky/dist

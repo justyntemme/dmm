@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -43,11 +44,12 @@ func main() {
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	logf(logFile, "backend response status=%s body=%s", resp.Status, strings.TrimSpace(string(respBody)))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		logf(logFile, "backend response status=%s body=%s", resp.Status, redactText(strings.TrimSpace(string(respBody))))
 		fmt.Fprintf(os.Stderr, "backend returned %s\n", resp.Status)
 		os.Exit(1)
 	}
+	logf(logFile, "backend response status=%s", resp.Status)
 }
 
 func openLog() *os.File {
@@ -89,4 +91,10 @@ func redactURL(raw string) string {
 		}
 	}
 	return parts[0] + "?" + strings.Join(queryParts, "&")
+}
+
+var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)(key|expires|md5)=([^&"'\s]+)`)
+
+func redactText(text string) string {
+	return sensitiveQueryValuePattern.ReplaceAllString(text, "$1=[redacted]")
 }

@@ -18,8 +18,12 @@ const (
 
 type FileMapping struct {
 	SourceRelative string `json:"source_relative"`
+	SourcePath     string `json:"source_path,omitempty"`
 	TargetRelative string `json:"target_relative"`
+	TargetPolicy   string `json:"target_policy,omitempty"`
 	ModID          string `json:"mod_id,omitempty"`
+	Priority       int    `json:"priority"`
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
 }
 
 type Action struct {
@@ -27,9 +31,15 @@ type Action struct {
 	TargetPath     string   `json:"target_path"`
 	TargetRelative string   `json:"target_relative"`
 	Strategy       Strategy `json:"strategy"`
+	Operation      string   `json:"operation"`
+	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
 	Conflict       bool     `json:"conflict"`
 	ConflictReason string   `json:"conflict_reason,omitempty"`
 }
+
+const (
+	TargetPolicyKeepExisting = "keep-existing"
+)
 
 type Plan struct {
 	StagingRoot string   `json:"staging_root"`
@@ -39,7 +49,16 @@ type Plan struct {
 	Conflicts   []Action `json:"conflicts"`
 }
 
+type mappingCandidate struct {
+	mapping FileMapping
+	index   int
+}
+
 func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []FileMapping) (Plan, error) {
+	return BuildPlanWithManagedFiles(stagingRoot, targetRoot, strategy, mappings, nil)
+}
+
+func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy, mappings []FileMapping, managedFiles []AppliedFile) (Plan, error) {
 	if stagingRoot == "" || targetRoot == "" {
 		return Plan{}, errors.New("stagingRoot and targetRoot are required")
 	}
@@ -51,23 +70,77 @@ func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []Fil
 		StagingRoot: stagingRoot,
 		TargetRoot:  targetRoot,
 		Strategy:    strategy,
+		Actions:     []Action{},
+		Conflicts:   []Action{},
 	}
-	for _, mapping := range mappings {
-		sourceRel, err := cleanRelative(mapping.SourceRelative)
-		if err != nil {
-			return Plan{}, err
+	managedByTarget := make(map[string]AppliedFile, len(managedFiles))
+	for _, file := range managedFiles {
+		if strings.TrimSpace(file.TargetPath) == "" {
+			continue
+		}
+		rel, err := filepath.Rel(targetRoot, file.TargetPath)
+		if err != nil || strings.HasPrefix(filepath.ToSlash(rel), "../") || filepath.IsAbs(rel) {
+			continue
+		}
+		managedByTarget[filepath.Clean(file.TargetPath)] = file
+	}
+	desiredTargets := make(map[string]struct{}, len(mappings))
+	winners, skipped, err := prioritizeMappings(mappings)
+	if err != nil {
+		return Plan{}, err
+	}
+	for _, action := range skipped {
+		plan.Actions = append(plan.Actions, action)
+	}
+	for _, mapping := range winners {
+		sourcePath := ""
+		if strings.TrimSpace(mapping.SourcePath) != "" {
+			sourcePath = filepath.Clean(mapping.SourcePath)
+			rel, err := filepath.Rel(stagingRoot, sourcePath)
+			if err != nil || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+				return Plan{}, errors.New("source path is outside staging root")
+			}
+		} else {
+			sourceRel, err := cleanRelative(mapping.SourceRelative)
+			if err != nil {
+				return Plan{}, err
+			}
+			sourcePath = filepath.Join(stagingRoot, sourceRel)
 		}
 		targetRel, err := cleanRelative(mapping.TargetRelative)
 		if err != nil {
 			return Plan{}, err
 		}
 		action := Action{
-			SourcePath:     filepath.Join(stagingRoot, sourceRel),
+			SourcePath:     sourcePath,
 			TargetPath:     filepath.Join(targetRoot, targetRel),
 			TargetRelative: filepath.ToSlash(targetRel),
 			Strategy:       strategy,
+			Operation:      "add",
+			ChecksumSHA256: mapping.ChecksumSHA256,
 		}
+		targetKey := filepath.Clean(action.TargetPath)
+		desiredTargets[targetKey] = struct{}{}
 		if st, err := os.Lstat(action.TargetPath); err == nil {
+			if st.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(action.TargetPath)
+				if err == nil && target == action.SourcePath {
+					action.Operation = "keep"
+					plan.Actions = append(plan.Actions, action)
+					continue
+				}
+			}
+			if _, ok := managedByTarget[targetKey]; ok {
+				action.Operation = "replace"
+				plan.Actions = append(plan.Actions, action)
+				continue
+			}
+			if mapping.TargetPolicy == TargetPolicyKeepExisting {
+				action.Operation = "skip"
+				action.ConflictReason = "target already exists; keeping existing file"
+				plan.Actions = append(plan.Actions, action)
+				continue
+			}
 			action.Conflict = true
 			if st.Mode()&os.ModeSymlink != 0 {
 				action.ConflictReason = "target symlink already exists"
@@ -78,6 +151,23 @@ func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []Fil
 		}
 		plan.Actions = append(plan.Actions, action)
 	}
+	for targetKey, file := range managedByTarget {
+		if _, ok := desiredTargets[targetKey]; ok {
+			continue
+		}
+		rel, err := filepath.Rel(targetRoot, targetKey)
+		if err != nil {
+			continue
+		}
+		plan.Actions = append(plan.Actions, Action{
+			SourcePath:     file.SourcePath,
+			TargetPath:     targetKey,
+			TargetRelative: filepath.ToSlash(rel),
+			Strategy:       file.Strategy,
+			Operation:      "remove",
+			ChecksumSHA256: file.ChecksumSHA256,
+		})
+	}
 
 	sort.Slice(plan.Actions, func(i, j int) bool {
 		return plan.Actions[i].TargetRelative < plan.Actions[j].TargetRelative
@@ -86,6 +176,57 @@ func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []Fil
 		return plan.Conflicts[i].TargetRelative < plan.Conflicts[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error) {
+	byTarget := map[string]mappingCandidate{}
+	var skipped []Action
+	for i, mapping := range mappings {
+		targetRel, err := cleanRelative(mapping.TargetRelative)
+		if err != nil {
+			return nil, nil, err
+		}
+		key := filepath.ToSlash(targetRel)
+		next := mappingCandidate{mapping: mapping, index: i}
+		current, ok := byTarget[key]
+		if !ok {
+			byTarget[key] = next
+			continue
+		}
+		winner, loser := chooseMappingWinner(current, next)
+		byTarget[key] = winner
+		skipped = append(skipped, Action{
+			TargetRelative: filepath.ToSlash(targetRel),
+			Operation:      "skip",
+			ConflictReason: "overridden by mod priority",
+			ChecksumSHA256: loser.mapping.ChecksumSHA256,
+		})
+	}
+	winners := make([]mappingCandidate, 0, len(byTarget))
+	for _, item := range byTarget {
+		winners = append(winners, item)
+	}
+	sort.Slice(winners, func(i, j int) bool {
+		return winners[i].index < winners[j].index
+	})
+	out := make([]FileMapping, 0, len(winners))
+	for _, item := range winners {
+		out = append(out, item.mapping)
+	}
+	return out, skipped, nil
+}
+
+func chooseMappingWinner(a, b mappingCandidate) (winner, loser mappingCandidate) {
+	if b.mapping.Priority < a.mapping.Priority {
+		return b, a
+	}
+	if b.mapping.Priority > a.mapping.Priority {
+		return a, b
+	}
+	if b.index < a.index {
+		return b, a
+	}
+	return a, b
 }
 
 func cleanRelative(value string) (string, error) {

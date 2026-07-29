@@ -9,8 +9,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - The phone/tablet browser UI is the primary MVP management surface.
 - MVP supports Steam games on Steam Deck only.
 - MVP focuses on Nexus Mods "Mod Manager Download" / Vortex-compatible flows.
-- MVP workflow: paste a Nexus `https://www.nexusmods.com/...` URL or `nxm://` URL into the phone UI, resolve it, download it, install it into staging, and deploy it to the selected game.
-- `nxm://` OS-level protocol registration is not MVP, but pasted `nxm://` links are MVP.
+- MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
+- Staging, install planning, deployment manifests, and file operations are implementation details for the default experience; they remain inspectable through advanced/power-user surfaces.
+- User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain the fallback.
 - Future direction is to replace Vortex more broadly, but first milestones stay narrow and Steam Deck-focused.
 - Existing manually installed mods and existing Vortex/NMM libraries are future import features, not MVP.
 - Games with existing Vortex/manual mod state must be detected and treated as externally managed/dirty for MVP.
@@ -30,7 +31,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Project Zomboid, but likely Steam Workshop-focused and not ideal for Nexus MVP
 - Nexus/Vortex-supported games are the MVP target. Games without Vortex/Nexus mod manager support can be detected but ignored initially.
 - First custom handler should be chosen after Steam library inspection.
-- Current tentative clean Nexus test candidate: `METAL GEAR SOLID V: THE PHANTOM PAIN` (`287700`, Nexus domain likely `metalgearsolidvtpp`).
+- Current MVP vertical-slice target: `Stardew Valley` (`413150`, Nexus domain `stardewvalley`).
 - Avoid initial testing on Witcher 3, FF7 Rebirth, Fallout 4, Skyrim, Cyberpunk 2077, and Oblivion Remastered because Vortex/manual mod state was detected.
 
 ## UX Guidelines
@@ -38,7 +39,15 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Phone and tablet UI are first-class MVP targets.
 - UI is touch-first and dark-mode-only for MVP.
 - Desktop browser layout is non-MVP, but the app should not be unusable on desktop-sized browsers.
-- First screen should expose:
+- The default user mental model is profile-first:
+  - Select game.
+  - Use the selected/default profile.
+  - Download or approve a mod.
+  - See the mod in that profile.
+  - Enable/disable mods with simple toggles.
+  - Apply profile changes when needed.
+- The default user experience should not require understanding staging, installer target mappings, deployment manifests, symlink strategy, purge, or repair.
+- First screen or primary navigation should expose:
   - Games list
   - Active profile/loadout
   - Mod list
@@ -48,7 +57,11 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Disabled mods
   - Paste URL/import field
 - Design for simple install-and-play flows while still keeping power-user controls available.
-- Advanced conflict details and file-level controls should live behind an advanced view.
+- Staging, deployment preview, purge, repair, conflict details, blocked install internals, and file-level controls should live behind an advanced view unless they need immediate user attention.
+- The primary mod-management surface should be a profile mod list with clear enabled/disabled state, profile-scoped priority when relevant, pending/apply-needed state, and a simple apply action.
+- Avoid exposing backend pipeline terms such as "staged", "manifest", "install plan", or "target mapping" in primary user flows. Use them only in advanced/debug views and logs.
+- Download approval is required by default. A user setting may allow automatic download approval for faster Deck-only flows, but the setting must be explicit and easy to disable.
+- Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
 - FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI.
 - Destructive actions must require confirmation.
 - Downloads, installs, deployment, purge, and repair should appear in a visible activity/job queue.
@@ -170,16 +183,31 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 - Use a Vortex-inspired deployment model, adjusted for Linux/Steam Deck.
 - Default to Vortex-style deployment behavior unless there is a clear Linux/Steam Deck reason not to.
+- Treat DMM as owning a virtualized deployment layer, not the game's source files:
+  - Original archives remain in DMM-managed downloads.
+  - Extracted mod contents remain in DMM-managed staging.
+  - The game folder receives only deployment artifacts that DMM can identify through its manifest, preferably links.
+  - Profile switching reconciles DMM-owned deployment artifacts against the target profile; it must not copy profile state by mutating staged mod contents.
+  - The game folder must never be treated as the canonical mod store.
 - Primary deployment strategy should be selected per game and filesystem:
   - Hardlink when staging and game target are on the same filesystem and the game supports it.
   - Symlink when hardlink is not viable and the game supports symlinks.
   - Copy only as an explicit fallback.
 - Maintain a deployment manifest per game in SQLite.
 - Deployment manifests must be profile-aware so each game/profile combination can be purged, repaired, and rolled back safely.
+- Manifests are the authority for what DMM may remove or repair. Anything not present in the manifest is unmanaged and must be left alone unless the user enters an explicit adoption/cleanup flow.
 - Never remove or overwrite unmanaged files without explicit user confirmation.
+- Never delete parent game directories during purge. Purge removes only manifest-owned files/links.
+- Existing game files, folders, or links should block deployment as conflicts unless they are recognized as current DMM-managed artifacts for the same game/profile transition.
+- Profile switching should compute a transition plan:
+  - Remove links/files owned by the old profile manifest and absent from the new profile.
+  - Keep links/files already matching the new profile.
+  - Add links/files required by the new profile.
+  - Report conflicts before touching unmanaged files.
 - For MVP, block deployment to games with detected Vortex/manual mod state unless explicitly enabled for a controlled test.
 - Support purge in MVP.
-- Support rollback in MVP for deployment operations that changed files.
+- Support apply-time rollback in MVP: if deployment verification or manifest persistence fails, DMM must restore the files it changed during that attempt.
+- User-visible rollback jobs are post-MVP and require a product decision about whether rollback means last deployment, named restore points, or profile-transition history.
 - Verify deployed links/files against the deployment manifest.
 - If broken deployment state is detected, ask before repairing.
 - Use simple mod priority order for MVP.
@@ -198,19 +226,31 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Verify/checksum archive where possible.
   - Inspect archive entries before extraction.
   - Reject or warn on absolute paths and `..` traversal.
-  - Extract into temporary workspace.
+  - Extract into temporary workspace, not directly into deployable staging.
   - Detect top-level wrapper folder where obvious.
   - Detect supported installer metadata such as FOMOD.
-  - Pause for user installer choices when required.
-  - Install normalized files into per-mod staging folder.
+  - For MVP, fail safely with an explicit unsupported-installer message when installer choices are required.
+  - After MVP, pause for user installer choices when required.
+  - Run an installer-planning stage that produces explicit install instructions, a mod type, deployable files, and target mappings.
+  - Install only normalized deployable outputs into per-mod staging.
   - Plan deployment.
   - Apply deployment.
   - Persist logs and diagnostics.
-- Downloads and installs must be cancelable through context cancellation.
+- Do not treat a downloaded/extracted archive as a deployable mod solely because extraction succeeded.
+- Do not add one-off rules for specific Nexus mod IDs, filenames, or individual apps. If an archive layout cannot be handled by the current provider/game installer planner, keep the archive cached and surface a blocked/unsupported install result.
+- Do not invent deployment target paths for staged records that lack install-plan target mappings. Legacy staged records should be recovered/restaged through the current planner or removed by the user.
+- Follow Vortex's separation of download, install, mod type, and deployment: Nexus download metadata identifies source; game/provider installer planning identifies what gets staged; deployment manifests identify what DMM owns in the game folder.
+- Model installer planning as metadata evaluation first: installer matchers classify archive shape, installer specs emit install instructions, spec-declared metadata extractors validate/ingest manifest attributes, mod types define deploy roots, and runtime requirements are derived from the resulting staged metadata.
+- Prefer declarative metadata extractors for common archive manifests before adding procedural parser code. A custom parser is acceptable when the source format has nested dependency/runtime semantics that cannot be represented by the generic extractor.
+- Game-specific behavior belongs in Vortex-modeled specs or reviewed game-handler capabilities, not scattered through generic server, storage, deployment, or UI code.
+- When installer metadata says a payload file should not overwrite a pre-existing game file, express that as a target policy on the install mapping and persist it in the staged manifest.
+- Recognized but unsupported installer modes, such as future non-FOMOD custom installers, should produce blocked install candidates with precise installer IDs and reasons.
+- Downloads and installs must be cancelable through context cancellation, and cancellation must clean up persisted pending request state.
 - Failed installs should leave enough diagnostics for debugging.
 - Support common Nexus archive formats needed by Vortex-compatible downloads, starting with `.zip` and adding `.7z`/`.rar` as needed.
-- FOMOD installer support is MVP.
-- Persist pending installer-choice jobs so the user can disconnect and resume choosing options later.
+- FOMOD detection and a clear unsupported-installer failure are part of the current MVP slice.
+- Interactive FOMOD installer support is post-MVP and must not silently stage archives that need user choices before that UI exists.
+- Persist pending installer-choice jobs after the post-MVP installer architecture is selected, so the user can disconnect and resume choosing options later.
 - Prefer safe Go libraries for archive handling where practical.
 - Shelling out to `7z` or `bsdtar` is acceptable only through a constrained wrapper with path validation, argument hygiene, and clear error handling.
 - Installing extraction tools on the Deck is acceptable for debugging, but production should not rely on mutable system packages if avoidable.
@@ -222,24 +262,32 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 ## Game Handler Guidelines
 
-- MVP should start with a generic file/folder handler plus targeted behavior for the first selected game if needed.
+- MVP should start with a generic file/folder handler plus Vortex-modeled metadata specs for the first selected game.
 - A game handler should define:
   - Game identity and Steam app IDs
   - Supported Nexus game domains
+  - Deployment eligibility policy, including whether review-state deployment is allowed for a controlled supported target
   - Install roots and mod target directories
   - Proton prefix usage
   - Archive inspection/install rules
+  - Install-plan generation from archive layout and provider metadata
+  - Supported mod types and their deploy roots
+  - Runtime/dependency requirements derived from handler/provider metadata, not hard-coded one-off assumptions
   - Validation checks
   - Deployment strategy preferences
   - Load order rules if applicable
 - Implement handlers as internal Go packages for MVP.
 - External plugin handlers are future work.
+- Prefer declarative/spec-driven game metadata inside those Go packages. Procedural code is acceptable only when the installer behavior, metadata extraction, or runtime validation genuinely cannot be represented by the current metadata evaluator; when that happens, extend the evaluator before adding one-off logic.
+- Do not add game-specific runtime requirements directly to the generic server/UI. If a game needs SMAPI, script extenders, mod loaders, launch options, or equivalent runtime integration, expose that through handler/provider metadata attached to the staged mod, then have diagnostics evaluate the enabled mod types.
+- If the requirement cannot be derived from the current handler/provider metadata, surface it as an unsupported/missing handler capability rather than pretending DMM can validate it generically.
 - Prototype/TexMod-style support is non-MVP.
 - External commands are disabled by default. They may be justified later for tools such as script extenders, patchers, load-order tools, archive conversion, or game-specific installers.
 - Any future external-command handler must require explicit user approval and show the command/action clearly.
-- Interactive FOMOD installers are MVP and should be driven through the web UI.
+- Interactive FOMOD installers should be driven through the web UI once implemented.
 - Non-FOMOD interactive/custom installer systems are post-MVP unless the first selected game requires them.
 - Unsupported mods should fail with a clear reason instead of silently staging unusable files.
+- Handler logic must be layout/mod-type driven, not hard-coded to one Nexus file or one manually observed archive.
 
 ## Backend Architecture Guidelines
 
@@ -251,6 +299,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Do not use the HTTP `QUERY` method for MVP. Use `GET` for simple reads, `POST` for commands and complex query bodies, `PUT/PATCH` for updates, and `DELETE` for destructive actions.
 - Use SQLite for persistent state.
 - Persist job state across restarts.
+- Persist structured identifiers on long-lived jobs, such as app ID, catalog, provider game domain, mod ID, and file ID. UI filtering and diagnostics should use these fields first and treat titles/messages as display text, not business state.
 - Use JSON config for MVP.
 - Use structured JSON logs on disk and human-readable summaries in UI.
 - Keep domain/application logic independent from Decky and HTTP handlers. Decky and phone UI should be clients of the same backend capabilities.
@@ -364,7 +413,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 8. Implement Nexus API-key discovery/config and metadata/download flow.
 9. Implement archive inspection and safe extraction.
 10. Implement generic staging install.
-11. Implement deployment planner, conflict detection, symlink/hardlink/copy strategy, manifest, purge, and rollback.
+11. Implement deployment planner, conflict detection, symlink/hardlink/copy strategy, manifest, purge, and apply-time rollback.
 12. Implement mobile-first web UI for games, imports, mods, jobs, deploy, purge, conflicts, and logs.
 13. Implement Decky plugin wrapper with start/stop, URL, QR, settings, and debug tab.
 14. Package and test on the Steam Deck in Gaming Mode.
@@ -373,8 +422,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 These need explicit answers before or during implementation:
 
-1. First game: after Steam Deck inspection, which installed game should be the first vertical-slice target?
-2. None currently. Revisit after Steam Deck inspection and first game selection.
+1. None currently. Revisit after the latest Deck package is installed and tested in Gaming Mode.
 
 ## Broken Vortex / Existing Mods Guideline
 

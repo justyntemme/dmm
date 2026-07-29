@@ -1,6 +1,10 @@
 package server
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestIsLANRemote(t *testing.T) {
 	tests := map[string]bool{
@@ -20,4 +24,43 @@ func TestIsLANRemote(t *testing.T) {
 			t.Fatalf("isLANRemote(%q) = %v, want %v", remote, got, want)
 		}
 	}
+}
+
+func TestLANOnlyMiddleware(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	t.Run("rejects public remote when enabled", func(t *testing.T) {
+		handler := lanOnlyMiddleware(func() bool { return true }, next)
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req.RemoteAddr = "8.8.8.8:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("allows lan remote when enabled", func(t *testing.T) {
+		handler := lanOnlyMiddleware(func() bool { return true }, next)
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req.RemoteAddr = "192.168.8.22:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("allows public remote when disabled", func(t *testing.T) {
+		handler := lanOnlyMiddleware(func() bool { return false }, next)
+		req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+		req.RemoteAddr = "8.8.8.8:1234"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+	})
 }

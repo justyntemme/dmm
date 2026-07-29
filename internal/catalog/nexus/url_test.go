@@ -37,6 +37,15 @@ func TestParseURL(t *testing.T) {
 			nxmKey:     "x",
 			expires:    "1",
 		},
+		{
+			name:       "nxm URL normalizes game domain",
+			raw:        "nxm://StardewValley/mods/239/files/165575?key=x&expires=1",
+			gameDomain: "stardewvalley",
+			modID:      "239",
+			fileID:     "165575",
+			nxmKey:     "x",
+			expires:    "1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -46,6 +55,22 @@ func TestParseURL(t *testing.T) {
 			}
 			if got.GameDomain != tt.gameDomain || got.ModID != tt.modID || got.FileID != tt.fileID || got.NXMKey != tt.nxmKey || got.Expires != tt.expires {
 				t.Fatalf("ParseURL() = %+v", got)
+			}
+		})
+	}
+}
+
+func TestParseURLRejectsUnsafeIDs(t *testing.T) {
+	tests := []string{
+		"nxm://stardewvalley/mods/239/files/165575?mod_id=../239&file_id=165575",
+		"nxm://stardewvalley/mods/239/files/165575?mod_id=239&file_id=../165575",
+		"nxm://../mods/239/files/165575",
+		"https://www.nexusmods.com/stardewvalley/mods/239?file_id=../165575",
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			if got, err := ParseURL(raw); err == nil {
+				t.Fatalf("ParseURL(%q) = %+v, expected error", raw, got)
 			}
 		})
 	}

@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS installed_mods (
 	UNIQUE(mod_version_id)
 );
 
+CREATE TABLE IF NOT EXISTS install_candidates (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	catalog TEXT NOT NULL,
+	source_game_domain TEXT NOT NULL DEFAULT '',
+	source_mod_id TEXT NOT NULL DEFAULT '',
+	source_file_id TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL,
+	archive_path TEXT NOT NULL DEFAULT '',
+	checksum_sha256 TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	reason TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(game_id, catalog, source_mod_id, source_file_id)
+);
+
 CREATE TABLE IF NOT EXISTS profile_mods (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -149,5 +166,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 	payload_json TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_imports (
+	job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+	resolved_json TEXT NOT NULL,
+	download_links_json TEXT NOT NULL DEFAULT '[]',
+	source TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `

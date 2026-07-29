@@ -2,9 +2,13 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 )
 
@@ -22,6 +26,153 @@ func TestOpenMigratesSchema(t *testing.T) {
 	}
 	if name != "profiles" {
 		t.Fatalf("table = %q", name)
+	}
+}
+
+func TestMigrateAddsColumnsToOlderSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dmm.sqlite")
+	conn, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = conn.Exec(`
+CREATE TABLE games (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	steam_app_id TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL,
+	install_dir TEXT NOT NULL,
+	library_path TEXT NOT NULL,
+	game_path TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE mods (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	game_id INTEGER NOT NULL,
+	catalog TEXT NOT NULL,
+	source_url TEXT NOT NULL,
+	name TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE mod_versions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	mod_id INTEGER NOT NULL,
+	version TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE downloads (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	mod_version_id INTEGER,
+	source_url TEXT NOT NULL,
+	archive_path TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE installed_mods (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	mod_version_id INTEGER NOT NULL,
+	staging_path TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE profile_mods (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	profile_id INTEGER NOT NULL,
+	installed_mod_id INTEGER NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE jobs (
+	id TEXT PRIMARY KEY,
+	type TEXT NOT NULL,
+	title TEXT NOT NULL,
+	status TEXT NOT NULL,
+	message TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE pending_imports (
+	job_id TEXT PRIMARY KEY,
+	resolved_json TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`)
+	if closeErr := conn.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	for _, item := range []struct {
+		table  string
+		column string
+	}{
+		{"games", "state"},
+		{"mods", "source_game_domain"},
+		{"mods", "source_mod_id"},
+		{"mod_versions", "source_file_id"},
+		{"mod_versions", "metadata_json"},
+		{"downloads", "checksum_sha256"},
+		{"installed_mods", "checksum_manifest_json"},
+		{"profile_mods", "priority"},
+		{"jobs", "payload_json"},
+		{"pending_imports", "download_links_json"},
+		{"pending_imports", "source"},
+	} {
+		exists, err := db.hasColumn(context.Background(), item.table, item.column)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("missing migrated column %s.%s", item.table, item.column)
+		}
+	}
+}
+
+func TestJobsPersistPayload(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	job := jobs.Job{
+		ID:      "job-1",
+		Type:    "pending-import",
+		Title:   "Install request: stardewvalley/mods/541",
+		Status:  jobs.StatusWaiting,
+		Message: "Ready for approval",
+		Payload: jobs.JobPayload{
+			"app_id":      "413150",
+			"catalog":     "nexus",
+			"game_domain": "stardewvalley",
+			"mod_id":      "541",
+			"file_id":     "160470",
+		},
+	}
+	if err := db.UpsertJob(context.Background(), job); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := db.ListJobs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 {
+		t.Fatalf("jobs = %+v", restored)
+	}
+	if restored[0].Payload["app_id"] != "413150" || restored[0].Payload["game_domain"] != "stardewvalley" {
+		t.Fatalf("payload = %+v", restored[0].Payload)
 	}
 }
 
@@ -108,5 +259,300 @@ func TestCreateAndSetDefaultProfile(t *testing.T) {
 	}
 	if defaultCount != 1 {
 		t.Fatalf("default profile count = %d, profiles = %+v", defaultCount, profiles)
+	}
+}
+
+func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "165575",
+		},
+		Name:          "NPC Map Locations",
+		Version:       "165575",
+		ArchivePath:   "/downloads/mod.zip",
+		ArchiveSHA256: "archive-sum",
+		StagingPath:   "/staging/mod",
+		ManifestJSON:  "[]",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.Name != "NPC Map Locations" || !mod.Enabled || mod.Status != "staged" {
+		t.Fatalf("installed mod = %+v", mod)
+	}
+
+	mods, err := db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].SourceModID != "239" {
+		t.Fatalf("mods = %+v", mods)
+	}
+	var archiveSum string
+	if err := db.conn.QueryRow(`SELECT checksum_sha256 FROM downloads WHERE archive_path = '/downloads/mod.zip'`).Scan(&archiveSum); err != nil {
+		t.Fatal(err)
+	}
+	if archiveSum != "archive-sum" {
+		t.Fatalf("archive checksum = %q", archiveSum)
+	}
+
+	priority := -2
+	updated, err := db.SetProfileModState(context.Background(), mod.ProfileID, mod.ID, nil, &priority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Priority != -2 || !updated.Enabled {
+		t.Fatalf("updated priority = %+v", updated)
+	}
+
+	removed, err := db.DeleteInstalledModForSteamApp(context.Background(), "413150", mod.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.ID != mod.ID || removed.Name != mod.Name {
+		t.Fatalf("removed = %+v", removed)
+	}
+	mods, err = db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 0 {
+		t.Fatalf("mods after delete = %+v", mods)
+	}
+}
+
+func TestSetProfileModStateRejectsCrossGameProfile(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{
+		{
+			AppID:       "413150",
+			Name:        "Stardew Valley",
+			InstallDir:  "Stardew Valley",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Stardew Valley",
+			State:       "clean_candidate",
+		},
+		{
+			AppID:       "489830",
+			Name:        "Skyrim Special Edition",
+			InstallDir:  "Skyrim Special Edition",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Skyrim Special Edition",
+			State:       "clean_candidate",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "165575",
+		},
+		Name:          "NPC Map Locations",
+		Version:       "165575",
+		ArchivePath:   "/downloads/mod.zip",
+		ArchiveSHA256: "archive-sum",
+		StagingPath:   "/staging/mod",
+		ManifestJSON:  "[]",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "489830")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) == 0 {
+		t.Fatal("expected Skyrim profile")
+	}
+
+	enabled := false
+	if _, err := db.SetProfileModState(context.Background(), profiles[0].ID, mod.ID, &enabled, nil); err == nil {
+		t.Fatal("expected cross-game profile update to fail")
+	}
+
+	var count int
+	if err := db.conn.QueryRowContext(context.Background(), `
+SELECT COUNT(*) FROM profile_mods WHERE profile_id = ? AND installed_mod_id = ?
+`, profiles[0].ID, mod.ID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("cross-game profile_mods rows = %d", count)
+	}
+}
+
+func TestRecordInstalledModKeepsOneInstalledRowAfterRepeatedDownloads(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	params := RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  "/downloads/old.zip",
+		StagingPath:  "/staging/mod",
+		ManifestJSON: "[]",
+	}
+	if _, err := db.RecordInstalledMod(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	params.ArchivePath = "/downloads/new.zip"
+	if _, err := db.RecordInstalledMod(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+
+	mods, err := db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if mods[0].ArchivePath != "/downloads/new.zip" {
+		t.Fatalf("archive path = %q", mods[0].ArchivePath)
+	}
+}
+
+func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.RecordInstallCandidate(context.Background(), RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "2400",
+			FileID:     "160380",
+		},
+		Name:        "SMAPI installer",
+		ArchivePath: "/downloads/smapi.zip",
+		Status:      "blocked",
+		Reason:      "archive requires an installer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+
+	deleted, err := db.DeleteInstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d", deleted)
+	}
+	candidates, err = db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates after delete = %+v", candidates)
+	}
+}
+
+func TestRecordDeploymentPersistsChecksum(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordDeployment(context.Background(), "413150", "symlink", []deploy.AppliedFile{{
+		SourcePath:     "/staging/file.txt",
+		TargetPath:     "/game/Mods/file.txt",
+		Strategy:       "symlink",
+		ChecksumSHA256: "file-sum",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	files, err := db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].ChecksumSHA256 != "file-sum" {
+		t.Fatalf("files = %+v", files)
 	}
 }

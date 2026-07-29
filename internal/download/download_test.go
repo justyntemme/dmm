@@ -40,6 +40,26 @@ func TestFetchWritesDownload(t *testing.T) {
 	}
 }
 
+func TestFetchUsesContentDispositionFileName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="Friendly Mod-123.zip"`)
+		_, _ = w.Write([]byte("archive"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	got, err := Fetch(context.Background(), Options{
+		URL:     server.URL + "/files/dfb0c986-2260-47f9-ae8a-543f4eabe8d4",
+		DestDir: dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != filepath.Join(dir, "Friendly Mod-123.zip") {
+		t.Fatalf("path = %q", got.Path)
+	}
+}
+
 func TestFetchRejectsOversizedDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("too large"))

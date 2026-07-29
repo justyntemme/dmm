@@ -3,6 +3,7 @@
 
   type Status = {
     game_count: number;
+    install: { auto_deploy: boolean; auto_approve_downloads: boolean };
     nexus: { api_key_configured: boolean };
   };
 
@@ -28,6 +29,7 @@
     title: string;
     status: string;
     message: string;
+    payload?: Record<string, string>;
     created_at: string;
     updated_at: string;
   };
@@ -46,25 +48,131 @@
     size: number;
   };
 
+  type InstalledMod = {
+    id: number;
+    name: string;
+    profile_id: number;
+    catalog: string;
+    source_game_domain: string;
+    source_mod_id: string;
+    source_file_id: string;
+    version: string;
+    enabled: boolean;
+    priority: number;
+    status: string;
+    mod_type?: string;
+    planner_id?: string;
+    metadata?: ModMetadata[];
+  };
+
+  type ModDependency = {
+    unique_id?: string;
+    minimum_version?: string;
+    required: boolean;
+  };
+
+  type ModMetadata = {
+    kind?: string;
+    name?: string;
+    unique_id?: string;
+    version?: string;
+    entry_dll?: string;
+    minimum_api_version?: string;
+    additional_logical_file_names?: string[];
+    manifest_version?: string;
+    content_pack_for?: ModDependency;
+    dependencies?: ModDependency[];
+  };
+
+  type InstallCandidate = {
+    id: number;
+    steam_app_id: string;
+    name: string;
+    catalog: string;
+    source_game_domain: string;
+    source_mod_id: string;
+    source_file_id: string;
+    archive_path: string;
+    status: string;
+    reason: string;
+  };
+
+  type DeployAction = {
+    source_path: string;
+    target_path: string;
+    target_relative: string;
+    strategy: string;
+    operation: string;
+    conflict: boolean;
+    conflict_reason?: string;
+  };
+
+  type DeployPlan = {
+    staging_root: string;
+    target_root: string;
+    strategy: string;
+    actions: DeployAction[];
+    conflicts: DeployAction[];
+  };
+
+  type DeploymentStatus = {
+    deployed: boolean;
+    file_count: number;
+    strategy?: string;
+    sample_files?: string[];
+  };
+
+  type RuntimeRequirement = {
+    id: string;
+    name: string;
+    kind: string;
+    required: boolean;
+    status: "ok" | "missing" | string;
+    message: string;
+    details?: string[];
+    help_url?: string;
+    install_hint?: string;
+  };
+
+  type GameDiagnostics = {
+    runtime_requirements?: RuntimeRequirement[];
+    validation_warnings?: string[];
+  };
+
+  type Confirmation = {
+    title: string;
+    message: string;
+    detail?: string;
+    confirmLabel: string;
+    danger?: boolean;
+    run: () => Promise<void>;
+  };
+
   type Drawer = "games" | "settings" | null;
   type Surface = "requests" | "game" | "settings";
   type GameModule = "plugins" | "requests" | "profiles" | "review" | "paths";
-  type SettingsPage = "overview" | "jobs" | "server" | "nexus";
+  type SettingsPage = "overview" | "jobs" | "install" | "nexus";
 
   let status: Status | null = null;
   let games: Game[] = [];
   let jobs: Job[] = [];
   let selectedGame: Game | null = null;
   let profiles: Profile[] = [];
+  let installedMods: InstalledMod[] = [];
+  let installCandidates: InstallCandidate[] = [];
   let profileName = "";
   let importURL = "";
   let lastImportURL = "";
   let resolvedImport = "";
   let nexusFiles: NexusFile[] = [];
   let downloadLinks: DownloadLink[] = [];
+  let deployPlan: DeployPlan | null = null;
+  let deploymentStatus: DeploymentStatus | null = null;
+  let gameDiagnostics: GameDiagnostics | null = null;
   let loading = true;
   let error = "";
   let drawer: Drawer = null;
+  let confirmation: Confirmation | null = null;
   let surface: Surface = "requests";
   let activeGameModule: GameModule = "plugins";
   let activeSettingsPage: SettingsPage = "overview";
@@ -73,14 +181,32 @@
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
-  $: installRequests = jobs.filter((job) => job.type === "pending-import");
+  $: installRequests = jobs.filter((job) => job.type === "pending-import" && !["completed", "canceled"].includes(job.status));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
+  $: selectedGameActivity = selectedGame
+    ? jobs.filter((job) => {
+        if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["deploy", "purge", "repair", "recover-downloads"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+      })
+    : [];
   $: filteredGames = games.filter((game) => {
     const query = gameQuery.trim().toLowerCase();
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
   });
   $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "requests" ? "Install Requests" : selectedGame?.name ?? "Select a Game";
+  $: deployableActions = getDeployableActions(deployPlan);
+  $: enabledMods = installedMods.filter((mod) => mod.enabled);
+  $: disabledMods = installedMods.filter((mod) => !mod.enabled);
+  $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
+  $: deployReplaces = deployableActions.filter((action) => action.operation === "replace").length;
+  $: deployRemoves = deployableActions.filter((action) => action.operation === "remove").length;
+  $: hasPendingInstallRequests = selectedGameRequests.length > 0;
+  $: hasDeployConflicts = (deployPlan?.conflicts.length ?? 0) > 0;
+  $: stagedReady = installedMods.length > 0 && enabledMods.length > 0;
+  $: previewReady = Boolean(deployPlan && !hasDeployConflicts);
+  $: deployedReady = Boolean(deploymentStatus?.deployed && (deploymentStatus.file_count ?? 0) > 0);
+  $: visibleValidationWarnings = displayValidationWarnings(gameDiagnostics);
 
   async function getJSON<T>(url: string): Promise<T> {
     const response = await fetch(url);
@@ -101,7 +227,7 @@
       jobs = nextJobs;
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
-      if (selectedGame) await loadProfiles(selectedGame);
+      if (selectedGame) await loadGameState(selectedGame);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -117,7 +243,12 @@
     resolvedImport = "";
     nexusFiles = [];
     downloadLinks = [];
-    await loadProfiles(game);
+    deployPlan = null;
+    deploymentStatus = null;
+    gameDiagnostics = null;
+    installCandidates = [];
+    await loadGameState(game);
+    await previewDeploy();
   }
 
   function openSettings(page: SettingsPage) {
@@ -133,6 +264,31 @@
 
   async function loadProfiles(game: Game) {
     profiles = await getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`);
+  }
+
+  async function loadInstalledMods(game: Game) {
+    installedMods = await getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`);
+  }
+
+  async function loadGameState(game: Game) {
+    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics] = await Promise.all([
+      getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
+      getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
+      getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
+      getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
+      getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`)
+    ]);
+    profiles = nextProfiles;
+    installedMods = nextMods;
+    installCandidates = nextCandidates;
+    deploymentStatus = nextDeploymentStatus;
+    gameDiagnostics = nextDiagnostics;
+  }
+
+  async function refreshSelectedGame(options: { refreshPreview?: boolean } = {}) {
+    if (!selectedGame) return;
+    await loadGameState(selectedGame);
+    if (options.refreshPreview) await previewDeploy();
   }
 
   async function createProfile() {
@@ -160,6 +316,67 @@
       return;
     }
     await loadProfiles(selectedGame);
+    await loadInstalledMods(selectedGame);
+    await previewDeploy();
+  }
+
+  async function setModEnabled(mod: InstalledMod, enabled: boolean) {
+    if (!selectedProfile) return;
+    error = "";
+    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const updated = await response.json();
+    installedMods = installedMods.map((item) => (item.id === updated.id ? updated : item));
+    await previewDeploy();
+  }
+
+  async function setModPriority(mod: InstalledMod, priority: number) {
+    if (!selectedProfile) return;
+    error = "";
+    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priority })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const updated = await response.json();
+    installedMods = installedMods
+      .map((item) => (item.id === updated.id ? updated : item))
+      .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    await previewDeploy();
+  }
+
+  async function removeInstalledMod(mod: InstalledMod) {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    installedMods = installedMods.filter((item) => item.id !== mod.id);
+    await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  function askRemoveInstalledMod(mod: InstalledMod) {
+    confirmation = {
+      title: "Remove profile mod",
+      message: `Remove ${mod.name} from this profile. The cached download is kept so it can be recovered later.`,
+      detail: `${mod.source_game_domain}/mods/${mod.source_mod_id}/files/${mod.source_file_id}`,
+      confirmLabel: "Remove Mod",
+      danger: true,
+      run: () => removeInstalledMod(mod)
+    };
   }
 
   async function resolveImport() {
@@ -200,7 +417,201 @@
       error = await response.text();
       return;
     }
-    jobs = jobs.filter((job) => job.type !== "pending-import");
+    jobs = jobs.filter((job) => job.type !== "pending-import" || ["completed", "canceled"].includes(job.status));
+    await refresh();
+  }
+
+  async function clearBlockedInstallCandidates() {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates`, { method: "DELETE" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+  }
+
+  async function cancelJob(job: Job) {
+    if (!canCancelJob(job)) return;
+    error = "";
+    const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+  }
+
+  async function approveInstallRequest(request: Job) {
+    if (request.status !== "waiting") return;
+    error = "";
+    const response = await fetch(`/api/imports/pending/${request.id}/approve`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function retryInstallRequest(request: Job) {
+    if (request.status !== "failed") return;
+    error = "";
+    const response = await fetch(`/api/imports/pending/${request.id}/retry`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function previewDeploy() {
+    if (!selectedGame) return;
+    error = "";
+    deployPlan = null;
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    deployPlan = await response.json();
+  }
+
+  async function ensureDeployPlan() {
+    if (deployPlan) return deployPlan;
+    if (!selectedGame) return null;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
+    if (!response.ok) {
+      error = await response.text();
+      return null;
+    }
+    deployPlan = await response.json();
+    return deployPlan;
+  }
+
+  async function deployStagedMods() {
+    if (!selectedGame || !deployPlan || deployPlan.conflicts.length > 0 || deployableActions.length === 0) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    deployPlan = result.plan;
+    await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function askDeployStagedMods() {
+    if (!selectedGame) return;
+    const plan = await ensureDeployPlan();
+    if (!plan) return;
+    const actions = getDeployableActions(plan);
+    if (plan.conflicts.length > 0 || actions.length === 0) return;
+    const adds = actions.filter((action) => action.operation === "add").length;
+    const replaces = actions.filter((action) => action.operation === "replace").length;
+    const removes = actions.filter((action) => action.operation === "remove").length;
+    confirmation = {
+      title: "Apply profile changes",
+      message: `DMM will update ${selectedGame.name}'s game folder to match the selected profile.`,
+      detail: `${adds} add, ${replaces} replace, ${removes} remove. Advanced file details remain available before or after applying.`,
+      confirmLabel: "Apply Changes",
+      run: deployStagedMods
+    };
+  }
+
+  async function purgeDeployment() {
+    if (!selectedGame || !deploymentStatus?.deployed) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "DELETE" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    deployPlan = null;
+    await refreshSelectedGame();
+  }
+
+  function askPurgeDeployment() {
+    if (!selectedGame || !deploymentStatus?.deployed) return;
+    confirmation = {
+      title: "Purge deployed files",
+      message: `DMM will remove the active deployment manifest from ${selectedGame.name}'s game folder.`,
+      detail: `${deploymentStatus.file_count} DMM-owned file${deploymentStatus.file_count === 1 ? "" : "s"} will be removed. Unmanaged files and parent game directories are left alone.`,
+      confirmLabel: "Purge Deployment",
+      danger: true,
+      run: purgeDeployment
+    };
+  }
+
+  async function repairDeployment() {
+    if (!selectedGame || !deploymentStatus?.deployed) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/repair`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    if (deployPlan) await previewDeploy();
+  }
+
+  async function recoverDownloads() {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/recover-downloads`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    await refreshSelectedGame();
+    deployPlan = null;
+  }
+
+  async function setAutoDeploy(autoDeploy: boolean) {
+    error = "";
+    const response = await fetch("/api/settings/install", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auto_deploy: autoDeploy,
+        auto_approve_downloads: status?.install.auto_approve_downloads ?? false
+      })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    status = await response.json();
+  }
+
+  async function setAutoApproveDownloads(autoApproveDownloads: boolean) {
+    error = "";
+    const response = await fetch("/api/settings/install", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auto_deploy: status?.install.auto_deploy ?? false,
+        auto_approve_downloads: autoApproveDownloads
+      })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    status = await response.json();
   }
 
   function upsertJob(job: Job) {
@@ -209,6 +620,17 @@
       return;
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
+    if (job.type === "pending-import" && ["completed", "failed"].includes(job.status) && selectedGame) {
+      refreshSelectedGame({ refreshPreview: job.status === "completed" || deployPlan !== null });
+    }
+  }
+
+  function canCancelJob(job: Job) {
+    return !["completed", "failed", "canceled"].includes(job.status);
+  }
+
+  function getDeployableActions(plan: DeployPlan | null) {
+    return plan?.actions.filter((action) => action.operation !== "keep" && action.operation !== "skip") ?? [];
   }
 
   function stateLabel(state: string) {
@@ -221,12 +643,13 @@
 
   function settingsTitle(page: SettingsPage) {
     if (page === "jobs") return "Jobs";
-    if (page === "server") return "Server";
+    if (page === "install") return "Install";
     if (page === "nexus") return "Nexus";
     return "Settings";
   }
 
   function requestMatchesGame(job: Job, game: Game) {
+    if (jobMatchesGame(job, game)) return true;
     const haystack = `${job.title} ${job.message}`.toLowerCase().replace(/[^a-z0-9]/g, "");
     const gameName = game.name.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (gameName && haystack.includes(gameName)) return true;
@@ -238,6 +661,94 @@
       "287700": ["metalgearsolidvtpp", "mgsv"]
     };
     return (aliases[game.app_id] ?? []).some((alias) => haystack.includes(alias));
+  }
+
+  function jobMatchesGame(job: Job, game: Game) {
+    if (job.payload?.app_id && job.payload.app_id === game.app_id) return true;
+    const domain = job.payload?.game_domain?.toLowerCase();
+    if (!domain) return false;
+    return nexusDomainsForGame(game.app_id).includes(domain);
+  }
+
+  function nexusDomainsForGame(appID: string) {
+    const domains: Record<string, string[]> = {
+      "413150": ["stardewvalley"],
+      "489830": ["skyrimspecialedition"],
+      "292030": ["witcher3"],
+      "377160": ["fallout4"],
+      "287700": ["metalgearsolidvtpp"]
+    };
+    return domains[appID] ?? [];
+  }
+
+  function modStatusText(mod: InstalledMod) {
+    if (mod.status === "needs_recovery") return "Needs recovery before it can be applied";
+    return mod.status;
+  }
+
+  function primaryModMetadata(mod: InstalledMod) {
+    return mod.metadata?.find((metadata) => metadata.unique_id || metadata.name) ?? null;
+  }
+
+  function modDependencyLabels(mod: InstalledMod) {
+    const labels: string[] = [];
+    for (const metadata of mod.metadata ?? []) {
+      if (metadata.content_pack_for?.unique_id) {
+        labels.push(`Requires ${metadata.content_pack_for.unique_id}${metadata.content_pack_for.minimum_version ? ` ${metadata.content_pack_for.minimum_version}+` : ""}`);
+      }
+      for (const dependency of metadata.dependencies ?? []) {
+        if (!dependency.required || !dependency.unique_id) continue;
+        labels.push(`Requires ${dependency.unique_id}${dependency.minimum_version ? ` ${dependency.minimum_version}+` : ""}`);
+      }
+    }
+    return Array.from(new Set(labels));
+  }
+
+  function requestNextStep(request: Job) {
+    if (request.status === "waiting") {
+      return "Approve to download and add this mod to the selected profile.";
+    }
+    if (request.status === "running" || request.status === "queued") {
+      return "DMM is downloading and preparing this mod. It will appear in the profile when ready.";
+    }
+    if (request.status === "failed") {
+      return "The mod was not added. Retry the request if the download link is still valid, or clear it after saving anything useful.";
+    }
+    return "This request is retained in job history for diagnostics.";
+  }
+
+  function requestStatusLabel(request: Job) {
+    if (request.status === "waiting") return "Needs approval";
+    if (request.status === "running") return "Processing";
+    if (request.status === "queued") return "Queued";
+    if (request.status === "failed") return "Failed";
+    return request.status;
+  }
+
+  function displayValidationWarnings(diagnostics: GameDiagnostics | null) {
+    const warnings = diagnostics?.validation_warnings ?? [];
+    const requirements = diagnostics?.runtime_requirements ?? [];
+    if (warnings.length === 0 || requirements.length === 0) return warnings;
+    return warnings.filter((warning) => {
+      const normalized = warning.toLowerCase();
+      return !requirements.some((requirement) => {
+        const name = requirement.name.toLowerCase();
+        const kind = requirement.kind.toLowerCase();
+        const readableKind = kind.replace(/-/g, " ");
+        return name !== "" && (
+          normalized.includes(`${name} runtime requirement`) ||
+          (kind !== "" && normalized.includes(`${name} ${kind} requirement`)) ||
+          (readableKind !== "" && normalized.includes(`${name} ${readableKind} requirement`))
+        );
+      });
+    });
+  }
+
+  async function confirmCurrentAction() {
+    if (!confirmation) return;
+    const action = confirmation;
+    confirmation = null;
+    await action.run();
   }
 
   onMount(() => {
@@ -299,7 +810,7 @@
           <button type="button" class:active={activeSettingsPage === "overview"} on:click={() => openSettings("overview")}>Overview</button>
           <button type="button" on:click={openRequests}>Install Requests</button>
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
-          <button type="button" class:active={activeSettingsPage === "server"} on:click={() => openSettings("server")}>Server</button>
+          <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
         </nav>
       {/if}
@@ -329,9 +840,12 @@
           <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Requests</button>
         {/if}
         {#if installRequests.length === 0}
-          <div class="empty-state inline-empty">
-            <h2>No Install Requests</h2>
-            <p class="hint">Add a Nexus URL from the Decky plugin or paste one from a selected game's Plugins tab.</p>
+          <div class="request-home">
+            <div class="empty-state inline-empty">
+              <h2>No Install Requests</h2>
+              <p class="hint">Open a game to paste a Nexus URL, or capture an nxm:// link from the Decky plugin browser flow.</p>
+            </div>
+            <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
           </div>
         {:else}
           <div class="request-list">
@@ -340,9 +854,21 @@
                 <div>
                   <strong>{request.title}</strong>
                   {#if request.message}<p>{request.message}</p>{/if}
+                  <p class="request-next-step">{requestNextStep(request)}</p>
                   <small>{new Date(request.updated_at).toLocaleString()}</small>
                 </div>
-                <span>{request.status}</span>
+                <div class="request-actions">
+                  <span>{requestStatusLabel(request)}</span>
+                  {#if request.status === "waiting"}
+                    <button type="button" on:click={() => approveInstallRequest(request)}>Approve Download</button>
+                  {/if}
+                  {#if request.status === "failed"}
+                    <button type="button" on:click={() => retryInstallRequest(request)}>Retry</button>
+                  {/if}
+                  {#if canCancelJob(request)}
+                    <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)}>Cancel</button>
+                  {/if}
+                </div>
               </article>
             {/each}
           </div>
@@ -359,6 +885,8 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
+            <div><dt>Download approval</dt><dd>{status?.install.auto_approve_downloads ? "Automatic" : "Required"}</dd></div>
+            <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -374,19 +902,34 @@
                     <strong>{job.title}</strong>
                     {#if job.message}<p>{job.message}</p>{/if}
                   </div>
-                  <span>{job.status}</span>
-                </article>
+				  <div class="job-actions">
+					<span>{job.status}</span>
+					{#if canCancelJob(job)}
+					  <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)}>Cancel</button>
+					{/if}
+				  </div>
+				</article>
               {/each}
             </div>
           {/if}
         </article>
-      {:else if activeSettingsPage === "server"}
+      {:else if activeSettingsPage === "install"}
         <article class="workspace-panel">
-          <h2>Server</h2>
+          <h2>Install</h2>
           <dl class="settings-list">
-            <div><dt>Status</dt><dd>Managed from the Decky plugin</dd></div>
-            <div><dt>LAN</dt><dd>LAN-only access is configured from the Decky plugin</dd></div>
+            <div><dt>Download approval</dt><dd>{status?.install.auto_approve_downloads ? "Automatic" : "Required"}</dd></div>
+            <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
           </dl>
+          <label class="toggle-row">
+            <span>Approve downloads automatically</span>
+            <input type="checkbox" checked={status?.install.auto_approve_downloads ?? false} on:change={(event) => setAutoApproveDownloads(event.currentTarget.checked)} />
+          </label>
+          <p class="hint">Off by default. When enabled, captured Nexus links begin downloading immediately and still report progress in requests and jobs.</p>
+          <label class="toggle-row">
+            <span>Auto deploy after staging</span>
+            <input type="checkbox" checked={status?.install.auto_deploy ?? false} on:change={(event) => setAutoDeploy(event.currentTarget.checked)} />
+          </label>
+          <p class="hint">Keep this off while testing. Auto deploy will only apply when a deployment preview has no conflicts.</p>
         </article>
       {:else}
         <article class="workspace-panel">
@@ -418,62 +961,244 @@
       {#if activeGameModule === "plugins"}
         <article class="workspace-panel">
           <div class="panel-heading">
-            <h2>Plugins</h2>
-            <span>0 installed</span>
+            <h2>Mod Management</h2>
+            <span>{enabledMods.length} enabled · {disabledMods.length} disabled</span>
           </div>
-          <form class="stacked-form" on:submit|preventDefault={resolveImport}>
-            <textarea bind:value={importURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
-            <button type="submit">Add Mod</button>
-          </form>
-          <p class="hint">Use a Nexus mod page to list files. Use the Mod Manager Download nxm:// link to resolve download mirrors.</p>
-          {#if resolvedImport}
-            <p class="hint">Resolved {resolvedImport}</p>
-          {/if}
-          {#if nexusFiles.length > 0}
-            <div class="file-list">
-              {#each nexusFiles as file}
-                <button type="button" on:click={() => resolveFile(file)}>
-                  <span>
-                    <strong>{file.name || file.file_name}</strong>
-                    <small>{file.file_name} · v{file.version || "unknown"}</small>
-                  </span>
-                  <em>Use</em>
-                </button>
+          {#if selectedGameActivity.length > 0}
+            <section class="activity-strip" aria-label="Game activity">
+              {#each selectedGameActivity.slice(0, 3) as job}
+                <article class:failed-request={job.status === "failed"}>
+                  <strong>{job.title}</strong>
+                  <span>{job.status}</span>
+                  {#if job.message}<small>{job.message}</small>{/if}
+                </article>
               {/each}
-            </div>
+            </section>
           {/if}
-          {#if downloadLinks.length > 0}
-            <div class="link-list">
-              {#each downloadLinks as link}
-                <a href={link.URI}>{link.name || link.short_name || "Download link"}</a>
-              {/each}
+          <section class="management-grid">
+            <div class="management-card profile-card">
+              <div class="card-heading">
+                <h3>Selected Profile</h3>
+                <span>{selectedProfile?.name ?? "Default"}</span>
+              </div>
+              <div class="profile-summary">
+                <div><strong>{enabledMods.length}</strong><span>On</span></div>
+                <div><strong>{disabledMods.length}</strong><span>Off</span></div>
+                <div><strong>{selectedGameRequests.length}</strong><span>Requests</span></div>
+              </div>
+              {#if deployPlan && (deployableActions.length > 0 || deployPlan.conflicts.length > 0)}
+                <div class="profile-change-summary" class:has-conflicts={deployPlan.conflicts.length > 0}>
+                  <div><strong>{deployAdds}</strong><span>Add</span></div>
+                  <div><strong>{deployReplaces}</strong><span>Update</span></div>
+                  <div><strong>{deployRemoves}</strong><span>Remove</span></div>
+                  <div><strong>{deployPlan.conflicts.length}</strong><span>Conflict</span></div>
+                </div>
+              {/if}
+              {#if deploymentStatus?.deployed && deployPlan && deployPlan.conflicts.length === 0 && deployableActions.length === 0}
+                <p class="deploy-message success">
+                  Profile is applied to the game with {deploymentStatus.file_count} managed file{deploymentStatus.file_count === 1 ? "" : "s"}.
+                </p>
+              {:else if deploymentStatus?.deployed && !deployPlan}
+                <p class="deploy-message">A profile is deployed. Refresh status to check for pending profile changes.</p>
+              {:else}
+                <p class="deploy-message">Profile changes have not been applied to the game yet.</p>
+              {/if}
+              {#if deployPlan}
+                {#if deployPlan.conflicts.length > 0}
+                  <p class="deploy-message danger">Conflicts need attention before profile changes can be applied.</p>
+                {:else if deployableActions.length === 0}
+                  <p class="deploy-message">This profile is already applied.</p>
+                {:else}
+                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"}.</p>
+                {/if}
+              {:else}
+                <p class="deploy-message">Enable or disable mods, then apply the selected profile to the game.</p>
+              {/if}
+              <div class="deploy-actions primary-actions profile-actions">
+                {#if deployPlan && deployPlan.conflicts.length === 0 && deployableActions.length === 0}
+                  <button type="button" disabled>This Profile Is Applied</button>
+                {:else}
+                  <button type="button" on:click={askDeployStagedMods} disabled={installedMods.length === 0 || hasDeployConflicts}>Apply Profile Changes</button>
+                {/if}
+                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0}>Check Profile Changes</button>
+              </div>
             </div>
+
+            <div class="management-card import-card">
+              <div class="card-heading">
+                <h3>Add From Nexus</h3>
+                <span>{selectedGameRequests.length} pending</span>
+              </div>
+              <form class="stacked-form" on:submit|preventDefault={resolveImport}>
+                <textarea bind:value={importURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
+                <button type="submit">Add Mod</button>
+              </form>
+              <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Downloads that need unsupported installer logic will be kept as blocked install candidates.</p>
+              {#if resolvedImport}
+                <p class="hint">Resolved {resolvedImport}</p>
+              {/if}
+              {#if nexusFiles.length > 0}
+                <div class="file-list">
+                  {#each nexusFiles as file}
+                    <button type="button" on:click={() => resolveFile(file)}>
+                      <span>
+                        <strong>{file.name || file.file_name}</strong>
+                        <small>{file.file_name} · v{file.version || "unknown"}</small>
+                      </span>
+                      <em>Use</em>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </section>
+
+          {#if installedMods.length === 0}
+            <p class="hint">No profile mods yet. Approve an install request to add a supported Nexus mod to this profile.</p>
+          {:else}
+            <section class="mod-section">
+              <div class="card-heading">
+                <h3>Profile Mods</h3>
+                <span>{selectedProfile?.name ?? "Default"}</span>
+              </div>
+              <div class="mod-list">
+                {#each installedMods as mod}
+                  {@const metadata = primaryModMetadata(mod)}
+                  {@const dependencyLabels = modDependencyLabels(mod)}
+                  <article>
+                    <div>
+                      <strong>{mod.name}</strong>
+                      <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id}</p>
+                      {#if metadata || mod.mod_type}
+                        <div class="mod-meta">
+                          {#if metadata?.unique_id}<span>{metadata.unique_id}</span>{/if}
+                          {#if metadata?.version}<span>v{metadata.version}</span>{/if}
+                          {#if mod.mod_type}<span>{mod.mod_type}</span>{/if}
+                        </div>
+                      {/if}
+                      {#if dependencyLabels.length}
+                        <div class="mod-requirements">
+                          {#each dependencyLabels.slice(0, 3) as dependency}
+                            <span>{dependency}</span>
+                          {/each}
+                          {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
+                        </div>
+                      {/if}
+                      <small>{mod.enabled ? "Enabled in this profile" : "Disabled in this profile"} · Priority {mod.priority} · {modStatusText(mod)}</small>
+                    </div>
+                    <div class="mod-actions">
+                      <span class:warning-status={mod.status === "needs_recovery"}>{modStatusText(mod)}</span>
+                      <label class="mod-toggle">
+                        <input type="checkbox" checked={mod.enabled} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
+                        <em>{mod.enabled ? "On" : "Off"}</em>
+                      </label>
+                    </div>
+                    <details class="mod-advanced">
+                      <summary>Advanced</summary>
+                      <div class="mod-advanced-actions">
+                        <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority - 1)}>Higher Priority</button>
+                        <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority + 1)}>Lower Priority</button>
+                        <button type="button" class="secondary-action compact danger-action" on:click={() => askRemoveInstalledMod(mod)}>Remove</button>
+                      </div>
+                    </details>
+                  </article>
+                {/each}
+              </div>
+            </section>
           {/if}
+
+          <details class="deploy-preview">
+            <summary>
+              <span>Advanced Deployment Tools</span>
+              <small>{deploymentStatus?.deployed ? `${deploymentStatus.file_count} applied` : "Not applied"}</small>
+            </summary>
+            <div class="deployment-summary">
+              <div><strong>{enabledMods.length}</strong><span>Enabled</span></div>
+              <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
+              <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
+            </div>
+            <div class="deploy-actions utility-actions">
+              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0}>Preview Files</button>
+              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
+              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
+              <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
+            </div>
+            {#if deployPlan}
+              <div class="panel-heading">
+                <h3>File Operations</h3>
+                <span>{deployPlan.actions.length} files · {deployPlan.conflicts.length} conflicts</span>
+              </div>
+              <div class="deploy-list">
+                {#each deployPlan.actions.slice(0, 24) as action}
+                  <article class:failed-request={action.conflict}>
+                    <strong>{action.target_relative}</strong>
+                    <small>{action.conflict ? action.conflict_reason : `${action.operation || "add"} · ${action.strategy || "managed"}`}</small>
+                  </article>
+                {/each}
+              </div>
+            {/if}
+          </details>
         </article>
       {:else if activeGameModule === "requests"}
         <article class="workspace-panel">
           <div class="panel-heading">
             <h2>Install Requests</h2>
-            <span>{selectedGameRequests.length} shown</span>
+            <span>{selectedGameRequests.length} pending · {installCandidates.length} blocked</span>
           </div>
           {#if selectedGameRequests.length > 0}
             <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Requests</button>
           {/if}
-          {#if selectedGameRequests.length === 0}
-            <p class="hint">No install requests matched this game.</p>
-          {:else}
+          {#if selectedGameRequests.length === 0 && installCandidates.length === 0}
+            <p class="hint">No install requests or blocked install candidates matched this game.</p>
+          {/if}
+          {#if selectedGameRequests.length > 0}
             <div class="request-list">
               {#each selectedGameRequests as request}
                 <article class:failed-request={request.status === "failed"}>
                   <div>
                     <strong>{request.title}</strong>
                     {#if request.message}<p>{request.message}</p>{/if}
+                    <p class="request-next-step">{requestNextStep(request)}</p>
                     <small>{new Date(request.updated_at).toLocaleString()}</small>
                   </div>
-                  <span>{request.status}</span>
+                  <div class="request-actions">
+                    <span>{requestStatusLabel(request)}</span>
+                    {#if request.status === "waiting"}
+                      <button type="button" on:click={() => approveInstallRequest(request)}>Approve Download</button>
+                    {/if}
+                    {#if request.status === "failed"}
+                      <button type="button" on:click={() => retryInstallRequest(request)}>Retry</button>
+                    {/if}
+                    {#if canCancelJob(request)}
+                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)}>Cancel</button>
+                    {/if}
+                  </div>
                 </article>
               {/each}
             </div>
+          {/if}
+          {#if installCandidates.length > 0}
+            <section class="blocked-candidates" aria-label="Blocked install candidates">
+              <div class="panel-heading compact-heading">
+                <h3>Blocked Install Plans</h3>
+                <span>{installCandidates.length}</span>
+              </div>
+              <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Blocked</button>
+              <div class="request-list">
+                {#each installCandidates as candidate}
+                  <article class="failed-request">
+                    <div>
+                      <strong>{candidate.name}</strong>
+                      <p>{candidate.reason}</p>
+                      <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
+                    </div>
+                    <div class="request-actions">
+                      <span>{candidate.status}</span>
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            </section>
           {/if}
         </article>
       {:else if activeGameModule === "profiles"}
@@ -498,13 +1223,55 @@
       {:else if activeGameModule === "review"}
         <article class="workspace-panel">
           <h2>Review</h2>
+          {#if gameDiagnostics?.runtime_requirements?.length}
+            <section class="requirement-list" aria-label="Runtime requirements">
+              <div class="panel-heading compact-heading">
+                <h3>Runtime Requirements</h3>
+                <span>{gameDiagnostics.runtime_requirements.length}</span>
+              </div>
+              {#each gameDiagnostics.runtime_requirements as requirement}
+                <article class:requirement-missing={requirement.status !== "ok"}>
+                  <div>
+                    <strong>{requirement.name}</strong>
+                    <p>{requirement.message}</p>
+                    {#if requirement.details?.length}
+                      <ul class="requirement-details">
+                        {#each requirement.details as detail}
+                          <li>{detail}</li>
+                        {/each}
+                      </ul>
+                    {/if}
+                    {#if requirement.install_hint}<small>{requirement.install_hint}</small>{/if}
+                    {#if requirement.help_url}<a href={requirement.help_url} target="_blank" rel="noreferrer">Open help</a>{/if}
+                  </div>
+                  <span>{requirement.status}</span>
+                </article>
+              {/each}
+            </section>
+          {/if}
+          {#if visibleValidationWarnings.length}
+            <section class="requirement-list" aria-label="Validation warnings">
+              <div class="panel-heading compact-heading">
+                <h3>Warnings</h3>
+                <span>{visibleValidationWarnings.length}</span>
+              </div>
+              {#each visibleValidationWarnings as warning}
+                <article class="requirement-missing">
+                  <div>
+                    <strong>Needs attention</strong>
+                    <p>{warning}</p>
+                  </div>
+                </article>
+              {/each}
+            </section>
+          {/if}
           {#if selectedGame.markers?.length}
             <div class="markers">
               {#each selectedGame.markers as marker}
                 <span>{marker}</span>
               {/each}
             </div>
-          {:else}
+          {:else if !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
             <p class="hint">No review markers for this game.</p>
           {/if}
         </article>
@@ -526,3 +1293,23 @@
     </section>
   {/if}
 </main>
+
+{#if confirmation}
+  <section class="confirm-layer" aria-label="Confirm action">
+    <button type="button" class="confirm-scrim" aria-label="Cancel confirmation" on:click={() => (confirmation = null)}></button>
+    <article class:danger-confirm={confirmation.danger} class="confirm-dialog">
+      <div>
+        <p class="eyebrow">Confirm</p>
+        <h2>{confirmation.title}</h2>
+      </div>
+      <p>{confirmation.message}</p>
+      {#if confirmation.detail}
+        <p class="confirm-detail">{confirmation.detail}</p>
+      {/if}
+      <div class="confirm-actions">
+        <button type="button" class="secondary-action" on:click={() => (confirmation = null)}>Cancel</button>
+        <button type="button" class:danger-action={confirmation.danger} on:click={confirmCurrentAction}>{confirmation.confirmLabel}</button>
+      </div>
+    </article>
+  </section>
+{/if}

@@ -7,6 +7,26 @@ type RemoteModCatalog interface {
 	ResolveURL(ctx context.Context, rawURL string) (ResolvedDownload, error)
 }
 
+type ModFile struct {
+	FileID     int64  `json:"file_id"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	CategoryID int64  `json:"category_id"`
+	FileName   string `json:"file_name"`
+	Size       int64  `json:"size"`
+	UploadedAt int64  `json:"uploaded_timestamp"`
+}
+
+type FilesResponse struct {
+	Files []ModFile `json:"files"`
+}
+
+type DownloadLink struct {
+	Name      string `json:"name"`
+	ShortName string `json:"short_name"`
+	URI       string `json:"URI"`
+}
+
 type ResolvedDownload struct {
 	Catalog    string `json:"catalog"`
 	SourceURL  string `json:"source_url"`

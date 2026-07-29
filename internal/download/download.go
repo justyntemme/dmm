@@ -2,9 +2,12 @@ package download
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +20,7 @@ type Result struct {
 	Path         string `json:"path"`
 	BytesWritten int64  `json:"bytes_written"`
 	ContentType  string `json:"content_type,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
 }
 
 type Options struct {
@@ -49,14 +53,6 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, errors.New("destination directory is required")
 	}
 
-	name := safeFileName(opts.FileName)
-	if name == "" {
-		name = safeFileName(filepath.Base(u.Path))
-	}
-	if name == "" || name == "." || name == "/" {
-		name = "download.bin"
-	}
-
 	if err := os.MkdirAll(opts.DestDir, 0o700); err != nil {
 		return Result{}, err
 	}
@@ -76,6 +72,17 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("download failed: %s", resp.Status)
 	}
 
+	name := safeFileName(opts.FileName)
+	if name == "" {
+		name = safeFileName(contentDispositionFileName(resp.Header.Get("Content-Disposition")))
+	}
+	if name == "" {
+		name = safeFileName(filepath.Base(u.Path))
+	}
+	if name == "" || name == "." || name == "/" {
+		name = "download.bin"
+	}
+
 	finalPath := filepath.Join(opts.DestDir, name)
 	tmp, err := os.CreateTemp(opts.DestDir, "."+name+".*.tmp")
 	if err != nil {
@@ -87,7 +94,8 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	}()
 
 	limited := io.LimitReader(resp.Body, opts.MaxBytes+1)
-	written, err := io.Copy(tmp, limited)
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(tmp, hash), limited)
 	closeErr := tmp.Close()
 	if err != nil {
 		return Result{}, err
@@ -105,6 +113,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		Path:         finalPath,
 		BytesWritten: written,
 		ContentType:  resp.Header.Get("Content-Type"),
+		SHA256:       hex.EncodeToString(hash.Sum(nil)),
 	}, nil
 }
 
@@ -121,4 +130,16 @@ func safeFileName(name string) string {
 		}
 	}, name)
 	return name
+}
+
+func contentDispositionFileName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(value)
+	if err != nil {
+		return ""
+	}
+	return params["filename"]
 }

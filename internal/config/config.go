@@ -15,11 +15,17 @@ type Config struct {
 	DataDir    string `json:"data_dir"`
 	ConfigPath string `json:"-"`
 
-	Nexus NexusConfig `json:"nexus"`
+	Nexus   NexusConfig   `json:"nexus"`
+	Install InstallConfig `json:"install"`
 }
 
 type NexusConfig struct {
 	APIKey string `json:"api_key"`
+}
+
+type InstallConfig struct {
+	AutoDeploy           bool `json:"auto_deploy"`
+	AutoApproveDownloads bool `json:"auto_approve_downloads"`
 }
 
 func Load() (Config, error) {

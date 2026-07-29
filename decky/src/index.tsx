@@ -7,9 +7,9 @@ import {
   definePlugin,
   staticClasses
 } from "@decky/ui";
-import { call } from "@decky/api";
+import { call, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type BackendStatus = {
   running: boolean;
@@ -45,16 +45,52 @@ type NXMStatus = {
   registered: boolean;
 };
 
-type Tab = "server" | "add" | "dependencies" | "nxm";
+type Diagnostics = {
+  logs: Record<string, { path: string; tail: string }>;
+};
+
+type Job = {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  message?: string;
+  payload?: Record<string, string>;
+  updated_at?: string;
+};
+
+type Tab = "main" | "settings" | "debug";
+
+function installToastBody(job: Job): string {
+  if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this download.";
+  if (job.status === "running" || job.status === "queued") return job.message || "DMM is downloading and preparing this mod.";
+  if (job.status === "completed") return job.message || "The mod is ready in its profile.";
+  if (job.status === "failed") return job.message || "Open DMM to review the error.";
+  return job.message || job.title;
+}
+
+function showInstallToast(job: Job) {
+  toaster.toast({
+    title: job.status === "failed" ? "DMM install failed" : "Decky Mod Manager",
+    body: installToastBody(job),
+    subtext: job.title,
+    duration: job.status === "failed" ? 9000 : 6000,
+    critical: job.status === "failed",
+    playSound: true,
+    showToast: true
+  });
+}
 
 function Content() {
-  const [tab, setTab] = useState<Tab>("server");
+  const [tab, setTab] = useState<Tab>("main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [nxm, setNXM] = useState<NXMStatus | null>(null);
   const [importUrl, setImportUrl] = useState<string>("");
   const [importResult, setImportResult] = useState<string>("");
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [error, setError] = useState<string>("");
+  const seenJobStates = useRef<Map<string, string>>(new Map());
 
   async function refresh() {
     try {
@@ -90,34 +126,63 @@ function Content() {
   }
 
   async function openNexus() {
-    const result = await call<[string | null], { ok: boolean; error?: string; url?: string }>("open_nexus", null);
-    if (!result.ok) setError(result.error ?? "Unable to open Nexus.");
-    if (result.url) Navigation.NavigateToExternalWeb(result.url);
+    try {
+      setError("");
+      const result = await call<[string | null], { ok: boolean; error?: string; url?: string }>("open_nexus", null);
+      if (!result.ok) setError(result.error ?? "Unable to open Nexus.");
+      if (result.url) Navigation.NavigateToExternalWeb(result.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function registerNXM() {
-    const result = await call<[], { ok: boolean; error?: string; status: NXMStatus }>("register_nxm_handler");
-    setNXM(result.status);
-    if (!result.ok) setError(result.error ?? "Unable to register NXM handler.");
+    try {
+      setError("");
+      const result = await call<[], { ok: boolean; error?: string; status: NXMStatus }>("register_nxm_handler");
+      setNXM(result.status);
+      if (!result.ok) setError(result.error ?? "Unable to register NXM handler.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function testNXM() {
-    const result = await call<[], { ok: boolean; error?: string }>("test_nxm_handler");
-    if (!result.ok) setError(result.error ?? "Unable to run NXM handler.");
-    await refresh();
+    try {
+      setError("");
+      const result = await call<[], { ok: boolean; error?: string }>("test_nxm_handler");
+      if (!result.ok) setError(result.error ?? "Unable to run NXM handler.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function testNXMDispatch() {
-    const result = await call<[], { ok: boolean; error?: string }>("test_nxm_dispatch");
-    if (!result.ok) setError(result.error ?? "Unable to dispatch test NXM link.");
-    await refresh();
+    try {
+      setError("");
+      const result = await call<[], { ok: boolean; error?: string }>("test_nxm_dispatch");
+      if (!result.ok) setError(result.error ?? "Unable to dispatch test NXM link.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function loadDiagnostics() {
+    try {
+      setError("");
+      setDiagnostics(await call<[], Diagnostics>("diagnostics"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function addPendingImport() {
     try {
       setError("");
       setImportResult("");
-      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: { title?: string; status?: string; message?: string } } }>("add_pending_import", importUrl);
+      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_pending_import", importUrl);
       if (!result.ok) {
         setError(result.error ?? "Unable to add install request.");
         return;
@@ -125,40 +190,62 @@ function Content() {
       setImportUrl("");
       const job = result.result?.job;
       setImportResult(job?.message || job?.title || "Install request added.");
+      if (job) {
+        seenJobStates.current.set(job.id, job.status);
+        showInstallToast(job as Job);
+      }
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
+  async function pollInstallJobs({ seed = false } = {}) {
+    try {
+      const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
+      if (!result.ok) return;
+      for (const job of result.jobs) {
+        if (job.type !== "pending-import") continue;
+        const stateKey = `${job.status}:${job.message || ""}`;
+        const previous = seenJobStates.current.get(job.id);
+        seenJobStates.current.set(job.id, stateKey);
+        if (!seed && previous !== stateKey && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+          showInstallToast(job);
+        }
+      }
+    } catch (_err) {
+      // Status polling is best-effort; the Debug view exposes detailed backend errors.
+    }
+  }
+
   useEffect(() => {
     refresh();
+    pollInstallJobs({ seed: true });
+    const interval = window.setInterval(() => {
+      pollInstallJobs();
+    }, 4000);
+    return () => window.clearInterval(interval);
   }, []);
 
   return (
     <PanelSection title="Decky Mod Manager">
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("server")}>
-          Server
+        <ButtonItem layout="below" onClick={() => setTab("main")}>
+          Manage
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("add")}>
-          Add Plugin
+        <ButtonItem layout="below" onClick={() => setTab("settings")}>
+          Settings
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("dependencies")}>
-          Dependencies
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setTab("nxm")}>
-          NXM Handler
+        <ButtonItem layout="below" onClick={() => setTab("debug")}>
+          Debug
         </ButtonItem>
       </PanelSectionRow>
 
-      {tab === "server" && (
+      {tab === "main" && (
         <>
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={toggleServer}>
@@ -184,27 +271,10 @@ function Content() {
               <div>URL: {status?.url ?? "Unavailable"}</div>
               {status?.backend && <div>Games: {status.backend.game_count}</div>}
               {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
-              {status?.backend && <div>LAN only: {status.backend.lan_only ? "Enabled" : "Disabled"}</div>}
-              {status?.logs && <div style={{ color: "#a1a1aa", marginTop: "8px", overflowWrap: "anywhere" }}>Logs: {status.logs.plugin}</div>}
-              {error && <div style={{ color: "#f87171", marginTop: "8px" }}>{error}</div>}
-              {status?.error && <div style={{ color: "#f87171", marginTop: "8px" }}>{status.error}</div>}
+              {error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{error}</div>}
+              {status?.error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{status.error}</div>}
             </div>
           </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setLanOnly(true)}>
-              Enable LAN Only
-            </ButtonItem>
-          </PanelSectionRow>
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setLanOnly(false)}>
-              Allow Trusted Tunnel
-            </ButtonItem>
-          </PanelSectionRow>
-        </>
-      )}
-
-      {tab === "add" && (
-        <>
           <PanelSectionRow>
             <div style={{ display: "grid", gap: "10px", width: "100%" }}>
               <TextField
@@ -221,35 +291,58 @@ function Content() {
                 Adds the URL to Install Requests for phone or tablet approval.
               </div>
               {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
-              {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
             </div>
           </PanelSectionRow>
         </>
       )}
 
-      {tab === "dependencies" && (
-        <PanelSectionRow>
-          <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
-            {dependencies.map((dep) => (
-              <div key={dep.command} style={{ marginBottom: "10px", borderBottom: "1px solid #303741", paddingBottom: "8px" }}>
-                <div style={{ color: dep.installed ? "#72e0a2" : "#f87171", fontWeight: 800 }}>
-                  {dep.name}: {dep.installed ? "Installed" : "Missing"}
+      {tab === "settings" && (
+        <>
+          <PanelSectionRow>
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
+              <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
+              <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
+            </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => setLanOnly(true)}>
+              Enable LAN Only
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => setLanOnly(false)}>
+              Allow Trusted Tunnel
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <div style={{ maxHeight: "320px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+              <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
+              {dependencies.map((dep) => (
+                <div key={dep.command} style={{ marginBottom: "10px", borderBottom: "1px solid #303741", paddingBottom: "8px" }}>
+                  <div style={{ color: dep.installed ? "#72e0a2" : "#f87171", fontWeight: 800 }}>
+                    {dep.name}: {dep.installed ? "Installed" : "Missing"}
+                  </div>
+                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere", lineHeight: 1.25 }}>
+                    {dep.path ?? dep.command}
+                  </div>
                 </div>
-                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere", lineHeight: 1.25 }}>
-                  {dep.path ?? dep.command}
-                </div>
-              </div>
-            ))}
-            {error && <div style={{ color: "#f87171", marginTop: "8px" }}>{error}</div>}
-          </div>
-        </PanelSectionRow>
+              ))}
+            </div>
+          </PanelSectionRow>
+        </>
       )}
 
-      {tab === "nxm" && (
+      {tab === "debug" && (
         <>
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={registerNXM}>
               Register NXM Handler
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={loadDiagnostics}>
+              Load Diagnostics
             </ButtonItem>
           </PanelSectionRow>
           <PanelSectionRow>
@@ -269,7 +362,23 @@ function Content() {
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Protocol: {nxm?.protocol_handler || "None"}</div>
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>xdg-mime: {nxm?.xdg_handler || "Unknown"}</div>
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>File: {nxm?.desktop_path || "Unknown"}</div>
-              {error && <div style={{ color: "#f87171", marginTop: "8px" }}>{error}</div>}
+              {status?.logs && (
+                <>
+                  <div style={{ color: "#a1a1aa", marginTop: "8px", overflowWrap: "anywhere" }}>Plugin log: {status.logs.plugin}</div>
+                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Backend log: {status.logs.backend}</div>
+                </>
+              )}
+              {diagnostics && (
+                <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "420px", overflowY: "auto", width: "100%" }}>
+                  {Object.entries(diagnostics.logs).map(([name, log]) => (
+                    <div key={name} style={{ borderTop: "1px solid #303741", paddingTop: "8px" }}>
+                      <div style={{ fontWeight: 800 }}>{name}</div>
+                      <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{log.path}</div>
+                      <pre style={{ color: "#d4d4d8", fontSize: "10px", maxWidth: "100%", overflowX: "auto", whiteSpace: "pre-wrap" }}>{log.tail || "No log entries."}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </PanelSectionRow>
         </>

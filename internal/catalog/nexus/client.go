@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 )
 
 const defaultBaseURL = "https://api.nexusmods.com/v1"
@@ -55,25 +57,9 @@ type ValidateResponse struct {
 	IsSupporter bool   `json:"is_supporter"`
 }
 
-type ModFile struct {
-	FileID     int64  `json:"file_id"`
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	CategoryID int64  `json:"category_id"`
-	FileName   string `json:"file_name"`
-	Size       int64  `json:"size"`
-	UploadedAt int64  `json:"uploaded_timestamp"`
-}
-
-type FilesResponse struct {
-	Files []ModFile `json:"files"`
-}
-
-type DownloadLink struct {
-	Name      string `json:"name"`
-	ShortName string `json:"short_name"`
-	URI       string `json:"URI"`
-}
+type ModFile = catalog.ModFile
+type FilesResponse = catalog.FilesResponse
+type DownloadLink = catalog.DownloadLink
 
 type apiErrorResponse struct {
 	Code    int    `json:"code"`

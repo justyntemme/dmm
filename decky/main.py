@@ -3,6 +3,7 @@ import configparser
 import datetime
 import json
 import os
+import re
 import signal
 import shutil
 import socket
@@ -19,6 +20,7 @@ class Plugin:
     backend_log = log_dir / "backend.log"
     desktop_id = "decky-mod-manager-nxm.desktop"
     nxm_schemes = ["x-scheme-handler/nxm", "x-scheme-handler/nxm-protocol"]
+    sensitive_query_pattern = re.compile(r"(?i)(key|expires|md5)=([^&\"'\s]+)")
 
     async def _main(self):
         self._log("plugin loaded")
@@ -149,11 +151,13 @@ class Plugin:
             self._log(f"registered nxm handler status={status}")
             return {"ok": status["registered"], "status": status, "error": None if status["registered"] else "NXM handler was written but did not become the active handler."}
         except subprocess.CalledProcessError as exc:
-            self._log(f"register nxm handler failed: {exc.stderr}")
-            return {"ok": False, "error": exc.stderr or str(exc), "status": self._nxm_status()}
+            error = self._redact_url(exc.stderr or str(exc))
+            self._log(f"register nxm handler failed: {error}")
+            return {"ok": False, "error": error, "status": self._nxm_status()}
         except Exception as exc:
-            self._log(f"register nxm handler failed: {exc}")
-            return {"ok": False, "error": str(exc), "status": self._nxm_status()}
+            error = self._redact_url(str(exc))
+            self._log(f"register nxm handler failed: {error}")
+            return {"ok": False, "error": error, "status": self._nxm_status()}
 
     async def test_nxm_handler(self):
         test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
@@ -168,8 +172,9 @@ class Plugin:
             self._run_command([str(handler), test_url], check=True)
             return {"ok": True, "url": test_url}
         except Exception as exc:
-            self._log(f"test nxm handler failed: {exc}")
-            return {"ok": False, "error": str(exc), "url": test_url}
+            error = self._redact_url(str(exc))
+            self._log(f"test nxm handler failed: {error}")
+            return {"ok": False, "error": error, "url": test_url}
 
     async def test_nxm_dispatch(self):
         test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
@@ -178,10 +183,12 @@ class Plugin:
             if not self._backend_responds():
                 return {"ok": False, "error": "Server must be running before testing NXM dispatch.", "url": test_url}
             result = self._run_command(["xdg-open", test_url], check=False)
-            return {"ok": result.returncode == 0, "error": result.stderr.strip() or None, "url": test_url}
+            error = self._redact_url(result.stderr.strip()) if result.stderr.strip() else None
+            return {"ok": result.returncode == 0, "error": error, "url": test_url}
         except Exception as exc:
-            self._log(f"test nxm dispatch failed: {exc}")
-            return {"ok": False, "error": str(exc), "url": test_url}
+            error = self._redact_url(str(exc))
+            self._log(f"test nxm dispatch failed: {error}")
+            return {"ok": False, "error": error, "url": test_url}
 
     async def add_pending_import(self, url):
         url = str(url or "").strip()
@@ -191,12 +198,22 @@ class Plugin:
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
         payload = json.dumps({"url": url, "source": "decky-plugin"}).encode("utf-8")
-        result = self._backend_json("POST", "/api/imports/pending", payload)
+        result, error = self._backend_json_result("POST", "/api/imports/pending", payload)
         if result is None:
-            return {"ok": False, "error": "Unable to add install request."}
+            return {"ok": False, "error": error or "Unable to add install request."}
         job = result.get("job") if isinstance(result, dict) else None
         self._log(f"add pending import accepted job={job}")
         return {"ok": True, "result": result}
+
+    async def jobs(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "jobs": []}
+        result, error = self._backend_json_result("GET", "/api/jobs")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load jobs.", "jobs": []}
+        if isinstance(result, list):
+            return {"ok": True, "jobs": result}
+        return {"ok": False, "error": "Unexpected jobs response.", "jobs": []}
 
     async def dependencies(self):
         return [
@@ -213,15 +230,43 @@ class Plugin:
                 "error": "Server is not running.",
             }
         payload = json.dumps({"lan_only": bool(lan_only)}).encode("utf-8")
-        result = self._backend_json("PUT", "/api/settings/security", payload)
+        result, error = self._backend_json_result("PUT", "/api/settings/security", payload)
         if result is None:
             return {
                 "ok": False,
-                "error": "Unable to update server settings.",
+                "error": error or "Unable to update server settings.",
             }
         return {
             "ok": True,
             "status": result,
+        }
+
+    async def diagnostics(self):
+        self._log("diagnostics requested")
+        nxm_log = self.log_dir / "nxm-handler.log"
+        steam_js = Path.home() / ".local" / "share" / "Steam" / "logs" / "webhelper_js.txt"
+        return {
+            "status": await self.status(),
+            "nxm": self._nxm_status(),
+            "dependencies": await self.dependencies(),
+            "logs": {
+                "plugin": {
+                    "path": str(self.plugin_log),
+                    "tail": self._tail_file(self.plugin_log),
+                },
+                "backend": {
+                    "path": str(self.backend_log),
+                    "tail": self._tail_file(self.backend_log),
+                },
+                "nxm": {
+                    "path": str(nxm_log),
+                    "tail": self._tail_file(nxm_log),
+                },
+                "steam_js": {
+                    "path": str(steam_js),
+                    "tail": self._tail_file(steam_js),
+                },
+            },
         }
 
     def _lan_ip(self):
@@ -249,6 +294,10 @@ class Plugin:
             return False
 
     def _backend_json(self, method, path, body=None):
+        result, _ = self._backend_json_result(method, path, body)
+        return result
+
+    def _backend_json_result(self, method, path, body=None):
         try:
             request = urllib.request.Request(
                 f"http://127.0.0.1:17942{path}",
@@ -260,14 +309,16 @@ class Plugin:
                 },
             )
             with urllib.request.urlopen(request, timeout=2) as response:
-                return json.loads(response.read().decode("utf-8"))
+                return json.loads(response.read().decode("utf-8")), None
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace").strip()
+            detail = self._redact_url(detail)
             self._log(f"backend json request failed: {method} {path}: HTTP {exc.code}: {detail[:500]}")
-            return None
+            return None, f"Backend HTTP {exc.code}: {detail}" if detail else f"Backend HTTP {exc.code}"
         except Exception as exc:
-            self._log(f"backend json request failed: {method} {path}: {exc}")
-            return None
+            error = self._redact_url(str(exc))
+            self._log(f"backend json request failed: {method} {path}: {error}")
+            return None, error
 
     def _dependency(self, name, command, description):
         path = shutil.which(command)
@@ -347,8 +398,8 @@ class Plugin:
             text=True,
             env=self._clean_env(),
         )
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
+        stdout = self._redact_url(result.stdout.strip())
+        stderr = self._redact_url(result.stderr.strip())
         self._log(f"command result rc={result.returncode} stdout={stdout[:500]} stderr={stderr[:500]}")
         return result
 
@@ -378,9 +429,24 @@ class Plugin:
         return out
 
     def _redact_url(self, text):
-        if "key=" in text or "expires=" in text:
-            return "[redacted-url]"
-        return text
+        return self.sensitive_query_pattern.sub(r"\1=[redacted]", str(text))
+
+    def _tail_file(self, path, max_lines=40, max_bytes=24000):
+        try:
+            path = Path(path)
+            if not path.exists():
+                return ""
+            size = path.stat().st_size
+            with path.open("rb") as handle:
+                if size > max_bytes:
+                    handle.seek(size - max_bytes)
+                    handle.readline()
+                data = handle.read(max_bytes)
+            text = data.decode("utf-8", errors="replace")
+            lines = text.splitlines()[-max_lines:]
+            return "\n".join(self._redact_url(line) for line in lines)
+        except Exception as exc:
+            return f"Unable to read {path}: {exc}"
 
     def _log(self, message):
         try:

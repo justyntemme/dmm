@@ -1,8 +1,15 @@
 package server
 
 import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -11,11 +18,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/deps"
+	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
@@ -25,12 +38,35 @@ import (
 var embeddedStatic embed.FS
 
 type Server struct {
-	cfgMu  sync.RWMutex
-	cfg    config.Config
-	logger *slog.Logger
-	jobs   *jobs.Manager
-	db     *storage.DB
+	cfgMu    sync.RWMutex
+	cfg      config.Config
+	logger   *slog.Logger
+	jobs     *jobs.Manager
+	db       *storage.DB
+	nexus    nexusClientFactory
+	catalogs []catalog.RemoteModCatalog
+
+	pendingMu      sync.Mutex
+	pendingImports map[string]pendingImport
+
+	activeMu      sync.Mutex
+	activeCancels map[string]context.CancelFunc
 }
+
+type pendingImport struct {
+	Resolved      catalog.ResolvedDownload
+	DownloadLinks []nexus.DownloadLink
+	Source        string
+}
+
+type nexusClient interface {
+	Files(ctx context.Context, gameDomain, modID string) (nexus.FilesResponse, error)
+	DownloadLinks(ctx context.Context, gameDomain, modID, fileID, nxmKey, expires string) ([]nexus.DownloadLink, error)
+}
+
+type nexusClientFactory func(apiKey string) nexusClient
+
+var errLegacyStagedMod = errors.New("staged mod lacks install-plan target mappings")
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err := config.EnsureDataDirs(cfg.DataDir); err != nil {
@@ -40,12 +76,86 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	storedJobs, err := db.ListJobs(context.Background())
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	storedPending, err := db.ListPendingImports(context.Background())
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	storedJobs = normalizeRestoredJobs(storedJobs, storedPending)
+	for _, job := range storedJobs {
+		if err := db.UpsertJob(context.Background(), job); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
+	srv := &Server{
 		cfg:    cfg,
 		logger: logger,
-		jobs:   jobs.NewManager(),
 		db:     db,
-	}, nil
+		nexus: func(apiKey string) nexusClient {
+			return nexus.NewClient(apiKey)
+		},
+		catalogs: []catalog.RemoteModCatalog{
+			nexus.Resolver{},
+		},
+
+		pendingImports: map[string]pendingImport{},
+		activeCancels:  map[string]context.CancelFunc{},
+	}
+	for _, pending := range storedPending {
+		srv.pendingImports[pending.JobID] = pendingImport{
+			Resolved:      pending.Resolved,
+			DownloadLinks: pending.DownloadLinks,
+			Source:        pending.Source,
+		}
+	}
+	srv.jobs = jobs.NewManagerWithSeed(storedJobs, func(job jobs.Job) {
+		if err := db.UpsertJob(context.Background(), job); err != nil {
+			logger.Warn("persist job failed", "job_id", job.ID, "error", err)
+		}
+	}, func(job jobs.Job) {
+		if err := db.DeletePendingImport(context.Background(), job.ID); err != nil {
+			logger.Warn("delete pending import failed", "job_id", job.ID, "error", err)
+		}
+		if err := db.DeleteJob(context.Background(), job.ID); err != nil {
+			logger.Warn("delete job failed", "job_id", job.ID, "error", err)
+		}
+	})
+	logger.Info("state restored", "jobs", len(storedJobs), "pending_imports", len(storedPending))
+	return srv, nil
+}
+
+func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.PendingImport) []jobs.Job {
+	pendingByID := make(map[string]storage.PendingImport, len(storedPending))
+	for _, pending := range storedPending {
+		pendingByID[pending.JobID] = pending
+	}
+	for i, job := range storedJobs {
+		pending, hasPending := pendingByID[job.ID]
+		if job.Type != "pending-import" || !hasPending {
+			continue
+		}
+		if len(job.Payload) == 0 {
+			job.Payload = pendingImportJobPayload(pending.Resolved)
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusRunning:
+			job.Status = jobs.StatusWaiting
+			if len(pending.DownloadLinks) > 0 {
+				job.Message = "Interrupted; ready for approval again"
+			} else {
+				job.Message = "Interrupted; configure Nexus API key and capture the link again"
+			}
+			job.UpdatedAt = time.Now().UTC()
+		}
+		storedJobs[i] = job
+	}
+	return storedJobs
 }
 
 func (s *Server) Handler() http.Handler {
@@ -55,16 +165,32 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/nexus/validate", s.handleValidateNexus)
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
+	mux.HandleFunc("PUT /api/settings/install", s.handleUpdateInstallSettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
 	mux.HandleFunc("GET /api/games", s.handleGames)
+	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
+	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
+	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
+	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
+	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
+	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
+	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
+	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
+	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
+	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
+	mux.HandleFunc("POST /api/games/{appID}/deploy/repair", s.handleRepairDeploy)
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/jobs/events", s.jobs.ServeEvents)
+	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
 	mux.HandleFunc("POST /api/imports/pending", s.handlePendingImport)
+	mux.HandleFunc("POST /api/imports/pending/{jobID}/approve", s.handleApprovePendingImport)
+	mux.HandleFunc("POST /api/imports/pending/{jobID}/retry", s.handleRetryPendingImport)
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
 	mux.Handle("/", s.staticHandler())
 	return lanOnlyMiddleware(func() bool {
@@ -81,6 +207,272 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type deploymentStatusResponse struct {
+	Deployed    bool     `json:"deployed"`
+	FileCount   int      `json:"file_count"`
+	Strategy    string   `json:"strategy,omitempty"`
+	SampleFiles []string `json:"sample_files,omitempty"`
+}
+
+type deployPreviewSummary struct {
+	Available bool   `json:"available"`
+	Add       int    `json:"add"`
+	Replace   int    `json:"replace"`
+	Remove    int    `json:"remove"`
+	Keep      int    `json:"keep"`
+	Skip      int    `json:"skip"`
+	Conflicts int    `json:"conflicts"`
+	Error     string `json:"error,omitempty"`
+}
+
+type gameDiagnosticsResponse struct {
+	AppID               string                           `json:"app_id"`
+	Game                storage.Game                     `json:"game"`
+	Profiles            []storage.Profile                `json:"profiles"`
+	ProfileCount        int                              `json:"profile_count"`
+	DefaultProfile      string                           `json:"default_profile,omitempty"`
+	StagedMods          int                              `json:"staged_mods"`
+	EnabledMods         int                              `json:"enabled_mods"`
+	NeedsRecovery       int                              `json:"needs_recovery"`
+	BlockedCandidates   int                              `json:"blocked_candidates"`
+	ActiveInstallJobs   int                              `json:"active_install_jobs"`
+	ActiveDeployJobs    int                              `json:"active_deploy_jobs"`
+	Deployment          deploymentStatusResponse         `json:"deployment"`
+	Preview             deployPreviewSummary             `json:"preview"`
+	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
+	ValidationWarnings  []string                         `json:"validation_warnings,omitempty"`
+}
+
+func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if strings.TrimSpace(appID) == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	status, err := s.deploymentStatus(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) deploymentStatus(ctx context.Context, appID string) (deploymentStatusResponse, error) {
+	files, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		return deploymentStatusResponse{}, err
+	}
+	status := deploymentStatusResponse{
+		Deployed:  len(files) > 0,
+		FileCount: len(files),
+	}
+	for _, file := range files {
+		if status.Strategy == "" && file.Strategy != "" {
+			status.Strategy = string(file.Strategy)
+		}
+		if len(status.SampleFiles) < 3 {
+			status.SampleFiles = append(status.SampleFiles, filepath.ToSlash(file.TargetPath))
+		}
+	}
+	return status, nil
+}
+
+func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	profiles, err := s.db.ProfilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	markLegacyStagedMods(mods)
+	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	deployment, err := s.deploymentStatus(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	resp := gameDiagnosticsResponse{
+		AppID:             appID,
+		Game:              game,
+		Profiles:          profiles,
+		ProfileCount:      len(profiles),
+		StagedMods:        len(mods),
+		BlockedCandidates: len(candidates),
+		Deployment:        deployment,
+		Preview:           deployPreviewSummary{},
+	}
+	for _, profile := range profiles {
+		if profile.IsDefault {
+			resp.DefaultProfile = profile.Name
+			break
+		}
+	}
+	for _, mod := range mods {
+		if mod.Enabled {
+			resp.EnabledMods++
+		}
+		if mod.Status == "needs_recovery" {
+			resp.NeedsRecovery++
+		}
+	}
+	resp.RuntimeRequirements = gamehandler.RuntimeRequirements(r.Context(), appID, game.GamePath, runtimeModsForRequirements(mods))
+	for _, job := range s.jobs.List() {
+		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
+			continue
+		}
+		if job.Type == "pending-import" && s.jobMatchesAppID(job, appID) {
+			resp.ActiveInstallJobs++
+		}
+		if (job.Type == "deploy" || job.Type == "purge" || job.Type == "repair") && s.jobMatchesAppID(job, appID) {
+			resp.ActiveDeployJobs++
+		}
+	}
+	plan, err := s.buildGameDeployPlan(r.Context(), appID)
+	if err != nil {
+		resp.Preview.Error = err.Error()
+	} else {
+		resp.Preview = summarizeDeployPreview(plan)
+	}
+	resp.ValidationWarnings = gameDiagnosticsWarnings(resp)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func summarizeDeployPreview(plan deploy.Plan) deployPreviewSummary {
+	summary := deployPreviewSummary{
+		Available: true,
+		Conflicts: len(plan.Conflicts),
+	}
+	for _, action := range plan.Actions {
+		switch action.Operation {
+		case "add":
+			summary.Add++
+		case "replace":
+			summary.Replace++
+		case "remove":
+			summary.Remove++
+		case "keep":
+			summary.Keep++
+		case "skip":
+			summary.Skip++
+		}
+	}
+	return summary
+}
+
+func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
+	var warnings []string
+	if resp.ProfileCount == 0 {
+		warnings = append(warnings, "no profiles are available")
+	}
+	if resp.StagedMods == 0 {
+		warnings = append(warnings, "no staged mods are available")
+	}
+	if resp.NeedsRecovery > 0 {
+		warnings = append(warnings, strconv.Itoa(resp.NeedsRecovery)+" staged mods need recovery before deployment")
+	}
+	if resp.BlockedCandidates > 0 {
+		warnings = append(warnings, strconv.Itoa(resp.BlockedCandidates)+" downloaded archives are blocked by unsupported install planning")
+	}
+	if resp.Preview.Error != "" {
+		warnings = append(warnings, "deployment preview is unavailable: "+resp.Preview.Error)
+	}
+	if resp.Preview.Conflicts > 0 {
+		warnings = append(warnings, strconv.Itoa(resp.Preview.Conflicts)+" deployment conflicts must be resolved")
+	}
+	for _, requirement := range resp.RuntimeRequirements {
+		if requirement.Required && requirement.Status != gamehandler.RequirementOK {
+			warnings = append(warnings, requirement.Name+" "+requirementWarningKind(requirement.Kind)+" requirement is "+string(requirement.Status)+": "+requirement.Message)
+		}
+	}
+	return warnings
+}
+
+func requirementWarningKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "mod-loader":
+		return "runtime"
+	case "mod-dependency":
+		return "mod dependency"
+	case "":
+		return "general"
+	default:
+		return kind
+	}
+}
+
+func (s *Server) jobMatchesAppID(job jobs.Job, appID string) bool {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return false
+	}
+	if strings.TrimSpace(job.Payload["app_id"]) == appID {
+		return true
+	}
+	if domain := strings.TrimSpace(job.Payload["game_domain"]); domain != "" {
+		if mapped, ok := steamAppIDForNexusDomain(domain); ok && mapped == appID {
+			return true
+		}
+	}
+	if strings.Contains(job.Title, appID) || strings.Contains(job.Message, appID) {
+		return true
+	}
+	if job.Type != "pending-import" {
+		return false
+	}
+	s.pendingMu.Lock()
+	pending, ok := s.pendingImports[job.ID]
+	s.pendingMu.Unlock()
+	if !ok {
+		return false
+	}
+	return appIDForPending(pending) == appID
+}
+
+func gameJobPayload(appID string) jobs.JobPayload {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return nil
+	}
+	return jobs.JobPayload{"app_id": appID}
+}
+
+func pendingImportJobPayload(resolved catalog.ResolvedDownload) jobs.JobPayload {
+	payload := jobs.JobPayload{
+		"catalog":     strings.TrimSpace(resolved.Catalog),
+		"game_domain": strings.TrimSpace(resolved.GameDomain),
+		"mod_id":      strings.TrimSpace(resolved.ModID),
+		"file_id":     strings.TrimSpace(resolved.FileID),
+	}
+	if appID, ok := steamAppIDForNexusDomain(resolved.GameDomain); ok {
+		payload["app_id"] = appID
+	}
+	for key, value := range payload {
+		if value == "" {
+			delete(payload, key)
+		}
+	}
+	return payload
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
 	s.cfgMu.RLock()
@@ -91,6 +483,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"lan_only":    cfg.LANOnly,
 		"data_dir":    cfg.DataDir,
 		"game_count":  gameCount,
+		"install": map[string]any{
+			"auto_deploy":            cfg.Install.AutoDeploy,
+			"auto_approve_downloads": cfg.Install.AutoApproveDownloads,
+		},
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
 		},
@@ -105,8 +501,18 @@ type updateSecuritySettingsRequest struct {
 	LANOnly bool `json:"lan_only"`
 }
 
+type updateInstallSettingsRequest struct {
+	AutoDeploy           bool `json:"auto_deploy"`
+	AutoApproveDownloads bool `json:"auto_approve_downloads"`
+}
+
 type createProfileRequest struct {
 	Name string `json:"name"`
+}
+
+type updateProfileModRequest struct {
+	Enabled  *bool `json:"enabled"`
+	Priority *int  `json:"priority"`
 }
 
 func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +565,25 @@ func (s *Server) handleUpdateSecuritySettings(w http.ResponseWriter, r *http.Req
 	s.handleStatus(w, r)
 }
 
+func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Request) {
+	var req updateInstallSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.cfgMu.Lock()
+	s.cfg.Install.AutoDeploy = req.AutoDeploy
+	s.cfg.Install.AutoApproveDownloads = req.AutoApproveDownloads
+	cfg := s.cfg
+	s.cfgMu.Unlock()
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("install settings updated", "auto_deploy", req.AutoDeploy, "auto_approve_downloads", req.AutoApproveDownloads)
+	s.handleStatus(w, r)
+}
+
 func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deps.CheckArchiveTools())
 }
@@ -188,6 +613,340 @@ func (s *Server) handleGameProfiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, profiles)
+}
+
+func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	markLegacyStagedMods(mods)
+	writeJSON(w, http.StatusOK, gameModResponses(mods))
+}
+
+type gameModResponse struct {
+	ID               int64                    `json:"id"`
+	GameID           int64                    `json:"game_id"`
+	ProfileID        int64                    `json:"profile_id"`
+	SteamAppID       string                   `json:"steam_app_id"`
+	Name             string                   `json:"name"`
+	Catalog          string                   `json:"catalog"`
+	SourceGameDomain string                   `json:"source_game_domain"`
+	SourceModID      string                   `json:"source_mod_id"`
+	SourceFileID     string                   `json:"source_file_id"`
+	Version          string                   `json:"version"`
+	Enabled          bool                     `json:"enabled"`
+	Priority         int                      `json:"priority"`
+	Status           string                   `json:"status"`
+	ModType          string                   `json:"mod_type,omitempty"`
+	PlannerID        string                   `json:"planner_id,omitempty"`
+	Metadata         []gameModMetadataSummary `json:"metadata,omitempty"`
+}
+
+type gameModMetadataSummary struct {
+	Kind                       string                     `json:"kind,omitempty"`
+	Name                       string                     `json:"name,omitempty"`
+	UniqueID                   string                     `json:"unique_id,omitempty"`
+	Version                    string                     `json:"version,omitempty"`
+	EntryDLL                   string                     `json:"entry_dll,omitempty"`
+	MinimumAPIVersion          string                     `json:"minimum_api_version,omitempty"`
+	AdditionalLogicalFileNames []string                   `json:"additional_logical_file_names,omitempty"`
+	ManifestVersion            string                     `json:"manifest_version,omitempty"`
+	ContentPackFor             *gameModDependencySummary  `json:"content_pack_for,omitempty"`
+	Dependencies               []gameModDependencySummary `json:"dependencies,omitempty"`
+}
+
+type gameModDependencySummary struct {
+	UniqueID       string `json:"unique_id,omitempty"`
+	MinimumVersion string `json:"minimum_version,omitempty"`
+	Required       bool   `json:"required"`
+}
+
+func gameModResponses(mods []storage.InstalledMod) []gameModResponse {
+	out := make([]gameModResponse, 0, len(mods))
+	for _, mod := range mods {
+		resp := gameModResponse{
+			ID:               mod.ID,
+			GameID:           mod.GameID,
+			ProfileID:        mod.ProfileID,
+			SteamAppID:       mod.SteamAppID,
+			Name:             mod.Name,
+			Catalog:          mod.Catalog,
+			SourceGameDomain: mod.SourceGameDomain,
+			SourceModID:      mod.SourceModID,
+			SourceFileID:     mod.SourceFileID,
+			Version:          mod.Version,
+			Enabled:          mod.Enabled,
+			Priority:         mod.Priority,
+			Status:           mod.Status,
+		}
+		if manifest, err := parseStagedManifest(mod.ManifestJSON); err == nil {
+			resp.ModType = strings.TrimSpace(manifest.ModType)
+			resp.PlannerID = strings.TrimSpace(manifest.PlannerID)
+			resp.Metadata = gameModMetadataSummaries(manifest.Metadata)
+		}
+		out = append(out, resp)
+	}
+	return out
+}
+
+func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetadataSummary {
+	out := make([]gameModMetadataSummary, 0, len(metadata))
+	for _, item := range metadata {
+		next := gameModMetadataSummary{
+			Kind:                       strings.TrimSpace(item.Kind),
+			Name:                       strings.TrimSpace(item.Name),
+			UniqueID:                   strings.TrimSpace(item.UniqueID),
+			Version:                    strings.TrimSpace(item.Version),
+			EntryDLL:                   strings.TrimSpace(item.EntryDLL),
+			MinimumAPIVersion:          strings.TrimSpace(item.MinimumAPIVersion),
+			AdditionalLogicalFileNames: append([]string(nil), item.AdditionalLogicalFileNames...),
+			ManifestVersion:            strings.TrimSpace(item.ManifestVersion),
+		}
+		if item.ContentPackFor != nil {
+			next.ContentPackFor = &gameModDependencySummary{
+				UniqueID:       strings.TrimSpace(item.ContentPackFor.UniqueID),
+				MinimumVersion: strings.TrimSpace(item.ContentPackFor.MinimumVersion),
+				Required:       item.ContentPackFor.Required,
+			}
+		}
+		for _, dependency := range item.Dependencies {
+			if strings.TrimSpace(dependency.UniqueID) == "" {
+				continue
+			}
+			next.Dependencies = append(next.Dependencies, gameModDependencySummary{
+				UniqueID:       strings.TrimSpace(dependency.UniqueID),
+				MinimumVersion: strings.TrimSpace(dependency.MinimumVersion),
+				Required:       dependency.Required,
+			})
+		}
+		if next.Kind == "" && next.Name == "" && next.UniqueID == "" && len(next.Dependencies) == 0 && len(next.AdditionalLogicalFileNames) == 0 && next.ManifestVersion == "" && next.ContentPackFor == nil {
+			continue
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
+	if appID == "" || err != nil || installedModID <= 0 {
+		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.DeleteInstalledModForSteamApp(r.Context(), appID, installedModID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "installed mod was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.removeStagingPath(mod); err != nil {
+		s.logger.Warn("staging cleanup after installed mod removal failed", "app_id", appID, "installed_mod_id", installedModID, "staging_path", mod.StagingPath, "error", err)
+	} else {
+		s.logger.Info("installed mod removed", "app_id", appID, "installed_mod_id", installedModID, "name", mod.Name)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"removed": mod})
+}
+
+func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, candidates)
+}
+
+func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	deleted, err := s.db.DeleteInstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("cleared install candidates", "app_id", appID, "deleted", deleted)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
+}
+
+func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	job := s.jobs.CreateWithPayload("recover-downloads", "Recover downloaded mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Scanning downloaded archives for "+appID)
+	s.logger.Info("download recovery started", "job_id", job.ID, "app_id", appID)
+	staged, skipped, err := s.recoverDownloadedMods(r.Context(), job.ID, appID)
+	if err != nil {
+		s.logger.Warn("download recovery failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "staged": staged, "skipped": skipped})
+		return
+	}
+	message := "Recovered " + strconv.Itoa(staged) + " downloaded mods"
+	if skipped > 0 {
+		message += "; skipped " + strconv.Itoa(skipped)
+	}
+	job, _ = s.jobs.Complete(job.ID, message)
+	s.logger.Info("download recovery completed", "job_id", job.ID, "app_id", appID, "staged", staged, "skipped", skipped)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "staged": staged, "skipped": skipped})
+}
+
+func (s *Server) handleDeployPreview(w http.ResponseWriter, r *http.Request) {
+	plan, err := s.buildGameDeployPlan(r.Context(), r.PathValue("appID"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	plan, err := s.buildGameDeployPlan(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(plan.Conflicts) > 0 {
+		http.Error(w, "deployment has conflicts; resolve them before deploying", http.StatusConflict)
+		return
+	}
+	if !hasDeployableActions(plan) {
+		http.Error(w, "deployment has no changes to apply", http.StatusConflict)
+		return
+	}
+	job := s.jobs.CreateWithPayload("deploy", "Deploy staged mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Deploying staged mods for "+appID)
+	s.logger.Info("deployment approved", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
+	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(job.ID, "Applying profile changes"))
+	if err != nil {
+		s.logger.Warn("deployment failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan})
+		return
+	}
+	applied := deployment.Files
+	if err := deploy.Verify(applied); err != nil {
+		s.logger.Warn("deployment verification failed", "job_id", job.ID, "app_id", appID, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("deployment rollback after verification failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
+		}
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": applied})
+		return
+	}
+	s.logger.Info("deployment verified", "job_id", job.ID, "app_id", appID, "files", len(applied))
+	deploymentID, err := s.db.RecordDeployment(r.Context(), appID, plan.Strategy, applied)
+	if err != nil {
+		s.logger.Warn("deployment manifest record failed", "job_id", job.ID, "app_id", appID, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("deployment rollback after manifest failure failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
+		}
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan})
+		return
+	}
+	deployment.Commit()
+	s.logger.Info("deployment completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "applied", len(applied))
+	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(applied))+" files")
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"job":     job,
+		"plan":    plan,
+		"applied": applied,
+	})
+}
+
+func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if strings.TrimSpace(appID) == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(files) == 0 {
+		http.Error(w, "no deployed manifest is available to purge", http.StatusNotFound)
+		return
+	}
+	job := s.jobs.CreateWithPayload("purge", "Purge deployed mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Purging deployed files for "+appID)
+	s.logger.Info("purge approved", "job_id", job.ID, "app_id", appID, "files", len(files))
+	if err := deploy.Purge(files); err != nil {
+		s.logger.Warn("purge failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
+		s.logger.Warn("purge manifest update failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	s.logger.Info("purge completed", "job_id", job.ID, "app_id", appID, "files", len(files))
+	job, _ = s.jobs.Complete(job.ID, "Purged "+strconv.Itoa(len(files))+" deployed files")
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+}
+
+func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if strings.TrimSpace(appID) == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(files) == 0 {
+		http.Error(w, "no deployed manifest is available to repair", http.StatusNotFound)
+		return
+	}
+	job := s.jobs.CreateWithPayload("repair", "Repair deployed mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Repairing deployed files for "+appID)
+	s.logger.Info("repair approved", "job_id", job.ID, "app_id", appID, "files", len(files))
+	result, err := deploy.Repair(files)
+	if err != nil {
+		s.logger.Warn("repair failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	if len(result.Issues) > 0 {
+		message := "Repaired " + strconv.Itoa(len(result.Repaired)) + " files; " + strconv.Itoa(len(result.Issues)) + " issues need review"
+		s.logger.Warn("repair completed with issues", "job_id", job.ID, "app_id", appID, "repaired", len(result.Repaired), "issues", len(result.Issues))
+		job, _ = s.jobs.Fail(job.ID, message)
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+		return
+	}
+	s.logger.Info("repair completed", "job_id", job.ID, "app_id", appID, "repaired", len(result.Repaired))
+	job, _ = s.jobs.Complete(job.ID, "Repaired "+strconv.Itoa(len(result.Repaired))+" deployed files")
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
 }
 
 func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request) {
@@ -223,12 +982,81 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, profile)
 }
 
+func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
+	if err != nil || installedModID <= 0 {
+		http.Error(w, "valid installedModID is required", http.StatusBadRequest)
+		return
+	}
+	var req updateProfileModRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Enabled == nil && req.Priority == nil {
+		http.Error(w, "enabled or priority is required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.SetProfileModState(r.Context(), profileID, installedModID, req.Enabled, req.Priority)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !hasInstallPlanTargets(mod.ManifestJSON) {
+		mod.Status = "needs_recovery"
+	}
+	s.logger.Info("profile mod state updated", "profile_id", profileID, "installed_mod_id", installedModID, "enabled", req.Enabled, "priority", req.Priority)
+	writeJSON(w, http.StatusOK, mod)
+}
+
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.jobs.List())
 }
 
+func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "job was not found", http.StatusNotFound)
+		return
+	}
+	if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusFailed || job.Status == jobs.StatusCanceled {
+		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		return
+	}
+
+	if cancel := s.cancelActiveJob(jobID); cancel != nil {
+		cancel()
+	}
+	if job.Type == "pending-import" {
+		s.forgetPendingImport(jobID)
+	}
+	canceled, _ := s.jobs.Cancel(jobID, "Canceled by user")
+	s.logger.Info("job canceled", "job_id", jobID, "type", job.Type)
+	writeJSON(w, http.StatusOK, map[string]any{"job": canceled})
+}
+
 func (s *Server) handleClearPendingImports(w http.ResponseWriter, r *http.Request) {
-	removed := s.jobs.ClearType("pending-import")
+	removed := s.jobs.ClearTypeWhere("pending-import", func(job jobs.Job) bool {
+		return job.Status != jobs.StatusCompleted && job.Status != jobs.StatusCanceled
+	})
+	s.pendingMu.Lock()
+	for _, job := range removed {
+		if cancel := s.cancelActiveJob(job.ID); cancel != nil {
+			cancel()
+		}
+		delete(s.pendingImports, job.ID)
+	}
+	s.pendingMu.Unlock()
 	s.logger.Info("pending imports cleared", "count", len(removed))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"cleared": len(removed),
@@ -255,7 +1083,7 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url is required", http.StatusBadRequest)
 		return
 	}
-	resolved, err := nexus.ParseURL(req.URL)
+	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
 	if err != nil {
 		s.logger.Warn("resolve import parse failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
@@ -270,9 +1098,16 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 	s.cfgMu.RLock()
 	apiKey := s.cfg.Nexus.APIKey
 	s.cfgMu.RUnlock()
+	if resolved.Catalog != "nexus" {
+		message := "Resolved " + resolved.Catalog + " URL"
+		job, _ = s.jobs.Complete(job.ID, message+"; downloads for this catalog are not supported yet")
+		payload["job"] = job
+		writeJSON(w, http.StatusAccepted, payload)
+		return
+	}
 	if resolved.FileID != "" {
 		if apiKey != "" {
-			links, err := nexus.NewClient(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
+			links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 			if err != nil {
 				s.jobs.Fail(job.ID, err.Error())
 				writeError(w, http.StatusBadGateway, err)
@@ -285,7 +1120,7 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if apiKey != "" {
-		files, err := nexus.NewClient(apiKey).Files(r.Context(), resolved.GameDomain, resolved.ModID)
+		files, err := s.nexus(apiKey).Files(r.Context(), resolved.GameDomain, resolved.ModID)
 		if err != nil {
 			s.jobs.Fail(job.ID, err.Error())
 			writeError(w, http.StatusBadGateway, err)
@@ -315,7 +1150,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url is required", http.StatusBadRequest)
 		return
 	}
-	resolved, err := nexus.ParseURL(req.URL)
+	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
 	if err != nil {
 		s.logger.Warn("pending import parse failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
@@ -330,8 +1165,25 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		"mod_id", resolved.ModID,
 		"file_id", resolved.FileID,
 	)
+	if resolved.Catalog != "nexus" {
+		http.Error(w, "downloads for catalog "+resolved.Catalog+" are not supported yet", http.StatusBadRequest)
+		return
+	}
+	if job, pending, ok := s.findPendingImport(resolved); ok {
+		s.logger.Info("pending import duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+		payload := map[string]any{
+			"job":      job,
+			"resolved": pending.Resolved,
+			"source":   pending.Source,
+		}
+		if len(pending.DownloadLinks) > 0 {
+			payload["download_links"] = pending.DownloadLinks
+		}
+		writeJSON(w, http.StatusAccepted, payload)
+		return
+	}
 
-	job := s.jobs.Create("pending-import", "Install request: "+resolved.GameDomain+"/mods/"+resolved.ModID)
+	job := s.jobs.CreateWithPayload("pending-import", "Install request: "+resolved.GameDomain+"/mods/"+resolved.ModID, pendingImportJobPayload(resolved))
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
@@ -341,7 +1193,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 	apiKey := s.cfg.Nexus.APIKey
 	s.cfgMu.RUnlock()
 	if apiKey != "" {
-		links, err := nexus.NewClient(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
+		links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
 			job, _ = s.jobs.Fail(job.ID, err.Error())
 			payload["job"] = job
@@ -351,12 +1203,1160 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		payload["download_links"] = links
 		job, _ = s.jobs.Wait(job.ID, "Ready for approval from "+resolved.GameDomain)
 		payload["job"] = job
+		s.rememberPendingImport(job.ID, pendingImport{
+			Resolved:      resolved,
+			DownloadLinks: links,
+			Source:        source,
+		})
+		s.cfgMu.RLock()
+		autoApprove := s.cfg.Install.AutoApproveDownloads
+		s.cfgMu.RUnlock()
+		if autoApprove {
+			started, err := s.startPendingImportDownload(job.ID, "auto-approved download")
+			if err != nil {
+				s.logger.Warn("auto-approve pending import failed", "job_id", job.ID, "error", err)
+			} else {
+				payload["job"] = started
+				payload["auto_approved"] = true
+			}
+		}
 		writeJSON(w, http.StatusAccepted, payload)
 		return
 	}
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
 	payload["job"] = job
+	s.rememberPendingImport(job.ID, pendingImport{
+		Resolved: resolved,
+		Source:   source,
+	})
 	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) findPendingImport(resolved catalog.ResolvedDownload) (jobs.Job, pendingImport, bool) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	for jobID, pending := range s.pendingImports {
+		if pending.Resolved.Catalog != resolved.Catalog ||
+			pending.Resolved.GameDomain != resolved.GameDomain ||
+			pending.Resolved.ModID != resolved.ModID ||
+			pending.Resolved.FileID != resolved.FileID {
+			continue
+		}
+		job, ok := s.jobs.Get(jobID)
+		if !ok || job.Status != jobs.StatusWaiting {
+			continue
+		}
+		return job, pending, true
+	}
+	return jobs.Job{}, pendingImport{}, false
+}
+
+func (s *Server) resolveCatalogURL(ctx context.Context, rawURL string) (catalog.ResolvedDownload, error) {
+	var lastErr error
+	for _, remoteCatalog := range s.catalogs {
+		resolved, err := remoteCatalog.ResolveURL(ctx, rawURL)
+		if err == nil {
+			return resolved, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return catalog.ResolvedDownload{}, lastErr
+	}
+	return catalog.ResolvedDownload{}, errors.New("no remote mod catalogs are configured")
+}
+
+func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+
+	job, err := s.startPendingImportDownload(jobID, "user-approved download")
+	if err != nil {
+		switch {
+		case errors.Is(err, errPendingImportNotFound):
+			http.Error(w, "install request was not found; capture the Nexus link again", http.StatusNotFound)
+		case errors.Is(err, errPendingImportJobNotFound):
+			http.Error(w, "install request job was not found", http.StatusNotFound)
+		case errors.Is(err, errPendingImportNotWaiting):
+			http.Error(w, "install request is not waiting for approval", http.StatusConflict)
+		case errors.Is(err, errPendingImportNoLinks):
+			http.Error(w, "install request has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
+		case errors.Is(err, errPendingImportEmptyLink):
+			http.Error(w, "install request download link is empty", http.StatusBadRequest)
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+}
+
+func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "install request job was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != "pending-import" {
+		http.Error(w, "only install requests can be retried", http.StatusBadRequest)
+		return
+	}
+	if job.Status != jobs.StatusFailed {
+		http.Error(w, "only failed install requests can be retried", http.StatusConflict)
+		return
+	}
+	if _, ok := s.pendingImport(jobID); !ok {
+		http.Error(w, "install request no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
+		return
+	}
+	if _, ok := s.jobs.Wait(jobID, "Retry requested; waiting to download again"); !ok {
+		http.Error(w, "install request job was not found", http.StatusNotFound)
+		return
+	}
+	retried, err := s.startPendingImportDownload(jobID, "retry download")
+	if err != nil {
+		switch {
+		case errors.Is(err, errPendingImportNotFound):
+			http.Error(w, "install request was not found; capture the Nexus link again", http.StatusNotFound)
+		case errors.Is(err, errPendingImportJobNotFound):
+			http.Error(w, "install request job was not found", http.StatusNotFound)
+		case errors.Is(err, errPendingImportNotWaiting):
+			http.Error(w, "install request is not retryable right now", http.StatusConflict)
+		case errors.Is(err, errPendingImportNoLinks):
+			http.Error(w, "install request has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
+		case errors.Is(err, errPendingImportEmptyLink):
+			http.Error(w, "install request download link is empty", http.StatusBadRequest)
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": retried})
+}
+
+var (
+	errPendingImportNotFound    = errors.New("pending import was not found")
+	errPendingImportJobNotFound = errors.New("pending import job was not found")
+	errPendingImportNotWaiting  = errors.New("pending import is not waiting for approval")
+	errPendingImportNoLinks     = errors.New("pending import has no download links")
+	errPendingImportEmptyLink   = errors.New("pending import download link is empty")
+)
+
+func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.Job, error) {
+	pending, ok := s.pendingImport(jobID)
+	if !ok {
+		return jobs.Job{}, errPendingImportNotFound
+	}
+	currentJob, ok := s.jobs.Get(jobID)
+	if !ok {
+		return jobs.Job{}, errPendingImportJobNotFound
+	}
+	if currentJob.Status != jobs.StatusWaiting {
+		return jobs.Job{}, errPendingImportNotWaiting
+	}
+	if len(pending.DownloadLinks) == 0 {
+		return jobs.Job{}, errPendingImportNoLinks
+	}
+
+	link := pending.DownloadLinks[0]
+	if strings.TrimSpace(link.URI) == "" {
+		return jobs.Job{}, errPendingImportEmptyLink
+	}
+
+	job, ok := s.jobs.Run(jobID, "Downloading archive from "+pending.Resolved.GameDomain)
+	if !ok {
+		return jobs.Job{}, errPendingImportJobNotFound
+	}
+	s.logger.Info(
+		"pending import approved",
+		"job_id", jobID,
+		"approval_source", approvalSource,
+		"source", pending.Source,
+		"catalog", pending.Resolved.Catalog,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.trackActiveJob(jobID, cancel)
+	go s.downloadPendingImport(ctx, jobID, pending, link)
+	return job, nil
+}
+
+func (s *Server) pendingImport(jobID string) (pendingImport, bool) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	pending, ok := s.pendingImports[jobID]
+	return pending, ok
+}
+
+func (s *Server) rememberPendingImport(jobID string, pending pendingImport) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	s.pendingImports[jobID] = pending
+	s.ensurePendingImportJobPayload(jobID, pending.Resolved)
+	if err := s.db.SavePendingImport(context.Background(), storage.PendingImport{
+		JobID:         jobID,
+		Resolved:      pending.Resolved,
+		DownloadLinks: pending.DownloadLinks,
+		Source:        pending.Source,
+	}); err != nil {
+		s.logger.Warn("persist pending import failed", "job_id", jobID, "error", err)
+	}
+}
+
+func (s *Server) ensurePendingImportJobPayload(jobID string, resolved catalog.ResolvedDownload) {
+	job, ok := s.jobs.Get(jobID)
+	if !ok || job.Type != "pending-import" {
+		return
+	}
+	next := jobs.JobPayload{}
+	for key, value := range job.Payload {
+		next[key] = value
+	}
+	for key, value := range pendingImportJobPayload(resolved) {
+		if strings.TrimSpace(next[key]) == "" {
+			next[key] = value
+		}
+	}
+	if len(next) == len(job.Payload) {
+		changed := false
+		for key, value := range next {
+			if job.Payload[key] != value {
+				changed = true
+				break
+			}
+		}
+		if !changed {
+			return
+		}
+	}
+	if _, ok := s.jobs.SetPayload(jobID, next); !ok {
+		s.logger.Warn("pending import job payload update failed", "job_id", jobID)
+	}
+}
+
+func (s *Server) forgetPendingImport(jobID string) {
+	s.pendingMu.Lock()
+	delete(s.pendingImports, jobID)
+	s.pendingMu.Unlock()
+	if err := s.db.DeletePendingImport(context.Background(), jobID); err != nil {
+		s.logger.Warn("delete pending import failed", "job_id", jobID, "error", err)
+	}
+}
+
+func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pending pendingImport, link nexus.DownloadLink) {
+	defer s.untrackActiveJob(jobID)
+	destDir := filepath.Join(
+		s.cfg.DataDir,
+		"downloads",
+		pending.Resolved.Catalog,
+		pending.Resolved.GameDomain,
+		"mods",
+		pending.Resolved.ModID,
+		"files",
+		pending.Resolved.FileID,
+	)
+	result, err := download.Fetch(ctx, download.Options{
+		URL:     link.URI,
+		DestDir: destDir,
+	})
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			s.logger.Info("pending import download canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+			s.jobs.Cancel(jobID, "Canceled by user")
+			s.forgetPendingImport(jobID)
+			return
+		}
+		s.logger.Warn(
+			"pending import download failed",
+			"job_id", jobID,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"error", err,
+		)
+		s.jobs.Fail(jobID, err.Error())
+		return
+	}
+	s.logger.Info(
+		"pending import downloaded",
+		"job_id", jobID,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"path", result.Path,
+		"bytes", result.BytesWritten,
+	)
+	staged, err := s.stagePendingImport(ctx, jobID, pending, result)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			s.logger.Info("pending import staging canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+			s.jobs.Cancel(jobID, "Canceled by user")
+			s.forgetPendingImport(jobID)
+			return
+		}
+		s.logger.Warn(
+			"pending import staging failed",
+			"job_id", jobID,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"error", err,
+		)
+		var unsupported installplan.UnsupportedError
+		if errors.As(err, &unsupported) {
+			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+				SteamAppID:    appIDForPending(pending),
+				Resolved:      pending.Resolved,
+				Name:          modNameFromArchive(result.Path, pending.Resolved),
+				ArchivePath:   result.Path,
+				ArchiveSHA256: result.SHA256,
+				Status:        "blocked",
+				Reason:        unsupported.Error(),
+			}); recordErr != nil {
+				s.logger.Warn("record blocked install candidate failed", "job_id", jobID, "error", recordErr)
+			}
+			s.jobs.Fail(jobID, err.Error())
+			s.forgetPendingImport(jobID)
+			return
+		}
+		s.jobs.Fail(jobID, err.Error())
+		return
+	}
+	s.cfgMu.RLock()
+	autoDeploy := s.cfg.Install.AutoDeploy
+	s.cfgMu.RUnlock()
+	if autoDeploy {
+		plan, err := s.buildGameDeployPlan(ctx, staged.SteamAppID)
+		if err != nil {
+			s.logger.Warn("auto deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; automatic deploy could not preview changes: "+err.Error())
+			s.forgetPendingImport(jobID)
+			return
+		}
+		if len(plan.Conflicts) > 0 {
+			s.logger.Info("auto deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
+			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; deployment has conflicts to review")
+			s.forgetPendingImport(jobID)
+			return
+		}
+		if !hasDeployableActions(plan) {
+			s.logger.Info("auto deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
+			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; deployment is already up to date")
+			s.forgetPendingImport(jobID)
+			return
+		}
+		deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Auto deploying profile changes"))
+		if err != nil {
+			s.logger.Warn("auto deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.jobs.Fail(jobID, err.Error())
+			s.forgetPendingImport(jobID)
+			return
+		}
+		applied := deployment.Files
+		if err := deploy.Verify(applied); err != nil {
+			s.logger.Warn("auto deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+				s.logger.Warn("auto deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+			}
+			s.jobs.Fail(jobID, err.Error())
+			s.forgetPendingImport(jobID)
+			return
+		}
+		deploymentID, err := s.db.RecordDeployment(context.Background(), staged.SteamAppID, plan.Strategy, applied)
+		if err != nil {
+			s.logger.Warn("auto deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+				s.logger.Warn("auto deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+			}
+			s.jobs.Fail(jobID, err.Error())
+			s.forgetPendingImport(jobID)
+			return
+		}
+		deployment.Commit()
+		s.logger.Info("auto deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
+		s.jobs.Complete(jobID, "Added and deployed "+staged.Name)
+		s.forgetPendingImport(jobID)
+		return
+	}
+	s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; apply profile changes to deploy")
+	s.forgetPendingImport(jobID)
+}
+
+func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string) (int, int, error) {
+	domain, ok := nexusDomainForSteamAppID(appID)
+	if !ok {
+		return 0, 0, errors.New("download recovery is not enabled for this game because no Vortex/Nexus metadata spec is registered")
+	}
+	installed, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, 0, err
+	}
+	installedFiles := make(map[string]struct{}, len(installed))
+	for _, mod := range installed {
+		if hasInstallPlanTargets(mod.ManifestJSON) {
+			installedFiles[mod.SourceModID+"/"+mod.SourceFileID] = struct{}{}
+			continue
+		}
+		s.logger.Info("download recovery will restage legacy installed mod without install-plan targets", "job_id", jobID, "app_id", appID, "installed_mod_id", mod.ID, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+	}
+
+	root := filepath.Join(s.cfg.DataDir, "downloads", "nexus", domain, "mods")
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	var staged, skipped int
+	for _, modDir := range entries {
+		if err := ctx.Err(); err != nil {
+			return staged, skipped, err
+		}
+		if !modDir.IsDir() {
+			continue
+		}
+		modID := strings.TrimSpace(modDir.Name())
+		filesRoot := filepath.Join(root, modID, "files")
+		fileDirs, err := os.ReadDir(filesRoot)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return staged, skipped, err
+		}
+		for _, fileDir := range fileDirs {
+			if err := ctx.Err(); err != nil {
+				return staged, skipped, err
+			}
+			if !fileDir.IsDir() {
+				continue
+			}
+			fileID := strings.TrimSpace(fileDir.Name())
+			if _, ok := installedFiles[modID+"/"+fileID]; ok {
+				skipped++
+				continue
+			}
+			archivePath, err := newestFileInDir(filepath.Join(filesRoot, fileID))
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return staged, skipped, err
+			}
+			sum, err := fileSHA256(archivePath)
+			if err != nil {
+				return staged, skipped, err
+			}
+			pending := pendingImport{
+				Resolved: catalog.ResolvedDownload{
+					Catalog:    "nexus",
+					SourceURL:  archivePath,
+					GameDomain: domain,
+					ModID:      modID,
+					FileID:     fileID,
+				},
+				Source: "download-recovery",
+			}
+			result := download.Result{
+				Path:   archivePath,
+				SHA256: sum,
+			}
+			if info, err := os.Stat(archivePath); err == nil {
+				result.BytesWritten = info.Size()
+			}
+			if _, err := s.stagePendingImport(ctx, jobID, pending, result); err != nil {
+				var unsupported installplan.UnsupportedError
+				if errors.As(err, &unsupported) {
+					if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+						SteamAppID:    appID,
+						Resolved:      pending.Resolved,
+						Name:          modNameFromArchive(archivePath, pending.Resolved),
+						ArchivePath:   archivePath,
+						ArchiveSHA256: sum,
+						Status:        "blocked",
+						Reason:        unsupported.Error(),
+					}); recordErr != nil {
+						s.logger.Warn("record blocked recovery candidate failed", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "error", recordErr)
+						return staged, skipped, recordErr
+					}
+					s.logger.Info("download recovery recorded blocked candidate", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "reason", unsupported.Error())
+					skipped++
+					continue
+				}
+				return staged, skipped, err
+			}
+			staged++
+			installedFiles[modID+"/"+fileID] = struct{}{}
+		}
+	}
+	return staged, skipped, nil
+}
+
+func newestFileInDir(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	var bestPath string
+	var bestModTime int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			return "", err
+		}
+		modTime := info.ModTime().UnixNano()
+		if bestPath == "" || modTime > bestModTime || (modTime == bestModTime && path > bestPath) {
+			bestPath = path
+			bestModTime = modTime
+		}
+	}
+	if bestPath == "" {
+		return "", os.ErrNotExist
+	}
+	return bestPath, nil
+}
+
+func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending pendingImport, result download.Result) (storage.InstalledMod, error) {
+	if err := ctx.Err(); err != nil {
+		return storage.InstalledMod{}, err
+	}
+	appID, ok := steamAppIDForNexusDomain(pending.Resolved.GameDomain)
+	if !ok {
+		return storage.InstalledMod{}, errors.New("no Steam game mapping exists for Nexus domain " + pending.Resolved.GameDomain)
+	}
+	archivePath := result.Path
+	extractPath := filepath.Join(s.cfg.DataDir, "tmp", "install", jobID)
+	stagingPath := filepath.Join(
+		s.cfg.DataDir,
+		"staging",
+		pending.Resolved.Catalog,
+		pending.Resolved.GameDomain,
+		"mods",
+		pending.Resolved.ModID,
+		"files",
+		pending.Resolved.FileID,
+	)
+	if err := os.RemoveAll(extractPath); err != nil {
+		return storage.InstalledMod{}, err
+	}
+	defer func() {
+		if cleanupErr := os.RemoveAll(extractPath); cleanupErr != nil {
+			s.logger.Warn("install workspace cleanup failed", "job_id", jobID, "extract_path", extractPath, "error", cleanupErr)
+		}
+	}()
+	if err := os.RemoveAll(stagingPath); err != nil {
+		return storage.InstalledMod{}, err
+	}
+	s.logger.Info(
+		"pending import extraction started",
+		"job_id", jobID,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"archive_path", archivePath,
+		"extract_path", extractPath,
+	)
+	inspection, err := archive.ExtractContext(ctx, archivePath, extractPath)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	s.logger.Info(
+		"pending import archive extracted",
+		"job_id", jobID,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"format", inspection.Format,
+		"entries", len(inspection.Entries),
+		"top_level_dirs", strings.Join(inspection.TopLevelDirs, ","),
+		"requires_external", inspection.RequiresExternal,
+		"requires_installer", inspection.RequiresInstaller,
+		"installer_kind", inspection.InstallerKind,
+		"warnings", strings.Join(inspection.Warnings, " | "),
+	)
+	if inspection.RequiresInstaller {
+		s.logger.Info("pending import requires installer UI", "job_id", jobID, "installer_kind", inspection.InstallerKind, "extract_path", extractPath)
+		if inspection.InstallerKind == "" {
+			return storage.InstalledMod{}, installplan.Unsupported("archive requires an installer UI that is not implemented yet")
+		}
+		return storage.InstalledMod{}, installplan.Unsupported(inspection.InstallerKind + " installer UI is not implemented yet")
+	}
+	installPlan, err := installplan.Build(appID, extractPath)
+	if err != nil {
+		s.logger.Info("pending import has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
+		return storage.InstalledMod{}, err
+	}
+	s.logger.Info(
+		"pending import install plan accepted",
+		"job_id", jobID,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"app_id", appID,
+		"mod_type", installPlan.ModType,
+		"planner_id", installPlan.PlannerID,
+		"detections", len(installPlan.DetectedFrom),
+		"instructions", len(installPlan.Instructions),
+	)
+	game, gameErr := s.db.GameBySteamApp(context.Background(), appID)
+	if gameErr != nil {
+		s.logger.Warn("install plan could not load game path for generated files", "job_id", jobID, "app_id", appID, "error", gameErr)
+	}
+	if err := applyInstallPlan(installPlan, stagingPath, game.GamePath); err != nil {
+		if cleanupErr := os.RemoveAll(stagingPath); cleanupErr != nil {
+			s.logger.Warn("failed install-plan staging cleanup failed", "job_id", jobID, "staging_path", stagingPath, "error", cleanupErr)
+		}
+		return storage.InstalledMod{}, err
+	}
+	manifest, err := stagedManifestJSONWithPlan(stagingPath, installPlan)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
+	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:    appID,
+		Resolved:      pending.Resolved,
+		Name:          name,
+		Version:       pending.Resolved.FileID,
+		ArchivePath:   archivePath,
+		ArchiveSHA256: result.SHA256,
+		StagingPath:   stagingPath,
+		ManifestJSON:  manifest,
+	})
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	s.logger.Info(
+		"pending import staged",
+		"job_id", jobID,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"format", inspection.Format,
+		"entries", len(inspection.Entries),
+		"mod_type", installPlan.ModType,
+		"planner_id", installPlan.PlannerID,
+		"detections", len(installPlan.DetectedFrom),
+		"instructions", len(installPlan.Instructions),
+		"installed_mod_id", staged.ID,
+	)
+	return staged, nil
+}
+
+func applyInstallPlan(plan installplan.Plan, stagingPath string, gamePath string) error {
+	if len(plan.Instructions) == 0 {
+		return errors.New("install plan has no files to stage")
+	}
+	if err := os.RemoveAll(stagingPath); err != nil {
+		return err
+	}
+	for _, instruction := range plan.Instructions {
+		if strings.TrimSpace(instruction.StagingRelative) == "" {
+			return errors.New("install plan contains an empty staging path")
+		}
+		rel := filepath.Clean(filepath.FromSlash(instruction.StagingRelative))
+		if filepath.IsAbs(rel) || rel == "." || rel == ".." || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+			return errors.New("install plan contains an unsafe staging path")
+		}
+		target := filepath.Join(stagingPath, rel)
+		switch instruction.Kind {
+		case "", installplan.InstructionKindCopy:
+			if strings.TrimSpace(instruction.SourcePath) == "" {
+				return errors.New("install plan contains an empty source path")
+			}
+			if err := copyFile(instruction.SourcePath, target); err != nil {
+				return err
+			}
+		case installplan.InstructionKindGenerateFromGameFile:
+			if err := generateFileFromGamePath(gamePath, instruction, target); err != nil {
+				return err
+			}
+		default:
+			return errors.New("install plan contains unsupported instruction kind " + instruction.Kind)
+		}
+	}
+	return nil
+}
+
+func generateFileFromGamePath(gamePath string, instruction installplan.Instruction, target string) error {
+	sourceRel := filepath.Clean(filepath.FromSlash(instruction.GenerateFromGameRelative))
+	if sourceRel == "." || sourceRel == ".." || filepath.IsAbs(sourceRel) || strings.HasPrefix(filepath.ToSlash(sourceRel), "../") {
+		return errors.New("install plan contains an unsafe generated source path")
+	}
+	data := []byte(instruction.GeneratedFallback)
+	if strings.TrimSpace(gamePath) != "" {
+		sourcePath := filepath.Join(gamePath, sourceRel)
+		if sourceData, err := os.ReadFile(sourcePath); err == nil {
+			data = sourceData
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(target, data, 0o600)
+}
+
+func copyFile(source, target string) error {
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("install plan source is not a regular file")
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	targetFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(targetFile, sourceFile); err != nil {
+		_ = targetFile.Close()
+		return err
+	}
+	return targetFile.Close()
+}
+
+func (s *Server) trackActiveJob(jobID string, cancel context.CancelFunc) {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	s.activeCancels[jobID] = cancel
+}
+
+func (s *Server) untrackActiveJob(jobID string) {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	delete(s.activeCancels, jobID)
+}
+
+func (s *Server) cancelActiveJob(jobID string) context.CancelFunc {
+	s.activeMu.Lock()
+	defer s.activeMu.Unlock()
+	cancel := s.activeCancels[jobID]
+	delete(s.activeCancels, jobID)
+	return cancel
+}
+
+func steamAppIDForNexusDomain(domain string) (string, bool) {
+	return installplan.SteamAppIDForVortexGameID(strings.ToLower(strings.TrimSpace(domain)))
+}
+
+func appIDForPending(pending pendingImport) string {
+	appID, _ := steamAppIDForNexusDomain(pending.Resolved.GameDomain)
+	return appID
+}
+
+func nexusDomainForSteamAppID(appID string) (string, bool) {
+	return installplan.VortexGameIDForSteamAppID(strings.TrimSpace(appID))
+}
+
+func modNameFromArchive(archivePath string, resolved catalog.ResolvedDownload) string {
+	name := strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
+	name = strings.TrimSpace(strings.ReplaceAll(name, "_", " "))
+	if name != "" && name != "." && !looksLikeGUID(name) {
+		return name
+	}
+	return "Nexus mod " + resolved.ModID
+}
+
+func modNameFromStaging(archivePath string, resolved catalog.ResolvedDownload, plan installplan.Plan) string {
+	if plan.NameSource == installplan.NameSourceArchive {
+		return modNameFromArchive(archivePath, resolved)
+	}
+	if name := installplan.ManifestDisplayNameFromPlan(plan); name != "" {
+		return name
+	}
+	return modNameFromArchive(archivePath, resolved)
+}
+
+type stagedManifestFile struct {
+	Path           string `json:"path"`
+	TargetRelative string `json:"target_relative,omitempty"`
+	TargetPolicy   string `json:"target_policy,omitempty"`
+	Size           int64  `json:"size"`
+	SHA256         string `json:"sha256"`
+}
+
+type stagedManifest struct {
+	GameID       string                    `json:"game_id,omitempty"`
+	ModType      string                    `json:"mod_type,omitempty"`
+	PlannerID    string                    `json:"planner_id,omitempty"`
+	NameSource   string                    `json:"name_source,omitempty"`
+	DetectedFrom []installplan.Detection   `json:"detected_from,omitempty"`
+	Metadata     []installplan.ModMetadata `json:"metadata,omitempty"`
+	Files        []stagedManifestFile      `json:"files"`
+}
+
+func looksLikeGUID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for i, r := range value {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func stagedManifestJSON(stagingPath string) (string, error) {
+	return stagedManifestJSONWithPlan(stagingPath, installplan.Plan{})
+}
+
+func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (string, error) {
+	targets := make(map[string]string, len(plan.Instructions))
+	targetPolicies := make(map[string]string, len(plan.Instructions))
+	for _, instruction := range plan.Instructions {
+		if instruction.StagingRelative == "" || instruction.TargetRelative == "" {
+			continue
+		}
+		stagingRel := filepath.ToSlash(instruction.StagingRelative)
+		targets[stagingRel] = filepath.ToSlash(instruction.TargetRelative)
+		targetPolicies[stagingRel] = strings.TrimSpace(instruction.TargetPolicy)
+	}
+	files := []stagedManifestFile{}
+	if err := filepath.WalkDir(stagingPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(stagingPath, path)
+		if err != nil {
+			return err
+		}
+		sum, err := fileSHA256(path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		files = append(files, stagedManifestFile{
+			Path:           rel,
+			TargetRelative: targets[rel],
+			TargetPolicy:   targetPolicies[rel],
+			Size:           info.Size(),
+			SHA256:         sum,
+		})
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	manifest := stagedManifest{
+		GameID:       strings.TrimSpace(plan.GameID),
+		ModType:      strings.TrimSpace(plan.ModType),
+		PlannerID:    strings.TrimSpace(plan.PlannerID),
+		NameSource:   strings.TrimSpace(plan.NameSource),
+		DetectedFrom: plan.DetectedFrom,
+		Metadata:     plan.Metadata,
+		Files:        files,
+	}
+	b, err := json.Marshal(manifest)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func parseStagedManifest(manifestJSON string) (stagedManifest, error) {
+	manifestJSON = strings.TrimSpace(manifestJSON)
+	if manifestJSON == "" || manifestJSON == "{}" {
+		return stagedManifest{}, nil
+	}
+	var manifest stagedManifest
+	if strings.HasPrefix(manifestJSON, "{") {
+		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+			return stagedManifest{}, err
+		}
+		if manifest.Files == nil {
+			manifest.Files = []stagedManifestFile{}
+		}
+		return manifest, nil
+	}
+	var files []stagedManifestFile
+	if err := json.Unmarshal([]byte(manifestJSON), &files); err != nil {
+		return stagedManifest{}, err
+	}
+	return stagedManifest{Files: files}, nil
+}
+
+func stagedManifestFiles(manifestJSON string) ([]stagedManifestFile, error) {
+	manifest, err := parseStagedManifest(manifestJSON)
+	if err != nil {
+		return nil, err
+	}
+	return manifest.Files, nil
+}
+
+func hasInstallPlanTargets(manifestJSON string) bool {
+	files, err := stagedManifestFiles(manifestJSON)
+	if err != nil || len(files) == 0 {
+		return false
+	}
+	for _, file := range files {
+		if strings.TrimSpace(file.Path) == "" || strings.TrimSpace(file.TargetRelative) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func markLegacyStagedMods(mods []storage.InstalledMod) {
+	for i := range mods {
+		if !hasInstallPlanTargets(mods[i].ManifestJSON) {
+			mods[i].Status = "needs_recovery"
+		}
+	}
+}
+
+func runtimeModsForRequirements(mods []storage.InstalledMod) []gamehandler.RuntimeMod {
+	runtimeMods := make([]gamehandler.RuntimeMod, 0, len(mods))
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		modType := strings.TrimSpace(manifest.ModType)
+		runtimeMods = append(runtimeMods, gamehandler.RuntimeMod{
+			ModType:  modType,
+			Enabled:  true,
+			Metadata: runtimeMetadataFromStagedManifest(manifest),
+		})
+	}
+	return runtimeMods
+}
+
+func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.ModMetadata {
+	out := make([]gamehandler.ModMetadata, 0, len(manifest.Metadata))
+	for _, metadata := range manifest.Metadata {
+		next := gamehandler.ModMetadata{
+			Kind:                       metadata.Kind,
+			Name:                       metadata.Name,
+			UniqueID:                   metadata.UniqueID,
+			Version:                    metadata.Version,
+			EntryDLL:                   metadata.EntryDLL,
+			MinimumAPIVersion:          metadata.MinimumAPIVersion,
+			AdditionalLogicalFileNames: append([]string(nil), metadata.AdditionalLogicalFileNames...),
+			ManifestVersion:            metadata.ManifestVersion,
+		}
+		if metadata.ContentPackFor != nil {
+			next.ContentPackFor = &gamehandler.ModDependency{
+				UniqueID:       metadata.ContentPackFor.UniqueID,
+				MinimumVersion: metadata.ContentPackFor.MinimumVersion,
+				Required:       metadata.ContentPackFor.Required,
+			}
+		}
+		for _, dependency := range metadata.Dependencies {
+			next.Dependencies = append(next.Dependencies, gamehandler.ModDependency{
+				UniqueID:       dependency.UniqueID,
+				MinimumVersion: dependency.MinimumVersion,
+				Required:       dependency.Required,
+			})
+		}
+		out = append(out, next)
+	}
+	return out
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.Plan, error) {
+	if strings.TrimSpace(appID) == "" {
+		return deploy.Plan{}, errors.New("appID is required")
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	if err := deploymentAllowedForGame(game); err != nil {
+		return deploy.Plan{}, err
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	if len(mods) == 0 {
+		return deploy.Plan{}, errors.New("no staged mods are available to deploy")
+	}
+
+	var mappings []deploy.FileMapping
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		next, err := s.deployMappingsForInstalledMod(mod)
+		if err != nil {
+			if errors.Is(err, errLegacyStagedMod) {
+				s.logger.Info("skipping legacy staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+				continue
+			}
+			return deploy.Plan{}, err
+		}
+		mappings = append(mappings, next...)
+	}
+	managedFiles, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	if len(mappings) == 0 && len(managedFiles) == 0 {
+		return deploy.Plan{}, errors.New("no enabled staged files are available to deploy")
+	}
+	return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+}
+
+func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]deploy.FileMapping, error) {
+	stagingPath := s.effectiveStagingPath(mod)
+	manifestFiles, err := stagedManifestFiles(mod.ManifestJSON)
+	if err != nil {
+		return nil, err
+	}
+	if len(manifestFiles) > 0 {
+		mappings := make([]deploy.FileMapping, 0, len(manifestFiles))
+		for _, file := range manifestFiles {
+			if strings.TrimSpace(file.Path) == "" {
+				continue
+			}
+			targetRelative := strings.TrimSpace(file.TargetRelative)
+			if targetRelative == "" {
+				return nil, fmt.Errorf("%w: staged mod %q was created without install-plan target mappings; recover downloads or reinstall this mod with the current DMM build", errLegacyStagedMod, mod.Name)
+			}
+			mappings = append(mappings, deploy.FileMapping{
+				SourcePath:     filepath.Join(stagingPath, filepath.FromSlash(file.Path)),
+				TargetRelative: filepath.ToSlash(targetRelative),
+				TargetPolicy:   strings.TrimSpace(file.TargetPolicy),
+				ModID:          mod.SourceModID,
+				Priority:       mod.Priority,
+				ChecksumSHA256: file.SHA256,
+			})
+		}
+		return mappings, nil
+	}
+	return nil, fmt.Errorf("%w: staged mod %q does not have a deployable manifest; recover downloads or reinstall this mod with the current DMM build", errLegacyStagedMod, mod.Name)
+}
+
+func hasDeployableActions(plan deploy.Plan) bool {
+	for _, action := range plan.Actions {
+		if action.Conflict {
+			continue
+		}
+		switch action.Operation {
+		case "keep", "skip":
+			continue
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) deployProgressUpdater(jobID, prefix string) deploy.ProgressFunc {
+	var lastUpdate time.Time
+	return func(completed, total int, action deploy.Action) {
+		if total <= 0 {
+			return
+		}
+		now := time.Now()
+		if completed != 1 && completed != total && completed%25 != 0 && now.Sub(lastUpdate) < 750*time.Millisecond {
+			return
+		}
+		lastUpdate = now
+		operation := action.Operation
+		if operation == "" {
+			operation = "apply"
+		}
+		message := fmt.Sprintf("%s %d/%d (%s)", prefix, completed, total, operation)
+		if action.TargetRelative != "" {
+			message += ": " + action.TargetRelative
+		}
+		s.jobs.Run(jobID, message)
+	}
+}
+
+func (s *Server) effectiveStagingPath(mod storage.InstalledMod) string {
+	canonical := filepath.Join(
+		s.cfg.DataDir,
+		"staging",
+		mod.Catalog,
+		mod.SourceGameDomain,
+		"mods",
+		mod.SourceModID,
+		"files",
+		mod.SourceFileID,
+	)
+	if info, err := os.Stat(canonical); err == nil && info.IsDir() {
+		return canonical
+	}
+	return mod.StagingPath
+}
+
+func (s *Server) removeStagingPath(mod storage.InstalledMod) error {
+	path := s.effectiveStagingPath(mod)
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
+	rel, err := filepath.Rel(stagingRoot, path)
+	if err != nil {
+		return err
+	}
+	if rel == "." || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+		return fmt.Errorf("refusing to remove staging path outside DMM staging root: %s", path)
+	}
+	return os.RemoveAll(path)
+}
+
+func deploymentAllowedForGame(game storage.Game) error {
+	if ok, reason := installplan.DeploymentAllowedForSteamAppState(game.SteamAppID, game.State); !ok {
+		return errors.New(reason)
+	}
+	return nil
 }
 
 func (s *Server) handleInspectArchive(w http.ResponseWriter, r *http.Request) {
@@ -379,8 +2379,7 @@ func (s *Server) handleInspectArchive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) staticHandler() http.Handler {
-	local := filepath.Join("web", "dist")
-	if st, err := os.Stat(local); err == nil && st.IsDir() {
+	if local := packagedWebDist(); local != "" {
 		return spaFileServer(http.Dir(local))
 	}
 	sub, err := fs.Sub(embeddedStatic, "static")
@@ -388,6 +2387,24 @@ func (s *Server) staticHandler() http.Handler {
 		return http.NotFoundHandler()
 	}
 	return spaFileServer(http.FS(sub))
+}
+
+func packagedWebDist() string {
+	candidates := []string{}
+	if override := strings.TrimSpace(os.Getenv("DMM_WEB_DIR")); override != "" {
+		candidates = append(candidates, override)
+	}
+	if exe, err := os.Executable(); err == nil {
+		pluginRoot := filepath.Dir(filepath.Dir(exe))
+		candidates = append(candidates, filepath.Join(pluginRoot, "web", "dist"))
+	}
+	candidates = append(candidates, filepath.Join("web", "dist"))
+	for _, candidate := range candidates {
+		if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func spaFileServer(root http.FileSystem) http.Handler {
@@ -414,9 +2431,34 @@ func spaFileServer(root http.FileSystem) http.Handler {
 
 func logMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
-		logger.Info("request", "method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		if shouldLogRequest(r, recorder.status) {
+			logger.Info("request", "method", r.Method, "path", r.URL.Path, "status", recorder.status, "remote", r.RemoteAddr)
+		}
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func shouldLogRequest(r *http.Request, status int) bool {
+	if status >= http.StatusBadRequest || r.Method != http.MethodGet {
+		return true
+	}
+	switch r.URL.Path {
+	case "/api/health", "/api/jobs", "/api/jobs/events":
+		return false
+	default:
+		return true
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
