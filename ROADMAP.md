@@ -14,19 +14,33 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Highest implementation priority is Stardew extension-framework parity with the required behavior from Vortex's Stardew Valley extension, including SMAPI installer handling, SMAPI mod install rules, runtime requirements, primary launch tool behavior, and Steam Deck launch configuration.
 - The next required MVP feature after Stardew extension parity is FOMOD/installer-choice support with Decky modal support for Deck-only flows.
 - Stardew Valley MVP support targets the native Linux Steam install on Steam Deck. Windows/Proton support is post-MVP and must remain extension-driven when implemented.
-- The default user mental model is profile-first: select a game, select a profile, download/approve a mod, then enable or disable that mod in the profile.
+- The default user mental model is profile-first: select a game, select a profile, capture/download a mod immediately, approve install when needed, then enable or disable that mod in the profile.
 - The UI must not make ordinary users reason about staging, install planning, target mappings, manifests, or deployment transactions before they can use a mod.
 - Staging, preview, deploy, purge, repair, blocked install plans, and file-level operations are still core safety mechanisms, but they should be exposed as advanced/power-user views unless immediate user action is required.
-- Download approval should be controlled by a setting named around user intent, such as "approve downloads by default" or "require download approval"; default behavior is approval required.
-- Auto-deploy should exist as a user setting for fast Deck-only use, but it must remain off by default until staging and deployment are reliable.
+- Nexus automatic download links may be short-lived, so DMM should download/cache captured `nxm://` links immediately and move user approval to the install/stage/profile decision.
+- The Decky setting currently named `Auto-accept download requests` should either map to the new install-approval model or be renamed during the UI redesign. It defaults on for MVP Deck-only flow and must be easy to disable.
+- `Auto-deploy staged mods` is an MVP Decky Settings control and should default on for Deck-only use. Auto-deploy may inspect, stage, and deploy cached mod files, but it must not enable the mod in the active profile.
 - ZIP, 7z, and RAR archives are all MVP-relevant because Nexus mods commonly use all three.
-- The internal safe path remains: capture request, approve download when required, inspect the archive, produce an explicit install plan, stage only deployable outputs, update the selected profile's mod list, preview/apply deployment through DMM-owned manifests, and report failures clearly.
-- The primary happy path should feel like: capture/download mod, approve if prompted, see it in the selected profile, toggle it on/off, and let DMM apply the safe deployment work in the background or through a simple "Apply profile changes" action.
+- The internal safe path remains: capture request, immediately download/cache the archive, inspect it, produce an explicit install plan, ask for install choices/approval when required, stage only deployable outputs, update the selected profile's mod list disabled by default, preview/apply deployment through DMM-owned manifests, and report failures clearly.
+- The primary happy path should feel like: capture/download mod, approve install if prompted or auto-accept is on, have DMM stage/deploy safely when auto-deploy is on, see the mod in the selected profile disabled by default, then toggle it on/off from the phone/tablet UI or Decky plugin.
 - Gaming Mode must show immediate Decky feedback after Nexus hands DMM a download link. A user should not see only the Nexus "download starting" page and then silence; the Decky plugin should notify when a request is captured, waiting for approval, processing, completed, or failed.
+- Deck-only MVP flow must let a user browse Nexus in Gaming Mode, click Mod Manager Download, let DMM auto-accept/auto-deploy according to Decky settings, then use the Decky plugin `Mods` surface for the running game to search and enable or disable mods without needing a phone.
 - DMM must follow a Vortex-style virtualized deployment model: archives and extracted mods live in DMM storage, profiles define enabled staged mods, and game folders receive only DMM-owned deployment artifacts tracked by manifests.
 - Profile switching must reconcile manifests and links, not mutate staged mods or overwrite unmanaged game files.
 - Like Vortex, DMM must separate download, install planning, staging, and deployment. A downloaded Nexus archive is not automatically a deployable mod until a game/provider installer plan has identified its mod type, deployable files, and target mapping.
 - The Go backend publishes required launch-tool actions, while the Decky frontend executes Steam frontend-only capabilities such as setting Steam launch options. This is an explicit service contract, not an ad hoc callback path.
+- After the install-approval, Decky Mods interaction, fast settings, and mobile favorites/sort work, the target live-update architecture is a durable backend queue plus typed domain events delivered over WebSocket. The queue owns work execution, retries, cancellation, and crash recovery; WebSocket owns realtime phone/tablet updates and Decky modal flows such as FOMOD choices.
+- Game list favorites and sorting are MVP polish after the Decky Mods/fast-install slice; mobile web should default to `Recent` sorting and support favorites plus `A-Z`/`Z-A`.
+
+### Decky Mods UX Requirements
+
+- Decky should use tabs where they create more usable sidebar space than dropdown-heavy navigation.
+- The existing Decky Mods UI should be promoted/polished as a first-class `Mods` tab or equivalent tab-level surface, not hidden behind a click-through button.
+- The `Mods` surface should prioritize the active game, active/default profile, installed mod rows, enable/disable toggles, search/filter, and compact status labels.
+- Mod rows must be focusable with D-pad/controller navigation, visibly highlight when focused, and scroll correctly without requiring pointer clicks.
+- Staging, deployment preview, manifests, target mappings, purge, repair, and recovery belong in advanced/debug surfaces unless an error requires user action.
+- Enabling or disabling a mod from Decky should update the selected profile and apply profile changes automatically, while clearly noting that an already-running game may need a restart.
+- If no game is running or the running game is unsupported, Decky should show a compact fallback state with a game selector or a clear unsupported-game message.
 
 ### Done
 
@@ -36,7 +50,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Backend serves REST APIs and the mobile/tablet web UI.
 - LAN-only access enforcement is enabled by default.
 - LAN-only middleware coverage proves public remotes are rejected while LAN/loopback requests pass, and the trusted-tunnel toggle disables that rejection.
-- Sparse or older config files preserve secure defaults such as LAN-only access, the default listen address, default data directory, and auto-deploy disabled.
+- Sparse or older config files preserve secure defaults such as LAN-only access, the default listen address, and default data directory. MVP fast-install settings default on, but must remain explicit Decky settings.
 - Steam library and installed-game discovery.
 - SQLite storage for discovered games and profiles.
 - Storage migration handles older MVP database shapes by adding missing columns introduced during development.
@@ -132,7 +146,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Completed install jobs now refresh deployment preview state automatically, and the Plugins view only reports a profile as applied when the preview proves there are no pending changes or conflicts.
 - Endpoint-level coverage proves a user-facing profile mod toggle removes DMM-managed files on apply and recreates them when re-enabled and applied again.
 - Install request cards now explain what approval will do before the user starts the download/install-planning path.
-- Install settings now separate automatic download approval from automatic deployment; download approval remains required by default.
+- Install settings now separate automatic download approval from automatic deployment; both default on for MVP Deck-only flow, and newly installed mods remain disabled until explicitly enabled.
 - The auto-accept download setting belongs in the Decky plugin Settings tab, not in the phone/tablet web app.
 - Endpoint-level coverage proves automatic download approval can resolve links, start the pending import without manual approval, download the archive, inspect/stage it, and add it to the selected profile.
 - Endpoint-level coverage proves manual approval with automatic deployment enabled can download, stage, deploy DMM-owned symlinks, record the deployment manifest, and clear the pending import.
@@ -194,8 +208,8 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed: live Gaming Mode validation against a fresh simple Stardew mod after installing the then-current package.
    - Completed: native Linux Stardew support selects the Linux SMAPI payload through the Stardew extension metadata.
    - Completed: SMAPI primary launch-tool requirements are expressed through extension metadata/rules and evaluated generically from enabled profile mod metadata.
-   - Completed: backend launch-action endpoints publish, apply, log, back up, and verify the desired Steam launch options without generic server code hardcoding Stardew-specific behavior.
-   - Remaining: live-verify the newest installed package updates Steam launch options after the user installs the staged package.
+   - Completed: backend launch-action endpoints publish and verify the desired Steam launch action without generic server code hardcoding Stardew-specific behavior or editing Steam config files.
+   - Remaining: live-verify the newest installed package deploys SMAPI launch-root files as copies and launches Stardew through SMAPI in Gaming Mode.
    - Post-MVP: implement and verify Windows/Proton Stardew end to end on Steam Deck through the same extension framework.
 
 4. FOMOD support
@@ -225,9 +239,9 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 7. Rollback and repair
    - Status: partially complete.
    - Completed: apply-time backup restoration, manifest-based purge, and repair of missing/broken DMM-owned links.
+   - Completed locally: deployment planning can reconcile an active manifest with zero staged/enabled mods by producing remove actions for DMM-owned deployed files instead of returning `no staged mods are available to deploy`.
    - Remaining: deleting a staged mod that has active deployed files must either block with a clear "apply/purge first" message or run a safe remove-and-reconcile flow that removes only manifest-owned artifacts before deleting staging.
    - Remaining: add a game-level "Reset DMM-managed mods" action that purges the active deployment manifest, disables/removes profile mod associations, clears staged mod rows and staging folders as requested, and leaves cached downloads available for recovery unless the user explicitly chooses to delete them too.
-   - Remaining: fix deployment planning so an active manifest with zero staged mods can still produce remove actions instead of returning `no staged mods are available to deploy`.
    - Remaining: explicit user-visible rollback jobs.
    - Decision needed: rollback UX model: last-deployment rollback only, named restore points, or profile-transition history.
 
@@ -250,13 +264,14 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed: archive extraction decisions and accepted install-plan summaries are logged before staging.
 
 10. Stardew SMAPI launch integration
-   - Status: implemented locally; live Deck verification requires installing the newest staged package.
+   - Status: in progress; launch-option mutation uses Decky's Steam API, and live launch verification found a SMAPI runtime deployment issue.
    - Verified upstream behavior: Vortex registers SMAPI as a supported/default primary tool for Stardew and selects the SMAPI executable name by platform.
    - Completed: diagnostics can report that enabled Stardew SMAPI mods require SMAPI files and a SMAPI launch path.
    - Completed: extension metadata marks SMAPI as the default/primary launch tool when enabled mod metadata requires SMAPI.
-   - Completed: backend runtime-action endpoints declare the desired launch-tool change and can apply a low-risk `localconfig.vdf` fallback with backup/verification.
-   - Completed: Decky frontend polls required launch actions and uses Steam's frontend API when available, falling back to the backend action path when needed.
-   - Remaining: install the newest staged package on the Deck and live-verify `POST /api/games/413150/launch/apply` no longer returns 404 and Stardew launch options reference `StardewModdingAPI`.
+   - Completed: backend runtime-action endpoints declare the desired launch-tool change for Decky without editing Steam config files.
+   - Completed: Decky frontend polls required launch actions and uses Steam's frontend API when available.
+   - Completed: SMAPI launch-root files can be extension-marked as copy deployments, preserving VFS symlinks for normal mod files while avoiding .NET host resolution through staging.
+   - Remaining: install the newest staged package on the Deck, redeploy SMAPI, and live-verify Stardew launches through SMAPI in Gaming Mode.
 
 11. End-to-end Steam Deck validation
    - Status: live acceptance passed for the previous installed package; the newest staged package still needs install/live verification.
@@ -269,6 +284,13 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed validation: install the then-current package, start backend from Gaming Mode, capture a fresh Nexus automatic download, approve from phone/tablet, download, inspect, stage, deploy, and verify the DMM-owned deployment manifest and symlink count.
    - Remaining validation: install the newest staged package and rerun installed-package, MVP live, Stardew file visibility/runtime, auto-approval, and real-device UI checks.
    - Remaining validation: launch Stardew Valley and confirm the deployed mod behavior is visible in game, then purge and redeploy from the live game folder once the in-game check has passed.
+
+12. Game list favorites and sorting
+   - Status: last MVP polish item.
+   - Remaining: persist per-user favorite games and pin them to the top of the game drawer/list.
+   - Remaining: add a game sort dropdown with `A-Z`, `Z-A`, and `Recent`.
+   - Remaining: define `Recent` as either recently selected in DMM or recently played from Steam metadata, preferring the lower-friction DMM-local history for MVP unless Steam metadata is already available in the discovery model.
+   - Priority note: this should be implemented after core Nexus install, profile deployment, FOMOD choice handling, launch setup, and live validation are stable.
 
 ## MVP Acceptance Criteria
 
@@ -283,6 +305,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - By default, the user can approve an install request from the phone/tablet UI before the archive downloads/installs.
 - If the user enables automatic download approval, captured requests can proceed without manual approval while still surfacing job state and errors.
 - Auto-accept download requests can be toggled from Decky Settings and is not configurable from the phone/tablet web UI.
+- The game list supports favorite games pinned at the top and user-selectable sorting by `A-Z`, `Z-A`, and `Recent`.
 - Auto-deploy does not bypass FOMOD or installer-choice prompts unless a valid saved preset/headless choice set exists.
 - Failed retryable install requests can be retried without recapturing the Nexus link while DMM still has valid request metadata.
 - The archive downloads to DMM-managed storage.
