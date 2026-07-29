@@ -62,7 +62,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/jobs/events", s.jobs.ServeEvents)
+	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
+	mux.HandleFunc("POST /api/imports/pending", s.handlePendingImport)
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
 	mux.Handle("/", s.staticHandler())
 	return lanOnlyMiddleware(func() bool {
@@ -225,8 +227,17 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.jobs.List())
 }
 
+func (s *Server) handleClearPendingImports(w http.ResponseWriter, r *http.Request) {
+	removed := s.jobs.ClearType("pending-import")
+	s.logger.Info("pending imports cleared", "count", len(removed))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"cleared": len(removed),
+	})
+}
+
 type resolveImportRequest struct {
-	URL string `json:"url"`
+	URL    string `json:"url"`
+	Source string `json:"source"`
 }
 
 type inspectArchiveRequest struct {
@@ -246,6 +257,7 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 	}
 	resolved, err := nexus.ParseURL(req.URL)
 	if err != nil {
+		s.logger.Warn("resolve import parse failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -288,6 +300,61 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 		message += "; choose a file before download"
 	}
 	job, _ = s.jobs.Complete(job.ID, message)
+	payload["job"] = job
+	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
+	var req resolveImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	resolved, err := nexus.ParseURL(req.URL)
+	if err != nil {
+		s.logger.Warn("pending import parse failed", "error", err, "source", req.Source)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	s.logger.Info(
+		"pending import requested",
+		"source", source,
+		"catalog", resolved.Catalog,
+		"game_domain", resolved.GameDomain,
+		"mod_id", resolved.ModID,
+		"file_id", resolved.FileID,
+	)
+
+	job := s.jobs.Create("pending-import", "Install request: "+resolved.GameDomain+"/mods/"+resolved.ModID)
+	payload := map[string]any{
+		"job":      job,
+		"resolved": resolved,
+		"source":   source,
+	}
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
+	if apiKey != "" {
+		links, err := nexus.NewClient(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
+		if err != nil {
+			job, _ = s.jobs.Fail(job.ID, err.Error())
+			payload["job"] = job
+			writeJSON(w, http.StatusAccepted, payload)
+			return
+		}
+		payload["download_links"] = links
+		job, _ = s.jobs.Wait(job.ID, "Ready for approval from "+resolved.GameDomain)
+		payload["job"] = job
+		writeJSON(w, http.StatusAccepted, payload)
+		return
+	}
+	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
 	payload["job"] = job
 	writeJSON(w, http.StatusAccepted, payload)
 }

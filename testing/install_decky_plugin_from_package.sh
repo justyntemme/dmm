@@ -43,7 +43,7 @@ sudo find "${DECK_PLUGIN_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 sudo cp -R "${tmp_dir}/${PLUGIN_NAME}/." "${DECK_PLUGIN_DIR}/"
 sudo find "${DECK_PLUGIN_DIR}" -name '._*' -delete
 sudo chown -R root:root "${DECK_PLUGIN_DIR}"
-sudo chmod +x "${DECK_PLUGIN_DIR}/bin/dmm-server"
+sudo chmod +x "${DECK_PLUGIN_DIR}/bin/dmm-server" "${DECK_PLUGIN_DIR}/bin/dmm-nxm-handler"
 
 echo "==> Restarting Decky plugin loader"
 if sudo systemctl restart plugin_loader.service 2>/dev/null; then

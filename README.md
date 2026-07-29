@@ -96,6 +96,7 @@ Decky Mod Manager plugin/backend logs:
 ```text
 /home/deck/.local/state/decky-mod-manager/plugin.log
 /home/deck/.local/state/decky-mod-manager/backend.log
+/home/deck/.local/state/decky-mod-manager/nxm-handler.log
 ```
 
 Steam frontend JavaScript/plugin load errors:

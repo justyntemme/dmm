@@ -66,6 +66,10 @@ func (m *Manager) Complete(id, message string) (Job, bool) {
 	return m.update(id, StatusCompleted, message)
 }
 
+func (m *Manager) Wait(id, message string) (Job, bool) {
+	return m.update(id, StatusWaiting, message)
+}
+
 func (m *Manager) Fail(id, message string) (Job, bool) {
 	return m.update(id, StatusFailed, message)
 }
@@ -95,6 +99,25 @@ func (m *Manager) List() []Job {
 		out = append(out, job)
 	}
 	return out
+}
+
+func (m *Manager) ClearType(jobType string) []Job {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	removed := []Job{}
+	for id, job := range m.jobs {
+		if job.Type != jobType {
+			continue
+		}
+		delete(m.jobs, id)
+		job.Status = StatusCanceled
+		job.Message = "Cleared"
+		job.UpdatedAt = time.Now().UTC()
+		removed = append(removed, job)
+		m.publishLocked(job)
+	}
+	return removed
 }
 
 func (m *Manager) ServeEvents(w http.ResponseWriter, r *http.Request) {

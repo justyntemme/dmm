@@ -1,4 +1,5 @@
 import asyncio
+import configparser
 import datetime
 import json
 import os
@@ -16,6 +17,8 @@ class Plugin:
     log_dir = Path(os.environ.get("XDG_STATE_HOME", "/home/deck/.local/state")) / "decky-mod-manager"
     plugin_log = log_dir / "plugin.log"
     backend_log = log_dir / "backend.log"
+    desktop_id = "decky-mod-manager-nxm.desktop"
+    nxm_schemes = ["x-scheme-handler/nxm", "x-scheme-handler/nxm-protocol"]
 
     async def _main(self):
         self._log("plugin loaded")
@@ -103,6 +106,98 @@ class Plugin:
         }
         return result
 
+    async def open_nexus(self, game_domain=None):
+        url = "https://www.nexusmods.com"
+        if game_domain:
+            url = f"https://www.nexusmods.com/{game_domain}"
+        self._log(f"open nexus navigation requested: {url}")
+        return {"ok": True, "url": url}
+
+    async def nxm_status(self):
+        return self._nxm_status()
+
+    async def register_nxm_handler(self):
+        self._log("register nxm handler requested")
+        try:
+            plugin_dir = Path(__file__).resolve().parent
+            handler = plugin_dir / "bin" / "dmm-nxm-handler"
+            self._log(f"register nxm handler plugin_dir={plugin_dir}")
+            self._log(f"register nxm handler binary={handler} exists={handler.exists()}")
+            if not handler.exists():
+                return {"ok": False, "error": f"NXM handler missing: {handler}", "status": self._nxm_status()}
+
+            desktop_dir = Path.home() / ".local" / "share" / "applications"
+            desktop_dir.mkdir(parents=True, exist_ok=True)
+            desktop_path = desktop_dir / self.desktop_id
+            self._log(f"register nxm handler desktop_path={desktop_path}")
+            desktop_path.write_text(
+                "\n".join([
+                    "[Desktop Entry]",
+                    "Name=Decky Mod Manager NXM Handler",
+                    f"Exec={handler} %u",
+                    "Type=Application",
+                    "NoDisplay=true",
+                    "MimeType=x-scheme-handler/nxm;x-scheme-handler/nxm-protocol;",
+                    "",
+                ]),
+                encoding="utf-8",
+            )
+            for scheme in self.nxm_schemes:
+                self._write_mimeapps_default(scheme, self.desktop_id)
+            self._run_command(["update-desktop-database", str(desktop_dir)], check=False)
+            status = self._nxm_status()
+            self._log(f"registered nxm handler status={status}")
+            return {"ok": status["registered"], "status": status, "error": None if status["registered"] else "NXM handler was written but did not become the active handler."}
+        except subprocess.CalledProcessError as exc:
+            self._log(f"register nxm handler failed: {exc.stderr}")
+            return {"ok": False, "error": exc.stderr or str(exc), "status": self._nxm_status()}
+        except Exception as exc:
+            self._log(f"register nxm handler failed: {exc}")
+            return {"ok": False, "error": str(exc), "status": self._nxm_status()}
+
+    async def test_nxm_handler(self):
+        test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
+        try:
+            self._log("test nxm handler requested")
+            if not self._backend_responds():
+                return {"ok": False, "error": "Server must be running before testing the NXM handler.", "url": test_url}
+            plugin_dir = Path(__file__).resolve().parent
+            handler = plugin_dir / "bin" / "dmm-nxm-handler"
+            if not handler.exists():
+                return {"ok": False, "error": f"NXM handler missing: {handler}", "url": test_url}
+            self._run_command([str(handler), test_url], check=True)
+            return {"ok": True, "url": test_url}
+        except Exception as exc:
+            self._log(f"test nxm handler failed: {exc}")
+            return {"ok": False, "error": str(exc), "url": test_url}
+
+    async def test_nxm_dispatch(self):
+        test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
+        try:
+            self._log("test nxm dispatch requested")
+            if not self._backend_responds():
+                return {"ok": False, "error": "Server must be running before testing NXM dispatch.", "url": test_url}
+            result = self._run_command(["xdg-open", test_url], check=False)
+            return {"ok": result.returncode == 0, "error": result.stderr.strip() or None, "url": test_url}
+        except Exception as exc:
+            self._log(f"test nxm dispatch failed: {exc}")
+            return {"ok": False, "error": str(exc), "url": test_url}
+
+    async def add_pending_import(self, url):
+        url = str(url or "").strip()
+        self._log(f"add pending import requested url={self._redact_url(url)}")
+        if not url:
+            return {"ok": False, "error": "Nexus URL is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"url": url, "source": "decky-plugin"}).encode("utf-8")
+        result = self._backend_json("POST", "/api/imports/pending", payload)
+        if result is None:
+            return {"ok": False, "error": "Unable to add install request."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"add pending import accepted job={job}")
+        return {"ok": True, "result": result}
+
     async def dependencies(self):
         return [
             self._dependency("7-Zip", "7z", "Extracts .7z and many Nexus archive formats."),
@@ -166,6 +261,10 @@ class Plugin:
             )
             with urllib.request.urlopen(request, timeout=2) as response:
                 return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            self._log(f"backend json request failed: {method} {path}: HTTP {exc.code}: {detail[:500]}")
+            return None
         except Exception as exc:
             self._log(f"backend json request failed: {method} {path}: {exc}")
             return None
@@ -179,6 +278,109 @@ class Plugin:
             "path": path,
             "description": description,
         }
+
+    def _nxm_status(self):
+        desktop_path = Path.home() / ".local" / "share" / "applications" / self.desktop_id
+        current = self._read_mimeapps_default("x-scheme-handler/nxm")
+        protocol_current = self._read_mimeapps_default("x-scheme-handler/nxm-protocol")
+        xdg_current = ""
+        try:
+            result = self._run_command(["xdg-mime", "query", "default", "x-scheme-handler/nxm"], check=False)
+            xdg_current = result.stdout.strip()
+            if not current:
+                current = xdg_current
+        except Exception as exc:
+            self._log(f"nxm xdg-mime query failed: {exc}")
+        return {
+            "desktop_path": str(desktop_path),
+            "desktop_exists": desktop_path.exists(),
+            "current_handler": current,
+            "protocol_handler": protocol_current,
+            "xdg_handler": xdg_current,
+            "registered": current == self.desktop_id and protocol_current == self.desktop_id and desktop_path.exists(),
+        }
+
+    def _write_mimeapps_default(self, scheme, desktop_id):
+        config_dir = Path.home() / ".config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        path = config_dir / "mimeapps.list"
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        parser.optionxform = str
+        if path.exists():
+            parser.read(path, encoding="utf-8")
+        if "Default Applications" not in parser:
+            parser["Default Applications"] = {}
+        if "Added Associations" not in parser:
+            parser["Added Associations"] = {}
+        previous = parser["Default Applications"].get(scheme, "")
+        parser["Default Applications"][scheme] = desktop_id
+        parser["Added Associations"][scheme] = desktop_id
+        with path.open("w", encoding="utf-8") as handle:
+            parser.write(handle, space_around_delimiters=False)
+        self._log(f"mimeapps associations updated path={path} scheme={scheme} previous_default={previous} next={desktop_id}")
+
+    def _read_mimeapps_default(self, scheme):
+        for path in [
+            Path.home() / ".config" / "mimeapps.list",
+            Path.home() / ".local" / "share" / "applications" / "mimeapps.list",
+        ]:
+            if not path.exists():
+                continue
+            parser = configparser.ConfigParser(interpolation=None, strict=False)
+            parser.optionxform = str
+            try:
+                parser.read(path, encoding="utf-8")
+            except Exception as exc:
+                self._log(f"mimeapps read failed path={path}: {exc}")
+                continue
+            if parser.has_section("Default Applications") and parser.has_option("Default Applications", scheme):
+                return parser.get("Default Applications", scheme).strip()
+        return ""
+
+    def _run_command(self, args, check):
+        self._log(f"run command args={self._format_args(args)}")
+        result = subprocess.run(
+            args,
+            check=check,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._clean_env(),
+        )
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        self._log(f"command result rc={result.returncode} stdout={stdout[:500]} stderr={stderr[:500]}")
+        return result
+
+    def _clean_env(self):
+        env = os.environ.copy()
+        for key in [
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "PYTHONPATH",
+            "PYTHONHOME",
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+            "STEAM_COMPAT_DATA_PATH",
+        ]:
+            env.pop(key, None)
+        env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/bin:/bin"
+        env.setdefault("HOME", str(Path.home()))
+        env.setdefault("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+        env.setdefault("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+        return env
+
+    def _format_args(self, args):
+        out = []
+        for item in args:
+            text = str(item)
+            text = self._redact_url(text)
+            out.append(text)
+        return out
+
+    def _redact_url(self, text):
+        if "key=" in text or "expires=" in text:
+            return "[redacted-url]"
+        return text
 
     def _log(self, message):
         try:

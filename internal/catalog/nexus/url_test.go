@@ -28,6 +28,15 @@ func TestParseURL(t *testing.T) {
 			nxmKey:     "x",
 			expires:    "1",
 		},
+		{
+			name:       "nxm URL with IDs in path",
+			raw:        "nxm://stardewvalley/mods/239/files/165575?key=x&expires=1&user_id=2",
+			gameDomain: "stardewvalley",
+			modID:      "239",
+			fileID:     "165575",
+			nxmKey:     "x",
+			expires:    "1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

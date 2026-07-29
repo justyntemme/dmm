@@ -10,6 +10,7 @@ import (
 )
 
 var nexusModPath = regexp.MustCompile(`^/([^/]+)/mods/([0-9]+)`)
+var nxmModFilePath = regexp.MustCompile(`^/mods/([0-9]+)/files/([0-9]+)`)
 
 func ParseURL(raw string) (catalog.ResolvedDownload, error) {
 	raw = strings.TrimSpace(raw)
@@ -30,10 +31,17 @@ func ParseURL(raw string) (catalog.ResolvedDownload, error) {
 		q := u.Query()
 		out.ModID = q.Get("mod_id")
 		out.FileID = q.Get("file_id")
+		if out.ModID == "" || out.FileID == "" {
+			matches := nxmModFilePath.FindStringSubmatch(u.Path)
+			if len(matches) == 3 {
+				out.ModID = matches[1]
+				out.FileID = matches[2]
+			}
+		}
 		out.NXMKey = q.Get("key")
 		out.Expires = q.Get("expires")
 		if out.ModID == "" || out.FileID == "" {
-			return catalog.ResolvedDownload{}, errors.New("nxm link must include mod_id and file_id")
+			return catalog.ResolvedDownload{}, errors.New("nxm link must include /mods/{mod_id}/files/{file_id} or mod_id and file_id query params")
 		}
 		return out, nil
 	case "http", "https":

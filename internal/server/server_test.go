@@ -62,6 +62,53 @@ func TestResolveImportWithoutNexusKey(t *testing.T) {
 	}
 }
 
+func TestPendingImportCapturesNXMLink(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"nxm-handler"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("Captured; configure Nexus API key")) {
+		t.Fatalf("expected pending import guidance, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"waiting"`)) {
+		t.Fatalf("expected waiting install request, body = %s", rec.Body.String())
+	}
+}
+
+func TestClearPendingImports(t *testing.T) {
+	srv := newTestServer(t)
+
+	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
+	create.Header.Set("Content-Type", "application/json")
+	create.RemoteAddr = "127.0.0.1:1"
+	createRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(createRec, create)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	clear := httptest.NewRequest(http.MethodDelete, "/api/imports/pending", nil)
+	clear.RemoteAddr = "127.0.0.1:1"
+	clearRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(clearRec, clear)
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, body = %s", clearRec.Code, clearRec.Body.String())
+	}
+	if !bytes.Contains(clearRec.Body.Bytes(), []byte(`"cleared":1`)) {
+		t.Fatalf("expected one cleared request, body = %s", clearRec.Body.String())
+	}
+	if jobs := srv.jobs.List(); len(jobs) != 0 {
+		t.Fatalf("jobs after clear = %+v", jobs)
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
