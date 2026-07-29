@@ -2531,6 +2531,87 @@ func TestApplyGameLaunchUsesExtensionActionAndBacksUpSteamConfig(t *testing.T) {
 	}
 }
 
+func TestDeployAutoAppliesLowRiskLaunchAction(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	for _, rel := range []string{
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "LookupAnything"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "LookupAnything", "manifest.json"), []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "LookupAnything", "LookupAnything.dll"), []byte("dll"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeSteamLaunchOptions(t, "413150", "")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job    jobs.Job                 `json:"job"`
+		Launch *applyGameLaunchResponse `json:"launch"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	desired := steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI")
+	if body.Job.Status != jobs.StatusCompleted || body.Launch == nil || !body.Launch.Applied || !body.Launch.Status.Configured {
+		t.Fatalf("deploy response = %+v", body)
+	}
+	status, err := steam.LaunchOptionsStatusForApp(context.Background(), "413150", desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Configured || status.CurrentOptions != desired {
+		t.Fatalf("launch options were not configured = %+v", status)
+	}
+}
+
 func TestGameLaunchStatusBlocksActionUntilLaunchToolFilesExist(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
