@@ -839,6 +839,104 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 	}
 }
 
+func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><folder source="Options/High" destination="textures" /></files>
+            </plugin>
+            <plugin name="Low">
+              <typeDescriptor><type name="Optional" /></typeDescriptor>
+              <files><folder source="Options/Low" destination="textures" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"Core/base.txt":            "base",
+		"Options/High/variant.txt": "high",
+		"Options/Low/variant.txt":  "low",
+		"fomod/info.xml":           "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, archivePath)
+	}))
+	defer downloadServer.Close()
+
+	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/999")
+	job, _ = srv.jobs.Wait(job.ID, "Ready for approval from stardewvalley")
+	srv.rememberPendingImport(job.ID, pendingImport{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		DownloadLinks: []nexus.DownloadLink{{
+			Name: "Local FOMOD archive",
+			URI:  downloadServer.URL + "/fomod.zip",
+		}},
+		Source: "test",
+	})
+
+	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
+	approve.RemoteAddr = "127.0.0.1:1"
+	approveRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(approveRec, approve)
+	if approveRec.Code != http.StatusAccepted {
+		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	}
+
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "installer choices required") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	if _, ok := srv.pendingImports[job.ID]; ok {
+		t.Fatalf("pending import %s was not forgotten after installer choice capture", job.ID)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "needs_choices" || !strings.Contains(candidates[0].InstallerJSON, "Choice Mod") {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	choiceJob, ok := srv.findInstallerChoiceJob(candidates[0].ID)
+	if !ok {
+		t.Fatalf("installer choice job was not created for candidate %+v", candidates[0])
+	}
+	if choiceJob.Status != jobs.StatusWaiting || choiceJob.Type != "installer-choice" {
+		t.Fatalf("installer choice job = %+v", choiceJob)
+	}
+	if choiceJob.Payload["app_id"] != "413150" || choiceJob.Payload["candidate_id"] != strconv.FormatInt(candidates[0].ID, 10) || choiceJob.Payload["mod_id"] != "999" {
+		t.Fatalf("installer choice payload = %+v", choiceJob.Payload)
+	}
+}
+
 func TestPendingImportAutoApprovalDownloadsAndStagesArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
@@ -1169,6 +1267,24 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"blocked"`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
+	choiceCandidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		Name:          "Choice Mod",
+		ArchivePath:   "/downloads/fomod.zip",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: `{"name":"Choice Mod","module_config":"fomod/ModuleConfig.xml","steps":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	choiceJob := srv.ensureInstallerChoiceJob("413150", choiceCandidate)
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/games/413150/install-candidates", nil)
 	req.RemoteAddr = "127.0.0.1:1"
@@ -1177,8 +1293,12 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"deleted":1`)) {
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"deleted":2`)) {
 		t.Fatalf("delete body = %s", rec.Body.String())
+	}
+	canceled, ok := srv.jobs.Get(choiceJob.ID)
+	if !ok || canceled.Status != jobs.StatusCanceled {
+		t.Fatalf("choice job after candidate clear = %+v ok=%v", canceled, ok)
 	}
 
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
@@ -1274,6 +1394,7 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	choiceJob := srv.ensureInstallerChoiceJob("413150", candidate)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -1282,6 +1403,15 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.ID != choiceJob.ID || body.Job.Status != jobs.StatusCompleted {
+		t.Fatalf("apply job = %+v, existing choice job = %+v", body.Job, choiceJob)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {

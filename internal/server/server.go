@@ -1154,10 +1154,18 @@ func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
+	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	deleted, err := s.db.DeleteInstallCandidatesForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	for _, candidate := range candidates {
+		s.cancelInstallerChoiceJobs(candidate.ID, "Installer choices cleared")
 	}
 	s.logger.Info("cleared install candidates", "app_id", appID, "deleted", deleted)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
@@ -1190,12 +1198,17 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "install candidate does not require choices", http.StatusConflict)
 		return
 	}
-	payload := gameJobPayload(appID)
-	payload["candidate_id"] = strconv.FormatInt(candidate.ID, 10)
-	payload["game_domain"] = candidate.SourceGameDomain
-	payload["mod_id"] = candidate.SourceModID
-	payload["file_id"] = candidate.SourceFileID
-	job := s.jobs.CreateWithPayload("installer-choice", "Apply installer choices: "+candidate.Name, payload)
+	job, ok := s.findInstallerChoiceJob(candidate.ID)
+	if ok && job.Status == jobs.StatusRunning {
+		http.Error(w, "installer choices are already being applied", http.StatusConflict)
+		return
+	}
+	if ok {
+		payload := installerChoiceJobPayload(appID, candidate)
+		job, _ = s.jobs.SetPayload(job.ID, payload)
+	} else {
+		job = s.jobs.CreateWithPayload("installer-choice", "Installer choices: "+candidate.Name, installerChoiceJobPayload(appID, candidate))
+	}
 	job, _ = s.jobs.Run(job.ID, "Applying installer choices for "+candidate.Name)
 	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status)
 
@@ -1212,6 +1225,67 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	job, _ = s.jobs.Complete(job.ID, "Added "+mod.Name+" to the profile disabled; enable it to deploy")
 	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+}
+
+func installerChoiceJobPayload(appID string, candidate storage.InstallCandidate) jobs.JobPayload {
+	payload := gameJobPayload(appID)
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["candidate_id"] = strconv.FormatInt(candidate.ID, 10)
+	payload["game_domain"] = strings.TrimSpace(candidate.SourceGameDomain)
+	payload["mod_id"] = strings.TrimSpace(candidate.SourceModID)
+	payload["file_id"] = strings.TrimSpace(candidate.SourceFileID)
+	for key, value := range payload {
+		if strings.TrimSpace(value) == "" {
+			delete(payload, key)
+		}
+	}
+	return payload
+}
+
+func (s *Server) ensureInstallerChoiceJob(appID string, candidate storage.InstallCandidate) jobs.Job {
+	if job, ok := s.findInstallerChoiceJob(candidate.ID); ok {
+		payload := installerChoiceJobPayload(appID, candidate)
+		job, _ = s.jobs.SetPayload(job.ID, payload)
+		if job.Status == jobs.StatusWaiting || job.Status == jobs.StatusQueued {
+			return job
+		}
+		job, _ = s.jobs.Wait(job.ID, "Choose installer options for "+candidate.Name)
+		return job
+	}
+	job := s.jobs.CreateWithPayload("installer-choice", "Installer choices: "+candidate.Name, installerChoiceJobPayload(appID, candidate))
+	job, _ = s.jobs.Wait(job.ID, "Choose installer options for "+candidate.Name)
+	return job
+}
+
+func (s *Server) findInstallerChoiceJob(candidateID int64) (jobs.Job, bool) {
+	needle := strconv.FormatInt(candidateID, 10)
+	for _, job := range s.jobs.List() {
+		if job.Type != "installer-choice" {
+			continue
+		}
+		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
+			continue
+		}
+		if job.Payload["candidate_id"] == needle {
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
+}
+
+func (s *Server) cancelInstallerChoiceJobs(candidateID int64, message string) {
+	needle := strconv.FormatInt(candidateID, 10)
+	for _, job := range s.jobs.List() {
+		if job.Type != "installer-choice" || job.Payload["candidate_id"] != needle {
+			continue
+		}
+		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
+			continue
+		}
+		s.jobs.Cancel(job.ID, message)
+	}
 }
 
 func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate, selections map[string][]string) (storage.InstalledMod, error) {
@@ -2081,8 +2155,9 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
 			installerJSON, _ := json.Marshal(choice.Installer)
-			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-				SteamAppID:    s.appIDForPending(pending),
+			appID := s.appIDForPending(pending)
+			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
 				Name:          modNameFromArchive(result.Path, pending.Resolved),
 				ArchivePath:   result.Path,
@@ -2090,8 +2165,12 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 				Status:        "needs_choices",
 				Reason:        choice.Error(),
 				InstallerJSON: string(installerJSON),
-			}); recordErr != nil {
+			})
+			if recordErr != nil {
 				s.logger.Warn("record installer choice candidate failed", "job_id", jobID, "error", recordErr)
+			} else {
+				choiceJob := s.ensureInstallerChoiceJob(appID, candidate)
+				s.logger.Info("installer choice job waiting", "job_id", choiceJob.ID, "pending_job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
 			}
 			s.jobs.Complete(jobID, "Downloaded "+modNameFromArchive(result.Path, pending.Resolved)+"; installer choices required")
 			s.forgetPendingImport(jobID)
@@ -2271,7 +2350,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
 					installerJSON, _ := json.Marshal(choice.Installer)
-					if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+					candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 						SteamAppID:    appID,
 						Resolved:      pending.Resolved,
 						Name:          modNameFromArchive(archivePath, pending.Resolved),
@@ -2280,11 +2359,13 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 						Status:        "needs_choices",
 						Reason:        choice.Error(),
 						InstallerJSON: string(installerJSON),
-					}); recordErr != nil {
+					})
+					if recordErr != nil {
 						s.logger.Warn("record installer choice recovery candidate failed", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "error", recordErr)
 						return staged, skipped, recordErr
 					}
-					s.logger.Info("download recovery recorded installer choice candidate", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "reason", choice.Error())
+					choiceJob := s.ensureInstallerChoiceJob(appID, candidate)
+					s.logger.Info("download recovery recorded installer choice candidate", "job_id", jobID, "choice_job_id", choiceJob.ID, "app_id", appID, "candidate_id", candidate.ID, "mod_id", modID, "file_id", fileID, "reason", choice.Error())
 					skipped++
 					continue
 				}
