@@ -135,6 +135,31 @@
     install_hint?: string;
   };
 
+  type GameLaunchStatus = {
+    required: boolean;
+    configured: boolean;
+    can_configure: boolean;
+    desired_options?: string;
+    current_options?: string;
+    missing_files?: string[];
+    tool?: {
+      id: string;
+      name: string;
+      executable_path: string;
+      source_extension: string;
+    };
+    action?: {
+      type: string;
+      app_id: string;
+      tool_id: string;
+      desired_options: string;
+      current_options?: string;
+      risk: string;
+      source_extension: string;
+    };
+    error?: string;
+  };
+
   type GameDiagnostics = {
     runtime_requirements?: RuntimeRequirement[];
     validation_warnings?: string[];
@@ -170,6 +195,7 @@
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
   let gameDiagnostics: GameDiagnostics | null = null;
+  let gameLaunchStatus: GameLaunchStatus | null = null;
   let loading = true;
   let error = "";
   let drawer: Drawer = null;
@@ -208,6 +234,7 @@
   $: previewReady = Boolean(deployPlan && !hasDeployConflicts);
   $: deployedReady = Boolean(deploymentStatus?.deployed && (deploymentStatus.file_count ?? 0) > 0);
   $: visibleValidationWarnings = displayValidationWarnings(gameDiagnostics);
+  $: launchSetupAvailable = Boolean(gameLaunchStatus?.required && !gameLaunchStatus.configured && gameLaunchStatus.can_configure && gameLaunchStatus.action);
 
   async function getJSON<T>(url: string): Promise<T> {
     const response = await fetch(url);
@@ -247,6 +274,7 @@
     deployPlan = null;
     deploymentStatus = null;
     gameDiagnostics = null;
+    gameLaunchStatus = null;
     installCandidates = [];
     await loadGameState(game);
     await previewDeploy();
@@ -272,18 +300,20 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics, nextLaunchStatus] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
-      getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`)
+      getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
+      getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`)
     ]);
     profiles = nextProfiles;
     installedMods = nextMods;
     installCandidates = nextCandidates;
     deploymentStatus = nextDeploymentStatus;
     gameDiagnostics = nextDiagnostics;
+    gameLaunchStatus = nextLaunchStatus;
   }
 
   async function refreshSelectedGame(options: { refreshPreview?: boolean } = {}) {
@@ -565,6 +595,20 @@
     const result = await response.json();
     upsertJob(result.job);
     if (deployPlan) await previewDeploy();
+  }
+
+  async function applyLaunchSetup() {
+    if (!selectedGame || !launchSetupAvailable) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/launch/apply`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    if (result.job) upsertJob(result.job);
+    gameLaunchStatus = result.status;
+    await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
 
   async function recoverDownloads() {
@@ -981,9 +1025,9 @@
                 {#if deployPlan && deployPlan.conflicts.length === 0 && deployableActions.length === 0}
                   <button type="button" disabled>This Profile Is Applied</button>
                 {:else}
-                  <button type="button" on:click={askDeployStagedMods} disabled={installedMods.length === 0 || hasDeployConflicts}>Apply Profile Changes</button>
+                  <button type="button" on:click={askDeployStagedMods} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Changes</button>
                 {/if}
-                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0}>Check Profile Changes</button>
+                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Check Profile Changes</button>
               </div>
             </div>
 
@@ -1081,7 +1125,7 @@
               <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
             </div>
             <div class="deploy-actions utility-actions">
-              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0}>Preview Files</button>
+              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
               <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
               <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
               <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
@@ -1206,6 +1250,14 @@
                     {/if}
                     {#if requirement.install_hint}<small>{requirement.install_hint}</small>{/if}
                     {#if requirement.help_url}<a href={requirement.help_url} target="_blank" rel="noreferrer">Open help</a>{/if}
+                    {#if requirement.kind === "launch-tool" && requirement.status !== "ok" && launchSetupAvailable}
+                      <div class="requirement-actions">
+                        <button type="button" on:click={applyLaunchSetup}>Configure Launch Tool</button>
+                        {#if gameLaunchStatus?.action?.risk === "replaces-existing-launch-options"}
+                          <small>Existing Steam launch options will be replaced.</small>
+                        {/if}
+                      </div>
+                    {/if}
                   </div>
                   <span>{requirement.status}</span>
                 </article>

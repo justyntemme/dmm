@@ -5,10 +5,9 @@ import {
   PanelSectionRow,
   TextField,
   ToggleField,
-  definePlugin,
   staticClasses
 } from "@decky/ui";
-import { call, toaster } from "@decky/api";
+import { call, definePlugin, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
 import { useEffect, useRef, useState } from "react";
 
@@ -147,6 +146,14 @@ function Content() {
   const seenJobStates = useRef<Map<string, string>>(new Map());
   const appliedLaunchActions = useRef<Map<string, string>>(new Map());
 
+  async function logFrontendEvent(message: string, detail: Record<string, string | number | boolean> = {}) {
+    try {
+      await call<[string, Record<string, string | number | boolean>], { ok: boolean }>("frontend_log", message, detail);
+    } catch (_err) {
+      // Frontend logging is best-effort and must not block Decky actions.
+    }
+  }
+
   async function refresh() {
     try {
       setError("");
@@ -284,11 +291,42 @@ function Content() {
     }
   }
 
+  async function applyLaunchActionsThroughBackend(source: string): Promise<boolean> {
+    try {
+      await logFrontendEvent("backend launch action fallback requested", { source });
+      const result = await call<[], { ok: boolean; error?: string; applied?: unknown[] }>("apply_launch_actions");
+      if (!result.ok) {
+        const message = result.error || "Backend launch setup did not complete.";
+        setLaunchResult(message);
+        showLaunchToast("DMM launch tool failed", message, true);
+        await logFrontendEvent("backend launch action fallback failed", { source, error: message });
+        return false;
+      }
+      const count = result.applied?.length ?? 0;
+      const message = count > 0 ? `Configured ${count} launch action${count === 1 ? "" : "s"}.` : "No launch setup was pending.";
+      setLaunchResult(message);
+      if (count > 0) showLaunchToast("DMM launch tool configured", message);
+      await logFrontendEvent("backend launch action fallback completed", { source, count });
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setLaunchResult(message);
+      showLaunchToast("DMM launch tool failed", message, true);
+      await logFrontendEvent("backend launch action fallback threw", { source, error: message });
+      return false;
+    }
+  }
+
   async function pollLaunchActions() {
     try {
-      if (!status?.running) return;
       const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
-      if (!result.ok) return;
+      if (!result.ok) {
+        await logFrontendEvent("launch action poll returned not ok", { error: result.error || "" });
+        return;
+      }
+      if (result.actions.length > 0) {
+        await logFrontendEvent("launch action poll found actions", { count: result.actions.length });
+      }
       for (const launchStatus of result.actions) {
         const action = launchStatus.action;
         if (!action || action.type !== "set-steam-launch-options") continue;
@@ -301,31 +339,39 @@ function Content() {
           const message = "Steam launch-option API is unavailable in this Decky context.";
           appliedLaunchActions.current.set(actionKey, "failed");
           setLaunchResult(message);
-          showLaunchToast("DMM launch tool failed", message, true);
+          await logFrontendEvent("launch action steam api unavailable", { app_id: action.app_id, tool_id: action.tool_id });
           await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
             applied: false,
             error: message,
             source: "decky-auto"
           });
+          await applyLaunchActionsThroughBackend("steam-api-unavailable");
           continue;
         }
         try {
+          await logFrontendEvent("launch action applying", { app_id: action.app_id, tool_id: action.tool_id });
           steamApps.SetAppLaunchOptions(appid, action.desired_options);
           appliedLaunchActions.current.set(actionKey, "applied");
           const toolName = launchStatus.tool?.name || action.tool_id;
           const message = `${toolName} launch option configured for ${launchStatus.app_id}.`;
           setLaunchResult(message);
           showLaunchToast("DMM launch tool configured", message);
-          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+          await logFrontendEvent("launch action applied", { app_id: action.app_id, tool_id: action.tool_id });
+          const report = await call<[string, Record<string, string | boolean>], { ok: boolean; status?: LaunchStatus }>("record_launch_action", action.app_id, {
             applied: true,
             current_options: action.desired_options,
             source: "decky-auto"
           });
+          if (!report.ok || !report.status?.configured) {
+            await logFrontendEvent("launch action still pending after steam api call", { app_id: action.app_id, tool_id: action.tool_id });
+            await applyLaunchActionsThroughBackend("steam-api-not-verified");
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           appliedLaunchActions.current.set(actionKey, "failed");
           setLaunchResult(message);
           showLaunchToast("DMM launch tool failed", message, true);
+          await logFrontendEvent("launch action failed", { app_id: action.app_id, tool_id: action.tool_id, error: message });
           await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
             applied: false,
             error: message,
@@ -334,19 +380,32 @@ function Content() {
         }
       }
     } catch (_err) {
+      await logFrontendEvent("launch action poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
       // Launch action polling is best-effort; backend diagnostics expose details.
     }
   }
 
+  async function retryLaunchSetup() {
+    appliedLaunchActions.current.clear();
+    await pollLaunchActions();
+    await applyLaunchActionsThroughBackend("manual-retry");
+    await refresh();
+  }
+
   useEffect(() => {
+    logFrontendEvent("watchers mounted");
     refresh();
     pollInstallJobs({ seed: true });
+    pollLaunchActions();
     const interval = window.setInterval(() => {
       pollInstallJobs();
       pollLaunchActions();
     }, 4000);
-    return () => window.clearInterval(interval);
-  }, [status?.running]);
+    return () => {
+      window.clearInterval(interval);
+      logFrontendEvent("watchers unmounted");
+    };
+  }, []);
 
   return (
     <PanelSection title="Decky Mod Manager">
@@ -371,6 +430,11 @@ function Content() {
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={toggleServer}>
               {status?.running ? "Stop Server" : "Start Server"}
+            </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={retryLaunchSetup} disabled={!status?.running}>
+              Retry Launch Setup
             </ButtonItem>
           </PanelSectionRow>
           <PanelSectionRow>

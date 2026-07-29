@@ -575,6 +575,18 @@ h2 {
   text-decoration: none;
 }
 
+.requirement-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 10px;
+}
+
+.requirement-actions button {
+  min-height: 34px;
+  padding: 8px 12px;
+}
+
 .requirement-list > article > span {
   border: 1px solid #365244;
   border-radius: 999px;

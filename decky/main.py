@@ -244,6 +244,37 @@ class Plugin:
             self._log(f"launch actions available count={len(actions)}")
         return {"ok": True, "actions": actions}
 
+    async def apply_launch_actions(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "applied": []}
+        result, error = self._backend_json_result("GET", "/api/launch/actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load launch actions.", "applied": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected launch actions response.", "applied": []}
+
+        applied = []
+        errors = []
+        self._log(f"backend launch action apply requested count={len(actions)}")
+        for status in actions:
+            if not isinstance(status, dict):
+                continue
+            app_id = str(status.get("app_id") or "").strip()
+            action = status.get("action") if isinstance(status.get("action"), dict) else {}
+            if not app_id:
+                continue
+            result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/launch/apply", b"{}")
+            if result is None:
+                errors.append(f"{app_id}: {error or 'Unable to apply launch action.'}")
+                self._log(f"backend launch action apply failed app_id={app_id} tool_id={action.get('tool_id', '')} error={error}")
+                continue
+            applied.append(result)
+            self._log(f"backend launch action apply completed app_id={app_id} tool_id={action.get('tool_id', '')}")
+        if errors:
+            return {"ok": False, "error": "; ".join(errors), "applied": applied}
+        return {"ok": True, "applied": applied}
+
     async def record_launch_action(self, app_id, report):
         app_id = str(app_id or "").strip()
         if not app_id:
@@ -258,6 +289,20 @@ class Plugin:
             return {"ok": False, "error": error or "Unable to record launch configuration."}
         self._log(f"launch action report app_id={app_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
         return {"ok": True, "status": result}
+
+    async def frontend_log(self, message, detail=None):
+        message = str(message or "").strip()
+        if not isinstance(detail, dict):
+            detail = {}
+        safe_detail = {}
+        for key, value in detail.items():
+            key = str(key)
+            if key.lower() in {"url", "source_url", "nxm_url", "api_key", "key", "token"}:
+                safe_detail[key] = "[redacted]"
+            else:
+                safe_detail[key] = self._redact_url(str(value))
+        self._log(f"frontend {message} detail={safe_detail}")
+        return {"ok": True}
 
     async def dependencies(self):
         return [

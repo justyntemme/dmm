@@ -186,6 +186,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
 	mux.HandleFunc("POST /api/games/{appID}/deploy/repair", s.handleRepairDeploy)
 	mux.HandleFunc("GET /api/games/{appID}/launch", s.handleGameLaunchStatus)
+	mux.HandleFunc("POST /api/games/{appID}/launch/apply", s.handleApplyGameLaunch)
 	mux.HandleFunc("POST /api/games/{appID}/launch/configure", s.handleConfigureGameLaunch)
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
@@ -302,6 +303,13 @@ type configureGameLaunchRequest struct {
 	CurrentOptions string `json:"current_options,omitempty"`
 	Error          string `json:"error,omitempty"`
 	Source         string `json:"source,omitempty"`
+}
+
+type applyGameLaunchResponse struct {
+	Applied bool                      `json:"applied"`
+	Job     *jobs.Job                 `json:"job,omitempty"`
+	Status  gameLaunchStatusResponse  `json:"status"`
+	Steam   steam.LaunchOptionsStatus `json:"steam,omitempty"`
 }
 
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
@@ -458,6 +466,132 @@ func (s *Server) handleConfigureGameLaunch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleApplyGameLaunch(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.applyGameLaunch(r.Context(), appID)
+	if err != nil {
+		writeError(w, launchApplyErrorStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) applyGameLaunch(ctx context.Context, appID string) (applyGameLaunchResponse, error) {
+	status, err := s.gameLaunchStatus(ctx, appID)
+	if err != nil {
+		return applyGameLaunchResponse{}, err
+	}
+	resp := applyGameLaunchResponse{Status: status}
+	if !status.Required || status.Configured {
+		return resp, nil
+	}
+	if !status.CanConfigure || status.Action == nil {
+		return resp, errors.New("launch tool cannot be configured until the extension-provided launch tool files are deployed")
+	}
+	if status.Action.Type != "set-steam-launch-options" {
+		return resp, fmt.Errorf("unsupported launch action type %q", status.Action.Type)
+	}
+
+	job := s.jobs.CreateWithPayload("launch-config", "Configure launch tool", jobs.JobPayload{
+		"app_id":           appID,
+		"action_type":      status.Action.Type,
+		"tool_id":          status.Action.ToolID,
+		"source_extension": status.Action.SourceExtension,
+	})
+	resp.Job = &job
+	s.jobs.Run(job.ID, "Configuring Steam launch options")
+	s.logger.Info(
+		"launch action backend apply started",
+		"job_id", job.ID,
+		"app_id", appID,
+		"action_type", status.Action.Type,
+		"tool_id", status.Action.ToolID,
+		"source_extension", status.Action.SourceExtension,
+		"risk", status.Action.Risk,
+		"current_options", status.CurrentOptions,
+		"desired_options", status.DesiredOptions,
+	)
+
+	s.cfgMu.RLock()
+	backupDir := filepath.Join(s.cfg.DataDir, "backups", "steam")
+	s.cfgMu.RUnlock()
+	steamStatus, err := steam.SetLaunchOptions(ctx, appID, status.Action.DesiredOptions, backupDir)
+	resp.Steam = steamStatus
+	if err != nil {
+		failed, _ := s.jobs.Fail(job.ID, "Steam launch options were not updated: "+err.Error())
+		resp.Job = &failed
+		s.logger.Error(
+			"launch action backend apply failed",
+			"job_id", job.ID,
+			"app_id", appID,
+			"tool_id", status.Action.ToolID,
+			"source_extension", status.Action.SourceExtension,
+			"error", err,
+		)
+		return resp, err
+	}
+
+	updatedStatus, err := s.gameLaunchStatus(ctx, appID)
+	if err != nil {
+		failed, _ := s.jobs.Fail(job.ID, "Steam launch options were updated but could not be verified: "+err.Error())
+		resp.Job = &failed
+		s.logger.Error(
+			"launch action backend verification failed",
+			"job_id", job.ID,
+			"app_id", appID,
+			"tool_id", status.Action.ToolID,
+			"source_extension", status.Action.SourceExtension,
+			"updated_config_path", steamStatus.UpdatedConfigPath,
+			"backup_path", steamStatus.BackupPath,
+			"error", err,
+		)
+		return resp, err
+	}
+	resp.Status = updatedStatus
+	if !updatedStatus.Configured {
+		err := errors.New("Steam launch options were updated but still do not match the extension launch tool")
+		failed, _ := s.jobs.Fail(job.ID, err.Error())
+		resp.Job = &failed
+		s.logger.Error(
+			"launch action backend apply did not configure tool",
+			"job_id", job.ID,
+			"app_id", appID,
+			"tool_id", status.Action.ToolID,
+			"source_extension", status.Action.SourceExtension,
+			"updated_config_path", steamStatus.UpdatedConfigPath,
+			"backup_path", steamStatus.BackupPath,
+			"current_options", updatedStatus.CurrentOptions,
+			"desired_options", updatedStatus.DesiredOptions,
+		)
+		return resp, err
+	}
+	resp.Applied = true
+	completed, _ := s.jobs.Complete(job.ID, "Launch tool configured")
+	resp.Job = &completed
+	s.logger.Info(
+		"launch action backend apply completed",
+		"job_id", job.ID,
+		"app_id", appID,
+		"tool_id", status.Action.ToolID,
+		"source_extension", status.Action.SourceExtension,
+		"updated_config_path", steamStatus.UpdatedConfigPath,
+		"backup_path", steamStatus.BackupPath,
+	)
+	return resp, nil
+}
+
+func launchApplyErrorStatus(err error) int {
+	message := err.Error()
+	if strings.Contains(message, "cannot be configured") || strings.Contains(message, "unsupported launch action") {
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
 }
 
 func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunchStatusResponse, error) {
@@ -1094,11 +1228,53 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	deployment.Commit()
 	s.logger.Info("deployment completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "applied", len(applied))
 	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(applied))+" files")
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	launchApply, launchErr := s.autoApplyLowRiskLaunchAction(r.Context(), appID, job.ID)
+	if launchErr != nil {
+		s.logger.Warn("post-deployment launch action failed", "job_id", job.ID, "app_id", appID, "error", launchErr)
+	}
+	response := map[string]any{
 		"job":     job,
 		"plan":    plan,
 		"applied": applied,
-	})
+	}
+	if launchApply != nil {
+		response["launch"] = launchApply
+	}
+	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) autoApplyLowRiskLaunchAction(ctx context.Context, appID, parentJobID string) (*applyGameLaunchResponse, error) {
+	status, err := s.gameLaunchStatus(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	if !status.Required || status.Configured || status.Action == nil {
+		return nil, nil
+	}
+	if status.Action.Risk != "low" {
+		s.logger.Info(
+			"post-deployment launch action left for manual review",
+			"parent_job_id", parentJobID,
+			"app_id", appID,
+			"tool_id", status.Action.ToolID,
+			"source_extension", status.Action.SourceExtension,
+			"risk", status.Action.Risk,
+			"current_options", status.CurrentOptions,
+		)
+		return nil, nil
+	}
+	if len(status.Details) == 0 {
+		s.logger.Warn(
+			"post-deployment launch action skipped because no Steam localconfig was found",
+			"parent_job_id", parentJobID,
+			"app_id", appID,
+			"tool_id", status.Action.ToolID,
+			"source_extension", status.Action.SourceExtension,
+		)
+		return nil, nil
+	}
+	resp, err := s.applyGameLaunch(ctx, appID)
+	return &resp, err
 }
 
 func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
