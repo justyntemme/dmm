@@ -236,6 +236,8 @@
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
   let candidateSelections: Record<number, Record<string, string[]>> = {};
+  let refreshJobsInFlight = false;
+  let refreshJobsQueued = false;
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
@@ -297,11 +299,22 @@
   }
 
   async function refreshJobsAndSelectedGame() {
+    if (refreshJobsInFlight) {
+      refreshJobsQueued = true;
+      return;
+    }
+    refreshJobsInFlight = true;
     try {
       jobs = await getJSON<Job[]>("/api/jobs");
       if (selectedGame) await refreshSelectedGame({ refreshPreview: deployPlan !== null });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+    } finally {
+      refreshJobsInFlight = false;
+      if (refreshJobsQueued) {
+        refreshJobsQueued = false;
+        void refreshJobsAndSelectedGame();
+      }
     }
   }
 
@@ -1006,14 +1019,31 @@
     refresh();
     const events = new EventSource("/api/jobs/events");
     events.addEventListener("job", (event) => {
-      upsertJob(JSON.parse((event as MessageEvent).data));
+      const job = JSON.parse((event as MessageEvent).data) as Job;
+      upsertJob(job);
+      if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
+        void refreshJobsAndSelectedGame();
+      }
     });
+    events.onerror = () => {
+      void refreshJobsAndSelectedGame();
+    };
     const poll = window.setInterval(() => {
-      refreshJobsAndSelectedGame();
-    }, 4000);
+      void refreshJobsAndSelectedGame();
+    }, 2500);
+    const refreshOnFocus = () => {
+      void refreshJobsAndSelectedGame();
+    };
+    const refreshOnVisibility = () => {
+      if (!document.hidden) void refreshJobsAndSelectedGame();
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisibility);
     return () => {
       events.close();
       window.clearInterval(poll);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisibility);
       if (selectedGameRefreshTimer !== null) window.clearTimeout(selectedGameRefreshTimer);
     };
   });

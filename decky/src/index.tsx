@@ -9,7 +9,7 @@ import {
 } from "@decky/ui";
 import { call, definePlugin, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 declare const SteamClient:
   | {
@@ -158,6 +158,170 @@ function showLaunchToast(title: string, body: string, failed = false) {
 }
 
 const notifiedInstallJobStates = new Map<string, string>();
+const completedLaunchActions = new Set<string>();
+const launchActionAttempts = new Map<string, number>();
+let backgroundMonitorInterval: number | null = null;
+
+type LaunchResultSink = (message: string) => void;
+
+async function logFrontendEvent(message: string, detail: Record<string, string | number | boolean> = {}) {
+  try {
+    await call<[string, Record<string, string | number | boolean>], { ok: boolean }>("frontend_log", message, detail);
+  } catch (_err) {
+    // Frontend logging is best-effort and must not block Decky actions.
+  }
+}
+
+function isInstallNotificationJob(job: Job) {
+  return job.type === "pending-import" || job.type === "installer-choice";
+}
+
+async function pollInstallJobs({ seed = false } = {}) {
+  try {
+    const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
+    if (!result.ok) {
+      await logFrontendEvent("install job poll returned not ok", { error: result.error || "" });
+      return;
+    }
+    for (const job of result.jobs) {
+      if (!isInstallNotificationJob(job)) continue;
+      const stateKey = `${job.status}:${job.message || ""}`;
+      const previous = notifiedInstallJobStates.get(job.id);
+      notifiedInstallJobStates.set(job.id, stateKey);
+      const updatedAt = Date.parse(job.updated_at || "");
+      const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
+      if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+        await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type });
+        showInstallToast(job);
+      }
+    }
+  } catch (_err) {
+    await logFrontendEvent("install job poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
+  }
+}
+
+async function applyLaunchActionThroughBackend(action: LaunchAction, source: string, sink?: LaunchResultSink): Promise<boolean> {
+  try {
+    await logFrontendEvent("backend launch action requested", { app_id: action.app_id, tool_id: action.tool_id, source });
+    const result = await call<
+      [string],
+      { ok: boolean; error?: string; result?: { applied?: boolean; status?: LaunchStatus; job?: Job } }
+    >("apply_launch_action", action.app_id);
+    if (!result.ok) {
+      const message = result.error || "Backend launch setup did not complete.";
+      sink?.(message);
+      showLaunchToast("DMM launch tool failed", message, true);
+      await logFrontendEvent("backend launch action failed", { app_id: action.app_id, tool_id: action.tool_id, source, error: message });
+      return false;
+    }
+    const configured = Boolean(result.result?.applied || result.result?.status?.configured);
+    const message = configured ? "Launch tool configured." : "Launch setup ran, but DMM still sees it as pending.";
+    sink?.(message);
+    showLaunchToast(configured ? "DMM launch tool configured" : "DMM launch tool needs review", message, !configured);
+    await logFrontendEvent("backend launch action completed", { app_id: action.app_id, tool_id: action.tool_id, source, configured });
+    return configured;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    sink?.(message);
+    showLaunchToast("DMM launch tool failed", message, true);
+    await logFrontendEvent("backend launch action threw", { app_id: action.app_id, tool_id: action.tool_id, source, error: message });
+    return false;
+  }
+}
+
+async function pollLaunchActions(options: { force?: boolean; sink?: LaunchResultSink } = {}) {
+  try {
+    const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
+    if (!result.ok) {
+      await logFrontendEvent("launch action poll returned not ok", { error: result.error || "" });
+      return;
+    }
+    if (result.actions.length > 0) {
+      await logFrontendEvent("launch action poll found actions", { count: result.actions.length });
+    }
+    for (const launchStatus of result.actions) {
+      const action = launchStatus.action;
+      if (!action || action.type !== "set-steam-launch-options") continue;
+      if (!launchStatus.can_configure || launchStatus.configured) continue;
+      const actionKey = `${action.app_id}:${action.tool_id}:${action.desired_options}`;
+      if (completedLaunchActions.has(actionKey)) continue;
+      const now = Date.now();
+      const previousAttempt = launchActionAttempts.get(actionKey) ?? 0;
+      if (!options.force && previousAttempt > 0 && now - previousAttempt < 30_000) continue;
+      launchActionAttempts.set(actionKey, now);
+
+      const appid = Number.parseInt(action.app_id, 10);
+      const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
+      if (!Number.isFinite(appid) || typeof steamApps?.SetAppLaunchOptions !== "function") {
+        const message = "Steam launch-option API is unavailable in this Decky context.";
+        options.sink?.(message);
+        await logFrontendEvent("launch action steam api unavailable", { app_id: action.app_id, tool_id: action.tool_id });
+        await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+          applied: false,
+          error: message,
+          source: "decky-auto"
+        });
+        if (await applyLaunchActionThroughBackend(action, "steam-api-unavailable", options.sink)) {
+          completedLaunchActions.add(actionKey);
+        }
+        continue;
+      }
+
+      try {
+        await logFrontendEvent("launch action applying", { app_id: action.app_id, tool_id: action.tool_id });
+        steamApps.SetAppLaunchOptions(appid, action.desired_options);
+        const report = await call<[string, Record<string, string | boolean>], { ok: boolean; status?: LaunchStatus }>("record_launch_action", action.app_id, {
+          applied: true,
+          current_options: action.desired_options,
+          source: "decky-auto"
+        });
+        if (report.ok && report.status?.configured) {
+          completedLaunchActions.add(actionKey);
+          const toolName = launchStatus.tool?.name || action.tool_id;
+          const message = `${toolName} launch option configured for ${launchStatus.app_id}.`;
+          options.sink?.(message);
+          showLaunchToast("DMM launch tool configured", message);
+          await logFrontendEvent("launch action applied", { app_id: action.app_id, tool_id: action.tool_id });
+          continue;
+        }
+        await logFrontendEvent("launch action still pending after steam api call", { app_id: action.app_id, tool_id: action.tool_id });
+        if (await applyLaunchActionThroughBackend(action, "steam-api-not-verified", options.sink)) {
+          completedLaunchActions.add(actionKey);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        options.sink?.(message);
+        showLaunchToast("DMM launch tool failed", message, true);
+        await logFrontendEvent("launch action failed", { app_id: action.app_id, tool_id: action.tool_id, error: message });
+        await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+          applied: false,
+          error: message,
+          source: "decky-auto"
+        });
+      }
+    }
+  } catch (_err) {
+    await logFrontendEvent("launch action poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
+  }
+}
+
+function startBackgroundMonitors() {
+  if (backgroundMonitorInterval !== null) return;
+  logFrontendEvent("background monitors started");
+  pollInstallJobs({ seed: true });
+  pollLaunchActions();
+  backgroundMonitorInterval = window.setInterval(() => {
+    pollInstallJobs();
+    pollLaunchActions();
+  }, 4000);
+}
+
+function stopBackgroundMonitors() {
+  if (backgroundMonitorInterval === null) return;
+  window.clearInterval(backgroundMonitorInterval);
+  backgroundMonitorInterval = null;
+  logFrontendEvent("background monitors stopped");
+}
 
 function Content() {
   const [tab, setTab] = useState<Tab>("main");
@@ -175,16 +339,6 @@ function Content() {
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [modsResult, setModsResult] = useState<string>("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
-  const seenJobStates = useRef<Map<string, string>>(new Map());
-  const appliedLaunchActions = useRef<Map<string, string>>(new Map());
-
-  async function logFrontendEvent(message: string, detail: Record<string, string | number | boolean> = {}) {
-    try {
-      await call<[string, Record<string, string | number | boolean>], { ok: boolean }>("frontend_log", message, detail);
-    } catch (_err) {
-      // Frontend logging is best-effort and must not block Decky actions.
-    }
-  }
 
   async function refresh() {
     try {
@@ -405,7 +559,6 @@ function Content() {
       setImportResult(job?.message || job?.title || "Install request added.");
       if (job) {
         const stateKey = `${job.status}:${job.message || ""}`;
-        seenJobStates.current.set(job.id, stateKey);
         notifiedInstallJobStates.set(job.id, stateKey);
         await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, source: "decky-add-import" });
         showInstallToast(job as Job);
@@ -416,144 +569,18 @@ function Content() {
     }
   }
 
-  async function pollInstallJobs({ seed = false } = {}) {
-    try {
-      const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
-      if (!result.ok) {
-        await logFrontendEvent("install job poll returned not ok", { error: result.error || "" });
-        return;
-      }
-      for (const job of result.jobs) {
-        if (job.type !== "pending-import") continue;
-        const stateKey = `${job.status}:${job.message || ""}`;
-        const previous = notifiedInstallJobStates.get(job.id) ?? seenJobStates.current.get(job.id);
-        seenJobStates.current.set(job.id, stateKey);
-        const updatedAt = Date.parse(job.updated_at || "");
-        const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
-        if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
-          notifiedInstallJobStates.set(job.id, stateKey);
-          await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent });
-          showInstallToast(job);
-        }
-      }
-    } catch (_err) {
-      // Status polling is best-effort; the Debug view exposes detailed backend errors.
-    }
-  }
-
-  async function applyLaunchActionsThroughBackend(source: string): Promise<boolean> {
-    try {
-      await logFrontendEvent("backend launch action fallback requested", { source });
-      const result = await call<[], { ok: boolean; error?: string; applied?: unknown[] }>("apply_launch_actions");
-      if (!result.ok) {
-        const message = result.error || "Backend launch setup did not complete.";
-        setLaunchResult(message);
-        showLaunchToast("DMM launch tool failed", message, true);
-        await logFrontendEvent("backend launch action fallback failed", { source, error: message });
-        return false;
-      }
-      const count = result.applied?.length ?? 0;
-      const message = count > 0 ? `Configured ${count} launch action${count === 1 ? "" : "s"}.` : "No launch setup was pending.";
-      setLaunchResult(message);
-      if (count > 0) showLaunchToast("DMM launch tool configured", message);
-      await logFrontendEvent("backend launch action fallback completed", { source, count });
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setLaunchResult(message);
-      showLaunchToast("DMM launch tool failed", message, true);
-      await logFrontendEvent("backend launch action fallback threw", { source, error: message });
-      return false;
-    }
-  }
-
-  async function pollLaunchActions() {
-    try {
-      const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
-      if (!result.ok) {
-        await logFrontendEvent("launch action poll returned not ok", { error: result.error || "" });
-        return;
-      }
-      if (result.actions.length > 0) {
-        await logFrontendEvent("launch action poll found actions", { count: result.actions.length });
-      }
-      for (const launchStatus of result.actions) {
-        const action = launchStatus.action;
-        if (!action || action.type !== "set-steam-launch-options") continue;
-        if (!launchStatus.can_configure || launchStatus.configured) continue;
-        const actionKey = `${action.app_id}:${action.tool_id}:${action.desired_options}`;
-        if (appliedLaunchActions.current.get(actionKey) === "applied") continue;
-        const appid = Number.parseInt(action.app_id, 10);
-        const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
-        if (!Number.isFinite(appid) || typeof steamApps?.SetAppLaunchOptions !== "function") {
-          const message = "Steam launch-option API is unavailable in this Decky context.";
-          appliedLaunchActions.current.set(actionKey, "failed");
-          setLaunchResult(message);
-          await logFrontendEvent("launch action steam api unavailable", { app_id: action.app_id, tool_id: action.tool_id });
-          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
-            applied: false,
-            error: message,
-            source: "decky-auto"
-          });
-          await applyLaunchActionsThroughBackend("steam-api-unavailable");
-          continue;
-        }
-        try {
-          await logFrontendEvent("launch action applying", { app_id: action.app_id, tool_id: action.tool_id });
-          steamApps.SetAppLaunchOptions(appid, action.desired_options);
-          appliedLaunchActions.current.set(actionKey, "applied");
-          const toolName = launchStatus.tool?.name || action.tool_id;
-          const message = `${toolName} launch option configured for ${launchStatus.app_id}.`;
-          setLaunchResult(message);
-          showLaunchToast("DMM launch tool configured", message);
-          await logFrontendEvent("launch action applied", { app_id: action.app_id, tool_id: action.tool_id });
-          const report = await call<[string, Record<string, string | boolean>], { ok: boolean; status?: LaunchStatus }>("record_launch_action", action.app_id, {
-            applied: true,
-            current_options: action.desired_options,
-            source: "decky-auto"
-          });
-          if (!report.ok || !report.status?.configured) {
-            await logFrontendEvent("launch action still pending after steam api call", { app_id: action.app_id, tool_id: action.tool_id });
-            await applyLaunchActionsThroughBackend("steam-api-not-verified");
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          appliedLaunchActions.current.set(actionKey, "failed");
-          setLaunchResult(message);
-          showLaunchToast("DMM launch tool failed", message, true);
-          await logFrontendEvent("launch action failed", { app_id: action.app_id, tool_id: action.tool_id, error: message });
-          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
-            applied: false,
-            error: message,
-            source: "decky-auto"
-          });
-        }
-      }
-    } catch (_err) {
-      await logFrontendEvent("launch action poll failed", { error: _err instanceof Error ? _err.message : String(_err) });
-      // Launch action polling is best-effort; backend diagnostics expose details.
-    }
-  }
-
   async function retryLaunchSetup() {
-    appliedLaunchActions.current.clear();
-    await pollLaunchActions();
-    await applyLaunchActionsThroughBackend("manual-retry");
+    completedLaunchActions.clear();
+    launchActionAttempts.clear();
+    await pollLaunchActions({ force: true, sink: setLaunchResult });
     await refresh();
   }
 
   useEffect(() => {
-    logFrontendEvent("watchers mounted");
+    logFrontendEvent("content mounted");
     refresh();
-    pollInstallJobs({ seed: true });
-    pollLaunchActions();
-    const interval = window.setInterval(() => {
-      pollInstallJobs();
-      pollLaunchActions();
-    }, 4000);
     return () => {
-      window.clearInterval(interval);
-      logFrontendEvent("watchers unmounted");
+      logFrontendEvent("content unmounted");
     };
   }, []);
 
@@ -864,12 +891,15 @@ function Content() {
 }
 
 export default definePlugin(() => {
+  startBackgroundMonitors();
   return {
     name: "Decky Mod Manager",
     titleView: <div className={staticClasses.Title}>Decky Mod Manager</div>,
     alwaysRender: true,
     content: <Content />,
     icon: <FaPowerOff />,
-    onDismount() {}
+    onDismount() {
+      stopBackgroundMonitors();
+    }
   };
 });

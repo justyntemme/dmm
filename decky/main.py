@@ -363,6 +363,19 @@ class Plugin:
             return {"ok": False, "error": "; ".join(errors), "applied": applied}
         return {"ok": True, "applied": applied}
 
+    async def apply_launch_action(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/launch/apply", b"{}")
+        if result is None:
+            self._log(f"backend launch action apply failed app_id={app_id} error={error}")
+            return {"ok": False, "error": error or "Unable to apply launch action."}
+        self._log(f"backend launch action apply completed app_id={app_id}")
+        return {"ok": True, "result": result}
+
     async def record_launch_action(self, app_id, report):
         app_id = str(app_id or "").strip()
         if not app_id:
