@@ -321,32 +321,7 @@ class Plugin:
         if result is None:
             return {"ok": False, "error": error or "Unable to update mod."}
         self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)}")
-        deploy_result, deploy_error = self._apply_profile_changes(app_id)
-        if deploy_error:
-            return {"ok": False, "error": deploy_error, "mod": result}
-        return {"ok": True, "mod": result, "deploy": deploy_result}
-
-    def _apply_profile_changes(self, app_id):
-        preview, preview_error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/preview")
-        if preview is None:
-            return None, preview_error or "Unable to preview profile changes."
-        conflicts = preview.get("conflicts") if isinstance(preview, dict) else None
-        if isinstance(conflicts, list) and conflicts:
-            return None, f"{len(conflicts)} deployment conflict{'s' if len(conflicts) != 1 else ''} must be reviewed from the phone/tablet UI."
-        actions = preview.get("actions") if isinstance(preview, dict) else None
-        deployable = []
-        if isinstance(actions, list):
-            deployable = [
-                action for action in actions
-                if isinstance(action, dict) and action.get("operation") not in {"keep", "skip"}
-            ]
-        if not deployable:
-            return {"preview": preview, "message": "Profile is already applied."}, None
-        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/deploy", b"{}")
-        if result is None:
-            return None, error or "Unable to apply profile changes."
-        self._log(f"profile changes applied app_id={app_id} actions={len(deployable)}")
-        return result, None
+        return {"ok": True, "mod": result.get("mod"), "apply": result.get("apply")}
 
     async def launch_actions(self):
         if not self._backend_responds():

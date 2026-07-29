@@ -200,6 +200,20 @@
     validation_warnings?: string[];
   };
 
+  type ProfileApplyResult = {
+    status: "applied" | "blocked" | "failed" | string;
+    message: string;
+    job?: Job;
+    plan?: DeployPlan;
+    applied?: unknown[];
+    launch?: GameLaunchStatus;
+  };
+
+  type ProfileModUpdateResult = {
+    mod: InstalledMod;
+    apply: ProfileApplyResult;
+  };
+
   type Confirmation = {
     title: string;
     message: string;
@@ -609,9 +623,10 @@
       error = await response.text();
       return;
     }
-    const updated = await response.json();
-    installedMods = installedMods.map((item) => (item.id === updated.id ? updated : item));
-    await applyCurrentProfileChanges();
+    const result: ProfileModUpdateResult = await response.json();
+    installedMods = installedMods.map((item) => (item.id === result.mod.id ? result.mod : item));
+    handleProfileApplyResult(result.apply);
+    await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function setModPriority(mod: InstalledMod, priority: number) {
@@ -626,11 +641,12 @@
       error = await response.text();
       return;
     }
-    const updated = await response.json();
+    const result: ProfileModUpdateResult = await response.json();
     installedMods = installedMods
-      .map((item) => (item.id === updated.id ? updated : item))
+      .map((item) => (item.id === result.mod.id ? result.mod : item))
       .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
-    await applyCurrentProfileChanges();
+    handleProfileApplyResult(result.apply);
+    await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function removeInstalledMod(mod: InstalledMod) {
@@ -641,9 +657,19 @@
       error = await response.text();
       return;
     }
+    const result: { removed: InstalledMod; apply: ProfileApplyResult } = await response.json();
     installedMods = installedMods.filter((item) => item.id !== mod.id);
+    handleProfileApplyResult(result.apply);
     await refreshSelectedGame({ refreshPreview: true });
-    await applyCurrentProfileChanges();
+  }
+
+  function handleProfileApplyResult(result: ProfileApplyResult | null | undefined) {
+    if (!result) return;
+    if (result.job) upsertJob(result.job);
+    if (result.plan) deployPlan = result.plan;
+    if (result.status === "blocked" || result.status === "failed") {
+      error = result.message;
+    }
   }
 
   function askRemoveInstalledMod(mod: InstalledMod) {

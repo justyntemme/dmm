@@ -835,6 +835,26 @@ type updateProfileModRequest struct {
 	Priority *int  `json:"priority"`
 }
 
+type profileModUpdateResponse struct {
+	Mod   storage.InstalledMod `json:"mod"`
+	Apply profileApplyResponse `json:"apply"`
+}
+
+type profileApplyResponse struct {
+	Status  string                    `json:"status"`
+	Message string                    `json:"message"`
+	Job     *jobs.Job                 `json:"job,omitempty"`
+	Plan    *deploy.Plan              `json:"plan,omitempty"`
+	Applied []deploy.AppliedFile      `json:"applied,omitempty"`
+	Launch  *gameLaunchStatusResponse `json:"launch,omitempty"`
+}
+
+type deploymentApplyResult struct {
+	Applied      []deploy.AppliedFile
+	DeploymentID int64
+	Launch       *gameLaunchStatusResponse
+}
+
 func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Request) {
 	var req updateNexusSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1116,7 +1136,8 @@ func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
 		"action":           "removed",
 		"installed_mod_id": installedModID,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"removed": mod})
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "mod-removal")
+	writeJSON(w, http.StatusOK, map[string]any{"removed": mod, "apply": apply})
 }
 
 func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
@@ -1436,53 +1457,20 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
 	s.logger.Info("deployment approved", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
-	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(job.ID, "Applying profile changes"))
+	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying profile changes", "manual")
 	if err != nil {
-		s.logger.Warn("deployment failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": result.Applied})
 		return
 	}
-	applied := deployment.Files
-	if err := deploy.Verify(applied); err != nil {
-		s.logger.Warn("deployment verification failed", "job_id", job.ID, "app_id", appID, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-			s.logger.Warn("deployment rollback after verification failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
-		}
-		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": applied})
-		return
-	}
-	s.logger.Info("deployment verified", "job_id", job.ID, "app_id", appID, "files", len(applied))
-	deploymentID, err := s.db.RecordDeployment(r.Context(), appID, plan.Strategy, applied)
-	if err != nil {
-		s.logger.Warn("deployment manifest record failed", "job_id", job.ID, "app_id", appID, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-			s.logger.Warn("deployment rollback after manifest failure failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
-		}
-		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan})
-		return
-	}
-	deployment.Commit()
-	s.logger.Info("deployment completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "applied", len(applied))
-	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(applied))+" files")
-	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
-		"action":        "deployed",
-		"deployment_id": deploymentID,
-		"files":         len(applied),
-	})
-	launchStatus, launchErr := s.postDeploymentLaunchStatus(r.Context(), appID, job.ID)
-	if launchErr != nil {
-		s.logger.Warn("post-deployment launch action status failed", "job_id", job.ID, "app_id", appID, "error", launchErr)
-	}
+	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(result.Applied))+" files")
 	response := map[string]any{
 		"job":     job,
 		"plan":    plan,
-		"applied": applied,
+		"applied": result.Applied,
 	}
-	if launchStatus != nil {
-		response["launch"] = launchStatus
+	if result.Launch != nil {
+		response["launch"] = result.Launch
 	}
 	writeJSON(w, http.StatusAccepted, response)
 }
@@ -1518,6 +1506,100 @@ func (s *Server) postDeploymentLaunchStatus(ctx context.Context, appID, parentJo
 		"desired_options", status.DesiredOptions,
 	)
 	return &status, nil
+}
+
+func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, source string) profileApplyResponse {
+	plan, err := s.buildGameDeployPlan(ctx, appID)
+	if err != nil {
+		s.logger.Warn("profile apply preview failed", "app_id", appID, "source", source, "error", err)
+		return profileApplyResponse{
+			Status:  "failed",
+			Message: "Profile was updated, but DMM could not preview game-folder changes: " + err.Error(),
+		}
+	}
+	if len(plan.Conflicts) > 0 {
+		s.logger.Info("profile apply blocked by conflicts", "app_id", appID, "source", source, "conflicts", len(plan.Conflicts))
+		return profileApplyResponse{
+			Status:  "blocked",
+			Message: "Profile was updated, but " + strconv.Itoa(len(plan.Conflicts)) + " conflict" + plural(len(plan.Conflicts)) + " need review before applying.",
+			Plan:    &plan,
+		}
+	}
+	if !hasDeployableActions(plan) {
+		return profileApplyResponse{
+			Status:  "applied",
+			Message: "Profile is already applied.",
+			Plan:    &plan,
+		}
+	}
+	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
+	s.logger.Info("profile apply started", "job_id", job.ID, "app_id", appID, "source", source, "actions", len(plan.Actions), "strategy", plan.Strategy)
+	result, err := s.applyPreparedDeployment(ctx, appID, job.ID, plan, "Applying profile changes", source)
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		return profileApplyResponse{
+			Status:  "failed",
+			Message: "Profile was updated, but DMM could not apply game-folder changes: " + err.Error(),
+			Job:     &job,
+			Plan:    &plan,
+			Applied: result.Applied,
+		}
+	}
+	job, _ = s.jobs.Complete(job.ID, "Applied profile changes to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
+	return profileApplyResponse{
+		Status:  "applied",
+		Message: job.Message,
+		Job:     &job,
+		Plan:    &plan,
+		Applied: result.Applied,
+		Launch:  result.Launch,
+	}
+}
+
+func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID string, plan deploy.Plan, progressPrefix, source string) (deploymentApplyResult, error) {
+	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, progressPrefix))
+	if err != nil {
+		s.logger.Warn("deployment failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
+		return deploymentApplyResult{}, err
+	}
+	applied := deployment.Files
+	if err := deploy.Verify(applied); err != nil {
+		s.logger.Warn("deployment verification failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("deployment rollback after verification failed", "job_id", jobID, "app_id", appID, "source", source, "error", rollbackErr)
+		}
+		return deploymentApplyResult{Applied: applied}, err
+	}
+	s.logger.Info("deployment verified", "job_id", jobID, "app_id", appID, "source", source, "files", len(applied))
+	deploymentID, err := s.db.RecordDeployment(ctx, appID, plan.Strategy, applied)
+	if err != nil {
+		s.logger.Warn("deployment manifest record failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
+		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+			s.logger.Warn("deployment rollback after manifest failure failed", "job_id", jobID, "app_id", appID, "source", source, "error", rollbackErr)
+		}
+		return deploymentApplyResult{Applied: applied}, err
+	}
+	deployment.Commit()
+	s.logger.Info("deployment completed", "job_id", jobID, "app_id", appID, "source", source, "deployment_id", deploymentID, "applied", len(applied))
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":        "deployed",
+		"deployment_id": deploymentID,
+		"files":         len(applied),
+		"source":        source,
+	})
+	launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, appID, jobID)
+	if launchErr != nil {
+		s.logger.Warn("post-deployment launch action status failed", "job_id", jobID, "app_id", appID, "source", source, "error", launchErr)
+	}
+	return deploymentApplyResult{Applied: applied, DeploymentID: deploymentID, Launch: launchStatus}, nil
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
@@ -1678,7 +1760,8 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		"enabled":          req.Enabled,
 		"priority":         req.Priority,
 	})
-	writeJSON(w, http.StatusOK, mod)
+	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-update")
+	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -2469,46 +2552,14 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		finish()
 		return
 	}
-	deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Deploying enabled mod"))
+	result, err := s.applyPreparedDeployment(ctx, staged.SteamAppID, jobID, plan, "Deploying enabled mod", "auto-enable")
 	if err != nil {
-		s.logger.Warn("auto-enable deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 		s.jobs.Fail(jobID, err.Error())
 		finish()
 		return
 	}
-	applied := deployment.Files
-	if err := deploy.Verify(applied); err != nil {
-		s.logger.Warn("auto-enable deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-			s.logger.Warn("auto-enable deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
-		}
-		s.jobs.Fail(jobID, err.Error())
-		finish()
-		return
-	}
-	deploymentID, err := s.db.RecordDeployment(context.Background(), staged.SteamAppID, plan.Strategy, applied)
-	if err != nil {
-		s.logger.Warn("auto-enable deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-			s.logger.Warn("auto-enable deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
-		}
-		s.jobs.Fail(jobID, err.Error())
-		finish()
-		return
-	}
-	deployment.Commit()
-	s.logger.Info("auto-enable deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
-	s.publishGameEvent(events.TypeDeploymentChanged, staged.SteamAppID, map[string]any{
-		"action":        "deployed",
-		"deployment_id": deploymentID,
-		"files":         len(applied),
-		"source":        "auto-enable",
-	})
 	message := "Installed, enabled, and deployed " + staged.Name
-	launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, staged.SteamAppID, jobID)
-	if launchErr != nil {
-		s.logger.Warn("auto-enable deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
-	} else if launchStatus != nil && launchStatus.Action != nil {
+	if result.Launch != nil && result.Launch.Action != nil {
 		message += "; launch tool setup pending"
 	}
 	s.jobs.Complete(jobID, message)
@@ -3198,14 +3249,18 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	}
 
 	var mappings []deploy.FileMapping
+	enabledMods := 0
+	legacyMods := 0
 	for _, mod := range mods {
 		if !mod.Enabled {
 			continue
 		}
+		enabledMods++
 		next, err := s.deployMappingsForInstalledMod(mod)
 		if err != nil {
 			if errors.Is(err, errLegacyStagedMod) {
 				s.logger.Info("skipping legacy staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+				legacyMods++
 				continue
 			}
 			return deploy.Plan{}, err
@@ -3216,10 +3271,10 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
 		}
-		if len(mods) == 0 {
-			return deploy.Plan{}, errors.New("no installed profile mods are available to apply")
+		if enabledMods > 0 && legacyMods == enabledMods {
+			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
-		return deploy.Plan{}, errors.New("no enabled mod files are available to apply")
+		return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, nil)
 	}
 	return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
 }

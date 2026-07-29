@@ -1844,6 +1844,12 @@ func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
 	if deleteRec.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
 	}
+	if !bytes.Contains(deleteRec.Body.Bytes(), []byte(`"status":"applied"`)) {
+		t.Fatalf("delete apply body = %s", deleteRec.Body.String())
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatalf("deployed target was not removed: %v", err)
+	}
 
 	previewReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/preview", nil)
 	previewReq.RemoteAddr = "127.0.0.1:1"
@@ -1856,19 +1862,8 @@ func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
 	if err := json.Unmarshal(previewRec.Body.Bytes(), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "remove" {
+	if len(plan.Actions) != 0 || len(plan.Conflicts) != 0 {
 		t.Fatalf("preview plan = %+v", plan)
-	}
-
-	removeReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
-	removeReq.RemoteAddr = "127.0.0.1:1"
-	removeRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(removeRec, removeReq)
-	if removeRec.Code != http.StatusAccepted {
-		t.Fatalf("remove deploy status = %d, body = %s", removeRec.Code, removeRec.Body.String())
-	}
-	if _, err := os.Lstat(target); !os.IsNotExist(err) {
-		t.Fatalf("deployed target was not removed: %v", err)
 	}
 	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -1985,6 +1980,12 @@ func TestProfileModToggleDeploysAndRemovesManagedFiles(t *testing.T) {
 	if !bytes.Contains(disableRec.Body.Bytes(), []byte(`"enabled":false`)) {
 		t.Fatalf("disable body = %s", disableRec.Body.String())
 	}
+	if !bytes.Contains(disableRec.Body.Bytes(), []byte(`"status":"applied"`)) {
+		t.Fatalf("disable apply body = %s", disableRec.Body.String())
+	}
+	if _, err := os.Lstat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("managed link was not removed after disabling mod: %v", err)
+	}
 
 	previewReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/preview", nil)
 	previewReq.RemoteAddr = "127.0.0.1:1"
@@ -1997,19 +1998,8 @@ func TestProfileModToggleDeploysAndRemovesManagedFiles(t *testing.T) {
 	if err := json.Unmarshal(previewRec.Body.Bytes(), &disabledPlan); err != nil {
 		t.Fatal(err)
 	}
-	if len(disabledPlan.Actions) != 1 || disabledPlan.Actions[0].Operation != "remove" || disabledPlan.Actions[0].TargetPath != targetPath {
+	if len(disabledPlan.Actions) != 0 || len(disabledPlan.Conflicts) != 0 {
 		t.Fatalf("disabled preview actions = %+v", disabledPlan.Actions)
-	}
-
-	removeReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
-	removeReq.RemoteAddr = "127.0.0.1:1"
-	removeRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(removeRec, removeReq)
-	if removeRec.Code != http.StatusAccepted {
-		t.Fatalf("disabled deploy status = %d, body = %s", removeRec.Code, removeRec.Body.String())
-	}
-	if _, err := os.Lstat(targetPath); !os.IsNotExist(err) {
-		t.Fatalf("managed link was not removed after disabling mod: %v", err)
 	}
 
 	enableReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10), bytes.NewBufferString(`{"enabled":true}`))
@@ -2020,13 +2010,8 @@ func TestProfileModToggleDeploysAndRemovesManagedFiles(t *testing.T) {
 	if enableRec.Code != http.StatusOK {
 		t.Fatalf("enable status = %d, body = %s", enableRec.Code, enableRec.Body.String())
 	}
-
-	restoreReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
-	restoreReq.RemoteAddr = "127.0.0.1:1"
-	restoreRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(restoreRec, restoreReq)
-	if restoreRec.Code != http.StatusAccepted {
-		t.Fatalf("enabled deploy status = %d, body = %s", restoreRec.Code, restoreRec.Body.String())
+	if !bytes.Contains(enableRec.Body.Bytes(), []byte(`"status":"applied"`)) {
+		t.Fatalf("enable apply body = %s", enableRec.Body.String())
 	}
 	link, err := os.Readlink(targetPath)
 	if err != nil {
@@ -3188,13 +3173,23 @@ func TestBuildGameDeployPlanAfterDeletingLastStagedModRemovesCurrentDeployment(t
 	if rec.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"applied"`)) {
+		t.Fatalf("delete apply body = %s", rec.Body.String())
+	}
 
 	plan, err := srv.buildGameDeployPlan(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "remove" || plan.Actions[0].TargetPath != targetPath {
+	if len(plan.Actions) != 0 || len(plan.Conflicts) != 0 {
 		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("active deployment files after delete = %+v", files)
 	}
 }
 
@@ -3433,7 +3428,7 @@ func TestLegacyManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testing
 	}
 
 	_, err := srv.buildGameDeployPlan(context.Background(), "413150")
-	if err == nil || !strings.Contains(err.Error(), "no enabled mod files") {
+	if err == nil || !strings.Contains(err.Error(), "enabled mods need recovery") {
 		t.Fatalf("error = %v", err)
 	}
 }

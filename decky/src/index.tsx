@@ -117,6 +117,12 @@ type ManagedMod = {
   source_file_id: string;
 };
 
+type ProfileApplyResult = {
+  status: string;
+  message?: string;
+  job?: Job;
+};
+
 type InstallCandidate = {
   id: number;
   steam_app_id: string;
@@ -778,7 +784,7 @@ function Content() {
       setError("");
       setModsResult("");
       setBusyModID(mod.id);
-      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string; mod?: ManagedMod; deploy?: { job?: Job; message?: string } }>(
+      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string; mod?: ManagedMod; apply?: ProfileApplyResult }>(
         "set_profile_mod_enabled",
         selectedDeckyGameID,
         profile.id,
@@ -792,8 +798,13 @@ function Content() {
         return;
       }
       await loadDeckyGameState(selectedDeckyGameID);
-      setModsResult(result.deploy?.job?.message || result.deploy?.message || "Profile changes applied. Restart the game if it is already running.");
-      if (result.deploy?.job) showInstallToast(result.deploy.job);
+      const applyMessage = result.apply?.message || "Profile changes applied. Restart the game if it is already running.";
+      if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
+        setError(applyMessage);
+      } else {
+        setModsResult(applyMessage);
+      }
+      if (result.apply?.job) showInstallToast(result.apply.job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
