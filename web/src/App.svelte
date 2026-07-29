@@ -35,6 +35,15 @@
     updated_at: string;
   };
 
+  type DomainEvent = {
+    id: number;
+    type: string;
+    app_id?: string;
+    job_id?: string;
+    payload?: unknown;
+    created_at: string;
+  };
+
   type DownloadLink = {
     name: string;
     short_name: string;
@@ -238,6 +247,10 @@
   let candidateSelections: Record<number, Record<string, string[]>> = {};
   let refreshJobsInFlight = false;
   let refreshJobsQueued = false;
+  let eventSocket: WebSocket | null = null;
+  let eventReconnectTimer: number | null = null;
+  let eventReconnectDelay = 1000;
+  let lastEventID = 0;
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
@@ -319,6 +332,103 @@
         void refreshJobsAndSelectedGame();
       }
     }
+  }
+
+  function eventSocketURL() {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const after = lastEventID > 0 ? `?after=${lastEventID}` : "";
+    return `${protocol}//${window.location.host}/api/events/ws${after}`;
+  }
+
+  function connectEvents() {
+    if (eventSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(eventSocket.readyState)) return;
+    if (eventReconnectTimer !== null) {
+      window.clearTimeout(eventReconnectTimer);
+      eventReconnectTimer = null;
+    }
+
+    const socket = new WebSocket(eventSocketURL());
+    eventSocket = socket;
+    socket.onopen = () => {
+      eventReconnectDelay = 1000;
+    };
+    socket.onmessage = (message) => {
+      if (typeof message.data !== "string") return;
+      try {
+        handleDomainEvent(JSON.parse(message.data) as DomainEvent);
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+      }
+    };
+    socket.onerror = () => {
+      socket.close();
+    };
+    socket.onclose = () => {
+      if (eventSocket !== socket) return;
+      eventSocket = null;
+      scheduleEventReconnect();
+    };
+  }
+
+  function scheduleEventReconnect() {
+    if (eventReconnectTimer !== null) return;
+    const delay = eventReconnectDelay;
+    eventReconnectDelay = Math.min(eventReconnectDelay * 2, 10000);
+    eventReconnectTimer = window.setTimeout(() => {
+      eventReconnectTimer = null;
+      void refreshJobsAndSelectedGame();
+      connectEvents();
+    }, delay);
+  }
+
+  function closeEventSocket() {
+    if (eventReconnectTimer !== null) {
+      window.clearTimeout(eventReconnectTimer);
+      eventReconnectTimer = null;
+    }
+    if (eventSocket) {
+      const socket = eventSocket;
+      eventSocket = null;
+      socket.close();
+    }
+  }
+
+  function handleDomainEvent(event: DomainEvent) {
+    if (event.id > lastEventID) lastEventID = event.id;
+    if (event.type === "jobs.snapshot") {
+      if (Array.isArray(event.payload)) jobs = event.payload as Job[];
+      return;
+    }
+    if (event.type === "job.updated") {
+      if (isJob(event.payload)) upsertJob(event.payload);
+      return;
+    }
+    if (event.type === "launch.changed") {
+      if (selectedGame && eventMatchesSelectedGame(event)) {
+        if (isGameLaunchStatus(event.payload)) gameLaunchStatus = event.payload;
+        scheduleSelectedGameRefresh(false);
+      }
+      return;
+    }
+    if (event.type === "game.changed") {
+      void refresh();
+      return;
+    }
+    if (["profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
+      scheduleSelectedGameRefresh(true);
+    }
+  }
+
+  function eventMatchesSelectedGame(event: DomainEvent) {
+    return Boolean(selectedGame && (!event.app_id || event.app_id === selectedGame.app_id));
+  }
+
+  function isJob(value: unknown): value is Job {
+    return Boolean(value && typeof value === "object" && typeof (value as Job).id === "string" && typeof (value as Job).type === "string");
+  }
+
+  function isGameLaunchStatus(value: unknown): value is GameLaunchStatus {
+    return Boolean(value && typeof value === "object" && "required" in value && "configured" in value);
   }
 
   function scheduleSelectedGameRefresh(refreshPreview = false) {
@@ -1003,20 +1113,7 @@
 
   onMount(() => {
     refresh();
-    const events = new EventSource("/api/jobs/events");
-    events.addEventListener("job", (event) => {
-      const job = JSON.parse((event as MessageEvent).data) as Job;
-      upsertJob(job);
-      if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type)) {
-        void refreshJobsAndSelectedGame();
-      }
-    });
-    events.onerror = () => {
-      void refreshJobsAndSelectedGame();
-    };
-    const poll = window.setInterval(() => {
-      void refreshJobsAndSelectedGame();
-    }, 2500);
+    connectEvents();
     const refreshOnFocus = () => {
       void refreshJobsAndSelectedGame();
     };
@@ -1026,8 +1123,7 @@
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshOnVisibility);
     return () => {
-      events.close();
-      window.clearInterval(poll);
+      closeEventSocket();
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnVisibility);
       if (selectedGameRefreshTimer !== null) window.clearTimeout(selectedGameRefreshTimer);

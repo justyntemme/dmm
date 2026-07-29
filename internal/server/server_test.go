@@ -16,12 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -113,7 +115,7 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 	}{
 		{name: "health poll", method: http.MethodGet, path: "/api/health", status: http.StatusOK, want: false},
 		{name: "jobs poll", method: http.MethodGet, path: "/api/jobs", status: http.StatusOK, want: false},
-		{name: "events poll", method: http.MethodGet, path: "/api/jobs/events", status: http.StatusOK, want: false},
+		{name: "websocket events", method: http.MethodGet, path: "/api/events/ws", status: http.StatusOK, want: false},
 		{name: "status read", method: http.MethodGet, path: "/api/status", status: http.StatusOK, want: true},
 		{name: "polling error", method: http.MethodGet, path: "/api/health", status: http.StatusInternalServerError, want: true},
 		{name: "mutation", method: http.MethodPost, path: "/api/imports/pending", status: http.StatusAccepted, want: true},
@@ -126,6 +128,70 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 				t.Fatalf("shouldLogRequest() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
+	srv := newTestServer(t)
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events/ws"
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		body := ""
+		if resp != nil && resp.Body != nil {
+			b, _ := io.ReadAll(resp.Body)
+			body = string(b)
+		}
+		t.Fatalf("Dial(%q) error = %v body = %q", wsURL, err, body)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read snapshot error = %v", err)
+	}
+	var snapshot events.Event
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("snapshot unmarshal error = %v", err)
+	}
+	if snapshot.Type != events.TypeJobsSnapshot {
+		t.Fatalf("snapshot event = %+v", snapshot)
+	}
+
+	job := srv.jobs.CreateWithPayload("pending-import", "Install request", jobs.JobPayload{"app_id": "413150"})
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; approve install")
+
+	for {
+		_, data, err = conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read job event error = %v", err)
+		}
+		var event events.Event
+		if err := json.Unmarshal(data, &event); err != nil {
+			t.Fatalf("job event unmarshal error = %v", err)
+		}
+		if event.Type != events.TypeJobUpdated || event.JobID != job.ID {
+			continue
+		}
+		if event.AppID != "413150" {
+			t.Fatalf("job event app id = %q, want 413150", event.AppID)
+		}
+		var got jobs.Job
+		if err := json.Unmarshal(event.Payload, &got); err != nil {
+			t.Fatalf("job payload unmarshal error = %v", err)
+		}
+		if got.ID != job.ID {
+			t.Fatalf("job payload = %+v, want waiting job %+v", got, job)
+		}
+		if got.Status != jobs.StatusWaiting {
+			continue
+		}
+		return
 	}
 }
 

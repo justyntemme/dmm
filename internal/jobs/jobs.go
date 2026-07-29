@@ -1,9 +1,7 @@
 package jobs
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -34,12 +32,11 @@ type Job struct {
 type JobPayload map[string]string
 
 type Manager struct {
-	mu          sync.Mutex
-	seq         int
-	jobs        map[string]Job
-	subscribers map[chan Job]struct{}
-	onSave      func(Job)
-	onDelete    func(Job)
+	mu       sync.Mutex
+	seq      int
+	jobs     map[string]Job
+	onSave   func(Job)
+	onDelete func(Job)
 }
 
 func NewManager() *Manager {
@@ -48,10 +45,9 @@ func NewManager() *Manager {
 
 func NewManagerWithSeed(seed []Job, onSave func(Job), onDelete func(Job)) *Manager {
 	manager := &Manager{
-		jobs:        map[string]Job{},
-		subscribers: map[chan Job]struct{}{},
-		onSave:      onSave,
-		onDelete:    onDelete,
+		jobs:     map[string]Job{},
+		onSave:   onSave,
+		onDelete: onDelete,
 	}
 	for _, job := range seed {
 		manager.jobs[job.ID] = job
@@ -74,7 +70,6 @@ func (m *Manager) Snapshot(job Job) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.jobs[job.ID] = job
-	m.publishLocked(job)
 }
 
 func (m *Manager) CreateWithID(job Job) Job {
@@ -88,7 +83,6 @@ func (m *Manager) CreateWithID(job Job) Job {
 	}
 	m.jobs[job.ID] = job
 	m.persistLocked(job)
-	m.publishLocked(job)
 	return job
 }
 
@@ -115,7 +109,6 @@ func (m *Manager) CreateWithPayload(jobType, title string, payload JobPayload) J
 	}
 	m.jobs[job.ID] = job
 	m.persistLocked(job)
-	m.publishLocked(job)
 	return job
 }
 
@@ -131,7 +124,6 @@ func (m *Manager) SetPayload(id string, payload JobPayload) (Job, bool) {
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
-	m.publishLocked(job)
 	return job, true
 }
 
@@ -168,7 +160,6 @@ func (m *Manager) update(id string, status Status, message string) (Job, bool) {
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
-	m.publishLocked(job)
 	return job, true
 }
 
@@ -216,67 +207,8 @@ func (m *Manager) ClearTypeWhere(jobType string, shouldClear func(Job) bool) []J
 		job.UpdatedAt = time.Now().UTC()
 		removed = append(removed, job)
 		m.deleteLocked(job)
-		m.publishLocked(job)
 	}
 	return removed
-}
-
-func (m *Manager) ServeEvents(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	ch := make(chan Job, 16)
-	m.mu.Lock()
-	m.subscribers[ch] = struct{}{}
-	snapshot := make([]Job, 0, len(m.jobs))
-	for _, job := range m.jobs {
-		snapshot = append(snapshot, job)
-	}
-	m.mu.Unlock()
-	sort.Slice(snapshot, func(i, j int) bool {
-		return snapshot[i].UpdatedAt.After(snapshot[j].UpdatedAt)
-	})
-
-	defer func() {
-		m.mu.Lock()
-		delete(m.subscribers, ch)
-		m.mu.Unlock()
-		close(ch)
-	}()
-
-	for _, job := range snapshot {
-		if r.Context().Err() != nil {
-			return
-		}
-		writeJobEvent(w, job)
-	}
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case job := <-ch:
-			writeJobEvent(w, job)
-		}
-	}
-}
-
-func writeJobEvent(w http.ResponseWriter, job Job) {
-	b, _ := json.Marshal(job)
-	_, _ = fmt.Fprintf(w, "event: job\ndata: %s\n\n", b)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (m *Manager) publishLocked(job Job) {
-	for ch := range m.subscribers {
-		select {
-		case ch <- job:
-		default:
-		}
-	}
 }
 
 func (m *Manager) persistLocked(job Job) {

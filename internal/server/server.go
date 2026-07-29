@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
@@ -27,6 +28,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/deps"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -45,6 +47,7 @@ type Server struct {
 	cfg      config.Config
 	logger   *slog.Logger
 	jobs     *jobs.Manager
+	events   *events.Bus
 	db       *storage.DB
 	nexus    nexusClientFactory
 	catalogs []catalog.RemoteModCatalog
@@ -113,9 +116,11 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			return nil, err
 		}
 	}
+	eventBus := events.NewBus(512)
 	srv := &Server{
 		cfg:    cfg,
 		logger: logger,
+		events: eventBus,
 		db:     db,
 		nexus: func(apiKey string) nexusClient {
 			return nexus.NewClient(apiKey)
@@ -142,6 +147,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		if err := db.UpsertJob(context.Background(), job); err != nil {
 			logger.Warn("persist job failed", "job_id", job.ID, "error", err)
 		}
+		srv.publishJobEvent(job)
 	}, func(job jobs.Job) {
 		if err := db.DeletePendingImport(context.Background(), job.ID); err != nil {
 			logger.Warn("delete pending import failed", "job_id", job.ID, "error", err)
@@ -149,6 +155,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		if err := db.DeleteJob(context.Background(), job.ID); err != nil {
 			logger.Warn("delete job failed", "job_id", job.ID, "error", err)
 		}
+		srv.publishJobEvent(job)
 	})
 	logger.Info("state restored", "jobs", len(storedJobs), "pending_imports", len(storedPending))
 	return srv, nil
@@ -215,7 +222,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
-	mux.HandleFunc("GET /api/jobs/events", s.handleJobEvents)
+	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
@@ -490,6 +497,7 @@ func (s *Server) handleConfigureGameLaunch(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.publishGameEvent(events.TypeLaunchChanged, appID, status)
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -754,6 +762,29 @@ func pendingImportJobPayload(gameRegistry games.Registry, resolved catalog.Resol
 		}
 	}
 	return payload
+}
+
+func (s *Server) publishJobEvent(job jobs.Job) {
+	if s.events == nil {
+		return
+	}
+	s.events.Publish(events.Event{
+		Type:    events.TypeJobUpdated,
+		AppID:   strings.TrimSpace(job.Payload["app_id"]),
+		JobID:   job.ID,
+		Payload: events.MustPayload(job),
+	})
+}
+
+func (s *Server) publishGameEvent(eventType, appID string, payload any) {
+	if s.events == nil {
+		return
+	}
+	s.events.Publish(events.Event{
+		Type:    eventType,
+		AppID:   strings.TrimSpace(appID),
+		Payload: events.MustPayload(payload),
+	})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -1075,6 +1106,10 @@ func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.logger.Info("installed mod removed", "app_id", appID, "installed_mod_id", installedModID, "name", mod.Name)
 	}
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":           "removed",
+		"installed_mod_id": installedModID,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"removed": mod})
 }
 
@@ -1350,6 +1385,13 @@ func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) 
 	}
 	job, _ = s.jobs.Complete(job.ID, message)
 	s.logger.Info("download recovery completed", "job_id", job.ID, "app_id", appID, "staged", staged, "skipped", skipped)
+	if staged > 0 {
+		s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+			"action":  "recovered",
+			"staged":  staged,
+			"skipped": skipped,
+		})
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "staged": staged, "skipped": skipped})
 }
 
@@ -1411,6 +1453,11 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	deployment.Commit()
 	s.logger.Info("deployment completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "applied", len(applied))
 	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(applied))+" files")
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":        "deployed",
+		"deployment_id": deploymentID,
+		"files":         len(applied),
+	})
 	launchStatus, launchErr := s.postDeploymentLaunchStatus(r.Context(), appID, job.ID)
 	if launchErr != nil {
 		s.logger.Warn("post-deployment launch action status failed", "job_id", job.ID, "app_id", appID, "error", launchErr)
@@ -1491,6 +1538,10 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("purge completed", "job_id", job.ID, "app_id", appID, "files", len(files))
 	job, _ = s.jobs.Complete(job.ID, "Purged "+strconv.Itoa(len(files))+" deployed files")
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action": "purged",
+		"files":  len(files),
+	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
 }
 
@@ -1528,6 +1579,10 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("repair completed", "job_id", job.ID, "app_id", appID, "repaired", len(result.Repaired))
 	job, _ = s.jobs.Complete(job.ID, "Repaired "+strconv.Itoa(len(result.Repaired))+" deployed files")
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":   "repaired",
+		"repaired": len(result.Repaired),
+	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
 }
 
@@ -1547,6 +1602,10 @@ func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":     "profile_created",
+		"profile_id": profile.ID,
+	})
 	writeJSON(w, http.StatusCreated, profile)
 }
 
@@ -1561,6 +1620,11 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.publishGameEvent(events.TypeProfileModsChanged, "", map[string]any{
+		"action":     "default_profile_changed",
+		"profile_id": profile.ID,
+		"game_id":    profile.GameID,
+	})
 	writeJSON(w, http.StatusOK, profile)
 }
 
@@ -1593,6 +1657,13 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		mod.Status = "needs_recovery"
 	}
 	s.logger.Info("profile mod state updated", "profile_id", profileID, "installed_mod_id", installedModID, "enabled", req.Enabled, "priority", req.Priority)
+	s.publishGameEvent(events.TypeProfileModsChanged, mod.SteamAppID, map[string]any{
+		"action":           "updated",
+		"profile_id":       profileID,
+		"installed_mod_id": installedModID,
+		"enabled":          req.Enabled,
+		"priority":         req.Priority,
+	})
 	writeJSON(w, http.StatusOK, mod)
 }
 
@@ -1600,10 +1671,62 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.jobs.List())
 }
 
-func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
-	s.logger.Info("job events stream opened", "remote", r.RemoteAddr)
-	s.jobs.ServeEvents(w, r)
-	s.logger.Info("job events stream closed", "remote", r.RemoteAddr, "error", r.Context().Err())
+func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
+	var afterID int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("after")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 0 {
+			http.Error(w, "after must be a non-negative event id", http.StatusBadRequest)
+			return
+		}
+		afterID = parsed
+	}
+
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		s.logger.Warn("event websocket accept failed", "remote", r.RemoteAddr, "error", err)
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	ctx := conn.CloseRead(r.Context())
+	s.logger.Info("event websocket opened", "remote", r.RemoteAddr, "after_id", afterID)
+	defer s.logger.Info("event websocket closed", "remote", r.RemoteAddr, "error", ctx.Err())
+
+	subscription := s.events.Subscribe(afterID)
+	defer subscription.Close()
+
+	snapshot := events.Event{
+		Type:      events.TypeJobsSnapshot,
+		Payload:   events.MustPayload(s.jobs.List()),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := writeWebSocketEvent(ctx, conn, snapshot); err != nil {
+		s.logger.Warn("event websocket snapshot write failed", "remote", r.RemoteAddr, "error", err)
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-subscription.C:
+			if !ok {
+				return
+			}
+			if err := writeWebSocketEvent(ctx, conn, event); err != nil {
+				s.logger.Warn("event websocket write failed", "remote", r.RemoteAddr, "event_id", event.ID, "type", event.Type, "error", err)
+				return
+			}
+		}
+	}
+}
+
+func writeWebSocketEvent(ctx context.Context, conn *websocket.Conn, event events.Event) error {
+	b, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	return conn.Write(ctx, websocket.MessageText, b)
 }
 
 func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
@@ -3249,12 +3372,16 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
 func shouldLogRequest(r *http.Request, status int) bool {
 	if status >= http.StatusBadRequest || r.Method != http.MethodGet {
 		return true
 	}
 	switch r.URL.Path {
-	case "/api/health", "/api/jobs", "/api/jobs/events":
+	case "/api/health", "/api/jobs", "/api/events/ws":
 		return false
 	default:
 		return true
