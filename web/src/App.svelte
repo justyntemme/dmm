@@ -996,6 +996,20 @@
     await refreshSelectedGame();
   }
 
+  async function resetManagedMods() {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/reset`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    if (result.job) upsertJob(result.job);
+    deployPlan = null;
+    await refreshSelectedGame({ refreshPreview: true });
+  }
+
   function askPurgeDeployment() {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     confirmation = {
@@ -1005,6 +1019,18 @@
       confirmLabel: "Purge Deployment",
       danger: true,
       run: purgeDeployment
+    };
+  }
+
+  function askResetManagedMods() {
+    if (!selectedGame) return;
+    confirmation = {
+      title: "Reset managed mods",
+      message: `DMM will remove its managed mods for ${selectedGame.name}.`,
+      detail: "This purges DMM-owned deployed files, removes installed mod rows, deletes staging folders, and clears pending installer work. Cached downloads are kept for recovery.",
+      confirmLabel: "Reset Managed Mods",
+      danger: true,
+      run: resetManagedMods
     };
   }
 
@@ -1608,6 +1634,7 @@
 	              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
 	              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
 	              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
+              <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameRequests.length === 0}>Reset Managed Mods</button>
               <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
             </div>
             {#if deployPlan}

@@ -214,6 +214,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
 	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
 	mux.HandleFunc("POST /api/games/{appID}/deploy/repair", s.handleRepairDeploy)
+	mux.HandleFunc("POST /api/games/{appID}/reset", s.handleResetGameMods)
 	mux.HandleFunc("GET /api/games/{appID}/launch", s.handleGameLaunchStatus)
 	mux.HandleFunc("POST /api/games/{appID}/launch/apply", s.handleApplyGameLaunch)
 	mux.HandleFunc("POST /api/games/{appID}/launch/configure", s.handleConfigureGameLaunch)
@@ -853,6 +854,15 @@ type deploymentApplyResult struct {
 	Applied      []deploy.AppliedFile
 	DeploymentID int64
 	Launch       *gameLaunchStatusResponse
+}
+
+type resetGameModsResponse struct {
+	Job                      jobs.Job `json:"job"`
+	DeploymentFilesPurged    int      `json:"deployment_files_purged"`
+	InstalledModsRemoved     int      `json:"installed_mods_removed"`
+	StagingPathsRemoved      int      `json:"staging_paths_removed"`
+	InstallCandidatesCleared int64    `json:"install_candidates_cleared"`
+	PendingImportsCleared    int      `json:"pending_imports_cleared"`
 }
 
 func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Request) {
@@ -1680,6 +1690,127 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 		"repaired": len(result.Repaired),
 	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+}
+
+func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "game was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	job := s.jobs.CreateWithPayload("reset", "Reset DMM-managed mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Resetting DMM-managed mods for "+appID)
+	result := resetGameModsResponse{Job: job}
+
+	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		s.finishResetFailure(w, job.ID, result, err)
+		return
+	}
+	if len(files) > 0 {
+		s.logger.Info("reset purging deployed files", "job_id", job.ID, "app_id", appID, "files", len(files))
+		if err := deploy.Purge(files); err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
+		if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
+		result.DeploymentFilesPurged = len(files)
+	}
+
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		s.finishResetFailure(w, job.ID, result, err)
+		return
+	}
+	for _, mod := range mods {
+		removed, err := s.db.DeleteInstalledModForSteamApp(r.Context(), appID, mod.ID)
+		if err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
+		result.InstalledModsRemoved++
+		if err := s.removeStagingPath(removed); err != nil {
+			s.logger.Warn("reset staging cleanup failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", removed.ID, "staging_path", removed.StagingPath, "error", err)
+			continue
+		}
+		result.StagingPathsRemoved++
+	}
+
+	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		s.finishResetFailure(w, job.ID, result, err)
+		return
+	}
+	deletedCandidates, err := s.db.DeleteInstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		s.finishResetFailure(w, job.ID, result, err)
+		return
+	}
+	result.InstallCandidatesCleared = deletedCandidates
+	for _, candidate := range candidates {
+		s.cancelInstallerChoiceJobs(candidate.ID, "Game reset")
+	}
+	result.PendingImportsCleared = s.clearPendingImportsForSteamApp(appID)
+
+	message := "Reset DMM-managed mods: " + strconv.Itoa(result.InstalledModsRemoved) + " mod" + plural(result.InstalledModsRemoved) + " removed"
+	job, _ = s.jobs.Complete(job.ID, message)
+	result.Job = job
+	s.logger.Info(
+		"game reset completed",
+		"job_id", job.ID,
+		"app_id", appID,
+		"deployment_files_purged", result.DeploymentFilesPurged,
+		"installed_mods_removed", result.InstalledModsRemoved,
+		"staging_paths_removed", result.StagingPathsRemoved,
+		"install_candidates_cleared", result.InstallCandidatesCleared,
+		"pending_imports_cleared", result.PendingImportsCleared,
+	)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action": "reset",
+	})
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action": "reset",
+		"files":  result.DeploymentFilesPurged,
+	})
+	writeJSON(w, http.StatusAccepted, result)
+}
+
+func (s *Server) finishResetFailure(w http.ResponseWriter, jobID string, result resetGameModsResponse, err error) {
+	s.logger.Warn("game reset failed", "job_id", jobID, "error", err)
+	job, _ := s.jobs.Fail(jobID, err.Error())
+	result.Job = job
+	writeJSON(w, http.StatusAccepted, result)
+}
+
+func (s *Server) clearPendingImportsForSteamApp(appID string) int {
+	removed := s.jobs.ClearTypeWhere("pending-import", func(job jobs.Job) bool {
+		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
+			return false
+		}
+		return s.jobMatchesAppID(job, appID)
+	})
+	s.pendingMu.Lock()
+	for _, job := range removed {
+		delete(s.pendingImports, job.ID)
+	}
+	s.pendingMu.Unlock()
+	for _, job := range removed {
+		if cancel := s.cancelActiveJob(job.ID); cancel != nil {
+			cancel()
+		}
+	}
+	return len(removed)
 }
 
 func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request) {

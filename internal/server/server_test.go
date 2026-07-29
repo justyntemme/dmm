@@ -1874,6 +1874,137 @@ func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
 	}
 }
 
+func TestResetGameModsPurgesDMMStateAndKeepsDownloads(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(srv.cfg.DataDir, "downloads", "nexus", "stardewvalley", "mods", "541", "files", "160470", "lookup-anything.zip")
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archivePath, []byte("cached archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	sourcePath := filepath.Join(stagingPath, "LookupAnything", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  archivePath,
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deployReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
+	deployReq.RemoteAddr = "127.0.0.1:1"
+	deployRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(deployRec, deployReq)
+	if deployRec.Code != http.StatusAccepted {
+		t.Fatalf("deploy status = %d, body = %s", deployRec.Code, deployRec.Body.String())
+	}
+	targetPath := filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json")
+	if _, err := os.Readlink(targetPath); err != nil {
+		t.Fatalf("expected deployed symlink: %v", err)
+	}
+	if _, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "111",
+		},
+		Name:        "Choices Mod",
+		ArchivePath: archivePath,
+		Status:      "needs_choices",
+		Reason:      "test",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pendingResolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "123",
+		FileID:     "456",
+	}
+	pendingJob := srv.jobs.CreateWithPayload("pending-import", "Install request: stardewvalley/mods/123", pendingImportJobPayload(srv.games, pendingResolved))
+	pendingJob, _ = srv.jobs.Wait(pendingJob.ID, "Ready for install")
+	srv.rememberPendingImport(pendingJob.ID, pendingImport{
+		Resolved:      pendingResolved,
+		DownloadLinks: []nexus.DownloadLink{{URI: "https://example.invalid/mod.zip"}},
+		Source:        "test",
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/reset", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("reset status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"installed_mods_removed":1`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"install_candidates_cleared":1`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"pending_imports_cleared":1`)) {
+		t.Fatalf("reset body = %s", rec.Body.String())
+	}
+	if _, err := os.Lstat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("deployed target was not reset: %v", err)
+	}
+	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
+		t.Fatalf("staging path was not reset: %v", err)
+	}
+	if _, err := os.Stat(archivePath); err != nil {
+		t.Fatalf("cached archive should remain: %v", err)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 0 {
+		t.Fatalf("mods after reset = %+v", mods)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates after reset = %+v", candidates)
+	}
+	if _, ok := srv.pendingImport(pendingJob.ID); ok {
+		t.Fatalf("pending import survived reset")
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("deployment files after reset = %+v", files)
+	}
+}
+
 func TestUpdateProfileModPriorityEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
