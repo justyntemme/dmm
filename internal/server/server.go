@@ -2955,7 +2955,10 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		}
 		mappings = append(mappings, next...)
 	}
-	if len(mappings) == 0 && len(managedFiles) == 0 {
+	if len(mappings) == 0 {
+		if len(managedFiles) > 0 {
+			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
+		}
 		if len(mods) == 0 {
 			return deploy.Plan{}, errors.New("no staged mods are available to deploy")
 		}

@@ -1493,6 +1493,98 @@ func TestDeleteGameModRemovesInstalledRowAndStaging(t *testing.T) {
 	}
 }
 
+func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "LookupAnything"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "LookupAnything", "manifest.json"), []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "mod.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deployReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
+	deployReq.RemoteAddr = "127.0.0.1:1"
+	deployRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(deployRec, deployReq)
+	if deployRec.Code != http.StatusAccepted {
+		t.Fatalf("initial deploy status = %d, body = %s", deployRec.Code, deployRec.Body.String())
+	}
+	target := filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json")
+	if _, err := os.Readlink(target); err != nil {
+		t.Fatalf("expected deployed symlink: %v", err)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	deleteReq.RemoteAddr = "127.0.0.1:1"
+	deleteRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	previewReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/preview", nil)
+	previewReq.RemoteAddr = "127.0.0.1:1"
+	previewRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(previewRec, previewReq)
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, body = %s", previewRec.Code, previewRec.Body.String())
+	}
+	var plan deploy.Plan
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "remove" {
+		t.Fatalf("preview plan = %+v", plan)
+	}
+
+	removeReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
+	removeReq.RemoteAddr = "127.0.0.1:1"
+	removeRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(removeRec, removeReq)
+	if removeRec.Code != http.StatusAccepted {
+		t.Fatalf("remove deploy status = %d, body = %s", removeRec.Code, removeRec.Body.String())
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatalf("deployed target was not removed: %v", err)
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("active deployment files after remove = %+v", files)
+	}
+}
+
 func TestUpdateProfileModPriorityEndpoint(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
