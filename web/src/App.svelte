@@ -213,6 +213,9 @@
   type Surface = "requests" | "game" | "settings";
   type GameModule = "plugins" | "requests" | "profiles" | "review" | "paths";
   type SettingsPage = "overview" | "jobs" | "install" | "nexus";
+  type GameSort = "recent" | "az" | "za";
+
+  const gamePreferencesKey = "dmm.gamePreferences.v1";
 
   let status: Status | null = null;
   let games: Game[] = [];
@@ -239,6 +242,9 @@
   let activeGameModule: GameModule = "plugins";
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
+  let gameSort: GameSort = "recent";
+  let favoriteGameIDs = new Set<string>();
+  let gameRecent: Record<string, number> = {};
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let initialRefreshComplete = false;
@@ -263,11 +269,11 @@
         return ["installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
-  $: filteredGames = games.filter((game) => {
+  $: filteredGames = sortDrawerGames(games.filter((game) => {
     const query = gameQuery.trim().toLowerCase();
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
-  });
+  }));
   $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "requests" ? "Install Requests" : selectedGame?.name ?? "Select a Game";
   $: deployableActions = getDeployableActions(deployPlan);
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
@@ -444,6 +450,7 @@
   }
 
   async function selectGame(game: Game) {
+    markGameRecent(game.app_id);
     selectedGame = game;
     surface = "game";
     activeGameModule = "plugins";
@@ -458,6 +465,68 @@
     installCandidates = [];
     await loadGameState(game);
     await previewDeploy();
+  }
+
+  function loadGamePreferences() {
+    try {
+      const raw = localStorage.getItem(gamePreferencesKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { favorites?: unknown; recent?: unknown; sort?: unknown };
+      if (Array.isArray(parsed.favorites)) {
+        favoriteGameIDs = new Set(parsed.favorites.filter((item): item is string => typeof item === "string" && item.trim() !== ""));
+      }
+      if (parsed.recent && typeof parsed.recent === "object") {
+        const entries = Object.entries(parsed.recent as Record<string, unknown>)
+          .map(([appID, value]) => [appID, Number(value)] as const)
+          .filter(([appID, value]) => appID.trim() !== "" && Number.isFinite(value));
+        gameRecent = Object.fromEntries(entries);
+      }
+      if (parsed.sort === "recent" || parsed.sort === "az" || parsed.sort === "za") {
+        gameSort = parsed.sort;
+      }
+    } catch (_err) {
+      favoriteGameIDs = new Set();
+      gameRecent = {};
+      gameSort = "recent";
+    }
+  }
+
+  function saveGamePreferences() {
+    try {
+      localStorage.setItem(gamePreferencesKey, JSON.stringify({
+        favorites: Array.from(favoriteGameIDs),
+        recent: gameRecent,
+        sort: gameSort
+      }));
+    } catch (_err) {
+      // Browser storage can be unavailable in private contexts; the drawer still works without persistence.
+    }
+  }
+
+  function setGameSort(nextSort: GameSort) {
+    gameSort = nextSort;
+    saveGamePreferences();
+  }
+
+  function isFavoriteGame(appID: string) {
+    return favoriteGameIDs.has(appID);
+  }
+
+  function toggleFavoriteGame(appID: string) {
+    const next = new Set(favoriteGameIDs);
+    if (next.has(appID)) {
+      next.delete(appID);
+    } else {
+      next.add(appID);
+    }
+    favoriteGameIDs = next;
+    saveGamePreferences();
+  }
+
+  function markGameRecent(appID: string) {
+    const next = { ...gameRecent, [appID]: Date.now() };
+    gameRecent = Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, 50));
+    saveGamePreferences();
   }
 
   function openSettings(page: SettingsPage) {
@@ -1007,6 +1076,18 @@
     return plan?.actions.filter((action) => action.operation !== "keep" && action.operation !== "skip") ?? [];
   }
 
+  function sortDrawerGames(items: Game[]) {
+    return [...items].sort((a, b) => {
+      const favoriteDelta = Number(favoriteGameIDs.has(b.app_id)) - Number(favoriteGameIDs.has(a.app_id));
+      if (favoriteDelta !== 0) return favoriteDelta;
+      if (gameSort === "az") return a.name.localeCompare(b.name);
+      if (gameSort === "za") return b.name.localeCompare(a.name);
+      const recentDelta = (gameRecent[b.app_id] ?? 0) - (gameRecent[a.app_id] ?? 0);
+      if (recentDelta !== 0) return recentDelta;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
   function stateLabel(state: string) {
     return state === "clean_candidate" ? "Clean" : "Review";
   }
@@ -1112,6 +1193,7 @@
   }
 
   onMount(() => {
+    loadGamePreferences();
     refresh();
     connectEvents();
     const refreshOnFocus = () => {
@@ -1155,20 +1237,41 @@
           <button type="button" class="icon-button small" aria-label="Refresh games" on:click={refresh}>R</button>
         </div>
         <input bind:value={gameQuery} aria-label="Search games" placeholder="Search games" />
+        <div class="game-drawer-controls">
+          <label>
+            <span>Sort</span>
+            <select aria-label="Sort games" value={gameSort} on:change={(event) => setGameSort(event.currentTarget.value as GameSort)}>
+              <option value="recent">Recent</option>
+              <option value="az">A-Z</option>
+              <option value="za">Z-A</option>
+            </select>
+          </label>
+          <span>{favoriteGameIDs.size} pinned</span>
+        </div>
         <div class="drawer-list game-list">
           {#each filteredGames as game}
-            <button
-              type="button"
+            <div
+              class="game-row"
               class:selected={selectedGame?.app_id === game.app_id}
               class:needs-review={game.state !== "clean_candidate"}
-              on:click={() => selectGame(game)}
             >
-              <img src={gameImage(game.app_id)} alt="" loading="lazy" />
-              <span>
-                <strong>{game.name}</strong>
-                <small>{game.app_id} · {stateLabel(game.state)}</small>
-              </span>
-            </button>
+              <button type="button" class="game-select" on:click={() => selectGame(game)}>
+                <img src={gameImage(game.app_id)} alt="" loading="lazy" />
+                <span>
+                  <strong>{game.name}</strong>
+                  <small>{game.app_id} · {stateLabel(game.state)}</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="favorite-game"
+                class:favorited={isFavoriteGame(game.app_id)}
+                aria-label={isFavoriteGame(game.app_id) ? `Unfavorite ${game.name}` : `Favorite ${game.name}`}
+                on:click={() => toggleFavoriteGame(game.app_id)}
+              >
+                {isFavoriteGame(game.app_id) ? "★" : "☆"}
+              </button>
+            </div>
           {/each}
         </div>
       {:else}

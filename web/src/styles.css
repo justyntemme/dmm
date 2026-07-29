@@ -226,7 +226,7 @@ h2 {
   inset: 0 auto 0 0;
   z-index: 40;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 12px;
   width: min(88vw, 390px);
   border-right: 1px solid #303741;
@@ -254,13 +254,53 @@ h2 {
   background: #15191f;
 }
 
-.game-list button {
+.game-drawer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.game-drawer-controls label {
+  display: grid;
+  grid-template-columns: auto minmax(128px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.game-drawer-controls span {
+  color: #a1a1aa;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.game-drawer-controls select {
+  min-height: 36px;
+  border: 1px solid #303741;
+  border-radius: 6px;
+  padding: 0 10px;
+  color: #f4f4f5;
+  background: #222831;
+}
+
+.game-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: stretch;
+  border-bottom: 1px solid #242a31;
+}
+
+.game-row:last-child {
+  border-bottom: 0;
+}
+
+.game-select {
   display: grid;
   grid-template-columns: 86px minmax(0, 1fr);
   gap: 8px;
   width: 100%;
   min-height: 68px;
-  border-bottom: 1px solid #242a31;
   border-radius: 0;
   padding: 8px;
   color: #f4f4f5;
@@ -268,11 +308,7 @@ h2 {
   background: transparent;
 }
 
-.game-list button:last-child {
-  border-bottom: 0;
-}
-
-.game-list .selected {
+.game-row.selected {
   background: #17281f;
 }
 
@@ -306,6 +342,21 @@ h2 {
 .game-list .needs-review small,
 .review-badge {
   color: #fecaca;
+}
+
+.favorite-game {
+  width: 42px;
+  min-width: 42px;
+  min-height: 68px;
+  border-radius: 0;
+  padding: 0;
+  color: #a1a1aa;
+  background: transparent;
+  font-size: 1.2rem;
+}
+
+.favorite-game.favorited {
+  color: #facc15;
 }
 
 .settings-nav {
