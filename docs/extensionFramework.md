@@ -11,14 +11,14 @@ This document tracks the extension/runtime boundary for Decky Mod Manager. The f
 
 ## Stardew Valley MVP
 
-- Support both Steam Deck-native Linux Stardew and Windows/Proton Stardew.
-- Native Linux Stardew is the first implementation path. Windows/Proton Stardew remains MVP-required, but should wait until native Linux launch-tool behavior is validated.
+- Support Steam Deck-native Linux Stardew for MVP.
+- Windows/Proton Stardew is post-MVP, but the eventual implementation must use the same extension-driven runtime/platform model.
 - Detect runtime platform from the actual Steam install and compatibility state, not from the host OS alone.
 - Native Linux Stardew:
   - Game marker: `StardewValley`.
   - SMAPI payload: Linux `install.dat`.
   - SMAPI launch target: `StardewModdingAPI`.
-- Windows/Proton Stardew:
+- Post-MVP Windows/Proton Stardew:
   - Game marker: `Stardew Valley.exe` and/or forced Proton compatibility state.
   - SMAPI payload: Windows `install.dat`.
   - SMAPI launch target: `StardewModdingAPI.exe`.
@@ -68,8 +68,8 @@ Out of scope for the Decky frontend:
 4. Add extension-declared primary launch-tool rules for SMAPI-required mods.
 5. Add backend runtime action endpoints for launch-tool configuration.
 6. Add Decky frontend action execution using Steam client launch-option APIs.
-7. Verify native Linux Stardew end to end.
-8. Implement and verify Windows/Proton Stardew end to end before MVP sign-off.
+7. Verify native Linux Stardew end to end for MVP sign-off.
+8. Implement and verify Windows/Proton Stardew end to end after MVP.
 
 ## Next MVP Feature After Stardew Extension Parity
 

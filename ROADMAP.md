@@ -13,7 +13,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - First vertical-slice game: Stardew Valley (`413150`, Nexus domain `stardewvalley`).
 - Highest implementation priority is Stardew extension-framework parity with the required behavior from Vortex's Stardew Valley extension, including SMAPI installer handling, SMAPI mod install rules, runtime requirements, primary launch tool behavior, and Steam Deck launch configuration.
 - The next required MVP feature after Stardew extension parity is FOMOD/installer-choice support with Decky modal support for Deck-only flows.
-- Stardew Valley MVP support includes both native Linux and Windows/Proton Steam installs on Steam Deck. Native Linux is the immediate implementation target; Windows/Proton is required before MVP sign-off but should not block validating the native Linux launch path first.
+- Stardew Valley MVP support targets the native Linux Steam install on Steam Deck. Windows/Proton support is post-MVP and must remain extension-driven when implemented.
 - The default user mental model is profile-first: select a game, select a profile, download/approve a mod, then enable or disable that mod in the profile.
 - The UI must not make ordinary users reason about staging, install planning, target mappings, manifests, or deployment transactions before they can use a mod.
 - Staging, preview, deploy, purge, repair, blocked install plans, and file-level operations are still core safety mechanisms, but they should be exposed as advanced/power-user views unless immediate user action is required.
@@ -73,7 +73,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Download recovery is routed through the same game/domain registry, so orphaned Nexus archives are only restaged for games with a registered Vortex metadata spec and supported Nexus domain.
 - Mod type deploy roots are now modeled separately from installer selection. Installers choose a mod type and emit install instructions; the selected mod type supplies the deploy root, matching Vortex's installer/mod-type split and avoiding per-installer path duplication.
 - The current Stardew spec preserves Vortex's installer/mod-type separation for the MVP slice: `stardew-valley-installer` maps valid manifest-based mods into `Mods/`, `sdvrootfolder` maps root-folder archives to game-root targets, and `smapi-installer` extracts the Linux embedded payload into game-root targets.
-- Verified SMAPI archive payloads contain separate Linux and Windows inner payloads. MVP must select the correct payload from detected game runtime: Linux payload for native Stardew, Windows payload for Proton Stardew.
+- Verified SMAPI archive payloads contain separate Linux and Windows inner payloads. MVP targets the Linux payload for native Stardew; post-MVP Windows/Proton support must select the Windows payload from detected game runtime through extension metadata.
 - Install-plan metadata can mark individual target mappings with policy such as `keep-existing`, which lets SMAPI preserve an existing game-owned `steam_appid.txt` without treating the whole deployment as conflicted.
 - Install-plan metadata controls staged mod display naming, so installer/runtime packages such as SMAPI can use the Nexus archive name while normal manifest-based mods use their manifest display name without adding server-side mod-type special cases.
 - SMAPI manifest parsing now follows Vortex's tolerant shape for common real-world archives by accepting UTF-8 BOMs and trailing commas before validating manifest identity. SMAPI manifest attributes are now extracted through a spec-declared metadata extractor, including logical file names, name, unique ID, version, entry DLL, minimum API version, content-pack target, and dependencies.
@@ -192,10 +192,10 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Status: incomplete for the expanded MVP vertical slice.
    - Completed: Stardew Valley maps simple staged SMAPI mod folders into `Mods/`; unsupported game domains fail clearly; unsupported install plans appear as blocked install candidates in UI/jobs.
    - Completed: live Gaming Mode validation against a fresh simple Stardew mod after installing the then-current package.
-   - Remaining: detect Stardew runtime platform as native Linux or Windows/Proton from Steam/game state.
-   - Remaining: select Linux or Windows SMAPI payload by detected runtime platform.
+   - Remaining: confirm native Linux Stardew runtime detection from Steam/game state.
+   - Remaining: select the Linux SMAPI payload for native Linux Stardew through extension metadata.
    - Remaining: express primary launch-tool requirements in extension metadata/rules, then configure and validate the platform-correct SMAPI launch tool without generic server code hardcoding Stardew-specific behavior.
-   - Remaining: implement and verify Windows/Proton Stardew end to end on Steam Deck before MVP sign-off.
+   - Post-MVP: implement and verify Windows/Proton Stardew end to end on Steam Deck through the same extension framework.
 
 4. FOMOD support
    - Status: incomplete, MVP-required, and next after Stardew extension-framework parity.
@@ -291,8 +291,8 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - The mod can be enabled or disabled for the selected profile with a simple toggle.
 - Ordinary profile/mod management does not require the user to understand staging, manifests, or file operations.
 - Stardew native Linux installs can install/deploy SMAPI and configure Steam to launch through `StardewModdingAPI`.
-- Stardew Windows/Proton installs can install/deploy the Windows SMAPI payload and configure Steam to launch through `StardewModdingAPI.exe` before MVP sign-off.
-- Runtime platform detection prevents Linux SMAPI payloads from being installed into Windows/Proton Stardew and prevents Windows SMAPI payloads from being installed into native Linux Stardew.
+- Windows/Proton Stardew support is documented as post-MVP and not required for MVP sign-off.
+- Runtime platform detection prevents unsupported platform/payload combinations from being silently deployed.
 - A power-user deployment preview can show what will be written to the game folder.
 - A power-user profile switch preview can show what DMM-owned artifacts will be removed, kept, or added.
 - Deployment applies using a safe strategy and records a manifest.
@@ -334,19 +334,25 @@ Completion rule for this roadmap section: an item is considered ready for post-M
    - Why the decision matters: installing helpers such as `7z`, `unar`, SMAPI, or script extenders may require privilege escalation and has a different trust model than read-only detection.
    - Implementation status: blocked until the privilege/security model is selected.
 
-5. Auth and pairing
+5. Windows/Proton Stardew support
+   - Status: incomplete.
+   - Decision needed: how DMM should detect forced Proton state, select Windows SMAPI payloads, and configure launch options for Proton without editing Steam-owned config files directly when a Decky/Steam API path exists.
+   - Why the decision matters: platform selection affects installer payloads, launch tool paths, deployment validation, and rollback semantics.
+   - Implementation status: post-MVP, extension-driven, and blocked until native Linux Stardew is validated end to end.
+
+6. Auth and pairing
    - Status: incomplete.
    - Decision needed: simple local pairing code, API token, reverse-proxy expectation, or HTTPS-first model.
    - Why the decision matters: this controls how much the LAN-only default can safely evolve for Tailscale, browser bookmarks, shared networks, and multiple phones/tablets.
    - Implementation status: blocked until the access-control model is selected.
 
-6. Vortex/manual adoption wizard
+7. Vortex/manual adoption wizard
    - Status: incomplete.
    - Decision needed: read-only import/report first, DMM-managed adoption, or cleanup flow that can remove existing Vortex artifacts.
    - Why the decision matters: adoption can destroy or orphan user files if DMM mistakes unmanaged files for deployable artifacts.
    - Implementation status: blocked until the adoption/cleanup risk model is selected.
 
-7. Mod update checks
+8. Mod update checks
    - Status: incomplete.
    - Decision needed: Nexus-only update checks first, or generic provider update contract before adding update UI.
    - Why the decision matters: update records can either be tied to Nexus source metadata now or shaped around future upstream providers from the start.

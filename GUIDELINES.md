@@ -71,11 +71,11 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Nexus/Vortex-supported games are the MVP target. Games without Vortex/Nexus mod manager support can be detected but ignored initially.
 - First custom handler should be chosen after Steam library inspection.
 - Current MVP vertical-slice target: `Stardew Valley` (`413150`, Nexus domain `stardewvalley`).
-- Stardew Valley support must cover both Steam Deck-native Linux installs and Windows/Proton installs for MVP.
-- Native Linux Stardew is the immediate implementation target. Windows/Proton Stardew is still an MVP requirement, but should be implemented after the native Linux SMAPI launch path is validated.
+- Stardew Valley MVP support targets the Steam Deck-native Linux install.
+- Windows/Proton Stardew support is post-MVP, but must remain extension-driven when implemented.
 - Stardew support must detect the installed runtime shape before installing runtime payloads:
   - Native Linux install: `StardewValley` launcher/script and Linux SMAPI payload with `StardewModdingAPI`.
-  - Windows/Proton install: `Stardew Valley.exe`/Proton compatibility state and Windows SMAPI payload with `StardewModdingAPI.exe`.
+  - Post-MVP Windows/Proton install: `Stardew Valley.exe`/Proton compatibility state and Windows SMAPI payload with `StardewModdingAPI.exe`.
 - Windows/Proton support must be extension-driven. The generic backend must not assume that every Steam Deck install wants Linux payloads just because DMM runs on Linux.
 - Avoid initial testing on Witcher 3, FF7 Rebirth, Fallout 4, Skyrim, Cyberpunk 2077, and Oblivion Remastered because Vortex/manual mod state was detected.
 
@@ -305,7 +305,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Do not invent deployment target paths for staged records that lack install-plan target mappings. Legacy staged records should be recovered/restaged through the current planner or removed by the user.
 - Follow Vortex's separation of download, install, mod type, and deployment: Nexus download metadata identifies source; game/provider installer planning identifies what gets staged; deployment manifests identify what DMM owns in the game folder.
 - Model installer planning as metadata evaluation first: installer matchers classify archive shape, installer specs emit install instructions, spec-declared metadata extractors validate/ingest manifest attributes, mod types define deploy roots, and runtime requirements are derived from the resulting staged metadata.
-- Installer planning must consider the detected game runtime platform when upstream metadata has platform-specific payloads. For Stardew SMAPI, native Linux installs use the Linux `install.dat` payload and Windows/Proton installs use the Windows `install.dat` payload.
+- Installer planning must consider the detected game runtime platform when upstream metadata has platform-specific payloads. For Stardew MVP, native Linux installs use the Linux `install.dat` payload; post-MVP Windows/Proton support must select the Windows payload through extension metadata instead of generic app logic.
 - Prefer declarative metadata extractors for common archive manifests before adding procedural parser code. A custom parser is acceptable when the source format has nested dependency/runtime semantics that cannot be represented by the generic extractor.
 - Game-specific behavior belongs in Vortex-modeled specs or reviewed game-handler capabilities, not scattered through generic server, storage, deployment, or UI code.
 - When installer metadata says a payload file should not overwrite a pre-existing game file, express that as a target policy on the install mapping and persist it in the staged manifest.

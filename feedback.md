@@ -60,4 +60,4 @@
 - SMAPI launch setup should be presented as a required runtime action for Stardew, not as a generic debug/file-editing feature.
 - The Decky plugin may apply Steam launch options because it has access to Steam frontend APIs, but the Go backend should own the desired state and verification.
 - The UI should explain that DMM will configure Steam to launch SMAPI for Stardew profiles that need it.
-- Windows/Proton Stardew support is MVP, so launch setup must show which runtime was detected and which SMAPI executable will be used.
+- Windows/Proton Stardew support is post-MVP, but launch setup should eventually show which runtime was detected and which SMAPI executable will be used.
