@@ -245,7 +245,7 @@
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["deploy", "purge", "repair", "recover-downloads"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: filteredGames = games.filter((game) => {

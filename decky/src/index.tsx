@@ -518,6 +518,11 @@ function Content() {
               Allow Trusted Tunnel
             </ButtonItem>
           </PanelSectionRow>
+        </>
+      )}
+
+      {tab === "debug" && (
+        <>
           <PanelSectionRow>
             <div style={{ maxHeight: "320px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
               <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
@@ -533,11 +538,6 @@ function Content() {
               ))}
             </div>
           </PanelSectionRow>
-        </>
-      )}
-
-      {tab === "debug" && (
-        <>
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={registerNXM}>
               Register NXM Handler
