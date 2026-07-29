@@ -231,6 +231,94 @@ class Plugin:
             return {"ok": True, "jobs": result}
         return {"ok": False, "error": "Unexpected jobs response.", "jobs": []}
 
+    async def games(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "games": []}
+        result, error = self._backend_json_result("GET", "/api/games")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load games.", "games": []}
+        if isinstance(result, list):
+            return {"ok": True, "games": result}
+        return {"ok": False, "error": "Unexpected games response.", "games": []}
+
+    async def game_profiles(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "profiles": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "profiles": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/profiles")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load profiles.", "profiles": []}
+        if isinstance(result, list):
+            return {"ok": True, "profiles": result}
+        return {"ok": False, "error": "Unexpected profiles response.", "profiles": []}
+
+    async def game_mods(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "mods": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "mods": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/mods")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load mods.", "mods": []}
+        if isinstance(result, list):
+            return {"ok": True, "mods": result}
+        return {"ok": False, "error": "Unexpected mods response.", "mods": []}
+
+    async def set_default_profile(self, profile_id):
+        profile_id = str(profile_id or "").strip()
+        if not profile_id:
+            return {"ok": False, "error": "profile_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/default", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to select profile."}
+        self._log(f"default profile selected profile_id={profile_id}")
+        return {"ok": True, "profile": result}
+
+    async def set_profile_mod_enabled(self, app_id, profile_id, installed_mod_id, enabled):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        installed_mod_id = str(installed_mod_id or "").strip()
+        if not app_id or not profile_id or not installed_mod_id:
+            return {"ok": False, "error": "app_id, profile_id, and installed_mod_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"enabled": bool(enabled)}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/mods/{urllib.parse.quote(installed_mod_id)}", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to update mod."}
+        self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)}")
+        deploy_result, deploy_error = self._apply_profile_changes(app_id)
+        if deploy_error:
+            return {"ok": False, "error": deploy_error, "mod": result}
+        return {"ok": True, "mod": result, "deploy": deploy_result}
+
+    def _apply_profile_changes(self, app_id):
+        preview, preview_error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/preview")
+        if preview is None:
+            return None, preview_error or "Unable to preview profile changes."
+        conflicts = preview.get("conflicts") if isinstance(preview, dict) else None
+        if isinstance(conflicts, list) and conflicts:
+            return None, f"{len(conflicts)} deployment conflict{'s' if len(conflicts) != 1 else ''} must be reviewed from the phone/tablet UI."
+        actions = preview.get("actions") if isinstance(preview, dict) else None
+        deployable = []
+        if isinstance(actions, list):
+            deployable = [
+                action for action in actions
+                if isinstance(action, dict) and action.get("operation") not in {"keep", "skip"}
+            ]
+        if not deployable:
+            return {"preview": preview, "message": "Profile is already applied."}, None
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/deploy", b"{}")
+        if result is None:
+            return None, error or "Unable to apply profile changes."
+        self._log(f"profile changes applied app_id={app_id} actions={len(deployable)}")
+        return result, None
+
     async def launch_actions(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "actions": []}

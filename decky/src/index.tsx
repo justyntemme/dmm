@@ -71,6 +71,30 @@ type Job = {
   updated_at?: string;
 };
 
+type ManagedGame = {
+  app_id: string;
+  name: string;
+  state: string;
+  nexus_domains?: string[];
+};
+
+type Profile = {
+  id: number;
+  name: string;
+  is_default: boolean;
+};
+
+type ManagedMod = {
+  id: number;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  status: string;
+  source_game_domain: string;
+  source_mod_id: string;
+  source_file_id: string;
+};
+
 type LaunchAction = {
   type: string;
   app_id: string;
@@ -100,7 +124,7 @@ type LaunchStatus = {
   action?: LaunchAction;
 };
 
-type Tab = "main" | "settings" | "debug";
+type Tab = "main" | "mods" | "settings" | "debug";
 
 function installToastBody(job: Job): string {
   if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this download.";
@@ -145,6 +169,12 @@ function Content() {
   const [launchResult, setLaunchResult] = useState<string>("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [error, setError] = useState<string>("");
+  const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
+  const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>("");
+  const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
+  const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
+  const [modsResult, setModsResult] = useState<string>("");
+  const [busyModID, setBusyModID] = useState<number | null>(null);
   const seenJobStates = useRef<Map<string, string>>(new Map());
   const appliedLaunchActions = useRef<Map<string, string>>(new Map());
 
@@ -164,6 +194,110 @@ function Content() {
       setNXM(await call<[], NXMStatus>("nxm_status"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function loadDeckyGames() {
+    const result = await call<[], { ok: boolean; error?: string; games: ManagedGame[] }>("games");
+    if (!result.ok) {
+      setError(result.error ?? "Unable to load games.");
+      return [];
+    }
+    setManagedGames(result.games);
+    return result.games;
+  }
+
+  async function loadDeckyGameState(appID: string) {
+    if (!appID) {
+      setDeckyProfiles([]);
+      setDeckyMods([]);
+      return;
+    }
+    const [profilesResult, modsResult] = await Promise.all([
+      call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
+      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID)
+    ]);
+    if (!profilesResult.ok) {
+      setError(profilesResult.error ?? "Unable to load profiles.");
+      return;
+    }
+    if (!modsResult.ok) {
+      setError(modsResult.error ?? "Unable to load mods.");
+      return;
+    }
+    setDeckyProfiles(profilesResult.profiles);
+    setDeckyMods(modsResult.mods);
+  }
+
+  async function refreshDeckyMods(appID = selectedDeckyGameID) {
+    try {
+      setError("");
+      setModsResult("");
+      const games = await loadDeckyGames();
+      const selected = appID || selectedDeckyGameID;
+      const nextID = selected && games.some((game) => game.app_id === selected) ? selected : "";
+      setSelectedDeckyGameID(nextID);
+      await loadDeckyGameState(nextID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function selectDeckyGame(appID: string) {
+    try {
+      setError("");
+      setModsResult("");
+      setSelectedDeckyGameID(appID);
+      await loadDeckyGameState(appID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function selectDeckyProfile(profile: Profile) {
+    if (!selectedDeckyGameID || profile.is_default) return;
+    try {
+      setError("");
+      setModsResult("");
+      const result = await call<[number], { ok: boolean; error?: string }>("set_default_profile", profile.id);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to select profile.");
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      setModsResult("Profile selected. Restart the game for changes to affect a running session.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function toggleDeckyMod(mod: ManagedMod, enabled: boolean) {
+    const profile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0];
+    if (!selectedDeckyGameID || !profile) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyModID(mod.id);
+      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string; mod?: ManagedMod; deploy?: { job?: Job; message?: string } }>(
+        "set_profile_mod_enabled",
+        selectedDeckyGameID,
+        profile.id,
+        mod.id,
+        enabled
+      );
+      if (!result.ok) {
+        await logFrontendEvent("decky mod toggle failed", { app_id: selectedDeckyGameID, mod_id: mod.id, error: result.error || "" });
+        setError(result.error ?? "Unable to update mod.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      setModsResult(result.deploy?.job?.message || result.deploy?.message || "Profile changes applied. Restart the game if it is already running.");
+      if (result.deploy?.job) showInstallToast(result.deploy.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
     }
   }
 
@@ -422,6 +556,17 @@ function Content() {
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={() => {
+            setTab("mods");
+            refreshDeckyMods();
+          }}
+        >
+          Mods
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
         <ButtonItem layout="below" onClick={() => setTab("settings")}>
           Settings
         </ButtonItem>
@@ -486,6 +631,119 @@ function Content() {
               {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
             </div>
           </PanelSectionRow>
+        </>
+      )}
+
+      {tab === "mods" && (
+        <>
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={() => refreshDeckyMods()} disabled={!status?.running}>
+              Refresh Mods
+            </ButtonItem>
+          </PanelSectionRow>
+          {!status?.running && (
+            <PanelSectionRow>
+              <div style={{ color: "#fbbf24", overflowWrap: "anywhere" }}>Start the server before managing profile mods from Decky.</div>
+            </PanelSectionRow>
+          )}
+          {status?.running && !selectedDeckyGameID && (
+            <PanelSectionRow>
+              <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+                <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
+                {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
+                {managedGames.map((game) => (
+                  <button
+                    key={game.app_id}
+                    type="button"
+                    onClick={() => selectDeckyGame(game.app_id)}
+                    style={{
+                      background: "#1f2937",
+                      border: "1px solid #374151",
+                      borderRadius: "6px",
+                      color: "#f8fafc",
+                      display: "block",
+                      fontWeight: 800,
+                      marginBottom: "8px",
+                      padding: "10px",
+                      textAlign: "left",
+                      width: "100%"
+                    }}
+                  >
+                    {game.name}
+                  </button>
+                ))}
+              </div>
+            </PanelSectionRow>
+          )}
+          {status?.running && selectedDeckyGameID && (
+            <>
+              <PanelSectionRow>
+                <div>
+                  <div style={{ fontWeight: 800 }}>{managedGames.find((game) => game.app_id === selectedDeckyGameID)?.name ?? selectedDeckyGameID}</div>
+                  <div style={{ color: "#a1a1aa" }}>Changes apply to the selected profile. Restart the game for a running session to pick them up.</div>
+                </div>
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem layout="below" onClick={() => setSelectedDeckyGameID("")}>
+                  Change Game
+                </ButtonItem>
+              </PanelSectionRow>
+              {deckyProfiles.length > 1 && (
+                <PanelSectionRow>
+                  <div style={{ maxHeight: "180px", overflowY: "auto", width: "100%" }}>
+                    <div style={{ fontWeight: 800, marginBottom: "8px" }}>Profile</div>
+                    {deckyProfiles.map((profile) => (
+                      <button
+                        key={profile.id}
+                        type="button"
+                        onClick={() => selectDeckyProfile(profile)}
+                        style={{
+                          background: profile.is_default ? "#0f766e" : "#1f2937",
+                          border: "1px solid #374151",
+                          borderRadius: "6px",
+                          color: "#f8fafc",
+                          display: "block",
+                          fontWeight: 800,
+                          marginBottom: "8px",
+                          padding: "10px",
+                          textAlign: "left",
+                          width: "100%"
+                        }}
+                      >
+                        {profile.name}
+                      </button>
+                    ))}
+                  </div>
+                </PanelSectionRow>
+              )}
+              {deckyMods.length === 0 && (
+                <PanelSectionRow>
+                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add and approve Nexus downloads from the phone/tablet UI or the Decky paste field.</div>
+                </PanelSectionRow>
+              )}
+              {deckyMods.map((mod) => (
+                <PanelSectionRow key={mod.id}>
+                  <ToggleField
+                    label={mod.name}
+                    description={`${mod.enabled ? "Enabled" : "Disabled"} · Priority ${mod.priority} · ${mod.source_game_domain}/mods/${mod.source_mod_id}/files/${mod.source_file_id}`}
+                    checked={mod.enabled}
+                    disabled={busyModID === mod.id}
+                    onChange={(checked) => toggleDeckyMod(mod, checked)}
+                  />
+                </PanelSectionRow>
+              ))}
+              {modsResult && (
+                <PanelSectionRow>
+                  <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{modsResult}</div>
+                </PanelSectionRow>
+              )}
+              {error && (
+                <PanelSectionRow>
+                  <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>
+                </PanelSectionRow>
+              )}
+            </>
+          )}
         </>
       )}
 
