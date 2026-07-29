@@ -1039,6 +1039,13 @@ h2 {
   font-weight: 900;
 }
 
+.mod-advanced p {
+  margin: 8px 0 0;
+  color: #a1a1aa;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .mod-advanced-actions {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -281,11 +281,8 @@
   $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
   $: deployReplaces = deployableActions.filter((action) => action.operation === "replace").length;
   $: deployRemoves = deployableActions.filter((action) => action.operation === "remove").length;
-  $: hasPendingInstallRequests = selectedGameRequests.length > 0;
   $: hasDeployConflicts = (deployPlan?.conflicts.length ?? 0) > 0;
-  $: stagedReady = installedMods.length > 0 && enabledMods.length > 0;
-  $: previewReady = Boolean(deployPlan && !hasDeployConflicts);
-  $: deployedReady = Boolean(deploymentStatus?.deployed && (deploymentStatus.file_count ?? 0) > 0);
+  $: hasPendingProfileChanges = Boolean(deployPlan && deployableActions.length > 0 && !hasDeployConflicts);
   $: visibleValidationWarnings = displayValidationWarnings(gameDiagnostics);
   $: launchSetupAvailable = Boolean(gameLaunchStatus?.required && !gameLaunchStatus.configured && gameLaunchStatus.can_configure && gameLaunchStatus.action);
 
@@ -900,7 +897,7 @@
     return deployPlan;
   }
 
-  async function deployStagedMods() {
+  async function applyPendingProfileChanges() {
     if (!selectedGame || !deployPlan || deployPlan.conflicts.length > 0 || deployableActions.length === 0) return;
     error = "";
     const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
@@ -941,7 +938,7 @@
     return true;
   }
 
-  async function askDeployStagedMods() {
+  async function askApplyPendingProfileChanges() {
     if (!selectedGame) return;
     const plan = await ensureDeployPlan();
     if (!plan) return;
@@ -955,7 +952,7 @@
       message: `DMM will update ${selectedGame.name}'s game folder to match the selected profile.`,
       detail: `${adds} add, ${replaces} replace, ${removes} remove. Advanced file details remain available before or after applying.`,
       confirmLabel: "Apply Changes",
-      run: deployStagedMods
+      run: applyPendingProfileChanges
     };
   }
 
@@ -1164,6 +1161,12 @@
     if (request.status === "queued") return "Queued";
     if (request.status === "failed") return "Failed";
     return request.status;
+  }
+
+  function candidateStatusLabel(candidate: InstallCandidate) {
+    if (candidate.status === "needs_choices") return "Needs choices";
+    if (candidate.status === "blocked") return "Blocked";
+    return candidate.status;
   }
 
   function displayValidationWarnings(diagnostics: GameDiagnostics | null) {
@@ -1415,7 +1418,7 @@
       </article>
 
       <nav class="module-tabs" aria-label="Game modules">
-        <button type="button" class:active={activeGameModule === "plugins"} on:click={() => (activeGameModule = "plugins")}>Plugins</button>
+        <button type="button" class:active={activeGameModule === "plugins"} on:click={() => (activeGameModule = "plugins")}>Mods</button>
         <button type="button" class:active={activeGameModule === "requests"} on:click={() => (activeGameModule = "requests")}>Requests</button>
         <button type="button" class:active={activeGameModule === "profiles"} on:click={() => (activeGameModule = "profiles")}>Profiles</button>
         <button type="button" class:active={activeGameModule === "review"} on:click={() => (activeGameModule = "review")}>Review</button>
@@ -1425,7 +1428,7 @@
       {#if activeGameModule === "plugins"}
         <article class="workspace-panel">
           <div class="panel-heading">
-            <h2>Mod Management</h2>
+            <h2>Profile Mods</h2>
             <span>{enabledMods.length} enabled · {disabledMods.length} disabled</span>
           </div>
           {#if selectedGameActivity.length > 0}
@@ -1450,40 +1453,17 @@
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
                 <div><strong>{selectedGameRequests.length}</strong><span>Requests</span></div>
               </div>
-              {#if deployPlan && (deployableActions.length > 0 || deployPlan.conflicts.length > 0)}
-                <div class="profile-change-summary" class:has-conflicts={deployPlan.conflicts.length > 0}>
-                  <div><strong>{deployAdds}</strong><span>Add</span></div>
-                  <div><strong>{deployReplaces}</strong><span>Update</span></div>
-                  <div><strong>{deployRemoves}</strong><span>Remove</span></div>
-                  <div><strong>{deployPlan.conflicts.length}</strong><span>Conflict</span></div>
-                </div>
-              {/if}
-              {#if deploymentStatus?.deployed && deployPlan && deployPlan.conflicts.length === 0 && deployableActions.length === 0}
-                <p class="deploy-message success">
-                  Profile is applied to the game with {deploymentStatus.file_count} managed file{deploymentStatus.file_count === 1 ? "" : "s"}.
-                </p>
-              {:else if deploymentStatus?.deployed && !deployPlan}
-                <p class="deploy-message">A profile is deployed. Refresh status to check for pending profile changes.</p>
+              {#if hasDeployConflicts}
+                <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
+              {:else if hasPendingProfileChanges}
+                <p class="deploy-message">This profile has pending changes. Enable or disable a mod to apply automatically, or use Advanced Deployment Tools.</p>
+              {:else if deploymentStatus?.deployed}
+                <p class="deploy-message success">This profile is applied to the game.</p>
+              {:else if enabledMods.length === 0}
+                <p class="deploy-message">No enabled mods are applied for this profile.</p>
               {:else}
-                <p class="deploy-message">Profile changes have not been applied to the game yet.</p>
+                <p class="deploy-message">Enable or disable a mod to apply this profile.</p>
               {/if}
-	              {#if deployPlan}
-	                {#if deployPlan.conflicts.length > 0}
-	                  <p class="deploy-message danger">Conflicts need attention before profile changes can be applied.</p>
-	                {:else if deployableActions.length === 0}
-	                  <p class="deploy-message">This profile is already applied.</p>
-	                {:else}
-	                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"} ready to apply.</p>
-	                {/if}
-	              {:else}
-	                <p class="deploy-message">Enable or disable mods to apply the selected profile to the game.</p>
-	              {/if}
-	              <div class="deploy-actions primary-actions profile-actions">
-	                {#if deployPlan && deployableActions.length > 0 && !hasDeployConflicts}
-	                  <button type="button" on:click={askDeployStagedMods}>Apply Changes</button>
-	                {/if}
-	                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Check Profile Changes</button>
-	              </div>
             </div>
 
             <div class="management-card import-card">
@@ -1530,7 +1510,6 @@
                   <article>
                     <div>
                       <strong>{mod.name}</strong>
-                      <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id}</p>
                       {#if metadata || mod.mod_type}
                         <div class="mod-meta">
                           {#if metadata?.unique_id}<span>{metadata.unique_id}</span>{/if}
@@ -1546,7 +1525,7 @@
                           {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
                         </div>
                       {/if}
-                      <small>{mod.enabled ? "Enabled in this profile" : "Disabled in this profile"} · Priority {mod.priority} · {modStatusText(mod)}</small>
+                      <small>{mod.enabled ? "Enabled in this profile" : "Disabled in this profile"} · {modStatusText(mod)}</small>
                     </div>
                     <div class="mod-actions">
                       <span class:warning-status={mod.status === "needs_recovery"}>{modStatusText(mod)}</span>
@@ -1557,6 +1536,7 @@
                     </div>
                     <details class="mod-advanced">
                       <summary>Advanced</summary>
+                      <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id} · Priority {mod.priority}</p>
                       <div class="mod-advanced-actions">
                         <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority - 1)}>Higher Priority</button>
                         <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority + 1)}>Lower Priority</button>
@@ -1572,15 +1552,33 @@
           <details class="deploy-preview">
             <summary>
               <span>Advanced Deployment Tools</span>
-              <small>{deploymentStatus?.deployed ? `${deploymentStatus.file_count} applied` : "Not applied"}</small>
+              <small>
+                {#if hasDeployConflicts}
+                  Conflicts
+                {:else if hasPendingProfileChanges}
+                  Pending
+                {:else if deploymentStatus?.deployed}
+                  Applied
+                {:else}
+                  Not applied
+                {/if}
+              </small>
             </summary>
+            {#if deployPlan && (deployableActions.length > 0 || deployPlan.conflicts.length > 0)}
+              <div class="profile-change-summary" class:has-conflicts={deployPlan.conflicts.length > 0}>
+                <div><strong>{deployAdds}</strong><span>Add</span></div>
+                <div><strong>{deployReplaces}</strong><span>Update</span></div>
+                <div><strong>{deployRemoves}</strong><span>Remove</span></div>
+                <div><strong>{deployPlan.conflicts.length}</strong><span>Conflict</span></div>
+              </div>
+            {/if}
             <div class="deployment-summary">
               <div><strong>{enabledMods.length}</strong><span>Enabled</span></div>
               <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
               <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
 	            </div>
 	            <div class="deploy-actions utility-actions">
-	              <button type="button" class="secondary-action" on:click={askDeployStagedMods} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
+	              <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
 	              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
 	              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
 	              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
@@ -1606,7 +1604,7 @@
         <article class="workspace-panel">
           <div class="panel-heading">
             <h2>Install Requests</h2>
-            <span>{selectedGameRequests.length} pending · {installCandidates.length} blocked</span>
+            <span>{selectedGameRequests.length} pending · {installCandidates.length} need attention</span>
           </div>
           {#if selectedGameRequests.length > 0}
             <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Requests</button>
@@ -1643,10 +1641,10 @@
           {#if installCandidates.length > 0}
             <section class="blocked-candidates" aria-label="Blocked install candidates">
               <div class="panel-heading compact-heading">
-                <h3>Blocked Install Plans</h3>
+                <h3>Installer Choices</h3>
                 <span>{installCandidates.length}</span>
               </div>
-              <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Blocked</button>
+              <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Items</button>
               <div class="request-list">
                 {#each installCandidates as candidate}
                   {@const installer = installerForCandidate(candidate)}
@@ -1687,7 +1685,7 @@
                       {/if}
                     </div>
                     <div class="request-actions">
-                      <span>{candidate.status}</span>
+                      <span>{candidateStatusLabel(candidate)}</span>
                       {#if installer}
                         <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
                           {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
