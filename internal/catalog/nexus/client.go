@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -73,6 +75,11 @@ type DownloadLink struct {
 	URI       string `json:"URI"`
 }
 
+type apiErrorResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 func (c *Client) Validate(ctx context.Context) (ValidateResponse, error) {
 	var out ValidateResponse
 	err := c.getJSON(ctx, "/users/validate.json", nil, &out)
@@ -119,6 +126,11 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		var apiErr apiErrorResponse
+		if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Message != "" {
+			return fmt.Errorf("nexus api request failed: %s: %s", resp.Status, strings.TrimSpace(apiErr.Message))
+		}
 		return fmt.Errorf("nexus api request failed: %s", resp.Status)
 	}
 	return json.NewDecoder(resp.Body).Decode(out)

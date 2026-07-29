@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,22 @@ func TestDownloadLinksIncludesNXMParameters(t *testing.T) {
 	}
 	if len(links) != 1 || links[0].URI == "" {
 		t.Fatalf("links = %+v", links)
+	}
+}
+
+func TestClientIncludesNexusErrorMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"code":403,"message":"paste the nxm link"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("", WithBaseURL(server.URL))
+	_, err := client.DownloadLinks(context.Background(), "stardewvalley", "1", "2", "", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "paste the nxm link") {
+		t.Fatalf("error = %v", err)
 	}
 }

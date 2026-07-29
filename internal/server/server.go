@@ -255,10 +255,10 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 		"job":      job,
 		"resolved": resolved,
 	}
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
 	if resolved.FileID != "" {
-		s.cfgMu.RLock()
-		apiKey := s.cfg.Nexus.APIKey
-		s.cfgMu.RUnlock()
 		if apiKey != "" {
 			links, err := nexus.NewClient(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 			if err != nil {
@@ -272,6 +272,14 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusAccepted, payload)
 			return
 		}
+	} else if apiKey != "" {
+		files, err := nexus.NewClient(apiKey).Files(r.Context(), resolved.GameDomain, resolved.ModID)
+		if err != nil {
+			s.jobs.Fail(job.ID, err.Error())
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		payload["files"] = files.Files
 	}
 	message := "Resolved Nexus URL for " + resolved.GameDomain
 	if resolved.FileID != "" {

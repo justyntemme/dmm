@@ -1,9 +1,13 @@
 import asyncio
 import datetime
+import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -82,18 +86,47 @@ class Plugin:
             pid = self.backend_process.pid
         elif self.backend_process is not None and self.backend_process.returncode is not None:
             error = f"Backend exited with code {self.backend_process.returncode}. See {self.backend_log}."
-        return {
+        backend_status = self._backend_json("GET", "/api/status")
+        result = {
             "running": running,
             "ip": ip,
             "port": 17942,
             "url": f"http://{ip}:17942" if ip else None,
             "pid": pid,
+            "backend": backend_status,
             "logs": {
                 "plugin": str(self.plugin_log),
                 "backend": str(self.backend_log),
             },
             "error": error,
             "warning": "No app authentication is enabled. Keep LAN-only mode enabled unless using a trusted VPN/tunnel.",
+        }
+        return result
+
+    async def dependencies(self):
+        return [
+            self._dependency("7-Zip", "7z", "Extracts .7z and many Nexus archive formats."),
+            self._dependency("bsdtar", "bsdtar", "Extracts tar/zip archives and is useful as a fallback."),
+            self._dependency("unzip", "unzip", "Extracts .zip archives."),
+            self._dependency("unrar", "unrar", "Extracts .rar archives when available."),
+        ]
+
+    async def set_lan_only(self, lan_only):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        payload = json.dumps({"lan_only": bool(lan_only)}).encode("utf-8")
+        result = self._backend_json("PUT", "/api/settings/security", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": "Unable to update server settings.",
+            }
+        return {
+            "ok": True,
+            "status": result,
         }
 
     def _lan_ip(self):
@@ -119,6 +152,33 @@ class Plugin:
                 return b" 200 " in response
         except Exception:
             return False
+
+    def _backend_json(self, method, path, body=None):
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:17942{path}",
+                data=body,
+                method=method,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=2) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            self._log(f"backend json request failed: {method} {path}: {exc}")
+            return None
+
+    def _dependency(self, name, command, description):
+        path = shutil.which(command)
+        return {
+            "name": name,
+            "command": command,
+            "installed": path is not None,
+            "path": path,
+            "description": description,
+        }
 
     def _log(self, message):
         try:
