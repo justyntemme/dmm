@@ -30,8 +30,8 @@ type BackendStatus = {
     game_count: number;
     nexus: { api_key_configured: boolean };
     install: {
-      auto_deploy: boolean;
-      auto_approve_downloads: boolean;
+      auto_install_captured_downloads: boolean;
+      auto_enable_installed_mods: boolean;
     };
   } | null;
   logs?: {
@@ -127,8 +127,8 @@ type LaunchStatus = {
 type Tab = "main" | "mods" | "settings" | "debug";
 
 function installToastBody(job: Job): string {
-  if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this download.";
-  if (job.status === "running" || job.status === "queued") return job.message || "DMM is downloading and preparing this mod.";
+  if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this install.";
+  if (job.status === "running" || job.status === "queued") return job.message || "DMM is downloading or installing this mod.";
   if (job.status === "completed") return job.message || "The mod is ready in its profile.";
   if (job.status === "failed") return job.message || "Open DMM to review the error.";
   return job.message || job.title;
@@ -446,11 +446,22 @@ function Content() {
     }
   }
 
-  async function setAutoAcceptDownloads(autoAccept: boolean) {
+  async function setAutoInstallCapturedDownloads(autoInstall: boolean) {
     try {
       setError("");
-      const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_accept_downloads", autoAccept);
-      if (!result.ok) setError(result.error ?? "Unable to update download settings.");
+      const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_install_captured_downloads", autoInstall);
+      if (!result.ok) setError(result.error ?? "Unable to update install settings.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function setAutoEnableInstalledMods(autoEnable: boolean) {
+    try {
+      setError("");
+      const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_enable_installed_mods", autoEnable);
+      if (!result.ok) setError(result.error ?? "Unable to update enable settings.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -754,17 +765,27 @@ function Content() {
             <div>
               <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
               <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
-              <div>Download requests: {status?.backend?.install.auto_approve_downloads ? "Auto-accepted" : "Approval required"}</div>
+              <div>Install captured downloads: {status?.backend?.install.auto_install_captured_downloads ? "Automatic" : "Approval required"}</div>
+              <div>Enable installed mods: {status?.backend?.install.auto_enable_installed_mods ? "Automatic" : "Manual"}</div>
               <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
             </div>
           </PanelSectionRow>
           <PanelSectionRow>
             <ToggleField
-              label="Auto-accept download requests"
-              description="Captured Nexus links start downloading immediately. Keep this off when you want phone approval."
-              checked={status?.backend?.install.auto_approve_downloads ?? false}
+              label="Auto-install captured downloads"
+              description="NXM links always download immediately. This skips phone approval for the local install step."
+              checked={status?.backend?.install.auto_install_captured_downloads ?? false}
               disabled={!status?.running}
-              onChange={setAutoAcceptDownloads}
+              onChange={setAutoInstallCapturedDownloads}
+            />
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label="Auto-enable installed mods"
+              description="New installs are enabled and deployed automatically when there are no conflicts."
+              checked={status?.backend?.install.auto_enable_installed_mods ?? false}
+              disabled={!status?.running}
+              onChange={setAutoEnableInstalledMods}
             />
           </PanelSectionRow>
           <PanelSectionRow>

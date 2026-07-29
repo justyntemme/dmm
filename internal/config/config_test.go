@@ -27,11 +27,11 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if cfg.DataDir != wantDataDir {
 		t.Fatalf("DataDir = %q, want %q", cfg.DataDir, wantDataDir)
 	}
-	if cfg.Install.AutoDeploy {
-		t.Fatal("AutoDeploy = true, want false")
+	if !cfg.Install.AutoInstallCapturedDownloads {
+		t.Fatal("AutoInstallCapturedDownloads = false, want true")
 	}
-	if cfg.Install.AutoApproveDownloads {
-		t.Fatal("AutoApproveDownloads = true, want false")
+	if cfg.Install.AutoEnableInstalledMods {
+		t.Fatal("AutoEnableInstalledMods = true, want false")
 	}
 
 	if _, err := os.Stat(cfg.ConfigPath); err != nil {
@@ -80,11 +80,11 @@ func TestLoadSparseConfigPreservesDefaults(t *testing.T) {
 	if cfg.Nexus.APIKey != "abc123" {
 		t.Fatalf("Nexus.APIKey = %q, want abc123", cfg.Nexus.APIKey)
 	}
-	if cfg.Install.AutoDeploy {
-		t.Fatal("AutoDeploy = true, want false")
+	if !cfg.Install.AutoInstallCapturedDownloads {
+		t.Fatal("AutoInstallCapturedDownloads = false, want true")
 	}
-	if cfg.Install.AutoApproveDownloads {
-		t.Fatal("AutoApproveDownloads = true, want false")
+	if cfg.Install.AutoEnableInstalledMods {
+		t.Fatal("AutoEnableInstalledMods = true, want false")
 	}
 	if cfg.ConfigPath != path {
 		t.Fatalf("ConfigPath = %q, want %q", cfg.ConfigPath, path)

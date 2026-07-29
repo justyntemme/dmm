@@ -61,6 +61,9 @@ type pendingImport struct {
 	Resolved      catalog.ResolvedDownload
 	DownloadLinks []nexus.DownloadLink
 	Source        string
+	ArchivePath   string
+	ArchiveSHA256 string
+	ArchiveBytes  int64
 }
 
 type nexusClient interface {
@@ -130,6 +133,9 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			Resolved:      pending.Resolved,
 			DownloadLinks: pending.DownloadLinks,
 			Source:        pending.Source,
+			ArchivePath:   pending.ArchivePath,
+			ArchiveSHA256: pending.ArchiveSHA256,
+			ArchiveBytes:  pending.ArchiveBytes,
 		}
 	}
 	srv.jobs = jobs.NewManagerWithSeed(storedJobs, func(job jobs.Job) {
@@ -164,8 +170,10 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Pendin
 		switch job.Status {
 		case jobs.StatusQueued, jobs.StatusRunning:
 			job.Status = jobs.StatusWaiting
-			if len(pending.DownloadLinks) > 0 {
-				job.Message = "Interrupted; ready for approval again"
+			if strings.TrimSpace(pending.ArchivePath) != "" {
+				job.Message = "Interrupted; downloaded archive is ready for install approval"
+			} else if len(pending.DownloadLinks) > 0 {
+				job.Message = "Interrupted; ready to retry download"
 			} else {
 				job.Message = "Interrupted; configure Nexus API key and capture the link again"
 			}
@@ -759,8 +767,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"data_dir":    cfg.DataDir,
 		"game_count":  gameCount,
 		"install": map[string]any{
-			"auto_deploy":            cfg.Install.AutoDeploy,
-			"auto_approve_downloads": cfg.Install.AutoApproveDownloads,
+			"auto_install_captured_downloads": cfg.Install.AutoInstallCapturedDownloads,
+			"auto_enable_installed_mods":      cfg.Install.AutoEnableInstalledMods,
 		},
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
@@ -777,8 +785,8 @@ type updateSecuritySettingsRequest struct {
 }
 
 type updateInstallSettingsRequest struct {
-	AutoDeploy           bool `json:"auto_deploy"`
-	AutoApproveDownloads bool `json:"auto_approve_downloads"`
+	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
+	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
 }
 
 type createProfileRequest struct {
@@ -847,15 +855,19 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.cfgMu.Lock()
-	s.cfg.Install.AutoDeploy = req.AutoDeploy
-	s.cfg.Install.AutoApproveDownloads = req.AutoApproveDownloads
+	s.cfg.Install.AutoInstallCapturedDownloads = req.AutoInstallCapturedDownloads
+	s.cfg.Install.AutoEnableInstalledMods = req.AutoEnableInstalledMods
 	cfg := s.cfg
 	s.cfgMu.Unlock()
 	if err := config.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.logger.Info("install settings updated", "auto_deploy", req.AutoDeploy, "auto_approve_downloads", req.AutoApproveDownloads)
+	s.logger.Info(
+		"install settings updated",
+		"auto_install_captured_downloads", req.AutoInstallCapturedDownloads,
+		"auto_enable_installed_mods", req.AutoEnableInstalledMods,
+	)
 	s.handleStatus(w, r)
 }
 
@@ -1777,7 +1789,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		payload["download_links"] = links
-		job, _ = s.jobs.Wait(job.ID, "Ready for approval from "+resolved.GameDomain)
+		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+resolved.GameDomain)
 		payload["job"] = job
 		s.rememberPendingImport(job.ID, pendingImport{
 			Resolved:      resolved,
@@ -1785,16 +1797,17 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 			Source:        source,
 		})
 		s.cfgMu.RLock()
-		autoApprove := s.cfg.Install.AutoApproveDownloads
+		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
 		s.cfgMu.RUnlock()
-		if autoApprove {
-			started, err := s.startPendingImportDownload(job.ID, "auto-approved download")
-			if err != nil {
-				s.logger.Warn("auto-approve pending import failed", "job_id", job.ID, "error", err)
-			} else {
-				payload["job"] = started
-				payload["auto_approved"] = true
-			}
+		started, err := s.startPendingImportDownload(job.ID, "captured nexus link")
+		if err != nil {
+			s.logger.Warn("pending import immediate download failed", "job_id", job.ID, "error", err)
+			job, _ = s.jobs.Fail(job.ID, err.Error())
+			payload["job"] = job
+		} else {
+			payload["job"] = started
+			payload["download_started"] = true
+			payload["auto_install"] = autoInstall
 		}
 		writeJSON(w, http.StatusAccepted, payload)
 		return
@@ -1819,12 +1832,21 @@ func (s *Server) findPendingImport(resolved catalog.ResolvedDownload) (jobs.Job,
 			continue
 		}
 		job, ok := s.jobs.Get(jobID)
-		if !ok || job.Status != jobs.StatusWaiting {
+		if !ok || !pendingImportIsActive(job.Status) {
 			continue
 		}
 		return job, pending, true
 	}
 	return jobs.Job{}, pendingImport{}, false
+}
+
+func pendingImportIsActive(status jobs.Status) bool {
+	switch status {
+	case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) resolveCatalogURL(ctx context.Context, rawURL string) (catalog.ResolvedDownload, error) {
@@ -1849,7 +1871,7 @@ func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	job, err := s.startPendingImportDownload(jobID, "user-approved download")
+	job, err := s.startPendingImportInstall(jobID, "user-approved install")
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):
@@ -1858,10 +1880,8 @@ func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "install request job was not found", http.StatusNotFound)
 		case errors.Is(err, errPendingImportNotWaiting):
 			http.Error(w, "install request is not waiting for approval", http.StatusConflict)
-		case errors.Is(err, errPendingImportNoLinks):
-			http.Error(w, "install request has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
-		case errors.Is(err, errPendingImportEmptyLink):
-			http.Error(w, "install request download link is empty", http.StatusBadRequest)
+		case errors.Is(err, errPendingImportNoArchive):
+			http.Error(w, "install request has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}
@@ -1889,15 +1909,28 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 		http.Error(w, "only failed install requests can be retried", http.StatusConflict)
 		return
 	}
-	if _, ok := s.pendingImport(jobID); !ok {
+	pending, ok := s.pendingImport(jobID)
+	if !ok {
 		http.Error(w, "install request no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
 		return
 	}
-	if _, ok := s.jobs.Wait(jobID, "Retry requested; waiting to download again"); !ok {
+	var message string
+	if pendingArchiveReady(pending) {
+		message = "Retry requested; installing cached archive"
+	} else {
+		message = "Retry requested; downloading archive again"
+	}
+	if _, ok := s.jobs.Wait(jobID, message); !ok {
 		http.Error(w, "install request job was not found", http.StatusNotFound)
 		return
 	}
-	retried, err := s.startPendingImportDownload(jobID, "retry download")
+	var retried jobs.Job
+	var err error
+	if pendingArchiveReady(pending) {
+		retried, err = s.startPendingImportInstall(jobID, "retry install")
+	} else {
+		retried, err = s.startPendingImportDownload(jobID, "retry download")
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):
@@ -1910,6 +1943,8 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 			http.Error(w, "install request has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
 		case errors.Is(err, errPendingImportEmptyLink):
 			http.Error(w, "install request download link is empty", http.StatusBadRequest)
+		case errors.Is(err, errPendingImportNoArchive):
+			http.Error(w, "install request has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}
@@ -1924,6 +1959,7 @@ var (
 	errPendingImportNotWaiting  = errors.New("pending import is not waiting for approval")
 	errPendingImportNoLinks     = errors.New("pending import has no download links")
 	errPendingImportEmptyLink   = errors.New("pending import download link is empty")
+	errPendingImportNoArchive   = errors.New("pending import has no downloaded archive")
 )
 
 func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.Job, error) {
@@ -1952,10 +1988,10 @@ func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.
 		return jobs.Job{}, errPendingImportJobNotFound
 	}
 	s.logger.Info(
-		"pending import approved",
+		"pending import download started",
 		"job_id", jobID,
-		"approval_source", approvalSource,
-		"source", pending.Source,
+		"source", approvalSource,
+		"request_source", pending.Source,
 		"catalog", pending.Resolved.Catalog,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -1966,6 +2002,66 @@ func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.
 	s.trackActiveJob(jobID, cancel)
 	go s.downloadPendingImport(ctx, jobID, pending, link)
 	return job, nil
+}
+
+func (s *Server) startPendingImportInstall(jobID, approvalSource string) (jobs.Job, error) {
+	pending, ok := s.pendingImport(jobID)
+	if !ok {
+		return jobs.Job{}, errPendingImportNotFound
+	}
+	currentJob, ok := s.jobs.Get(jobID)
+	if !ok {
+		return jobs.Job{}, errPendingImportJobNotFound
+	}
+	if currentJob.Status != jobs.StatusWaiting {
+		return jobs.Job{}, errPendingImportNotWaiting
+	}
+	if !pendingArchiveReady(pending) {
+		return jobs.Job{}, errPendingImportNoArchive
+	}
+
+	job, ok := s.jobs.Run(jobID, "Installing downloaded archive from "+pending.Resolved.GameDomain)
+	if !ok {
+		return jobs.Job{}, errPendingImportJobNotFound
+	}
+	s.logger.Info(
+		"pending import install approved",
+		"job_id", jobID,
+		"approval_source", approvalSource,
+		"request_source", pending.Source,
+		"catalog", pending.Resolved.Catalog,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"archive_path", pending.ArchivePath,
+		"archive_sha256", pending.ArchiveSHA256,
+		"archive_bytes", pending.ArchiveBytes,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.trackActiveJob(jobID, cancel)
+	go func() {
+		defer s.untrackActiveJob(jobID)
+		s.installPendingImport(ctx, jobID, pending, pending.downloadResult(), approvalSource)
+	}()
+	return job, nil
+}
+
+func pendingArchiveReady(pending pendingImport) bool {
+	path := strings.TrimSpace(pending.ArchivePath)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func (pending pendingImport) downloadResult() download.Result {
+	return download.Result{
+		Path:         pending.ArchivePath,
+		SHA256:       pending.ArchiveSHA256,
+		BytesWritten: pending.ArchiveBytes,
+	}
 }
 
 func (s *Server) pendingImport(jobID string) (pendingImport, bool) {
@@ -1985,6 +2081,9 @@ func (s *Server) rememberPendingImport(jobID string, pending pendingImport) {
 		Resolved:      pending.Resolved,
 		DownloadLinks: pending.DownloadLinks,
 		Source:        pending.Source,
+		ArchivePath:   pending.ArchivePath,
+		ArchiveSHA256: pending.ArchiveSHA256,
+		ArchiveBytes:  pending.ArchiveBytes,
 	}); err != nil {
 		s.logger.Warn("persist pending import failed", "job_id", jobID, "error", err)
 	}
@@ -2073,10 +2172,51 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		"path", result.Path,
 		"bytes", result.BytesWritten,
 	)
+	pending.ArchivePath = result.Path
+	pending.ArchiveSHA256 = result.SHA256
+	pending.ArchiveBytes = result.BytesWritten
+	s.rememberPendingImport(jobID, pending)
+	s.cfgMu.RLock()
+	autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
+	s.cfgMu.RUnlock()
+	if !autoInstall {
+		name := modNameFromArchive(result.Path, pending.Resolved)
+		s.logger.Info(
+			"pending import downloaded and waiting for install approval",
+			"job_id", jobID,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"archive_path", result.Path,
+			"archive_sha256", result.SHA256,
+			"archive_bytes", result.BytesWritten,
+		)
+		s.jobs.Wait(jobID, "Downloaded "+name+"; approve install to add it disabled")
+		return
+	}
+	s.installPendingImport(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func (s *Server) installPendingImport(ctx context.Context, jobID string, pending pendingImport, result download.Result, installSource string) {
+	if _, ok := s.jobs.Run(jobID, "Installing downloaded archive from "+pending.Resolved.GameDomain); !ok {
+		s.logger.Warn("pending import install job missing", "job_id", jobID)
+		return
+	}
+	s.logger.Info(
+		"pending import install started",
+		"job_id", jobID,
+		"install_source", installSource,
+		"game_domain", pending.Resolved.GameDomain,
+		"mod_id", pending.Resolved.ModID,
+		"file_id", pending.Resolved.FileID,
+		"archive_path", result.Path,
+		"archive_sha256", result.SHA256,
+		"archive_bytes", result.BytesWritten,
+	)
 	staged, err := s.stagePendingImport(ctx, jobID, pending, result)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			s.logger.Info("pending import staging canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+			s.logger.Info("pending import install canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
 			s.jobs.Cancel(jobID, "Canceled by user")
 			s.forgetPendingImport(jobID)
 			return
@@ -2134,40 +2274,40 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		return
 	}
 	s.cfgMu.RLock()
-	autoDeploy := s.cfg.Install.AutoDeploy
+	autoEnable := s.cfg.Install.AutoEnableInstalledMods
 	s.cfgMu.RUnlock()
-	if autoDeploy {
+	if autoEnable {
 		plan, err := s.buildGameDeployPlan(ctx, staged.SteamAppID)
 		if err != nil {
-			s.logger.Warn("auto deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
-			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; automatic deploy could not preview changes: "+err.Error())
+			s.logger.Warn("auto-enable deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deploy preview failed: "+err.Error())
 			s.forgetPendingImport(jobID)
 			return
 		}
 		if len(plan.Conflicts) > 0 {
-			s.logger.Info("auto deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
-			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; deployment has conflicts to review")
+			s.logger.Info("auto-enable deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
+			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deployment has conflicts to review")
 			s.forgetPendingImport(jobID)
 			return
 		}
 		if !hasDeployableActions(plan) {
-			s.logger.Info("auto deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
-			s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; deployment is already up to date")
+			s.logger.Info("auto-enable deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
+			s.jobs.Complete(jobID, "Installed "+staged.Name+" enabled; deployment is already up to date")
 			s.forgetPendingImport(jobID)
 			return
 		}
-		deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Auto deploying profile changes"))
+		deployment, err := deploy.ApplyPreparedWithProgress(plan, s.deployProgressUpdater(jobID, "Deploying enabled mod"))
 		if err != nil {
-			s.logger.Warn("auto deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.logger.Warn("auto-enable deploy failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 			s.jobs.Fail(jobID, err.Error())
 			s.forgetPendingImport(jobID)
 			return
 		}
 		applied := deployment.Files
 		if err := deploy.Verify(applied); err != nil {
-			s.logger.Warn("auto deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.logger.Warn("auto-enable deploy verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-				s.logger.Warn("auto deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+				s.logger.Warn("auto-enable deploy rollback after verification failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
 			}
 			s.jobs.Fail(jobID, err.Error())
 			s.forgetPendingImport(jobID)
@@ -2175,20 +2315,20 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		}
 		deploymentID, err := s.db.RecordDeployment(context.Background(), staged.SteamAppID, plan.Strategy, applied)
 		if err != nil {
-			s.logger.Warn("auto deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+			s.logger.Warn("auto-enable deploy manifest record failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 			if rollbackErr := deployment.Rollback(); rollbackErr != nil {
-				s.logger.Warn("auto deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
+				s.logger.Warn("auto-enable deploy rollback after manifest failure failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", rollbackErr)
 			}
 			s.jobs.Fail(jobID, err.Error())
 			s.forgetPendingImport(jobID)
 			return
 		}
 		deployment.Commit()
-		s.logger.Info("auto deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
-		message := "Added and deployed " + staged.Name
+		s.logger.Info("auto-enable deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
+		message := "Installed, enabled, and deployed " + staged.Name
 		launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, staged.SteamAppID, jobID)
 		if launchErr != nil {
-			s.logger.Warn("auto deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
+			s.logger.Warn("auto-enable deploy launch action status failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
 		} else if launchStatus != nil && launchStatus.Action != nil {
 			message += "; launch tool setup pending"
 		}
@@ -2196,7 +2336,7 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		s.forgetPendingImport(jobID)
 		return
 	}
-	s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile disabled; enable it to deploy")
+	s.jobs.Complete(jobID, "Installed "+staged.Name+" disabled; enable it to deploy")
 	s.forgetPendingImport(jobID)
 }
 
@@ -2468,25 +2608,27 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		return storage.InstalledMod{}, err
 	}
 	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
+	s.cfgMu.RLock()
+	autoEnable := s.cfg.Install.AutoEnableInstalledMods
+	s.cfgMu.RUnlock()
+	defaultEnabled := autoEnable
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
-		SteamAppID:    appID,
-		Resolved:      pending.Resolved,
-		Name:          name,
-		Version:       pending.Resolved.FileID,
-		ArchivePath:   archivePath,
-		ArchiveSHA256: result.SHA256,
-		StagingPath:   stagingPath,
-		ManifestJSON:  manifest,
+		SteamAppID:     appID,
+		Resolved:       pending.Resolved,
+		Name:           name,
+		Version:        pending.Resolved.FileID,
+		ArchivePath:    archivePath,
+		ArchiveSHA256:  result.SHA256,
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifest,
+		DefaultEnabled: &defaultEnabled,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	s.cfgMu.RLock()
-	autoDeploy := s.cfg.Install.AutoDeploy
-	s.cfgMu.RUnlock()
-	if !autoDeploy {
-		disabled := false
-		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &disabled, nil)
+	if autoEnable && !staged.Enabled {
+		enabled := true
+		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
 		if err != nil {
 			return storage.InstalledMod{}, err
 		}

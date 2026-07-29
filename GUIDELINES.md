@@ -105,14 +105,15 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Staging, deployment preview, purge, repair, conflict details, blocked install internals, and file-level controls should live behind an advanced view unless they need immediate user attention.
 - The primary mod-management surface should be a profile mod list with clear enabled/disabled state, profile-scoped priority when relevant, pending/apply-needed state, and a simple apply action.
 - Avoid exposing backend pipeline terms such as "staged", "manifest", "install plan", or "target mapping" in primary user flows. Use them only in advanced/debug views and logs.
-- Decky Settings should expose "Auto-accept download requests" and "Auto-deploy staged mods"; both default on for MVP Deck-only flows, but both must be explicit and easy to disable.
-- Auto-deploy may download, inspect, stage, and deploy files, but it must not auto-enable a newly installed mod in the profile.
-- The phone/tablet web app should not expose the auto-accept download setting. That belongs in the Steam Deck plugin because it changes the Deck-side capture behavior.
+- Nexus links can expire quickly, so DMM should download captured Nexus archives immediately after capture. Approval gates the local install step, not the network download.
+- Decky Settings should expose "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, auto-enable defaults off, and both must be explicit and easy to disable.
+- Auto-enable may install, enable, and deploy files when there are no conflicts. When auto-enable is off, newly installed mods must remain disabled until the user enables them.
+- The phone/tablet web app should not expose these Deck behavior switches. They belong in the Steam Deck plugin because they change Deck-side capture/install behavior.
 - Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
 - FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI and, for Deck-only flows, in a Decky modal rather than a crowded sidebar view.
-- If "Auto deploy to current profile" is enabled and a first-time FOMOD/installer-choice request is reached while the Decky plugin UI is active, DMM may automatically open the Decky choice modal.
+- If "Auto-enable installed mods" is enabled and a first-time FOMOD/installer-choice request is reached while the Decky plugin UI is active, DMM may automatically open the Decky choice modal.
 - If Decky cannot safely open the modal because the plugin UI is not active or Steam overlay state is unavailable, DMM should show a Decky notification and leave a visible installer-choice request for the user to open from Decky or the phone/tablet UI.
-- The "Auto deploy to current profile" setting should include helper text that FOMOD/installer-choice menus may appear as Decky modals before deployment can continue.
+- The "Auto-enable installed mods" setting should include helper text that FOMOD/installer-choice menus may appear as Decky modals before deployment can continue.
 - Destructive actions must require confirmation.
 - Downloads, installs, deployment, purge, and repair should appear in a visible activity/job queue.
 - Background jobs must continue if the phone disconnects.

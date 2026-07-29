@@ -387,7 +387,7 @@ class Plugin:
             "status": result,
         }
 
-    async def set_auto_accept_downloads(self, auto_accept):
+    async def set_auto_install_captured_downloads(self, auto_install):
         if not self._backend_responds():
             return {
                 "ok": False,
@@ -401,16 +401,45 @@ class Plugin:
             }
         install = status.get("install") if isinstance(status.get("install"), dict) else {}
         payload = json.dumps({
-            "auto_deploy": bool(install.get("auto_deploy", False)),
-            "auto_approve_downloads": bool(auto_accept),
+            "auto_install_captured_downloads": bool(auto_install),
+            "auto_enable_installed_mods": bool(install.get("auto_enable_installed_mods", False)),
         }).encode("utf-8")
         result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
         if result is None:
             return {
                 "ok": False,
-                "error": error or "Unable to update download settings.",
+                "error": error or "Unable to update install settings.",
             }
-        self._log(f"auto-accept download requests set to {bool(auto_accept)}")
+        self._log(f"auto-install captured downloads set to {bool(auto_install)}")
+        return {
+            "ok": True,
+            "status": result,
+        }
+
+    async def set_auto_enable_installed_mods(self, auto_enable):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        status, status_error = self._backend_json_result("GET", "/api/status")
+        if not isinstance(status, dict):
+            return {
+                "ok": False,
+                "error": status_error or "Unable to load current install settings.",
+            }
+        install = status.get("install") if isinstance(status.get("install"), dict) else {}
+        payload = json.dumps({
+            "auto_install_captured_downloads": bool(install.get("auto_install_captured_downloads", False)),
+            "auto_enable_installed_mods": bool(auto_enable),
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to update enable settings.",
+            }
+        self._log(f"auto-enable installed mods set to {bool(auto_enable)}")
         return {
             "ok": True,
             "status": result,

@@ -397,9 +397,10 @@ cat > "${CONFIG_HOME}/decky-mod-manager/config.json" <<JSON
   "listen_addr": "127.0.0.1:${PORT}",
   "lan_only": false,
   "data_dir": "${DATA_COPY}",
-  "deployment_strategy": "symlink",
-  "nexus_api_key": "",
-  "auto_deploy": false
+  "install": {
+    "auto_install_captured_downloads": true,
+    "auto_enable_installed_mods": false
+  }
 }
 JSON
 

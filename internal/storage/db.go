@@ -76,6 +76,9 @@ type PendingImport struct {
 	Resolved      catalog.ResolvedDownload `json:"resolved"`
 	DownloadLinks []nexus.DownloadLink     `json:"download_links"`
 	Source        string                   `json:"source"`
+	ArchivePath   string                   `json:"archive_path"`
+	ArchiveSHA256 string                   `json:"archive_sha256"`
+	ArchiveBytes  int64                    `json:"archive_bytes"`
 }
 
 func Open(path string) (*DB, error) {
@@ -123,6 +126,9 @@ func (db *DB) applyCompatibilityMigrations(ctx context.Context) error {
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "pending_imports", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "pending_imports", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "pending_imports", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "pending_imports", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "pending_imports", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, column := range columns {
 		exists, err := db.hasColumn(ctx, column.table, column.name)
@@ -308,20 +314,23 @@ func (db *DB) SavePendingImport(ctx context.Context, pending PendingImport) erro
 		return err
 	}
 	_, err = db.conn.ExecContext(ctx, `
-INSERT INTO pending_imports (job_id, resolved_json, download_links_json, source, updated_at)
-VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO pending_imports (job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(job_id) DO UPDATE SET
 	resolved_json = excluded.resolved_json,
 	download_links_json = excluded.download_links_json,
 	source = excluded.source,
+	archive_path = excluded.archive_path,
+	archive_sha256 = excluded.archive_sha256,
+	archive_bytes = excluded.archive_bytes,
 	updated_at = CURRENT_TIMESTAMP
-`, pending.JobID, string(resolved), string(links), pending.Source)
+`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes)
 	return err
 }
 
 func (db *DB) ListPendingImports(ctx context.Context) ([]PendingImport, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT job_id, resolved_json, download_links_json, source
+SELECT job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes
 FROM pending_imports
 ORDER BY updated_at DESC, created_at DESC
 `)
@@ -333,7 +342,7 @@ ORDER BY updated_at DESC, created_at DESC
 	for rows.Next() {
 		var pending PendingImport
 		var resolved, links string
-		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source); err != nil {
+		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(resolved), &pending.Resolved); err != nil {
@@ -449,14 +458,15 @@ WHERE id = ?
 }
 
 type RecordInstalledModParams struct {
-	SteamAppID    string
-	Resolved      catalog.ResolvedDownload
-	Name          string
-	Version       string
-	ArchivePath   string
-	ArchiveSHA256 string
-	StagingPath   string
-	ManifestJSON  string
+	SteamAppID     string
+	Resolved       catalog.ResolvedDownload
+	Name           string
+	Version        string
+	ArchivePath    string
+	ArchiveSHA256  string
+	StagingPath    string
+	ManifestJSON   string
+	DefaultEnabled *bool
 }
 
 func (db *DB) RecordInstalledMod(ctx context.Context, params RecordInstalledModParams) (InstalledMod, error) {
@@ -558,13 +568,16 @@ LIMIT 1
 `, gameID).Scan(&profileID); err != nil {
 		return InstalledMod{}, err
 	}
+	defaultEnabled := 1
+	if params.DefaultEnabled != nil && !*params.DefaultEnabled {
+		defaultEnabled = 0
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO profile_mods (profile_id, installed_mod_id, enabled, priority, updated_at)
-VALUES (?, ?, 1, 0, CURRENT_TIMESTAMP)
+VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
 ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
-	enabled = 1,
 	updated_at = CURRENT_TIMESTAMP
-`, profileID, installedModID); err != nil {
+`, profileID, installedModID, defaultEnabled); err != nil {
 		return InstalledMod{}, err
 	}
 

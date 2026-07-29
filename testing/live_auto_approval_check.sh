@@ -12,7 +12,7 @@ section() {
   printf '\n==> %s\n' "$1"
 }
 
-section "DMM live automatic download approval check"
+section "DMM live automatic install check"
 echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "timeout_seconds=${TIMEOUT_SECONDS}"
@@ -90,22 +90,22 @@ def validate_job_payload(job):
 
 status = request("GET", "/api/status")
 install = status.get("install") or {}
-previous_auto_approve = bool(install.get("auto_approve_downloads"))
-previous_auto_deploy = bool(install.get("auto_deploy"))
+previous_auto_install = bool(install.get("auto_install_captured_downloads"))
+previous_auto_enable = bool(install.get("auto_enable_installed_mods"))
 
 baseline_ids = {job.get("id") for job in jobs_list()}
 
-print("previous_auto_approve=", previous_auto_approve, sep="")
-print("previous_auto_deploy=", previous_auto_deploy, sep="")
+print("previous_auto_install=", previous_auto_install, sep="")
+print("previous_auto_enable=", previous_auto_enable, sep="")
 print("baseline_jobs=", len(baseline_ids), sep="")
 
 request("PUT", "/api/settings/install", {
-    "auto_deploy": previous_auto_deploy,
-    "auto_approve_downloads": True,
+    "auto_install_captured_downloads": True,
+    "auto_enable_installed_mods": previous_auto_enable,
 })
-print("\nAuto-approval is enabled for this check.")
+print("\nAuto-install is enabled for this check.")
 print("Now use the Deck browser to click a fresh Nexus Mod Manager Download link.")
-print("This script will pass when the new request runs/completes without stopping at manual approval.")
+print("This script will pass when the new request runs/completes without stopping at manual install approval.")
 
 seen_states = {}
 deadline = time.monotonic() + timeout
@@ -162,10 +162,10 @@ try:
 finally:
     if restore_setting:
         request("PUT", "/api/settings/install", {
-            "auto_deploy": previous_auto_deploy,
-            "auto_approve_downloads": previous_auto_approve,
+            "auto_install_captured_downloads": previous_auto_install,
+            "auto_enable_installed_mods": previous_auto_enable,
         })
-        print("restored_auto_approve=", previous_auto_approve, sep="")
+        print("restored_auto_install=", previous_auto_install, sep="")
 
 sys.exit(exit_code)
 PY

@@ -41,10 +41,10 @@ require_text "$WEB_APP" "Add From Nexus" \
   "Nexus import must live inside the selected game workspace"
 require_text "$WEB_APP" "Advanced Deployment Tools" \
   "file-level deployment controls must remain an advanced disclosure"
-require_text "$WEB_APP" "Auto deploy after staging" \
-  "mobile install settings must expose auto-deploy as an explicit setting"
+require_text "$WEB_APP" "Auto install captured downloads" \
+  "mobile install settings must show Deck-managed install behavior"
 reject_text "$WEB_APP" "Approve downloads automatically" \
-  "mobile install settings must not expose automatic download approval; it belongs in Decky"
+  "mobile install settings must not expose the retired download-approval model"
 reject_text "$WEB_APP" ">Server</button>" \
   "mobile UI must not expose a Server settings tab; server access belongs in Decky"
 reject_text "$WEB_APP" ">Dependencies</button>" \
@@ -54,7 +54,9 @@ require_text "$DECKY_APP" "Server Access" \
   "Decky plugin must retain server access controls/status"
 require_text "$DECKY_APP" "Dependencies" \
   "Decky plugin must retain dependency status"
-require_text "$DECKY_APP" "Auto-accept download requests" \
-  "Decky plugin must expose automatic download approval"
+require_text "$DECKY_APP" "Auto-install captured downloads" \
+  "Decky plugin must expose automatic install approval"
+require_text "$DECKY_APP" "Auto-enable installed mods" \
+  "Decky plugin must expose automatic enable/deploy behavior"
 
 echo "MVP UI product audit passed"

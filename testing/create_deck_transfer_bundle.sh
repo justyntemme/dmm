@@ -99,7 +99,7 @@ Or run the individual checks:
   ~/.testing/live_profile_toggle_check.sh
   ~/.testing/live_stardew_mod_files_check.sh
 
-For auto-approval validation, start the server from Decky, run:
+For auto-install validation, start the server from Decky, run:
 
   ~/.testing/live_auto_approval_check.sh
 

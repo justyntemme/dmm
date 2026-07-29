@@ -174,6 +174,9 @@ CREATE TABLE IF NOT EXISTS pending_imports (
 	resolved_json TEXT NOT NULL,
 	download_links_json TEXT NOT NULL DEFAULT '[]',
 	source TEXT NOT NULL DEFAULT '',
+	archive_path TEXT NOT NULL DEFAULT '',
+	archive_sha256 TEXT NOT NULL DEFAULT '',
+	archive_bytes INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

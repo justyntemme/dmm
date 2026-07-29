@@ -3,7 +3,7 @@
 
   type Status = {
     game_count: number;
-    install: { auto_deploy: boolean; auto_approve_downloads: boolean };
+    install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
     nexus: { api_key_configured: boolean };
   };
 
@@ -847,23 +847,6 @@
     deployPlan = null;
   }
 
-  async function setAutoDeploy(autoDeploy: boolean) {
-    error = "";
-    const response = await fetch("/api/settings/install", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auto_deploy: autoDeploy,
-        auto_approve_downloads: status?.install.auto_approve_downloads ?? false
-      })
-    });
-    if (!response.ok) {
-      error = await response.text();
-      return;
-    }
-    status = await response.json();
-  }
-
   function upsertJob(job: Job) {
     const existing = jobs.find((item) => item.id === job.id);
     const changed = !existing || existing.status !== job.status || existing.message !== job.message || existing.updated_at !== job.updated_at;
@@ -973,10 +956,10 @@
 
   function requestNextStep(request: Job) {
     if (request.status === "waiting") {
-      return "Approve to download and add this mod to the selected profile.";
+      return "Approve install to add this downloaded mod to the selected profile.";
     }
     if (request.status === "running" || request.status === "queued") {
-      return "DMM is downloading and preparing this mod. It will appear in the profile when ready.";
+      return "DMM is downloading or installing this mod. It will appear in the profile when ready.";
     }
     if (request.status === "failed") {
       return "The mod was not added. Retry the request if the download link is still valid, or clear it after saving anything useful.";
@@ -1151,7 +1134,7 @@
 	                  <div class="request-actions">
 	                    <span>{requestStatusLabel(request)}</span>
 	                    {#if request.status === "waiting"}
-	                      <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Download"}</button>
+	                      <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
 	                    {/if}
 	                    {#if request.status === "failed"}
 	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
@@ -1176,7 +1159,8 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
+            <div><dt>Auto install</dt><dd>{status?.install.auto_install_captured_downloads ? "Enabled" : "Approval required"}</dd></div>
+            <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -1207,13 +1191,10 @@
         <article class="workspace-panel">
           <h2>Install</h2>
           <dl class="settings-list">
-            <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
+            <div><dt>Auto install captured downloads</dt><dd>{status?.install.auto_install_captured_downloads ? "Enabled" : "Approval required"}</dd></div>
+            <div><dt>Auto enable installed mods</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
           </dl>
-          <label class="toggle-row">
-            <span>Auto deploy after staging</span>
-            <input type="checkbox" checked={status?.install.auto_deploy ?? false} on:change={(event) => setAutoDeploy(event.currentTarget.checked)} />
-          </label>
-          <p class="hint">Keep this off while testing. Auto deploy will only apply when a deployment preview has no conflicts.</p>
+          <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
         </article>
       {:else}
         <article class="workspace-panel">
@@ -1447,7 +1428,7 @@
                     <div class="request-actions">
                       <span>{requestStatusLabel(request)}</span>
                       {#if request.status === "waiting"}
-                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Download"}</button>
+                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
                       {/if}
                       {#if request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>

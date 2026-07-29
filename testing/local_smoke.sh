@@ -83,7 +83,8 @@ require_contains "${health}" '"ok":true' "health"
 
 status="$(curl -fsS "http://127.0.0.1:${PORT}/api/status")"
 require_contains "${status}" '"lan_only":true' "status lan_only"
-require_contains "${status}" '"auto_deploy":false' "status auto_deploy default"
+require_contains "${status}" '"auto_install_captured_downloads":true' "status auto_install_captured_downloads default"
+require_contains "${status}" '"auto_enable_installed_mods":false' "status auto_enable_installed_mods default"
 
 jobs="$(curl -fsS "http://127.0.0.1:${PORT}/api/jobs")"
 require_contains "${jobs}" '[]' "empty jobs"

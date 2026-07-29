@@ -24,8 +24,8 @@ type NexusConfig struct {
 }
 
 type InstallConfig struct {
-	AutoDeploy           bool `json:"auto_deploy"`
-	AutoApproveDownloads bool `json:"auto_approve_downloads"`
+	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
+	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
 }
 
 func Load() (Config, error) {
@@ -83,6 +83,10 @@ func Defaults() Config {
 		ListenAddr: ":17942",
 		LANOnly:    true,
 		DataDir:    dataDir,
+		Install: InstallConfig{
+			AutoInstallCapturedDownloads: true,
+			AutoEnableInstalledMods:      false,
+		},
 	}
 }
 

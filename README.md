@@ -16,7 +16,8 @@ MVP vertical slice in active testing:
 - Import URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP import handlers; Nexus remains the only MVP download provider.
 - Pending install requests and active pending-import downloads/extractions can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped request and activity filtering after backend restarts.
-- Decky Settings exposes "Auto-accept download requests" and "Auto-deploy staged mods"; both default on for MVP Deck-only flows, while newly installed mods still remain disabled until the user enables them.
+- Captured Nexus links download immediately so short-lived URLs are consumed while valid; approval applies to installing the cached archive.
+- Decky Settings exposes "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, while auto-enable defaults off so newly installed mods remain disabled until the user enables them.
 - The Decky plugin shows Gaming Mode notifications for Nexus install request and download job transitions while it is loaded.
 - Stardew Valley (`413150`) is the first supported deploy target.
 - Install planning uses Vortex-modeled metadata specs: the current Stardew slice handles manifest-based mods, root-folder `Content/` archives, and SMAPI installer archives with Linux embedded-payload extraction.

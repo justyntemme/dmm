@@ -110,14 +110,15 @@ fi
 section "Checking packaged UI content"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Server Access" "Decky server access UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Dependencies" "Decky dependency UI"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-accept download requests" "Decky download approval setting"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-install captured downloads" "Decky auto-install setting"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-enable installed mods" "Decky auto-enable setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
   require_file_contains "${asset_file}" "Profile Mods" "web profile mod list"
   require_file_contains "${asset_file}" "Add From Nexus" "web in-game Nexus import"
   require_file_contains "${asset_file}" "Advanced Deployment Tools" "web advanced deployment disclosure"
-  require_file_contains "${asset_file}" "Auto deploy after staging" "web auto-deploy setting"
+  require_file_contains "${asset_file}" "Auto install captured downloads" "web install settings status"
 done
 
 if [[ -n "${SHAPE_ONLY}" ]]; then
@@ -133,9 +134,10 @@ cat > "${CONFIG_HOME}/decky-mod-manager/config.json" <<JSON
   "listen_addr": "127.0.0.1:${PORT}",
   "lan_only": false,
   "data_dir": "${DATA_DIR}",
-  "deployment_strategy": "symlink",
-  "nexus_api_key": "",
-  "auto_deploy": false
+  "install": {
+    "auto_install_captured_downloads": true,
+    "auto_enable_installed_mods": false
+  }
 }
 JSON
 
@@ -152,7 +154,8 @@ require_contains "${health}" '"ok":true' "health"
 
 status="$(curl -fsS "${BASE_URL}/api/status")"
 require_contains "${status}" '"lan_only":false' "status lan_only"
-require_contains "${status}" '"auto_deploy":false' "status auto_deploy"
+require_contains "${status}" '"auto_install_captured_downloads":true' "status auto_install_captured_downloads"
+require_contains "${status}" '"auto_enable_installed_mods":false' "status auto_enable_installed_mods"
 
 index="$(curl -fsS "${BASE_URL}/")"
 require_contains "${index}" "Decky Mod Manager" "web index title"

@@ -242,7 +242,7 @@ After capturing at least one fresh Nexus request with the current package, the M
 REQUIRE_JOB_PAYLOAD=1 ~/.testing/mvp_live_check.sh
 ```
 
-The automatic download approval verifier always checks that the fresh captured request includes app/catalog/domain/mod/file identifiers in the job payload.
+The automatic install verifier always checks that the fresh captured request includes app/catalog/domain/mod/file identifiers in the job payload.
 
 For narrower debugging, run the checks individually.
 
@@ -302,12 +302,12 @@ REQUIRE_SMAPI_ROOT=1 REQUIRE_RUNTIME=1 ~/.testing/live_stardew_mod_files_check.s
 
 `REQUIRE_SMAPI_ROOT=1` verifies DMM-managed symlinked root markers such as `StardewModdingAPI`, `StardewModdingAPI.dll`, `StardewModdingAPI.deps.json`, and `smapi-internal/SMAPI.Toolkit.CoreInterfaces.dll`.
 
-## Auto-Approval Live Check
+## Auto-Install Live Check
 
-After installing the latest package and starting the server from Decky, use this script to verify the `Approve downloads automatically` setting with a real Nexus capture:
+After installing the latest package and starting the server from Decky, use this script to verify the `Auto-install captured downloads` setting with a real Nexus capture:
 
 ```sh
 ~/.testing/live_auto_approval_check.sh
 ```
 
-The script records the current install settings, enables automatic download approval, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual approval and completes through download/staging. By default it restores the previous automatic-approval setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.
+The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual install approval and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.
