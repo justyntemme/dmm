@@ -14,6 +14,7 @@
     library_path: string;
     state: string;
     markers?: string[];
+    nexus_domains?: string[];
   };
 
   type Profile = {
@@ -597,23 +598,6 @@
     status = await response.json();
   }
 
-  async function setAutoApproveDownloads(autoApproveDownloads: boolean) {
-    error = "";
-    const response = await fetch("/api/settings/install", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        auto_deploy: status?.install.auto_deploy ?? false,
-        auto_approve_downloads: autoApproveDownloads
-      })
-    });
-    if (!response.ok) {
-      error = await response.text();
-      return;
-    }
-    status = await response.json();
-  }
-
   function upsertJob(job: Job) {
     if (job.type === "pending-import" && job.status === "canceled" && job.message === "Cleared") {
       jobs = jobs.filter((item) => item.id !== job.id);
@@ -653,32 +637,18 @@
     const haystack = `${job.title} ${job.message}`.toLowerCase().replace(/[^a-z0-9]/g, "");
     const gameName = game.name.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (gameName && haystack.includes(gameName)) return true;
-    const aliases: Record<string, string[]> = {
-      "413150": ["stardewvalley", "stardew"],
-      "489830": ["skyrimspecialedition", "skyrim"],
-      "292030": ["witcher3", "thewitcher3"],
-      "377160": ["fallout4"],
-      "287700": ["metalgearsolidvtpp", "mgsv"]
-    };
-    return (aliases[game.app_id] ?? []).some((alias) => haystack.includes(alias));
+    return nexusDomainsForGame(game).some((domain) => haystack.includes(domain.toLowerCase().replace(/[^a-z0-9]/g, "")));
   }
 
   function jobMatchesGame(job: Job, game: Game) {
     if (job.payload?.app_id && job.payload.app_id === game.app_id) return true;
     const domain = job.payload?.game_domain?.toLowerCase();
     if (!domain) return false;
-    return nexusDomainsForGame(game.app_id).includes(domain);
+    return nexusDomainsForGame(game).includes(domain);
   }
 
-  function nexusDomainsForGame(appID: string) {
-    const domains: Record<string, string[]> = {
-      "413150": ["stardewvalley"],
-      "489830": ["skyrimspecialedition"],
-      "292030": ["witcher3"],
-      "377160": ["fallout4"],
-      "287700": ["metalgearsolidvtpp"]
-    };
-    return domains[appID] ?? [];
+  function nexusDomainsForGame(game: Game) {
+    return (game.nexus_domains ?? []).map((domain) => domain.toLowerCase()).filter(Boolean);
   }
 
   function modStatusText(mod: InstalledMod) {
@@ -885,7 +855,6 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Download approval</dt><dd>{status?.install.auto_approve_downloads ? "Automatic" : "Required"}</dd></div>
             <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
           </dl>
         </article>
@@ -917,14 +886,8 @@
         <article class="workspace-panel">
           <h2>Install</h2>
           <dl class="settings-list">
-            <div><dt>Download approval</dt><dd>{status?.install.auto_approve_downloads ? "Automatic" : "Required"}</dd></div>
             <div><dt>Auto deploy</dt><dd>{status?.install.auto_deploy ? "Enabled" : "Disabled"}</dd></div>
           </dl>
-          <label class="toggle-row">
-            <span>Approve downloads automatically</span>
-            <input type="checkbox" checked={status?.install.auto_approve_downloads ?? false} on:change={(event) => setAutoApproveDownloads(event.currentTarget.checked)} />
-          </label>
-          <p class="hint">Off by default. When enabled, captured Nexus links begin downloading immediately and still report progress in requests and jobs.</p>
           <label class="toggle-row">
             <span>Auto deploy after staging</span>
             <input type="checkbox" checked={status?.install.auto_deploy ?? false} on:change={(event) => setAutoDeploy(event.currentTarget.checked)} />

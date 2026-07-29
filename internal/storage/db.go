@@ -215,6 +215,27 @@ func (db *DB) GameCount(ctx context.Context) (int, error) {
 	return count, err
 }
 
+func (db *DB) Games(ctx context.Context) ([]Game, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT id, steam_app_id, name, game_path, state
+FROM games
+ORDER BY LOWER(name), steam_app_id
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var games []Game
+	for rows.Next() {
+		var game Game
+		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.GamePath, &game.State); err != nil {
+			return nil, err
+		}
+		games = append(games, game)
+	}
+	return games, rows.Err()
+}
+
 func (db *DB) ListJobs(ctx context.Context) ([]jobs.Job, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 SELECT id, type, title, status, message, payload_json, created_at, updated_at

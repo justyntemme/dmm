@@ -2,6 +2,45 @@
 
 These guidelines translate `notes.md` into build decisions. Treat `notes.md` as the raw Q&A record and this file as the working development contract.
 
+## Guideline 1: Verify Upstream Behavior First
+
+- Before implementing or changing Vortex-compatible behavior, verify how Vortex or the relevant official game extension models the same behavior from source, documentation, or observed runtime state.
+- Do not guess archive install rules, mod types, deployment roots, launcher behavior, dependency semantics, metadata extraction, or protocol handling when a Vortex implementation or official game-handler source exists.
+- Use source verification as the default path for Nexus/Vortex compatibility work. Local observations from one downloaded mod are useful test fixtures, not architectural authority.
+- When Vortex behavior is Windows-specific or does not map cleanly to Steam Deck/Linux, document the verified Vortex behavior first, then document the Linux-specific adaptation and why it is necessary.
+- If a decision was previously inferred before source verification, mark it for review and either confirm it against upstream source or explicitly redesign it.
+- Keep citations or source file references in implementation notes, tests, or documentation whenever we encode Vortex-derived behavior.
+
+## Decisions Requiring Source Review
+
+- Stardew SMAPI launch integration: verify the Vortex extension's primary-tool and deployment behavior, then define the Steam Deck equivalent for launching through SMAPI.
+- Stardew SMAPI installer extraction: verify the current Vortex installer source for Linux payload extraction, generated files, keep-existing target policies, and version/update handling.
+- Stardew root-folder installer behavior: verify how Vortex distinguishes root `Content/` archives from normal SMAPI manifest mods, including nested wrapper-folder cases.
+- Stardew manifest installer behavior: verify Vortex's manifest parser, locale filtering, nested manifest handling, metadata attributes, and how it picks installed display names.
+- Runtime/dependency diagnostics: verify Vortex's SMAPI compatibility/dependency checks before expanding DMM's Review tab logic.
+- FOMOD support: verify Vortex's installer-choice data model and persistence before implementing interactive installer UI.
+- Existing Vortex/manual-mod detection: verify Vortex deployment manifest shape and cleanup semantics before any adoption or cleanup feature.
+- Deployment method selection: verify Vortex deployment/hardlink/symlink behavior, then document Steam Deck filesystem differences before changing DMM's default deployment strategy.
+
+## Pre-MVP Compatibility Policy
+
+- Do not spend development time on backward compatibility with older DMM builds before the first real release boundary.
+- Breaking internal API, config, database, package, or UI contracts is acceptable and encouraged when it produces simpler, faster, more reliable, or more maintainable code.
+- Do not add compatibility shims for old backend/frontend status shapes, deprecated local config keys, stale package layouts, or abandoned in-flight implementation paths unless they are needed to recover the current developer test device.
+- If a pre-MVP breaking change invalidates local test data, prefer a clear migration reset, diagnostic note, or one-time developer cleanup command over permanent compatibility code.
+- Backward compatibility becomes a product requirement only after an explicit release/versioning policy exists.
+
+## Commit Strategy
+
+- Commit at coherent feature boundaries instead of batching unrelated work into large catch-all commits.
+- Use Conventional Commits-style messages: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `build:`, or `chore:` followed by a concise imperative summary.
+- Keep each commit focused on one logical change: backend behavior, Decky integration, web UI, docs, tests, or packaging. Split work when one change grows into multiple reviewable concerns.
+- Run the relevant lightweight verification before committing. For cross-layer changes, prefer `go test ./...`, Decky build, web build, and package smoke checks when the touched files warrant it.
+- Do not commit transient AI planning artifacts, scratch files, local logs, downloaded archives, device-specific secrets, or generated dependency folders.
+- Commit durable project documentation when it is part of the requested product record, such as guidelines, roadmap, testing docs, architecture docs, and extension target inventories.
+- If the worktree contains unrelated user changes, leave them out of the commit unless the user explicitly asks to include the full current tree.
+- Mention known unverified areas or follow-up requirements in the final response after a commit, not by hiding them in the commit message.
+
 ## Product Direction
 
 - Build a Steam Deck-first mod manager named Decky Mod Manager.
@@ -32,6 +71,12 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Nexus/Vortex-supported games are the MVP target. Games without Vortex/Nexus mod manager support can be detected but ignored initially.
 - First custom handler should be chosen after Steam library inspection.
 - Current MVP vertical-slice target: `Stardew Valley` (`413150`, Nexus domain `stardewvalley`).
+- Stardew Valley support must cover both Steam Deck-native Linux installs and Windows/Proton installs for MVP.
+- Native Linux Stardew is the immediate implementation target. Windows/Proton Stardew is still an MVP requirement, but should be implemented after the native Linux SMAPI launch path is validated.
+- Stardew support must detect the installed runtime shape before installing runtime payloads:
+  - Native Linux install: `StardewValley` launcher/script and Linux SMAPI payload with `StardewModdingAPI`.
+  - Windows/Proton install: `Stardew Valley.exe`/Proton compatibility state and Windows SMAPI payload with `StardewModdingAPI.exe`.
+- Windows/Proton support must be extension-driven. The generic backend must not assume that every Steam Deck install wants Linux payloads just because DMM runs on Linux.
 - Avoid initial testing on Witcher 3, FF7 Rebirth, Fallout 4, Skyrim, Cyberpunk 2077, and Oblivion Remastered because Vortex/manual mod state was detected.
 
 ## UX Guidelines
@@ -60,9 +105,13 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Staging, deployment preview, purge, repair, conflict details, blocked install internals, and file-level controls should live behind an advanced view unless they need immediate user attention.
 - The primary mod-management surface should be a profile mod list with clear enabled/disabled state, profile-scoped priority when relevant, pending/apply-needed state, and a simple apply action.
 - Avoid exposing backend pipeline terms such as "staged", "manifest", "install plan", or "target mapping" in primary user flows. Use them only in advanced/debug views and logs.
-- Download approval is required by default. A user setting may allow automatic download approval for faster Deck-only flows, but the setting must be explicit and easy to disable.
+- Download approval is required by default. A Decky Settings checkbox named "Auto-accept download requests" may allow automatic download approval for faster Deck-only flows, but the setting must be explicit and easy to disable.
+- The phone/tablet web app should not expose the auto-accept download setting. That belongs in the Steam Deck plugin because it changes the Deck-side capture behavior.
 - Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
-- FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI.
+- FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI and, for Deck-only flows, in a Decky modal rather than a crowded sidebar view.
+- If "Auto deploy to current profile" is enabled and a first-time FOMOD/installer-choice request is reached while the Decky plugin UI is active, DMM may automatically open the Decky choice modal.
+- If Decky cannot safely open the modal because the plugin UI is not active or Steam overlay state is unavailable, DMM should show a Decky notification and leave a visible installer-choice request for the user to open from Decky or the phone/tablet UI.
+- The "Auto deploy to current profile" setting should include helper text that FOMOD/installer-choice menus may appear as Decky modals before deployment can continue.
 - Destructive actions must require confirmation.
 - Downloads, installs, deployment, purge, and repair should appear in a visible activity/job queue.
 - Background jobs must continue if the phone disconnects.
@@ -89,6 +138,20 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - User-level systemd service support is post-MVP and should wait until auth/pairing exists.
 - The plugin release layout must be compatible with Decky plugin installation.
 - Eventually support installation from a GitHub release ZIP.
+
+## Decky Capability Boundary
+
+- The Go backend owns domain state and decisions: game detection, extension metadata, install planning, staging, profile state, deployment manifests, runtime requirements, and the desired launch-tool state for a game/profile.
+- The Decky frontend owns Decky/Steam-client capabilities that are only available inside Steam's frontend context.
+- The Decky frontend may call Steam client APIs such as `SteamClient.Apps.RegisterForAppDetails` and `SteamClient.Apps.SetAppLaunchOptions` when a backend-published runtime action requires it.
+- The backend must not depend on callbacks from the frontend to continue core install/deploy work. Frontend-executed capability actions are explicit user/admin actions with a request, result, and audit trail.
+- Service contract shape:
+  - Backend exposes required runtime actions, including `app_id`, current status, desired launch option, source extension, reason, and risk level.
+  - Decky frontend reads the action, shows the user what will change, invokes the Steam client capability, then reports the observed result back to the backend.
+  - Backend stores the result and re-runs diagnostics from Steam/game state instead of blindly trusting the UI response.
+- Prefer a verified Steam client API for Steam launch options over editing Steam config files directly.
+- Direct `localconfig.vdf` mutation is a fallback only. If used, it requires backup, restore, drift detection, and clear logs because Steam owns and may rewrite that file.
+- If a community Decky plugin already exposes a stable integration point for a Steam capability, verify its source and decide whether to integrate rather than duplicating behavior.
 
 ## Network And Security Guidelines
 
@@ -175,6 +238,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Scan default Steam Deck internal and microSD library locations.
 - Show Steam app ID and install path in the UI.
 - Detect Proton compatdata paths where mod files may need to be installed into prefixes.
+- Detect whether an installed Steam game is running native Linux or Windows/Proton when that affects installer payloads, deployment roots, runtime dependencies, or launch tools.
 - Manual game path registration is post-MVP.
 - Non-Steam game support is post-MVP.
 - Test primarily in Gaming Mode because Decky is the install/control surface.
@@ -241,6 +305,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Do not invent deployment target paths for staged records that lack install-plan target mappings. Legacy staged records should be recovered/restaged through the current planner or removed by the user.
 - Follow Vortex's separation of download, install, mod type, and deployment: Nexus download metadata identifies source; game/provider installer planning identifies what gets staged; deployment manifests identify what DMM owns in the game folder.
 - Model installer planning as metadata evaluation first: installer matchers classify archive shape, installer specs emit install instructions, spec-declared metadata extractors validate/ingest manifest attributes, mod types define deploy roots, and runtime requirements are derived from the resulting staged metadata.
+- Installer planning must consider the detected game runtime platform when upstream metadata has platform-specific payloads. For Stardew SMAPI, native Linux installs use the Linux `install.dat` payload and Windows/Proton installs use the Windows `install.dat` payload.
 - Prefer declarative metadata extractors for common archive manifests before adding procedural parser code. A custom parser is acceptable when the source format has nested dependency/runtime semantics that cannot be represented by the generic extractor.
 - Game-specific behavior belongs in Vortex-modeled specs or reviewed game-handler capabilities, not scattered through generic server, storage, deployment, or UI code.
 - When installer metadata says a payload file should not overwrite a pre-existing game file, express that as a target policy on the install mapping and persist it in the staged manifest.
@@ -249,7 +314,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Failed installs should leave enough diagnostics for debugging.
 - Support common Nexus archive formats needed by Vortex-compatible downloads, starting with `.zip` and adding `.7z`/`.rar` as needed.
 - FOMOD detection and a clear unsupported-installer failure are part of the current MVP slice.
-- Interactive FOMOD installer support is post-MVP and must not silently stage archives that need user choices before that UI exists.
+- Interactive FOMOD installer support is required for complete no-phone modding and must not silently stage archives that need user choices before that UI exists.
+- Auto-deploy may proceed only for installers that can produce a complete plan without user choices, or for installer-choice mods with a saved preset/headless choice set that was previously approved by the user.
+- First-time FOMOD installs must pause as an installer-choice request until the user completes the options either in a phone/tablet web UI or a Decky-native choice surface.
 - Persist pending installer-choice jobs after the post-MVP installer architecture is selected, so the user can disconnect and resume choosing options later.
 - Prefer safe Go libraries for archive handling where practical.
 - Shelling out to `7z` or `bsdtar` is acceptable only through a constrained wrapper with path validation, argument hygiene, and clear error handling.
@@ -280,6 +347,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - External plugin handlers are future work.
 - Prefer declarative/spec-driven game metadata inside those Go packages. Procedural code is acceptable only when the installer behavior, metadata extraction, or runtime validation genuinely cannot be represented by the current metadata evaluator; when that happens, extend the evaluator before adding one-off logic.
 - Do not add game-specific runtime requirements directly to the generic server/UI. If a game needs SMAPI, script extenders, mod loaders, launch options, or equivalent runtime integration, expose that through handler/provider metadata attached to the staged mod, then have diagnostics evaluate the enabled mod types.
+- Launch tools are game-extension capabilities. A handler may declare tools such as SMAPI, their required files, platform-specific executable names, desired Steam launch behavior, and whether the tool should become the default/primary launch target when required by enabled mod metadata.
+- Primary launch-tool selection must be expressed in extension metadata/rules, such as "enabled mods of these mod types or metadata requirements require tool `smapi` as the primary launch tool." Generic code evaluates the rule; it must not know Stardew-specific tool semantics.
+- Stardew's extension should mirror Vortex's primary-tool model: when enabled mods require SMAPI and SMAPI is deployed, DMM should configure the Steam launch path to run SMAPI rather than making generic server code know Stardew-specific launch rules.
 - If the requirement cannot be derived from the current handler/provider metadata, surface it as an unsupported/missing handler capability rather than pretending DMM can validate it generically.
 - Prototype/TexMod-style support is non-MVP.
 - External commands are disabled by default. They may be justified later for tools such as script extenders, patchers, load-order tools, archive conversion, or game-specific installers.
@@ -375,7 +445,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Archive path traversal checks
   - Steam library discovery parsing
 - Use temporary directories for deployment tests on local macOS/Linux.
-- Do not spend MVP time building a full fake Steam Deck environment.
+- Keep tests lightweight and behavior-focused. Do not spend MVP time recreating full Steam, Decky, Nexus, Vortex, or game environments virtually when that turns into more work than the feature itself.
+- Prefer small tests around stable contracts, path safety, planner output, persisted state, and extension metadata evaluation over brittle mocks that are over-fitted to one implementation detail.
+- Use enough coverage to protect the mod deployment pipeline, but avoid test designs that slow development by fighting mocked environments that still cannot prove real Steam Deck behavior.
 - Manual testing on the actual Steam Deck is acceptable and expected for environment-specific behavior.
 - Mocked Nexus tests are useful but not required before the first vertical slice.
 - Real Nexus downloads should be manual/integration tests, not default unit tests.

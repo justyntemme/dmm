@@ -4,12 +4,21 @@ import {
   PanelSection,
   PanelSectionRow,
   TextField,
+  ToggleField,
   definePlugin,
   staticClasses
 } from "@decky/ui";
 import { call, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
 import { useEffect, useRef, useState } from "react";
+
+declare const SteamClient:
+  | {
+      Apps?: {
+        SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
+      };
+    }
+  | undefined;
 
 type BackendStatus = {
   running: boolean;
@@ -21,6 +30,10 @@ type BackendStatus = {
     lan_only: boolean;
     game_count: number;
     nexus: { api_key_configured: boolean };
+    install: {
+      auto_deploy: boolean;
+      auto_approve_downloads: boolean;
+    };
   } | null;
   logs?: {
     plugin: string;
@@ -59,6 +72,35 @@ type Job = {
   updated_at?: string;
 };
 
+type LaunchAction = {
+  type: string;
+  app_id: string;
+  tool_id: string;
+  desired_options: string;
+  current_options?: string;
+  reason: string;
+  source_extension: string;
+  risk: string;
+};
+
+type LaunchStatus = {
+  app_id: string;
+  required: boolean;
+  configured: boolean;
+  can_configure: boolean;
+  desired_options?: string;
+  current_options?: string;
+  missing_files?: string[];
+  tool?: {
+    id: string;
+    name: string;
+    executable_relative: string;
+    executable_path: string;
+    source_extension: string;
+  };
+  action?: LaunchAction;
+};
+
 type Tab = "main" | "settings" | "debug";
 
 function installToastBody(job: Job): string {
@@ -81,6 +123,17 @@ function showInstallToast(job: Job) {
   });
 }
 
+function showLaunchToast(title: string, body: string, failed = false) {
+  toaster.toast({
+    title,
+    body,
+    duration: failed ? 9000 : 6000,
+    critical: failed,
+    playSound: true,
+    showToast: true
+  });
+}
+
 function Content() {
   const [tab, setTab] = useState<Tab>("main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
@@ -88,9 +141,11 @@ function Content() {
   const [nxm, setNXM] = useState<NXMStatus | null>(null);
   const [importUrl, setImportUrl] = useState<string>("");
   const [importResult, setImportResult] = useState<string>("");
+  const [launchResult, setLaunchResult] = useState<string>("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [error, setError] = useState<string>("");
   const seenJobStates = useRef<Map<string, string>>(new Map());
+  const appliedLaunchActions = useRef<Map<string, string>>(new Map());
 
   async function refresh() {
     try {
@@ -119,6 +174,17 @@ function Content() {
       setError("");
       const result = await call<[boolean], { ok: boolean; error?: string }>("set_lan_only", lanOnly);
       if (!result.ok) setError(result.error ?? "Unable to update server settings.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function setAutoAcceptDownloads(autoAccept: boolean) {
+    try {
+      setError("");
+      const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_accept_downloads", autoAccept);
+      if (!result.ok) setError(result.error ?? "Unable to update download settings.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -218,14 +284,69 @@ function Content() {
     }
   }
 
+  async function pollLaunchActions() {
+    try {
+      if (!status?.running) return;
+      const result = await call<[], { ok: boolean; error?: string; actions: LaunchStatus[] }>("launch_actions");
+      if (!result.ok) return;
+      for (const launchStatus of result.actions) {
+        const action = launchStatus.action;
+        if (!action || action.type !== "set-steam-launch-options") continue;
+        if (!launchStatus.can_configure || launchStatus.configured) continue;
+        const actionKey = `${action.app_id}:${action.tool_id}:${action.desired_options}`;
+        if (appliedLaunchActions.current.get(actionKey) === "applied") continue;
+        const appid = Number.parseInt(action.app_id, 10);
+        const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
+        if (!Number.isFinite(appid) || typeof steamApps?.SetAppLaunchOptions !== "function") {
+          const message = "Steam launch-option API is unavailable in this Decky context.";
+          appliedLaunchActions.current.set(actionKey, "failed");
+          setLaunchResult(message);
+          showLaunchToast("DMM launch tool failed", message, true);
+          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+            applied: false,
+            error: message,
+            source: "decky-auto"
+          });
+          continue;
+        }
+        try {
+          steamApps.SetAppLaunchOptions(appid, action.desired_options);
+          appliedLaunchActions.current.set(actionKey, "applied");
+          const toolName = launchStatus.tool?.name || action.tool_id;
+          const message = `${toolName} launch option configured for ${launchStatus.app_id}.`;
+          setLaunchResult(message);
+          showLaunchToast("DMM launch tool configured", message);
+          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+            applied: true,
+            current_options: action.desired_options,
+            source: "decky-auto"
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          appliedLaunchActions.current.set(actionKey, "failed");
+          setLaunchResult(message);
+          showLaunchToast("DMM launch tool failed", message, true);
+          await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_launch_action", action.app_id, {
+            applied: false,
+            error: message,
+            source: "decky-auto"
+          });
+        }
+      }
+    } catch (_err) {
+      // Launch action polling is best-effort; backend diagnostics expose details.
+    }
+  }
+
   useEffect(() => {
     refresh();
     pollInstallJobs({ seed: true });
     const interval = window.setInterval(() => {
       pollInstallJobs();
+      pollLaunchActions();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [status?.running]);
 
   return (
     <PanelSection title="Decky Mod Manager">
@@ -271,6 +392,7 @@ function Content() {
               <div>URL: {status?.url ?? "Unavailable"}</div>
               {status?.backend && <div>Games: {status.backend.game_count}</div>}
               {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
+              {launchResult && <div style={{ color: "#72e0a2", marginTop: "8px", overflowWrap: "anywhere" }}>{launchResult}</div>}
               {error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{error}</div>}
               {status?.error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{status.error}</div>}
             </div>
@@ -302,8 +424,18 @@ function Content() {
             <div>
               <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
               <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
+              <div>Download requests: {status?.backend?.install.auto_approve_downloads ? "Auto-accepted" : "Approval required"}</div>
               <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
             </div>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            <ToggleField
+              label="Auto-accept download requests"
+              description="Captured Nexus links start downloading immediately. Keep this off when you want phone approval."
+              checked={status?.backend?.install.auto_approve_downloads ?? false}
+              disabled={!status?.running}
+              onChange={setAutoAcceptDownloads}
+            />
           </PanelSectionRow>
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={() => setLanOnly(true)}>

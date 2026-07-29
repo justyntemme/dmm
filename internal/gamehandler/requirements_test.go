@@ -1,4 +1,4 @@
-package gamehandler
+package gamehandler_test
 
 import (
 	"context"
@@ -6,7 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	. "github.com/justyntemme/decky-mod-manager/internal/gamehandler"
+	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 )
+
+var stardewRuntimeRegistry = NewRegistry([]GameSpec{stardewvalley.Extension().RuntimeRequirements})
+
+func RuntimeRequirements(ctx context.Context, steamAppID, gamePath string, mods []RuntimeMod) []RuntimeRequirement {
+	return stardewRuntimeRegistry.RuntimeRequirements(ctx, steamAppID, gamePath, mods)
+}
 
 func TestRuntimeRequirementsSkipWhenNoEnabledMods(t *testing.T) {
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), nil)
@@ -24,11 +33,11 @@ func TestRuntimeRequirementsSkipWhenEnabledModDoesNotNeedRuntime(t *testing.T) {
 
 func TestStardewRuntimeRequirementsMissingSMAPI(t *testing.T) {
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
-	if len(reqs) != 1 {
+	if len(reqs) != 2 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
-	if reqs[0].ID != "stardew-smapi" || reqs[0].Status != RequirementMissing || !reqs[0].Required {
-		t.Fatalf("requirement = %+v", reqs[0])
+	if reqStatus(reqs, "stardew-smapi-installed") != RequirementMissing || reqStatus(reqs, "stardew-smapi-launch") != RequirementMissing {
+		t.Fatalf("requirements = %+v", reqs)
 	}
 }
 
@@ -39,31 +48,34 @@ func TestStardewRuntimeRequirementsDetectSMAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
-	if len(reqs) != 1 {
+	if len(reqs) != 2 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
-	if reqs[0].Status != RequirementOK || len(reqs[0].Details) != 1 {
-		t.Fatalf("requirement = %+v", reqs[0])
+	req, ok := reqByID(reqs, "stardew-smapi-installed")
+	if !ok || req.Status != RequirementOK || len(req.Details) != 1 {
+		t.Fatalf("requirements = %+v", reqs)
 	}
 }
 
 func TestStardewRuntimeRequirementsDetectSteamLaunchOption(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	gamePath := filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Stardew Valley")
 	configPath := filepath.Join(home, ".local", "share", "Steam", "userdata", "1", "config", "localconfig.vdf")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := `"Apps" { "413150" { "LaunchOptions" "\"/home/deck/.local/share/Steam/steamapps/common/Stardew Valley/StardewModdingAPI\" %command%" } }`
+	body := `"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "413150" { "LaunchOptions" "\"` + filepath.ToSlash(filepath.Join(gamePath, "StardewModdingAPI")) + `\" %command%" } } } } } }`
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
-	if len(reqs) != 1 {
+	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
+	if len(reqs) != 2 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
-	if reqs[0].Status != RequirementOK || len(reqs[0].Details) != 1 || !strings.Contains(reqs[0].Message, "launch option") {
-		t.Fatalf("requirement = %+v", reqs[0])
+	req, ok := reqByID(reqs, "stardew-smapi-launch")
+	if !ok || req.Status != RequirementOK || len(req.Details) != 1 || !strings.Contains(req.Message, "launch option") {
+		t.Fatalf("requirements = %+v", reqs)
 	}
 }
 
@@ -79,11 +91,11 @@ func TestStardewRuntimeRequirementsIgnoresOtherAppLaunchOption(t *testing.T) {
 		t.Fatal(err)
 	}
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
-	if len(reqs) != 1 {
+	if len(reqs) != 2 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
-	if reqs[0].Status != RequirementMissing {
-		t.Fatalf("requirement = %+v", reqs[0])
+	if reqStatus(reqs, "stardew-smapi-launch") != RequirementMissing {
+		t.Fatalf("requirements = %+v", reqs)
 	}
 }
 
@@ -106,7 +118,7 @@ func TestStardewRuntimeRequirementsWarnForMissingRequiredManifestDependency(t *t
 			},
 		}},
 	}})
-	if len(reqs) != 3 {
+	if len(reqs) != 4 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
 	var missingFramework, missingDependency bool
@@ -158,9 +170,19 @@ func TestStardewRuntimeRequirementsSkipInstalledManifestDependency(t *testing.T)
 	}
 }
 
-func TestStardewLaunchBlockReferencesSMAPIHandlesNestedBracesInQuotes(t *testing.T) {
-	vdf := `"Apps" { "413150" { "LaunchOptions" "\"{path}/StardewModdingAPI\" %command%" } }`
-	if !stardewLaunchBlockReferencesSMAPI(vdf) {
-		t.Fatal("expected SMAPI launch option")
+func reqByID(reqs []RuntimeRequirement, id string) (RuntimeRequirement, bool) {
+	for _, req := range reqs {
+		if req.ID == id {
+			return req, true
+		}
 	}
+	return RuntimeRequirement{}, false
+}
+
+func reqStatus(reqs []RuntimeRequirement, id string) RequirementStatus {
+	req, ok := reqByID(reqs, id)
+	if !ok {
+		return ""
+	}
+	return req.Status
 }

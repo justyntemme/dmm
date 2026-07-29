@@ -1,0 +1,89 @@
+# Extension Framework
+
+This document tracks the extension/runtime boundary for Decky Mod Manager. The first target is a one-for-one functional clone of the Stardew Valley Vortex extension behavior needed for Steam Deck, implemented in DMM's extension framework rather than as generic hardcoded application logic.
+
+## Current Direction
+
+- Extensions are compiled Go packages for MVP.
+- Extension specs describe game identity, Nexus domains, Steam app IDs, supported installer rules, mod types, deployment roots, runtime requirements, and launch tools.
+- Generic backend code executes common pipeline stages, but it does not own game-specific rules.
+- The Decky frontend is a capability adapter for Steam frontend APIs that are unavailable to the Go backend.
+
+## Stardew Valley MVP
+
+- Support both Steam Deck-native Linux Stardew and Windows/Proton Stardew.
+- Native Linux Stardew is the first implementation path. Windows/Proton Stardew remains MVP-required, but should wait until native Linux launch-tool behavior is validated.
+- Detect runtime platform from the actual Steam install and compatibility state, not from the host OS alone.
+- Native Linux Stardew:
+  - Game marker: `StardewValley`.
+  - SMAPI payload: Linux `install.dat`.
+  - SMAPI launch target: `StardewModdingAPI`.
+- Windows/Proton Stardew:
+  - Game marker: `Stardew Valley.exe` and/or forced Proton compatibility state.
+  - SMAPI payload: Windows `install.dat`.
+  - SMAPI launch target: `StardewModdingAPI.exe`.
+- SMAPI runtime support must come from the Stardew extension's launch-tool metadata, not from generic server branches.
+- The Stardew extension should declare that enabled SMAPI mod metadata/mod types require `smapi` as the primary launch tool.
+- The backend should publish a required launch-tool action when extension rules require SMAPI and the active Steam launch options do not reference the correct SMAPI executable.
+- The Decky frontend should apply that action through Steam's frontend API, then report the observed result back to the backend for diagnostics.
+
+## Decky Capability Contract
+
+Backend responsibilities:
+
+- Determine when a game/profile requires a launch tool.
+- Evaluate extension-declared launch-tool rules against enabled profile mods and staged metadata.
+- Produce a desired launch action with app ID, extension ID, tool ID, executable path, desired launch options, current diagnostics, and user-facing explanation.
+- Persist the action result and logs.
+- Re-read game/Steam state after the action to verify it.
+
+Decky frontend responsibilities:
+
+- Present the action in a Decky settings/debug/runtime view.
+- Read current launch options through Steam frontend state when available.
+- Apply launch options through `SteamClient.Apps.SetAppLaunchOptions`.
+- Report success, failure, and observed launch options to the backend.
+
+Out of scope for the Decky frontend:
+
+- Archive parsing.
+- Nexus provider logic.
+- Installer planning.
+- Deployment planning.
+- Profile state mutation beyond calling backend APIs.
+- Game-specific launch rules.
+
+## Source Alignment
+
+- Vortex Stardew registers SMAPI as a supported/default primary tool.
+- Vortex Stardew chooses `StardewModdingAPI.exe` on Windows and `StardewModdingAPI` on Linux/macOS.
+- Vortex SMAPI installer support uses platform-specific payload metadata.
+- Decky launch option changes should prefer verified Steam frontend APIs over direct Steam config edits.
+
+## Remaining Stardew Extension Steps
+
+1. Add runtime platform detection to the extension/game discovery path.
+2. Select the SMAPI installer payload by detected game runtime platform.
+3. Persist platform-specific launch-tool metadata in staged manifests or diagnostics.
+4. Add extension-declared primary launch-tool rules for SMAPI-required mods.
+5. Add backend runtime action endpoints for launch-tool configuration.
+6. Add Decky frontend action execution using Steam client launch-option APIs.
+7. Verify native Linux Stardew end to end.
+8. Implement and verify Windows/Proton Stardew end to end before MVP sign-off.
+
+## Next MVP Feature After Stardew Extension Parity
+
+- Implement FOMOD/installer-choice support as an MVP-required feature after the Stardew Valley extension reaches parity with the required Vortex extension behavior.
+- FOMOD support must use the shared install pipeline: download, inspect, pause for choices, persist the choice request, produce install instructions, stage outputs, and then deploy according to profile settings.
+- Deck-only FOMOD flows should use Decky modals, not the sidebar as the primary option UI.
+- Phone/tablet FOMOD flows should use the same backend choice-state API as Decky modals.
+- Auto-deploy may open a Decky modal for first-time installer choices, but it must not silently choose options.
+- Saved installer-choice presets may enable future headless reinstall/update flows only when the FOMOD structure still matches the stored preset.
+
+## Future Extension Work
+
+- External extension loading.
+- Script extender and toolchain launch management for other games.
+- Per-game load order engines.
+- Provider-specific update checks.
+- Vortex extension translation or compatibility shims.

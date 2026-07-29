@@ -110,13 +110,14 @@ fi
 section "Checking packaged UI content"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Server Access" "Decky server access UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Dependencies" "Decky dependency UI"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-accept download requests" "Decky download approval setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
   require_file_contains "${asset_file}" "Profile Mods" "web profile mod list"
   require_file_contains "${asset_file}" "Add From Nexus" "web in-game Nexus import"
   require_file_contains "${asset_file}" "Advanced Deployment Tools" "web advanced deployment disclosure"
-  require_file_contains "${asset_file}" "Approve downloads automatically" "web install settings"
+  require_file_contains "${asset_file}" "Auto deploy after staging" "web auto-deploy setting"
 done
 
 if [[ -n "${SHAPE_ONLY}" ]]; then

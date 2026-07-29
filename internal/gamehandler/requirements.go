@@ -2,9 +2,6 @@ package gamehandler
 
 import (
 	"context"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -54,9 +51,12 @@ type ModDependency struct {
 }
 
 type GameSpec struct {
-	SteamAppID              string
-	RuntimeRequirements     []RuntimeRequirementSpec
-	DependencyMetadataKinds []string
+	SteamAppID                    string
+	RuntimeRequirements           []RuntimeRequirementSpec
+	DependencyMetadataKinds       []string
+	DependencyRequirementIDPrefix string
+	DependencyRequirementKind     string
+	DependencyRequirementMessage  string
 }
 
 type RuntimeRequirementSpec struct {
@@ -66,33 +66,30 @@ type RuntimeRequirementSpec struct {
 	Required    bool
 	ModTypes    []string
 	Message     string
+	OKMessage   string
 	HelpURL     string
 	InstallHint string
 	Check       func(context.Context, string) []string
 }
 
-var defaultSpecs = map[string]GameSpec{
-	"413150": {
-		SteamAppID: "413150",
-		RuntimeRequirements: []RuntimeRequirementSpec{
-			{
-				ID:          "stardew-smapi",
-				Name:        "SMAPI",
-				Kind:        "mod-loader",
-				Required:    true,
-				ModTypes:    []string{"stardew-smapi-mod"},
-				Message:     "SMAPI was not found in the Stardew Valley install folder. Deployed SMAPI mods will not load until the game is launched through SMAPI.",
-				HelpURL:     "https://smapi.io/",
-				InstallHint: "Install SMAPI for Linux/Steam Deck, then configure Stardew Valley to launch through SMAPI.",
-				Check:       stardewSMAPIMarkers,
-			},
-		},
-		DependencyMetadataKinds: []string{"smapi-manifest"},
-	},
+type Registry struct {
+	specs map[string]GameSpec
 }
 
-func RuntimeRequirements(ctx context.Context, steamAppID, gamePath string, mods []RuntimeMod) []RuntimeRequirement {
-	spec, ok := defaultSpecs[strings.TrimSpace(steamAppID)]
+func NewRegistry(specs []GameSpec) Registry {
+	byAppID := make(map[string]GameSpec, len(specs))
+	for _, spec := range specs {
+		appID := strings.TrimSpace(spec.SteamAppID)
+		if appID == "" {
+			continue
+		}
+		byAppID[appID] = spec
+	}
+	return Registry{specs: byAppID}
+}
+
+func (r Registry) RuntimeRequirements(ctx context.Context, steamAppID, gamePath string, mods []RuntimeMod) []RuntimeRequirement {
+	spec, ok := r.specs[strings.TrimSpace(steamAppID)]
 	if !ok {
 		return nil
 	}
@@ -136,16 +133,10 @@ func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec Runti
 	if spec.Check != nil {
 		if details := spec.Check(ctx, gamePath); len(details) > 0 {
 			req.Status = RequirementOK
-			req.Message = spec.Name + " is present in the game install folder."
-			req.Details = details
-			req.InstallHint = ""
-			return req
-		}
-	}
-	if spec.ID == "stardew-smapi" {
-		if details := steamLaunchOptionMarkers(ctx); len(details) > 0 {
-			req.Status = RequirementOK
-			req.Message = "A Steam launch option appears to reference SMAPI."
+			req.Message = spec.Name + " is present."
+			if strings.TrimSpace(spec.OKMessage) != "" {
+				req.Message = strings.TrimSpace(spec.OKMessage)
+			}
 			req.Details = details
 			req.InstallHint = ""
 			return req
@@ -158,13 +149,25 @@ func modDependencyRequirements(spec GameSpec, mods []RuntimeMod) []RuntimeRequir
 	if len(spec.DependencyMetadataKinds) == 0 {
 		return nil
 	}
-	return modMetadataDependencyRequirements(spec.DependencyMetadataKinds, mods)
+	return modMetadataDependencyRequirements(spec, mods)
 }
 
-func modMetadataDependencyRequirements(metadataKinds []string, mods []RuntimeMod) []RuntimeRequirement {
+func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {
 	kinds := map[string]struct{}{}
-	for _, kind := range metadataKinds {
+	for _, kind := range spec.DependencyMetadataKinds {
 		kinds[strings.TrimSpace(kind)] = struct{}{}
+	}
+	idPrefix := strings.TrimSpace(spec.DependencyRequirementIDPrefix)
+	if idPrefix == "" {
+		idPrefix = "mod-dependency:"
+	}
+	reqKind := strings.TrimSpace(spec.DependencyRequirementKind)
+	if reqKind == "" {
+		reqKind = "mod-dependency"
+	}
+	message := strings.TrimSpace(spec.DependencyRequirementMessage)
+	if message == "" {
+		message = "Required mod dependency is not enabled in this profile."
 	}
 	installed := map[string]ModMetadata{}
 	for _, mod := range mods {
@@ -200,17 +203,17 @@ func modMetadataDependencyRequirements(metadataKinds []string, mods []RuntimeMod
 				if _, ok := installed[strings.ToLower(uniqueID)]; ok {
 					continue
 				}
-				id := "stardew-mod-dependency:" + uniqueID
+				id := idPrefix + uniqueID
 				if _, ok := missing[id]; ok {
 					continue
 				}
 				missing[id] = RuntimeRequirement{
 					ID:       id,
 					Name:     uniqueID,
-					Kind:     "mod-dependency",
+					Kind:     reqKind,
 					Required: true,
 					Status:   RequirementMissing,
-					Message:  "Required mod dependency is not enabled in this profile.",
+					Message:  message,
 					Details:  dependencyDetails(metadata, dependency),
 				}
 			}
@@ -255,104 +258,4 @@ func dependencyDetails(metadata ModMetadata, dependency ModDependency) []string 
 		details = append(details, "Minimum version "+dependency.MinimumVersion)
 	}
 	return details
-}
-
-func stardewSMAPIMarkers(ctx context.Context, gamePath string) []string {
-	var details []string
-	for _, rel := range []string{
-		"StardewModdingAPI",
-		"StardewModdingAPI.exe",
-		"StardewModdingAPI.dll",
-		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
-	} {
-		if ctx.Err() != nil {
-			return details
-		}
-		path := filepath.Join(gamePath, rel)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			details = append(details, filepath.ToSlash(path))
-		}
-	}
-	return details
-}
-
-func steamLaunchOptionMarkers(ctx context.Context) []string {
-	home, err := os.UserHomeDir()
-	if err != nil || strings.TrimSpace(home) == "" {
-		return nil
-	}
-	root := filepath.Join(home, ".local", "share", "Steam", "userdata")
-	var details []string
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || ctx.Err() != nil {
-			return nil
-		}
-		if d.IsDir() || filepath.Base(path) != "localconfig.vdf" {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-		if stardewLaunchBlockReferencesSMAPI(string(body)) {
-			details = append(details, filepath.ToSlash(path))
-		}
-		return nil
-	})
-	return details
-}
-
-func stardewLaunchBlockReferencesSMAPI(vdf string) bool {
-	for searchStart := 0; searchStart < len(vdf); {
-		idx := strings.Index(vdf[searchStart:], `"413150"`)
-		if idx < 0 {
-			return false
-		}
-		idx += searchStart
-		block, ok := braceBlockAfter(vdf, idx+len(`"413150"`))
-		if ok && strings.Contains(block, "LaunchOptions") && (strings.Contains(block, "StardewModdingAPI") || strings.Contains(block, "SMAPI")) {
-			return true
-		}
-		searchStart = idx + len(`"413150"`)
-	}
-	return false
-}
-
-func braceBlockAfter(text string, start int) (string, bool) {
-	open := strings.IndexByte(text[start:], '{')
-	if open < 0 {
-		return "", false
-	}
-	open += start
-	depth := 0
-	inQuote := false
-	escaped := false
-	for i := open; i < len(text); i++ {
-		ch := text[i]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if ch == '\\' && inQuote {
-			escaped = true
-			continue
-		}
-		if ch == '"' {
-			inQuote = !inQuote
-			continue
-		}
-		if inQuote {
-			continue
-		}
-		switch ch {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return text[open : i+1], true
-			}
-		}
-	}
-	return "", false
 }

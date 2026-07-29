@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -160,7 +161,7 @@ class Plugin:
             return {"ok": False, "error": error, "status": self._nxm_status()}
 
     async def test_nxm_handler(self):
-        test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
+        test_url = self._debug_nxm_test_url()
         try:
             self._log("test nxm handler requested")
             if not self._backend_responds():
@@ -177,7 +178,7 @@ class Plugin:
             return {"ok": False, "error": error, "url": test_url}
 
     async def test_nxm_dispatch(self):
-        test_url = "nxm://stardewvalley/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
+        test_url = self._debug_nxm_test_url()
         try:
             self._log("test nxm dispatch requested")
             if not self._backend_responds():
@@ -189,6 +190,21 @@ class Plugin:
             error = self._redact_url(str(exc))
             self._log(f"test nxm dispatch failed: {error}")
             return {"ok": False, "error": error, "url": test_url}
+
+    def _debug_nxm_test_url(self):
+        domain = "examplegame"
+        games = self._backend_json("GET", "/api/games")
+        if isinstance(games, list):
+            for game in games:
+                if not isinstance(game, dict):
+                    continue
+                domains = game.get("nexus_domains")
+                if isinstance(domains, list) and domains:
+                    candidate = str(domains[0] or "").strip()
+                    if candidate:
+                        domain = candidate
+                        break
+        return f"nxm://{domain}/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
 
     async def add_pending_import(self, url):
         url = str(url or "").strip()
@@ -215,6 +231,34 @@ class Plugin:
             return {"ok": True, "jobs": result}
         return {"ok": False, "error": "Unexpected jobs response.", "jobs": []}
 
+    async def launch_actions(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "actions": []}
+        result, error = self._backend_json_result("GET", "/api/launch/actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load launch actions.", "actions": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected launch actions response.", "actions": []}
+        if actions:
+            self._log(f"launch actions available count={len(actions)}")
+        return {"ok": True, "actions": actions}
+
+    async def record_launch_action(self, app_id, report):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not isinstance(report, dict):
+            report = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps(report).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/launch/configure", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to record launch configuration."}
+        self._log(f"launch action report app_id={app_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
+        return {"ok": True, "status": result}
+
     async def dependencies(self):
         return [
             self._dependency("7-Zip", "7z", "Extracts .7z and many Nexus archive formats."),
@@ -236,6 +280,35 @@ class Plugin:
                 "ok": False,
                 "error": error or "Unable to update server settings.",
             }
+        return {
+            "ok": True,
+            "status": result,
+        }
+
+    async def set_auto_accept_downloads(self, auto_accept):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        status, status_error = self._backend_json_result("GET", "/api/status")
+        if not isinstance(status, dict):
+            return {
+                "ok": False,
+                "error": status_error or "Unable to load current install settings.",
+            }
+        install = status.get("install") if isinstance(status.get("install"), dict) else {}
+        payload = json.dumps({
+            "auto_deploy": bool(install.get("auto_deploy", False)),
+            "auto_approve_downloads": bool(auto_accept),
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to update download settings.",
+            }
+        self._log(f"auto-accept download requests set to {bool(auto_accept)}")
         return {
             "ok": True,
             "status": result,

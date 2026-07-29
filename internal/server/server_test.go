@@ -22,6 +22,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
+	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -326,6 +327,7 @@ func TestRememberPendingImportBackfillsJobPayload(t *testing.T) {
 
 func TestClearPendingImports(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
 
@@ -1756,14 +1758,15 @@ func TestRunningPendingImportRestoresAsWaitingAfterRestart(t *testing.T) {
 }
 
 func TestDeploymentAllowedUsesGameSpecDirtyStatePolicy(t *testing.T) {
-	err := deploymentAllowedForGame(storage.Game{
+	srv := newTestServer(t)
+	err := srv.deploymentAllowedForGame(storage.Game{
 		SteamAppID: "287700",
 		State:      "needs_review",
 	})
 	if err == nil {
 		t.Fatal("expected dirty game deployment to be blocked")
 	}
-	if err := deploymentAllowedForGame(storage.Game{SteamAppID: "413150", State: "needs_review"}); err != nil {
+	if err := srv.deploymentAllowedForGame(storage.Game{SteamAppID: "413150", State: "needs_review"}); err != nil {
 		t.Fatalf("expected Stardew spec to allow review-state deployment, got %v", err)
 	}
 }
@@ -1977,6 +1980,7 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	writeSteamLaunchOptions(t, "413150", steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI"))
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Ready for approval from stardewvalley")
 	srv.rememberPendingImport(job.ID, pendingImport{
@@ -2036,7 +2040,11 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	if !body.Preview.Available || body.Preview.Add != 0 || body.Preview.Keep != 1 || body.Preview.Conflicts != 0 {
 		t.Fatalf("preview diagnostics = %+v", body.Preview)
 	}
-	if len(body.RuntimeRequirements) != 1 || body.RuntimeRequirements[0].ID != "stardew-smapi" || body.RuntimeRequirements[0].Status != "ok" {
+	requirements := map[string]string{}
+	for _, requirement := range body.RuntimeRequirements {
+		requirements[requirement.ID] = requirement.Status
+	}
+	if len(requirements) != 2 || requirements["stardew-smapi-installed"] != "ok" || requirements["stardew-smapi-launch"] != "ok" {
 		t.Fatalf("runtime requirements = %+v", body.RuntimeRequirements)
 	}
 	if len(body.ValidationWarnings) != 0 {
@@ -2099,11 +2107,158 @@ func TestGameDiagnosticsWarnsWhenRuntimeRequirementMissing(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.RuntimeRequirements) != 1 || body.RuntimeRequirements[0].ID != "stardew-smapi" || body.RuntimeRequirements[0].Status != "missing" {
+	requirements := map[string]string{}
+	for _, requirement := range body.RuntimeRequirements {
+		requirements[requirement.ID] = requirement.Status
+	}
+	if len(requirements) != 2 || requirements["stardew-smapi-installed"] != "missing" || requirements["stardew-smapi-launch"] != "missing" {
 		t.Fatalf("runtime requirements = %+v", body.RuntimeRequirements)
 	}
 	if len(body.ValidationWarnings) == 0 || !strings.Contains(body.ValidationWarnings[0], "SMAPI runtime requirement is missing") {
 		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
+func TestGameLaunchStatusPublishesExtensionLaunchAction(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	for _, rel := range []string{
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "LookupAnything"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "LookupAnything", "manifest.json"), []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Required       bool     `json:"required"`
+		Configured     bool     `json:"configured"`
+		CanConfigure   bool     `json:"can_configure"`
+		DesiredOptions string   `json:"desired_options"`
+		MissingFiles   []string `json:"missing_files"`
+		Action         *struct {
+			Type            string `json:"type"`
+			AppID           string `json:"app_id"`
+			ToolID          string `json:"tool_id"`
+			DesiredOptions  string `json:"desired_options"`
+			SourceExtension string `json:"source_extension"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Required || body.Configured || !body.CanConfigure || len(body.MissingFiles) != 0 || body.Action == nil {
+		t.Fatalf("launch status = %+v", body)
+	}
+	if body.Action.Type != "set-steam-launch-options" || body.Action.AppID != "413150" || body.Action.ToolID != "smapi" || body.Action.SourceExtension != "stardewvalley" {
+		t.Fatalf("launch action = %+v", body.Action)
+	}
+	if body.Action.DesiredOptions != steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI") || body.DesiredOptions != body.Action.DesiredOptions {
+		t.Fatalf("desired options = %q action=%+v", body.DesiredOptions, body.Action)
+	}
+}
+
+func TestGameLaunchStatusBlocksActionUntilLaunchToolFilesExist(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "LookupAnything"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "LookupAnything", "manifest.json"), []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Required     bool      `json:"required"`
+		CanConfigure bool      `json:"can_configure"`
+		MissingFiles []string  `json:"missing_files"`
+		Action       *struct{} `json:"action"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Required || body.CanConfigure || len(body.MissingFiles) == 0 || body.Action != nil {
+		t.Fatalf("launch status = %+v", body)
 	}
 }
 
@@ -2188,6 +2343,71 @@ func TestDeployEmptyProfileRemovesCurrentManagedLinks(t *testing.T) {
 	}
 	if len(mods) != 1 || mods[0].StagingPath != stagingPath {
 		t.Fatalf("staged mod was mutated by profile deploy = %+v", mods)
+	}
+}
+
+func TestBuildGameDeployPlanAfterDeletingLastStagedModRemovesCurrentDeployment(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	sourcePath := filepath.Join(stagingPath, "LookupAnything", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "mod.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json")
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
+		SourcePath:     sourcePath,
+		TargetPath:     targetPath,
+		Strategy:       deploy.StrategySymlink,
+		ChecksumSHA256: "old",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "remove" || plan.Actions[0].TargetPath != targetPath {
+		t.Fatalf("actions = %+v", plan.Actions)
 	}
 }
 
@@ -2314,7 +2534,7 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 		GameID:  "413150",
 		ModType: "stardew-smapi-mod",
 		Metadata: []installplan.ModMetadata{{
-			Kind:     installplan.MetadataKindSMAPIManifest,
+			Kind:     stardewvalley.MetadataKindSMAPIManifest,
 			Name:     "Lookup Anything",
 			UniqueID: "Pathoschild.LookupAnything",
 			Dependencies: []installplan.ModDependency{{
@@ -2456,7 +2676,7 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 		ModType:   "stardew-smapi-mod",
 		PlannerID: "vortex:stardewvalley:stardew-valley-installer",
 		Metadata: []installplan.ModMetadata{{
-			Kind:     installplan.MetadataKindSMAPIManifest,
+			Kind:     stardewvalley.MetadataKindSMAPIManifest,
 			Name:     "Visible Fish",
 			UniqueID: "shekurika.WaterFish",
 			ContentPackFor: &installplan.ModDependency{
@@ -2650,4 +2870,20 @@ func newTestServer(t *testing.T) *Server {
 		_ = srv.db.Close()
 	})
 	return srv
+}
+
+func writeSteamLaunchOptions(t *testing.T, appID, options string) {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, ".local", "share", "Steam", "userdata", "1", "config", "localconfig.vdf")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "` + appID + `" { "LaunchOptions" "` + strings.ReplaceAll(strings.ReplaceAll(options, `\`, `\\`), `"`, `\"`) + `" } } } } } }`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }

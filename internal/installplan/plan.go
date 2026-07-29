@@ -142,6 +142,7 @@ type MetadataExtractorSpec struct {
 	VersionField           string
 	EntryDLLField          string
 	MinimumAPIVersionField string
+	Parse                  func(path string) ModMetadata
 }
 
 type InstructionMode string
@@ -158,10 +159,7 @@ const (
 	InstructionKindGenerateFromGameFile = "generate-from-game-file"
 )
 
-const (
-	MetadataKindSMAPIManifest = "smapi-manifest"
-	MetadataKindJSONManifest  = "json-manifest"
-)
+const MetadataKindJSONManifest = "json-manifest"
 
 const (
 	TargetPolicyKeepExisting = "keep-existing"
@@ -171,10 +169,6 @@ const (
 	NameSourceArchive         = "archive"
 	NameSourceManifestDisplay = "manifest-display"
 )
-
-var DefaultRegistry = NewRegistry([]GameSpec{
-	stardewValleyVortexSpec(),
-})
 
 func NewRegistry(specs []GameSpec) Registry {
 	byID := map[string]GameSpec{}
@@ -191,10 +185,6 @@ func NewRegistry(specs []GameSpec) Registry {
 	return Registry{specs: byID}
 }
 
-func Build(gameID, extractedRoot string) (Plan, error) {
-	return DefaultRegistry.Build(gameID, extractedRoot)
-}
-
 func (r Registry) Build(gameID, extractedRoot string) (Plan, error) {
 	spec, ok := r.specs[canonicalGameID(gameID)]
 	if !ok {
@@ -203,17 +193,9 @@ func (r Registry) Build(gameID, extractedRoot string) (Plan, error) {
 	return buildFromSpec(spec, extractedRoot)
 }
 
-func SupportsGame(gameID string) bool {
-	return DefaultRegistry.SupportsGame(gameID)
-}
-
 func (r Registry) SupportsGame(gameID string) bool {
 	_, ok := r.specs[canonicalGameID(gameID)]
 	return ok
-}
-
-func SteamAppIDForVortexGameID(gameID string) (string, bool) {
-	return DefaultRegistry.SteamAppIDForVortexGameID(gameID)
 }
 
 func (r Registry) SteamAppIDForVortexGameID(gameID string) (string, bool) {
@@ -222,10 +204,6 @@ func (r Registry) SteamAppIDForVortexGameID(gameID string) (string, bool) {
 		return "", false
 	}
 	return spec.SteamAppIDs[0], true
-}
-
-func VortexGameIDForSteamAppID(appID string) (string, bool) {
-	return DefaultRegistry.VortexGameIDForSteamAppID(appID)
 }
 
 func (r Registry) VortexGameIDForSteamAppID(appID string) (string, bool) {
@@ -250,10 +228,6 @@ func ManifestDisplayNameFromPlan(plan Plan) string {
 	return ""
 }
 
-func DeploymentAllowedForSteamAppState(appID, state string) (bool, string) {
-	return DefaultRegistry.DeploymentAllowedForSteamAppState(appID, state)
-}
-
 func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, string) {
 	spec, ok := r.specs[canonicalGameID(appID)]
 	if !ok {
@@ -264,87 +238,6 @@ func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, 
 		return false, "game has external mod state and must be reviewed before deployment"
 	}
 	return true, ""
-}
-
-func stardewValleyVortexSpec() GameSpec {
-	return GameSpec{
-		SteamAppIDs:  []string{"413150"},
-		VortexGameID: "stardewvalley",
-		Deployment: DeploymentSpec{
-			AllowNeedsReviewState: true,
-		},
-		ModTypes: []ModTypeSpec{
-			{ID: "SMAPI", TargetRoot: ""},
-			{ID: "sdvrootfolder", TargetRoot: ""},
-			{ID: "stardew-smapi-mod", TargetRoot: "Mods"},
-		},
-		Installers: []InstallerSpec{
-			{
-				ID:                "vortex:stardewvalley:smapi-installer",
-				VortexInstallerID: "smapi-installer",
-				Priority:          30,
-				ModType:           "SMAPI",
-				NameSource:        NameSourceArchive,
-				Match: MatchSpec{
-					FileBasenames: []string{"smapi.installer.dll"},
-				},
-				Payload: PayloadSpec{
-					FileBasenames: []string{"install.dat"},
-					PathSegments:  []string{"internal", "linux"},
-				},
-				GeneratedFiles: []GeneratedFileSpec{
-					{
-						FromGameRelative: "Stardew Valley.deps.json",
-						Destination:      "StardewModdingAPI.deps.json",
-					},
-				},
-				TargetPolicies: []TargetPolicySpec{
-					{
-						TargetRelative: "steam_appid.txt",
-						Policy:         TargetPolicyKeepExisting,
-					},
-				},
-				MetadataExtractors: []MetadataExtractorSpec{
-					smapiManifestExtractor(),
-				},
-				InstructionMode: InstructionEmbeddedZip,
-			},
-			{
-				ID:                "vortex:stardewvalley:sdvrootfolder",
-				VortexInstallerID: "sdvrootfolder",
-				Priority:          50,
-				ModType:           "sdvrootfolder",
-				Match: MatchSpec{
-					RequireTopLevelDirs: []string{"Content"},
-				},
-				InstructionMode: InstructionRootFolder,
-			},
-			{
-				ID:                "vortex:stardewvalley:stardew-valley-installer",
-				VortexInstallerID: "stardew-valley-installer",
-				Priority:          50,
-				ModType:           "stardew-smapi-mod",
-				NameSource:        NameSourceManifestDisplay,
-				Match: MatchSpec{
-					ManifestFileName:      "manifest.json",
-					ExcludeLocaleManifest: true,
-					ExcludeTopLevelDirs:   []string{"Content"},
-				},
-				MetadataExtractors: []MetadataExtractorSpec{
-					smapiManifestExtractor(),
-				},
-				InstructionMode: InstructionManifestFolders,
-			},
-		},
-	}
-}
-
-func smapiManifestExtractor() MetadataExtractorSpec {
-	return MetadataExtractorSpec{
-		Kind:                  MetadataKindSMAPIManifest,
-		ManifestFileName:      "manifest.json",
-		ExcludeLocaleManifest: true,
-	}
 }
 
 func buildFromSpec(spec GameSpec, extractedRoot string) (Plan, error) {
@@ -679,9 +572,10 @@ func metadataExtractorMatchesFile(extractor MetadataExtractorSpec, filePath stri
 }
 
 func metadataFromExtractor(extractor MetadataExtractorSpec, path string) ModMetadata {
+	if extractor.Parse != nil {
+		return extractor.Parse(path)
+	}
 	switch extractor.Kind {
-	case MetadataKindSMAPIManifest:
-		return SMAPIManifestMetadata(path)
 	case MetadataKindJSONManifest:
 		return JSONManifestMetadata(extractor, path)
 	default:
@@ -709,63 +603,6 @@ func JSONManifestMetadata(extractor MetadataExtractorSpec, path string) ModMetad
 	return metadata
 }
 
-func SMAPIManifestMetadata(path string) ModMetadata {
-	var manifest struct {
-		Name              string `json:"Name"`
-		UniqueID          string `json:"UniqueID"`
-		Version           string `json:"Version"`
-		EntryDLL          string `json:"EntryDll"`
-		MinimumAPIVersion string `json:"MinimumApiVersion"`
-		ContentPackFor    *struct {
-			UniqueID       string `json:"UniqueID"`
-			MinimumVersion string `json:"MinimumVersion"`
-		} `json:"ContentPackFor"`
-		Dependencies []struct {
-			UniqueID       string `json:"UniqueID"`
-			MinimumVersion string `json:"MinimumVersion"`
-			IsRequired     *bool  `json:"IsRequired"`
-		} `json:"Dependencies"`
-	}
-	if !readManifestJSON(path, &manifest) {
-		return ModMetadata{}
-	}
-	metadata := ModMetadata{
-		Kind:              MetadataKindSMAPIManifest,
-		Name:              strings.TrimSpace(manifest.Name),
-		UniqueID:          strings.TrimSpace(manifest.UniqueID),
-		Version:           strings.TrimSpace(manifest.Version),
-		ManifestVersion:   strings.TrimSpace(manifest.Version),
-		EntryDLL:          strings.TrimSpace(manifest.EntryDLL),
-		MinimumAPIVersion: strings.TrimSpace(manifest.MinimumAPIVersion),
-	}
-	if metadata.UniqueID != "" {
-		metadata.AdditionalLogicalFileNames = []string{strings.ToLower(metadata.UniqueID)}
-	}
-	if manifest.ContentPackFor != nil && strings.TrimSpace(manifest.ContentPackFor.UniqueID) != "" {
-		metadata.ContentPackFor = &ModDependency{
-			UniqueID:       strings.TrimSpace(manifest.ContentPackFor.UniqueID),
-			MinimumVersion: strings.TrimSpace(manifest.ContentPackFor.MinimumVersion),
-			Required:       true,
-		}
-	}
-	for _, dependency := range manifest.Dependencies {
-		uniqueID := strings.TrimSpace(dependency.UniqueID)
-		if uniqueID == "" {
-			continue
-		}
-		required := true
-		if dependency.IsRequired != nil {
-			required = *dependency.IsRequired
-		}
-		metadata.Dependencies = append(metadata.Dependencies, ModDependency{
-			UniqueID:       uniqueID,
-			MinimumVersion: strings.TrimSpace(dependency.MinimumVersion),
-			Required:       required,
-		})
-	}
-	return metadata
-}
-
 func jsonStringField(manifest map[string]any, field string) string {
 	field = strings.TrimSpace(field)
 	if field == "" {
@@ -786,6 +623,10 @@ func jsonStringField(manifest map[string]any, field string) string {
 }
 
 func readManifestJSON(path string, out any) bool {
+	return ReadManifestJSON(path, out)
+}
+
+func ReadManifestJSON(path string, out any) bool {
 	file, err := os.Open(path)
 	if err != nil {
 		return false

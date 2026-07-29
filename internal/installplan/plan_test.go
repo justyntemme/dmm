@@ -1,4 +1,4 @@
-package installplan
+package installplan_test
 
 import (
 	"archive/zip"
@@ -6,7 +6,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
+	. "github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
+
+var stardewPlanner = NewRegistry([]GameSpec{stardewvalley.InstallPlanSpec()})
+
+func Build(gameID, extractedRoot string) (Plan, error) {
+	return stardewPlanner.Build(gameID, extractedRoot)
+}
+
+func SteamAppIDForVortexGameID(gameID string) (string, bool) {
+	return stardewPlanner.SteamAppIDForVortexGameID(gameID)
+}
+
+func VortexGameIDForSteamAppID(appID string) (string, bool) {
+	return stardewPlanner.VortexGameIDForSteamAppID(appID)
+}
+
+func DeploymentAllowedForSteamAppState(appID, state string) (bool, string) {
+	return stardewPlanner.DeploymentAllowedForSteamAppState(appID, state)
+}
 
 func TestStardewPlannerBuildsInstructionsForSMAPIModFolder(t *testing.T) {
 	root := t.TempDir()
@@ -140,7 +161,7 @@ func TestStardewPlannerAcceptsRelaxedSMAPIManifest(t *testing.T) {
 		t.Fatalf("metadata = %+v", plan.Metadata)
 	}
 	metadata := plan.Metadata[0]
-	if metadata.Kind != MetadataKindSMAPIManifest || metadata.Name != "Visible Fish" || metadata.UniqueID != "shekurika.WaterFish" || metadata.Version != "0.4.2" {
+	if metadata.Kind != stardewvalley.MetadataKindSMAPIManifest || metadata.Name != "Visible Fish" || metadata.UniqueID != "shekurika.WaterFish" || metadata.Version != "0.4.2" {
 		t.Fatalf("metadata = %+v", metadata)
 	}
 	if metadata.ManifestVersion != "0.4.2" || len(metadata.AdditionalLogicalFileNames) != 1 || metadata.AdditionalLogicalFileNames[0] != "shekurika.waterfish" {

@@ -65,7 +65,7 @@ for target in "${tmp_dir}"/*.js; do
       "Profile Mods" \
       "Add From Nexus" \
       "Advanced Deployment Tools" \
-      "Approve downloads automatically"
+      "Auto deploy after staging"
     do
       if ! grep -qF "${needle}" "${target}"; then
         echo "web UI asset is missing MVP UI text: ${needle}" >&2
