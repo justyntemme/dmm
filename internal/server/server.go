@@ -1985,11 +1985,18 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		}
 		deployment.Commit()
 		s.logger.Info("auto deploy completed", "job_id", jobID, "app_id", staged.SteamAppID, "deployment_id", deploymentID, "applied", len(applied))
-		s.jobs.Complete(jobID, "Added and deployed "+staged.Name)
+		message := "Added and deployed " + staged.Name
+		launchApply, launchErr := s.autoApplyLowRiskLaunchAction(ctx, staged.SteamAppID, jobID)
+		if launchErr != nil {
+			s.logger.Warn("auto deploy launch action failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", launchErr)
+		} else if launchApply != nil && launchApply.Applied {
+			message += "; configured launch tool"
+		}
+		s.jobs.Complete(jobID, message)
 		s.forgetPendingImport(jobID)
 		return
 	}
-	s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile; apply profile changes to deploy")
+	s.jobs.Complete(jobID, "Added "+staged.Name+" to the profile disabled; enable it to deploy")
 	s.forgetPendingImport(jobID)
 }
 
@@ -2242,6 +2249,16 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
+	s.cfgMu.RLock()
+	autoDeploy := s.cfg.Install.AutoDeploy
+	s.cfgMu.RUnlock()
+	if !autoDeploy {
+		disabled := false
+		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &disabled, nil)
+		if err != nil {
+			return storage.InstalledMod{}, err
+		}
+	}
 	s.logger.Info(
 		"pending import staged",
 		"job_id", jobID,
@@ -2255,6 +2272,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		"detections", len(installPlan.DetectedFrom),
 		"instructions", len(installPlan.Instructions),
 		"installed_mod_id", staged.ID,
+		"enabled", staged.Enabled,
 	)
 	return staged, nil
 }

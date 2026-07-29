@@ -578,14 +578,14 @@ func TestApprovePendingImportDownloadsAndStagesArchive(t *testing.T) {
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
-	if completed.Message != "Added Lookup Anything to the profile; apply profile changes to deploy" {
+	if completed.Message != "Added Lookup Anything to the profile disabled; enable it to deploy" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || !mods[0].Enabled {
+	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || mods[0].Enabled {
 		t.Fatalf("mods = %+v", mods)
 	}
 	var manifest struct {
@@ -756,7 +756,7 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 		t.Fatalf("retry status = %d, body = %s", retryRec.Code, retryRec.Body.String())
 	}
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
-	if completed.Message != "Added Lookup Anything to the profile; apply profile changes to deploy" {
+	if completed.Message != "Added Lookup Anything to the profile disabled; enable it to deploy" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	if attempts != 2 {
@@ -920,7 +920,7 @@ func TestPendingImportAutoApprovalDownloadsAndStagesArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || !mods[0].Enabled {
+	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || mods[0].Enabled {
 		t.Fatalf("mods = %+v", mods)
 	}
 }
@@ -1525,8 +1525,12 @@ func TestStardewRecoveredDownloadDeployAndPurgeEndpoints(t *testing.T) {
 	if err := json.Unmarshal(modsRec.Body.Bytes(), &mods); err != nil {
 		t.Fatal(err)
 	}
-	if len(mods) != 1 || !mods[0].Enabled || mods[0].Name != "Lookup Anything" {
+	if len(mods) != 1 || mods[0].Enabled || mods[0].Name != "Lookup Anything" {
 		t.Fatalf("mods = %+v", mods)
+	}
+	enabled := true
+	if _, err := srv.db.SetProfileModState(context.Background(), mods[0].ProfileID, mods[0].ID, &enabled, nil); err != nil {
+		t.Fatal(err)
 	}
 
 	previewReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/preview", nil)

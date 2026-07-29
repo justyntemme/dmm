@@ -204,6 +204,10 @@
   let activeGameModule: GameModule = "plugins";
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
+  let busyJobs: Record<string, boolean> = {};
+  let initialRefreshComplete = false;
+  let selectedGameRefreshTimer: number | null = null;
+  let selectedGameRefreshNeedsPreview = false;
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
@@ -260,7 +264,29 @@
       error = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
+      initialRefreshComplete = true;
     }
+  }
+
+  async function refreshJobsAndSelectedGame() {
+    try {
+      jobs = await getJSON<Job[]>("/api/jobs");
+      if (selectedGame) await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function scheduleSelectedGameRefresh(refreshPreview = false) {
+    if (!selectedGame || !initialRefreshComplete) return;
+    selectedGameRefreshNeedsPreview = selectedGameRefreshNeedsPreview || refreshPreview;
+    if (selectedGameRefreshTimer !== null) return;
+    selectedGameRefreshTimer = window.setTimeout(async () => {
+      const shouldRefreshPreview = selectedGameRefreshNeedsPreview;
+      selectedGameRefreshTimer = null;
+      selectedGameRefreshNeedsPreview = false;
+      await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+    }, 250);
   }
 
   async function selectGame(game: Game) {
@@ -348,7 +374,7 @@
     }
     await loadProfiles(selectedGame);
     await loadInstalledMods(selectedGame);
-    await previewDeploy();
+    await applyCurrentProfileChanges();
   }
 
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
@@ -365,7 +391,7 @@
     }
     const updated = await response.json();
     installedMods = installedMods.map((item) => (item.id === updated.id ? updated : item));
-    await previewDeploy();
+    await applyCurrentProfileChanges();
   }
 
   async function setModPriority(mod: InstalledMod, priority: number) {
@@ -384,7 +410,7 @@
     installedMods = installedMods
       .map((item) => (item.id === updated.id ? updated : item))
       .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
-    await previewDeploy();
+    await applyCurrentProfileChanges();
   }
 
   async function removeInstalledMod(mod: InstalledMod) {
@@ -397,6 +423,7 @@
     }
     installedMods = installedMods.filter((item) => item.id !== mod.id);
     await refreshSelectedGame({ refreshPreview: true });
+    await applyCurrentProfileChanges();
   }
 
   function askRemoveInstalledMod(mod: InstalledMod) {
@@ -466,39 +493,60 @@
   async function cancelJob(job: Job) {
     if (!canCancelJob(job)) return;
     error = "";
-    const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    setJobBusy(job.id, true);
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setJobBusy(job.id, false);
     }
-    const result = await response.json();
-    upsertJob(result.job);
   }
 
   async function approveInstallRequest(request: Job) {
     if (request.status !== "waiting") return;
     error = "";
-    const response = await fetch(`/api/imports/pending/${request.id}/approve`, { method: "POST" });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    setJobBusy(request.id, true);
+    try {
+      const response = await fetch(`/api/imports/pending/${request.id}/approve`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+      if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setJobBusy(request.id, false);
     }
-    const result = await response.json();
-    upsertJob(result.job);
-    if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function retryInstallRequest(request: Job) {
     if (request.status !== "failed") return;
     error = "";
-    const response = await fetch(`/api/imports/pending/${request.id}/retry`, { method: "POST" });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    setJobBusy(request.id, true);
+    try {
+      const response = await fetch(`/api/imports/pending/${request.id}/retry`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+      if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setJobBusy(request.id, false);
     }
-    const result = await response.json();
-    upsertJob(result.job);
-    if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function previewDeploy() {
@@ -538,6 +586,33 @@
     upsertJob(result.job);
     deployPlan = result.plan;
     await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function applyCurrentProfileChanges() {
+    if (!selectedGame) return false;
+    error = "";
+    const previewResponse = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
+    if (!previewResponse.ok) {
+      error = await previewResponse.text();
+      return false;
+    }
+    const nextPlan: DeployPlan = await previewResponse.json();
+    deployPlan = nextPlan;
+    const actions = getDeployableActions(nextPlan);
+    if (nextPlan.conflicts.length > 0 || actions.length === 0) {
+      await refreshSelectedGame();
+      return false;
+    }
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return false;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    deployPlan = result.plan;
+    await refreshSelectedGame({ refreshPreview: true });
+    return true;
   }
 
   async function askDeployStagedMods() {
@@ -643,14 +718,31 @@
   }
 
   function upsertJob(job: Job) {
+    const existing = jobs.find((item) => item.id === job.id);
+    const changed = !existing || existing.status !== job.status || existing.message !== job.message || existing.updated_at !== job.updated_at;
     if (job.type === "pending-import" && job.status === "canceled" && job.message === "Cleared") {
       jobs = jobs.filter((item) => item.id !== job.id);
       return;
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
-    if (job.type === "pending-import" && ["completed", "failed"].includes(job.status) && selectedGame) {
-      refreshSelectedGame({ refreshPreview: job.status === "completed" || deployPlan !== null });
+    if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
+    if (["pending-import", "deploy", "purge", "repair", "recover-downloads", "launch-config"].includes(job.type)) {
+      scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null);
     }
+  }
+
+  function setJobBusy(jobID: string, busy: boolean) {
+    if (busy) {
+      busyJobs = { ...busyJobs, [jobID]: true };
+      return;
+    }
+    const next = { ...busyJobs };
+    delete next[jobID];
+    busyJobs = next;
+  }
+
+  function isJobBusy(job: Job) {
+    return Boolean(busyJobs[job.id]);
   }
 
   function canCancelJob(job: Job) {
@@ -771,7 +863,14 @@
     events.addEventListener("job", (event) => {
       upsertJob(JSON.parse((event as MessageEvent).data));
     });
-    return () => events.close();
+    const poll = window.setInterval(() => {
+      refreshJobsAndSelectedGame();
+    }, 4000);
+    return () => {
+      events.close();
+      window.clearInterval(poll);
+      if (selectedGameRefreshTimer !== null) window.clearTimeout(selectedGameRefreshTimer);
+    };
   });
 </script>
 
@@ -867,23 +966,23 @@
               <article class:failed-request={request.status === "failed"}>
                 <div>
                   <strong>{request.title}</strong>
-                  {#if request.message}<p>{request.message}</p>{/if}
-                  <p class="request-next-step">{requestNextStep(request)}</p>
-                  <small>{new Date(request.updated_at).toLocaleString()}</small>
-                </div>
-                <div class="request-actions">
-                  <span>{requestStatusLabel(request)}</span>
-                  {#if request.status === "waiting"}
-                    <button type="button" on:click={() => approveInstallRequest(request)}>Approve Download</button>
-                  {/if}
-                  {#if request.status === "failed"}
-                    <button type="button" on:click={() => retryInstallRequest(request)}>Retry</button>
-                  {/if}
-                  {#if canCancelJob(request)}
-                    <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)}>Cancel</button>
-                  {/if}
-                </div>
-              </article>
+	                    {#if request.message}<p>{request.message}</p>{/if}
+	                    <p class="request-next-step">{requestNextStep(request)}</p>
+	                    <small>{new Date(request.updated_at).toLocaleString()}</small>
+	                  </div>
+	                  <div class="request-actions">
+	                    <span>{requestStatusLabel(request)}</span>
+	                    {#if request.status === "waiting"}
+	                      <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Download"}</button>
+	                    {/if}
+	                    {#if request.status === "failed"}
+	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+	                    {/if}
+	                    {#if canCancelJob(request)}
+	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>
+	                    {/if}
+	                  </div>
+	                </article>
             {/each}
           </div>
         {/if}
@@ -911,17 +1010,17 @@
             <div class="jobs">
               {#each jobs as job}
                 <article class="job">
-                  <div>
-                    <strong>{job.title}</strong>
-                    {#if job.message}<p>{job.message}</p>{/if}
-                  </div>
-				  <div class="job-actions">
-					<span>{job.status}</span>
-					{#if canCancelJob(job)}
-					  <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)}>Cancel</button>
-					{/if}
-				  </div>
-				</article>
+	                  <div>
+	                    <strong>{job.title}</strong>
+	                    {#if job.message}<p>{job.message}</p>{/if}
+	                  </div>
+	                  <div class="job-actions">
+	                    <span>{job.status}</span>
+	                    {#if canCancelJob(job)}
+	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)} disabled={isJobBusy(job)}>Cancel</button>
+	                    {/if}
+	                  </div>
+	                </article>
               {/each}
             </div>
           {/if}
@@ -1010,25 +1109,20 @@
               {:else}
                 <p class="deploy-message">Profile changes have not been applied to the game yet.</p>
               {/if}
-              {#if deployPlan}
-                {#if deployPlan.conflicts.length > 0}
-                  <p class="deploy-message danger">Conflicts need attention before profile changes can be applied.</p>
-                {:else if deployableActions.length === 0}
-                  <p class="deploy-message">This profile is already applied.</p>
-                {:else}
-                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"}.</p>
-                {/if}
-              {:else}
-                <p class="deploy-message">Enable or disable mods, then apply the selected profile to the game.</p>
-              {/if}
-              <div class="deploy-actions primary-actions profile-actions">
-                {#if deployPlan && deployPlan.conflicts.length === 0 && deployableActions.length === 0}
-                  <button type="button" disabled>This Profile Is Applied</button>
-                {:else}
-                  <button type="button" on:click={askDeployStagedMods} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Changes</button>
-                {/if}
-                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Check Profile Changes</button>
-              </div>
+	              {#if deployPlan}
+	                {#if deployPlan.conflicts.length > 0}
+	                  <p class="deploy-message danger">Conflicts need attention before profile changes can be applied.</p>
+	                {:else if deployableActions.length === 0}
+	                  <p class="deploy-message">This profile is already applied.</p>
+	                {:else}
+	                  <p class="deploy-message">{deployAdds + deployReplaces + deployRemoves} pending profile change{deployAdds + deployReplaces + deployRemoves === 1 ? "" : "s"} waiting for automatic apply.</p>
+	                {/if}
+	              {:else}
+	                <p class="deploy-message">Enable or disable mods to apply the selected profile to the game.</p>
+	              {/if}
+	              <div class="deploy-actions primary-actions profile-actions">
+	                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Check Profile Changes</button>
+	              </div>
             </div>
 
             <div class="management-card import-card">
@@ -1123,11 +1217,12 @@
               <div><strong>{enabledMods.length}</strong><span>Enabled</span></div>
               <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
               <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
-            </div>
-            <div class="deploy-actions utility-actions">
-              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
-              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
-              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
+	            </div>
+	            <div class="deploy-actions utility-actions">
+	              <button type="button" class="secondary-action" on:click={askDeployStagedMods} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
+	              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
+	              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
+	              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
               <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
             </div>
             {#if deployPlan}
@@ -1168,17 +1263,17 @@
                     <p class="request-next-step">{requestNextStep(request)}</p>
                     <small>{new Date(request.updated_at).toLocaleString()}</small>
                   </div>
-                  <div class="request-actions">
-                    <span>{requestStatusLabel(request)}</span>
-                    {#if request.status === "waiting"}
-                      <button type="button" on:click={() => approveInstallRequest(request)}>Approve Download</button>
-                    {/if}
-                    {#if request.status === "failed"}
-                      <button type="button" on:click={() => retryInstallRequest(request)}>Retry</button>
-                    {/if}
-                    {#if canCancelJob(request)}
-                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)}>Cancel</button>
-                    {/if}
+                    <div class="request-actions">
+                      <span>{requestStatusLabel(request)}</span>
+                      {#if request.status === "waiting"}
+                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Download"}</button>
+                      {/if}
+                      {#if request.status === "failed"}
+                        <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+                      {/if}
+                      {#if canCancelJob(request)}
+                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>
+                      {/if}
                   </div>
                 </article>
               {/each}

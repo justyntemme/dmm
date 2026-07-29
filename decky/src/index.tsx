@@ -133,6 +133,8 @@ function showLaunchToast(title: string, body: string, failed = false) {
   });
 }
 
+const notifiedInstallJobStates = new Map<string, string>();
+
 function Content() {
   const [tab, setTab] = useState<Tab>("main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
@@ -264,7 +266,9 @@ function Content() {
       const job = result.result?.job;
       setImportResult(job?.message || job?.title || "Install request added.");
       if (job) {
-        seenJobStates.current.set(job.id, job.status);
+        const stateKey = `${job.status}:${job.message || ""}`;
+        seenJobStates.current.set(job.id, stateKey);
+        notifiedInstallJobStates.set(job.id, stateKey);
         showInstallToast(job as Job);
       }
       await refresh();
@@ -280,9 +284,12 @@ function Content() {
       for (const job of result.jobs) {
         if (job.type !== "pending-import") continue;
         const stateKey = `${job.status}:${job.message || ""}`;
-        const previous = seenJobStates.current.get(job.id);
+        const previous = notifiedInstallJobStates.get(job.id) ?? seenJobStates.current.get(job.id);
         seenJobStates.current.set(job.id, stateKey);
-        if (!seed && previous !== stateKey && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+        const updatedAt = Date.parse(job.updated_at || "");
+        const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
+        if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+          notifiedInstallJobStates.set(job.id, stateKey);
           showInstallToast(job);
         }
       }
