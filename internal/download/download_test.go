@@ -1,0 +1,73 @@
+package download
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestFetchWritesDownload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write([]byte("archive"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	got, err := Fetch(context.Background(), Options{
+		URL:      server.URL + "/files/mod.zip",
+		DestDir:  dir,
+		FileName: "../unsafe:name.zip",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != filepath.Join(dir, "unsafe-name.zip") {
+		t.Fatalf("path = %q", got.Path)
+	}
+	if got.BytesWritten != int64(len("archive")) {
+		t.Fatalf("bytes = %d", got.BytesWritten)
+	}
+	body, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "archive" {
+		t.Fatalf("body = %q", string(body))
+	}
+}
+
+func TestFetchRejectsOversizedDownload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("too large"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	if _, err := Fetch(context.Background(), Options{
+		URL:      server.URL + "/mod.zip",
+		DestDir:  dir,
+		MaxBytes: 3,
+	}); err == nil {
+		t.Fatal("expected oversized download to fail")
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("unexpected files after failed download: %v", matches)
+	}
+}
+
+func TestFetchRejectsUnsupportedScheme(t *testing.T) {
+	if _, err := Fetch(context.Background(), Options{
+		URL:     "file:///etc/passwd",
+		DestDir: t.TempDir(),
+	}); err == nil {
+		t.Fatal("expected unsupported scheme to fail")
+	}
+}

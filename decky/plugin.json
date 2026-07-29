@@ -1,0 +1,11 @@
+{
+  "name": "Decky Mod Manager",
+  "author": "Justyn Temme",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["mods", "mod-manager", "nexus", "steam-deck"],
+    "description": "Manage Nexus/Vortex-compatible mods on Steam Deck from a phone or tablet browser.",
+    "image": ""
+  }
+}
