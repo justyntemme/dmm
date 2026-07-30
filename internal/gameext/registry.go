@@ -188,7 +188,7 @@ func (r Registry) NexusDomainForSteamAppID(appID string) (string, bool) {
 func (r Registry) NexusDomainsForSteamAppID(appID string) []string {
 	domains := r.nexusDomainsBySteamApp[canonical(appID)]
 	if len(domains) == 0 {
-		return nil
+		return []string{}
 	}
 	out := make([]string, len(domains))
 	copy(out, domains)
@@ -481,8 +481,8 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		Name:         extension.Name,
 		Version:      extension.Version,
 		BuildID:      extension.BuildID,
-		SteamAppIDs:  appendClean(nil, extension.SteamAppIDs...),
-		NexusDomains: appendClean(nil, extension.NexusDomains...),
+		SteamAppIDs:  appendClean([]string{}, extension.SteamAppIDs...),
+		NexusDomains: appendClean([]string{}, extension.NexusDomains...),
 		VortexGameID: extension.InstallPlan.VortexGameID,
 		Sources:      append([]SourceRef(nil), extension.Sources...),
 	}
