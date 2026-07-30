@@ -788,6 +788,13 @@ func (s *Server) publishGameEvent(eventType, appID string, payload any) {
 	})
 }
 
+func (s *Server) publishInstallCandidatesChanged(appID, action string, count int) {
+	s.publishGameEvent(events.TypeInstallChanged, appID, map[string]any{
+		"action": "install_candidates_" + strings.TrimSpace(action),
+		"count":  count,
+	})
+}
+
 func (s *Server) autoEnableInstalledMods() bool {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
@@ -1189,6 +1196,7 @@ func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http
 		s.cancelInstallerChoiceJobs(candidate.ID, "Installer choices cleared")
 	}
 	s.logger.Info("cleared install candidates", "app_id", appID, "deleted", deleted)
+	s.publishInstallCandidatesChanged(appID, "cleared", int(deleted))
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
@@ -1242,6 +1250,8 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	}
 	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
 		s.logger.Warn("installer candidate cleanup failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+	} else {
+		s.publishInstallCandidatesChanged(appID, "applied", 1)
 	}
 	s.completeInstalledModJob(r.Context(), job.ID, mod, nil)
 	if finalJob, ok := s.jobs.Get(job.ID); ok {
@@ -1765,6 +1775,9 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 	result.InstallCandidatesCleared = deletedCandidates
 	for _, candidate := range candidates {
 		s.cancelInstallerChoiceJobs(candidate.ID, "Game reset")
+	}
+	if deletedCandidates > 0 {
+		s.publishInstallCandidatesChanged(appID, "reset", int(deletedCandidates))
 	}
 	result.PendingImportsCleared = s.clearPendingImportsForSteamApp(appID)
 
@@ -2617,6 +2630,7 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 			} else {
 				choiceJob := s.ensureInstallerChoiceJob(appID, candidate)
 				s.logger.Info("installer choice job waiting", "job_id", choiceJob.ID, "pending_job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+				s.publishInstallCandidatesChanged(appID, "created", 1)
 			}
 			s.jobs.Complete(jobID, "Downloaded "+modNameFromArchive(result.Path, pending.Resolved)+"; installer choices required")
 			s.forgetPendingImport(jobID)
@@ -2634,6 +2648,8 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 				Reason:        unsupported.Error(),
 			}); recordErr != nil {
 				s.logger.Warn("record blocked install candidate failed", "job_id", jobID, "error", recordErr)
+			} else {
+				s.publishInstallCandidatesChanged(s.appIDForPending(pending), "created", 1)
 			}
 			s.jobs.Fail(jobID, err.Error())
 			s.forgetPendingImport(jobID)
@@ -2812,6 +2828,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 					}
 					choiceJob := s.ensureInstallerChoiceJob(appID, candidate)
 					s.logger.Info("download recovery recorded installer choice candidate", "job_id", jobID, "choice_job_id", choiceJob.ID, "app_id", appID, "candidate_id", candidate.ID, "mod_id", modID, "file_id", fileID, "reason", choice.Error())
+					s.publishInstallCandidatesChanged(appID, "created", 1)
 					skipped++
 					continue
 				}
@@ -2830,6 +2847,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 						return staged, skipped, recordErr
 					}
 					s.logger.Info("download recovery recorded blocked candidate", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "reason", unsupported.Error())
+					s.publishInstallCandidatesChanged(appID, "created", 1)
 					skipped++
 					continue
 				}
