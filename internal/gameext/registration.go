@@ -2,6 +2,7 @@ package gameext
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -132,17 +133,145 @@ func (r *Registrar) RegisterEventHandler(spec EventHandlerSpec) {
 }
 
 func validateExtension(extension Extension) error {
+	var errs []error
 	if strings.TrimSpace(extension.ID) == "" {
-		return errors.New("extension id is required")
+		errs = append(errs, errors.New("extension id is required"))
 	}
 	if strings.TrimSpace(extension.Name) == "" {
-		return errors.New("extension name is required")
+		errs = append(errs, errors.New("extension name is required"))
 	}
 	if len(extension.SteamAppIDs) == 0 {
-		return errors.New("extension must register at least one Steam app id")
+		errs = append(errs, errors.New("extension must register at least one Steam app id"))
 	}
 	if len(extension.NexusDomains) == 0 {
-		return errors.New("extension must register at least one Nexus domain")
+		errs = append(errs, errors.New("extension must register at least one Nexus domain"))
+	}
+	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
+	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
+	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
+	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec MergeSpec) string { return spec.ID })...)
+	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec LoadOrderSpec) string { return spec.ID })...)
+	for _, handler := range extension.EventHandlers {
+		if strings.TrimSpace(handler.Event) == "" {
+			errs = append(errs, errors.New("event handler event is required"))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func validateInstallPlanSpec(spec installplan.GameSpec) []error {
+	var errs []error
+	declaredModTypes := map[string]struct{}{}
+	for _, modType := range spec.ModTypes {
+		id := strings.TrimSpace(modType.ID)
+		if id == "" {
+			errs = append(errs, errors.New("mod type id is required"))
+			continue
+		}
+		declaredModTypes[id] = struct{}{}
+		if err := validateRelativeOrRoot(modType.TargetRoot); err != nil {
+			errs = append(errs, errors.New("mod type "+id+" target root: "+err.Error()))
+		}
+	}
+	for _, installer := range spec.Installers {
+		id := strings.TrimSpace(installer.ID)
+		if id == "" {
+			errs = append(errs, errors.New("installer id is required"))
+			continue
+		}
+		if strings.TrimSpace(installer.VortexInstallerID) == "" {
+			errs = append(errs, errors.New("installer "+id+" Vortex installer id is required"))
+		}
+		modType := strings.TrimSpace(installer.ModType)
+		if modType != "" {
+			if _, ok := declaredModTypes[modType]; !ok {
+				errs = append(errs, errors.New("installer "+id+" references undeclared mod type "+modType))
+			}
+		}
+		if err := validateRelativeOrRoot(installer.TargetRoot); err != nil {
+			errs = append(errs, errors.New("installer "+id+" target root: "+err.Error()))
+		}
+		for _, generated := range installer.GeneratedFiles {
+			if err := validateRelativePath(generated.FromGameRelative); err != nil {
+				errs = append(errs, errors.New("installer "+id+" generated source path: "+err.Error()))
+			}
+			if err := validateRelativePath(generated.Destination); err != nil {
+				errs = append(errs, errors.New("installer "+id+" generated destination path: "+err.Error()))
+			}
+		}
+		for _, policy := range installer.TargetPolicies {
+			if err := validateRelativePath(policy.TargetRelative); err != nil {
+				errs = append(errs, errors.New("installer "+id+" target policy path: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateRuntimeSpec(spec gamehandler.GameSpec) []error {
+	var errs []error
+	for _, requirement := range spec.RuntimeRequirements {
+		if strings.TrimSpace(requirement.ID) == "" {
+			errs = append(errs, errors.New("runtime requirement id is required"))
+		}
+		if strings.TrimSpace(requirement.Name) == "" {
+			errs = append(errs, errors.New("runtime requirement name is required"))
+		}
+	}
+	return errs
+}
+
+func validateLaunchTools(tools []LaunchToolSpec) []error {
+	var errs []error
+	for _, tool := range tools {
+		id := strings.TrimSpace(tool.ID)
+		if id == "" {
+			errs = append(errs, errors.New("launch tool id is required"))
+			continue
+		}
+		if strings.TrimSpace(tool.Name) == "" {
+			errs = append(errs, errors.New("launch tool "+id+" name is required"))
+		}
+		if err := validateRelativePath(tool.ExecutableRelative); err != nil {
+			errs = append(errs, errors.New("launch tool "+id+" executable path: "+err.Error()))
+		}
+		for _, path := range tool.RequiredFiles {
+			if err := validateRelativePath(path); err != nil {
+				errs = append(errs, errors.New("launch tool "+id+" required file: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateNamedSpecs[T any](kind string, specs []T, id func(T) string) []error {
+	var errs []error
+	for _, spec := range specs {
+		if strings.TrimSpace(id(spec)) == "" {
+			errs = append(errs, errors.New(kind+" id is required"))
+		}
+	}
+	return errs
+}
+
+func validateRelativeOrRoot(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return validateRelativePath(value)
+}
+
+func validateRelativePath(value string) error {
+	value = strings.TrimSpace(filepath.ToSlash(value))
+	if value == "" {
+		return errors.New("relative path is required")
+	}
+	if strings.HasPrefix(value, "/") || filepath.IsAbs(value) {
+		return errors.New("absolute path is not allowed")
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return errors.New("path traversal is not allowed")
 	}
 	return nil
 }
