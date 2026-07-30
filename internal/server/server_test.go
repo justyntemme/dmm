@@ -3206,6 +3206,7 @@ func TestObsoleteRestoredJobPredicateRemovesPreMVPLegacyJobs(t *testing.T) {
 		{Type: "pending-import", Title: "Install request: stardewvalley/mods/239"},
 		{Type: "launch-config", Title: "Configure launch tool"},
 		{Type: "deploy", Title: "Deploy staged mods"},
+		{Type: "deploy", Title: "Apply profile changes", Message: "Deployed 63 files"},
 	}
 	for _, job := range cases {
 		if !obsoleteRestoredJob(job) {

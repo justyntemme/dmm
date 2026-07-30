@@ -224,7 +224,12 @@ func obsoleteRestoredJob(job jobs.Job) bool {
 	case "pending-import", "launch-config":
 		return true
 	}
-	return job.Type == "deploy" && strings.EqualFold(strings.TrimSpace(job.Title), "Deploy staged mods")
+	if job.Type != "deploy" {
+		return false
+	}
+	title := strings.TrimSpace(job.Title)
+	message := strings.TrimSpace(job.Message)
+	return strings.EqualFold(title, "Deploy staged mods") || strings.HasPrefix(message, "Deployed ")
 }
 
 func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.CapturedInstall, gameRegistry games.Registry) []jobs.Job {
@@ -2777,7 +2782,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": result.Applied})
 		return
 	}
-	job, _ = s.jobs.Complete(job.ID, "Deployed "+strconv.Itoa(len(result.Applied))+" files")
+	job, _ = s.jobs.Complete(job.ID, "Applied profile changes to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
 	response := map[string]any{
 		"job":     job,
 		"plan":    plan,
