@@ -842,11 +842,6 @@ function installerForCandidate(candidate: InstallCandidate): FomodInstaller | nu
   }
 }
 
-function preferredFomodType(type: string | undefined) {
-  const normalized = (type ?? "").trim().toLowerCase();
-  return normalized === "required" || normalized === "recommended";
-}
-
 function fomodGroupType(group: FomodGroup) {
   return (group.type ?? "").trim().toLowerCase();
 }
@@ -856,30 +851,12 @@ function fomodGroupInputType(group: FomodGroup) {
   return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
 }
 
-function defaultFomodSelections(installer: FomodInstaller): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const step of visibleFomodSteps(installer)) {
-    for (const group of step.groups ?? []) {
-      const plugins = group.plugins ?? [];
-      const type = fomodGroupType(group);
-      if (type === "selectall") {
-        out[group.id] = plugins.map((plugin) => plugin.id);
-        continue;
-      }
-      const preferred = plugins.find((plugin) => preferredFomodType(plugin.type)) ?? plugins[0];
-      if (!preferred) continue;
-      if (type === "selectexactlyone" || type === "selectatleastone" || type === "") {
-        out[group.id] = [preferred.id];
-        continue;
-      }
-      out[group.id] = plugins.filter((plugin) => preferredFomodType(plugin.type)).map((plugin) => plugin.id);
-    }
-  }
-  return out;
-}
-
 function visibleFomodSteps(installer: FomodInstaller) {
   return (installer.steps ?? []).filter((step) => step.visible !== false);
+}
+
+function installerRequiresSelections(installer: FomodInstaller) {
+  return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => (group.plugins ?? []).length > 0));
 }
 
 function storedFomodSelections(candidate: InstallCandidate): Record<string, string[]> | null {
@@ -1189,7 +1166,7 @@ async function syncWorkshopActions() {
 
 function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; closeModal: () => void; onApplied: () => void }) {
   const installer = installerForCandidate(props.candidate);
-  const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? (installer ? defaultFomodSelections(installer) : {}));
+  const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -1234,6 +1211,10 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
 
   async function applyChoices() {
     if (!installer || busy) return;
+    if (installerRequiresSelections(installer) && Object.keys(selections).length === 0) {
+      setMessage("Installer choices are missing from backend state. Retry this installer item so DMM can rebuild the choices.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {

@@ -1015,28 +1015,6 @@
     }
   }
 
-  function defaultCandidateSelections(installer: FomodInstaller): Record<string, string[]> {
-    const out: Record<string, string[]> = {};
-    for (const step of visibleFomodSteps(installer)) {
-      for (const group of step.groups ?? []) {
-        const plugins = group.plugins ?? [];
-        const type = group.type.toLowerCase();
-        if (type === "selectall") {
-          out[group.id] = plugins.map((plugin) => plugin.id);
-          continue;
-        }
-        const preferred = plugins.find((plugin) => preferredFomodType(plugin.type)) ?? plugins[0];
-        if (!preferred) continue;
-        if (type === "selectexactlyone" || type === "selectatleastone" || type === "") {
-          out[group.id] = [preferred.id];
-          continue;
-        }
-        out[group.id] = plugins.filter((plugin) => preferredFomodType(plugin.type)).map((plugin) => plugin.id);
-      }
-    }
-    return out;
-  }
-
   function storedCandidateSelections(candidate: InstallCandidate) {
     if (!candidate.choices_json) return null;
     try {
@@ -1045,11 +1023,6 @@
     } catch (_err) {
       return null;
     }
-  }
-
-  function preferredFomodType(type: string | undefined) {
-    const normalized = (type ?? "").trim().toLowerCase();
-    return normalized === "required" || normalized === "recommended";
   }
 
   function fomodGroupType(group: FomodGroup) {
@@ -1065,16 +1038,20 @@
     return (installer.steps ?? []).filter((step) => step.visible !== false);
   }
 
-  function candidateCurrentSelections(candidate: InstallCandidate, installer: FomodInstaller) {
-    return candidateSelections[candidate.id] ?? storedCandidateSelections(candidate) ?? defaultCandidateSelections(installer);
+  function installerRequiresSelections(installer: FomodInstaller) {
+    return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => (group.plugins ?? []).length > 0));
   }
 
-  function isCandidatePluginSelected(candidate: InstallCandidate, installer: FomodInstaller, group: FomodGroup, plugin: FomodPlugin) {
-    return (candidateCurrentSelections(candidate, installer)[group.id] ?? []).includes(plugin.id);
+  function candidateCurrentSelections(candidate: InstallCandidate) {
+    return candidateSelections[candidate.id] ?? storedCandidateSelections(candidate) ?? {};
   }
 
-  function setCandidatePluginSelection(candidate: InstallCandidate, installer: FomodInstaller, group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
-    const current = candidateCurrentSelections(candidate, installer);
+  function isCandidatePluginSelected(candidate: InstallCandidate, group: FomodGroup, plugin: FomodPlugin) {
+    return (candidateCurrentSelections(candidate)[group.id] ?? []).includes(plugin.id);
+  }
+
+  function setCandidatePluginSelection(candidate: InstallCandidate, group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
+    const current = candidateCurrentSelections(candidate);
     const next = { ...current };
     const type = group.type.toLowerCase();
     if (type === "selectall") return;
@@ -1116,7 +1093,11 @@
     error = "";
     setInstallCandidateBusy(candidate.id, true);
     try {
-      const selections = candidateCurrentSelections(candidate, installer);
+      const selections = candidateCurrentSelections(candidate);
+      if (installerRequiresSelections(installer) && Object.keys(selections).length === 0) {
+        error = "Installer choices are missing from backend state. Retry this installer item so DMM can rebuild the choices.";
+        return;
+      }
       const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2244,9 +2225,9 @@
                                       <input
                                         type={fomodGroupInputType(group)}
                                         name={`candidate-${candidate.id}-${group.id}`}
-                                        checked={isCandidatePluginSelected(candidate, installer, group, plugin)}
+                                        checked={isCandidatePluginSelected(candidate, group, plugin)}
                                         disabled={fomodGroupType(group) === "selectall" || isInstallCandidateBusy(candidate)}
-                                        on:change={(event) => setCandidatePluginSelection(candidate, installer, group, plugin, event.currentTarget.checked)}
+                                        on:change={(event) => setCandidatePluginSelection(candidate, group, plugin, event.currentTarget.checked)}
                                       />
                                       <span>
                                         <strong>{plugin.name}</strong>
