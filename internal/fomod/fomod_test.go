@@ -2,6 +2,7 @@ package fomod
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -678,6 +679,71 @@ func TestBuildPlanOrdersFOMODFilePriorityLowToHigh(t *testing.T) {
 	}
 	if filepath.Base(plan.Instructions[1].SourcePath) != "high.txt" {
 		t.Fatalf("higher priority file should be staged last: %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanRequiresSatisfiedModuleDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <moduleDependencies operator="And">
+    <fommDependency version="5.0" />
+    <gameDependency version="1.10.0" />
+  </moduleDependencies>
+  <requiredInstallFiles>
+    <file source="base.txt" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "base.txt"), "base")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installer.ModuleDependencies == nil || len(installer.ModuleDependencies.FOMMDependencies) != 1 || len(installer.ModuleDependencies.GameDependencies) != 1 {
+		t.Fatalf("module dependencies were not parsed: %+v", installer.ModuleDependencies)
+	}
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:     "fallout4-data-root",
+		PlannerID:   "vortex:fallout4:fomod",
+		TargetRoot:  "Data",
+		GameVersion: "1.10.984.0",
+		HostVersion: "5.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Data/base.txt" {
+		t.Fatalf("module dependency plan = %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanBlocksUnsatisfiedModuleDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <moduleDependencies operator="And">
+    <gameDependency version="2.0.0" />
+  </moduleDependencies>
+  <requiredInstallFiles>
+    <file source="base.txt" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "base.txt"), "base")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:     "fallout4-data-root",
+		PlannerID:   "vortex:fallout4:fomod",
+		TargetRoot:  "Data",
+		GameVersion: "1.10.984.0",
+		HostVersion: "5.1",
+	})
+	if err == nil {
+		t.Fatal("expected unsatisfied module dependencies to block the plan")
+	}
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("error = %T %v, want UnsupportedError", err, err)
 	}
 }
 

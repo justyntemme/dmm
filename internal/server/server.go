@@ -83,7 +83,10 @@ var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan t
 
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
 
-const jobTypeSteamWorkshopAction = "steam-workshop-action"
+const (
+	jobTypeSteamWorkshopAction = "steam-workshop-action"
+	fomodHostVersion           = "5.1"
+)
 
 type installerChoiceRequiredError struct {
 	Kind      string
@@ -2294,6 +2297,7 @@ func (s *Server) fomodPlanOptions(ctx context.Context, appID string) (fomod.Plan
 		TargetRoot:        choiceSpec.TargetRoot,
 		StopFolders:       choiceSpec.StopFolders,
 		GameVersion:       game.Version,
+		HostVersion:       fomodHostVersion,
 		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	}, nil
 }
@@ -2548,6 +2552,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		TargetRoot:        choiceSpec.TargetRoot,
 		StopFolders:       choiceSpec.StopFolders,
 		GameVersion:       game.Version,
+		HostVersion:       fomodHostVersion,
 		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	})
 	if err != nil {

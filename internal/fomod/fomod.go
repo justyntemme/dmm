@@ -19,6 +19,7 @@ import (
 type Installer struct {
 	Name                string               `json:"name"`
 	ModuleConfig        string               `json:"module_config"`
+	ModuleDependencies  *DependencyGroup     `json:"module_dependencies,omitempty"`
 	RequiredFiles       []FileEntry          `json:"required_files,omitempty"`
 	ConditionalPatterns []ConditionalPattern `json:"conditional_patterns,omitempty"`
 	Steps               []Step               `json:"steps"`
@@ -78,6 +79,7 @@ type DependencyGroup struct {
 	FlagDependencies      []FlagDependency  `json:"flag_dependencies,omitempty"`
 	FileDependencies      []FileDependency  `json:"file_dependencies,omitempty"`
 	GameDependencies      []GameDependency  `json:"game_dependencies,omitempty"`
+	FOMMDependencies      []FOMMDependency  `json:"fomm_dependencies,omitempty"`
 	NestedDependencies    []DependencyGroup `json:"nested_dependencies,omitempty"`
 	UnsupportedDependency bool              `json:"unsupported_dependency,omitempty"`
 }
@@ -96,6 +98,10 @@ type GameDependency struct {
 	Version string `json:"version"`
 }
 
+type FOMMDependency struct {
+	Version string `json:"version"`
+}
+
 type FileStateResolver func(relative string) string
 
 type PlanOptions struct {
@@ -104,12 +110,14 @@ type PlanOptions struct {
 	TargetRoot        string
 	StopFolders       []string
 	GameVersion       string
+	HostVersion       string
 	FileStates        map[string]string
 	FileStateResolver FileStateResolver
 }
 
 type configXML struct {
 	ModuleName              string                     `xml:"moduleName"`
+	ModuleDependencies      dependenciesXML            `xml:"moduleDependencies"`
 	RequiredInstallFiles    fileContainerXML           `xml:"requiredInstallFiles"`
 	ConditionalFileInstalls conditionalFileInstallsXML `xml:"conditionalFileInstalls"`
 	InstallSteps            installStepsXML            `xml:"installSteps"`
@@ -210,6 +218,7 @@ type dependenciesXML struct {
 	FlagDependencies []flagDependencyXML `xml:"flagDependency"`
 	FileDependencies []fileDependencyXML `xml:"fileDependency"`
 	GameDependencies []gameDependencyXML `xml:"gameDependency"`
+	FOMMDependencies []gameDependencyXML `xml:"fommDependency"`
 	Dependencies     []dependenciesXML   `xml:"dependencies"`
 }
 
@@ -255,6 +264,10 @@ func Parse(root string) (Installer, error) {
 		RequiredFiles:       cfg.RequiredInstallFiles.entries(),
 		ConditionalPatterns: cfg.ConditionalFileInstalls.patterns(),
 		Steps:               []Step{},
+	}
+	if cfg.ModuleDependencies.present() {
+		moduleDependencies := cfg.ModuleDependencies.group()
+		installer.ModuleDependencies = &moduleDependencies
 	}
 	if installer.Name == "" {
 		installer.Name = "FOMOD installer"
@@ -402,6 +415,9 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		Instructions: []installplan.Instruction{},
 	}
 	stopFolders := normalizedStopFolders(options.StopFolders)
+	if installer.ModuleDependencies != nil && !dependencyGroupMatchesWithOptions(*installer.ModuleDependencies, nil, options) {
+		return installplan.Plan{}, installplan.Unsupported("FOMOD module dependencies are not satisfied")
+	}
 	for _, entry := range installer.RequiredFiles {
 		if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 			return installplan.Plan{}, err
@@ -440,7 +456,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		}
 	}
 	for _, pattern := range installer.ConditionalPatterns {
-		if !dependencyGroupMatchesWithGameVersion(pattern.Dependencies, selectedFlags, options.FileStates, options.FileStateResolver, options.GameVersion) {
+		if !dependencyGroupMatchesWithOptions(pattern.Dependencies, selectedFlags, options) {
 			continue
 		}
 		for _, entry := range pattern.Files {
@@ -740,6 +756,13 @@ func (d dependenciesXML) group() DependencyGroup {
 		}
 		group.GameDependencies = append(group.GameDependencies, GameDependency{Version: version})
 	}
+	for _, dependency := range d.FOMMDependencies {
+		version := strings.TrimSpace(dependency.Version)
+		if version == "" {
+			continue
+		}
+		group.FOMMDependencies = append(group.FOMMDependencies, FOMMDependency{Version: version})
+	}
 	return group
 }
 
@@ -748,6 +771,7 @@ func (d dependenciesXML) present() bool {
 		len(d.FlagDependencies) > 0 ||
 		len(d.FileDependencies) > 0 ||
 		len(d.GameDependencies) > 0 ||
+		len(d.FOMMDependencies) > 0 ||
 		len(d.Dependencies) > 0
 }
 
@@ -773,10 +797,14 @@ func parseXMLBool(value string) bool {
 }
 
 func dependencyGroupMatches(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver) bool {
-	return dependencyGroupMatchesWithGameVersion(group, flags, fileStates, fileStateResolver, "")
+	return dependencyGroupMatchesWithGameVersion(group, flags, fileStates, fileStateResolver, "", "")
 }
 
-func dependencyGroupMatchesWithGameVersion(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver, gameVersion string) bool {
+func dependencyGroupMatchesWithOptions(group DependencyGroup, flags map[string]string, options PlanOptions) bool {
+	return dependencyGroupMatchesWithGameVersion(group, flags, options.FileStates, options.FileStateResolver, options.GameVersion, options.HostVersion)
+}
+
+func dependencyGroupMatchesWithGameVersion(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver, gameVersion string, hostVersion string) bool {
 	if group.UnsupportedDependency {
 		return false
 	}
@@ -790,8 +818,11 @@ func dependencyGroupMatchesWithGameVersion(group DependencyGroup, flags map[stri
 	for _, dependency := range group.GameDependencies {
 		results = append(results, gameDependencyMatches(dependency, gameVersion))
 	}
+	for _, dependency := range group.FOMMDependencies {
+		results = append(results, fommDependencyMatches(dependency, hostVersion))
+	}
 	for _, nested := range group.NestedDependencies {
-		results = append(results, dependencyGroupMatchesWithGameVersion(nested, flags, fileStates, fileStateResolver, gameVersion))
+		results = append(results, dependencyGroupMatchesWithGameVersion(nested, flags, fileStates, fileStateResolver, gameVersion, hostVersion))
 	}
 	if len(results) == 0 {
 		return true
@@ -812,6 +843,15 @@ func dependencyGroupMatchesWithGameVersion(group DependencyGroup, flags map[stri
 		}
 		return true
 	}
+}
+
+func fommDependencyMatches(dependency FOMMDependency, hostVersion string) bool {
+	required := strings.TrimSpace(dependency.Version)
+	current := strings.TrimSpace(hostVersion)
+	if required == "" || current == "" {
+		return false
+	}
+	return compareLooseVersions(current, required) >= 0
 }
 
 func gameDependencyMatches(dependency GameDependency, gameVersion string) bool {
@@ -975,7 +1015,7 @@ func effectivePluginTypes(plugins []Plugin, flags map[string]string, options Pla
 
 func effectivePluginType(plugin Plugin, flags map[string]string, options PlanOptions) string {
 	for _, rule := range plugin.TypeRules {
-		if dependencyGroupMatchesWithGameVersion(rule.Dependencies, flags, options.FileStates, options.FileStateResolver, options.GameVersion) {
+		if dependencyGroupMatchesWithOptions(rule.Dependencies, flags, options) {
 			return strings.TrimSpace(rule.Type)
 		}
 	}
@@ -986,7 +1026,7 @@ func stepIsVisible(step Step, flags map[string]string, options PlanOptions) bool
 	if step.Visibility == nil {
 		return true
 	}
-	return dependencyGroupMatchesWithGameVersion(*step.Visibility, flags, options.FileStates, options.FileStateResolver, options.GameVersion)
+	return dependencyGroupMatchesWithOptions(*step.Visibility, flags, options)
 }
 
 func pluginsByID(plugins []Plugin) map[string]Plugin {
