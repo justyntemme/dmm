@@ -6644,7 +6644,13 @@ func installedModType(mod storage.InstalledMod) string {
 }
 
 func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage.Game, mod storage.InstalledMod) ([]deploy.FileMapping, error) {
-	stagingPath := s.effectiveStagingPath(mod)
+	stagingPath := strings.TrimSpace(mod.StagingPath)
+	if stagingPath == "" {
+		return nil, fmt.Errorf("%w: installed mod %q has no staging path; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+	}
+	if info, err := os.Stat(stagingPath); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("%w: installed mod %q staging path is missing; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+	}
 	manifestFiles, err := stagedManifestFiles(mod.ManifestJSON)
 	if err != nil {
 		return nil, err
@@ -6750,25 +6756,8 @@ func (s *Server) deployProgressUpdater(jobID, prefix string) deploy.ProgressFunc
 	}
 }
 
-func (s *Server) effectiveStagingPath(mod storage.InstalledMod) string {
-	canonical := filepath.Join(
-		s.cfg.DataDir,
-		"staging",
-		mod.Catalog,
-		mod.SourceGameDomain,
-		"mods",
-		mod.SourceModID,
-		"files",
-		mod.SourceFileID,
-	)
-	if info, err := os.Stat(canonical); err == nil && info.IsDir() {
-		return canonical
-	}
-	return mod.StagingPath
-}
-
 func (s *Server) removeStagingPath(mod storage.InstalledMod) error {
-	path := s.effectiveStagingPath(mod)
+	path := strings.TrimSpace(mod.StagingPath)
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}

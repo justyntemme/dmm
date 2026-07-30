@@ -4680,24 +4680,6 @@ func TestAnnotateSteamWorkshopSupportUsesExtensionPolicy(t *testing.T) {
 	}
 }
 
-func TestEffectiveStagingPathPrefersCurrentDataDir(t *testing.T) {
-	srv := newTestServer(t)
-	canonical := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
-	if err := os.MkdirAll(canonical, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	got := srv.effectiveStagingPath(storage.InstalledMod{
-		Catalog:          "nexus",
-		SourceGameDomain: "stardewvalley",
-		SourceModID:      "541",
-		SourceFileID:     "160470",
-		StagingPath:      "/old/data/staging/nexus/stardewvalley/mods/541/files/160470",
-	})
-	if got != canonical {
-		t.Fatalf("staging path = %q, want %q", got, canonical)
-	}
-}
-
 func TestBuildGameDeployPlanAllowsEmptyProfileToRemoveCurrentDeployment(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
