@@ -123,15 +123,13 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 		targetKey := filepath.Clean(action.TargetPath)
 		desiredTargets[targetKey] = struct{}{}
 		if st, err := os.Lstat(action.TargetPath); err == nil {
-			if st.Mode()&os.ModeSymlink != 0 {
-				target, err := os.Readlink(action.TargetPath)
-				if err == nil && target == action.SourcePath {
-					action.Operation = "keep"
-					plan.Actions = append(plan.Actions, action)
-					continue
-				}
+			managedFile, managed := managedByTarget[targetKey]
+			if deploymentTargetMatches(action, st, managed, managedFile) {
+				action.Operation = "keep"
+				plan.Actions = append(plan.Actions, action)
+				continue
 			}
-			if _, ok := managedByTarget[targetKey]; ok {
+			if managed {
 				action.Operation = "replace"
 				plan.Actions = append(plan.Actions, action)
 				continue
@@ -177,6 +175,46 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 		return plan.Conflicts[i].TargetRelative < plan.Conflicts[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func deploymentTargetMatches(action Action, targetInfo os.FileInfo, managed bool, managedFile AppliedFile) bool {
+	switch action.Strategy {
+	case StrategySymlink:
+		if targetInfo.Mode()&os.ModeSymlink == 0 {
+			return false
+		}
+		target, err := os.Readlink(action.TargetPath)
+		return err == nil && target == action.SourcePath
+	case StrategyHardlink:
+		if !managed || managedFile.Strategy != StrategyHardlink {
+			return false
+		}
+		sourceInfo, err := os.Stat(action.SourcePath)
+		if err != nil {
+			return false
+		}
+		targetStat, err := os.Stat(action.TargetPath)
+		return err == nil && os.SameFile(sourceInfo, targetStat)
+	case StrategyCopy:
+		if !managed || managedFile.Strategy != StrategyCopy || targetInfo.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		expected := strings.TrimSpace(action.ChecksumSHA256)
+		if expected == "" {
+			sum, err := fileSHA256(action.SourcePath)
+			if err != nil {
+				return false
+			}
+			expected = sum
+		}
+		if strings.TrimSpace(managedFile.ChecksumSHA256) != "" && managedFile.ChecksumSHA256 != expected {
+			return false
+		}
+		targetSum, err := fileSHA256(action.TargetPath)
+		return err == nil && targetSum == expected
+	default:
+		return false
+	}
 }
 
 func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {

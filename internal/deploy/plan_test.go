@@ -221,6 +221,94 @@ func TestBuildPlanReplacesExistingManagedTarget(t *testing.T) {
 	}
 }
 
+func TestBuildPlanKeepsExistingManagedCopyWhenChecksumMatches(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	source := filepath.Join(staging, "mod", "launcher")
+	targetPath := filepath.Join(target, "launcher")
+	for _, dir := range []string{filepath.Dir(source), filepath.Dir(targetPath)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(source, []byte("launcher"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := fileSHA256(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte("launcher"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlanWithManagedFiles(staging, target, StrategySymlink, []FileMapping{{
+		SourceRelative: "mod/launcher",
+		TargetRelative: "launcher",
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: sum,
+	}}, []AppliedFile{{
+		SourcePath:     source,
+		TargetPath:     targetPath,
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: sum,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "keep" {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+}
+
+func TestBuildPlanReplacesExistingManagedCopyWhenChecksumDiffers(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	source := filepath.Join(staging, "mod", "launcher")
+	targetPath := filepath.Join(target, "launcher")
+	for _, dir := range []string{filepath.Dir(source), filepath.Dir(targetPath)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(source, []byte("new launcher"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := fileSHA256(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte("old launcher"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlanWithManagedFiles(staging, target, StrategySymlink, []FileMapping{{
+		SourceRelative: "mod/launcher",
+		TargetRelative: "launcher",
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: sum,
+	}}, []AppliedFile{{
+		SourcePath:     source,
+		TargetPath:     targetPath,
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: sum,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "replace" {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+}
+
 func TestBuildPlanRemovesManagedTargetAbsentFromDesiredFiles(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")
