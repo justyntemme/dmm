@@ -70,11 +70,37 @@ func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersi
 	if gamePath == "" {
 		return sdk.GameVersionResult{}, nil
 	}
-	data, err := os.ReadFile(filepath.Join(gamePath, "version.txt"))
+	versionPath, err := caseInsensitiveChild(gamePath, "version.txt")
 	if err != nil {
 		return sdk.GameVersionResult{}, err
 	}
-	return sdk.GameVersionResult{Version: strings.TrimSpace(string(data)), Source: "version.txt"}, nil
+	data, err := os.ReadFile(versionPath)
+	if err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	return sdk.GameVersionResult{Version: strings.TrimSpace(string(data)), Source: filepath.Base(versionPath)}, nil
+}
+
+func caseInsensitiveChild(root, name string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", os.ErrNotExist
+	}
+	direct := filepath.Join(root, name)
+	if _, err := os.Stat(direct); err == nil {
+		return direct, nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Name(), name) {
+			return filepath.Join(root, entry.Name()), nil
+		}
+	}
+	return "", os.ErrNotExist
 }
 
 func sources() []sdk.SourceRef {

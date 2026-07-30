@@ -1,11 +1,14 @@
 package rimworld_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -53,6 +56,26 @@ func TestExtensionRegistersRimWorldCapabilities(t *testing.T) {
 	}
 	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+}
+
+func TestExtensionDetectsVersionFileCaseInsensitively(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Version.txt"), "1.6.4534 rev1234\n")
+
+	extension := gameext.MustCompileExtension(rimworld.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	result, ran, err := registry.DetectGameVersion(context.Background(), rimworld.SteamAppID, sdk.GameVersionInput{
+		GamePath: root,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ran {
+		t.Fatal("expected version provider to run")
+	}
+	if result.Version != "1.6.4534 rev1234" || !strings.EqualFold(result.Source, "version.txt") {
+		t.Fatalf("version result = %+v", result)
 	}
 }
 
