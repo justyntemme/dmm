@@ -116,6 +116,107 @@ func TestBuildPlanAppliesExtensionTargetRoot(t *testing.T) {
 	}
 }
 
+func TestBuildPlanAppliesConditionalFilesFromSelectedFlags(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Texture Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High">
+              <conditionFlags><flag name="texture">high</flag></conditionFlags>
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><file source="high.txt" /></files>
+            </plugin>
+            <plugin name="Low">
+              <conditionFlags><flag name="texture">low</flag></conditionFlags>
+              <files><file source="low.txt" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <flagDependency flag="texture" value="high" />
+        </dependencies>
+        <files>
+          <file source="conditional-high.txt" destination="textures/conditional.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`)
+	writeFile(t, filepath.Join(root, "high.txt"), "high")
+	writeFile(t, filepath.Join(root, "low.txt"), "low")
+	writeFile(t, filepath.Join(root, "conditional-high.txt"), "conditional")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installer.ConditionalPatterns) != 1 {
+		t.Fatalf("conditional patterns = %+v", installer.ConditionalPatterns)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]bool{}
+	for _, instruction := range plan.Instructions {
+		targets[instruction.TargetRelative] = true
+	}
+	if !targets["Data/high.txt"] || !targets["Data/textures/conditional.txt"] {
+		t.Fatalf("conditional files missing from %+v", plan.Instructions)
+	}
+	if targets["Data/low.txt"] {
+		t.Fatalf("unselected files included in %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanDoesNotApplyUnsupportedConditionalDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <fileDependency file="Data/SomeOtherMod.esp" state="Active" />
+        </dependencies>
+        <files>
+          <file source="conditional.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`)
+	writeFile(t, filepath.Join(root, "conditional.txt"), "conditional")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 0 {
+		t.Fatalf("unsupported conditional dependency installed files: %+v", plan.Instructions)
+	}
+}
+
 func TestBuildPlanValidatesSelectExactlyOne(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>

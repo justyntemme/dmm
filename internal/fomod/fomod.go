@@ -17,10 +17,11 @@ import (
 )
 
 type Installer struct {
-	Name          string      `json:"name"`
-	ModuleConfig  string      `json:"module_config"`
-	RequiredFiles []FileEntry `json:"required_files,omitempty"`
-	Steps         []Step      `json:"steps"`
+	Name                string               `json:"name"`
+	ModuleConfig        string               `json:"module_config"`
+	RequiredFiles       []FileEntry          `json:"required_files,omitempty"`
+	ConditionalPatterns []ConditionalPattern `json:"conditional_patterns,omitempty"`
+	Steps               []Step               `json:"steps"`
 }
 
 type Step struct {
@@ -41,6 +42,7 @@ type Plugin struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
 	Type        string      `json:"type,omitempty"`
+	Flags       []Flag      `json:"flags,omitempty"`
 	Files       []FileEntry `json:"files,omitempty"`
 }
 
@@ -51,6 +53,28 @@ type FileEntry struct {
 	IsFolder    bool   `json:"is_folder,omitempty"`
 }
 
+type Flag struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ConditionalPattern struct {
+	Dependencies DependencyGroup `json:"dependencies"`
+	Files        []FileEntry     `json:"files"`
+}
+
+type DependencyGroup struct {
+	Operator              string            `json:"operator,omitempty"`
+	FlagDependencies      []FlagDependency  `json:"flag_dependencies,omitempty"`
+	NestedDependencies    []DependencyGroup `json:"nested_dependencies,omitempty"`
+	UnsupportedDependency bool              `json:"unsupported_dependency,omitempty"`
+}
+
+type FlagDependency struct {
+	Flag  string `json:"flag"`
+	Value string `json:"value"`
+}
+
 type PlanOptions struct {
 	ModType    string
 	PlannerID  string
@@ -58,9 +82,10 @@ type PlanOptions struct {
 }
 
 type configXML struct {
-	ModuleName           string           `xml:"moduleName"`
-	RequiredInstallFiles fileContainerXML `xml:"requiredInstallFiles"`
-	InstallSteps         installStepsXML  `xml:"installSteps"`
+	ModuleName              string                     `xml:"moduleName"`
+	RequiredInstallFiles    fileContainerXML           `xml:"requiredInstallFiles"`
+	ConditionalFileInstalls conditionalFileInstallsXML `xml:"conditionalFileInstalls"`
+	InstallSteps            installStepsXML            `xml:"installSteps"`
 }
 
 type installStepsXML struct {
@@ -89,6 +114,7 @@ type pluginsXML struct {
 type pluginXML struct {
 	Name           string            `xml:"name,attr"`
 	Description    string            `xml:"description"`
+	ConditionFlags conditionFlagsXML `xml:"conditionFlags"`
 	TypeDescriptor typeDescriptorXML `xml:"typeDescriptor"`
 	Files          fileContainerXML  `xml:"files"`
 }
@@ -110,6 +136,50 @@ type fileXML struct {
 	Source      string `xml:"source,attr"`
 	Destination string `xml:"destination,attr"`
 	Priority    string `xml:"priority,attr"`
+}
+
+type conditionFlagsXML struct {
+	Flags []flagXML `xml:"flag"`
+}
+
+type flagXML struct {
+	Name  string `xml:"name,attr"`
+	Value string `xml:",chardata"`
+}
+
+type conditionalFileInstallsXML struct {
+	Patterns conditionalPatternsXML `xml:"patterns"`
+}
+
+type conditionalPatternsXML struct {
+	Patterns []conditionalPatternXML `xml:"pattern"`
+}
+
+type conditionalPatternXML struct {
+	Dependencies dependenciesXML  `xml:"dependencies"`
+	Files        fileContainerXML `xml:"files"`
+}
+
+type dependenciesXML struct {
+	Operator         string              `xml:"operator,attr"`
+	FlagDependencies []flagDependencyXML `xml:"flagDependency"`
+	FileDependencies []fileDependencyXML `xml:"fileDependency"`
+	GameDependencies []gameDependencyXML `xml:"gameDependency"`
+	Dependencies     []dependenciesXML   `xml:"dependencies"`
+}
+
+type flagDependencyXML struct {
+	Flag  string `xml:"flag,attr"`
+	Value string `xml:"value,attr"`
+}
+
+type fileDependencyXML struct {
+	File  string `xml:"file,attr"`
+	State string `xml:"state,attr"`
+}
+
+type gameDependencyXML struct {
+	Version string `xml:"version,attr"`
 }
 
 func Parse(root string) (Installer, error) {
@@ -135,10 +205,11 @@ func Parse(root string) (Installer, error) {
 		return Installer{}, err
 	}
 	installer := Installer{
-		Name:          strings.TrimSpace(cfg.ModuleName),
-		ModuleConfig:  filepath.ToSlash(rel),
-		RequiredFiles: cfg.RequiredInstallFiles.entries(),
-		Steps:         []Step{},
+		Name:                strings.TrimSpace(cfg.ModuleName),
+		ModuleConfig:        filepath.ToSlash(rel),
+		RequiredFiles:       cfg.RequiredInstallFiles.entries(),
+		ConditionalPatterns: cfg.ConditionalFileInstalls.patterns(),
+		Steps:               []Step{},
 	}
 	if installer.Name == "" {
 		installer.Name = "FOMOD installer"
@@ -172,6 +243,7 @@ func Parse(root string) (Installer, error) {
 					Name:        name,
 					Description: strings.TrimSpace(pluginXML.Description),
 					Type:        strings.TrimSpace(pluginXML.TypeDescriptor.Type.Name),
+					Flags:       pluginXML.ConditionFlags.flags(),
 					Files:       pluginXML.Files.entries(),
 				})
 			}
@@ -246,6 +318,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 			return installplan.Plan{}, err
 		}
 	}
+	selectedFlags := map[string]string{}
 	for _, step := range installer.Steps {
 		for _, group := range step.Groups {
 			selected, err := selectedPlugins(group, selections[group.ID])
@@ -253,11 +326,27 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 				return installplan.Plan{}, err
 			}
 			for _, plugin := range selected {
+				for _, flag := range plugin.Flags {
+					name := strings.TrimSpace(flag.Name)
+					if name != "" {
+						selectedFlags[name] = strings.TrimSpace(flag.Value)
+					}
+				}
 				for _, entry := range plugin.Files {
 					if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
+			}
+		}
+	}
+	for _, pattern := range installer.ConditionalPatterns {
+		if !dependencyGroupMatches(pattern.Dependencies, selectedFlags) {
+			continue
+		}
+		for _, entry := range pattern.Files {
+			if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
+				return installplan.Plan{}, err
 			}
 		}
 	}
@@ -404,6 +493,57 @@ func (c fileContainerXML) entries() []FileEntry {
 	return out
 }
 
+func (c conditionFlagsXML) flags() []Flag {
+	var out []Flag
+	for _, flag := range c.Flags {
+		name := strings.TrimSpace(flag.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, Flag{
+			Name:  name,
+			Value: strings.TrimSpace(flag.Value),
+		})
+	}
+	return out
+}
+
+func (c conditionalFileInstallsXML) patterns() []ConditionalPattern {
+	var out []ConditionalPattern
+	for _, pattern := range c.Patterns.Patterns {
+		files := pattern.Files.entries()
+		if len(files) == 0 {
+			continue
+		}
+		out = append(out, ConditionalPattern{
+			Dependencies: pattern.Dependencies.group(),
+			Files:        files,
+		})
+	}
+	return out
+}
+
+func (d dependenciesXML) group() DependencyGroup {
+	group := DependencyGroup{
+		Operator:              normalizeDependencyOperator(d.Operator),
+		UnsupportedDependency: len(d.FileDependencies) > 0 || len(d.GameDependencies) > 0,
+	}
+	for _, dependency := range d.FlagDependencies {
+		flag := strings.TrimSpace(dependency.Flag)
+		if flag == "" {
+			continue
+		}
+		group.FlagDependencies = append(group.FlagDependencies, FlagDependency{
+			Flag:  flag,
+			Value: strings.TrimSpace(dependency.Value),
+		})
+	}
+	for _, nested := range d.Dependencies {
+		group.NestedDependencies = append(group.NestedDependencies, nested.group())
+	}
+	return group
+}
+
 func (f fileXML) entry(isFolder bool) FileEntry {
 	priority, _ := strconv.Atoi(strings.TrimSpace(f.Priority))
 	return FileEntry{
@@ -411,6 +551,57 @@ func (f fileXML) entry(isFolder bool) FileEntry {
 		Destination: strings.TrimSpace(filepath.ToSlash(f.Destination)),
 		Priority:    priority,
 		IsFolder:    isFolder,
+	}
+}
+
+func dependencyGroupMatches(group DependencyGroup, flags map[string]string) bool {
+	if group.UnsupportedDependency {
+		return false
+	}
+	var results []bool
+	for _, dependency := range group.FlagDependencies {
+		results = append(results, flagDependencyMatches(dependency, flags))
+	}
+	for _, nested := range group.NestedDependencies {
+		results = append(results, dependencyGroupMatches(nested, flags))
+	}
+	if len(results) == 0 {
+		return true
+	}
+	switch normalizeDependencyOperator(group.Operator) {
+	case "or":
+		for _, result := range results {
+			if result {
+				return true
+			}
+		}
+		return false
+	default:
+		for _, result := range results {
+			if !result {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func flagDependencyMatches(dependency FlagDependency, flags map[string]string) bool {
+	flag := strings.TrimSpace(dependency.Flag)
+	if flag == "" {
+		return false
+	}
+	want := strings.TrimSpace(dependency.Value)
+	got, ok := flags[flag]
+	return ok && strings.EqualFold(strings.TrimSpace(got), want)
+}
+
+func normalizeDependencyOperator(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "or":
+		return "or"
+	default:
+		return "and"
 	}
 }
 
