@@ -3574,7 +3574,7 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	}
 	target := filepath.Join(gamePath, "Data", "Choice", "base.txt")
 	if _, err := os.Readlink(target); err != nil {
-		t.Fatalf("expected auto-deployed symlink: %v", err)
+		t.Fatalf("expected deployed symlink: %v", err)
 	}
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
