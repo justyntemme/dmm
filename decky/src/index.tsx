@@ -731,22 +731,36 @@ async function maybeShowInstallerChoiceModal(job: Job) {
   if (!appID || !Number.isFinite(candidateID)) return;
   const key = String(candidateID);
   if (shownInstallerChoiceModals.has(key)) return;
-  shownInstallerChoiceModals.add(key);
   try {
     const result = await call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID);
     if (!result.ok) {
-      shownInstallerChoiceModals.delete(key);
       await logFrontendEvent("installer choice candidates load failed", { app_id: appID, candidate_id: candidateID, error: result.error || "" });
       showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
       return;
     }
     const candidate = result.candidates.find((item) => item.id === candidateID);
     if (!candidate || !installerForCandidate(candidate)) {
-      shownInstallerChoiceModals.delete(key);
       await logFrontendEvent("installer choice candidate missing installer json", { app_id: appID, candidate_id: candidateID });
       showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
       return;
     }
+    await openInstallerChoiceModalForCandidate(appID, candidate, "event");
+  } catch (err) {
+    await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidateID, error: err instanceof Error ? err.message : String(err) });
+    showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
+  }
+}
+
+async function openInstallerChoiceModalForCandidate(appID: string, candidate: InstallCandidate, source: string, onApplied?: () => void) {
+  const key = String(candidate.id);
+  if (shownInstallerChoiceModals.has(key)) return;
+  if (!installerForCandidate(candidate)) {
+    await logFrontendEvent("installer choice modal skipped for candidate without installer", { app_id: appID, candidate_id: candidate.id, source });
+    showLaunchToast("DMM installer choices unavailable", "Open the phone UI to review this installer item.", false);
+    return;
+  }
+  shownInstallerChoiceModals.add(key);
+  try {
     let modal: { Close: () => void } | null = null;
     const closeModal = () => {
       modal?.Close();
@@ -760,15 +774,16 @@ async function maybeShowInstallerChoiceModal(job: Job) {
           shownInstallerChoiceModals.delete(key);
           void seedInstallNotifications({ seed: true });
           void syncLaunchActions();
+          onApplied?.();
         }}
       />,
       window,
       { strTitle: "DMM Installer Choices", bNeverPopOut: true, popupWidth: 520, popupHeight: 720 }
     );
-    await logFrontendEvent("installer choice modal opened", { app_id: appID, candidate_id: candidateID });
+    await logFrontendEvent("installer choice modal opened", { app_id: appID, candidate_id: candidate.id, source });
   } catch (err) {
     shownInstallerChoiceModals.delete(key);
-    await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidateID, error: err instanceof Error ? err.message : String(err) });
+    await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidate.id, source, error: err instanceof Error ? err.message : String(err) });
     showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
   }
 }
@@ -885,6 +900,7 @@ function Content() {
   const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
+  const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [gameSearch, setGameSearch] = useState<string>("");
@@ -895,6 +911,7 @@ function Content() {
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
   const [focusedGameID, setFocusedGameID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
+  const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
   const [focusedModAction, setFocusedModAction] = useState<string>("");
 
   async function refresh() {
@@ -964,6 +981,7 @@ function Content() {
     setSelectedDeckyGameID("");
     setFocusedModID(null);
     setFocusedModAction("");
+    setFocusedCandidateID(null);
     setModSearch("");
   }
 
@@ -988,11 +1006,13 @@ function Content() {
     if (!appID) {
       setDeckyProfiles([]);
       setDeckyMods([]);
+      setDeckyInstallCandidates([]);
       return;
     }
-    const [profilesResult, modsResult] = await Promise.all([
+    const [profilesResult, modsResult, candidatesResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
-      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID)
+      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
+      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID)
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
@@ -1004,6 +1024,12 @@ function Content() {
     }
     setDeckyProfiles(profilesResult.profiles);
     setDeckyMods(modsResult.mods);
+    if (candidatesResult.ok) {
+      setDeckyInstallCandidates(candidatesResult.candidates);
+    } else {
+      setDeckyInstallCandidates([]);
+      setError(candidatesResult.error ?? "Unable to load installer items.");
+    }
   }
 
   async function refreshDeckyMods(appID = selectedDeckyGameID) {
@@ -1112,6 +1138,52 @@ function Content() {
       window,
       { strTitle: "Remove Mod", bNeverPopOut: true }
     );
+  }
+
+  function askClearDeckyInstallCandidates() {
+    if (!selectedDeckyGameID || deckyInstallCandidates.length === 0) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle="Clear Installer Items"
+        strDescription="DMM will remove blocked installer items and choice requests for this game. Downloaded archives are kept in the cache."
+        strOKButtonText="Clear Items"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void clearDeckyInstallCandidates();
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Clear Installer Items", bNeverPopOut: true }
+    );
+  }
+
+  async function clearDeckyInstallCandidates() {
+    if (!selectedDeckyGameID) return;
+    try {
+      setError("");
+      setModsResult("");
+      const result = await call<[string], { ok: boolean; error?: string; result?: { deleted?: number } }>("clear_game_install_candidates", selectedDeckyGameID);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to clear installer items.");
+        return;
+      }
+      setModsResult(`Cleared ${result.result?.deleted ?? deckyInstallCandidates.length} installer item(s).`);
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function openDeckyInstallerChoice(candidate: InstallCandidate) {
+    if (!selectedDeckyGameID) return;
+    void openInstallerChoiceModalForCandidate(selectedDeckyGameID, candidate, "decky-sidebar", () => {
+      void loadDeckyGameState(selectedDeckyGameID);
+    });
   }
 
   async function removeDeckyMod(mod: ManagedMod) {
@@ -1518,6 +1590,58 @@ function Content() {
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
             )}
           </PanelSectionRow>
+          {deckyInstallCandidates.length > 0 && (
+            <PanelSectionRow>
+              <div style={{ boxSizing: "border-box", display: "grid", gap: "8px", minWidth: 0, paddingRight: "4px", width: "100%" }}>
+                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+                  <div style={{ fontWeight: 800 }}>Action Center</div>
+                  <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{deckyInstallCandidates.length} item{deckyInstallCandidates.length === 1 ? "" : "s"}</div>
+                </div>
+                {deckyInstallCandidates.map((candidate) => {
+                  const focused = focusedCandidateID === candidate.id;
+                  const installer = installerForCandidate(candidate);
+                  return (
+                    <div key={candidate.id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", minWidth: 0, width: "100%" }}>
+                      <Focusable
+                        onActivate={() => {
+                          if (installer) openDeckyInstallerChoice(candidate);
+                        }}
+                        onGamepadFocus={() => setFocusedCandidateID(candidate.id)}
+                        onFocus={() => setFocusedCandidateID(candidate.id)}
+                        onMouseEnter={() => setFocusedCandidateID(candidate.id)}
+                        style={{
+                          ...deckyFocusableCardStyle(focused),
+                          display: "grid",
+                          gap: "5px",
+                          padding: "10px"
+                        }}
+                      >
+                        <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{candidate.name}</div>
+                        <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {candidate.status === "blocked" ? "Blocked installer" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}
+                        </div>
+                        {candidate.reason && (
+                          <div style={{ color: candidate.status === "blocked" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                            {candidate.reason}
+                          </div>
+                        )}
+                      </Focusable>
+                      <Focusable flow-children="row" style={{ boxSizing: "border-box", display: "grid", gap: "6px", gridTemplateColumns: installer ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)", minWidth: 0, width: "100%" }}>
+                        {installer && (
+                          <Focusable onActivate={() => openDeckyInstallerChoice(candidate)} style={deckyCompactActionStyle("neutral", focused)}>
+                            Open Choices
+                          </Focusable>
+                        )}
+                        <Focusable onActivate={askClearDeckyInstallCandidates} style={deckyCompactActionStyle("danger")}>
+                          Clear Items
+                        </Focusable>
+                      </Focusable>
+                    </div>
+                  );
+                })}
+              </div>
+            </PanelSectionRow>
+          )}
           {deckyMods.length > 0 && (
             <PanelSectionRow>
               <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />

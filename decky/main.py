@@ -291,6 +291,18 @@ class Plugin:
             return {"ok": True, "candidates": result}
         return {"ok": False, "error": "Unexpected installer choices response.", "candidates": []}
 
+    async def clear_game_install_candidates(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("DELETE", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to clear installer items."}
+        self._log(f"install candidates cleared app_id={app_id} result={result}")
+        return {"ok": True, "result": result}
+
     async def apply_install_candidate(self, app_id, candidate_id, selections):
         app_id = str(app_id or "").strip()
         candidate_id = str(candidate_id or "").strip()
