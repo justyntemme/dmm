@@ -42,6 +42,10 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	if pakFolder == "." {
 		pakFolder = ""
 	}
+	targetRoot := strings.TrimSpace(input.TargetRoot)
+	if targetRoot == "" {
+		return installplan.Plan{}, errors.New("Spyro Reignited Trilogy installer has no target root")
+	}
 	instructions := make([]installplan.Instruction, 0, len(files))
 	for _, file := range files {
 		rel, ok := trimArchiveRoot(file, pakFolder)
@@ -52,7 +56,7 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 			Kind:            installplan.InstructionKindCopy,
 			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
 			StagingRelative: rel,
-			TargetRelative:  filepath.ToSlash(filepath.Join(pakRoot, rel)),
+			TargetRelative:  filepath.ToSlash(filepath.Join(targetRoot, rel)),
 		})
 	}
 	if len(instructions) == 0 {

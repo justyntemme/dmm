@@ -42,6 +42,7 @@ func TestInstallerBuildsPakFolderPlan(t *testing.T) {
 
 	extension := gameext.MustCompileExtension(spyroreignitedtrilogy.Extension())
 	spec := extension.InstallPlan.Installers[0]
+	targetRoot := extension.InstallPlan.ModTypes[0].TargetRoot
 	if !spec.CustomMatch(root) {
 		t.Fatal("Spyro installer did not match a .pak archive")
 	}
@@ -49,7 +50,7 @@ func TestInstallerBuildsPakFolderPlan(t *testing.T) {
 		GameID:        spyroreignitedtrilogy.VortexGameID,
 		ExtractedRoot: root,
 		Installer:     spec,
-		TargetRoot:    spec.TargetRoot,
+		TargetRoot:    targetRoot,
 	})
 	if err != nil {
 		t.Fatalf("build plan: %v", err)
