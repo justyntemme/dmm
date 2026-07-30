@@ -290,6 +290,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
@@ -1104,6 +1105,10 @@ type updateProfileModRequest struct {
 	Priority *int  `json:"priority"`
 }
 
+type updateProfileModOrderRequest struct {
+	ModIDs []int64 `json:"mod_ids"`
+}
+
 type updateDeploySettingsRequest struct {
 	Strategy string `json:"strategy"`
 }
@@ -1111,6 +1116,11 @@ type updateDeploySettingsRequest struct {
 type profileModUpdateResponse struct {
 	Mod   storage.InstalledMod `json:"mod"`
 	Apply profileApplyResponse `json:"apply"`
+}
+
+type profileModOrderUpdateResponse struct {
+	Mods  []storage.InstalledMod `json:"mods"`
+	Apply profileApplyResponse   `json:"apply"`
 }
 
 type profileApplyResponse struct {
@@ -3725,6 +3735,42 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 	})
 	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-update")
 	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
+}
+
+func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	var req updateProfileModOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	mods, err := s.db.SetProfileModOrder(r.Context(), profileID, req.ModIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	markUndeployableInstalledMods(mods)
+	appID := ""
+	if len(mods) > 0 {
+		appID = mods[0].SteamAppID
+	}
+	s.logger.Info("profile mod order updated", "profile_id", profileID, "mods", len(req.ModIDs), "app_id", appID)
+	if appID != "" {
+		s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+			"action":     "order_updated",
+			"profile_id": profileID,
+			"mod_ids":    req.ModIDs,
+		})
+	}
+	apply := profileApplyResponse{Status: "skipped", Message: "Profile order saved."}
+	if appID != "" {
+		apply = s.applyProfileChangesForUserAction(r.Context(), appID, "profile-mod-order")
+	}
+	writeJSON(w, http.StatusOK, profileModOrderUpdateResponse{Mods: mods, Apply: apply})
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {

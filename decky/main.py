@@ -456,6 +456,22 @@ class Plugin:
         self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)}")
         return {"ok": True, "mod": result.get("mod"), "apply": result.get("apply")}
 
+    async def set_profile_mod_order(self, app_id, profile_id, mod_ids):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        if not app_id or not profile_id:
+            return {"ok": False, "error": "app_id and profile_id are required."}
+        if not isinstance(mod_ids, list) or len(mod_ids) == 0:
+            return {"ok": False, "error": "mod_ids must be a non-empty list."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"mod_ids": mod_ids}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/mods/order", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to update mod order."}
+        self._log(f"profile mod order updated app_id={app_id} profile_id={profile_id} mods={len(mod_ids)}")
+        return {"ok": True, "mods": result.get("mods"), "apply": result.get("apply")}
+
     async def remove_game_mod(self, app_id, installed_mod_id):
         app_id = str(app_id or "").strip()
         installed_mod_id = str(installed_mod_id or "").strip()

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -3173,6 +3174,74 @@ func TestUpdateProfileModPriorityEndpoint(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"priority":-5`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"enabled":true`)) {
 		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestUpdateProfileModOrderEndpointNormalizesPriorities(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  filepath.Join(srv.cfg.DataDir, "staging", "lookup"),
+		ManifestJSON: lookupAnythingManifestJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "190000",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "190000",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "gmcm.zip"),
+		StagingPath:  filepath.Join(srv.cfg.DataDir, "staging", "gmcm"),
+		ManifestJSON: lookupAnythingManifestJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := fmt.Sprintf(`{"mod_ids":[%d,%d]}`, second.ID, first.ID)
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(first.ProfileID, 10)+"/mods/order", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var result profileModOrderUpdateResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mods) != 2 {
+		t.Fatalf("mods = %+v", result.Mods)
+	}
+	if result.Mods[0].ID != second.ID || result.Mods[0].Priority != 0 || result.Mods[1].ID != first.ID || result.Mods[1].Priority != 1 {
+		t.Fatalf("ordered mods = %+v", result.Mods)
 	}
 }
 

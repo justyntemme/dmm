@@ -1374,6 +1374,103 @@ func (db *DB) SetProfileModEnabled(ctx context.Context, profileID, installedModI
 	return db.SetProfileModState(ctx, profileID, installedModID, &enabled, nil)
 }
 
+func (db *DB) InstalledModsForProfile(ctx context.Context, profileID int64) ([]InstalledMod, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+WITH latest_download AS (
+	SELECT mod_version_id, MAX(id) AS id
+	FROM downloads
+	WHERE mod_version_id IS NOT NULL
+	GROUP BY mod_version_id
+)
+SELECT im.id, g.id, p.id, g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
+	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
+FROM profiles p
+JOIN games g ON g.id = p.game_id
+JOIN mods m ON m.game_id = g.id
+JOIN mod_versions mv ON mv.mod_id = m.id
+JOIN installed_mods im ON im.mod_version_id = mv.id
+LEFT JOIN latest_download ld ON ld.mod_version_id = mv.id
+LEFT JOIN downloads d ON d.id = ld.id
+LEFT JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = p.id
+WHERE p.id = ?
+ORDER BY COALESCE(pm.priority, 0) ASC, m.name ASC
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var mods []InstalledMod
+	for rows.Next() {
+		mod, err := scanInstalledMod(rows, "staged")
+		if err != nil {
+			return nil, err
+		}
+		mods = append(mods, mod)
+	}
+	return mods, rows.Err()
+}
+
+func (db *DB) SetProfileModOrder(ctx context.Context, profileID int64, installedModIDs []int64) ([]InstalledMod, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	if len(installedModIDs) == 0 {
+		return nil, errors.New("mod order cannot be empty")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var gameID int64
+	if err := tx.QueryRowContext(ctx, `SELECT game_id FROM profiles WHERE id = ?`, profileID).Scan(&gameID); err != nil {
+		return nil, err
+	}
+	seen := map[int64]struct{}{}
+	for priority, installedModID := range installedModIDs {
+		if installedModID <= 0 {
+			return nil, errors.New("mod order contains an invalid mod id")
+		}
+		if _, exists := seen[installedModID]; exists {
+			return nil, errors.New("mod order contains a duplicate mod id")
+		}
+		seen[installedModID] = struct{}{}
+		var belongs int
+		if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM installed_mods im
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id
+WHERE im.id = ? AND m.game_id = ?
+`, installedModID, gameID).Scan(&belongs); err != nil {
+			return nil, err
+		}
+		if belongs == 0 {
+			return nil, errors.New("mod order contains a mod outside this profile's game")
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_mods (profile_id, installed_mod_id, enabled, priority, updated_at)
+VALUES (
+	?, ?,
+	COALESCE((SELECT enabled FROM profile_mods WHERE profile_id = ? AND installed_mod_id = ?), 1),
+	?,
+	CURRENT_TIMESTAMP
+)
+ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
+	priority = excluded.priority,
+	updated_at = CURRENT_TIMESTAMP
+`, profileID, installedModID, profileID, installedModID, priority); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return db.InstalledModsForProfile(ctx, profileID)
+}
+
 func (db *DB) SetProfileModState(ctx context.Context, profileID, installedModID int64, enabled *bool, priority *int) (InstalledMod, error) {
 	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {

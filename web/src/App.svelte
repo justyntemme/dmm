@@ -312,6 +312,11 @@
     apply: ProfileApplyResult;
   };
 
+  type ProfileModOrderUpdateResult = {
+    mods: InstalledMod[];
+    apply: ProfileApplyResult;
+  };
+
   type SetDefaultProfileResult = {
     profile: Profile;
     apply: ProfileApplyResult;
@@ -846,22 +851,25 @@
     await refreshSelectedGame({ refreshPreview: true });
   }
 
-  async function setModPriority(mod: InstalledMod, priority: number) {
+  async function moveModInProfile(mod: InstalledMod, direction: -1 | 1) {
     if (!selectedProfile) return;
+    const current = [...installedMods].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    const from = current.findIndex((item) => item.id === mod.id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= current.length) return;
+    [current[from], current[to]] = [current[to], current[from]];
     error = "";
-    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
+    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/order`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ priority })
+      body: JSON.stringify({ mod_ids: current.map((item) => item.id) })
     });
     if (!response.ok) {
       error = await response.text();
       return;
     }
-    const result: ProfileModUpdateResult = await response.json();
-    installedMods = installedMods
-      .map((item) => (item.id === result.mod.id ? result.mod : item))
-      .sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    const result: ProfileModOrderUpdateResult = await response.json();
+    installedMods = result.mods.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
     handleProfileApplyResult(result.apply);
     await refreshSelectedGame({ refreshPreview: true });
   }
@@ -2192,6 +2200,7 @@
                 {#each installedMods as mod}
                   {@const metadata = primaryModMetadata(mod)}
                   {@const dependencyLabels = modDependencyLabels(mod)}
+                  {@const orderIndex = installedMods.findIndex((item) => item.id === mod.id)}
                   <article>
                     <div>
                       <strong>{mod.name}</strong>
@@ -2227,8 +2236,8 @@
                       <summary>Advanced</summary>
                       <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id} · Priority {mod.priority}</p>
                       <div class="mod-advanced-actions">
-                        <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority - 1)}>Higher Priority</button>
-                        <button type="button" class="secondary-action compact" on:click={() => setModPriority(mod, mod.priority + 1)}>Lower Priority</button>
+                        <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
+                        <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
                         <button type="button" class="secondary-action compact danger-action" on:click={() => askRemoveInstalledMod(mod)}>Remove</button>
                       </div>
                     </details>
