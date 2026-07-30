@@ -308,6 +308,16 @@ const deckyRuntimeStyles = `
 .dmm-action-grid {
   overflow-x: hidden;
 }
+.dmm-action-grid .dmm-focus-card {
+  inline-size: 100%;
+}
+.dmm-sidebar-row img {
+  flex-shrink: 0;
+}
+.dmm-sidebar-row span,
+.dmm-sidebar-row div {
+  min-width: 0;
+}
 .dmm-focus-card-focused {
   background: #27364a !important;
   border-color: #7dd3fc !important;
@@ -417,8 +427,11 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
     minWidth: 0,
     overflowX: "hidden",
     overflowY: "visible",
+    outline: focused ? "2px solid rgba(125, 211, 252, 0.34)" : "none",
+    outlineOffset: "-2px",
     padding: "6px",
     scrollMarginBlock: "10px",
+    transition: "background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, outline-color 120ms ease",
     width: "100%"
   };
 }
@@ -1828,6 +1841,32 @@ function Content() {
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       )
     : deckyMods;
+  const visibleManagedGameIDs = visibleManagedGames.map((game) => game.app_id).join("|");
+  const visibleDeckyModIDs = visibleDeckyMods.map((mod) => String(mod.id)).join("|");
+
+  useEffect(() => {
+    if (selectedDeckyGameID || visibleManagedGames.length === 0) {
+      if (focusedGameID && !visibleManagedGames.some((game) => game.app_id === focusedGameID)) {
+        setFocusedGameID("");
+      }
+      return;
+    }
+    if (!focusedGameID || !visibleManagedGames.some((game) => game.app_id === focusedGameID)) {
+      setFocusedGameID(visibleManagedGames[0].app_id);
+    }
+  }, [selectedDeckyGameID, visibleManagedGameIDs, focusedGameID]);
+
+  useEffect(() => {
+    if (!selectedDeckyGameID || visibleDeckyMods.length === 0) {
+      if (focusedModID !== null) setFocusedModID(null);
+      setFocusedModAction("");
+      return;
+    }
+    if (focusedModID === null || !visibleDeckyMods.some((mod) => mod.id === focusedModID)) {
+      setFocusedModID(visibleDeckyMods[0].id);
+      setFocusedModAction("");
+    }
+  }, [selectedDeckyGameID, visibleDeckyModIDs, focusedModID]);
 
   function nextDirectionalIndex(currentIndex: number, length: number, direction: -1 | 1) {
     if (length <= 0) return -1;
@@ -1946,18 +1985,30 @@ function Content() {
                   <Focusable
                     key={game.app_id}
                     className="dmm-sidebar-surface dmm-sidebar-row"
+                    focusClassName="dmm-sidebar-row-focused"
                     focusWithinClassName="dmm-sidebar-row-focused"
                     flow-children="column"
                     noFocusRing
+                    onActivate={() => selectDeckyGame(game.app_id)}
+                    onOKButton={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void selectDeckyGame(game.app_id);
+                    }}
                     onGamepadFocus={() => setFocusedGameID(game.app_id)}
                     onFocus={() => setFocusedGameID(game.app_id)}
                     onMouseEnter={() => setFocusedGameID(game.app_id)}
+                    preferredFocus={focused}
                     style={deckyCompositeRowStyle(focused, favorite)}
                   >
                     <Focusable
                       className="dmm-focus-card"
                       focusClassName="dmm-focus-card-focused"
-                      onActivate={() => selectDeckyGame(game.app_id)}
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        selectDeckyGame(game.app_id);
+                      }}
                       onClick={() => {
                         void selectDeckyGame(game.app_id);
                       }}
@@ -1969,7 +2020,7 @@ function Content() {
                       onGamepadFocus={() => setFocusedGameID(game.app_id)}
                       onFocus={() => setFocusedGameID(game.app_id)}
                       onMouseEnter={() => setFocusedGameID(game.app_id)}
-                      preferredFocus={index === 0}
+                      preferredFocus={focused || (index === 0 && !focusedGameID)}
                       style={{
                         ...deckyFocusableCardStyle(focused, favorite),
                         display: "grid",
@@ -1986,7 +2037,11 @@ function Content() {
                     <Focusable
                       className="dmm-focus-card"
                       focusClassName="dmm-focus-card-focused"
-                      onActivate={() => toggleDeckyFavoriteGame(game.app_id)}
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleDeckyFavoriteGame(game.app_id);
+                      }}
                       onClick={() => toggleDeckyFavoriteGame(game.app_id)}
                       onOKButton={(event) => {
                         event.preventDefault();
@@ -1996,7 +2051,7 @@ function Content() {
                       onGamepadFocus={() => setFocusedGameID(game.app_id)}
                       onFocus={() => setFocusedGameID(game.app_id)}
                       onMouseEnter={() => setFocusedGameID(game.app_id)}
-                      style={deckyCompactActionStyle("neutral", focused)}
+                      style={deckyCompactActionStyle("neutral")}
                     >
                       {favorite ? "Unfavorite" : "Favorite"}
                     </Focusable>
@@ -2054,18 +2109,22 @@ function Content() {
                     <Focusable
                       key={candidate.id}
                       className="dmm-sidebar-row"
+                      focusClassName="dmm-sidebar-row-focused"
                       focusWithinClassName="dmm-sidebar-row-focused"
                       flow-children="column"
                       noFocusRing
                       onGamepadFocus={() => setFocusedCandidateID(candidate.id)}
                       onFocus={() => setFocusedCandidateID(candidate.id)}
                       onMouseEnter={() => setFocusedCandidateID(candidate.id)}
+                      preferredFocus={focused}
                       style={deckyCompositeRowStyle(focused)}
                     >
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
-                        onActivate={() => {
+                        onActivate={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
                           if (installer) openDeckyInstallerChoice(candidate);
                         }}
                         onClick={() => {
@@ -2093,11 +2152,31 @@ function Content() {
                       </Focusable>
                       <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(installer ? 2 : 1)}>
                         {installer && (
-                          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => openDeckyInstallerChoice(candidate)} onClick={() => openDeckyInstallerChoice(candidate)} style={deckyCompactActionStyle("neutral", focused)}>
+                          <Focusable
+                            className="dmm-focus-card"
+                            focusClassName="dmm-focus-card-focused"
+                            onActivate={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openDeckyInstallerChoice(candidate);
+                            }}
+                            onClick={() => openDeckyInstallerChoice(candidate)}
+                            style={deckyCompactActionStyle("neutral", focused)}
+                          >
                             Open Choices
                           </Focusable>
                         )}
-                        <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={askClearDeckyInstallCandidates} onClick={askClearDeckyInstallCandidates} style={deckyCompactActionStyle("danger")}>
+                        <Focusable
+                          className="dmm-focus-card"
+                          focusClassName="dmm-focus-card-focused"
+                          onActivate={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            askClearDeckyInstallCandidates();
+                          }}
+                          onClick={askClearDeckyInstallCandidates}
+                          style={deckyCompactActionStyle("danger")}
+                        >
                           Clear Items
                         </Focusable>
                       </Focusable>
@@ -2159,9 +2238,16 @@ function Content() {
                     <Focusable
                       key={mod.id}
                       className="dmm-sidebar-surface dmm-sidebar-row"
+                      focusClassName="dmm-sidebar-row-focused"
                       focusWithinClassName="dmm-sidebar-row-focused"
                       flow-children="column"
                       noFocusRing
+                      onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                      onOKButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void toggleDeckyMod(mod, !mod.enabled);
+                      }}
                       onGamepadFocus={() => {
                         setFocusedModID(mod.id);
                         setFocusedModAction("");
@@ -2174,12 +2260,17 @@ function Content() {
                         setFocusedModID(mod.id);
                         setFocusedModAction("");
                       }}
+                      preferredFocus={focused}
                       style={deckyCompositeRowStyle(focused, mod.enabled)}
                     >
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
-                        onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onActivate={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void toggleDeckyMod(mod, !mod.enabled);
+                        }}
                         onClick={() => {
                           void toggleDeckyMod(mod, !mod.enabled);
                         }}
@@ -2232,7 +2323,11 @@ function Content() {
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
-                        onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onActivate={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void toggleDeckyMod(mod, !mod.enabled);
+                        }}
                         onClick={() => {
                           void toggleDeckyMod(mod, !mod.enabled);
                         }}
@@ -2261,7 +2356,11 @@ function Content() {
                         <Focusable
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
-                          onActivate={() => reinstallDeckyMod(mod)}
+                          onActivate={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void reinstallDeckyMod(mod);
+                          }}
                           onClick={() => {
                             void reinstallDeckyMod(mod);
                           }}
@@ -2289,7 +2388,11 @@ function Content() {
                         <Focusable
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
-                          onActivate={() => askRemoveDeckyMod(mod)}
+                          onActivate={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            askRemoveDeckyMod(mod);
+                          }}
                           onClick={() => askRemoveDeckyMod(mod)}
                           onOKButton={(event) => {
                             event.preventDefault();
