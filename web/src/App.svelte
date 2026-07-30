@@ -301,9 +301,9 @@
   let installedMods: InstalledMod[] = [];
   let installCandidates: InstallCandidate[] = [];
   let profileName = "";
-  let importURL = "";
-  let lastImportURL = "";
-  let resolvedImport = "";
+  let captureURL = "";
+  let lastCaptureURL = "";
+  let resolvedCapture = "";
   let nexusFiles: NexusFile[] = [];
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "downloads";
@@ -612,7 +612,7 @@
     surface = "game";
     activeGameModule = "plugins";
     drawer = null;
-    resolvedImport = "";
+    resolvedCapture = "";
     nexusFiles = [];
     nexusSearchResults = [];
     nexusSearchTotal = 0;
@@ -829,16 +829,16 @@
     };
   }
 
-  async function resolveImport() {
-    if (!selectedGame || !importURL.trim()) return;
+  async function resolveCapturedInstall() {
+    if (!selectedGame || !captureURL.trim()) return;
     error = "";
-    lastImportURL = importURL;
+    lastCaptureURL = captureURL;
     nexusFiles = [];
     downloadLinks = [];
-    const response = await fetch("/api/imports/resolve", {
+    const response = await fetch("/api/captured-installs/resolve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: importURL })
+      body: JSON.stringify({ url: captureURL })
     });
     if (!response.ok) {
       error = await response.text();
@@ -846,18 +846,18 @@
     }
     const result = await response.json();
     upsertJob(result.job);
-    resolvedImport = `${result.resolved.catalog}:${result.resolved.game_domain}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
+    resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
     nexusFiles = result.files ?? [];
     downloadLinks = result.download_links ?? [];
-    importURL = "";
+    captureURL = "";
   }
 
   async function resolveFile(file: NexusFile) {
-    if (!lastImportURL) return;
-    const nextURL = new URL(lastImportURL);
+    if (!lastCaptureURL) return;
+    const nextURL = new URL(lastCaptureURL);
     nextURL.searchParams.set("file_id", String(file.file_id));
-    importURL = nextURL.toString();
-    await resolveImport();
+    captureURL = nextURL.toString();
+    await resolveCapturedInstall();
   }
 
   function selectedNexusDomain() {
@@ -956,7 +956,7 @@
     busyNexusFileKey = key;
     nexusSearchError = "";
     try {
-      const response = await fetch("/api/imports/resolve", {
+      const response = await fetch("/api/captured-installs/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: nexusFileURL(mod.mod_id, file.file_id) })
@@ -967,7 +967,7 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
-      resolvedImport = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
+      resolvedCapture = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
       await refreshJobsAndSelectedGame();
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
@@ -1944,8 +1944,8 @@
                 <h3>Add From Nexus</h3>
                 <span>{selectedGameActionItems.length} open</span>
               </div>
-              <form class="stacked-form" on:submit|preventDefault={resolveImport}>
-                <textarea bind:value={importURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
+              <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
+                <textarea bind:value={captureURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
                 <button type="submit">Add Mod</button>
               </form>
               <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Downloads that need unsupported installer logic will be kept as blocked install candidates.</p>
@@ -1999,8 +1999,8 @@
               {:else}
                 <p class="hint">This game does not have an extension-owned Nexus domain yet.</p>
               {/if}
-              {#if resolvedImport}
-                <p class="hint">Resolved {resolvedImport}</p>
+              {#if resolvedCapture}
+                <p class="hint">Resolved {resolvedCapture}</p>
               {/if}
               {#if nexusFiles.length > 0}
                 <div class="file-list">

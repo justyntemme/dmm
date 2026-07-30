@@ -721,10 +721,10 @@ func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	}
 }
 
-func TestResolveImportWithoutNexusKey(t *testing.T) {
+func TestResolveCapturedInstallWithoutNexusKey(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/resolve", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/witcher3/mods/123?file_id=456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/witcher3/mods/123?file_id=456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -738,7 +738,7 @@ func TestResolveImportWithoutNexusKey(t *testing.T) {
 	}
 }
 
-func TestResolveImportUsesRegisteredCatalogResolver(t *testing.T) {
+func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
 	srv := newTestServer(t)
 	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
 		resolved: catalog.ResolvedDownload{
@@ -750,7 +750,7 @@ func TestResolveImportUsesRegisteredCatalogResolver(t *testing.T) {
 		},
 	}}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/resolve", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()

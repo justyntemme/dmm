@@ -286,7 +286,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/captured-installs", s.handleClearCapturedInstalls)
-	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
+	mux.HandleFunc("POST /api/captured-installs/resolve", s.handleResolveCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs", s.handleCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/install", s.handleInstallCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/retry", s.handleRetryCapturedInstall)
@@ -3517,7 +3517,7 @@ func (s *Server) handleClearCapturedInstalls(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-type resolveImportRequest struct {
+type capturedInstallURLRequest struct {
 	URL    string `json:"url"`
 	Source string `json:"source"`
 }
@@ -3526,8 +3526,8 @@ type inspectArchiveRequest struct {
 	Path string `json:"path"`
 }
 
-func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
-	var req resolveImportRequest
+func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Request) {
+	var req capturedInstallURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -3539,12 +3539,12 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 	}
 	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
 	if err != nil {
-		s.logger.Warn("resolve import parse failed", "error", err, "source", req.Source)
+		s.logger.Warn("captured install resolve failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	job := s.jobs.Create("resolve-import", "Resolve import URL")
+	job := s.jobs.Create("captured-install-resolve", "Resolve Nexus URL")
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
@@ -3594,7 +3594,7 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
-	var req resolveImportRequest
+	var req capturedInstallURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
