@@ -502,28 +502,39 @@ class Plugin:
             "status": result,
         }
 
-    async def set_ui_preferences(self, favorite_game_ids, recent_games, game_sort):
+    async def patch_ui_preferences(self, patch=None):
         if not self._backend_responds():
             return {
                 "ok": False,
                 "error": "Server is not running.",
             }
-        if not isinstance(favorite_game_ids, list):
-            favorite_game_ids = []
-        if not isinstance(recent_games, dict):
-            recent_games = {}
-        payload = json.dumps({
-            "favorite_game_ids": [str(item).strip() for item in favorite_game_ids if str(item).strip()],
-            "recent_games": {str(key).strip(): int(value) for key, value in recent_games.items() if str(key).strip()},
-            "game_sort": str(game_sort or "recent").strip(),
-        }).encode("utf-8")
-        result, error = self._backend_json_result("PUT", "/api/settings/ui", payload)
+        if not isinstance(patch, dict):
+            return {
+                "ok": False,
+                "error": "UI preference patch is invalid.",
+            }
+        payload = {}
+        favorite_game_id = str(patch.get("favorite_game_id") or "").strip()
+        if favorite_game_id:
+            payload["favorite_game_id"] = favorite_game_id
+            payload["favorite"] = bool(patch.get("favorite"))
+        recent_game_id = str(patch.get("recent_game_id") or "").strip()
+        if recent_game_id:
+            payload["recent_game_id"] = recent_game_id
+            try:
+                payload["recent_at"] = int(patch.get("recent_at") or 0)
+            except (TypeError, ValueError):
+                payload["recent_at"] = 0
+        game_sort = str(patch.get("game_sort") or "").strip()
+        if game_sort:
+            payload["game_sort"] = game_sort
+        result, error = self._backend_json_result("PATCH", "/api/settings/ui", json.dumps(payload).encode("utf-8"))
         if result is None:
             return {
                 "ok": False,
                 "error": error or "Unable to update UI preferences.",
             }
-        self._log(f"ui preferences updated favorites={len(favorite_game_ids)} recent={len(recent_games)} sort={game_sort}")
+        self._log(f"ui preferences patched favorite_game_id={favorite_game_id} recent_game_id={recent_game_id} sort={game_sort}")
         return {
             "ok": True,
             "status": await self.status(),

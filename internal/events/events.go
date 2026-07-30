@@ -16,6 +16,7 @@ const (
 	TypeDeploymentChanged  = "deployment.changed"
 	TypeLaunchChanged      = "launch.changed"
 	TypeInstallChanged     = "install.changed"
+	TypeUIChanged          = "ui.changed"
 )
 
 type Event struct {

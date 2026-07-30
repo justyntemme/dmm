@@ -208,7 +208,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
 	mux.HandleFunc("PUT /api/settings/install", s.handleUpdateInstallSettings)
-	mux.HandleFunc("PUT /api/settings/ui", s.handleUpdateUISettings)
+	mux.HandleFunc("GET /api/settings/ui", s.handleUISettings)
+	mux.HandleFunc("PATCH /api/settings/ui", s.handlePatchUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
@@ -839,6 +840,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
 	s.cfgMu.RLock()
 	cfg := s.cfg
+	ui := normalizedUIConfig(cfg.UI)
 	s.cfgMu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"listen_addr": cfg.ListenAddr,
@@ -852,7 +854,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
 		},
-		"ui": cfg.UI,
+		"ui": ui,
 	})
 }
 
@@ -869,10 +871,12 @@ type updateInstallSettingsRequest struct {
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
 }
 
-type updateUISettingsRequest struct {
-	FavoriteGameIDs []string         `json:"favorite_game_ids"`
-	RecentGames     map[string]int64 `json:"recent_games"`
-	GameSort        string           `json:"game_sort"`
+type patchUISettingsRequest struct {
+	FavoriteGameID string `json:"favorite_game_id"`
+	Favorite       *bool  `json:"favorite"`
+	RecentGameID   string `json:"recent_game_id"`
+	RecentAt       int64  `json:"recent_at"`
+	GameSort       string `json:"game_sort"`
 }
 
 type createProfileRequest struct {
@@ -991,18 +995,39 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 	s.handleStatus(w, r)
 }
 
-func (s *Server) handleUpdateUISettings(w http.ResponseWriter, r *http.Request) {
-	var req updateUISettingsRequest
+func (s *Server) handleUISettings(w http.ResponseWriter, r *http.Request) {
+	s.cfgMu.RLock()
+	ui := normalizedUIConfig(s.cfg.UI)
+	s.cfgMu.RUnlock()
+	writeJSON(w, http.StatusOK, ui)
+}
+
+func (s *Server) handlePatchUISettings(w http.ResponseWriter, r *http.Request) {
+	var req patchUISettingsRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	ui := config.UIConfig{
-		FavoriteGameIDs: normalizedGameIDs(req.FavoriteGameIDs, 100),
-		RecentGames:     normalizedRecentGames(req.RecentGames, 100),
-		GameSort:        normalizedGameSort(req.GameSort),
-	}
 	s.cfgMu.Lock()
+	ui := normalizedUIConfig(s.cfg.UI)
+	if appID := strings.TrimSpace(req.FavoriteGameID); appID != "" && req.Favorite != nil {
+		ui.FavoriteGameIDs = setFavoriteGameID(ui.FavoriteGameIDs, appID, *req.Favorite, 100)
+	}
+	if appID := strings.TrimSpace(req.RecentGameID); appID != "" {
+		at := req.RecentAt
+		if at <= 0 {
+			at = time.Now().UnixMilli()
+		}
+		if ui.RecentGames == nil {
+			ui.RecentGames = map[string]int64{}
+		}
+		ui.RecentGames[appID] = at
+		ui.RecentGames = normalizedRecentGames(ui.RecentGames, 100)
+	}
+	if strings.TrimSpace(req.GameSort) != "" {
+		ui.GameSort = normalizedGameSort(req.GameSort)
+	}
+	ui = normalizedUIConfig(ui)
 	s.cfg.UI = ui
 	cfg := s.cfg
 	s.cfgMu.Unlock()
@@ -1010,8 +1035,51 @@ func (s *Server) handleUpdateUISettings(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.logger.Info("ui settings updated", "favorites", len(ui.FavoriteGameIDs), "recent", len(ui.RecentGames), "sort", ui.GameSort)
+	s.logger.Info(
+		"ui settings patched",
+		"favorite_game_id", strings.TrimSpace(req.FavoriteGameID),
+		"favorite_set", req.Favorite != nil,
+		"recent_game_id", strings.TrimSpace(req.RecentGameID),
+		"sort", ui.GameSort,
+		"favorites", len(ui.FavoriteGameIDs),
+		"recent", len(ui.RecentGames),
+	)
+	s.publishEvent(events.Event{
+		Type:    events.TypeUIChanged,
+		Payload: events.MustPayload(ui),
+	})
 	s.handleStatus(w, r)
+}
+
+func normalizedUIConfig(ui config.UIConfig) config.UIConfig {
+	return config.UIConfig{
+		FavoriteGameIDs: normalizedGameIDs(ui.FavoriteGameIDs, 100),
+		RecentGames:     normalizedRecentGames(ui.RecentGames, 100),
+		GameSort:        normalizedGameSort(ui.GameSort),
+	}
+}
+
+func setFavoriteGameID(values []string, appID string, favorite bool, limit int) []string {
+	values = normalizedGameIDs(values, limit)
+	out := make([]string, 0, len(values)+1)
+	found := false
+	for _, value := range values {
+		if value == appID {
+			found = true
+			if favorite {
+				out = append(out, value)
+			}
+			continue
+		}
+		out = append(out, value)
+	}
+	if favorite && !found {
+		out = append([]string{appID}, out...)
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
 }
 
 func normalizedGameIDs(values []string, limit int) []string {

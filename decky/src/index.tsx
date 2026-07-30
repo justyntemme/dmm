@@ -429,6 +429,10 @@ function isJob(value: unknown): value is Job {
   return Boolean(value && typeof value === "object" && typeof (value as Job).id === "string" && typeof (value as Job).type === "string");
 }
 
+function isUISettings(value: unknown): value is UISettings {
+  return Boolean(value && typeof value === "object");
+}
+
 function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
   if (!candidate.installer_json) return null;
   try {
@@ -900,19 +904,20 @@ function Content() {
   }
 
   function applyDeckyUIPreferences(nextStatus: BackendStatus) {
-    const ui = nextStatus.backend?.ui;
+    applyDeckyUIPreferencesFromUI(nextStatus.backend?.ui);
+  }
+
+  function applyDeckyUIPreferencesFromUI(ui?: UISettings) {
     setFavoriteGameIDs(new Set((ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== "")));
     setGameRecent(ui?.recent_games ?? {});
     setGameSortState(ui?.game_sort === "az" || ui?.game_sort === "za" ? ui.game_sort : "recent");
   }
 
-  async function saveDeckyUIPreferences(nextFavorites = favoriteGameIDs, nextRecent = gameRecent, nextSort = gameSort) {
+  async function patchDeckyUIPreferences(patch: Record<string, string | number | boolean>) {
     try {
-      const result = await call<[string[], Record<string, number>, GameSort], { ok: boolean; error?: string; status?: BackendStatus }>(
-        "set_ui_preferences",
-        Array.from(nextFavorites),
-        nextRecent,
-        nextSort
+      const result = await call<[Record<string, string | number | boolean>], { ok: boolean; error?: string; status?: BackendStatus }>(
+        "patch_ui_preferences",
+        patch
       );
       if (!result.ok) {
         await logFrontendEvent("decky ui preferences save failed", { error: result.error || "" });
@@ -928,9 +933,10 @@ function Content() {
   }
 
   function markDeckyGameRecent(appID: string) {
-    const next = Object.fromEntries(Object.entries({ ...gameRecent, [appID]: Date.now() }).sort((a, b) => b[1] - a[1]).slice(0, 50));
+    const recentAt = Date.now();
+    const next = Object.fromEntries(Object.entries({ ...gameRecent, [appID]: recentAt }).sort((a, b) => b[1] - a[1]).slice(0, 50));
     setGameRecent(next);
-    void saveDeckyUIPreferences(favoriteGameIDs, next, gameSort);
+    void patchDeckyUIPreferences({ recent_game_id: appID, recent_at: recentAt });
   }
 
   function toggleDeckyFavoriteGame(appID: string) {
@@ -938,13 +944,13 @@ function Content() {
     if (next.has(appID)) next.delete(appID);
     else next.add(appID);
     setFavoriteGameIDs(next);
-    void saveDeckyUIPreferences(next, gameRecent, gameSort);
+    void patchDeckyUIPreferences({ favorite_game_id: appID, favorite: next.has(appID) });
   }
 
   function cycleDeckyGameSort() {
     const next = nextGameSort(gameSort);
     setGameSortState(next);
-    void saveDeckyUIPreferences(favoriteGameIDs, gameRecent, next);
+    void patchDeckyUIPreferences({ game_sort: next });
   }
 
   async function loadDeckyGames() {
@@ -1282,6 +1288,10 @@ function Content() {
   useEffect(() => {
     const listener = (rawEvent: Event) => {
       const event = (rawEvent as CustomEvent<DomainEvent>).detail;
+      if (event?.type === "ui.changed") {
+        if (isUISettings(event.payload)) applyDeckyUIPreferencesFromUI(event.payload);
+        return;
+      }
       if (!event || tab !== "mods" || !selectedDeckyGameID || !status?.running) return;
       if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
         void loadDeckyGameState(selectedDeckyGameID);

@@ -105,6 +105,59 @@ func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
 	}
 }
 
+func TestPatchUISettingsMergesClientIntents(t *testing.T) {
+	srv := newTestServer(t)
+
+	sub := srv.events.Subscribe(0)
+	defer sub.Close()
+
+	patchUISettings := func(body string) map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/api/settings/ui", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+
+		var response map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case event := <-sub.C:
+			if event.Type != events.TypeUIChanged {
+				t.Fatalf("event type = %s, want %s", event.Type, events.TypeUIChanged)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for ui.changed event")
+		}
+		return response
+	}
+
+	patchUISettings(`{"favorite_game_id":"413150","favorite":true}`)
+	response := patchUISettings(`{"recent_game_id":"377160","recent_at":123,"game_sort":"az"}`)
+
+	ui, ok := response["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("ui response missing: %#v", response["ui"])
+	}
+	favorites, ok := ui["favorite_game_ids"].([]any)
+	if !ok || len(favorites) != 1 || favorites[0] != "413150" {
+		t.Fatalf("favorites = %#v, want [413150]", ui["favorite_game_ids"])
+	}
+	recent, ok := ui["recent_games"].(map[string]any)
+	if !ok || recent["377160"] != float64(123) {
+		t.Fatalf("recent_games = %#v, want 377160=123", ui["recent_games"])
+	}
+	if ui["game_sort"] != "az" {
+		t.Fatalf("game_sort = %#v, want az", ui["game_sort"])
+	}
+}
+
 func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 	cases := []struct {
 		name   string

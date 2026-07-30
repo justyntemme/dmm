@@ -1,15 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  type UISettings = {
+    favorite_game_ids?: string[];
+    recent_games?: Record<string, number>;
+    game_sort?: GameSort;
+  };
+
   type Status = {
     game_count: number;
     install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
     nexus: { api_key_configured: boolean };
-    ui?: {
-      favorite_game_ids?: string[];
-      recent_games?: Record<string, number>;
-      game_sort?: GameSort;
-    };
+    ui?: UISettings;
   };
 
   type Game = {
@@ -458,6 +460,10 @@
 
   function handleDomainEvent(event: DomainEvent) {
     if (event.id > lastEventID) lastEventID = event.id;
+    if (event.type === "ui.changed") {
+      if (isUISettings(event.payload)) applyUIPreferencesFromUI(event.payload);
+      return;
+    }
     if (event.type === "jobs.snapshot") {
       if (Array.isArray(event.payload)) jobs = event.payload as Job[];
       return;
@@ -499,6 +505,10 @@
     return Boolean(value && typeof value === "object" && "required" in value && "configured" in value);
   }
 
+  function isUISettings(value: unknown): value is UISettings {
+    return Boolean(value && typeof value === "object");
+  }
+
   function scheduleSelectedGameRefresh(refreshPreview = false) {
     if (!selectedGame || !initialRefreshComplete) return;
     selectedGameRefreshNeedsPreview = selectedGameRefreshNeedsPreview || refreshPreview;
@@ -530,20 +540,20 @@
   }
 
   function applyUIPreferences(nextStatus: Status) {
-    favoriteGameIDs = new Set((nextStatus.ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== ""));
-    gameRecent = nextStatus.ui?.recent_games ?? {};
-    gameSort = nextStatus.ui?.game_sort === "az" || nextStatus.ui?.game_sort === "za" ? nextStatus.ui.game_sort : "recent";
+    applyUIPreferencesFromUI(nextStatus.ui);
   }
 
-  async function saveGamePreferences(nextFavorites = favoriteGameIDs, nextRecent = gameRecent, nextSort = gameSort) {
+  function applyUIPreferencesFromUI(ui?: UISettings) {
+    favoriteGameIDs = new Set((ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== ""));
+    gameRecent = ui?.recent_games ?? {};
+    gameSort = ui?.game_sort === "az" || ui?.game_sort === "za" ? ui.game_sort : "recent";
+  }
+
+  async function patchGamePreferences(patch: Record<string, string | number | boolean>) {
     const response = await fetch("/api/settings/ui", {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        favorite_game_ids: Array.from(nextFavorites),
-        recent_games: nextRecent,
-        game_sort: nextSort
-      })
+      body: JSON.stringify(patch)
     });
     if (!response.ok) {
       logClientEvent("ui preferences save failed", { status: response.status });
@@ -556,7 +566,7 @@
 
   function setGameSort(nextSort: GameSort) {
     gameSort = nextSort;
-    void saveGamePreferences(favoriteGameIDs, gameRecent, nextSort);
+    void patchGamePreferences({ game_sort: nextSort });
   }
 
   function isFavoriteGame(appID: string) {
@@ -571,13 +581,13 @@
       next.add(appID);
     }
     favoriteGameIDs = next;
-    void saveGamePreferences(next, gameRecent, gameSort);
+    void patchGamePreferences({ favorite_game_id: appID, favorite: next.has(appID) });
   }
 
   function markGameRecent(appID: string) {
     const next = { ...gameRecent, [appID]: Date.now() };
     gameRecent = Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, 50));
-    void saveGamePreferences(favoriteGameIDs, gameRecent, gameSort);
+    void patchGamePreferences({ recent_game_id: appID, recent_at: gameRecent[appID] });
   }
 
   function openSettings(page: SettingsPage) {
