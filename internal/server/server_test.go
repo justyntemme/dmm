@@ -2046,7 +2046,7 @@ func TestRecoverDownloadsRestagesInvalidInstalledModWithoutTargets(t *testing.T)
 		Version:      "160470",
 		ArchivePath:  archivePath,
 		StagingPath:  invalidStagingPath,
-		ManifestJSON: `[{"path":"LookupAnything/manifest.json","size":26,"sha256":"invalid"}]`,
+		ManifestJSON: `{"game_id":"413150","mod_type":"stardew-smapi-mod","files":[{"path":"LookupAnything/manifest.json","size":26,"sha256":"invalid"}]}`,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -4679,7 +4679,7 @@ func TestDeployPlanUsesStoredInstallPlanTargetMapping(t *testing.T) {
 	if err := os.WriteFile(sourcePath, []byte(`{"ok":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `[{"path":"Data/content.json","target_relative":"Content/Data/content.json","size":11,"sha256":"abc"}]`
+	manifest := `{"game_id":"413150","mod_type":"stardew-content-root","files":[{"path":"Data/content.json","target_relative":"Content/Data/content.json","size":11,"sha256":"abc"}]}`
 	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
@@ -4913,7 +4913,7 @@ func TestInvalidManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testin
 		Version:      "160470",
 		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "mod.zip"),
 		StagingPath:  stagingPath,
-		ManifestJSON: `[{"path":"LookupAnything/manifest.json","size":26,"sha256":"test"}]`,
+		ManifestJSON: `{"game_id":"413150","mod_type":"stardew-smapi-mod","files":[{"path":"LookupAnything/manifest.json","size":26,"sha256":"test"}]}`,
 	}); err != nil {
 		t.Fatal(err)
 	}

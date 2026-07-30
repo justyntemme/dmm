@@ -473,7 +473,7 @@ func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
 		ArchivePath:   "/downloads/mod.zip",
 		ArchiveSHA256: "archive-sum",
 		StagingPath:   "/staging/mod",
-		ManifestJSON:  "[]",
+		ManifestJSON:  "{}",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -563,7 +563,7 @@ func TestSetProfileModStateRejectsCrossGameProfile(t *testing.T) {
 		ArchivePath:   "/downloads/mod.zip",
 		ArchiveSHA256: "archive-sum",
 		StagingPath:   "/staging/mod",
-		ManifestJSON:  "[]",
+		ManifestJSON:  "{}",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -623,7 +623,7 @@ func TestRecordInstalledModKeepsOneInstalledRowAfterRepeatedDownloads(t *testing
 		Version:      "160470",
 		ArchivePath:  "/downloads/old.zip",
 		StagingPath:  "/staging/mod",
-		ManifestJSON: "[]",
+		ManifestJSON: "{}",
 	}
 	if _, err := db.RecordInstalledMod(context.Background(), params); err != nil {
 		t.Fatal(err)

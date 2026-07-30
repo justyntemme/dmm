@@ -4813,20 +4813,16 @@ func parseStagedManifest(manifestJSON string) (stagedManifest, error) {
 		return stagedManifest{}, nil
 	}
 	var manifest stagedManifest
-	if strings.HasPrefix(manifestJSON, "{") {
-		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
-			return stagedManifest{}, err
-		}
-		if manifest.Files == nil {
-			manifest.Files = []stagedManifestFile{}
-		}
-		return manifest, nil
+	if !strings.HasPrefix(manifestJSON, "{") {
+		return stagedManifest{}, errors.New("staged manifest must be a JSON object")
 	}
-	var files []stagedManifestFile
-	if err := json.Unmarshal([]byte(manifestJSON), &files); err != nil {
+	if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
 		return stagedManifest{}, err
 	}
-	return stagedManifest{Files: files}, nil
+	if manifest.Files == nil {
+		manifest.Files = []stagedManifestFile{}
+	}
+	return manifest, nil
 }
 
 func stagedManifestFiles(manifestJSON string) ([]stagedManifestFile, error) {
