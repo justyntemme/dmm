@@ -79,3 +79,17 @@ func TestNewBusWithHistoryPreservesEventIDs(t *testing.T) {
 		t.Fatalf("replayed event id = %d, want 8", got.ID)
 	}
 }
+
+func TestLastIDReportsHighWaterMark(t *testing.T) {
+	bus := NewBusWithHistory(4, []Event{
+		{ID: 7, Type: TypeGameChanged},
+		{ID: 9, Type: TypeJobUpdated},
+	})
+	if got := bus.LastID(); got != 9 {
+		t.Fatalf("last id = %d, want 9", got)
+	}
+	next := bus.Publish(Event{Type: TypeDeploymentChanged})
+	if got := bus.LastID(); got != next.ID {
+		t.Fatalf("last id after publish = %d, want %d", got, next.ID)
+	}
+}

@@ -120,6 +120,12 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	storedJobs, err = cleanupObsoleteRestoredJobs(context.Background(), db, storedJobs, logger)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	storedPending = capturedInstallsForJobs(storedPending, storedJobs)
 	storedJobs = normalizeRestoredJobs(storedJobs, storedPending, gameRegistry)
 	for _, job := range storedJobs {
 		if err := db.UpsertJob(context.Background(), job); err != nil {
@@ -177,12 +183,66 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return srv, nil
 }
 
+func cleanupObsoleteRestoredJobs(ctx context.Context, db *storage.DB, storedJobs []jobs.Job, logger *slog.Logger) ([]jobs.Job, error) {
+	out := storedJobs[:0]
+	var removed int
+	for _, job := range storedJobs {
+		if !obsoleteRestoredJob(job) {
+			out = append(out, job)
+			continue
+		}
+		if err := db.DeleteCapturedInstall(ctx, job.ID); err != nil {
+			return nil, err
+		}
+		if err := db.DeleteJob(ctx, job.ID); err != nil {
+			return nil, err
+		}
+		removed++
+	}
+	if removed > 0 {
+		logger.Info("obsolete pre-mvp jobs removed", "jobs", removed)
+	}
+	return out, nil
+}
+
+func capturedInstallsForJobs(storedPending []storage.CapturedInstall, storedJobs []jobs.Job) []storage.CapturedInstall {
+	validJobs := make(map[string]struct{}, len(storedJobs))
+	for _, job := range storedJobs {
+		validJobs[job.ID] = struct{}{}
+	}
+	out := storedPending[:0]
+	for _, pending := range storedPending {
+		if _, ok := validJobs[pending.JobID]; ok {
+			out = append(out, pending)
+		}
+	}
+	return out
+}
+
+func obsoleteRestoredJob(job jobs.Job) bool {
+	switch strings.TrimSpace(job.Type) {
+	case "pending-import", "launch-config":
+		return true
+	}
+	return job.Type == "deploy" && strings.EqualFold(strings.TrimSpace(job.Title), "Deploy staged mods")
+}
+
 func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.CapturedInstall, gameRegistry games.Registry) []jobs.Job {
 	pendingByID := make(map[string]storage.CapturedInstall, len(storedPending))
 	for _, pending := range storedPending {
 		pendingByID[pending.JobID] = pending
 	}
 	for i, job := range storedJobs {
+		if job.Type == jobTypeSteamWorkshopAction {
+			switch job.Status {
+			case jobs.StatusQueued, jobs.StatusRunning:
+				job.Status = jobs.StatusWaiting
+				job.Message = "Interrupted; waiting for Decky to apply the Steam Workshop action"
+				job.UpdatedAt = time.Now().UTC()
+			}
+			storedJobs[i] = job
+			continue
+		}
 		pending, hasPending := pendingByID[job.ID]
 		if job.Type != "captured-install" || !hasPending {
 			continue
@@ -201,14 +261,6 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Captur
 				job.Message = "Interrupted; configure Nexus API key and capture the link again"
 			}
 			job.UpdatedAt = time.Now().UTC()
-		}
-		if job.Type == jobTypeSteamWorkshopAction {
-			switch job.Status {
-			case jobs.StatusQueued, jobs.StatusRunning:
-				job.Status = jobs.StatusWaiting
-				job.Message = "Interrupted; waiting for Decky to apply the Steam Workshop action"
-				job.UpdatedAt = time.Now().UTC()
-			}
 		}
 		storedJobs[i] = job
 	}
@@ -3227,7 +3279,11 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("event websocket opened", "remote", r.RemoteAddr, "after_id", afterID)
 	defer s.logger.Info("event websocket closed", "remote", r.RemoteAddr, "error", ctx.Err())
 
-	subscription := s.events.Subscribe(afterID)
+	subscribeAfterID := afterID
+	if subscribeAfterID <= 0 {
+		subscribeAfterID = s.events.LastID()
+	}
+	subscription := s.events.Subscribe(subscribeAfterID)
 	defer subscription.Close()
 
 	snapshot := events.Event{
@@ -3239,10 +3295,13 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("event websocket snapshot write failed", "remote", r.RemoteAddr, "error", err)
 		return
 	}
-	replayedThrough, err := s.replayStoredEvents(ctx, conn, afterID)
-	if err != nil {
-		s.logger.Warn("event websocket replay failed", "remote", r.RemoteAddr, "after_id", afterID, "error", err)
-		return
+	replayedThrough := subscribeAfterID
+	if afterID > 0 {
+		replayedThrough, err = s.replayStoredEvents(ctx, conn, afterID)
+		if err != nil {
+			s.logger.Warn("event websocket replay failed", "remote", r.RemoteAddr, "after_id", afterID, "error", err)
+			return
+		}
 	}
 
 	for {

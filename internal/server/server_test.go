@@ -30,6 +30,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -583,6 +584,51 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 			continue
 		}
 		return
+	}
+}
+
+func TestEventsWebSocketFreshConnectionDoesNotReplayExistingJobEvents(t *testing.T) {
+	srv := newTestServer(t)
+	existing := srv.jobs.CreateWithPayload("captured-install", "Install request", jobs.JobPayload{"app_id": "413150"})
+	srv.jobs.Wait(existing.ID, "Downloaded archive; ready to install")
+
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events/ws"
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"https://steamloopback.host"}},
+	})
+	if err != nil {
+		body := ""
+		if resp != nil && resp.Body != nil {
+			b, _ := io.ReadAll(resp.Body)
+			body = string(b)
+		}
+		t.Fatalf("Dial(%q) error = %v body = %q", wsURL, err, body)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read snapshot error = %v", err)
+	}
+	var snapshot events.Event
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("snapshot unmarshal error = %v", err)
+	}
+	if snapshot.Type != events.TypeJobsSnapshot {
+		t.Fatalf("snapshot event = %+v", snapshot)
+	}
+
+	shortCtx, shortCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer shortCancel()
+	_, data, err = conn.Read(shortCtx)
+	if err == nil {
+		t.Fatalf("fresh websocket replayed stale event after snapshot: %s", data)
 	}
 }
 
@@ -3123,6 +3169,57 @@ func TestCapturedInstallPersistsAcrossRestart(t *testing.T) {
 	next := restarted.jobs.Create("test", "Next job")
 	if next.ID == created.Job.ID {
 		t.Fatalf("job id was reused after restart: %s", next.ID)
+	}
+}
+
+func TestNormalizeRestoredJobsRestoresSteamWorkshopActionsAsWaiting(t *testing.T) {
+	updatedAt := time.Now().UTC().Add(-time.Minute)
+	restored := normalizeRestoredJobs([]jobs.Job{{
+		ID:        "job-10",
+		Type:      jobTypeSteamWorkshopAction,
+		Title:     "Disable Workshop item",
+		Status:    jobs.StatusRunning,
+		Message:   "Applying Steam Workshop action through Decky",
+		UpdatedAt: updatedAt,
+		Payload: jobs.JobPayload{
+			"app_id":  "377160",
+			"item_id": "123",
+			"kind":    "disable",
+		},
+	}}, nil, games.DefaultRegistry)
+	if len(restored) != 1 {
+		t.Fatalf("restored jobs = %+v", restored)
+	}
+	if restored[0].Status != jobs.StatusWaiting {
+		t.Fatalf("workshop job status = %s, want waiting", restored[0].Status)
+	}
+	if restored[0].Message != "Interrupted; waiting for Decky to apply the Steam Workshop action" {
+		t.Fatalf("workshop job message = %q", restored[0].Message)
+	}
+	if !restored[0].UpdatedAt.After(updatedAt) {
+		t.Fatalf("workshop job updated_at was not refreshed: %s", restored[0].UpdatedAt)
+	}
+}
+
+func TestObsoleteRestoredJobPredicateRemovesPreMVPLegacyJobs(t *testing.T) {
+	cases := []jobs.Job{
+		{Type: "pending-import", Title: "Install request: stardewvalley/mods/239"},
+		{Type: "launch-config", Title: "Configure launch tool"},
+		{Type: "deploy", Title: "Deploy staged mods"},
+	}
+	for _, job := range cases {
+		if !obsoleteRestoredJob(job) {
+			t.Fatalf("obsoleteRestoredJob(%+v) = false, want true", job)
+		}
+	}
+	for _, job := range []jobs.Job{
+		{Type: "captured-install", Title: "Captured mod: stardewvalley/mods/239"},
+		{Type: "deploy", Title: "Apply profile changes"},
+		{Type: jobTypeSteamWorkshopAction, Title: "Disable Workshop item"},
+	} {
+		if obsoleteRestoredJob(job) {
+			t.Fatalf("obsoleteRestoredJob(%+v) = true, want false", job)
+		}
 	}
 }
 

@@ -117,6 +117,12 @@ func (b *Bus) Subscribe(afterID int64) *Subscription {
 	}
 }
 
+func (b *Bus) LastID() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.nextID
+}
+
 func (s *Subscription) Close() {
 	if s == nil || s.close == nil {
 		return
