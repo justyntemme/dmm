@@ -104,6 +104,37 @@ type apiErrorResponse struct {
 	Message string `json:"message"`
 }
 
+type APIError struct {
+	StatusCode int
+	Status     string
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Message) != "" {
+		return fmt.Sprintf("nexus api request failed: %s: %s", e.Status, strings.TrimSpace(e.Message))
+	}
+	return fmt.Sprintf("nexus api request failed: %s", e.Status)
+}
+
+type BrowserDownloadRequiredError struct {
+	GameDomain string
+	ModID      string
+	FileID     string
+}
+
+func (e *BrowserDownloadRequiredError) Error() string {
+	return "Nexus requires a browser-generated Mod Manager Download link for this account. Open the mod page in the Deck browser and click Mod Manager Download so DMM receives the nxm:// link."
+}
+
+func IsBrowserDownloadRequired(err error) bool {
+	var browserErr *BrowserDownloadRequiredError
+	return errors.As(err, &browserErr)
+}
+
 func (c *Client) Validate(ctx context.Context) (ValidateResponse, error) {
 	var out ValidateResponse
 	err := c.getJSON(ctx, "/users/validate.json", nil, &out)
@@ -126,7 +157,22 @@ func (c *Client) DownloadLinks(ctx context.Context, gameDomain, modID, fileID, n
 	}
 	var out []DownloadLink
 	err := c.getJSON(ctx, fmt.Sprintf("/games/%s/mods/%s/files/%s/download_link.json", url.PathEscape(gameDomain), url.PathEscape(modID), url.PathEscape(fileID)), query, &out)
+	if err != nil && nxmKey == "" && nexusDownloadLinkRequiresBrowser(err) {
+		return nil, &BrowserDownloadRequiredError{GameDomain: gameDomain, ModID: modID, FileID: fileID}
+	}
 	return out, err
+}
+
+func nexusDownloadLinkRequiresBrowser(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	message := strings.ToLower(apiErr.Message)
+	return apiErr.StatusCode == http.StatusForbidden &&
+		strings.Contains(message, "without") &&
+		strings.Contains(message, "nexusmods.com") &&
+		strings.Contains(message, "premium")
 }
 
 func (c *Client) SearchMods(ctx context.Context, req ModSearchRequest) (ModSearchResponse, error) {
@@ -298,9 +344,9 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, out
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		var apiErr apiErrorResponse
 		if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Message != "" {
-			return fmt.Errorf("nexus api request failed: %s: %s", resp.Status, strings.TrimSpace(apiErr.Message))
+			return &APIError{StatusCode: resp.StatusCode, Status: resp.Status, Message: strings.TrimSpace(apiErr.Message)}
 		}
-		return fmt.Errorf("nexus api request failed: %s", resp.Status)
+		return &APIError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }

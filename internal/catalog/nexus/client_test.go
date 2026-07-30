@@ -65,6 +65,26 @@ func TestClientIncludesNexusErrorMessage(t *testing.T) {
 	}
 }
 
+func TestDownloadLinksReturnsBrowserRequiredForNonPremiumAPIBlock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"code":403,"message":"You don't have permission to get download links from the API without visting nexusmods.com - this is for premium users only."}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("", WithBaseURL(server.URL))
+	_, err := client.DownloadLinks(context.Background(), "fallout4", "90384", "344008", "", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !IsBrowserDownloadRequired(err) {
+		t.Fatalf("error type = %T %v", err, err)
+	}
+	if strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "Mod Manager Download") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestSearchModsUsesGraphQLAndFiltersVortexResults(t *testing.T) {
 	var captured map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
