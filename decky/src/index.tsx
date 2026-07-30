@@ -24,10 +24,10 @@ declare const SteamClient:
         SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
         GetSubscribedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
         GetDownloadedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
-        SetWorkshopItemsDisabledLocally?: (appid: number, itemIds: string[], disabled: boolean) => void;
-        SetWorkshopItemsLoadOrder?: (appid: number, itemIds: string[]) => void;
-        SubscribeWorkshopItem?: (appid: number, itemId: string, subscribed: boolean) => void;
-        DownloadWorkshopItem?: (appid: number, itemId: string, highPriority: boolean) => void;
+        SetWorkshopItemsDisabledLocally?: (appid: number, itemIds: string[], disabled: boolean) => void | Promise<unknown>;
+        SetWorkshopItemsLoadOrder?: (appid: number, itemIds: string[]) => void | Promise<unknown>;
+        SubscribeWorkshopItem?: (appid: number, itemId: string, subscribed: boolean) => void | Promise<unknown>;
+        DownloadWorkshopItem?: (appid: number, itemId: string, highPriority: boolean) => void | Promise<unknown>;
       };
       GameSessions?: {
         RegisterForAppLifetimeNotifications?: (callback: (notification: { unAppID: number; bRunning: boolean }) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
@@ -1022,25 +1022,25 @@ async function executeWorkshopAction(job: WorkshopActionJob) {
   }
   if (kind === "enable") {
     if (typeof steamApps.SetWorkshopItemsDisabledLocally !== "function") throw new Error("Steam Workshop enable API is unavailable.");
-    steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], false);
+    await Promise.resolve(steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], false));
     return;
   }
   if (kind === "disable") {
     if (typeof steamApps.SetWorkshopItemsDisabledLocally !== "function") throw new Error("Steam Workshop disable API is unavailable.");
-    steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], true);
+    await Promise.resolve(steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], true));
     return;
   }
   if (kind === "subscribe") {
     if (typeof steamApps.SubscribeWorkshopItem !== "function") throw new Error("Steam Workshop subscribe API is unavailable.");
-    steamApps.SubscribeWorkshopItem(appid, itemID, true);
+    await Promise.resolve(steamApps.SubscribeWorkshopItem(appid, itemID, true));
     if (typeof steamApps.DownloadWorkshopItem === "function") {
-      steamApps.DownloadWorkshopItem(appid, itemID, true);
+      await Promise.resolve(steamApps.DownloadWorkshopItem(appid, itemID, true));
     }
     return;
   }
   if (kind === "unsubscribe") {
     if (typeof steamApps.SubscribeWorkshopItem !== "function") throw new Error("Steam Workshop unsubscribe API is unavailable.");
-    steamApps.SubscribeWorkshopItem(appid, itemID, false);
+    await Promise.resolve(steamApps.SubscribeWorkshopItem(appid, itemID, false));
     return;
   }
   throw new Error(`Unsupported Steam Workshop action: ${kind}`);
