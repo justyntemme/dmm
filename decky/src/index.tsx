@@ -11,7 +11,8 @@ import {
   TextField,
   ToggleField,
   showModal,
-  staticClasses
+  staticClasses,
+  type GamepadEvent
 } from "@decky/ui";
 import { call, definePlugin, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
@@ -312,9 +313,15 @@ function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused
   };
 }
 
-function deckyTabBody(content: ReactNode) {
+function deckyTabBody(content: ReactNode, onCancelButton?: (event: GamepadEvent) => void) {
   return (
-    <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckyTabBodyStyle}>
+    <Focusable
+      flow-children="column"
+      navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+      onCancelActionDescription={onCancelButton ? "Back" : undefined}
+      onCancelButton={onCancelButton}
+      style={deckyTabBodyStyle}
+    >
       {content}
     </Focusable>
   );
@@ -953,6 +960,20 @@ function Content() {
     void patchDeckyUIPreferences({ game_sort: next });
   }
 
+  function clearSelectedDeckyGame() {
+    setSelectedDeckyGameID("");
+    setFocusedModID(null);
+    setFocusedModAction("");
+    setModSearch("");
+  }
+
+  function handleDeckyTabCancel(event: GamepadEvent) {
+    if (tab !== "mods" || !selectedDeckyGameID) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearSelectedDeckyGame();
+  }
+
   async function loadDeckyGames() {
     const result = await call<[], { ok: boolean; error?: string; games: ManagedGame[] }>("games");
     if (!result.ok) {
@@ -1484,7 +1505,7 @@ function Content() {
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
           </PanelSectionRow>
           <PanelSectionRow>
-            <ButtonItem layout="below" onClick={() => setSelectedDeckyGameID("")}>
+            <ButtonItem layout="below" onClick={clearSelectedDeckyGame}>
               Change Game
             </ButtonItem>
           </PanelSectionRow>
@@ -1808,7 +1829,7 @@ function Content() {
             </Focusable>
           ))}
         </Focusable>
-        {deckyTabBody(activeTabContent)}
+        {deckyTabBody(activeTabContent, tab === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined)}
       </Focusable>
     </PanelSection>
   );
