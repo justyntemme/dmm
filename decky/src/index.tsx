@@ -867,6 +867,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
   try {
     let modal: { Close: () => void } | null = null;
     const closeModal = () => {
+      shownInstallerChoiceModals.delete(key);
       modal?.Close();
     };
     modal = showModal(
