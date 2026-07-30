@@ -227,9 +227,23 @@ ON CONFLICT(game_id, name) DO NOTHING
 }
 
 func (db *DB) GameCount(ctx context.Context) (int, error) {
+	rows, err := db.conn.QueryContext(ctx, `SELECT steam_app_id, name FROM games`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
 	var count int
-	err := db.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM games`).Scan(&count)
-	return count, err
+	for rows.Next() {
+		var appID, name string
+		if err := rows.Scan(&appID, &name); err != nil {
+			return 0, err
+		}
+		if steam.IsHelperApp(appID, name, "") {
+			continue
+		}
+		count++
+	}
+	return count, rows.Err()
 }
 
 func (db *DB) Games(ctx context.Context) ([]Game, error) {
@@ -247,6 +261,9 @@ ORDER BY LOWER(name), steam_app_id
 		var game Game
 		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.GamePath, &game.State); err != nil {
 			return nil, err
+		}
+		if steam.IsHelperApp(game.SteamAppID, game.Name, "") {
+			continue
 		}
 		games = append(games, game)
 	}

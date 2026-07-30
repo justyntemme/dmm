@@ -52,7 +52,7 @@ func Discover(ctx context.Context) ([]Game, error) {
 			if len(markers) > 0 {
 				state = "needs_review"
 			}
-			games = append(games, Game{
+			game := Game{
 				AppID:       appID,
 				Name:        values["name"],
 				InstallDir:  installDir,
@@ -60,7 +60,11 @@ func Discover(ctx context.Context) ([]Game, error) {
 				Path:        path,
 				State:       state,
 				Markers:     markers,
-			})
+			}
+			if IsHelperApp(game.AppID, game.Name, game.InstallDir) {
+				continue
+			}
+			games = append(games, game)
 		}
 	}
 
@@ -123,6 +127,45 @@ func parseACF(path string) (map[string]string, error) {
 		}
 	}
 	return values, scanner.Err()
+}
+
+var knownSteamHelperAppIDs = map[string]struct{}{
+	"228980":  {}, // Steamworks Common Redistributables
+	"1070560": {}, // Steam Linux Runtime 1.0 (scout)
+	"1391110": {}, // Steam Linux Runtime 2.0 (soldier)
+	"1628350": {}, // Steam Linux Runtime 3.0 (sniper)
+	"4183110": {}, // Steam Linux Runtime 4.0
+	"1493710": {}, // Proton Experimental
+	"2805730": {}, // Proton 9.0
+	"3658110": {}, // Proton 10.0
+	"1161040": {}, // Proton BattlEye Runtime
+	"1826330": {}, // Proton EasyAntiCheat Runtime
+}
+
+func IsHelperApp(appID, name, installDir string) bool {
+	if _, ok := knownSteamHelperAppIDs[strings.TrimSpace(appID)]; ok {
+		return true
+	}
+	normalizedName := strings.ToLower(strings.TrimSpace(name))
+	normalizedDir := strings.ToLower(strings.TrimSpace(installDir))
+	return isSteamHelperName(normalizedName) || isSteamHelperName(normalizedDir)
+}
+
+func isSteamHelperName(value string) bool {
+	switch {
+	case value == "steamworks common redistributables":
+		return true
+	case strings.HasPrefix(value, "steam linux runtime"):
+		return true
+	case value == "proton experimental":
+		return true
+	case strings.HasPrefix(value, "proton ") && strings.Contains(value, "runtime"):
+		return true
+	case strings.HasPrefix(value, "proton ") && len(value) > len("proton ") && value[len("proton ")] >= '0' && value[len("proton ")] <= '9':
+		return true
+	default:
+		return false
+	}
 }
 
 func detectExternalMarkers(gamePath string) []string {

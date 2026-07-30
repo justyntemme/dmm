@@ -250,6 +250,51 @@ func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 	}
 }
 
+func TestGamesHideSteamHelperApps(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	err = db.SyncGames(context.Background(), []steam.Game{
+		{
+			AppID:       "413150",
+			Name:        "Stardew Valley",
+			InstallDir:  "Stardew Valley",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Stardew Valley",
+			State:       "clean_candidate",
+		},
+		{
+			AppID:       "3658110",
+			Name:        "Proton 10.0",
+			InstallDir:  "Proton 10.0",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Proton 10.0",
+			State:       "clean_candidate",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := db.GameCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("game count = %d, want 1", count)
+	}
+	games, err := db.Games(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 1 || games[0].SteamAppID != "413150" {
+		t.Fatalf("games = %+v, want only Stardew", games)
+	}
+}
+
 func TestCreateAndSetDefaultProfile(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

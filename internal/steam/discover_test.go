@@ -31,6 +31,29 @@ func TestParseACF(t *testing.T) {
 	}
 }
 
+func TestIsHelperApp(t *testing.T) {
+	cases := []struct {
+		appID string
+		name  string
+		want  bool
+	}{
+		{appID: "3658110", name: "Proton 10.0", want: true},
+		{appID: "2805730", name: "Proton 9.0", want: true},
+		{appID: "1493710", name: "Proton Experimental", want: true},
+		{appID: "1161040", name: "Proton BattlEye Runtime", want: true},
+		{appID: "1826330", name: "Proton EasyAntiCheat Runtime", want: true},
+		{appID: "1628350", name: "Steam Linux Runtime 3.0 (sniper)", want: true},
+		{appID: "228980", name: "Steamworks Common Redistributables", want: true},
+		{appID: "413150", name: "Stardew Valley", want: false},
+		{appID: "292030", name: "The Witcher 3: Wild Hunt", want: false},
+	}
+	for _, tc := range cases {
+		if got := IsHelperApp(tc.appID, tc.name, tc.name); got != tc.want {
+			t.Fatalf("IsHelperApp(%q, %q) = %v, want %v", tc.appID, tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestDetectExternalMarkers(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "vortex.deployment.json"), []byte("{}"), 0o600); err != nil {
