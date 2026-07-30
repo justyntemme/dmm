@@ -473,6 +473,95 @@ func TestArchiveRootInstallerTargetsConfiguredModPath(t *testing.T) {
 	}
 }
 
+func TestArchiveRootInstallerCanStripSingleCommonWrapper(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Nice Weapon", "Meshes", "weapon.nif"), "mesh")
+	writeFile(t, filepath.Join(root, "Nice Weapon", "NiceWeapon.esp"), "plugin")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"377160"},
+		VortexGameID: "fallout4",
+		ModTypes: []ModTypeSpec{
+			{ID: "fallout4-data-root", TargetRoot: "Data"},
+		},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:fallout4:data-root",
+			VortexInstallerID: "game-query-mod-path",
+			ModType:           "fallout4-data-root",
+			StripCommonRoot:   true,
+			InstructionMode:   InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("fallout4", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.DetectedFrom) != 1 || plan.DetectedFrom[0].Path != "Nice Weapon" {
+		t.Fatalf("detected from = %+v", plan.DetectedFrom)
+	}
+	want := map[string]bool{
+		"Data/NiceWeapon.esp":    false,
+		"Data/Meshes/weapon.nif": false,
+	}
+	for _, instruction := range plan.Instructions {
+		if strings.Contains(instruction.TargetRelative, "Nice Weapon") {
+			t.Fatalf("wrapper was not stripped from %+v", instruction)
+		}
+		if _, ok := want[instruction.TargetRelative]; ok {
+			want[instruction.TargetRelative] = true
+		}
+	}
+	for target, found := range want {
+		if !found {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
+func TestArchiveRootInstallerDoesNotStripWhenFilesDoNotShareAWrapper(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Meshes", "weapon.nif"), "mesh")
+	writeFile(t, filepath.Join(root, "readme.txt"), "readme")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"377160"},
+		VortexGameID: "fallout4",
+		ModTypes: []ModTypeSpec{
+			{ID: "fallout4-data-root", TargetRoot: "Data"},
+		},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:fallout4:data-root",
+			VortexInstallerID: "game-query-mod-path",
+			ModType:           "fallout4-data-root",
+			StripCommonRoot:   true,
+			InstructionMode:   InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("fallout4", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.DetectedFrom) != 1 || plan.DetectedFrom[0].Path != "." {
+		t.Fatalf("detected from = %+v", plan.DetectedFrom)
+	}
+	want := map[string]bool{
+		"Data/Meshes/weapon.nif": false,
+		"Data/readme.txt":        false,
+	}
+	for _, instruction := range plan.Instructions {
+		if _, ok := want[instruction.TargetRelative]; ok {
+			want[instruction.TargetRelative] = true
+		}
+	}
+	for target, found := range want {
+		if !found {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

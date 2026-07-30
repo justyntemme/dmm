@@ -96,6 +96,7 @@ func installers() []installplan.InstallerSpec {
 			Priority:          100,
 			ModType:           "witcher3-mod-root",
 			NameSource:        installplan.NameSourceArchive,
+			StripCommonRoot:   true,
 			InstructionMode:   installplan.InstructionArchiveRoot,
 		},
 	}

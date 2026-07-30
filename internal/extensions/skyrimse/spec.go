@@ -103,6 +103,7 @@ func installers() []installplan.InstallerSpec {
 			Priority:          100,
 			ModType:           "skyrimse-data-root",
 			NameSource:        installplan.NameSourceArchive,
+			StripCommonRoot:   true,
 			InstructionMode:   installplan.InstructionArchiveRoot,
 		},
 	}

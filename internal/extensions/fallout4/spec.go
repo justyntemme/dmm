@@ -90,6 +90,7 @@ func installers() []installplan.InstallerSpec {
 			Priority:          100,
 			ModType:           "fallout4-data-root",
 			NameSource:        installplan.NameSourceArchive,
+			StripCommonRoot:   true,
 			InstructionMode:   installplan.InstructionArchiveRoot,
 		},
 	}

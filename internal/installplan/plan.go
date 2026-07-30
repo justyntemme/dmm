@@ -103,6 +103,7 @@ type InstallerSpec struct {
 	ModType            string
 	NameSource         string
 	TargetRoot         string
+	StripCommonRoot    bool
 	Match              MatchSpec
 	Payload            PayloadSpec
 	GeneratedFiles     []GeneratedFileSpec
@@ -412,24 +413,34 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 }
 
 func buildArchiveRootPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {
+	contentRoot := extractedRoot
+	detectedPath := "."
+	detectedReason := "Vortex installer " + installer.VortexInstallerID + " matched the archive root for the game's mod path"
+	if installer.StripCommonRoot {
+		if strippedRoot, ok := stripCommonRoot(extractedRoot); ok {
+			contentRoot = strippedRoot
+			detectedPath = filepath.ToSlash(mustRel(extractedRoot, strippedRoot))
+			detectedReason = "Vortex installer " + installer.VortexInstallerID + " stripped a single archive wrapper before applying the game's mod path"
+		}
+	}
 	plan.DetectedFrom = append(plan.DetectedFrom, Detection{
 		Kind:   "vortex-archive-root",
-		Path:   ".",
-		Reason: "Vortex installer " + installer.VortexInstallerID + " matched the archive root for the game's mod path",
+		Path:   detectedPath,
+		Reason: detectedReason,
 	})
-	err := filepath.WalkDir(extractedRoot, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(contentRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		rel, err := filepath.Rel(extractedRoot, path)
+		rel, err := filepath.Rel(contentRoot, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, path, extractedRoot, rel, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)))...)
+		plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, path, contentRoot, rel, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)))...)
 		plan.Instructions = append(plan.Instructions, Instruction{
 			Kind:            InstructionKindCopy,
 			SourcePath:      path,
@@ -453,6 +464,59 @@ func buildArchiveRootPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 		return plan.Metadata[i].TargetRelative < plan.Metadata[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func stripCommonRoot(root string) (string, bool) {
+	files, err := dataFileRelPaths(root)
+	if err != nil || len(files) == 0 {
+		return "", false
+	}
+	common := commonTopLevelDir(files)
+	if common == "" {
+		return "", false
+	}
+	return filepath.Join(root, filepath.FromSlash(common)), true
+}
+
+func dataFileRelPaths(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func commonTopLevelDir(files []string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	first := strings.SplitN(files[0], "/", 2)
+	if len(first) < 2 || first[0] == "" {
+		return ""
+	}
+	common := first[0]
+	for _, file := range files[1:] {
+		segments := strings.SplitN(file, "/", 2)
+		if len(segments) < 2 || segments[0] != common {
+			return ""
+		}
+	}
+	return common
 }
 
 func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {
