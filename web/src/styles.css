@@ -1018,6 +1018,23 @@ h2 {
   text-align: left;
 }
 
+.profile-summary .summary-action {
+  position: relative;
+  border-color: #365244;
+  background: #14231b;
+}
+
+.profile-summary .summary-action em {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  color: #76dfa6;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .profile-summary button:focus-visible {
   border-color: #76dfa6;
   outline: 2px solid rgba(118, 223, 166, 0.35);
@@ -1789,6 +1806,26 @@ dd {
 .request-home {
   display: grid;
   gap: 10px;
+}
+
+.empty-action-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #171c22;
+}
+
+.empty-action-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.empty-action-buttons button {
+  min-height: 38px;
 }
 
 @media (min-width: 760px) {

@@ -2341,9 +2341,10 @@
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <button type="button" on:click={() => (activeGameModule = "actions")}>
+                <button type="button" class="summary-action" on:click={() => (activeGameModule = "actions")} aria-label="Open Action Center for this game">
                   <strong>{selectedGameActionItems.length}</strong>
                   <span>Actions</span>
+                  <em>Open</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
@@ -2689,7 +2690,13 @@
             <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
-            <p class="hint">No install actions need attention for this game.</p>
+            <div class="empty-action-panel">
+              <p class="hint">No install actions need attention for this game.</p>
+              <div class="empty-action-buttons">
+                <button type="button" on:click={() => (activeGameModule = "plugins")}>Manage Mods</button>
+                <button type="button" class="secondary-action compact" on:click={() => (activeGameModule = "plugins")}>Add From Nexus</button>
+              </div>
+            </div>
           {/if}
           {#if selectedGameActionItems.length > 0}
             <div class="request-list">
