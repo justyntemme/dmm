@@ -76,6 +76,19 @@ func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersVortexTools(t *testing.T) {
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	for _, id := range []string{"skse64", "SSEEdit", "WryeBash", "FNIS", "bodyslide", "creation-kit-64"} {
+		if !containsLaunchTool(extension, id) {
+			t.Fatalf("missing launch tool %q in %+v", id, extension.LaunchTools)
+		}
+	}
+	primary, ok := gameext.NewRegistry([]gameext.Extension{extension}).PrimaryLaunchToolForSteamApp(skyrimse.SteamAppID)
+	if !ok || primary.ID != "skse64" || !primary.DefaultPrimary {
+		t.Fatalf("primary launch tool = %+v ok=%v", primary, ok)
+	}
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {
@@ -89,6 +102,15 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLaunchTool(extension gameext.Extension, want string) bool {
+	for _, tool := range extension.LaunchTools {
+		if tool.ID == want {
 			return true
 		}
 	}

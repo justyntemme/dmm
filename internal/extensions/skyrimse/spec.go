@@ -53,6 +53,18 @@ func Register(r sdk.Registrar) {
 		ProviderModTypes:   []string{"skyrimse-script-extender"},
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "SSEEdit",
+		Name:               "SSEEdit",
+		ExecutableRelative: "SSEEdit.exe",
+		RequiredFiles:      []string{"SSEEdit.exe"},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "WryeBash",
+		Name:               "Wrye Bash",
+		ExecutableRelative: "Wrye Bash.exe",
+		RequiredFiles:      []string{"Wrye Bash.exe"},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "FNIS",
 		Name:               "Fores New Idles in Skyrim",
 		ExecutableRelative: "GenerateFNISForUsers.exe",
@@ -63,6 +75,12 @@ func Register(r sdk.Registrar) {
 		Name:               "BodySlide",
 		ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide.exe",
 		RequiredFiles:      []string{"Data/CalienteTools/BodySlide/BodySlide.exe"},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "creation-kit-64",
+		Name:               "Creation Kit",
+		ExecutableRelative: "CreationKit.exe",
+		RequiredFiles:      []string{"CreationKit.exe"},
 	})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
 		ID:                   "skyrimse-gamebryo-plugins",

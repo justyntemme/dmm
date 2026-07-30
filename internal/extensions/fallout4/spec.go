@@ -51,6 +51,24 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{"fallout4-script-extender"},
 		ProviderModTypes:   []string{"fallout4-script-extender"},
 	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "FO4Edit",
+		Name:               "FO4Edit",
+		ExecutableRelative: "FO4Edit.exe",
+		RequiredFiles:      []string{"FO4Edit.exe"},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "WryeBash",
+		Name:               "Wrye Bash",
+		ExecutableRelative: "Wrye Bash.exe",
+		RequiredFiles:      []string{"Wrye Bash.exe"},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "bodyslide",
+		Name:               "BodySlide",
+		ExecutableRelative: "Data/Tools/BodySlide/BodySlide.exe",
+		RequiredFiles:      []string{"Data/Tools/BodySlide/BodySlide.exe"},
+	})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
 		ID:                   "fallout4-gamebryo-plugins",
 		Name:                 "Fallout 4 plugins.txt activation",

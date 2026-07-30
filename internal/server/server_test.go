@@ -249,6 +249,18 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	if !featureIDsContain(fallout.Capabilities.LaunchTools, "f4se") {
 		t.Fatalf("fallout launch tools = %+v", fallout.Capabilities.LaunchTools)
 	}
+	if !featureIDsContain(fallout.Capabilities.LaunchTools, "FO4Edit") || !featureIDsContain(fallout.Capabilities.LaunchTools, "WryeBash") {
+		t.Fatalf("fallout tool parity = %+v", fallout.Capabilities.LaunchTools)
+	}
+	skyrim, ok := byID["skyrimse"]
+	if !ok {
+		t.Fatalf("extensions = %+v", body)
+	}
+	if !featureIDsContain(skyrim.Capabilities.LaunchTools, "skse64") ||
+		!featureIDsContain(skyrim.Capabilities.LaunchTools, "SSEEdit") ||
+		!featureIDsContain(skyrim.Capabilities.LaunchTools, "creation-kit-64") {
+		t.Fatalf("skyrim launch tools = %+v", skyrim.Capabilities.LaunchTools)
+	}
 }
 
 func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
