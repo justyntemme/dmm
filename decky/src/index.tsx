@@ -350,6 +350,31 @@ const deckyRowShellStyle: CSSProperties = {
   width: "100%"
 };
 
+function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties {
+  return {
+    background: active ? "rgba(15, 118, 110, 0.28)" : focused ? "rgba(39, 54, 74, 0.8)" : "rgba(17, 24, 39, 0.55)",
+    border: `1px solid ${focused ? "#7dd3fc" : active ? "#0f766e" : "#303741"}`,
+    borderRadius: "6px",
+    boxShadow: focused ? "inset 0 0 0 1px rgba(125, 211, 252, 0.35)" : "none",
+    boxSizing: "border-box",
+    display: "grid",
+    gap: "6px",
+    maxWidth: "100%",
+    minWidth: 0,
+    overflow: "hidden",
+    padding: "6px",
+    width: "100%"
+  };
+}
+
+function deckyTransparentFocusStyle(focused: boolean): CSSProperties {
+  return {
+    ...deckyFocusableCardBase,
+    background: focused ? "rgba(39, 54, 74, 0.5)" : "transparent",
+    border: `1px solid ${focused ? "rgba(125, 211, 252, 0.75)" : "transparent"}`,
+  };
+}
+
 function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
   return {
     boxSizing: "border-box",
@@ -1629,20 +1654,29 @@ function Content() {
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
             <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyGameListDirection} style={deckySidebarListStyle}>
-              {visibleManagedGames.map((game) => (
-                <div key={game.app_id} style={{ ...deckyRowShellStyle, gridTemplateColumns: "minmax(0, 1fr) 38px" }}>
+              {visibleManagedGames.map((game, index) => {
+                const focused = focusedGameID === game.app_id;
+                const favorite = favoriteGameIDs.has(game.app_id);
+                return (
+                <div key={game.app_id} className="dmm-sidebar-surface" style={{ ...deckyCompositeRowStyle(focused, favorite), gridTemplateColumns: "minmax(0, 1fr) 38px" }}>
                   <Focusable
                     className="dmm-focus-card"
                     focusClassName="dmm-focus-card-focused"
                     onActivate={() => selectDeckyGame(game.app_id)}
+                    onOKButton={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void selectDeckyGame(game.app_id);
+                    }}
                     onGamepadBlur={() => {
                       if (focusedGameID === game.app_id) setFocusedGameID("");
                     }}
                     onGamepadFocus={() => setFocusedGameID(game.app_id)}
                     onFocus={() => setFocusedGameID(game.app_id)}
                     onMouseEnter={() => setFocusedGameID(game.app_id)}
+                    preferredFocus={index === 0}
                     style={{
-                      ...deckyFocusableCardStyle(focusedGameID === game.app_id),
+                      ...deckyTransparentFocusStyle(focused),
                       display: "grid",
                       fontWeight: 800,
                       minHeight: "42px",
@@ -1655,12 +1689,17 @@ function Content() {
                     className="dmm-focus-card"
                     focusClassName="dmm-focus-card-focused"
                     onActivate={() => toggleDeckyFavoriteGame(game.app_id)}
+                    onOKButton={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      toggleDeckyFavoriteGame(game.app_id);
+                    }}
                     onGamepadFocus={() => setFocusedGameID(game.app_id)}
                     onFocus={() => setFocusedGameID(game.app_id)}
                     onMouseEnter={() => setFocusedGameID(game.app_id)}
                     style={{
                       alignItems: "center",
-                      background: favoriteGameIDs.has(game.app_id) ? "#0f766e" : "#1f2937",
+                      background: favorite ? "#0f766e" : "#1f2937",
                       border: `1px solid ${focusedGameID === game.app_id ? "#7dd3fc" : "#374151"}`,
                       borderRadius: "6px",
                       boxSizing: "border-box",
@@ -1676,10 +1715,11 @@ function Content() {
                       width: "38px"
                     }}
                   >
-                    {favoriteGameIDs.has(game.app_id) ? "★" : "☆"}
+                    {favorite ? "★" : "☆"}
                   </Focusable>
                 </div>
-              ))}
+                );
+              })}
             </Focusable>
           </div>
         </PanelSectionRow>
@@ -1813,11 +1853,16 @@ function Content() {
                 {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
-                    <div key={mod.id} className="dmm-sidebar-surface" style={deckyRowShellStyle}>
+                    <div key={mod.id} className="dmm-sidebar-surface" style={deckyCompositeRowStyle(focused, mod.enabled)}>
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
                         onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onOKButton={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void toggleDeckyMod(mod, !mod.enabled);
+                        }}
                         onGamepadBlur={() => {
                           if (focusedModID === mod.id) setFocusedModAction("");
                         }}
@@ -1825,7 +1870,7 @@ function Content() {
                         onFocus={() => setFocusedModID(mod.id)}
                         onMouseEnter={() => setFocusedModID(mod.id)}
                         style={{
-                          ...deckyFocusableCardStyle(focused),
+                          ...deckyTransparentFocusStyle(focused),
                           alignItems: "start",
                           display: "grid",
                           gap: "10px",
@@ -1863,6 +1908,11 @@ function Content() {
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
                           onActivate={() => reinstallDeckyMod(mod)}
+                          onOKButton={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void reinstallDeckyMod(mod);
+                          }}
                           onGamepadFocus={() => {
                             setFocusedModID(mod.id);
                             setFocusedModAction(`${mod.id}:reinstall`);
@@ -1883,6 +1933,11 @@ function Content() {
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
                           onActivate={() => askRemoveDeckyMod(mod)}
+                          onOKButton={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            askRemoveDeckyMod(mod);
+                          }}
                           onGamepadFocus={() => {
                             setFocusedModID(mod.id);
                             setFocusedModAction(`${mod.id}:remove`);
