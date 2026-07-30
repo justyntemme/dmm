@@ -88,11 +88,14 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"CreationKit.exe"},
 	})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
-		ID:                   "skyrimse-gamebryo-plugins",
-		Name:                 "Skyrim Special Edition plugins.txt activation",
-		AppDataPath:          "Skyrim Special Edition",
-		Format:               gamebryo.FormatFallout4,
-		NativePlugins:        nativePlugins(),
+		ID:            "skyrimse-gamebryo-plugins",
+		Name:          "Skyrim Special Edition plugins.txt activation",
+		AppDataPath:   "Skyrim Special Edition",
+		Format:        gamebryo.FormatFallout4,
+		NativePlugins: nativePlugins(),
+		NativePluginManifests: []string{
+			"Skyrim.ccc",
+		},
 		SupportsLightPlugins: true,
 	}))
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{

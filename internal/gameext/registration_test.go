@@ -72,6 +72,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				LoadOrderFile:    "loadorder.txt",
 				Format:           "fallout4",
 				PluginExtensions: []string{".esm", ".esp", ".esl"},
+				NativePluginManifests: []string{
+					"Sample.ccc",
+				},
 			})
 			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 				ID:       "sample-ignore",
@@ -218,6 +221,9 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				AppDataPath:      "Bad",
 				Format:           "weird",
 				PluginExtensions: []string{"esp"},
+				NativePluginManifests: []string{
+					"/Bad.ccc",
+				},
 			})
 			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 				ID:       "ignore",
@@ -243,6 +249,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",
 		"plugin activation plugins plugin extension must be a file extension",
+		"plugin activation plugins native plugin manifest: absolute path is not allowed",
 		"conflict ignore ignore pattern: absolute patterns are not allowed",
 		"conflict ignore ignore pattern: path traversal is not allowed",
 	} {

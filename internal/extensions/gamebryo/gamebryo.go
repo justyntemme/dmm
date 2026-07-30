@@ -17,6 +17,7 @@ type PluginActivationOptions struct {
 	AppDataPath            string
 	Format                 string
 	NativePlugins          []string
+	NativePluginManifests  []string
 	NativePluginPatterns   []string
 	SupportsLightPlugins   bool
 	SupportsMediumMasters  bool
@@ -38,6 +39,7 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 		Format:                 opts.Format,
 		PluginExtensions:       extensions,
 		NativePlugins:          lowerCopy(opts.NativePlugins),
+		NativePluginManifests:  append([]string(nil), opts.NativePluginManifests...),
 		NativePluginPatterns:   append([]string(nil), opts.NativePluginPatterns...),
 		SupportsLightPlugins:   opts.SupportsLightPlugins,
 		SupportsMediumMasters:  opts.SupportsMediumMasters,

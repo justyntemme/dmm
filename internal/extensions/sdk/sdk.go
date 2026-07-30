@@ -103,6 +103,7 @@ type PluginActivationSpec struct {
 	Format                 string
 	PluginExtensions       []string
 	NativePlugins          []string
+	NativePluginManifests  []string
 	NativePluginPatterns   []string
 	SupportsLightPlugins   bool
 	SupportsMediumMasters  bool

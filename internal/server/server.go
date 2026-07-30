@@ -2190,7 +2190,7 @@ func (s *Server) fomodDeployedPluginDependencyState(game storage.Game, targetRel
 	if info, err := os.Lstat(path); err != nil || info.IsDir() {
 		return "", false
 	}
-	if _, native := nativePluginSet(spec)[strings.ToLower(pluginName)]; native {
+	if _, native := nativePluginSetFromNames(append(append([]string(nil), spec.NativePlugins...), nativePluginsFromManifests(game.GamePath, spec)...))[strings.ToLower(pluginName)]; native {
 		return "active", true
 	}
 	active, err := s.activePluginNamesFromDisk(game, spec)
@@ -4587,9 +4587,10 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 	if err != nil {
 		return nil, err
 	}
-	entries := pluginActivationEntries(spec, mappings)
+	native := installedNativePluginNames(game.GamePath, spec)
+	entries := pluginActivationEntries(spec, mappings, native)
 	managed := hasManagedPluginActivationFiles(targetRoot, spec, managedFiles)
-	if len(entries) == 0 && !managed {
+	if len(entries) == 0 && len(native) == 0 && !managed {
 		return nil, nil
 	}
 	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
@@ -4603,7 +4604,6 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 	if err := os.MkdirAll(generatedRoot, 0o700); err != nil {
 		return nil, err
 	}
-	native := installedNativePluginNames(game.GamePath, spec)
 	files := pluginActivationFiles(spec, native, entries)
 	out := make([]deploy.FileMapping, 0, len(files))
 	for _, file := range files {
@@ -4696,9 +4696,9 @@ func inferSteamLibraryPath(gamePath string) string {
 	return gamePath[:idx]
 }
 
-func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping) []pluginActivationEntry {
+func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping, nativePlugins []string) []pluginActivationEntry {
 	extensions := pluginExtensionSet(spec)
-	native := nativePluginSet(spec)
+	native := nativePluginSetFromNames(append(append([]string(nil), spec.NativePlugins...), nativePlugins...))
 	byName := map[string]pluginActivationEntry{}
 	for _, mapping := range mappings {
 		name, ok := pluginNameFromTarget(spec, mapping.TargetRelative, extensions)
@@ -4762,9 +4762,9 @@ func pluginExtensionSet(spec gameext.PluginActivationSpec) map[string]struct{} {
 	return out
 }
 
-func nativePluginSet(spec gameext.PluginActivationSpec) map[string]struct{} {
-	out := make(map[string]struct{}, len(spec.NativePlugins))
-	for _, plugin := range spec.NativePlugins {
+func nativePluginSetFromNames(plugins []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(plugins))
+	for _, plugin := range plugins {
 		plugin = strings.ToLower(strings.TrimSpace(plugin))
 		if plugin != "" {
 			out[plugin] = struct{}{}
@@ -4794,7 +4794,7 @@ func installedNativePluginNames(gamePath string, spec gameext.PluginActivationSp
 	}
 	seen := map[string]struct{}{}
 	var out []string
-	for _, native := range spec.NativePlugins {
+	for _, native := range append(append([]string(nil), spec.NativePlugins...), nativePluginsFromManifests(gamePath, spec)...) {
 		name, ok := byLower[strings.ToLower(strings.TrimSpace(native))]
 		if !ok {
 			continue
@@ -4816,6 +4816,28 @@ func installedNativePluginNames(gamePath string, spec gameext.PluginActivationSp
 		}
 		seen[key] = struct{}{}
 		out = append(out, name)
+	}
+	return out
+}
+
+func nativePluginsFromManifests(gamePath string, spec gameext.PluginActivationSpec) []string {
+	var out []string
+	for _, manifest := range spec.NativePluginManifests {
+		manifest = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(manifest))))
+		if manifest == "." || manifest == "" || filepath.IsAbs(manifest) || strings.HasPrefix(manifest, "../") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(gamePath, filepath.FromSlash(manifest)))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n") {
+			plugin := strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+			if plugin == "" || strings.HasPrefix(plugin, "#") {
+				continue
+			}
+			out = append(out, plugin)
+		}
 	}
 	return out
 }

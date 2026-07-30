@@ -321,6 +321,11 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 				errs = append(errs, errors.New("plugin activation "+id+" plugin extension must be a file extension"))
 			}
 		}
+		for _, manifest := range spec.NativePluginManifests {
+			if err := validateRelativePath(manifest); err != nil {
+				errs = append(errs, errors.New("plugin activation "+id+" native plugin manifest: "+err.Error()))
+			}
+		}
 	}
 	return errs
 }

@@ -3766,6 +3766,12 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Fallout4.esm"), []byte("native"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "ccExample.esl"), []byte("native cc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Fallout4.ccc"), []byte("ccExample.esl\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       fallout4.SteamAppID,
 		Name:        fallout4.Name,
@@ -3836,7 +3842,7 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "*Example.esp") || strings.Contains(string(body), "Fallout4.esm") {
+	if !strings.Contains(string(body), "*Example.esp") || strings.Contains(string(body), "Fallout4.esm") || strings.Contains(string(body), "ccExample.esl") {
 		t.Fatalf("plugins.txt body = %q", string(body))
 	}
 	loadOrderAction, ok := targets["loadorder.txt"]
@@ -3847,7 +3853,7 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "Example.esp") {
+	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "ccExample.esl") || !strings.Contains(string(body), "Example.esp") {
 		t.Fatalf("loadorder.txt body = %q", string(body))
 	}
 }

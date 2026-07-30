@@ -54,6 +54,9 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	if activation.AppDataPath != "Fallout4" || activation.Format != "fallout4" {
 		t.Fatalf("activation = %+v", activation)
 	}
+	if !contains(activation.NativePluginManifests, "Fallout4.ccc") {
+		t.Fatalf("native plugin manifests = %+v", activation.NativePluginManifests)
+	}
 	if !contains(activation.PluginExtensions, ".esl") {
 		t.Fatalf("plugin extensions = %+v", activation.PluginExtensions)
 	}

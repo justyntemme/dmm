@@ -70,11 +70,14 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"Data/Tools/BodySlide/BodySlide.exe"},
 	})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
-		ID:                   "fallout4-gamebryo-plugins",
-		Name:                 "Fallout 4 plugins.txt activation",
-		AppDataPath:          "Fallout4",
-		Format:               gamebryo.FormatFallout4,
-		NativePlugins:        nativePlugins(),
+		ID:            "fallout4-gamebryo-plugins",
+		Name:          "Fallout 4 plugins.txt activation",
+		AppDataPath:   "Fallout4",
+		Format:        gamebryo.FormatFallout4,
+		NativePlugins: nativePlugins(),
+		NativePluginManifests: []string{
+			"Fallout4.ccc",
+		},
 		SupportsLightPlugins: true,
 	}))
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
