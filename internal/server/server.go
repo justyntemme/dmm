@@ -252,7 +252,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
 	mux.HandleFunc("POST /api/imports/pending", s.handlePendingImport)
-	mux.HandleFunc("POST /api/imports/pending/{jobID}/approve", s.handleApprovePendingImport)
+	mux.HandleFunc("POST /api/imports/pending/{jobID}/install", s.handleInstallPendingImport)
 	mux.HandleFunc("POST /api/imports/pending/{jobID}/retry", s.handleRetryPendingImport)
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
 	mux.Handle("/", s.staticHandler())
@@ -2352,7 +2352,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
-	s.logger.Info("deployment approved", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
+	s.logger.Info("deployment confirmed", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying profile changes", "manual")
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -2551,7 +2551,7 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	job := s.jobs.CreateWithPayload("purge", "Purge deployed mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Purging deployed files for "+appID)
-	s.logger.Info("purge approved", "job_id", job.ID, "app_id", appID, "files", len(files))
+	s.logger.Info("purge confirmed", "job_id", job.ID, "app_id", appID, "files", len(files))
 	if err := deploy.Purge(files); err != nil {
 		s.logger.Warn("purge failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -2593,7 +2593,7 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	job := s.jobs.CreateWithPayload("repair", "Repair deployed mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Repairing deployed files for "+appID)
-	s.logger.Info("repair approved", "job_id", job.ID, "app_id", appID, "files", len(files))
+	s.logger.Info("repair confirmed", "job_id", job.ID, "app_id", appID, "files", len(files))
 	result, err := deploy.Repair(files)
 	if err != nil {
 		s.logger.Warn("repair failed", "job_id", job.ID, "app_id", appID, "error", err)
@@ -3238,14 +3238,14 @@ func (s *Server) resolveCatalogURL(ctx context.Context, rawURL string) (catalog.
 	return catalog.ResolvedDownload{}, errors.New("no remote mod catalogs are configured")
 }
 
-func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleInstallPendingImport(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimSpace(r.PathValue("jobID"))
 	if jobID == "" {
 		http.Error(w, "jobID is required", http.StatusBadRequest)
 		return
 	}
 
-	job, err := s.startPendingImportInstall(jobID, "user-confirmed install")
+	job, err := s.startPendingImportInstall(jobID, "user-started install")
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):

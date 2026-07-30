@@ -882,7 +882,7 @@ func TestCancelPendingImportRemovesStoredRequest(t *testing.T) {
 	}
 }
 
-func TestApprovePendingImportWithoutDownloadLinks(t *testing.T) {
+func TestInstallPendingImportWithoutDownloadLinks(t *testing.T) {
 	srv := newTestServer(t)
 
 	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
@@ -903,19 +903,19 @@ func TestApprovePendingImportWithoutDownloadLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+created.Job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusBadRequest {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+created.Job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusBadRequest {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
-	if !bytes.Contains(approveRec.Body.Bytes(), []byte("no downloaded archive")) {
-		t.Fatalf("expected missing archive guidance, body = %s", approveRec.Body.String())
+	if !bytes.Contains(installRec.Body.Bytes(), []byte("no downloaded archive")) {
+		t.Fatalf("expected missing archive guidance, body = %s", installRec.Body.String())
 	}
 }
 
-func TestApprovePendingImportRejectsTerminalJobWithStalePendingState(t *testing.T) {
+func TestInstallPendingImportRejectsTerminalJobWithStalePendingState(t *testing.T) {
 	srv := newTestServer(t)
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
@@ -934,12 +934,12 @@ func TestApprovePendingImportRejectsTerminalJobWithStalePendingState(t *testing.
 	})
 	job, _ = srv.jobs.Fail(job.ID, "unsupported archive format")
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusConflict {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusConflict {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 	after, ok := srv.jobs.Get(job.ID)
 	if !ok {
@@ -950,7 +950,7 @@ func TestApprovePendingImportRejectsTerminalJobWithStalePendingState(t *testing.
 	}
 }
 
-func TestApprovePendingImportInstallsCachedArchive(t *testing.T) {
+func TestInstallPendingImportInstallsCachedArchive(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -984,12 +984,12 @@ func TestApprovePendingImportInstallsCachedArchive(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusAccepted {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
@@ -1021,7 +1021,7 @@ func TestApprovePendingImportInstallsCachedArchive(t *testing.T) {
 	}
 }
 
-func TestApprovePendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
+func TestInstallPendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()
 	srv.cfg.Install.AutoEnableInstalledMods = true
@@ -1059,12 +1059,12 @@ func TestApprovePendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusAccepted {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
@@ -1215,12 +1215,12 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusAccepted {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 	failed := waitForJobStatus(t, srv, job.ID, jobs.StatusFailed)
 	if !strings.Contains(failed.Message, "no Vortex installer metadata matched this archive") {
@@ -1303,12 +1303,12 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusAccepted {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
@@ -1497,12 +1497,12 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 		t.Fatalf("mods before install confirmation = %+v", mods)
 	}
 
-	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+body.Job.ID+"/approve", nil)
-	approve.RemoteAddr = "127.0.0.1:1"
-	approveRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(approveRec, approve)
-	if approveRec.Code != http.StatusAccepted {
-		t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+body.Job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
 	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
@@ -1517,7 +1517,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 	}
 }
 
-func TestApproveDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
+func TestInstallDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1551,12 +1551,12 @@ func TestApproveDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
 			ArchivePath: archivePath,
 		})
 
-		approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-		approve.RemoteAddr = "127.0.0.1:1"
-		approveRec := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(approveRec, approve)
-		if approveRec.Code != http.StatusAccepted {
-			t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+		installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+		installReq.RemoteAddr = "127.0.0.1:1"
+		installRec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(installRec, installReq)
+		if installRec.Code != http.StatusAccepted {
+			t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 		}
 		waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
 	}
@@ -1605,7 +1605,7 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 		ModID:      "541",
 		FileID:     "160470",
 	}
-	approveCached := func() storage.InstalledMod {
+	installCached := func() storage.InstalledMod {
 		t.Helper()
 		job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
 		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
@@ -1614,12 +1614,12 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 			Source:      "test",
 			ArchivePath: archivePath,
 		})
-		approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/approve", nil)
-		approve.RemoteAddr = "127.0.0.1:1"
-		approveRec := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(approveRec, approve)
-		if approveRec.Code != http.StatusAccepted {
-			t.Fatalf("approve status = %d, body = %s", approveRec.Code, approveRec.Body.String())
+		installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+		installReq.RemoteAddr = "127.0.0.1:1"
+		installRec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(installRec, installReq)
+		if installRec.Code != http.StatusAccepted {
+			t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 		}
 		waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
 		mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
@@ -1632,7 +1632,7 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 		return mods[0]
 	}
 
-	first := approveCached()
+	first := installCached()
 	if first.Enabled {
 		t.Fatalf("first install enabled = true, want false")
 	}
@@ -1640,7 +1640,7 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 	if _, err := srv.db.SetProfileModState(context.Background(), first.ProfileID, first.ID, &enabled, nil); err != nil {
 		t.Fatal(err)
 	}
-	second := approveCached()
+	second := installCached()
 	if !second.Enabled {
 		t.Fatalf("restaged mod enabled = false, want preserved true")
 	}

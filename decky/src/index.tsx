@@ -497,7 +497,7 @@ function deckyTabBody(content: ReactNode, onCancelButton?: (event: GamepadEvent)
 }
 
 function installToastBody(job: Job): string {
-  if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this install.";
+  if (job.status === "waiting") return job.message || "Open Action Center on Decky or the phone/tablet UI to install this mod.";
   if (job.status === "running" || job.status === "queued") return job.message || "DMM is downloading or installing this mod.";
   if (job.status === "completed") return job.message || "The mod is ready in its profile.";
   if (job.status === "failed") return job.message || "Open DMM to review the error.";
@@ -2460,7 +2460,7 @@ function Content() {
         <div>
           <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
           <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
-          <div>Captured installs: {status?.backend?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</div>
+          <div>Captured installs: {status?.backend?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</div>
           <div>New mod state: {status?.backend?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</div>
           <div>FOMOD installers: {status?.backend?.install.auto_show_fomod_installers ? "Auto display" : "Action Center"}</div>
           <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>

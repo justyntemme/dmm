@@ -983,13 +983,13 @@
     }
   }
 
-  async function approveInstallRequest(request: Job) {
+  async function installCapturedMod(request: Job) {
     if (request.status !== "waiting") return;
     error = "";
     setJobBusy(request.id, true);
     markJobProcessing(request, "Installing downloaded archive...");
     try {
-      const response = await fetch(`/api/imports/pending/${request.id}/approve`, { method: "POST" });
+      const response = await fetch(`/api/imports/pending/${request.id}/install`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1538,7 +1538,7 @@
 	                    {/if}
 	                    {#if request.status === "waiting"}
 	                      {#if request.type === "pending-import"}
-	                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
+	                        <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
 	                      {/if}
 	                    {/if}
 	                    {#if request.type === "pending-import" && request.status === "failed"}
@@ -1564,7 +1564,7 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</dd></div>
+            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
           </dl>
         </article>
@@ -1596,7 +1596,7 @@
         <article class="workspace-panel">
           <h2>Install Behavior</h2>
           <dl class="settings-list">
-            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</dd></div>
+            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
           </dl>
           <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
@@ -1846,7 +1846,7 @@
                         <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
                       {/if}
                       {#if request.type === "pending-import" && request.status === "waiting"}
-                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
+                        <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
                       {/if}
                       {#if request.type === "pending-import" && request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
