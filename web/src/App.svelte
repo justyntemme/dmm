@@ -101,7 +101,8 @@
     size: number;
   };
 
-  type NexusSearchSort = "downloads" | "updated" | "endorsements" | "name" | "relevance";
+  type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
+  type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 
   type NexusModResult = {
     mod_id: number;
@@ -401,6 +402,7 @@
   let nexusFiles: NexusFile[] = [];
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "downloads";
+  let nexusSearchTimeWindow: NexusTimeWindow = "all";
   let nexusSearchResults: NexusModResult[] = [];
   let nexusSearchTotal = 0;
   let nexusSearchBusy = false;
@@ -1065,19 +1067,39 @@
   }
 
   function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
-    if (current === "downloads") return "updated";
-    if (current === "updated") return "endorsements";
-    if (current === "endorsements") return "name";
+    if (current === "downloads") return "unique_downloads";
+    if (current === "unique_downloads") return "popular";
+    if (current === "popular") return "updated";
+    if (current === "updated") return "name";
     if (current === "name") return "relevance";
     return "downloads";
   }
 
   function nexusSortLabel(sort: NexusSearchSort) {
+    if (sort === "unique_downloads") return "Unique Downloads";
+    if (sort === "popular") return "Popular";
     if (sort === "updated") return "Updated";
-    if (sort === "endorsements") return "Endorsements";
     if (sort === "name") return "Name";
     if (sort === "relevance") return "Relevance";
     return "Downloads";
+  }
+
+  function nextNexusTimeWindow(current: NexusTimeWindow): NexusTimeWindow {
+    if (current === "all") return "one_week";
+    if (current === "one_week") return "three_weeks";
+    if (current === "three_weeks") return "one_month";
+    if (current === "one_month") return "three_months";
+    if (current === "three_months") return "one_year";
+    return "all";
+  }
+
+  function nexusTimeWindowLabel(window: NexusTimeWindow) {
+    if (window === "one_week") return "1 Week";
+    if (window === "three_weeks") return "3 Weeks";
+    if (window === "one_month") return "1 Month";
+    if (window === "three_months") return "3 Months";
+    if (window === "one_year") return "1 Year";
+    return "All Time";
   }
 
   function compactNumber(value: number | undefined) {
@@ -1095,7 +1117,7 @@
     return `${value} B`;
   }
 
-  async function searchNexusMods(nextSort = nexusSearchSort) {
+  async function searchNexusMods(nextSort = nexusSearchSort, nextWindow = nexusSearchTimeWindow) {
     if (!selectedGame) return;
     nexusSearchBusy = true;
     nexusSearchError = "";
@@ -1103,6 +1125,7 @@
       const params = new URLSearchParams({
         q: nexusSearchQuery,
         sort: nextSort,
+        time_window: nextWindow,
         count: "20",
         offset: "0",
         vortex_only: "true"
@@ -1125,7 +1148,13 @@
   function cycleNexusSort() {
     const next = nextNexusSort(nexusSearchSort);
     nexusSearchSort = next;
-    void searchNexusMods(next);
+    void searchNexusMods(next, nexusSearchTimeWindow);
+  }
+
+  function cycleNexusTimeWindow() {
+    const next = nextNexusTimeWindow(nexusSearchTimeWindow);
+    nexusSearchTimeWindow = next;
+    void searchNexusMods(nexusSearchSort, next);
   }
 
   async function loadNexusModFiles(mod: NexusModResult) {
@@ -2253,6 +2282,7 @@
                   <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
                     <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
                     <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
+                    <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
                     <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
                   </form>
                   {#if nexusSearchResults.length > 0}

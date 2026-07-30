@@ -902,7 +902,7 @@ h2 {
 
 .nexus-search-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 8px;
   margin-top: 10px;
 }
@@ -910,6 +910,10 @@ h2 {
 .nexus-search-form input {
   width: 100%;
   min-width: 0;
+}
+
+.nexus-search-form button {
+  white-space: nowrap;
 }
 
 .nexus-results,
@@ -1820,6 +1824,18 @@ dd {
 
   .deploy-flow {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .nexus-search-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nexus-search-form input {
+    grid-column: 1 / -1;
+  }
+
+  .nexus-search-form button {
+    width: 100%;
   }
 
   .mod-advanced-actions {
