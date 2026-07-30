@@ -359,7 +359,7 @@ type gameResponse struct {
 	State         string              `json:"state"`
 	Markers       []string            `json:"markers,omitempty"`
 	SteamWorkshop *steam.WorkshopInfo `json:"steam_workshop,omitempty"`
-	NexusDomains  []string            `json:"nexus_domains,omitempty"`
+	NexusDomains  []string            `json:"nexus_domains"`
 }
 
 type steamWorkshopStateResponse struct {

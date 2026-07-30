@@ -263,6 +263,28 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 		!featureIDsContain(skyrim.Capabilities.LaunchTools, "creation-kit-64") {
 		t.Fatalf("skyrim launch tools = %+v", skyrim.Capabilities.LaunchTools)
 	}
+	zomboid, ok := byID["projectzomboid"]
+	if !ok {
+		t.Fatalf("extensions = %+v", body)
+	}
+	if len(zomboid.NexusDomains) != 0 {
+		t.Fatalf("project zomboid nexus domains = %+v", zomboid.NexusDomains)
+	}
+}
+
+func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
+	body, err := json.Marshal(gameResponse{
+		AppID:        "108600",
+		Name:         "Project Zomboid",
+		State:        "clean_candidate",
+		NexusDomains: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"nexus_domains":[]`)) {
+		t.Fatalf("game response should include an empty Nexus domain array, got %s", string(body))
+	}
 }
 
 func TestSteamWorkshopActionQueueContract(t *testing.T) {
