@@ -330,12 +330,22 @@ type deploymentStatusResponse struct {
 }
 
 type deploymentSettingsResponse struct {
-	AppID             string   `json:"app_id"`
-	Strategy          string   `json:"strategy"`
-	EffectiveStrategy string   `json:"effective_strategy"`
-	Source            string   `json:"source"`
-	ExtensionDefault  string   `json:"extension_default"`
-	AllowedStrategies []string `json:"allowed_strategies"`
+	AppID               string                         `json:"app_id"`
+	Strategy            string                         `json:"strategy"`
+	EffectiveStrategy   string                         `json:"effective_strategy"`
+	Source              string                         `json:"source"`
+	ExtensionDefault    string                         `json:"extension_default"`
+	AllowedStrategies   []string                       `json:"allowed_strategies"`
+	RecommendedStrategy string                         `json:"recommended_strategy"`
+	StrategyWarnings    []string                       `json:"strategy_warnings,omitempty"`
+	Capabilities        []deploymentStrategyCapability `json:"capabilities"`
+}
+
+type deploymentStrategyCapability struct {
+	Strategy    string `json:"strategy"`
+	Supported   bool   `json:"supported"`
+	Recommended bool   `json:"recommended"`
+	Reason      string `json:"reason"`
 }
 
 type deployPreviewSummary struct {
@@ -469,11 +479,12 @@ func (s *Server) handleDeploySettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.deploymentSettings(appID))
+	writeJSON(w, http.StatusOK, s.deploymentSettings(game))
 }
 
 func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Request) {
@@ -482,7 +493,8 @@ func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
-	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
@@ -516,7 +528,7 @@ func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Reque
 		"action":   "settings",
 		"strategy": strategyOrExtension(strategy),
 	})
-	writeJSON(w, http.StatusOK, s.deploymentSettings(appID))
+	writeJSON(w, http.StatusOK, s.deploymentSettings(game))
 }
 
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
@@ -5537,7 +5549,8 @@ func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
 	}
 }
 
-func (s *Server) deploymentSettings(appID string) deploymentSettingsResponse {
+func (s *Server) deploymentSettings(game storage.Game) deploymentSettingsResponse {
+	appID := strings.TrimSpace(game.SteamAppID)
 	override, hasOverride := s.deploymentStrategyOverride(appID)
 	extensionDefault, ok := s.games.DeploymentStrategyForSteamApp(appID)
 	if !ok || !isConcreteDeployStrategy(extensionDefault) {
@@ -5551,13 +5564,17 @@ func (s *Server) deploymentSettings(appID string) deploymentSettingsResponse {
 		source = "override"
 		strategy = override
 	}
+	capabilities, recommended, warnings := s.deploymentStrategyCapabilities(game, effective)
 	return deploymentSettingsResponse{
-		AppID:             appID,
-		Strategy:          strategyOrExtension(strategy),
-		EffectiveStrategy: effective,
-		Source:            source,
-		ExtensionDefault:  extensionDefault,
-		AllowedStrategies: []string{"extension", string(deploy.StrategySymlink), string(deploy.StrategyHardlink), string(deploy.StrategyCopy)},
+		AppID:               appID,
+		Strategy:            strategyOrExtension(strategy),
+		EffectiveStrategy:   effective,
+		Source:              source,
+		ExtensionDefault:    extensionDefault,
+		AllowedStrategies:   []string{"extension", string(deploy.StrategySymlink), string(deploy.StrategyHardlink), string(deploy.StrategyCopy)},
+		RecommendedStrategy: recommended,
+		StrategyWarnings:    warnings,
+		Capabilities:        capabilities,
 	}
 }
 

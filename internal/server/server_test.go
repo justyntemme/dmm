@@ -833,6 +833,59 @@ func TestDeploySettingsOverrideAndReset(t *testing.T) {
 	}
 }
 
+func TestDeploySettingsReportsStrategyCapabilities(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(srv.cfg.DataDir, "game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: filepath.Dir(gamePath),
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/settings", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body deploymentSettingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.RecommendedStrategy == "" {
+		t.Fatalf("missing recommended strategy: %+v", body)
+	}
+	if len(body.Capabilities) != 3 {
+		t.Fatalf("capabilities = %+v", body.Capabilities)
+	}
+	supported := map[string]bool{}
+	recommended := 0
+	for _, capability := range body.Capabilities {
+		supported[capability.Strategy] = capability.Supported
+		if capability.Recommended {
+			recommended++
+		}
+		if strings.TrimSpace(capability.Reason) == "" {
+			t.Fatalf("capability missing reason = %+v", capability)
+		}
+	}
+	if !supported[string(deploy.StrategySymlink)] || !supported[string(deploy.StrategyHardlink)] || !supported[string(deploy.StrategyCopy)] {
+		t.Fatalf("supported strategies = %+v", supported)
+	}
+	if recommended != 1 {
+		t.Fatalf("recommended count = %d, capabilities = %+v", recommended, body.Capabilities)
+	}
+}
+
 func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	srv := newTestServer(t)
 

@@ -1085,6 +1085,53 @@ h2 {
   min-height: 38px;
 }
 
+.deployment-strategy-warnings {
+  display: grid;
+  gap: 6px;
+}
+
+.deployment-strategy-warnings p {
+  margin: 0;
+  border: 1px solid #6f4d1d;
+  border-radius: 8px;
+  padding: 8px;
+  color: #ffe6a3;
+  background: #241c12;
+}
+
+.deployment-capabilities {
+  display: grid;
+  gap: 8px;
+}
+
+.deployment-capabilities article {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #365244;
+  border-radius: 8px;
+  padding: 9px;
+  background: #141e19;
+}
+
+.deployment-capabilities article.unsupported {
+  border-color: #6f4d1d;
+  background: #201a12;
+}
+
+.deployment-capabilities article.recommended {
+  box-shadow: inset 0 0 0 1px rgba(118, 223, 166, 0.26);
+}
+
+.deployment-capabilities strong {
+  text-transform: capitalize;
+}
+
+.deployment-capabilities span,
+.deployment-capabilities small {
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
 .recovery-card {
   display: grid;
   gap: 10px;

@@ -257,6 +257,16 @@
     source: string;
     extension_default: string;
     allowed_strategies: string[];
+    recommended_strategy: string;
+    strategy_warnings?: string[];
+    capabilities?: DeploymentStrategyCapability[];
+  };
+
+  type DeploymentStrategyCapability = {
+    strategy: string;
+    supported: boolean;
+    recommended: boolean;
+    reason: string;
   };
 
   type RuntimeRequirement = {
@@ -2313,6 +2323,9 @@
                   Effective: {deploymentSettings?.effective_strategy ?? deployPlan?.strategy ?? "symlink"} ·
                   Default: {deploymentSettings?.extension_default ?? "symlink"}
                 </small>
+                {#if deploymentSettings?.recommended_strategy}
+                  <small>Recommended: {deploymentSettings.recommended_strategy}</small>
+                {/if}
               </div>
               <select aria-label="Deployment strategy" value={deploymentSettings?.strategy ?? "extension"} on:change={(event) => updateDeploymentStrategy(event.currentTarget.value)}>
                 <option value="extension">Extension Default</option>
@@ -2320,6 +2333,24 @@
                 <option value="hardlink">Hardlink</option>
                 <option value="copy">Copy</option>
               </select>
+              {#if deploymentSettings?.strategy_warnings?.length}
+                <div class="deployment-strategy-warnings">
+                  {#each deploymentSettings.strategy_warnings as warning}
+                    <p>{warning}</p>
+                  {/each}
+                </div>
+              {/if}
+              {#if deploymentSettings?.capabilities?.length}
+                <div class="deployment-capabilities" aria-label="Deployment strategy capabilities">
+                  {#each deploymentSettings.capabilities as capability}
+                    <article class:unsupported={!capability.supported} class:recommended={capability.recommended}>
+                      <strong>{capability.strategy}</strong>
+                      <span>{capability.supported ? "Supported" : "Not recommended"}{capability.recommended ? " · Recommended" : ""}</span>
+                      <small>{capability.reason}</small>
+                    </article>
+                  {/each}
+                </div>
+              {/if}
             </section>
             <section class="recovery-card">
               <div class="panel-heading compact-heading">
