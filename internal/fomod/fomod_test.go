@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 func TestParseAndBuildPlanUsesDefaultSelections(t *testing.T) {
@@ -399,6 +401,136 @@ func TestBuildPlanValidatesSelectExactlyOne(t *testing.T) {
 	}
 }
 
+func TestBuildPlanEvaluatesDependencyTypeDefaults(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Base" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="A">
+              <conditionFlags><flag name="variant">A</flag></conditionFlags>
+              <files><file source="a.txt" /></files>
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+            </plugin>
+            <plugin name="B">
+              <conditionFlags><flag name="variant">B</flag></conditionFlags>
+              <files><file source="b.txt" /></files>
+              <typeDescriptor><type name="Optional" /></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+        <group name="Patch" type="SelectAny">
+          <plugins>
+            <plugin name="Patch A">
+              <files><file source="patch-a.txt" /></files>
+              <typeDescriptor>
+                <dependencyType>
+                  <defaultType name="NotUsable" />
+                  <patterns>
+                    <pattern>
+                      <dependencies><flagDependency flag="variant" value="A" /></dependencies>
+                      <type name="Required" />
+                    </pattern>
+                  </patterns>
+                </dependencyType>
+              </typeDescriptor>
+            </plugin>
+            <plugin name="Patch B">
+              <files><file source="patch-b.txt" /></files>
+              <typeDescriptor>
+                <dependencyType>
+                  <defaultType name="NotUsable" />
+                  <patterns>
+                    <pattern>
+                      <dependencies><flagDependency flag="variant" value="B" /></dependencies>
+                      <type name="Required" />
+                    </pattern>
+                  </patterns>
+                </dependencyType>
+              </typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	writeFile(t, filepath.Join(root, "a.txt"), "a")
+	writeFile(t, filepath.Join(root, "b.txt"), "b")
+	writeFile(t, filepath.Join(root, "patch-a.txt"), "patch-a")
+	writeFile(t, filepath.Join(root, "patch-b.txt"), "patch-b")
+
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := DefaultSelections(installer)
+	patchGroup := installer.Steps[0].Groups[1]
+	if len(defaults[patchGroup.ID]) != 1 || defaults[patchGroup.ID][0] != patchGroup.Plugins[0].ID {
+		t.Fatalf("defaults = %+v", defaults)
+	}
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := instructionTargets(plan)
+	if !targets["Data/a.txt"] || !targets["Data/patch-a.txt"] || targets["Data/patch-b.txt"] {
+		t.Fatalf("dynamic dependencyType targets = %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanRejectsNotUsableDependencyTypeSelection(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Patch" type="SelectAny">
+          <plugins>
+            <plugin name="Patch">
+              <files><file source="patch.txt" /></files>
+              <typeDescriptor>
+                <dependencyType>
+                  <defaultType name="NotUsable" />
+                  <patterns>
+                    <pattern>
+                      <dependencies><flagDependency flag="missing" value="yes" /></dependencies>
+                      <type name="Required" />
+                    </pattern>
+                  </patterns>
+                </dependencyType>
+              </typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	writeFile(t, filepath.Join(root, "patch.txt"), "patch")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := installer.Steps[0].Groups[0]
+	_, err = BuildPlan("fallout4", root, installer, map[string][]string{
+		group.ID: {group.Plugins[0].ID},
+	}, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err == nil {
+		t.Fatal("expected NotUsable selection to fail")
+	}
+}
+
 func TestParseUTF16ModuleConfig(t *testing.T) {
 	root := t.TempDir()
 	xml := `<config><moduleName>UTF16 Installer</moduleName></config>`
@@ -423,6 +555,14 @@ func TestParseUTF16ModuleConfig(t *testing.T) {
 	if installer.Name != "UTF16 Installer" {
 		t.Fatalf("installer = %+v", installer)
 	}
+}
+
+func instructionTargets(plan installplan.Plan) map[string]bool {
+	out := make(map[string]bool, len(plan.Instructions))
+	for _, instruction := range plan.Instructions {
+		out[instruction.TargetRelative] = true
+	}
+	return out
 }
 
 func writeFile(t *testing.T, path string, body string) {

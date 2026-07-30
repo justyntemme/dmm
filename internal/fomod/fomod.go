@@ -42,6 +42,7 @@ type Plugin struct {
 	Name        string      `json:"name"`
 	Description string      `json:"description,omitempty"`
 	Type        string      `json:"type,omitempty"`
+	TypeRules   []TypeRule  `json:"type_rules,omitempty"`
 	Flags       []Flag      `json:"flags,omitempty"`
 	Files       []FileEntry `json:"files,omitempty"`
 }
@@ -61,6 +62,11 @@ type Flag struct {
 type ConditionalPattern struct {
 	Dependencies DependencyGroup `json:"dependencies"`
 	Files        []FileEntry     `json:"files"`
+}
+
+type TypeRule struct {
+	Dependencies DependencyGroup `json:"dependencies"`
+	Type         string          `json:"type"`
 }
 
 type DependencyGroup struct {
@@ -137,11 +143,26 @@ type pluginXML struct {
 }
 
 type typeDescriptorXML struct {
-	Type typeXML `xml:"type"`
+	Type           typeXML           `xml:"type"`
+	DependencyType dependencyTypeXML `xml:"dependencyType"`
 }
 
 type typeXML struct {
 	Name string `xml:"name,attr"`
+}
+
+type dependencyTypeXML struct {
+	DefaultType typeXML             `xml:"defaultType"`
+	Patterns    typeRulePatternsXML `xml:"patterns"`
+}
+
+type typeRulePatternsXML struct {
+	Patterns []typeRulePatternXML `xml:"pattern"`
+}
+
+type typeRulePatternXML struct {
+	Dependencies dependenciesXML `xml:"dependencies"`
+	Type         typeXML         `xml:"type"`
 }
 
 type fileContainerXML struct {
@@ -259,7 +280,8 @@ func Parse(root string) (Installer, error) {
 					ID:          fmt.Sprintf("%s-plugin-%d", group.ID, pluginIndex+1),
 					Name:        name,
 					Description: strings.TrimSpace(pluginXML.Description),
-					Type:        strings.TrimSpace(pluginXML.TypeDescriptor.Type.Name),
+					Type:        pluginXML.TypeDescriptor.defaultType(),
+					TypeRules:   pluginXML.TypeDescriptor.typeRules(),
 					Flags:       pluginXML.ConditionFlags.flags(),
 					Files:       pluginXML.Files.entries(),
 				})
@@ -272,28 +294,39 @@ func Parse(root string) (Installer, error) {
 }
 
 func DefaultSelections(installer Installer) map[string][]string {
+	return DefaultSelectionsWithOptions(installer, PlanOptions{})
+}
+
+func DefaultSelectionsWithOptions(installer Installer, options PlanOptions) map[string][]string {
 	out := map[string][]string{}
+	selectedFlags := map[string]string{}
 	for _, step := range installer.Steps {
 		for _, group := range step.Groups {
+			types := effectivePluginTypes(group.Plugins, selectedFlags, options)
 			switch strings.ToLower(group.Type) {
 			case "selectall":
 				for _, plugin := range group.Plugins {
-					out[group.ID] = append(out[group.ID], plugin.ID)
+					if isSelectablePluginType(types[plugin.ID]) {
+						out[group.ID] = append(out[group.ID], plugin.ID)
+					}
 				}
 			case "selectexactlyone", "selectatleastone":
-				if plugin, ok := preferredPlugin(group.Plugins); ok {
+				if plugin, ok := preferredPlugin(group.Plugins, types); ok {
 					out[group.ID] = []string{plugin.ID}
 				}
 			case "selectatmostone", "selectany":
 				for _, plugin := range group.Plugins {
-					if isPreferredPluginType(plugin.Type) {
+					if isPreferredPluginType(types[plugin.ID]) {
 						out[group.ID] = append(out[group.ID], plugin.ID)
 					}
 				}
 			default:
-				if plugin, ok := preferredPlugin(group.Plugins); ok {
+				if plugin, ok := preferredPlugin(group.Plugins, types); ok {
 					out[group.ID] = []string{plugin.ID}
 				}
+			}
+			for _, plugin := range selectedPluginsByID(group.Plugins, out[group.ID]) {
+				mergeFlags(selectedFlags, plugin.Flags)
 			}
 		}
 	}
@@ -320,7 +353,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		return installplan.Plan{}, err
 	}
 	if selections == nil {
-		selections = DefaultSelections(installer)
+		selections = DefaultSelectionsWithOptions(installer, options)
 	}
 	plan := installplan.Plan{
 		GameID:       strings.TrimSpace(gameID),
@@ -339,17 +372,12 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 	selectedFlags := map[string]string{}
 	for _, step := range installer.Steps {
 		for _, group := range step.Groups {
-			selected, err := selectedPlugins(group, selections[group.ID])
+			selected, err := selectedPlugins(group, selections[group.ID], selectedFlags, options)
 			if err != nil {
 				return installplan.Plan{}, err
 			}
 			for _, plugin := range selected {
-				for _, flag := range plugin.Flags {
-					name := strings.TrimSpace(flag.Name)
-					if name != "" {
-						selectedFlags[name] = strings.TrimSpace(flag.Value)
-					}
-				}
+				mergeFlags(selectedFlags, plugin.Flags)
 				for _, entry := range plugin.Files {
 					if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 						return installplan.Plan{}, err
@@ -374,20 +402,24 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 	return plan, nil
 }
 
-func selectedPlugins(group Group, ids []string) ([]Plugin, error) {
+func selectedPlugins(group Group, ids []string, flags map[string]string, options PlanOptions) ([]Plugin, error) {
 	selected := map[string]struct{}{}
 	for _, id := range ids {
 		selected[strings.TrimSpace(id)] = struct{}{}
 	}
+	types := effectivePluginTypes(group.Plugins, flags, options)
 	var out []Plugin
 	for _, plugin := range group.Plugins {
 		if _, ok := selected[plugin.ID]; ok {
+			if !isSelectablePluginType(types[plugin.ID]) {
+				return nil, fmt.Errorf("group %q option %q is not usable for the current selections", group.Name, plugin.Name)
+			}
 			out = append(out, plugin)
 		}
 	}
 	switch strings.ToLower(group.Type) {
 	case "selectall":
-		if len(out) != len(group.Plugins) {
+		if len(out) != selectablePluginCount(group.Plugins, types) {
 			return nil, fmt.Errorf("group %q requires all options", group.Name)
 		}
 	case "selectexactlyone":
@@ -404,6 +436,16 @@ func selectedPlugins(group Group, ids []string) ([]Plugin, error) {
 		}
 	}
 	return out, nil
+}
+
+func selectablePluginCount(plugins []Plugin, types map[string]string) int {
+	var count int
+	for _, plugin := range plugins {
+		if isSelectablePluginType(types[plugin.ID]) {
+			count++
+		}
+	}
+	return count
 }
 
 func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, stopFolders []string, entry FileEntry) error {
@@ -559,6 +601,29 @@ func (c conditionFlagsXML) flags() []Flag {
 		out = append(out, Flag{
 			Name:  name,
 			Value: strings.TrimSpace(flag.Value),
+		})
+	}
+	return out
+}
+
+func (d typeDescriptorXML) defaultType() string {
+	value := strings.TrimSpace(d.Type.Name)
+	if value != "" {
+		return value
+	}
+	return strings.TrimSpace(d.DependencyType.DefaultType.Name)
+}
+
+func (d typeDescriptorXML) typeRules() []TypeRule {
+	var out []TypeRule
+	for _, pattern := range d.DependencyType.Patterns.Patterns {
+		typeName := strings.TrimSpace(pattern.Type.Name)
+		if typeName == "" {
+			continue
+		}
+		out = append(out, TypeRule{
+			Dependencies: pattern.Dependencies.group(),
+			Type:         typeName,
 		})
 	}
 	return out
@@ -820,16 +885,62 @@ func normalizeDependencyOperator(value string) string {
 	}
 }
 
-func preferredPlugin(plugins []Plugin) (Plugin, bool) {
+func effectivePluginTypes(plugins []Plugin, flags map[string]string, options PlanOptions) map[string]string {
+	out := make(map[string]string, len(plugins))
 	for _, plugin := range plugins {
-		if isPreferredPluginType(plugin.Type) {
+		out[plugin.ID] = effectivePluginType(plugin, flags, options)
+	}
+	return out
+}
+
+func effectivePluginType(plugin Plugin, flags map[string]string, options PlanOptions) string {
+	for _, rule := range plugin.TypeRules {
+		if dependencyGroupMatchesWithGameVersion(rule.Dependencies, flags, options.FileStates, options.FileStateResolver, options.GameVersion) {
+			return strings.TrimSpace(rule.Type)
+		}
+	}
+	return strings.TrimSpace(plugin.Type)
+}
+
+func selectedPluginsByID(plugins []Plugin, ids []string) []Plugin {
+	selected := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		selected[id] = struct{}{}
+	}
+	out := make([]Plugin, 0, len(selected))
+	for _, plugin := range plugins {
+		if _, ok := selected[plugin.ID]; ok {
+			out = append(out, plugin)
+		}
+	}
+	return out
+}
+
+func mergeFlags(out map[string]string, flags []Flag) {
+	for _, flag := range flags {
+		name := strings.TrimSpace(flag.Name)
+		if name != "" {
+			out[name] = strings.TrimSpace(flag.Value)
+		}
+	}
+}
+
+func preferredPlugin(plugins []Plugin, types map[string]string) (Plugin, bool) {
+	for _, plugin := range plugins {
+		if isPreferredPluginType(types[plugin.ID]) {
 			return plugin, true
 		}
 	}
-	if len(plugins) == 0 {
-		return Plugin{}, false
+	for _, plugin := range plugins {
+		if isSelectablePluginType(types[plugin.ID]) {
+			return plugin, true
+		}
 	}
-	return plugins[0], true
+	return Plugin{}, false
 }
 
 func isPreferredPluginType(value string) bool {
@@ -839,6 +950,10 @@ func isPreferredPluginType(value string) bool {
 	default:
 		return false
 	}
+}
+
+func isSelectablePluginType(value string) bool {
+	return !strings.EqualFold(strings.TrimSpace(value), "NotUsable")
 }
 
 func normalizeGroupType(value string) string {
