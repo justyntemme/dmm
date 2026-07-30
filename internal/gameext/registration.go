@@ -223,6 +223,11 @@ func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []instal
 		if err := validateRelativeOrRoot(spec.TargetRoot); err != nil {
 			errs = append(errs, errors.New("installer choice "+id+" target root: "+err.Error()))
 		}
+		for _, folder := range spec.StopFolders {
+			if err := validatePathSegment(folder); err != nil {
+				errs = append(errs, errors.New("installer choice "+id+" stop folder: "+err.Error()))
+			}
+		}
 	}
 	return errs
 }
@@ -344,6 +349,20 @@ func validateRelativePath(value string) error {
 	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
 	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return errors.New("path traversal is not allowed")
+	}
+	return nil
+}
+
+func validatePathSegment(value string) error {
+	value = strings.TrimSpace(filepath.ToSlash(value))
+	if value == "" {
+		return errors.New("path segment is required")
+	}
+	if strings.Contains(value, "/") || value == "." || value == ".." {
+		return errors.New("must be a single relative path segment")
+	}
+	if filepath.IsAbs(value) {
+		return errors.New("absolute path is not allowed")
 	}
 	return nil
 }

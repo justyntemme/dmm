@@ -48,11 +48,12 @@ type SourceRef struct {
 }
 
 type InstallerChoiceSpec struct {
-	ID         string
-	Name       string
-	Kind       string
-	ModType    string
-	TargetRoot string
+	ID          string
+	Name        string
+	Kind        string
+	ModType     string
+	TargetRoot  string
+	StopFolders []string
 }
 
 type LaunchToolSpec struct {

@@ -76,9 +76,10 @@ type FlagDependency struct {
 }
 
 type PlanOptions struct {
-	ModType    string
-	PlannerID  string
-	TargetRoot string
+	ModType     string
+	PlannerID   string
+	TargetRoot  string
+	StopFolders []string
 }
 
 type configXML struct {
@@ -313,8 +314,9 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		DetectedFrom: []installplan.Detection{{Kind: "fomod-module-config", Path: installer.ModuleConfig, Reason: "FOMOD ModuleConfig.xml parsed"}},
 		Instructions: []installplan.Instruction{},
 	}
+	stopFolders := normalizedStopFolders(options.StopFolders)
 	for _, entry := range installer.RequiredFiles {
-		if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
+		if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 			return installplan.Plan{}, err
 		}
 	}
@@ -333,7 +335,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 					}
 				}
 				for _, entry := range plugin.Files {
-					if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
+					if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
@@ -345,7 +347,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 			continue
 		}
 		for _, entry := range pattern.Files {
-			if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
+			if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 				return installplan.Plan{}, err
 			}
 		}
@@ -388,7 +390,7 @@ func selectedPlugins(group Group, ids []string) ([]Plugin, error) {
 	return out, nil
 }
 
-func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, entry FileEntry) error {
+func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, stopFolders []string, entry FileEntry) error {
 	sourceRel, err := cleanRel(entry.Source)
 	if err != nil {
 		return err
@@ -402,6 +404,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 	if destRel == "" {
 		destRel = sourceRel
 	}
+	destRel = stripBeforeStopFolder(destRel, stopFolders)
 	destRel, err = cleanRel(destRel)
 	if err != nil {
 		return err
@@ -435,6 +438,43 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 		TargetRelative:  targetRelative(targetRoot, destRel),
 	})
 	return nil
+}
+
+func normalizedStopFolders(values []string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(filepath.ToSlash(value))
+		if value == "" || strings.Contains(value, "/") {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func stripBeforeStopFolder(rel string, stopFolders []string) string {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if rel == "" || len(stopFolders) == 0 {
+		return rel
+	}
+	stop := map[string]struct{}{}
+	for _, folder := range stopFolders {
+		stop[strings.ToLower(strings.TrimSpace(folder))] = struct{}{}
+	}
+	segments := strings.Split(rel, "/")
+	for index, segment := range segments {
+		if _, ok := stop[strings.ToLower(strings.TrimSpace(segment))]; !ok {
+			continue
+		}
+		return filepath.ToSlash(filepath.Join(segments[index:]...))
+	}
+	return rel
 }
 
 func targetRelative(targetRoot, destRel string) string {

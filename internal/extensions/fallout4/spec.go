@@ -33,11 +33,12 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
-		ID:         "vortex:fallout4:fomod",
-		Name:       "FOMOD installer",
-		Kind:       "fomod",
-		ModType:    "fallout4-data-root",
-		TargetRoot: "Data",
+		ID:          "vortex:fallout4:fomod",
+		Name:        "FOMOD installer",
+		Kind:        "fomod",
+		ModType:     "fallout4-data-root",
+		TargetRoot:  "Data",
+		StopFolders: gamebryo.StopFolders("f4se"),
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "f4se",

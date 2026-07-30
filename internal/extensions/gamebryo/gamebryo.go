@@ -45,6 +45,47 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 	}
 }
 
+func StopFolders(extra ...string) []string {
+	values := []string{
+		"Data",
+		"distantlod",
+		"textures",
+		"meshes",
+		"music",
+		"shaders",
+		"video",
+		"interface",
+		"fonts",
+		"scripts",
+		"facegen",
+		"menus",
+		"lodsettings",
+		"lsdata",
+		"sound",
+		"strings",
+		"trees",
+		"asi",
+		"tools",
+		"calientetools",
+	}
+	values = append(values, extra...)
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
 func lowerCopy(values []string) []string {
 	out := make([]string, 0, len(values))
 	for _, value := range values {

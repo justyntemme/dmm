@@ -1923,9 +1923,10 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		}
 	}
 	plan, err := fomod.BuildPlan(candidate.SteamAppID, extractPath, installer, selections, fomod.PlanOptions{
-		ModType:    choiceSpec.ModType,
-		PlannerID:  choiceSpec.ID,
-		TargetRoot: choiceSpec.TargetRoot,
+		ModType:     choiceSpec.ModType,
+		PlannerID:   choiceSpec.ID,
+		TargetRoot:  choiceSpec.TargetRoot,
+		StopFolders: choiceSpec.StopFolders,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err

@@ -34,11 +34,12 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
-		ID:         "vortex:skyrimse:fomod",
-		Name:       "FOMOD installer",
-		Kind:       "fomod",
-		ModType:    "skyrimse-data-root",
-		TargetRoot: "Data",
+		ID:          "vortex:skyrimse:fomod",
+		Name:        "FOMOD installer",
+		Kind:        "fomod",
+		ModType:     "skyrimse-data-root",
+		TargetRoot:  "Data",
+		StopFolders: gamebryo.StopFolders("skse", "SkyProc Patchers"),
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "skse64",

@@ -69,6 +69,11 @@ func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 	if choice.ModType != "fallout4-data-root" || choice.TargetRoot != "Data" {
 		t.Fatalf("choice = %+v", choice)
 	}
+	for _, want := range []string{"Data", "meshes", "textures", "f4se"} {
+		if !contains(choice.StopFolders, want) {
+			t.Fatalf("stop folders missing %q in %+v", want, choice.StopFolders)
+		}
+	}
 }
 
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {

@@ -137,10 +137,11 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				}},
 			})
 			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
-				ID:         "bad:fomod",
-				Kind:       "fomod",
-				ModType:    "missing-choice-type",
-				TargetRoot: "../Data",
+				ID:          "bad:fomod",
+				Kind:        "fomod",
+				ModType:     "missing-choice-type",
+				TargetRoot:  "../Data",
+				StopFolders: []string{"bad/path"},
 			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "tool",
@@ -167,6 +168,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"generated source path: absolute path is not allowed",
 		"installer choice bad:fomod references undeclared mod type missing-choice-type",
 		"installer choice bad:fomod target root: path traversal is not allowed",
+		"installer choice bad:fomod stop folder: must be a single relative path segment",
 		"launch tool tool executable path: path traversal is not allowed",
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",

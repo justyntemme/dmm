@@ -116,6 +116,42 @@ func TestBuildPlanAppliesExtensionTargetRoot(t *testing.T) {
 	}
 }
 
+func TestBuildPlanUsesExtensionStopFolders(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="Wrapper/Data/Plugin.esp" />
+    <file source="Wrapper/meshes/weapon.nif" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "Wrapper", "Data", "Plugin.esp"), "plugin")
+	writeFile(t, filepath.Join(root, "Wrapper", "meshes", "weapon.nif"), "mesh")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:     "fallout4-data-root",
+		PlannerID:   "vortex:fallout4:fomod",
+		TargetRoot:  "Data",
+		StopFolders: []string{"Data", "meshes"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]string{}
+	for _, instruction := range plan.Instructions {
+		targets[instruction.StagingRelative] = instruction.TargetRelative
+	}
+	if targets["Data/Plugin.esp"] != "Data/Plugin.esp" {
+		t.Fatalf("data target = %q, plan = %+v", targets["Data/Plugin.esp"], plan.Instructions)
+	}
+	if targets["meshes/weapon.nif"] != "Data/meshes/weapon.nif" {
+		t.Fatalf("meshes target = %q, plan = %+v", targets["meshes/weapon.nif"], plan.Instructions)
+	}
+}
+
 func TestBuildPlanAppliesConditionalFilesFromSelectedFlags(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
