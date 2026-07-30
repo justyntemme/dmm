@@ -306,7 +306,7 @@ class Plugin:
         if result is None:
             return {"ok": False, "error": error or "Unable to select profile."}
         self._log(f"default profile selected profile_id={profile_id}")
-        return {"ok": True, "profile": result}
+        return {"ok": True, "profile": result.get("profile"), "apply": result.get("apply")}
 
     async def set_profile_mod_enabled(self, app_id, profile_id, installed_mod_id, enabled):
         app_id = str(app_id or "").strip()

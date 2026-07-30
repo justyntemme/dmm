@@ -767,13 +767,18 @@ function Content() {
     try {
       setError("");
       setModsResult("");
-      const result = await call<[number], { ok: boolean; error?: string }>("set_default_profile", profile.id);
+      const result = await call<[number], { ok: boolean; error?: string; profile?: Profile; apply?: ProfileApplyResult }>("set_default_profile", profile.id);
       if (!result.ok) {
         setError(result.error ?? "Unable to select profile.");
         return;
       }
       await loadDeckyGameState(selectedDeckyGameID);
-      setModsResult("Profile selected. Restart the game for changes to affect a running session.");
+      const applyMessage = result.apply?.message || "Profile selected. Restart the game for changes to affect a running session.";
+      if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
+        setError(applyMessage);
+      } else {
+        setModsResult(applyMessage);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

@@ -214,6 +214,11 @@
     apply: ProfileApplyResult;
   };
 
+  type SetDefaultProfileResult = {
+    profile: Profile;
+    apply: ProfileApplyResult;
+  };
+
   type Confirmation = {
     title: string;
     message: string;
@@ -606,9 +611,11 @@
       error = await response.text();
       return;
     }
+    const result: SetDefaultProfileResult = await response.json();
+    handleProfileApplyResult(result.apply);
     await loadProfiles(selectedGame);
     await loadInstalledMods(selectedGame);
-    await applyCurrentProfileChanges();
+    await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
@@ -935,33 +942,6 @@
     upsertJob(result.job);
     deployPlan = result.plan;
     await refreshSelectedGame({ refreshPreview: true });
-  }
-
-  async function applyCurrentProfileChanges() {
-    if (!selectedGame) return false;
-    error = "";
-    const previewResponse = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
-    if (!previewResponse.ok) {
-      error = await previewResponse.text();
-      return false;
-    }
-    const nextPlan: DeployPlan = await previewResponse.json();
-    deployPlan = nextPlan;
-    const actions = getDeployableActions(nextPlan);
-    if (nextPlan.conflicts.length > 0 || actions.length === 0) {
-      await refreshSelectedGame();
-      return false;
-    }
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
-    if (!response.ok) {
-      error = await response.text();
-      return false;
-    }
-    const result = await response.json();
-    upsertJob(result.job);
-    deployPlan = result.plan;
-    await refreshSelectedGame({ refreshPreview: true });
-    return true;
   }
 
   async function askApplyPendingProfileChanges() {

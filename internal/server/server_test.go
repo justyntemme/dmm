@@ -2153,6 +2153,81 @@ func TestProfileModToggleDeploysAndRemovesManagedFiles(t *testing.T) {
 	}
 }
 
+func TestSetDefaultProfileAppliesProfileChanges(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	sourcePath := filepath.Join(stagingPath, "LookupAnything", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "mod.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deployReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy", nil)
+	deployReq.RemoteAddr = "127.0.0.1:1"
+	deployRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(deployRec, deployReq)
+	if deployRec.Code != http.StatusAccepted {
+		t.Fatalf("initial deploy status = %d, body = %s", deployRec.Code, deployRec.Body.String())
+	}
+	targetPath := filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json")
+	if _, err := os.Readlink(targetPath); err != nil {
+		t.Fatalf("initial deploy did not create managed link: %v", err)
+	}
+	emptyProfile, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(emptyProfile.ID, 10)+"/default", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("default profile status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"applied"`)) {
+		t.Fatalf("default profile apply body = %s", rec.Body.String())
+	}
+	if _, err := os.Lstat(targetPath); !os.IsNotExist(err) {
+		t.Fatalf("managed link was not removed after profile switch: %v", err)
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("active deployment files after profile switch = %+v", files)
+	}
+}
+
 func TestStaticHandlerServesConfiguredWebDist(t *testing.T) {
 	srv := newTestServer(t)
 	webDir := t.TempDir()

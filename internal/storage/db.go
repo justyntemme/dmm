@@ -457,6 +457,17 @@ WHERE id = ?
 	return profile, tx.Commit()
 }
 
+func (db *DB) SteamAppIDForProfile(ctx context.Context, profileID int64) (string, error) {
+	var appID string
+	err := db.conn.QueryRowContext(ctx, `
+SELECT g.steam_app_id
+FROM profiles p
+JOIN games g ON g.id = p.game_id
+WHERE p.id = ?
+`, profileID).Scan(&appID)
+	return appID, err
+}
+
 type RecordInstalledModParams struct {
 	SteamAppID     string
 	Resolved       catalog.ResolvedDownload

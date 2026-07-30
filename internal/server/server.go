@@ -831,6 +831,11 @@ type createProfileRequest struct {
 	Name string `json:"name"`
 }
 
+type setDefaultProfileResponse struct {
+	Profile storage.Profile      `json:"profile"`
+	Apply   profileApplyResponse `json:"apply"`
+}
+
 type updateProfileModRequest struct {
 	Enabled  *bool `json:"enabled"`
 	Priority *int  `json:"priority"`
@@ -1847,12 +1852,18 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	s.publishGameEvent(events.TypeProfileModsChanged, "", map[string]any{
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profile.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
 		"action":     "default_profile_changed",
 		"profile_id": profile.ID,
 		"game_id":    profile.GameID,
 	})
-	writeJSON(w, http.StatusOK, profile)
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "profile-switch")
+	writeJSON(w, http.StatusOK, setDefaultProfileResponse{Profile: profile, Apply: apply})
 }
 
 func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Request) {
