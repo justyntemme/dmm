@@ -1797,8 +1797,13 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                           <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
                             {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
                           </div>
-                          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => installFile(mod, file)} onClick={() => installFile(mod, file)} style={deckyCompactActionStyle("neutral", busyFileKey === fileKey)}>
-                            {busyFileKey === fileKey ? "Adding To DMM" : "Install With DMM"}
+                          <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(2)}>
+                            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => Navigation.NavigateToExternalWeb(nexusFileURL(props.gameDomain, mod.mod_id, file.file_id))} onClick={() => Navigation.NavigateToExternalWeb(nexusFileURL(props.gameDomain, mod.mod_id, file.file_id))} style={deckyCompactActionStyle("neutral")}>
+                              Open File Page
+                            </Focusable>
+                            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => installFile(mod, file)} onClick={() => installFile(mod, file)} style={deckyCompactActionStyle("neutral", busyFileKey === fileKey)}>
+                              {busyFileKey === fileKey ? "Adding To DMM" : "Install With DMM"}
+                            </Focusable>
                           </Focusable>
                         </div>
                       );

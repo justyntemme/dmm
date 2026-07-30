@@ -941,7 +941,7 @@ h2 {
 }
 
 .nexus-result-main,
-.nexus-file-list button {
+.nexus-file-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -957,7 +957,7 @@ h2 {
 }
 
 .nexus-result-main span,
-.nexus-file-list span {
+.nexus-file-card > span {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -987,6 +987,20 @@ h2 {
   font-size: 0.82rem;
   font-style: normal;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.nexus-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: end;
+}
+
+.nexus-file-actions button {
+  min-height: 34px;
+  margin: 0;
+  padding: 0 10px;
   white-space: nowrap;
 }
 

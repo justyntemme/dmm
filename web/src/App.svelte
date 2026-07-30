@@ -1082,6 +1082,10 @@
     return `https://www.nexusmods.com/${encodeURIComponent(domain)}/mods/${modID}?file_id=${fileID}`;
   }
 
+  function openNexusFilePage(modID: number, fileID: number) {
+    window.open(nexusFileURL(modID, fileID), "_blank", "noopener");
+  }
+
   function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
     if (current === "downloads") return "unique_downloads";
     if (current === "unique_downloads") return "popular";
@@ -2406,13 +2410,18 @@
                           {#if filesOpen && files.length > 0}
                             <div class="nexus-file-list">
                               {#each files as file}
-                                <button type="button" on:click={() => addNexusSearchFile(mod, file)} disabled={busyNexusFileKey === `${mod.mod_id}:${file.file_id}`}>
+                                <article class="nexus-file-card">
                                   <span>
                                     <strong>{file.name || file.file_name}</strong>
                                     <small>{file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}</small>
                                   </span>
-                                  <em>{busyNexusFileKey === `${mod.mod_id}:${file.file_id}` ? "Adding" : "Add"}</em>
-                                </button>
+                                  <div class="nexus-file-actions">
+                                    <button type="button" class="secondary-action compact" on:click={() => openNexusFilePage(mod.mod_id, file.file_id)}>Open Page</button>
+                                    <button type="button" on:click={() => addNexusSearchFile(mod, file)} disabled={busyNexusFileKey === `${mod.mod_id}:${file.file_id}`}>
+                                      <em>{busyNexusFileKey === `${mod.mod_id}:${file.file_id}` ? "Adding" : "Add"}</em>
+                                    </button>
+                                  </div>
+                                </article>
                               {/each}
                             </div>
                           {/if}
