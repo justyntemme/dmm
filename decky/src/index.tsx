@@ -197,6 +197,40 @@ type ProfileApplyResult = {
   job?: Job;
 };
 
+type DeployAction = {
+  target_path?: string;
+  target_relative?: string;
+  operation?: string;
+  strategy?: string;
+  installed_mod_id?: number;
+  mod_id?: string;
+  priority?: number;
+  winner_installed_mod_id?: number;
+  winner_mod_id?: string;
+  winner_priority?: number;
+  conflict?: boolean;
+  conflict_reason?: string;
+};
+
+type DeployPlan = {
+  actions: DeployAction[];
+  conflicts: DeployAction[];
+};
+
+type ConflictChoiceTarget = {
+  target_path: string;
+  target_relative: string;
+  current_winner_id: number;
+  current_winner_name: string;
+  reason: string;
+  candidates: Array<{
+    id: number;
+    name: string;
+    priority?: number;
+    current: boolean;
+  }>;
+};
+
 type InstallCandidate = {
   id: number;
   steam_app_id: string;
@@ -725,6 +759,54 @@ function deckyModUpdateDetail(update?: ModUpdate) {
   if (update.status === "available") return `Latest ${update.latest_version || update.latest_file_id || "file"}`;
   if (update.status === "current") return "Installed file is current.";
   return "Review the mod page before updating.";
+}
+
+function deckyConflictChoiceTargets(plan: DeployPlan | null, mods: ManagedMod[]): ConflictChoiceTarget[] {
+  if (!plan) return [];
+  const groups = new Map<string, ConflictChoiceTarget>();
+  for (const action of plan.actions ?? []) {
+    if (action.operation !== "skip" || !action.target_path || !action.winner_installed_mod_id) continue;
+    let group = groups.get(action.target_path);
+    if (!group) {
+      const winner = mods.find((mod) => mod.id === action.winner_installed_mod_id);
+      group = {
+        target_path: action.target_path,
+        target_relative: action.target_relative || action.target_path,
+        current_winner_id: action.winner_installed_mod_id,
+        current_winner_name: winner?.name || action.winner_mod_id || "Selected mod",
+        reason: action.conflict_reason || "Resolved by profile order",
+        candidates: []
+      };
+      groups.set(action.target_path, group);
+    }
+    addDeckyConflictCandidate(group, mods, action.installed_mod_id, action.priority, false);
+    addDeckyConflictCandidate(group, mods, action.winner_installed_mod_id, action.winner_priority, true);
+  }
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    candidates: [...group.candidates].sort((a, b) => Number(b.current) - Number(a.current) || (a.priority ?? 0) - (b.priority ?? 0) || a.name.localeCompare(b.name))
+  }));
+}
+
+function addDeckyConflictCandidate(group: ConflictChoiceTarget, mods: ManagedMod[], installedModID?: number, priority?: number, current = false) {
+  if (!installedModID) return;
+  const existing = group.candidates.find((candidate) => candidate.id === installedModID);
+  if (existing) {
+    existing.current = existing.current || current;
+    if (existing.priority === undefined) existing.priority = priority;
+    return;
+  }
+  const mod = mods.find((item) => item.id === installedModID);
+  group.candidates.push({
+    id: installedModID,
+    name: mod?.name || `Mod ${installedModID}`,
+    priority,
+    current
+  });
+}
+
+function nextDeckyConflictCandidate(target: ConflictChoiceTarget) {
+  return target.candidates.find((candidate) => !candidate.current) ?? null;
 }
 
 function nextGameSort(current: GameSort): GameSort {
@@ -1864,6 +1946,7 @@ function DeckyModManagerRoute() {
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
+  const [deckyDeployPlan, setDeckyDeployPlan] = useState<DeployPlan | null>(null);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [modSort, setModSort] = useState<DeckyModSort>("profile");
@@ -1879,6 +1962,8 @@ function DeckyModManagerRoute() {
   const [focusedGameID, setFocusedGameID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
   const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
+  const [focusedConflictTarget, setFocusedConflictTarget] = useState<string>("");
+  const [busyConflictTarget, setBusyConflictTarget] = useState<string>("");
 
   async function refresh() {
     try {
@@ -1981,14 +2066,16 @@ function DeckyModManagerRoute() {
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
       setDeckyLoadOrder(null);
+      setDeckyDeployPlan(null);
       return null;
     }
-    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult] = await Promise.all([
+    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult, deployPreviewResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
       call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
-      call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID)
+      call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID),
+      call<[string], { ok: boolean; error?: string; plan?: DeployPlan | null }>("game_deploy_preview", appID)
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
@@ -2018,6 +2105,11 @@ function DeckyModManagerRoute() {
     } else {
       setDeckyLoadOrder(null);
     }
+    if (deployPreviewResult.ok && deployPreviewResult.plan) {
+      setDeckyDeployPlan(deployPreviewResult.plan);
+    } else {
+      setDeckyDeployPlan(null);
+    }
     void syncWorkshopStateForApp(appID).then((synced) => {
       if (synced) {
         void call<[string], { ok: boolean; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID).then((next) => {
@@ -2031,7 +2123,8 @@ function DeckyModManagerRoute() {
       mods: modsResult.mods,
       candidates: candidatesResult.ok ? candidatesResult.candidates : [],
       workshopItems: workshopResult.ok ? workshopResult.items : [],
-      loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null
+      loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null,
+      deployPlan: deployPreviewResult.ok ? deployPreviewResult.plan : null
     };
   }
 
@@ -2174,6 +2267,75 @@ function DeckyModManagerRoute() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyModID(null);
+    }
+  }
+
+  async function setDeckyFileConflictWinner(target: ConflictChoiceTarget, winnerInstalledModID: number) {
+    const profile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0];
+    if (!selectedDeckyGameID || !profile || busyConflictTarget) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyConflictTarget(target.target_path);
+      const result = await call<[string, number, string, number], { ok: boolean; error?: string; apply?: ProfileApplyResult }>(
+        "set_file_conflict_winner",
+        selectedDeckyGameID,
+        profile.id,
+        target.target_path,
+        winnerInstalledModID
+      );
+      if (!result.ok) {
+        await logFrontendEvent("decky file conflict winner failed", { app_id: selectedDeckyGameID, target_path: target.target_path, winner_installed_mod_id: winnerInstalledModID, error: result.error || "" });
+        setError(result.error ?? "Unable to set file winner.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      const applyMessage = result.apply?.message || "File winner saved and profile applied.";
+      if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
+        setError(applyMessage);
+      } else {
+        setModsResult(applyMessage);
+      }
+      if (result.apply?.job) showJobToast(result.apply.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyConflictTarget("");
+    }
+  }
+
+  async function clearDeckyFileConflictWinner(target: ConflictChoiceTarget) {
+    const profile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0];
+    if (!selectedDeckyGameID || !profile || busyConflictTarget) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyConflictTarget(target.target_path);
+      const result = await call<[string, number, string], { ok: boolean; error?: string; apply?: ProfileApplyResult }>(
+        "clear_file_conflict_winner",
+        selectedDeckyGameID,
+        profile.id,
+        target.target_path
+      );
+      if (!result.ok) {
+        await logFrontendEvent("decky file conflict reset failed", { app_id: selectedDeckyGameID, target_path: target.target_path, error: result.error || "" });
+        setError(result.error ?? "Unable to reset file winner.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      const applyMessage = result.apply?.message || "File winner reset to profile order.";
+      if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
+        setError(applyMessage);
+      } else {
+        setModsResult(applyMessage);
+      }
+      if (result.apply?.job) showJobToast(result.apply.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyConflictTarget("");
     }
   }
 
@@ -2669,6 +2831,7 @@ function DeckyModManagerRoute() {
       return a.priority - b.priority || a.name.localeCompare(b.name);
     });
   }, [deckyMods, modSearch, effectiveModSort]);
+  const deckyConflictTargets = useMemo(() => deckyConflictChoiceTargets(deckyDeployPlan, deckyMods), [deckyDeployPlan, deckyMods]);
   const visibleWorkshopItems = useMemo(() => {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     if (!normalizedModSearch) return deckyWorkshopItems;
@@ -3135,6 +3298,61 @@ function DeckyModManagerRoute() {
                     )}
                   </div>
                 )}
+              </div>
+            </PanelSectionRow>
+          )}
+          {deckyConflictTargets.length > 0 && (
+            <PanelSectionRow>
+              <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
+                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: "8px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 800 }}>File Winners</div>
+                  <div style={{ color: "#7dd3fc", fontSize: "11px", fontWeight: 800 }}>{deckyConflictTargets.length} target{deckyConflictTargets.length === 1 ? "" : "s"}</div>
+                </div>
+                {deckyConflictTargets.map((target) => {
+                  const focused = focusedConflictTarget === target.target_path;
+                  const next = nextDeckyConflictCandidate(target);
+                  const busy = busyConflictTarget === target.target_path;
+                  return (
+                    <Focusable
+                      key={target.target_path}
+                      className="dmm-sidebar-row"
+                      focusClassName="dmm-sidebar-row-focused"
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (next) void setDeckyFileConflictWinner(target, next.id);
+                      }}
+                      onClick={() => {
+                        if (next) void setDeckyFileConflictWinner(target, next.id);
+                      }}
+                      onSecondaryActionDescription="Use Profile Order"
+                      onSecondaryButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void clearDeckyFileConflictWinner(target);
+                      }}
+                      onGamepadFocus={() => setFocusedConflictTarget(target.target_path)}
+                      onFocus={() => setFocusedConflictTarget(target.target_path)}
+                      onMouseEnter={() => setFocusedConflictTarget(target.target_path)}
+                      style={{
+                        ...deckyCompositeRowStyle(focused),
+                        opacity: busy ? 0.65 : 1,
+                        padding: "10px"
+                      }}
+                    >
+                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{target.target_relative}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        Current: {target.current_winner_name}
+                      </div>
+                      <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        {target.candidates.map((candidate) => `${candidate.current ? "Using" : "Option"} ${candidate.name}`).join(" · ")}
+                      </div>
+                      <div style={{ color: next ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                        {next ? `A Use ${next.name}` : "Only one winner available"} · Y Use Profile Order
+                      </div>
+                    </Focusable>
+                  );
+                })}
               </div>
             </PanelSectionRow>
           )}

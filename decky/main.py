@@ -342,6 +342,56 @@ class Plugin:
         self._log(f"plugin load order loaded app_id={app_id} supported={bool(result.get('supported'))} plugins={len(plugins)}")
         return {"ok": True, "load_order": result}
 
+    async def game_deploy_preview(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "plan": None}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "plan": None}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/preview")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to preview deployment.", "plan": None}
+        actions = result.get("actions")
+        conflicts = result.get("conflicts")
+        if not isinstance(actions, list) or not isinstance(conflicts, list):
+            return {"ok": False, "error": "Unexpected deployment preview response.", "plan": None}
+        self._log(f"deployment preview loaded app_id={app_id} actions={len(actions)} conflicts={len(conflicts)}")
+        return {"ok": True, "plan": result}
+
+    async def set_file_conflict_winner(self, app_id, profile_id, target_path, winner_installed_mod_id):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        target_path = str(target_path or "").strip()
+        winner_installed_mod_id = str(winner_installed_mod_id or "").strip()
+        if not app_id or not profile_id or not target_path or not winner_installed_mod_id:
+            return {"ok": False, "error": "app_id, profile_id, target_path, and winner_installed_mod_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({
+            "target_path": target_path,
+            "winner_installed_mod_id": int(winner_installed_mod_id),
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/conflicts/winner", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to set file winner."}
+        self._log(f"file conflict winner set app_id={app_id} profile_id={profile_id} target_path={target_path} winner_installed_mod_id={winner_installed_mod_id}")
+        return {"ok": True, "result": result, "winner": result.get("winner"), "apply": result.get("apply")}
+
+    async def clear_file_conflict_winner(self, app_id, profile_id, target_path):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        target_path = str(target_path or "").strip()
+        if not app_id or not profile_id or not target_path:
+            return {"ok": False, "error": "app_id, profile_id, and target_path are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        query = urllib.parse.urlencode({"target_path": target_path})
+        result, error = self._backend_json_result("DELETE", f"/api/profiles/{urllib.parse.quote(profile_id)}/conflicts/winner?{query}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to reset file winner."}
+        self._log(f"file conflict winner cleared app_id={app_id} profile_id={profile_id} target_path={target_path}")
+        return {"ok": True, "result": result, "apply": result.get("apply")}
+
     async def check_game_mod_updates(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:
