@@ -238,7 +238,23 @@ const deckyTabBodyStyle: CSSProperties = {
 };
 
 const deckyRuntimeStyles = `
+.dmm-sidebar-surface,
+.dmm-sidebar-surface * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.dmm-focus-card {
+  outline: none;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
 .dmm-focus-card-focused {
+  background: #27364a !important;
+  border-color: #7dd3fc !important;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
+}
+.dmm-focus-card:focus,
+.dmm-focus-card:focus-visible,
+.dmm-focus-card:focus-within {
   background: #27364a !important;
   border-color: #7dd3fc !important;
   box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
@@ -274,6 +290,7 @@ const deckyFocusableCardBase: CSSProperties = {
   borderRadius: "6px",
   boxSizing: "border-box",
   color: "#f8fafc",
+  cursor: "pointer",
   maxWidth: "100%",
   minWidth: 0,
   overflow: "hidden",
@@ -312,12 +329,32 @@ const deckySidebarListStyle: CSSProperties = {
   width: "100%"
 };
 
+const deckySidebarSurfaceStyle: CSSProperties = {
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "10px",
+  maxWidth: "100%",
+  minWidth: 0,
+  overflow: "hidden",
+  width: "100%"
+};
+
+const deckyRowShellStyle: CSSProperties = {
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "6px",
+  maxWidth: "100%",
+  minWidth: 0,
+  overflow: "hidden",
+  width: "100%"
+};
+
 function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
   return {
     boxSizing: "border-box",
     display: "grid",
     gap: "6px",
-    gridTemplateColumns: columns === 2 ? "minmax(0, calc(50% - 3px)) minmax(0, calc(50% - 3px))" : "minmax(0, 1fr)",
+    gridTemplateColumns: columns === 2 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)",
     maxWidth: "100%",
     minWidth: 0,
     overflow: "hidden",
@@ -1470,6 +1507,33 @@ function Content() {
       )
     : deckyMods;
 
+  function nextDirectionalIndex(currentIndex: number, length: number, direction: -1 | 1) {
+    if (length <= 0) return -1;
+    if (currentIndex < 0) return direction > 0 ? 0 : length - 1;
+    return Math.max(0, Math.min(length - 1, currentIndex + direction));
+  }
+
+  function handleDeckyGameListDirection(event: GamepadEvent) {
+    const button = event.detail.button;
+    if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
+    const nextIndex = nextDirectionalIndex(visibleManagedGames.findIndex((game) => game.app_id === focusedGameID), visibleManagedGames.length, direction);
+    const nextGame = visibleManagedGames[nextIndex];
+    if (nextGame) setFocusedGameID(nextGame.app_id);
+  }
+
+  function handleDeckyModListDirection(event: GamepadEvent) {
+    const button = event.detail.button;
+    if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
+    const nextIndex = nextDirectionalIndex(visibleDeckyMods.findIndex((mod) => mod.id === focusedModID), visibleDeckyMods.length, direction);
+    const nextMod = visibleDeckyMods[nextIndex];
+    if (nextMod) {
+      setFocusedModID(nextMod.id);
+      setFocusedModAction("");
+    }
+  }
+
   const mainContent = (
     <>
       <PanelSectionRow>
@@ -1544,7 +1608,7 @@ function Content() {
       )}
       {status?.running && !selectedDeckyGameID && (
         <PanelSectionRow>
-          <div style={{ boxSizing: "border-box", maxWidth: "100%", minWidth: 0, width: "100%" }}>
+          <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
             <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
             <TextField label="Search Games" value={gameSearch} bShowClearAction onChange={(event) => setGameSearch(event.currentTarget.value)} />
             <ButtonItem layout="below" onClick={cycleDeckyGameSort}>
@@ -1552,9 +1616,9 @@ function Content() {
             </ButtonItem>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
-            <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
+            <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyGameListDirection} style={deckySidebarListStyle}>
               {visibleManagedGames.map((game) => (
-                <div key={game.app_id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) 38px", maxWidth: "100%", minWidth: 0, width: "100%" }}>
+                <div key={game.app_id} style={{ ...deckyRowShellStyle, gridTemplateColumns: "minmax(0, 1fr) 38px" }}>
                   <Focusable
                     className="dmm-focus-card"
                     focusClassName="dmm-focus-card-focused"
@@ -1638,7 +1702,7 @@ function Content() {
           </PanelSectionRow>
           {deckyInstallCandidates.length > 0 && (
             <PanelSectionRow>
-              <div style={deckySidebarListStyle}>
+              <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
                 <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
                   <div style={{ fontWeight: 800 }}>Action Center</div>
                   <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{deckyInstallCandidates.length} item{deckyInstallCandidates.length === 1 ? "" : "s"}</div>
@@ -1647,7 +1711,7 @@ function Content() {
                   const focused = focusedCandidateID === candidate.id;
                   const installer = installerForCandidate(candidate);
                   return (
-                    <div key={candidate.id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", minWidth: 0, width: "100%" }}>
+                    <div key={candidate.id} style={deckyRowShellStyle}>
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
@@ -1697,7 +1761,7 @@ function Content() {
           )}
           {deckyProfiles.length > 1 && (
             <PanelSectionRow>
-              <div style={deckySidebarListStyle}>
+              <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
                 <div style={{ fontWeight: 800, marginBottom: "8px" }}>Profile</div>
                 {deckyProfiles.map((profile) => (
                   <Focusable
@@ -1733,11 +1797,11 @@ function Content() {
           )}
           {visibleDeckyMods.length > 0 && (
             <PanelSectionRow>
-              <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
+              <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyModListDirection} style={deckySidebarListStyle}>
                 {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
-                    <div key={mod.id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", maxWidth: "100%", minWidth: 0, width: "100%" }}>
+                    <div key={mod.id} className="dmm-sidebar-surface" style={deckyRowShellStyle}>
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
