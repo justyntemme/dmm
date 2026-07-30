@@ -2065,8 +2065,10 @@ func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
 	if len(candidates) != 0 {
 		t.Fatalf("unexpected installer choice candidates = %+v", candidates)
 	}
-	if _, ok := srv.findInstallerChoiceJob(1); ok {
-		t.Fatal("installer choice job was created despite exact-file preset")
+	for _, job := range srv.jobs.List() {
+		if job.Type == "installer-choice" {
+			t.Fatalf("installer choice job was created despite exact-file preset: %+v", job)
+		}
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
 	if err != nil {
@@ -2084,6 +2086,53 @@ func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "textures", "high-patch.txt")); !os.IsNotExist(err) {
 		t.Fatalf("high patch was staged despite low preset: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(mods[0].StagingPath, "textures", "variant.txt"), []byte("mutated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reinstallReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/mods/"+strconv.FormatInt(mods[0].ID, 10)+"/reinstall", nil)
+	reinstallReq.RemoteAddr = "127.0.0.1:1"
+	reinstallRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(reinstallRec, reinstallReq)
+	if reinstallRec.Code != http.StatusAccepted {
+		t.Fatalf("reinstall status = %d, body = %s", reinstallRec.Code, reinstallRec.Body.String())
+	}
+	var reinstallBody struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(reinstallRec.Body.Bytes(), &reinstallBody); err != nil {
+		t.Fatal(err)
+	}
+	reinstallJob := waitForJobStatus(t, srv, reinstallBody.Job.ID, jobs.StatusCompleted)
+	if !strings.Contains(reinstallJob.Message, "Installed Choice Mod disabled") {
+		t.Fatalf("reinstall job = %+v", reinstallJob)
+	}
+	candidates, err = srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("unexpected installer choice candidates after reinstall = %+v", candidates)
+	}
+	mods, err = srv.db.InstalledModsForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("mods after reinstall = %+v", mods)
+	}
+	lowVariant, err = os.ReadFile(filepath.Join(mods[0].StagingPath, "textures", "variant.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lowVariant) != "low" {
+		t.Fatalf("reinstall variant = %q, want low preset", string(lowVariant))
+	}
+	for _, job := range srv.jobs.List() {
+		if job.Type == "installer-choice" {
+			t.Fatalf("installer choice job was created during preset reinstall: %+v", job)
+		}
 	}
 }
 
