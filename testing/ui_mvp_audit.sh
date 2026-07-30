@@ -35,14 +35,18 @@ require_text "$WEB_APP" "type SettingsPage = \"overview\" | \"jobs\" | \"install
   "mobile settings pages must keep install settings separate from server settings"
 require_text "$WEB_APP" "Selected Profile" \
   "game Plugins view must lead with selected profile state"
-require_text "$WEB_APP" "Profile Mods" \
-  "game Plugins view must include the profile mod list"
+require_text "$WEB_APP" "Installed, disabled in this profile" \
+  "game Mods view must include profile-scoped mod state"
 require_text "$WEB_APP" "Add From Nexus" \
   "Nexus import must live inside the selected game workspace"
 require_text "$WEB_APP" "Advanced Deployment Tools" \
   "file-level deployment controls must remain an advanced disclosure"
-require_text "$WEB_APP" "Auto install captured downloads" \
-  "mobile install settings must show Deck-managed install behavior"
+require_text "$WEB_APP" "These Deck behavior switches are managed from the Decky sidebar settings." \
+  "mobile install settings must point users to Decky-owned behavior switches"
+reject_text "$WEB_APP" "Auto-install captured downloads" \
+  "mobile UI must not expose the Decky-owned auto-install toggle"
+reject_text "$WEB_APP" "Auto-enable installed mods" \
+  "mobile UI must not expose the Decky-owned auto-enable toggle"
 reject_text "$WEB_APP" "Approve downloads automatically" \
   "mobile install settings must not expose the retired download-approval model"
 reject_text "$WEB_APP" ">Server</button>" \

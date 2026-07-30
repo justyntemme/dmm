@@ -115,10 +115,10 @@ require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-ena
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
-  require_file_contains "${asset_file}" "Profile Mods" "web profile mod list"
+  require_file_contains "${asset_file}" "Installed, disabled in this profile" "web profile-scoped mod state"
   require_file_contains "${asset_file}" "Add From Nexus" "web in-game Nexus import"
   require_file_contains "${asset_file}" "Advanced Deployment Tools" "web advanced deployment disclosure"
-  require_file_contains "${asset_file}" "Auto install captured downloads" "web install settings status"
+  require_file_contains "${asset_file}" "These Deck behavior switches are managed from the Decky sidebar settings." "web install settings Decky ownership note"
 done
 
 if [[ -n "${SHAPE_ONLY}" ]]; then

@@ -62,10 +62,10 @@ for target in "${tmp_dir}"/*.js; do
   if grep -qF "Selected Profile" "${target}"; then
     js_checked=1
     for needle in \
-      "Profile Mods" \
+      "Installed, disabled in this profile" \
       "Add From Nexus" \
       "Advanced Deployment Tools" \
-      "Auto install captured downloads"
+      "These Deck behavior switches are managed from the Decky sidebar settings."
     do
       if ! grep -qF "${needle}" "${target}"; then
         echo "web UI asset is missing MVP UI text: ${needle}" >&2

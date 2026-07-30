@@ -80,12 +80,12 @@ def validate_job_payload(job):
     missing = [key for key in ("app_id", "catalog", "game_domain", "mod_id", "file_id") if not payload.get(key)]
     if missing:
         raise RuntimeError(
-            "fresh pending-import job is missing structured payload fields "
+            "fresh captured-install job is missing structured payload fields "
             + ", ".join(missing)
             + f": {payload}"
         )
     if payload.get("app_id") != app_id:
-        raise RuntimeError(f"fresh pending-import job payload app_id={payload.get('app_id')} does not match {app_id}")
+        raise RuntimeError(f"fresh captured-install job payload app_id={payload.get('app_id')} does not match {app_id}")
 
 
 status = request("GET", "/api/status")
@@ -115,7 +115,7 @@ try:
     while time.monotonic() < deadline:
         candidates = [
             job for job in jobs_list()
-            if job.get("type") == "pending-import"
+            if job.get("type") == "captured-install"
             and job.get("id") not in baseline_ids
             and matches_game(job)
         ]

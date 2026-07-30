@@ -121,13 +121,13 @@ if isinstance(job_items, list):
         payload = job.get("payload") or {}
         if payload.get("app_id"):
             structured_app_jobs.append(job)
-        if job.get("type") in ("pending-import", "deploy", "purge", "repair", "recover-downloads") and job.get("status") not in ("completed", "canceled", "failed"):
+        if job.get("type") in ("captured-install", "deploy", "purge", "repair", "recover-downloads") and job.get("status") not in ("completed", "canceled", "failed"):
             if not payload.get("app_id"):
                 failures.append(f"active {job.get('type')} job {job.get('id')} is missing structured app_id payload")
-            if job.get("type") == "pending-import":
+            if job.get("type") == "captured-install":
                 missing = [key for key in ("catalog", "game_domain", "mod_id", "file_id") if not payload.get(key)]
                 if missing:
-                    failures.append(f"active pending import {job.get('id')} is missing payload fields: {', '.join(missing)}")
+                    failures.append(f"active captured install {job.get('id')} is missing payload fields: {', '.join(missing)}")
     if active:
         labels = ", ".join(f"{job.get('type', 'job')}:{job.get('status', 'unknown')}" for job in active[:5])
         failures.append(f"job list still has active work: {labels}")
