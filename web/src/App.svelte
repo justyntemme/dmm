@@ -965,10 +965,12 @@
     if (!canCancelJob(job)) return;
     error = "";
     setJobBusy(job.id, true);
+    markJobProcessing(job, "Canceling job...");
     try {
       const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
+        await refreshJobsAndSelectedGame();
         return;
       }
       const result = await response.json();
@@ -985,10 +987,12 @@
     if (request.status !== "waiting") return;
     error = "";
     setJobBusy(request.id, true);
+    markJobProcessing(request, "Installing downloaded archive...");
     try {
       const response = await fetch(`/api/imports/pending/${request.id}/approve`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
+        await refreshJobsAndSelectedGame();
         return;
       }
       const result = await response.json();
@@ -1006,10 +1010,12 @@
     if (request.status !== "failed") return;
     error = "";
     setJobBusy(request.id, true);
+    markJobProcessing(request, "Retrying captured install...");
     try {
       const response = await fetch(`/api/imports/pending/${request.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
+        await refreshJobsAndSelectedGame();
         return;
       }
       const result = await response.json();
@@ -1186,6 +1192,15 @@
     if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null, job.status === "completed");
     }
+  }
+
+  function markJobProcessing(job: Job, message: string) {
+    upsertJob({
+      ...job,
+      status: "running",
+      message,
+      updated_at: new Date().toISOString()
+    });
   }
 
   function reconcileBusyState() {

@@ -213,7 +213,10 @@ const deckyPanelFrameStyle: CSSProperties = {
   gap: "8px",
   height: "calc(100vh - 112px)",
   maxHeight: "calc(100vh - 112px)",
+  maxWidth: "100%",
   minHeight: 0,
+  minWidth: 0,
+  overflowX: "hidden",
   width: "100%"
 };
 
@@ -247,6 +250,9 @@ const deckyRuntimeStyles = `
 .dmm-focus-card {
   outline: none;
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.dmm-focus-card > * {
+  min-width: 0;
 }
 .dmm-focus-card-focused {
   background: #27364a !important;
@@ -326,7 +332,8 @@ const deckySidebarListStyle: CSSProperties = {
   gap: "8px",
   maxWidth: "100%",
   minWidth: 0,
-  overflow: "hidden",
+  overflowX: "hidden",
+  overflowY: "visible",
   width: "100%"
 };
 
@@ -336,7 +343,8 @@ const deckySidebarSurfaceStyle: CSSProperties = {
   gap: "10px",
   maxWidth: "100%",
   minWidth: 0,
-  overflow: "hidden",
+  overflowX: "hidden",
+  overflowY: "visible",
   width: "100%"
 };
 
@@ -346,12 +354,14 @@ const deckyRowShellStyle: CSSProperties = {
   gap: "6px",
   maxWidth: "100%",
   minWidth: 0,
-  overflow: "hidden",
+  overflowX: "hidden",
+  overflowY: "visible",
   width: "100%"
 };
 
 function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties {
   return {
+    alignItems: "stretch",
     background: active ? "rgba(15, 118, 110, 0.28)" : focused ? "rgba(39, 54, 74, 0.8)" : "rgba(17, 24, 39, 0.55)",
     border: `1px solid ${focused ? "#7dd3fc" : active ? "#0f766e" : "#303741"}`,
     borderRadius: "6px",
@@ -359,9 +369,11 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
     boxSizing: "border-box",
     display: "grid",
     gap: "6px",
+    gridTemplateColumns: "minmax(0, 1fr)",
     maxWidth: "100%",
     minWidth: 0,
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "visible",
     padding: "6px",
     width: "100%"
   };
@@ -369,13 +381,15 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
 
 function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
   return {
+    alignItems: "stretch",
     boxSizing: "border-box",
     display: "grid",
     gap: "6px",
-    gridTemplateColumns: columns === 2 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)",
+    gridTemplateColumns: columns === 2 ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
     maxWidth: "100%",
     minWidth: 0,
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "visible",
     width: "100%"
   };
 }
@@ -396,6 +410,7 @@ function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused
     minHeight: "38px",
     maxWidth: "100%",
     padding: "8px 6px",
+    scrollMarginBlock: "10px",
     textAlign: "center",
     overflowWrap: "anywhere",
     whiteSpace: "normal"
@@ -1655,13 +1670,13 @@ function Content() {
                       className="dmm-focus-card"
                       focusClassName="dmm-focus-card-focused"
                       onActivate={() => selectDeckyGame(game.app_id)}
+                      onClick={() => {
+                        void selectDeckyGame(game.app_id);
+                      }}
                       onOKButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         void selectDeckyGame(game.app_id);
-                      }}
-                      onGamepadBlur={() => {
-                        if (focusedGameID === game.app_id) setFocusedGameID("");
                       }}
                       onGamepadFocus={() => setFocusedGameID(game.app_id)}
                       onFocus={() => setFocusedGameID(game.app_id)}
@@ -1684,6 +1699,7 @@ function Content() {
                       className="dmm-focus-card"
                       focusClassName="dmm-focus-card-focused"
                       onActivate={() => toggleDeckyFavoriteGame(game.app_id)}
+                      onClick={() => toggleDeckyFavoriteGame(game.app_id)}
                       onOKButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -1749,6 +1765,9 @@ function Content() {
                         onActivate={() => {
                           if (installer) openDeckyInstallerChoice(candidate);
                         }}
+                        onClick={() => {
+                          if (installer) openDeckyInstallerChoice(candidate);
+                        }}
                         onGamepadFocus={() => setFocusedCandidateID(candidate.id)}
                         onFocus={() => setFocusedCandidateID(candidate.id)}
                         onMouseEnter={() => setFocusedCandidateID(candidate.id)}
@@ -1771,11 +1790,11 @@ function Content() {
                       </Focusable>
                       <Focusable flow-children="row" style={deckyActionGridStyle(installer ? 2 : 1)}>
                         {installer && (
-                          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => openDeckyInstallerChoice(candidate)} style={deckyCompactActionStyle("neutral", focused)}>
+                          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => openDeckyInstallerChoice(candidate)} onClick={() => openDeckyInstallerChoice(candidate)} style={deckyCompactActionStyle("neutral", focused)}>
                             Open Choices
                           </Focusable>
                         )}
-                        <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={askClearDeckyInstallCandidates} style={deckyCompactActionStyle("danger")}>
+                        <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={askClearDeckyInstallCandidates} onClick={askClearDeckyInstallCandidates} style={deckyCompactActionStyle("danger")}>
                           Clear Items
                         </Focusable>
                       </Focusable>
@@ -1800,6 +1819,7 @@ function Content() {
                     focusClassName="dmm-focus-card-focused"
                     key={profile.id}
                     onActivate={() => selectDeckyProfile(profile)}
+                    onClick={() => selectDeckyProfile(profile)}
                     onGamepadFocus={() => setFocusedProfileID(profile.id)}
                     onFocus={() => setFocusedProfileID(profile.id)}
                     onMouseEnter={() => setFocusedProfileID(profile.id)}
@@ -1838,6 +1858,9 @@ function Content() {
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
                         onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onClick={() => {
+                          void toggleDeckyMod(mod, !mod.enabled);
+                        }}
                         onOKButton={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -1888,6 +1911,9 @@ function Content() {
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
                         onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onClick={() => {
+                          void toggleDeckyMod(mod, !mod.enabled);
+                        }}
                         onOKButton={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
@@ -1914,6 +1940,9 @@ function Content() {
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
                           onActivate={() => reinstallDeckyMod(mod)}
+                          onClick={() => {
+                            void reinstallDeckyMod(mod);
+                          }}
                           onOKButton={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -1939,6 +1968,7 @@ function Content() {
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
                           onActivate={() => askRemoveDeckyMod(mod)}
+                          onClick={() => askRemoveDeckyMod(mod)}
                           onOKButton={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
