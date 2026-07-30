@@ -252,6 +252,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/workshop/actions", s.handleSteamWorkshopActions)
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/start", s.handleStartSteamWorkshopAction)
+	mux.HandleFunc("POST /api/workshop/actions/{jobID}/retry", s.handleRetrySteamWorkshopAction)
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/complete", s.handleCompleteSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods/{modID}/files", s.handleGameNexusModFiles)
@@ -1622,6 +1623,44 @@ func (s *Server) handleStartSteamWorkshopAction(w http.ResponseWriter, r *http.R
 	}
 	s.logger.Info("steam workshop action started", "job_id", jobID, "app_id", started.Payload["app_id"], "item_id", started.Payload["item_id"], "kind", started.Payload["kind"])
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": started, "proceed": true})
+}
+
+func (s *Server) handleRetrySteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "Steam Workshop action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeSteamWorkshopAction {
+		http.Error(w, "job is not a Steam Workshop action", http.StatusBadRequest)
+		return
+	}
+	if job.Status != jobs.StatusFailed {
+		http.Error(w, "Steam Workshop action is not failed", http.StatusConflict)
+		return
+	}
+	appID := strings.TrimSpace(job.Payload["app_id"])
+	kind := strings.TrimSpace(job.Payload["kind"])
+	if _, ok := s.steamWorkshopActionForKind(appID, kind); !ok {
+		http.Error(w, "this game extension no longer supports Steam Workshop action "+kind, http.StatusConflict)
+		return
+	}
+	retried, _ := s.jobs.Wait(jobID, "Waiting for Decky to retry Steam Workshop action")
+	s.logger.Info("steam workshop action retry queued", "job_id", jobID, "app_id", appID, "item_id", job.Payload["item_id"], "kind", kind)
+	if appID != "" {
+		s.publishGameEvent(events.TypeWorkshopChanged, appID, map[string]any{
+			"action":  "retry_queued",
+			"job_id":  jobID,
+			"kind":    kind,
+			"item_id": job.Payload["item_id"],
+		})
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": retried})
 }
 
 func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
@@ -3483,7 +3522,11 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job was not found", http.StatusNotFound)
 		return
 	}
-	if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusFailed || job.Status == jobs.StatusCanceled {
+	if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
+		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		return
+	}
+	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction {
 		writeJSON(w, http.StatusOK, map[string]any{"job": job})
 		return
 	}

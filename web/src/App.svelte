@@ -1225,6 +1225,28 @@
     }
   }
 
+  async function retryWorkshopAction(request: Job) {
+    if (request.type !== "steam-workshop-action" || request.status !== "failed") return;
+    error = "";
+    setJobBusy(request.id, true);
+    markJobProcessing(request, "Waiting for Decky to retry this Workshop action...");
+    try {
+      const response = await fetch(`/api/workshop/actions/${request.id}/retry`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        await refreshJobsAndSelectedGame();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+      await refreshJobsAndSelectedGame();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setJobBusy(request.id, false);
+    }
+  }
+
   async function previewDeploy() {
     if (!selectedGame) return;
     error = "";
@@ -1502,6 +1524,7 @@
   }
 
   function canCancelJob(job: Job) {
+    if (job.type === "steam-workshop-action" && job.status === "failed") return true;
     return !["completed", "failed", "canceled"].includes(job.status);
   }
 
@@ -1813,6 +1836,9 @@
 	                    {/if}
 	                    {#if request.type === "captured-install" && request.status === "failed"}
 	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+	                    {/if}
+	                    {#if request.type === "steam-workshop-action" && request.status === "failed"}
+	                      <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
 	                    {/if}
 	                    {#if canCancelJob(request)}
 	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>
@@ -2170,6 +2196,9 @@
                       {/if}
                       {#if request.type === "captured-install" && request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+                      {/if}
+                      {#if request.type === "steam-workshop-action" && request.status === "failed"}
+                        <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
                       {/if}
                       {#if canCancelJob(request)}
                         <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>

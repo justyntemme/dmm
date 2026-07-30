@@ -369,6 +369,89 @@ func TestSteamWorkshopActionQueueContract(t *testing.T) {
 	}
 }
 
+func TestSteamWorkshopActionFailureCanRetryAndCancel(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	queueWorkshopAction := func(itemID string) jobs.Job {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/"+itemID+"/actions/disable", nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("queue status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Job jobs.Job `json:"job"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body.Job
+	}
+	failWorkshopAction := func(jobID string) jobs.Job {
+		t.Helper()
+		startReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+jobID+"/start", nil)
+		startReq.RemoteAddr = "127.0.0.1:1"
+		startRec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(startRec, startReq)
+		if startRec.Code != http.StatusAccepted {
+			t.Fatalf("start status = %d, body = %s", startRec.Code, startRec.Body.String())
+		}
+
+		failReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+jobID+"/complete", bytes.NewBufferString(`{"applied":false,"error":"Steam API unavailable","source":"test"}`))
+		failReq.Header.Set("Content-Type", "application/json")
+		failReq.RemoteAddr = "127.0.0.1:1"
+		failRec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(failRec, failReq)
+		if failRec.Code != http.StatusOK {
+			t.Fatalf("fail status = %d, body = %s", failRec.Code, failRec.Body.String())
+		}
+		job, ok := srv.jobs.Get(jobID)
+		if !ok || job.Status != jobs.StatusFailed {
+			t.Fatalf("failed job = %+v ok=%v", job, ok)
+		}
+		return job
+	}
+
+	retryJob := queueWorkshopAction("123")
+	failWorkshopAction(retryJob.ID)
+	retryReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+retryJob.ID+"/retry", nil)
+	retryReq.RemoteAddr = "127.0.0.1:1"
+	retryRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusAccepted {
+		t.Fatalf("retry status = %d, body = %s", retryRec.Code, retryRec.Body.String())
+	}
+	retried, ok := srv.jobs.Get(retryJob.ID)
+	if !ok || retried.Status != jobs.StatusWaiting {
+		t.Fatalf("retried job = %+v ok=%v", retried, ok)
+	}
+
+	cancelJob := queueWorkshopAction("456")
+	failWorkshopAction(cancelJob.ID)
+	cancelReq := httptest.NewRequest(http.MethodPost, "/api/jobs/"+cancelJob.ID+"/cancel", nil)
+	cancelReq.RemoteAddr = "127.0.0.1:1"
+	cancelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, body = %s", cancelRec.Code, cancelRec.Body.String())
+	}
+	canceled, ok := srv.jobs.Get(cancelJob.ID)
+	if !ok || canceled.Status != jobs.StatusCanceled {
+		t.Fatalf("canceled job = %+v ok=%v", canceled, ok)
+	}
+}
+
 func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
 	srv := newTestServer(t)
 	var captured nexus.ModSearchRequest
