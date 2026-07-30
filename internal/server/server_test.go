@@ -264,6 +264,8 @@ func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	}
 	var body []struct {
 		ID           string          `json:"id"`
+		Version      string          `json:"version"`
+		BuildID      string          `json:"build_id"`
 		SteamAppIDs  []string        `json:"steam_app_ids"`
 		Capabilities json.RawMessage `json:"capabilities"`
 	}
@@ -272,6 +274,8 @@ func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	}
 	byID := map[string]struct {
 		ID           string          `json:"id"`
+		Version      string          `json:"version"`
+		BuildID      string          `json:"build_id"`
 		SteamAppIDs  []string        `json:"steam_app_ids"`
 		Capabilities json.RawMessage `json:"capabilities"`
 	}{}
@@ -284,6 +288,9 @@ func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	}
 	if len(stardew.SteamAppIDs) != 1 || stardew.SteamAppIDs[0] != "413150" {
 		t.Fatalf("steam ids = %+v", stardew.SteamAppIDs)
+	}
+	if stardew.Version == "" || stardew.BuildID == "" {
+		t.Fatalf("snapshot version/build id missing: %+v", stardew)
 	}
 	if !json.Valid(stardew.Capabilities) || !strings.Contains(string(stardew.Capabilities), "launch_tools") {
 		t.Fatalf("capabilities = %s", stardew.Capabilities)
@@ -3619,8 +3626,10 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	var willDeployCalls int
 	var didDeployCalls int
 	extension := gameext.MustCompileExtension(sdk.Extension{
-		ID:   "hookgame",
-		Name: "Hook Game",
+		ID:      "hookgame",
+		Name:    "Hook Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
 				SteamAppIDs:  []string{appID},

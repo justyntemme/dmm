@@ -87,6 +87,8 @@ type PendingImport struct {
 type ExtensionSnapshot struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
+	Version          string `json:"version"`
+	BuildID          string `json:"build_id"`
 	SteamAppIDsJSON  string `json:"steam_app_ids_json"`
 	NexusDomainsJSON string `json:"nexus_domains_json"`
 	VortexGameID     string `json:"vortex_game_id"`
@@ -149,6 +151,8 @@ func (db *DB) applyCompatibilityMigrations(ctx context.Context) error {
 		{table: "pending_imports", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "pending_imports", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "pending_imports", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "extension_snapshots", name: "version", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "extension_snapshots", name: "build_id", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
 	for _, column := range columns {
 		exists, err := db.hasColumn(ctx, column.table, column.name)
@@ -199,12 +203,20 @@ func (db *DB) SyncExtensionSnapshots(ctx context.Context, snapshots []ExtensionS
 	for _, snapshot := range snapshots {
 		snapshot.ID = strings.TrimSpace(snapshot.ID)
 		snapshot.Name = strings.TrimSpace(snapshot.Name)
+		snapshot.Version = strings.TrimSpace(snapshot.Version)
+		snapshot.BuildID = strings.TrimSpace(snapshot.BuildID)
 		snapshot.VortexGameID = strings.TrimSpace(snapshot.VortexGameID)
 		if snapshot.ID == "" {
 			return errors.New("extension snapshot id is required")
 		}
 		if snapshot.Name == "" {
 			return errors.New("extension snapshot name is required")
+		}
+		if snapshot.Version == "" {
+			return errors.New("extension snapshot version is required")
+		}
+		if snapshot.BuildID == "" {
+			return errors.New("extension snapshot build id is required")
 		}
 		if !json.Valid([]byte(snapshot.SteamAppIDsJSON)) {
 			return errors.New("extension snapshot steam app ids must be valid JSON")
@@ -222,6 +234,8 @@ func (db *DB) SyncExtensionSnapshots(ctx context.Context, snapshots []ExtensionS
 INSERT INTO extension_snapshots (
 	id,
 	name,
+	version,
+	build_id,
 	steam_app_ids_json,
 	nexus_domains_json,
 	vortex_game_id,
@@ -229,8 +243,8 @@ INSERT INTO extension_snapshots (
 	capabilities_json,
 	updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-`, snapshot.ID, snapshot.Name, snapshot.SteamAppIDsJSON, snapshot.NexusDomainsJSON, snapshot.VortexGameID, snapshot.SourcesJSON, snapshot.CapabilitiesJSON); err != nil {
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`, snapshot.ID, snapshot.Name, snapshot.Version, snapshot.BuildID, snapshot.SteamAppIDsJSON, snapshot.NexusDomainsJSON, snapshot.VortexGameID, snapshot.SourcesJSON, snapshot.CapabilitiesJSON); err != nil {
 			return err
 		}
 	}
@@ -239,7 +253,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 
 func (db *DB) ExtensionSnapshots(ctx context.Context) ([]ExtensionSnapshot, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT id, name, steam_app_ids_json, nexus_domains_json, vortex_game_id, sources_json, capabilities_json
+SELECT id, name, version, build_id, steam_app_ids_json, nexus_domains_json, vortex_game_id, sources_json, capabilities_json
 FROM extension_snapshots
 ORDER BY id
 `)
@@ -253,6 +267,8 @@ ORDER BY id
 		if err := rows.Scan(
 			&snapshot.ID,
 			&snapshot.Name,
+			&snapshot.Version,
+			&snapshot.BuildID,
 			&snapshot.SteamAppIDsJSON,
 			&snapshot.NexusDomainsJSON,
 			&snapshot.VortexGameID,

@@ -16,6 +16,8 @@ import (
 type Extension struct {
 	ID           string
 	Name         string
+	Version      string
+	BuildID      string
 	SteamAppIDs  []string
 	NexusDomains []string
 
@@ -44,6 +46,8 @@ type DeploymentMod = sdk.DeploymentMod
 type ExtensionSummary struct {
 	ID           string                `json:"id"`
 	Name         string                `json:"name"`
+	Version      string                `json:"version"`
+	BuildID      string                `json:"build_id"`
 	SteamAppIDs  []string              `json:"steam_app_ids"`
 	NexusDomains []string              `json:"nexus_domains"`
 	VortexGameID string                `json:"vortex_game_id"`
@@ -350,6 +354,8 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	summary := ExtensionSummary{
 		ID:           extension.ID,
 		Name:         extension.Name,
+		Version:      extension.Version,
+		BuildID:      extension.BuildID,
 		SteamAppIDs:  appendClean(nil, extension.SteamAppIDs...),
 		NexusDomains: appendClean(nil, extension.NexusDomains...),
 		VortexGameID: extension.InstallPlan.VortexGameID,

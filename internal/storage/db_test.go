@@ -151,6 +151,8 @@ func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
 	first := []ExtensionSnapshot{{
 		ID:               "stardewvalley",
 		Name:             "Stardew Valley",
+		Version:          "0.1.0",
+		BuildID:          "first-party-go",
 		SteamAppIDsJSON:  `["413150"]`,
 		NexusDomainsJSON: `["stardewvalley"]`,
 		VortexGameID:     "stardewvalley",
@@ -163,6 +165,8 @@ func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
 	second := []ExtensionSnapshot{{
 		ID:               "fallout4",
 		Name:             "Fallout 4",
+		Version:          "0.2.0",
+		BuildID:          "test-build",
 		SteamAppIDsJSON:  `["377160"]`,
 		NexusDomainsJSON: `["fallout4"]`,
 		VortexGameID:     "fallout4",
@@ -176,7 +180,7 @@ func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(snapshots) != 1 || snapshots[0].ID != "fallout4" || snapshots[0].SteamAppIDsJSON != `["377160"]` {
+	if len(snapshots) != 1 || snapshots[0].ID != "fallout4" || snapshots[0].Version != "0.2.0" || snapshots[0].BuildID != "test-build" || snapshots[0].SteamAppIDsJSON != `["377160"]` {
 		t.Fatalf("snapshots = %+v", snapshots)
 	}
 }

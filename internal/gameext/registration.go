@@ -17,8 +17,10 @@ type Registrar struct {
 func CompileExtension(spec sdk.Extension) (Extension, error) {
 	registrar := &Registrar{
 		extension: Extension{
-			ID:   strings.TrimSpace(spec.ID),
-			Name: strings.TrimSpace(spec.Name),
+			ID:      strings.TrimSpace(spec.ID),
+			Name:    strings.TrimSpace(spec.Name),
+			Version: strings.TrimSpace(spec.Version),
+			BuildID: strings.TrimSpace(spec.BuildID),
 		},
 	}
 	if spec.Register != nil {
@@ -123,6 +125,12 @@ func validateExtension(extension Extension) error {
 	}
 	if strings.TrimSpace(extension.Name) == "" {
 		errs = append(errs, errors.New("extension name is required"))
+	}
+	if strings.TrimSpace(extension.Version) == "" {
+		errs = append(errs, errors.New("extension version is required"))
+	}
+	if strings.TrimSpace(extension.BuildID) == "" {
+		errs = append(errs, errors.New("extension build id is required"))
 	}
 	if len(extension.SteamAppIDs) == 0 {
 		errs = append(errs, errors.New("extension must register at least one Steam app id"))

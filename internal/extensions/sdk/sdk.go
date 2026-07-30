@@ -11,6 +11,8 @@ import (
 type Extension struct {
 	ID       string
 	Name     string
+	Version  string
+	BuildID  string
 	Register RegistrationFunc
 }
 

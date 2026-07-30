@@ -13,8 +13,10 @@ import (
 
 func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	extension, err := CompileExtension(sdk.Extension{
-		ID:   "sample",
-		Name: "Sample Game",
+		ID:      "sample",
+		Name:    "Sample Game",
+		Version: "1.2.3",
+		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
 				SteamAppIDs:  []string{"100", "100"},
@@ -112,6 +114,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.ID != "sample" || summary.VortexGameID != "samplegame" {
 		t.Fatalf("summary identity = %+v", summary)
 	}
+	if summary.Version != "1.2.3" || summary.BuildID != "test-build" {
+		t.Fatalf("summary version/build = %+v", summary)
+	}
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "sample:installer" {
 		t.Fatalf("installer capabilities = %+v", summary.Capabilities.Installers)
 	}
@@ -186,6 +191,8 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 	for _, want := range []string{
+		"extension version is required",
+		"extension build id is required",
 		"mod type mod target root: path traversal is not allowed",
 		"installer bad:installer custom builder is required",
 		"references undeclared mod type missing-type",

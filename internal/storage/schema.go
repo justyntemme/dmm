@@ -186,6 +186,8 @@ CREATE INDEX IF NOT EXISTS idx_domain_events_job_id ON domain_events(job_id);
 CREATE TABLE IF NOT EXISTS extension_snapshots (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
+	version TEXT NOT NULL DEFAULT '',
+	build_id TEXT NOT NULL DEFAULT '',
 	steam_app_ids_json TEXT NOT NULL DEFAULT '[]',
 	nexus_domains_json TEXT NOT NULL DEFAULT '[]',
 	vortex_game_id TEXT NOT NULL DEFAULT '',

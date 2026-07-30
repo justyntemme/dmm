@@ -16,6 +16,8 @@ func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:       VortexGameID,
 		Name:     Name,
+		Version:  "0.1.0",
+		BuildID:  "first-party-go",
 		Register: Register,
 	}
 }

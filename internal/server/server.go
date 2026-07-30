@@ -1173,6 +1173,8 @@ func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 type extensionSnapshotResponse struct {
 	ID           string          `json:"id"`
 	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	BuildID      string          `json:"build_id"`
 	SteamAppIDs  json.RawMessage `json:"steam_app_ids"`
 	NexusDomains json.RawMessage `json:"nexus_domains"`
 	VortexGameID string          `json:"vortex_game_id"`
@@ -1191,6 +1193,8 @@ func (s *Server) handleExtensionSnapshots(w http.ResponseWriter, r *http.Request
 		responses = append(responses, extensionSnapshotResponse{
 			ID:           snapshot.ID,
 			Name:         snapshot.Name,
+			Version:      snapshot.Version,
+			BuildID:      snapshot.BuildID,
 			SteamAppIDs:  json.RawMessage(snapshot.SteamAppIDsJSON),
 			NexusDomains: json.RawMessage(snapshot.NexusDomainsJSON),
 			VortexGameID: snapshot.VortexGameID,
@@ -1211,6 +1215,8 @@ func extensionSnapshotsFromSummaries(summaries []gameext.ExtensionSummary) []sto
 		out = append(out, storage.ExtensionSnapshot{
 			ID:               strings.TrimSpace(summary.ID),
 			Name:             strings.TrimSpace(summary.Name),
+			Version:          strings.TrimSpace(summary.Version),
+			BuildID:          strings.TrimSpace(summary.BuildID),
 			SteamAppIDsJSON:  steamAppIDsJSON,
 			NexusDomainsJSON: nexusDomainsJSON,
 			VortexGameID:     strings.TrimSpace(summary.VortexGameID),
