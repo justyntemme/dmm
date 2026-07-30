@@ -369,6 +369,46 @@ func TestSteamWorkshopActionQueueContract(t *testing.T) {
 	}
 }
 
+func TestSteamWorkshopActionQueueSupportsDeclaredMutationKinds(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for idx, kind := range []string{"enable", "disable", "subscribe", "unsubscribe"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/"+strconv.Itoa(100+idx)+"/actions/"+kind, nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("queue %s status = %d, body = %s", kind, rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Job jobs.Job `json:"job"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Job.Type != jobTypeSteamWorkshopAction || body.Job.Payload["kind"] != kind {
+			t.Fatalf("queued %s job = %+v", kind, body.Job)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/999/actions/delete", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "does not support Steam Workshop action delete") {
+		t.Fatalf("unsupported action status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSteamWorkshopActionFailureCanRetryAndCancel(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
