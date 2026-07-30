@@ -839,6 +839,14 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 
+	allCandidates, err := db.InstallCandidates(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allCandidates) != 1 || allCandidates[0].SteamAppID != "413150" || allCandidates[0].SourceModID != "2400" {
+		t.Fatalf("all candidates = %+v", allCandidates)
+	}
+
 	deleted, err := db.DeleteInstallCandidatesForSteamApp(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)

@@ -435,6 +435,7 @@
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
   let workshopItems: WorkshopItem[] = [];
+  let globalInstallCandidates: InstallCandidate[] = [];
   let loading = true;
   let error = "";
   let drawer: Drawer = null;
@@ -468,8 +469,10 @@
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   $: installRequests = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
+  $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
+  $: globalActionCount = actionItems.length + actionCenterCandidates.length;
   $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
     ? gameDiagnostics.steam_workshop
     : selectedGame?.steam_workshop?.detected
@@ -536,11 +539,21 @@
       initialRefreshComplete = true;
     }
     try {
-      jobs = await getJSON<Job[]>("/api/jobs");
+      await refreshActionState();
       reconcileBusyState();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
+  }
+
+  async function refreshActionState() {
+    const [nextJobs, nextCandidates] = await Promise.all([
+      getJSON<Job[]>("/api/jobs"),
+      getJSON<InstallCandidate[]>("/api/install-candidates")
+    ]);
+    jobs = nextJobs;
+    globalInstallCandidates = nextCandidates;
+    reconcileBusyState();
   }
 
   async function refreshJobsAndSelectedGame() {
@@ -550,7 +563,7 @@
     }
     refreshJobsInFlight = true;
     try {
-      jobs = await getJSON<Job[]>("/api/jobs");
+      await refreshActionState();
       if (selectedGame) await refreshSelectedGame({ refreshPreview: deployPlan !== null });
       reconcileBusyState();
     } catch (err) {
@@ -668,6 +681,11 @@
       }
       return;
     }
+    if (event.type === "install.changed") {
+      void refreshActionState();
+      if (eventMatchesSelectedGame(event)) scheduleSelectedGameRefresh(true, true);
+      return;
+    }
     if (event.type === "launch.changed") {
       if (selectedGame && eventMatchesSelectedGame(event)) {
         if (isGameLaunchStatus(event.payload)) gameLaunchStatus = event.payload;
@@ -683,7 +701,7 @@
       scheduleSelectedGameRefresh(false, true);
       return;
     }
-    if (["profile_mods.changed", "deployment.changed", "install.changed", "mod_updates.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
+    if (["profile_mods.changed", "deployment.changed", "mod_updates.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
       scheduleSelectedGameRefresh(true, true);
     }
   }
@@ -851,6 +869,7 @@
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
     workshopItems = nextWorkshopState.items ?? [];
+    globalInstallCandidates = mergeInstallCandidatesForGame(globalInstallCandidates, game.app_id, nextCandidates);
     reconcileBusyState();
   }
 
@@ -1240,6 +1259,7 @@
       return;
     }
     installCandidates = [];
+    globalInstallCandidates = globalInstallCandidates.filter((candidate) => candidate.steam_app_id !== selectedGame.app_id);
     candidateSelections = {};
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
@@ -1881,6 +1901,32 @@
     return games.find((game) => requestMatchesGame(job, game)) ?? null;
   }
 
+  function gameForInstallCandidate(candidate: InstallCandidate) {
+    return games.find((game) => game.app_id === candidate.steam_app_id) ?? null;
+  }
+
+  function hasOpenInstallerChoiceJob(candidate: InstallCandidate) {
+    const candidateID = String(candidate.id);
+    return actionItems.some((job) => job.type === "installer-choice" && job.payload?.candidate_id === candidateID);
+  }
+
+  async function openInstallCandidate(candidate: InstallCandidate) {
+    const game = gameForInstallCandidate(candidate);
+    if (!game) {
+      error = "DMM could not find the game for this installer item. Refresh games and try again.";
+      return;
+    }
+    await selectGame(game);
+    activeGameModule = "actions";
+  }
+
+  function mergeInstallCandidatesForGame(current: InstallCandidate[], appID: string, candidates: InstallCandidate[]) {
+    return [
+      ...candidates,
+      ...current.filter((candidate) => candidate.steam_app_id !== appID)
+    ].sort((a, b) => b.id - a.id);
+  }
+
   async function openActionItem(job: Job) {
     const game = gameForJob(job);
     if (!game) return;
@@ -2181,12 +2227,12 @@
       <article class="workspace-panel">
         <div class="panel-heading">
           <h2>Action Center</h2>
-          <span>{actionItems.length} open</span>
+          <span>{globalActionCount} open</span>
         </div>
         {#if installRequests.length > 0}
           <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
         {/if}
-        {#if actionItems.length === 0}
+        {#if globalActionCount === 0}
           <div class="request-home">
             <div class="empty-state inline-empty">
               <h2>No Actions Needed</h2>
@@ -2194,7 +2240,8 @@
             </div>
             <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
           </div>
-        {:else}
+        {/if}
+        {#if actionItems.length > 0}
           <div class="request-list">
             {#each actionItems as request}
               <article class:failed-request={request.status === "failed"}>
@@ -2227,6 +2274,31 @@
 	                </article>
             {/each}
           </div>
+        {/if}
+        {#if actionCenterCandidates.length > 0}
+          <section class="blocked-candidates" aria-label="Installer items">
+            <div class="panel-heading compact-heading">
+              <h3>Installer Items</h3>
+              <span>{actionCenterCandidates.length}</span>
+            </div>
+            <p class="hint">These downloaded archives need installer choices or review before they can be added to a profile.</p>
+            <div class="request-list">
+              {#each actionCenterCandidates as candidate}
+                {@const candidateGame = gameForInstallCandidate(candidate)}
+                <article class:failed-request={candidate.status === "blocked"}>
+                  <div>
+                    <strong>{candidate.name}</strong>
+                    <p>{candidate.reason}</p>
+                    <small>{candidateGame?.name ?? `App ${candidate.steam_app_id}`} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
+                  </div>
+                  <div class="request-actions">
+                    <span>{candidateStatusLabel(candidate)}</span>
+                    <button type="button" on:click={() => openInstallCandidate(candidate)}>{candidate.status === "needs_choices" ? "Open Choices" : "Review"}</button>
+                  </div>
+                </article>
+              {/each}
+            </div>
+          </section>
         {/if}
       </article>
     </section>

@@ -257,6 +257,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/games", s.handleGames)
+	mux.HandleFunc("GET /api/install-candidates", s.handleInstallCandidates)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/workshop/actions", s.handleSteamWorkshopActions)
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/start", s.handleStartSteamWorkshopAction)
@@ -2564,6 +2565,15 @@ func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, candidates)
+}
+
+func (s *Server) handleInstallCandidates(w http.ResponseWriter, r *http.Request) {
+	candidates, err := s.db.InstallCandidates(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

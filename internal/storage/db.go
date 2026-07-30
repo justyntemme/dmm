@@ -1284,6 +1284,29 @@ ORDER BY ic.updated_at DESC, ic.created_at DESC
 	return out, rows.Err()
 }
 
+func (db *DB) InstallCandidates(ctx context.Context) ([]InstallCandidate, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json
+FROM install_candidates ic
+JOIN games g ON g.id = ic.game_id
+ORDER BY ic.updated_at DESC, ic.created_at DESC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []InstallCandidate{}
+	for rows.Next() {
+		candidate, err := scanInstallCandidate(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, candidate)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) InstallCandidateForSteamApp(ctx context.Context, appID string, candidateID int64) (InstallCandidate, error) {
 	row := db.conn.QueryRowContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,

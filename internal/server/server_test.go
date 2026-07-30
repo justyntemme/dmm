@@ -2941,6 +2941,18 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"blocked"`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/install-candidates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("global status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"steam_app_id":"413150"`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) {
+		t.Fatalf("global body = %s", rec.Body.String())
+	}
+
 	choiceCandidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
