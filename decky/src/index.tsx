@@ -451,6 +451,13 @@ function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
   };
 }
 
+function scrollDeckyDataRowIntoView(attribute: string, value: string) {
+  window.requestAnimationFrame(() => {
+    const row = document.querySelector(`[${attribute}="${value}"]`) as HTMLElement | null;
+    row?.scrollIntoView({ block: "nearest" });
+  });
+}
+
 function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused = false): CSSProperties {
   const danger = kind === "danger";
   return {
@@ -1877,21 +1884,29 @@ function Content() {
   function handleDeckyGameListDirection(event: GamepadEvent) {
     const button = event.detail.button;
     if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    event.preventDefault();
+    event.stopPropagation();
     const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
     const nextIndex = nextDirectionalIndex(visibleManagedGames.findIndex((game) => game.app_id === focusedGameID), visibleManagedGames.length, direction);
     const nextGame = visibleManagedGames[nextIndex];
-    if (nextGame) setFocusedGameID(nextGame.app_id);
+    if (nextGame) {
+      setFocusedGameID(nextGame.app_id);
+      scrollDeckyDataRowIntoView("data-dmm-game-id", nextGame.app_id);
+    }
   }
 
   function handleDeckyModListDirection(event: GamepadEvent) {
     const button = event.detail.button;
     if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    event.preventDefault();
+    event.stopPropagation();
     const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
     const nextIndex = nextDirectionalIndex(visibleDeckyMods.findIndex((mod) => mod.id === focusedModID), visibleDeckyMods.length, direction);
     const nextMod = visibleDeckyMods[nextIndex];
     if (nextMod) {
       setFocusedModID(nextMod.id);
       setFocusedModAction("");
+      scrollDeckyDataRowIntoView("data-dmm-mod-id", String(nextMod.id));
     }
   }
 
@@ -1985,6 +2000,7 @@ function Content() {
                   <Focusable
                     key={game.app_id}
                     className="dmm-sidebar-surface dmm-sidebar-row"
+                    data-dmm-game-id={game.app_id}
                     focusClassName="dmm-sidebar-row-focused"
                     focusWithinClassName="dmm-sidebar-row-focused"
                     flow-children="column"
@@ -2150,7 +2166,7 @@ function Content() {
                           </div>
                         )}
                       </Focusable>
-                      <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(installer ? 2 : 1)}>
+                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
                         {installer && (
                           <Focusable
                             className="dmm-focus-card"
@@ -2238,6 +2254,7 @@ function Content() {
                     <Focusable
                       key={mod.id}
                       className="dmm-sidebar-surface dmm-sidebar-row"
+                      data-dmm-mod-id={String(mod.id)}
                       focusClassName="dmm-sidebar-row-focused"
                       focusWithinClassName="dmm-sidebar-row-focused"
                       flow-children="column"
@@ -2352,7 +2369,7 @@ function Content() {
                       >
                         {mod.enabled ? "Disable" : "Enable"}
                       </Focusable>
-                      <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(2)}>
+                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
                         <Focusable
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
