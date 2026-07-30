@@ -36,6 +36,9 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if cfg.Download.MaxConcurrentCapturedDownloads != DefaultMaxConcurrentCapturedDownloads {
 		t.Fatalf("MaxConcurrentCapturedDownloads = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloads, DefaultMaxConcurrentCapturedDownloads)
 	}
+	if cfg.Download.MaxConcurrentCapturedDownloadsPerGame != DefaultMaxConcurrentCapturedDownloadsPerGame {
+		t.Fatalf("MaxConcurrentCapturedDownloadsPerGame = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloadsPerGame, DefaultMaxConcurrentCapturedDownloadsPerGame)
+	}
 
 	if _, err := os.Stat(cfg.ConfigPath); err != nil {
 		t.Fatalf("default config was not written: %v", err)
@@ -92,6 +95,9 @@ func TestLoadSparseConfigPreservesDefaults(t *testing.T) {
 	if cfg.Download.MaxConcurrentCapturedDownloads != DefaultMaxConcurrentCapturedDownloads {
 		t.Fatalf("MaxConcurrentCapturedDownloads = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloads, DefaultMaxConcurrentCapturedDownloads)
 	}
+	if cfg.Download.MaxConcurrentCapturedDownloadsPerGame != DefaultMaxConcurrentCapturedDownloadsPerGame {
+		t.Fatalf("MaxConcurrentCapturedDownloadsPerGame = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloadsPerGame, DefaultMaxConcurrentCapturedDownloadsPerGame)
+	}
 	if cfg.ConfigPath != path {
 		t.Fatalf("ConfigPath = %q, want %q", cfg.ConfigPath, path)
 	}
@@ -112,6 +118,28 @@ func TestNormalizeMaxConcurrentCapturedDownloads(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := NormalizeMaxConcurrentCapturedDownloads(tt.in); got != tt.want {
 				t.Fatalf("NormalizeMaxConcurrentCapturedDownloads(%d) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeMaxConcurrentCapturedDownloadsPerGame(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        int
+		globalMax int
+		want      int
+	}{
+		{name: "zero", in: 0, globalMax: 4, want: MinConcurrentCapturedDownloads},
+		{name: "below", in: -1, globalMax: 4, want: MinConcurrentCapturedDownloads},
+		{name: "inside", in: 2, globalMax: 4, want: 2},
+		{name: "clamped to global", in: 4, globalMax: 2, want: 2},
+		{name: "global normalized", in: 99, globalMax: 99, want: MaxConcurrentCapturedDownloads},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeMaxConcurrentCapturedDownloadsPerGame(tt.in, tt.globalMax); got != tt.want {
+				t.Fatalf("NormalizeMaxConcurrentCapturedDownloadsPerGame(%d, %d) = %d, want %d", tt.in, tt.globalMax, got, tt.want)
 			}
 		})
 	}

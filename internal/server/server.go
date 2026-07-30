@@ -154,7 +154,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
-		downloadGate:     newDownloadSlotGate(config.NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads)),
+		downloadGate: newDownloadSlotGate(
+			config.NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads),
+			config.NormalizeMaxConcurrentCapturedDownloadsPerGame(cfg.Download.MaxConcurrentCapturedDownloadsPerGame, cfg.Download.MaxConcurrentCapturedDownloads),
+		),
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
@@ -1085,7 +1088,7 @@ func (s *Server) defaultEnableInstalledMod(appID, modType string) (bool, string)
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
-	activeDownloads, maxDownloads := s.downloadGate.status()
+	downloadStatus := s.downloadGate.status()
 	s.cfgMu.RLock()
 	cfg := s.cfg
 	ui := normalizedUIConfig(cfg.UI)
@@ -1101,8 +1104,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"auto_show_fomod_installers":      cfg.Install.AutoShowFOMODInstallers,
 		},
 		"download": map[string]any{
-			"max_concurrent_captured_downloads": maxDownloads,
-			"active_captured_downloads":         activeDownloads,
+			"max_concurrent_captured_downloads":          downloadStatus.Max,
+			"max_concurrent_captured_downloads_per_game": downloadStatus.MaxPerKey,
+			"active_captured_downloads":                  downloadStatus.Active,
+			"active_captured_downloads_by_game":          downloadStatus.ActiveByKey,
 		},
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
@@ -1126,7 +1131,8 @@ type updateInstallSettingsRequest struct {
 }
 
 type updateDownloadSettingsRequest struct {
-	MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
+	MaxConcurrentCapturedDownloads        *int `json:"max_concurrent_captured_downloads"`
+	MaxConcurrentCapturedDownloadsPerGame *int `json:"max_concurrent_captured_downloads_per_game"`
 }
 
 type patchUISettingsRequest struct {
@@ -1352,17 +1358,29 @@ func (s *Server) handleUpdateDownloadSettings(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	maxDownloads := config.NormalizeMaxConcurrentCapturedDownloads(req.MaxConcurrentCapturedDownloads)
+	s.cfgMu.RLock()
+	maxDownloads := s.cfg.Download.MaxConcurrentCapturedDownloads
+	maxDownloadsPerGame := s.cfg.Download.MaxConcurrentCapturedDownloadsPerGame
+	s.cfgMu.RUnlock()
+	if req.MaxConcurrentCapturedDownloads != nil {
+		maxDownloads = *req.MaxConcurrentCapturedDownloads
+	}
+	if req.MaxConcurrentCapturedDownloadsPerGame != nil {
+		maxDownloadsPerGame = *req.MaxConcurrentCapturedDownloadsPerGame
+	}
+	maxDownloads = config.NormalizeMaxConcurrentCapturedDownloads(maxDownloads)
+	maxDownloadsPerGame = config.NormalizeMaxConcurrentCapturedDownloadsPerGame(maxDownloadsPerGame, maxDownloads)
 	s.cfgMu.Lock()
 	s.cfg.Download.MaxConcurrentCapturedDownloads = maxDownloads
+	s.cfg.Download.MaxConcurrentCapturedDownloadsPerGame = maxDownloadsPerGame
 	cfg := s.cfg
 	s.cfgMu.Unlock()
 	if err := config.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.downloadGate.setMax(maxDownloads)
-	s.logger.Info("download settings updated", "max_concurrent_captured_downloads", maxDownloads)
+	s.downloadGate.setLimits(maxDownloads, maxDownloadsPerGame)
+	s.logger.Info("download settings updated", "max_concurrent_captured_downloads", maxDownloads, "max_concurrent_captured_downloads_per_game", maxDownloadsPerGame)
 	s.handleStatus(w, r)
 }
 
@@ -4721,6 +4739,7 @@ func (s *Server) forgetCapturedInstall(jobID string) {
 
 func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pending capturedInstall) {
 	defer s.untrackActiveJob(jobID)
+	downloadKey := capturedDownloadThrottleKey(pending.Resolved)
 	destDir := filepath.Join(
 		s.cfg.DataDir,
 		"downloads",
@@ -4731,19 +4750,19 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		"files",
 		pending.Resolved.FileID,
 	)
-	if !s.acquireCapturedDownloadSlot(ctx) {
-		s.logger.Info("captured install download canceled before slot", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+	if !s.acquireCapturedDownloadSlot(ctx, downloadKey) {
+		s.logger.Info("captured install download canceled before slot", "job_id", jobID, "download_key", downloadKey, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
 		s.jobs.Cancel(jobID, "Canceled by user")
 		s.forgetCapturedInstall(jobID)
 		return
 	}
 	if _, ok := s.jobs.Run(jobID, "Downloading archive from "+pending.Resolved.GameDomain); !ok {
-		s.releaseCapturedDownloadSlot()
+		s.releaseCapturedDownloadSlot(downloadKey)
 		s.logger.Warn("captured install download job missing after queue", "job_id", jobID)
 		return
 	}
 	result, err := s.fetchCapturedInstallArchive(ctx, jobID, pending, destDir)
-	s.releaseCapturedDownloadSlot()
+	s.releaseCapturedDownloadSlot(downloadKey)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			s.logger.Info("captured install download canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
@@ -4794,6 +4813,18 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		return
 	}
 	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func capturedDownloadThrottleKey(resolved catalog.ResolvedDownload) string {
+	catalogName := strings.ToLower(strings.TrimSpace(resolved.Catalog))
+	gameDomain := strings.ToLower(strings.TrimSpace(resolved.GameDomain))
+	if catalogName == "" {
+		catalogName = "unknown"
+	}
+	if gameDomain == "" {
+		return catalogName
+	}
+	return catalogName + ":" + gameDomain
 }
 
 func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, pending capturedInstall, destDir string) (download.Result, error) {
@@ -4873,12 +4904,12 @@ func waitCapturedDownloadRetry(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func (s *Server) acquireCapturedDownloadSlot(ctx context.Context) bool {
-	return s.downloadGate.acquire(ctx)
+func (s *Server) acquireCapturedDownloadSlot(ctx context.Context, key string) bool {
+	return s.downloadGate.acquire(ctx, key)
 }
 
-func (s *Server) releaseCapturedDownloadSlot() {
-	s.downloadGate.release()
+func (s *Server) releaseCapturedDownloadSlot(key string) {
+	s.downloadGate.release(key)
 }
 
 func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, result download.Result, installSource string) {

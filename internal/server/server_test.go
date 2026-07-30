@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -134,8 +135,10 @@ func TestUpdateDownloadSettingsPersistsAndUpdatesGate(t *testing.T) {
 
 	var body struct {
 		Download struct {
-			MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
-			ActiveCapturedDownloads        int `json:"active_captured_downloads"`
+			MaxConcurrentCapturedDownloads        int            `json:"max_concurrent_captured_downloads"`
+			MaxConcurrentCapturedDownloadsPerGame int            `json:"max_concurrent_captured_downloads_per_game"`
+			ActiveCapturedDownloads               int            `json:"active_captured_downloads"`
+			ActiveCapturedDownloadsByGame         map[string]int `json:"active_captured_downloads_by_game"`
 		} `json:"download"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -144,9 +147,12 @@ func TestUpdateDownloadSettingsPersistsAndUpdatesGate(t *testing.T) {
 	if body.Download.MaxConcurrentCapturedDownloads != 4 {
 		t.Fatalf("max_concurrent_captured_downloads = %d", body.Download.MaxConcurrentCapturedDownloads)
 	}
-	active, maxDownloads := srv.downloadGate.status()
-	if active != 0 || maxDownloads != 4 {
-		t.Fatalf("gate status = active %d max %d", active, maxDownloads)
+	if body.Download.MaxConcurrentCapturedDownloadsPerGame != 1 {
+		t.Fatalf("max_concurrent_captured_downloads_per_game = %d", body.Download.MaxConcurrentCapturedDownloadsPerGame)
+	}
+	status := srv.downloadGate.status()
+	if status.Active != 0 || status.Max != 4 || status.MaxPerKey != 1 {
+		t.Fatalf("gate status = %+v", status)
 	}
 
 	saved, err := config.Load()
@@ -155,6 +161,35 @@ func TestUpdateDownloadSettingsPersistsAndUpdatesGate(t *testing.T) {
 	}
 	if saved.Download.MaxConcurrentCapturedDownloads != 4 {
 		t.Fatalf("saved max_concurrent_captured_downloads = %d", saved.Download.MaxConcurrentCapturedDownloads)
+	}
+	if saved.Download.MaxConcurrentCapturedDownloadsPerGame != 1 {
+		t.Fatalf("saved max_concurrent_captured_downloads_per_game = %d", saved.Download.MaxConcurrentCapturedDownloadsPerGame)
+	}
+
+	perGameReq := httptest.NewRequest(http.MethodPut, "/api/settings/downloads", bytes.NewBufferString(`{"max_concurrent_captured_downloads_per_game":2}`))
+	perGameReq.Header.Set("Content-Type", "application/json")
+	perGameReq.RemoteAddr = "127.0.0.1:1"
+	perGameRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(perGameRec, perGameReq)
+	if perGameRec.Code != http.StatusOK {
+		t.Fatalf("per-game status = %d, body = %s", perGameRec.Code, perGameRec.Body.String())
+	}
+	status = srv.downloadGate.status()
+	if status.Max != 4 || status.MaxPerKey != 2 {
+		t.Fatalf("partial per-game gate status = %+v", status)
+	}
+
+	clampReq := httptest.NewRequest(http.MethodPut, "/api/settings/downloads", bytes.NewBufferString(`{"max_concurrent_captured_downloads":1}`))
+	clampReq.Header.Set("Content-Type", "application/json")
+	clampReq.RemoteAddr = "127.0.0.1:1"
+	clampRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(clampRec, clampReq)
+	if clampRec.Code != http.StatusOK {
+		t.Fatalf("clamp status = %d, body = %s", clampRec.Code, clampRec.Body.String())
+	}
+	status = srv.downloadGate.status()
+	if status.Max != 1 || status.MaxPerKey != 1 {
+		t.Fatalf("clamped gate status = %+v", status)
 	}
 }
 
@@ -717,15 +752,16 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 
 func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	srv := newTestServer(t)
-	_, maxDownloads := srv.downloadGate.status()
+	status := srv.downloadGate.status()
+	maxDownloads := status.Max
 	for i := 0; i < maxDownloads; i++ {
-		if !srv.acquireCapturedDownloadSlot(context.Background()) {
+		if !srv.acquireCapturedDownloadSlot(context.Background(), fmt.Sprintf("test:%d", i)) {
 			t.Fatal("failed to occupy download slot")
 		}
 	}
 	defer func() {
 		for i := 0; i < maxDownloads; i++ {
-			srv.releaseCapturedDownloadSlot()
+			srv.releaseCapturedDownloadSlot(fmt.Sprintf("test:%d", i))
 		}
 	}()
 
@@ -761,6 +797,89 @@ func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	}
 	cancel()
 	waitForJobStatus(t, srv, job.ID, jobs.StatusCanceled)
+}
+
+func TestCapturedInstallDownloadThrottlesSameGameDomain(t *testing.T) {
+	srv := newTestServer(t)
+	setCapturedDownloadRetryDelay(t, 0)
+	srv.downloadGate.setLimits(2, 1)
+	srv.cfgMu.Lock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.cfgMu.Unlock()
+
+	archivePath := filepath.Join(t.TempDir(), "throttle.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"Mod/manifest.json": `{"Name":"Throttle Test"}`,
+		"Mod/Mod.dll":       "dll",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var releaseFirstOnce sync.Once
+	secondStarted := make(chan struct{})
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/first.zip":
+			close(firstStarted)
+			<-releaseFirst
+			http.ServeFile(w, r, archivePath)
+		case "/second.zip":
+			close(secondStarted)
+			http.ServeFile(w, r, archivePath)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer downloadServer.Close()
+	defer releaseFirstOnce.Do(func() { close(releaseFirst) })
+
+	createPending := func(modID, fileID, uri string) string {
+		t.Helper()
+		resolved := catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      modID,
+			FileID:     fileID,
+		}
+		job := srv.jobs.CreateWithPayload("captured-install", "Captured mod", capturedInstallJobPayload(srv.games, resolved))
+		job, _ = srv.jobs.Wait(job.ID, "Ready to download")
+		srv.rememberCapturedInstall(job.ID, capturedInstall{
+			Resolved: resolved,
+			DownloadLinks: []nexus.DownloadLink{{
+				Name: "Local archive",
+				URI:  uri,
+			}},
+			Source: "test",
+		})
+		return job.ID
+	}
+
+	firstJobID := createPending("1", "100", downloadServer.URL+"/first.zip")
+	secondJobID := createPending("2", "200", downloadServer.URL+"/second.zip")
+	if _, err := srv.startCapturedInstallDownload(firstJobID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first download did not start")
+	}
+	if _, err := srv.startCapturedInstallDownload(secondJobID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-secondStarted:
+		t.Fatal("second same-game download started before the first released its keyed slot")
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseFirstOnce.Do(func() { close(releaseFirst) })
+	waitForJobStatus(t, srv, firstJobID, jobs.StatusWaiting)
+	waitForJobStatus(t, srv, secondJobID, jobs.StatusWaiting)
+	status := srv.downloadGate.status()
+	if status.Active != 0 || len(status.ActiveByKey) != 0 {
+		t.Fatalf("gate status after downloads = %+v", status)
+	}
 }
 
 func TestCapturedInstallDownloadTriesNextMirror(t *testing.T) {

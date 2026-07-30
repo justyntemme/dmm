@@ -62,7 +62,9 @@ type BackendStatus = {
     nexus: { api_key_configured: boolean };
     download?: {
       max_concurrent_captured_downloads: number;
+      max_concurrent_captured_downloads_per_game: number;
       active_captured_downloads: number;
+      active_captured_downloads_by_game?: Record<string, number>;
     };
     install: {
       auto_install_captured_downloads: boolean;
@@ -2459,6 +2461,24 @@ function DeckyModManagerRoute() {
     void setMaxConcurrentCapturedDownloads(next);
   }
 
+  async function setMaxConcurrentCapturedDownloadsPerGame(maxDownloads: number) {
+    try {
+      setError("");
+      const result = await call<[number], { ok: boolean; error?: string; status?: unknown }>("set_max_concurrent_captured_downloads_per_game", maxDownloads);
+      if (!result.ok) setError(result.error ?? "Unable to update per-game download settings.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function cycleMaxConcurrentCapturedDownloadsPerGame() {
+    const globalMax = status?.backend?.download?.max_concurrent_captured_downloads ?? 2;
+    const current = status?.backend?.download?.max_concurrent_captured_downloads_per_game ?? 1;
+    const next = current >= globalMax ? 1 : current + 1;
+    void setMaxConcurrentCapturedDownloadsPerGame(next);
+  }
+
   async function openNexus(gameDomain: string | null = null) {
     try {
       setError("");
@@ -3249,6 +3269,11 @@ function DeckyModManagerRoute() {
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={cycleMaxConcurrentCapturedDownloads} disabled={!status?.running}>
           Concurrent Downloads: {status?.backend?.download?.max_concurrent_captured_downloads ?? 2}
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={cycleMaxConcurrentCapturedDownloadsPerGame} disabled={!status?.running}>
+          Per-Game Downloads: {status?.backend?.download?.max_concurrent_captured_downloads_per_game ?? 1}
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>

@@ -33,7 +33,8 @@ type InstallConfig struct {
 }
 
 type DownloadConfig struct {
-	MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
+	MaxConcurrentCapturedDownloads        int `json:"max_concurrent_captured_downloads"`
+	MaxConcurrentCapturedDownloadsPerGame int `json:"max_concurrent_captured_downloads_per_game"`
 }
 
 type UIConfig struct {
@@ -98,9 +99,10 @@ func Save(cfg Config) error {
 }
 
 const (
-	DefaultMaxConcurrentCapturedDownloads = 2
-	MinConcurrentCapturedDownloads        = 1
-	MaxConcurrentCapturedDownloads        = 4
+	DefaultMaxConcurrentCapturedDownloads        = 2
+	MinConcurrentCapturedDownloads               = 1
+	MaxConcurrentCapturedDownloads               = 4
+	DefaultMaxConcurrentCapturedDownloadsPerGame = 1
 )
 
 func Normalize(cfg Config) Config {
@@ -108,6 +110,10 @@ func Normalize(cfg Config) Config {
 		cfg.Download.MaxConcurrentCapturedDownloads = DefaultMaxConcurrentCapturedDownloads
 	}
 	cfg.Download.MaxConcurrentCapturedDownloads = NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads)
+	if cfg.Download.MaxConcurrentCapturedDownloadsPerGame == 0 {
+		cfg.Download.MaxConcurrentCapturedDownloadsPerGame = DefaultMaxConcurrentCapturedDownloadsPerGame
+	}
+	cfg.Download.MaxConcurrentCapturedDownloadsPerGame = NormalizeMaxConcurrentCapturedDownloadsPerGame(cfg.Download.MaxConcurrentCapturedDownloadsPerGame, cfg.Download.MaxConcurrentCapturedDownloads)
 	if cfg.UI.RecentGames == nil {
 		cfg.UI.RecentGames = map[string]int64{}
 	}
@@ -130,6 +136,17 @@ func NormalizeMaxConcurrentCapturedDownloads(value int) int {
 	return value
 }
 
+func NormalizeMaxConcurrentCapturedDownloadsPerGame(value, globalMax int) int {
+	if value < MinConcurrentCapturedDownloads {
+		return MinConcurrentCapturedDownloads
+	}
+	globalMax = NormalizeMaxConcurrentCapturedDownloads(globalMax)
+	if value > globalMax {
+		return globalMax
+	}
+	return value
+}
+
 func Defaults() Config {
 	dataDir, _ := DefaultDataDir()
 	return Config{
@@ -142,7 +159,8 @@ func Defaults() Config {
 			AutoShowFOMODInstallers:      true,
 		},
 		Download: DownloadConfig{
-			MaxConcurrentCapturedDownloads: DefaultMaxConcurrentCapturedDownloads,
+			MaxConcurrentCapturedDownloads:        DefaultMaxConcurrentCapturedDownloads,
+			MaxConcurrentCapturedDownloadsPerGame: DefaultMaxConcurrentCapturedDownloadsPerGame,
 		},
 		UI: UIConfig{
 			RecentGames: map[string]int64{},

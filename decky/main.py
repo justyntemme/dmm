@@ -757,6 +757,36 @@ class Plugin:
             "status": result,
         }
 
+    async def set_max_concurrent_captured_downloads_per_game(self, max_downloads):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        try:
+            max_downloads = int(max_downloads)
+        except (TypeError, ValueError):
+            return {
+                "ok": False,
+                "error": "Per-game download slot count is invalid.",
+            }
+        payload = json.dumps({
+            "max_concurrent_captured_downloads_per_game": max_downloads,
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/downloads", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to update per-game download settings.",
+            }
+        normalized = ((result.get("download") or {}).get("max_concurrent_captured_downloads_per_game")
+                      if isinstance(result, dict) else max_downloads)
+        self._log(f"max concurrent captured downloads per game set to {normalized}")
+        return {
+            "ok": True,
+            "status": result,
+        }
+
     async def patch_ui_preferences(self, patch=None):
         if not self._backend_responds():
             return {

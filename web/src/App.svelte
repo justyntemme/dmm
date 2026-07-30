@@ -12,7 +12,9 @@
     install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
     download?: {
       max_concurrent_captured_downloads: number;
+      max_concurrent_captured_downloads_per_game: number;
       active_captured_downloads: number;
+      active_captured_downloads_by_game?: Record<string, number>;
     };
     nexus: { api_key_configured: boolean };
     ui?: UISettings;
@@ -862,6 +864,22 @@
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ max_concurrent_captured_downloads: maxDownloads })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const nextStatus = await response.json() as Status;
+    status = nextStatus;
+    applyUIPreferences(nextStatus);
+  }
+
+  async function updatePerGameDownloadConcurrency(maxDownloads: number) {
+    error = "";
+    const response = await fetch("/api/settings/downloads", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_concurrent_captured_downloads_per_game: maxDownloads })
     });
     if (!response.ok) {
       error = await response.text();
@@ -2123,6 +2141,7 @@
             <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
+            <div><dt>Per game</dt><dd>{status?.download?.max_concurrent_captured_downloads_per_game ?? 1} active download{(status?.download?.max_concurrent_captured_downloads_per_game ?? 1) === 1 ? "" : "s"}</dd></div>
           </dl>
           <label class="settings-control">
             <span>Concurrent downloads</span>
@@ -2131,6 +2150,15 @@
               <option value="2">2 downloads</option>
               <option value="3">3 downloads</option>
               <option value="4">4 downloads</option>
+            </select>
+          </label>
+          <label class="settings-control">
+            <span>Per-game downloads</span>
+            <select value={status?.download?.max_concurrent_captured_downloads_per_game ?? 1} on:change={(event) => updatePerGameDownloadConcurrency(Number(event.currentTarget.value))}>
+              <option value="1">1 per game</option>
+              <option value="2" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 2}>2 per game</option>
+              <option value="3" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 3}>3 per game</option>
+              <option value="4" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 4}>4 per game</option>
             </select>
           </label>
           <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
