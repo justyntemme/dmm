@@ -5260,6 +5260,34 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "ccExample.esl") || !strings.Contains(string(body), "Example.esp") {
 		t.Fatalf("loadorder.txt body = %q", string(body))
 	}
+
+	loadOrderReq := httptest.NewRequest(http.MethodGet, "/api/games/"+fallout4.SteamAppID+"/load-order", nil)
+	loadOrderReq.RemoteAddr = "127.0.0.1:1"
+	loadOrderRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(loadOrderRec, loadOrderReq)
+	if loadOrderRec.Code != http.StatusOK {
+		t.Fatalf("load order status = %d, body = %s", loadOrderRec.Code, loadOrderRec.Body.String())
+	}
+	var loadOrder pluginLoadOrderResponse
+	if err := json.Unmarshal(loadOrderRec.Body.Bytes(), &loadOrder); err != nil {
+		t.Fatal(err)
+	}
+	if !loadOrder.Supported || loadOrder.ActivationID == "" || loadOrder.TargetRoot != wantRoot {
+		t.Fatalf("load order response = %+v", loadOrder)
+	}
+	pluginsByName := map[string]pluginLoadOrderEntry{}
+	for _, plugin := range loadOrder.Plugins {
+		pluginsByName[plugin.Name] = plugin
+	}
+	if pluginsByName["Fallout4.esm"].Source != "native" || !pluginsByName["Fallout4.esm"].Active {
+		t.Fatalf("native Fallout4.esm entry = %+v", pluginsByName["Fallout4.esm"])
+	}
+	if pluginsByName["ccExample.esl"].Source != "native" || !pluginsByName["ccExample.esl"].Active {
+		t.Fatalf("native cc entry = %+v", pluginsByName["ccExample.esl"])
+	}
+	if pluginsByName["Example.esp"].Source != "dmm" || pluginsByName["Example.esp"].InstalledModID == 0 || pluginsByName["Example.esp"].Priority != 0 {
+		t.Fatalf("managed plugin entry = %+v", pluginsByName["Example.esp"])
+	}
 }
 
 func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {

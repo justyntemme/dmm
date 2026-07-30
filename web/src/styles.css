@@ -1130,6 +1130,66 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.plugin-load-order-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #101827;
+}
+
+.plugin-load-order-card p {
+  margin: 0;
+  color: #d4d4d8;
+}
+
+.plugin-load-order-card > small {
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.plugin-load-order-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plugin-load-order-list article {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border: 1px solid #263243;
+  border-radius: 8px;
+  padding: 9px;
+  background: #0d1422;
+}
+
+.plugin-load-order-list article > span {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+  border-radius: 6px;
+  background: #172033;
+  color: #7dd3fc;
+  font-weight: 800;
+}
+
+.plugin-load-order-list article div {
+  min-width: 0;
+}
+
+.plugin-load-order-list strong,
+.plugin-load-order-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.plugin-load-order-list small {
+  margin-top: 3px;
+  color: #a1a1aa;
+}
+
 .preset-selection-note {
   border: 1px solid #365244;
   border-radius: 8px;

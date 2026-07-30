@@ -281,6 +281,27 @@
     reason: string;
   };
 
+  type PluginLoadOrder = {
+    app_id: string;
+    supported: boolean;
+    activation_id?: string;
+    name?: string;
+    target_root?: string;
+    plugins_file?: string;
+    load_order_file?: string;
+    plugins: PluginLoadOrderEntry[];
+    warnings?: string[];
+  };
+
+  type PluginLoadOrderEntry = {
+    name: string;
+    source: string;
+    installed_mod_id?: number;
+    mod_id?: string;
+    priority: number;
+    active: boolean;
+  };
+
   type RuntimeRequirement = {
     id: string;
     name: string;
@@ -390,6 +411,7 @@
   let deploymentStatus: DeploymentStatus | null = null;
   let deploymentSettings: DeploymentSettings | null = null;
   let deploymentHistory: DeploymentHistoryItem[] = [];
+  let pluginLoadOrder: PluginLoadOrder | null = null;
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
@@ -784,7 +806,7 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
@@ -792,6 +814,7 @@
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
       getJSON<DeploymentSettings>(`/api/games/${game.app_id}/deploy/settings`),
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
+      getJSON<PluginLoadOrder>(`/api/games/${game.app_id}/load-order`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
       getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
@@ -803,6 +826,7 @@
     deploymentStatus = nextDeploymentStatus;
     deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
+    pluginLoadOrder = nextPluginLoadOrder;
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
@@ -2385,6 +2409,40 @@
                 </div>
               {/if}
             </section>
+            {#if pluginLoadOrder?.supported}
+              <section class="plugin-load-order-card">
+                <div class="panel-heading compact-heading">
+                  <h3>Plugin Load Order</h3>
+                  <span>{pluginLoadOrder.plugins.length} plugin{pluginLoadOrder.plugins.length === 1 ? "" : "s"}</span>
+                </div>
+                <p>{pluginLoadOrder.name ?? "Extension plugin activation"} writes {pluginLoadOrder.plugins_file ?? "plugins.txt"} and {pluginLoadOrder.load_order_file ?? "loadorder.txt"} for enabled DMM plugins.</p>
+                {#if pluginLoadOrder.target_root}
+                  <small>{pluginLoadOrder.target_root}</small>
+                {/if}
+                {#if pluginLoadOrder.warnings?.length}
+                  <div class="deployment-strategy-warnings">
+                    {#each pluginLoadOrder.warnings as warning}
+                      <p>{warning}</p>
+                    {/each}
+                  </div>
+                {/if}
+                {#if pluginLoadOrder.plugins.length > 0}
+                  <div class="plugin-load-order-list">
+                    {#each pluginLoadOrder.plugins as plugin, index}
+                      <article>
+                        <span>{index + 1}</span>
+                        <div>
+                          <strong>{plugin.name}</strong>
+                          <small>{plugin.source === "native" ? "Game/native plugin" : `DMM mod ${plugin.mod_id ?? plugin.installed_mod_id ?? ""}`} · Priority {plugin.priority}</small>
+                        </div>
+                      </article>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="hint">No active plugin files are currently part of this profile.</p>
+                {/if}
+              </section>
+            {/if}
             <section class="recovery-card">
               <div class="panel-heading compact-heading">
                 <h3>Recovery</h3>

@@ -265,6 +265,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
+	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
@@ -341,6 +342,27 @@ type deploymentSettingsResponse struct {
 	RecommendedStrategy string                         `json:"recommended_strategy"`
 	StrategyWarnings    []string                       `json:"strategy_warnings,omitempty"`
 	Capabilities        []deploymentStrategyCapability `json:"capabilities"`
+}
+
+type pluginLoadOrderResponse struct {
+	AppID         string                 `json:"app_id"`
+	Supported     bool                   `json:"supported"`
+	ActivationID  string                 `json:"activation_id,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	TargetRoot    string                 `json:"target_root,omitempty"`
+	PluginsFile   string                 `json:"plugins_file,omitempty"`
+	LoadOrderFile string                 `json:"load_order_file,omitempty"`
+	Plugins       []pluginLoadOrderEntry `json:"plugins"`
+	Warnings      []string               `json:"warnings,omitempty"`
+}
+
+type pluginLoadOrderEntry struct {
+	Name           string `json:"name"`
+	Source         string `json:"source"`
+	InstalledModID int64  `json:"installed_mod_id,omitempty"`
+	ModID          string `json:"mod_id,omitempty"`
+	Priority       int    `json:"priority"`
+	Active         bool   `json:"active"`
 }
 
 type deploymentStrategyCapability struct {
@@ -2039,6 +2061,24 @@ func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, gameModResponses(mods, updates))
+}
+
+func (s *Server) handleGameLoadOrder(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.gamePluginLoadOrder(r.Context(), appID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "game was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type gameModResponse struct {
@@ -5585,39 +5625,11 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
 	defaultStrategy := s.defaultDeploymentStrategy(appID)
 
-	var mappings []deploy.FileMapping
-	runtimeMods := runtimeModsForRequirements(mods)
-	_, requiredTool, toolRequired := s.games.RequiredPrimaryLaunchToolForSteamApp(appID, runtimeMods)
-	toolProviderModTypes := map[string]struct{}{}
-	if toolRequired {
-		toolProviderModTypes = launchToolProviderModTypes(requiredTool)
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		return deploy.Plan{}, err
 	}
-	deployableMods := 0
-	undeployableMods := 0
-	for _, mod := range mods {
-		modType := installedModType(mod)
-		deployAsRuntimeToolProvider := false
-		if _, ok := toolProviderModTypes[canonicalModType(modType)]; ok {
-			deployAsRuntimeToolProvider = true
-		}
-		if !mod.Enabled && !deployAsRuntimeToolProvider {
-			continue
-		}
-		deployableMods++
-		next, err := s.deployMappingsForInstalledMod(ctx, game, mod)
-		if err != nil {
-			if errors.Is(err, errUndeployableInstalledMod) {
-				s.logger.Info("skipping staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
-				undeployableMods++
-				continue
-			}
-			return deploy.Plan{}, err
-		}
-		if deployAsRuntimeToolProvider && !mod.Enabled {
-			s.logger.Info("including disabled launch-tool provider in deployment", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_type", modType, "tool_id", requiredTool.ID)
-		}
-		mappings = append(mappings, next...)
-	}
+	mappings := active.Mappings
 	activationMappings, err := s.pluginActivationMappings(ctx, game, mods, mappings, managedFiles, stagingRoot)
 	if err != nil {
 		return deploy.Plan{}, err
@@ -5636,7 +5648,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, managedFiles)
 		}
-		if deployableMods > 0 && undeployableMods == deployableMods {
+		if active.DeployableMods > 0 && active.UndeployableMods == active.DeployableMods {
 			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
 		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, nil)
@@ -5644,6 +5656,48 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, defaultStrategy, mappings, managedFiles, deploy.BuildOptions{
 		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
 	})
+}
+
+type activeDeploymentMappingsResult struct {
+	Mappings         []deploy.FileMapping
+	DeployableMods   int
+	UndeployableMods int
+}
+
+func (s *Server) activeDeploymentMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod) (activeDeploymentMappingsResult, error) {
+	appID := strings.TrimSpace(game.SteamAppID)
+	runtimeMods := runtimeModsForRequirements(mods)
+	_, requiredTool, toolRequired := s.games.RequiredPrimaryLaunchToolForSteamApp(appID, runtimeMods)
+	toolProviderModTypes := map[string]struct{}{}
+	if toolRequired {
+		toolProviderModTypes = launchToolProviderModTypes(requiredTool)
+	}
+	var result activeDeploymentMappingsResult
+	for _, mod := range mods {
+		modType := installedModType(mod)
+		deployAsRuntimeToolProvider := false
+		if _, ok := toolProviderModTypes[canonicalModType(modType)]; ok {
+			deployAsRuntimeToolProvider = true
+		}
+		if !mod.Enabled && !deployAsRuntimeToolProvider {
+			continue
+		}
+		result.DeployableMods++
+		next, err := s.deployMappingsForInstalledMod(ctx, game, mod)
+		if err != nil {
+			if errors.Is(err, errUndeployableInstalledMod) {
+				s.logger.Info("skipping staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+				result.UndeployableMods++
+				continue
+			}
+			return activeDeploymentMappingsResult{}, err
+		}
+		if deployAsRuntimeToolProvider && !mod.Enabled {
+			s.logger.Info("including disabled launch-tool provider in deployment", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_type", modType, "tool_id", requiredTool.ID)
+		}
+		result.Mappings = append(result.Mappings, next...)
+	}
+	return result, nil
 }
 
 func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
@@ -5844,8 +5898,63 @@ func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod
 }
 
 type pluginActivationEntry struct {
-	Name     string
-	Priority int
+	Name           string
+	InstalledModID int64
+	ModID          string
+	Priority       int
+}
+
+func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginLoadOrderResponse, error) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
+	resp := pluginLoadOrderResponse{
+		AppID:   strings.TrimSpace(game.SteamAppID),
+		Plugins: []pluginLoadOrderEntry{},
+	}
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return resp, nil
+	}
+	resp.Supported = true
+	resp.ActivationID = spec.ID
+	resp.Name = spec.Name
+	resp.PluginsFile = activationFileName(spec.PluginsFile, "plugins.txt")
+	resp.LoadOrderFile = activationFileName(spec.LoadOrderFile, "loadorder.txt")
+	if targetRoot, err := protonLocalAppDataTargetRoot(game, spec); err != nil {
+		resp.Warnings = append(resp.Warnings, err.Error())
+	} else {
+		resp.TargetRoot = targetRoot
+	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	for _, name := range native {
+		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
+			Name:     name,
+			Source:   "native",
+			Priority: -1,
+			Active:   true,
+		})
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
+	for _, entry := range pluginActivationEntries(spec, active.Mappings, native) {
+		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
+			Name:           entry.Name,
+			Source:         "dmm",
+			InstalledModID: entry.InstalledModID,
+			ModID:          entry.ModID,
+			Priority:       entry.Priority,
+			Active:         true,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot string) ([]deploy.FileMapping, error) {
@@ -5982,7 +6091,12 @@ func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deplo
 			continue
 		}
 		current, exists := byName[key]
-		next := pluginActivationEntry{Name: name, Priority: mapping.Priority}
+		next := pluginActivationEntry{
+			Name:           name,
+			InstalledModID: mapping.InstalledModID,
+			ModID:          mapping.ModID,
+			Priority:       mapping.Priority,
+		}
 		if !exists || next.Priority < current.Priority || (next.Priority == current.Priority && strings.ToLower(next.Name) < strings.ToLower(current.Name)) {
 			byName[key] = next
 		}
