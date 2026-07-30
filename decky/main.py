@@ -326,6 +326,36 @@ class Plugin:
             return {"ok": True, "mods": result}
         return {"ok": False, "error": "Unexpected mods response.", "mods": []}
 
+    async def game_workshop(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "items": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "items": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/workshop")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load Steam Workshop state.", "items": []}
+        items = result.get("items")
+        if not isinstance(items, list):
+            return {"ok": False, "error": "Unexpected Steam Workshop response.", "items": []}
+        return {"ok": True, "state": result, "items": items}
+
+    async def queue_workshop_action(self, app_id, item_id, kind):
+        app_id = str(app_id or "").strip()
+        item_id = str(item_id or "").strip()
+        kind = str(kind or "").strip()
+        if not app_id or not item_id or not kind:
+            return {"ok": False, "error": "app_id, item_id, and kind are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        path = f"/api/games/{urllib.parse.quote(app_id)}/workshop/items/{urllib.parse.quote(item_id)}/actions/{urllib.parse.quote(kind)}"
+        result, error = self._backend_json_result("POST", path, b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to queue Steam Workshop action."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"workshop action queued app_id={app_id} item_id={item_id} kind={kind} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def game_install_candidates(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

@@ -257,6 +257,11 @@ type WorkshopItem = {
   raw_json?: string;
 };
 
+type WorkshopState = {
+  supported: boolean;
+  items: WorkshopItem[];
+};
+
 type WorkshopActionJob = Job & {
   payload?: {
     app_id?: string;
@@ -1589,6 +1594,8 @@ function Content() {
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
+  const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
+  const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [gameSearch, setGameSearch] = useState<string>("");
@@ -1596,6 +1603,7 @@ function Content() {
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [busyWorkshopKey, setBusyWorkshopKey] = useState<string>("");
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
   const [focusedGameID, setFocusedGameID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
@@ -1695,12 +1703,15 @@ function Content() {
       setDeckyProfiles([]);
       setDeckyMods([]);
       setDeckyInstallCandidates([]);
+      setDeckyWorkshopItems([]);
+      setDeckyWorkshopSupported(false);
       return;
     }
-    const [profilesResult, modsResult, candidatesResult] = await Promise.all([
+    const [profilesResult, modsResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
-      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID)
+      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
+      call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID)
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
@@ -1718,7 +1729,22 @@ function Content() {
       setDeckyInstallCandidates([]);
       setError(candidatesResult.error ?? "Unable to load installer items.");
     }
-    void syncWorkshopStateForApp(appID);
+    if (workshopResult.ok) {
+      setDeckyWorkshopItems(workshopResult.items);
+      setDeckyWorkshopSupported(Boolean(workshopResult.state?.supported));
+    } else {
+      setDeckyWorkshopItems([]);
+      setDeckyWorkshopSupported(false);
+    }
+    void syncWorkshopStateForApp(appID).then((synced) => {
+      if (synced) {
+        void call<[string], { ok: boolean; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID).then((next) => {
+          if (!next.ok) return;
+          setDeckyWorkshopItems(next.items);
+          setDeckyWorkshopSupported(Boolean(next.state?.supported));
+        });
+      }
+    });
   }
 
   async function refreshDeckyMods(appID = selectedDeckyGameID) {
@@ -1922,6 +1948,60 @@ function Content() {
     } finally {
       setBusyModID(null);
     }
+  }
+
+  function workshopItemName(item: WorkshopItem) {
+    return (item.title || item.published_file_id || "Workshop item").trim();
+  }
+
+  async function queueDeckyWorkshopAction(item: WorkshopItem, kind: "enable" | "disable" | "unsubscribe") {
+    if (!selectedDeckyGameID || !deckyWorkshopSupported) return;
+    const key = `${item.published_file_id}:${kind}`;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyWorkshopKey(key);
+      const result = await call<[string, string, string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>(
+        "queue_workshop_action",
+        selectedDeckyGameID,
+        item.published_file_id,
+        kind
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Unable to queue Steam Workshop action.");
+        return;
+      }
+      const job = result.job ?? result.result?.job;
+      setModsResult(`${kind === "unsubscribe" ? "Unsubscribe" : kind === "disable" ? "Disable" : "Enable"} queued for ${workshopItemName(item)}.`);
+      if (job) showJobToast(job);
+      await syncWorkshopActions();
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyWorkshopKey("");
+    }
+  }
+
+  function askUnsubscribeWorkshopItem(item: WorkshopItem) {
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle={`Unsubscribe ${workshopItemName(item)}`}
+        strDescription="Steam will remove this Workshop subscription for the selected game. DMM-managed Nexus mods are not changed."
+        strOKButtonText="Unsubscribe"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void queueDeckyWorkshopAction(item, "unsubscribe");
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Unsubscribe Workshop Item", bNeverPopOut: true }
+    );
   }
 
   async function toggleServer() {
@@ -2155,6 +2235,14 @@ function Content() {
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       );
   }, [deckyMods, modSearch]);
+  const visibleWorkshopItems = useMemo(() => {
+    const normalizedModSearch = modSearch.trim().toLowerCase();
+    if (!normalizedModSearch) return deckyWorkshopItems;
+    return deckyWorkshopItems.filter((item) =>
+      [item.title, item.published_file_id, item.disabled_locally ? "disabled" : "enabled", item.downloaded ? "downloaded" : "pending"]
+        .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
+    );
+  }, [deckyWorkshopItems, modSearch]);
   const focusedGameIndex = visibleManagedGames.findIndex((game) => game.app_id === focusedGameID);
   const focusedModIndex = visibleDeckyMods.findIndex((mod) => mod.id === focusedModID);
   const renderedManagedGames = windowedList(visibleManagedGames, focusedGameIndex, deckyGameListWindowSize);
@@ -2517,7 +2605,7 @@ function Content() {
               </div>
             </PanelSectionRow>
           )}
-          {deckyMods.length > 0 && (
+          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
             <PanelSectionRow>
               <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
             </PanelSectionRow>
@@ -2549,7 +2637,7 @@ function Content() {
               </div>
             </PanelSectionRow>
           )}
-          {deckyMods.length === 0 && (
+          {deckyMods.length === 0 && deckyWorkshopItems.length === 0 && (
             <PanelSectionRow>
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add Nexus downloads from the Decky paste field or phone/tablet UI.</div>
             </PanelSectionRow>
@@ -2757,6 +2845,102 @@ function Content() {
                   );
                 })}
               </Focusable>
+            </PanelSectionRow>
+          )}
+          {deckyWorkshopItems.length > 0 && visibleWorkshopItems.length === 0 && (
+            <PanelSectionRow>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Steam Workshop items match this search.</div>
+            </PanelSectionRow>
+          )}
+          {visibleWorkshopItems.length > 0 && (
+            <PanelSectionRow>
+              <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
+                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: "8px", minWidth: 0 }}>
+                  <div style={{ fontWeight: 800 }}>Steam Workshop</div>
+                  <div style={{ color: deckyWorkshopSupported ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{visibleWorkshopItems.length} item{visibleWorkshopItems.length === 1 ? "" : "s"}</div>
+                </div>
+                {!deckyWorkshopSupported && (
+                  <div style={{ color: "#fbbf24", fontSize: "11px", marginBottom: "8px", overflowWrap: "anywhere" }}>This extension can coexist with Workshop content, but management actions are not enabled for this game.</div>
+                )}
+                {visibleWorkshopItems.map((item) => {
+                  const disabled = item.disabled_known && item.disabled_locally;
+                  const toggleKind = disabled ? "enable" : "disable";
+                  const toggleKey = `${item.published_file_id}:${toggleKind}`;
+                  const unsubscribeKey = `${item.published_file_id}:unsubscribe`;
+                  return (
+                    <Focusable
+                      key={item.published_file_id}
+                      className="dmm-sidebar-row"
+                      focusClassName="dmm-sidebar-row-focused"
+                      focusWithinClassName="dmm-sidebar-row-focused"
+                      flow-children="column"
+                      noFocusRing
+                      style={deckyCompositeRowStyle(false, !disabled)}
+                    >
+                      <Focusable
+                        className="dmm-focus-card"
+                        focusClassName="dmm-focus-card-focused"
+                        style={{
+                          ...deckyFocusableCardStyle(false, !disabled),
+                          display: "grid",
+                          gap: "6px",
+                          opacity: busyWorkshopKey.startsWith(`${item.published_file_id}:`) ? 0.65 : 1,
+                          padding: "10px"
+                        }}
+                      >
+                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{workshopItemName(item)}</div>
+                        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                          <span
+                            style={{
+                              background: disabled ? "#3f3f46" : "#0f766e",
+                              border: `1px solid ${disabled ? "#52525b" : "#5eead4"}`,
+                              borderRadius: "999px",
+                              color: "#f8fafc",
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              lineHeight: 1,
+                              padding: "5px 8px"
+                            }}
+                          >
+                            {item.disabled_known ? (disabled ? "Disabled" : "Enabled") : "Steam managed"}
+                          </span>
+                          <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                            {item.downloaded ? "Downloaded" : "Subscribed"} · {item.published_file_id}
+                          </span>
+                        </div>
+                      </Focusable>
+                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
+                        <Focusable
+                          className="dmm-focus-card"
+                          focusClassName="dmm-focus-card-focused"
+                          onActivate={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            void queueDeckyWorkshopAction(item, toggleKind);
+                          }}
+                          onClick={() => queueDeckyWorkshopAction(item, toggleKind)}
+                          style={deckyCompactActionStyle("neutral", busyWorkshopKey === toggleKey)}
+                        >
+                          {busyWorkshopKey === toggleKey ? "Queueing" : disabled ? "Enable" : "Disable"}
+                        </Focusable>
+                        <Focusable
+                          className="dmm-focus-card"
+                          focusClassName="dmm-focus-card-focused"
+                          onActivate={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            askUnsubscribeWorkshopItem(item);
+                          }}
+                          onClick={() => askUnsubscribeWorkshopItem(item)}
+                          style={deckyCompactActionStyle("danger", busyWorkshopKey === unsubscribeKey)}
+                        >
+                          {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
+                        </Focusable>
+                      </Focusable>
+                    </Focusable>
+                  );
+                })}
+              </div>
             </PanelSectionRow>
           )}
           {modsResult && (
