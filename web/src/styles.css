@@ -1050,6 +1050,36 @@ h2 {
   background: #12171d;
 }
 
+.deployment-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.deployment-history-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #303741;
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #10161d;
+}
+
+.deployment-history-list strong,
+.deployment-history-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deployment-history-list small,
+.deployment-history-list time {
+  color: #a1a1aa;
+  font-size: 0.78rem;
+}
+
 .deploy-flow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

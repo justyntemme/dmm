@@ -3821,6 +3821,55 @@ func TestRestoreDeployEndpointRestoresLastAppliedState(t *testing.T) {
 	}
 }
 
+func TestDeployHistoryEndpointReportsRecentDeployments(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
+		SourcePath: "/staging/a.txt",
+		TargetPath: filepath.Join(gamePath, "Mods", "a.txt"),
+		Strategy:   deploy.StrategySymlink,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: "/staging/b.txt",
+		TargetPath: filepath.Join(gamePath, "Mods", "b.txt"),
+		Strategy:   deploy.StrategyCopy,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/history?limit=1", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Deployments []storage.DeploymentSummary `json:"deployments"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Deployments) != 1 {
+		t.Fatalf("deployments = %+v", body.Deployments)
+	}
+	if body.Deployments[0].Strategy != string(deploy.StrategyCopy) || body.Deployments[0].Status != "deployed" || body.Deployments[0].FileCount != 1 {
+		t.Fatalf("deployment summary = %+v", body.Deployments[0])
+	}
+}
+
 func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

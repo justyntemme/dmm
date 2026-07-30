@@ -270,6 +270,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/retry", s.handleRetryInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
+	mux.HandleFunc("GET /api/games/{appID}/deploy/history", s.handleDeployHistory)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
 	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
 	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
@@ -458,6 +459,21 @@ func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleDeployHistory(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if strings.TrimSpace(appID) == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	limit := parseBoundedQueryInt(r.URL.Query().Get("limit"), 10, 1, 50)
+	history, err := s.db.DeploymentHistoryForSteamApp(r.Context(), appID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deployments": history})
 }
 
 func (s *Server) deploymentStatus(ctx context.Context, appID string) (deploymentStatusResponse, error) {

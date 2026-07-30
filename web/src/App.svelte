@@ -218,6 +218,17 @@
     restore_summary?: string;
   };
 
+  type DeploymentHistoryItem = {
+    id: number;
+    profile_id: number;
+    profile_name: string;
+    status: string;
+    strategy: string;
+    file_count: number;
+    created_at: string;
+    updated_at: string;
+  };
+
   type RuntimeRequirement = {
     id: string;
     name: string;
@@ -319,6 +330,7 @@
   let downloadLinks: DownloadLink[] = [];
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
+  let deploymentHistory: DeploymentHistoryItem[] = [];
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
@@ -630,6 +642,7 @@
     downloadLinks = [];
     deployPlan = null;
     deploymentStatus = null;
+    deploymentHistory = [];
     gameDiagnostics = null;
     gameLaunchStatus = null;
     installCandidates = [];
@@ -708,11 +721,12 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
+      getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
       getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
@@ -721,6 +735,7 @@
     installedMods = nextMods;
     installCandidates = nextCandidates;
     deploymentStatus = nextDeploymentStatus;
+    deploymentHistory = nextDeploymentHistory.deployments ?? [];
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
@@ -2151,6 +2166,19 @@
                 <div class="sample-file-list">
                   {#each deploymentStatus.sample_files as file}
                     <small>{file}</small>
+                  {/each}
+                </div>
+              {/if}
+              {#if deploymentHistory.length > 0}
+                <div class="deployment-history-list" aria-label="Deployment history">
+                  {#each deploymentHistory as deployment}
+                    <article>
+                      <div>
+                        <strong>{deployment.status === "deployed" ? "Active deployment" : "Previous deployment"}</strong>
+                        <small>{deployment.profile_name} · {deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy}</small>
+                      </div>
+                      <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
+                    </article>
                   {/each}
                 </div>
               {/if}

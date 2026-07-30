@@ -59,6 +59,17 @@ type InstalledMod struct {
 	Status           string `json:"status"`
 }
 
+type DeploymentSummary struct {
+	ID          int64  `json:"id"`
+	ProfileID   int64  `json:"profile_id"`
+	ProfileName string `json:"profile_name"`
+	Status      string `json:"status"`
+	Strategy    string `json:"strategy"`
+	FileCount   int    `json:"file_count"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type InstallCandidate struct {
 	ID               int64  `json:"id"`
 	GameID           int64  `json:"game_id"`
@@ -1431,6 +1442,40 @@ ORDER BY df.target_path DESC
 		files = append(files, file)
 	}
 	return files, rows.Err()
+}
+
+func (db *DB) DeploymentHistoryForSteamApp(ctx context.Context, appID string, limit int) ([]DeploymentSummary, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT d.id, p.id, p.name, d.status, d.strategy, COUNT(df.id), d.created_at, d.updated_at
+FROM deployments d
+JOIN games g ON g.id = d.game_id
+JOIN profiles p ON p.id = d.profile_id
+LEFT JOIN deployed_files df ON df.deployment_id = d.id
+WHERE g.steam_app_id = ?
+GROUP BY d.id, p.id, p.name, d.status, d.strategy, d.created_at, d.updated_at
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT ?
+`, appID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []DeploymentSummary{}
+	for rows.Next() {
+		var item DeploymentSummary
+		if err := rows.Scan(&item.ID, &item.ProfileID, &item.ProfileName, &item.Status, &item.Strategy, &item.FileCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) MarkLatestDeploymentPurged(ctx context.Context, appID string) error {
