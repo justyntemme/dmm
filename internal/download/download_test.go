@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -80,6 +81,38 @@ func TestFetchRejectsOversizedDownload(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("unexpected files after failed download: %v", matches)
+	}
+}
+
+func TestFetchReturnsStatusError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary failure", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, err := Fetch(context.Background(), Options{
+		URL:     server.URL + "/mod.zip",
+		DestDir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected status failure")
+	}
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error type = %T, want StatusError", err)
+	}
+	if statusErr.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d", statusErr.StatusCode)
+	}
+	if !IsRetryable(err) {
+		t.Fatal("expected 502 to be retryable")
+	}
+}
+
+func TestIsRetryableRejectsPermanentStatus(t *testing.T) {
+	err := &StatusError{StatusCode: http.StatusNotFound, Status: "404 Not Found"}
+	if IsRetryable(err) {
+		t.Fatal("expected 404 to be permanent")
 	}
 }
 

@@ -764,6 +764,7 @@ func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 
 func TestCapturedInstallDownloadTriesNextMirror(t *testing.T) {
 	srv := newTestServer(t)
+	setCapturedDownloadRetryDelay(t, 0)
 	srv.cfgMu.Lock()
 	srv.cfg.Install.AutoInstallCapturedDownloads = false
 	srv.cfgMu.Unlock()
@@ -815,7 +816,7 @@ func TestCapturedInstallDownloadTriesNextMirror(t *testing.T) {
 	if !strings.Contains(waiting.Message, "Downloaded") {
 		t.Fatalf("waiting job = %+v", waiting)
 	}
-	if failedHits != 1 || successHits != 1 {
+	if failedHits != capturedDownloadMaxAttemptsPerLink || successHits != 1 {
 		t.Fatalf("mirror hits: failed=%d success=%d", failedHits, successHits)
 	}
 	pending, ok := srv.capturedInstall(job.ID)
@@ -1756,8 +1757,9 @@ func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	}
 }
 
-func TestRetryCapturedInstallAfterDownloadFailure(t *testing.T) {
+func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 	srv := newTestServer(t)
+	setCapturedDownloadRetryDelay(t, 0)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
 		Name:        "Stardew Valley",
@@ -1809,21 +1811,6 @@ func TestRetryCapturedInstallAfterDownloadFailure(t *testing.T) {
 	if started.Status != jobs.StatusQueued {
 		t.Fatalf("started job = %+v", started)
 	}
-	failed := waitForJobStatus(t, srv, job.ID, jobs.StatusFailed)
-	if !strings.Contains(failed.Message, "502") {
-		t.Fatalf("failed job = %+v", failed)
-	}
-	if _, ok := srv.capturedInstalls[job.ID]; !ok {
-		t.Fatalf("captured install %s was not retained for retry", job.ID)
-	}
-
-	retry := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/retry", nil)
-	retry.RemoteAddr = "127.0.0.1:1"
-	retryRec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(retryRec, retry)
-	if retryRec.Code != http.StatusAccepted {
-		t.Fatalf("retry status = %d, body = %s", retryRec.Code, retryRec.Body.String())
-	}
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
 	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
 		t.Fatalf("completed job = %+v", completed)
@@ -1833,6 +1820,52 @@ func TestRetryCapturedInstallAfterDownloadFailure(t *testing.T) {
 	}
 	if _, ok := srv.capturedInstalls[job.ID]; ok {
 		t.Fatalf("captured install %s was not forgotten after retry success", job.ID)
+	}
+}
+
+func TestCapturedInstallDownloadFailureIsRetainedAfterRetryExhaustion(t *testing.T) {
+	srv := newTestServer(t)
+	setCapturedDownloadRetryDelay(t, 0)
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "541",
+		FileID:     "160470",
+	}
+	var attempts int
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		http.Error(w, "temporary failure", http.StatusBadGateway)
+	}))
+	defer downloadServer.Close()
+
+	job := srv.jobs.CreateWithPayload("captured-install", "Captured mod", capturedInstallJobPayload(srv.games, resolved))
+	job, _ = srv.jobs.Wait(job.ID, "Ready to download")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: resolved,
+		DownloadLinks: []nexus.DownloadLink{{
+			Name: "Flaky test archive",
+			URI:  downloadServer.URL + "/lookup.zip",
+		}},
+		Source: "test",
+	})
+
+	started, err := srv.startCapturedInstallDownload(job.ID, "test download")
+	if err != nil {
+		t.Fatalf("startCapturedInstallDownload() error = %v", err)
+	}
+	if started.Status != jobs.StatusQueued {
+		t.Fatalf("started job = %+v", started)
+	}
+	failed := waitForJobStatus(t, srv, job.ID, jobs.StatusFailed)
+	if !strings.Contains(failed.Message, "502") {
+		t.Fatalf("failed job = %+v", failed)
+	}
+	if attempts != capturedDownloadMaxAttemptsPerLink {
+		t.Fatalf("download attempts = %d", attempts)
+	}
+	if _, ok := srv.capturedInstalls[job.ID]; !ok {
+		t.Fatalf("captured install %s was not retained for retry", job.ID)
 	}
 }
 
@@ -6233,6 +6266,15 @@ func waitForJobStatus(t *testing.T, srv *Server, jobID string, status jobs.Statu
 	job, _ := srv.jobs.Get(jobID)
 	t.Fatalf("job %s did not reach status %s: %+v", jobID, status, job)
 	return jobs.Job{}
+}
+
+func setCapturedDownloadRetryDelay(t *testing.T, delay time.Duration) {
+	t.Helper()
+	previous := capturedDownloadRetryBaseDelay
+	capturedDownloadRetryBaseDelay = delay
+	t.Cleanup(func() {
+		capturedDownloadRetryBaseDelay = previous
+	})
 }
 
 type fakeNexusClient struct {

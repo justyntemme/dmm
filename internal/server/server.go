@@ -4502,6 +4502,10 @@ var (
 	errCapturedInstallNoArchive   = errors.New("captured install has no downloaded archive")
 )
 
+const capturedDownloadMaxAttemptsPerLink = 3
+
+var capturedDownloadRetryBaseDelay = 250 * time.Millisecond
+
 func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.Job, error) {
 	pending, ok := s.capturedInstall(jobID)
 	if !ok {
@@ -4763,28 +4767,63 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 		if uri == "" {
 			continue
 		}
-		attempts++
-		s.jobs.Run(jobID, fmt.Sprintf("Downloading archive from %s (%d/%d)", pending.Resolved.GameDomain, index+1, total))
-		result, err := download.Fetch(ctx, download.Options{
-			URL:     uri,
-			DestDir: destDir,
-		})
-		if err == nil {
-			if attempts > 1 {
-				s.logger.Info("captured install download succeeded after mirror retry", "job_id", jobID, "attempt", attempts, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName)
+		for linkAttempt := 1; linkAttempt <= capturedDownloadMaxAttemptsPerLink; linkAttempt++ {
+			attempts++
+			message := fmt.Sprintf("Downloading archive from %s (%d/%d, try %d/%d)", pending.Resolved.GameDomain, index+1, total, linkAttempt, capturedDownloadMaxAttemptsPerLink)
+			s.jobs.Run(jobID, message)
+			result, err := download.Fetch(ctx, download.Options{
+				URL:     uri,
+				DestDir: destDir,
+			})
+			if err == nil {
+				if attempts > 1 {
+					s.logger.Info("captured install download succeeded after retry", "job_id", jobID, "attempt", attempts, "link_attempt", linkAttempt, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName)
+				}
+				return result, nil
 			}
-			return result, nil
+			lastErr = err
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return download.Result{}, err
+			}
+			retryable := download.IsRetryable(err)
+			s.logger.Warn("captured install download attempt failed", "job_id", jobID, "attempt", attempts, "link_attempt", linkAttempt, "retryable", retryable, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName, "error", err)
+			if !retryable || linkAttempt == capturedDownloadMaxAttemptsPerLink {
+				break
+			}
+			delay := capturedDownloadRetryDelay(linkAttempt)
+			if delay > 0 {
+				s.jobs.Run(jobID, fmt.Sprintf("Download from %s failed; retrying in %s", pending.Resolved.GameDomain, delay))
+			}
+			if err := waitCapturedDownloadRetry(ctx, delay); err != nil {
+				return download.Result{}, err
+			}
 		}
-		lastErr = err
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return download.Result{}, err
-		}
-		s.logger.Warn("captured install download mirror failed", "job_id", jobID, "attempt", attempts, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName, "error", err)
 	}
 	if attempts == 0 {
 		return download.Result{}, errCapturedInstallNoLinks
 	}
 	return download.Result{}, lastErr
+}
+
+func capturedDownloadRetryDelay(attempt int) time.Duration {
+	if capturedDownloadRetryBaseDelay <= 0 || attempt <= 0 {
+		return 0
+	}
+	return time.Duration(attempt) * capturedDownloadRetryBaseDelay
+}
+
+func waitCapturedDownloadRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (s *Server) acquireCapturedDownloadSlot(ctx context.Context) bool {

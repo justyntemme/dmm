@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,12 +24,49 @@ type Result struct {
 	SHA256       string `json:"sha256,omitempty"`
 }
 
+type StatusError struct {
+	StatusCode int
+	Status     string
+}
+
+func (err *StatusError) Error() string {
+	if err == nil {
+		return "download failed"
+	}
+	return "download failed: " + err.Status
+}
+
 type Options struct {
 	URL      string
 	DestDir  string
 	FileName string
 	MaxBytes int64
 	Client   *http.Client
+}
+
+func IsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == http.StatusRequestTimeout ||
+			statusErr.StatusCode == http.StatusTooEarly ||
+			statusErr.StatusCode == http.StatusTooManyRequests ||
+			statusErr.StatusCode >= http.StatusInternalServerError
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		if errors.Is(urlErr.Err, context.Canceled) {
+			return false
+		}
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 func Fetch(ctx context.Context, opts Options) (Result, error) {
@@ -69,7 +107,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return Result{}, fmt.Errorf("download failed: %s", resp.Status)
+		return Result{}, &StatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 
 	name := safeFileName(opts.FileName)
