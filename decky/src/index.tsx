@@ -761,7 +761,8 @@ async function maybeShowJobToast(job: Job, { seed = false, source = "event" } = 
   notifiedJobStates.set(job.id, stateKey);
   const updatedAt = Date.parse(job.updated_at || "");
   const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
-  if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+  const requireRecent = seed || source === "event" || source === "event-snapshot";
+  if (previous !== stateKey && (!requireRecent || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
     await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
     showJobToast(job);
   }
