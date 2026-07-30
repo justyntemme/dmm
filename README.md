@@ -116,6 +116,8 @@ Decky Mod Manager plugin/backend logs:
 /home/deck/.local/state/decky-mod-manager/nxm-handler.log
 ```
 
+The phone/tablet web UI writes redacted WebSocket lifecycle and domain-event diagnostics to `backend.log` as `web client event` entries.
+
 Steam frontend JavaScript/plugin load errors:
 
 ```text
@@ -138,7 +140,7 @@ DMM handles this through an explicit action bridge:
 2. The Go backend evaluates installed/enabled mods and extension metadata, then exposes pending launch actions from `GET /api/launch/actions`.
 3. The Decky Python bridge exposes `launch_actions` and `record_launch_action` methods to the Decky frontend.
 4. The Decky frontend starts module-level background monitors when the plugin is loaded, outside the React panel component. Closing the Decky sidebar does not stop those monitors.
-5. The monitor polls pending launch actions and, when available, calls `SteamClient.Apps.SetAppLaunchOptions(appid, desiredOptions)`.
+5. The monitor syncs pending launch actions at startup and after backend domain events, then calls `SteamClient.Apps.SetAppLaunchOptions(appid, desiredOptions)` when an action is available.
 6. After the Steam API call, Decky reports the result back to the backend with `POST /api/games/{appID}/launch/configure`, so diagnostics and the phone/tablet UI can show whether the action is configured.
 
 This means the Decky panel does not need to be open for launch-option actions to be applied. Decky Loader must still have the DMM plugin loaded, and the DMM backend must be running. If the Steam frontend API is unavailable, Decky records that failure and leaves the action pending for retry through the Steam client API. The Go backend does not patch Steam's `localconfig.vdf` as a product path.

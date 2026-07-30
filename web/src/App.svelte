@@ -311,6 +311,17 @@
     return response.json();
   }
 
+  function logClientEvent(message: string, detail: Record<string, string | number | boolean | null | undefined> = {}) {
+    const body = JSON.stringify({ message, detail });
+    fetch("/api/client-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body
+    }).catch(() => {
+      // Client diagnostics must not interfere with the mod-management flow.
+    });
+  }
+
   async function refresh() {
     error = "";
     try {
@@ -369,33 +380,56 @@
       eventReconnectTimer = null;
     }
 
+    logClientEvent("events connecting", { after_id: lastEventID, host: window.location.host });
     const socket = new WebSocket(eventSocketURL());
     eventSocket = socket;
     socket.onopen = () => {
       eventReconnectDelay = 1000;
+      logClientEvent("events connected", { after_id: lastEventID, host: window.location.host });
     };
     socket.onmessage = (message) => {
       if (typeof message.data !== "string") return;
       try {
-        handleDomainEvent(JSON.parse(message.data) as DomainEvent);
+        const event = JSON.parse(message.data) as DomainEvent;
+        logDomainEvent(event);
+        handleDomainEvent(event);
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
+        logClientEvent("events message failed", { error });
       }
     };
     socket.onerror = () => {
+      logClientEvent("events socket error", { after_id: lastEventID, host: window.location.host });
       socket.close();
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      logClientEvent("events closed", { after_id: lastEventID, code: event.code, clean: event.wasClean, reason: event.reason });
       if (eventSocket !== socket) return;
       eventSocket = null;
       scheduleEventReconnect();
     };
   }
 
+  function logDomainEvent(event: DomainEvent) {
+    const detail: Record<string, string | number | boolean | null | undefined> = {
+      id: event.id,
+      type: event.type,
+      app_id: event.app_id,
+      job_id: event.job_id
+    };
+    if (isJob(event.payload)) {
+      detail.job_type = event.payload.type;
+      detail.job_status = event.payload.status;
+      detail.job_message = event.payload.message;
+    }
+    logClientEvent("events received", detail);
+  }
+
   function scheduleEventReconnect() {
     if (eventReconnectTimer !== null) return;
     const delay = eventReconnectDelay;
     eventReconnectDelay = Math.min(eventReconnectDelay * 2, 10000);
+    logClientEvent("events reconnect scheduled", { delay_ms: delay, after_id: lastEventID });
     eventReconnectTimer = window.setTimeout(() => {
       eventReconnectTimer = null;
       void refreshJobsAndSelectedGame();

@@ -116,6 +116,7 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 		{name: "health poll", method: http.MethodGet, path: "/api/health", status: http.StatusOK, want: false},
 		{name: "jobs poll", method: http.MethodGet, path: "/api/jobs", status: http.StatusOK, want: false},
 		{name: "websocket events", method: http.MethodGet, path: "/api/events/ws", status: http.StatusOK, want: false},
+		{name: "web client event", method: http.MethodPost, path: "/api/client-events", status: http.StatusOK, want: false},
 		{name: "status read", method: http.MethodGet, path: "/api/status", status: http.StatusOK, want: true},
 		{name: "polling error", method: http.MethodGet, path: "/api/health", status: http.StatusInternalServerError, want: true},
 		{name: "mutation", method: http.MethodPost, path: "/api/imports/pending", status: http.StatusAccepted, want: true},
@@ -194,6 +195,75 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 			continue
 		}
 		return
+	}
+}
+
+func TestEventsWebSocketAcceptsSameHostBrowserOrigin(t *testing.T) {
+	srv := newTestServer(t)
+	httpServer := httptest.NewServer(srv.Handler())
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/events/ws"
+	conn, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{httpServer.URL}},
+	})
+	if err != nil {
+		body := ""
+		if resp != nil && resp.Body != nil {
+			b, _ := io.ReadAll(resp.Body)
+			body = string(b)
+		}
+		t.Fatalf("Dial(%q) error = %v body = %q", wsURL, err, body)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	_, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("read snapshot error = %v", err)
+	}
+	var snapshot events.Event
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("snapshot unmarshal error = %v", err)
+	}
+	if snapshot.Type != events.TypeJobsSnapshot {
+		t.Fatalf("snapshot event = %+v", snapshot)
+	}
+}
+
+func TestClientEventLogRedactsSensitiveDetails(t *testing.T) {
+	srv := newTestServer(t)
+	var log bytes.Buffer
+	srv.logger = slog.New(slog.NewTextHandler(&log, nil))
+
+	body := bytes.NewBufferString(`{
+		"message":"events message failed",
+		"detail":{
+			"url":"nxm://stardewvalley/mods/1/files/2?key=secret&expires=never&md5=hash",
+			"job_id":"job-1",
+			"token":"secret-token"
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/client-events", body)
+	req.RemoteAddr = "192.168.1.25:50000"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %q", rec.Code, rec.Body.String())
+	}
+	out := log.String()
+	for _, secret := range []string{"secret", "never", "hash", "secret-token"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("log leaked %q: %s", secret, out)
+		}
+	}
+	for _, want := range []string{"events message failed", "job-1", "[redacted]"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log missing %q: %s", want, out)
+		}
 	}
 }
 

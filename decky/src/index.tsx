@@ -2,19 +2,20 @@ import {
   ButtonItem,
   ConfirmModal,
   Focusable,
+  GamepadButton,
   Navigation,
+  NavEntryPositionPreferences,
   PanelSection,
   PanelSectionRow,
   Router,
   TextField,
-  Tabs,
   ToggleField,
   showModal,
   staticClasses
 } from "@decky/ui";
 import { call, definePlugin, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { useEffect, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useState } from "react";
 
 declare const SteamClient:
   | {
@@ -190,6 +191,74 @@ type LaunchStatus = {
 };
 
 type Tab = "main" | "mods" | "settings" | "debug";
+
+const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
+
+const deckyPanelFrameStyle: CSSProperties = {
+  alignSelf: "stretch",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  height: "calc(100vh - 112px)",
+  maxHeight: "calc(100vh - 112px)",
+  minHeight: 0,
+  width: "100%"
+};
+
+const deckyTabBarStyle: CSSProperties = {
+  alignSelf: "stretch",
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "4px",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  minWidth: 0,
+  width: "100%"
+};
+
+const deckyTabBodyStyle: CSSProperties = {
+  boxSizing: "border-box",
+  display: "block",
+  flex: "1 1 auto",
+  minHeight: 0,
+  overflowY: "auto",
+  paddingBottom: "16px",
+  paddingRight: "4px",
+  width: "100%"
+};
+
+function deckyTabButtonStyle(active: boolean): CSSProperties {
+  return {
+    alignItems: "center",
+    background: active ? "#0f766e" : "#1f2937",
+    border: `1px solid ${active ? "#5eead4" : "#374151"}`,
+    borderRadius: "6px",
+    boxSizing: "border-box",
+    color: "#f8fafc",
+    display: "flex",
+    fontSize: "11px",
+    fontWeight: 800,
+    height: "34px",
+    justifyContent: "center",
+    lineHeight: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    padding: "0 4px",
+    textAlign: "center",
+    textOverflow: "ellipsis",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap",
+    width: "100%"
+  };
+}
+
+function deckyTabBody(content: ReactNode) {
+  return (
+    <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckyTabBodyStyle}>
+      {content}
+    </Focusable>
+  );
+}
 
 function installToastBody(job: Job): string {
   if (job.status === "waiting") return job.message || "Open the phone or tablet UI to approve this install.";
@@ -1073,7 +1142,7 @@ function Content() {
       )}
       {status?.running && !selectedDeckyGameID && (
         <PanelSectionRow>
-          <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+          <div style={{ paddingRight: "4px", width: "100%" }}>
             <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.map((game) => (
@@ -1123,7 +1192,7 @@ function Content() {
           )}
           {deckyProfiles.length > 1 && (
             <PanelSectionRow>
-              <div style={{ maxHeight: "150px", overflowY: "auto", width: "100%" }}>
+              <div style={{ width: "100%" }}>
                 <div style={{ fontWeight: 800, marginBottom: "8px" }}>Profile</div>
                 {deckyProfiles.map((profile) => (
                   <Focusable
@@ -1158,7 +1227,7 @@ function Content() {
           )}
           {visibleDeckyMods.length > 0 && (
             <PanelSectionRow>
-              <Focusable flow-children="column" style={{ display: "grid", gap: "8px", maxHeight: "420px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+              <Focusable flow-children="column" style={{ display: "grid", gap: "8px", paddingRight: "4px", width: "100%" }}>
                 {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
@@ -1266,7 +1335,12 @@ function Content() {
   const debugContent = (
     <>
       <PanelSectionRow>
-        <div style={{ maxHeight: "320px", overflowY: "auto", paddingRight: "4px", width: "100%" }}>
+        <ButtonItem layout="below" onClick={refresh}>
+          Refresh
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <div style={{ paddingRight: "4px", width: "100%" }}>
           <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
           {dependencies.map((dep) => (
             <div key={dep.command} style={{ marginBottom: "10px", borderBottom: "1px solid #303741", paddingBottom: "8px" }}>
@@ -1312,7 +1386,7 @@ function Content() {
             </>
           )}
           {diagnostics && (
-            <div style={{ display: "grid", gap: "10px", marginTop: "10px", maxHeight: "420px", overflowY: "auto", width: "100%" }}>
+            <div style={{ display: "grid", gap: "10px", marginTop: "10px", width: "100%" }}>
               {Object.entries(diagnostics.logs).map(([name, log]) => (
                 <div key={name} style={{ borderTop: "1px solid #303741", paddingTop: "8px" }}>
                   <div style={{ fontWeight: 800 }}>{name}</div>
@@ -1327,28 +1401,63 @@ function Content() {
     </>
   );
 
+  const tabItems: { id: Tab; title: string; content: ReactNode }[] = [
+    { id: "main", title: "Manage", content: mainContent },
+    { id: "mods", title: "Mods", content: modsContent },
+    { id: "settings", title: "Settings", content: settingsContent },
+    { id: "debug", title: "Debug", content: debugContent }
+  ];
+  const activeTabContent = tabItems.find((item) => item.id === tab)?.content ?? mainContent;
+  const showDeckyTab = (next: Tab) => {
+    if (next === tab) return;
+    setTab(next);
+    if (next === "mods") refreshDeckyMods();
+  };
+  const shiftDeckyTab = (direction: -1 | 1) => {
+    const index = deckyTabOrder.indexOf(tab);
+    const current = index >= 0 ? index : 0;
+    const next = deckyTabOrder[(current + direction + deckyTabOrder.length) % deckyTabOrder.length];
+    showDeckyTab(next);
+  };
+  const handleDeckyShellButtonDown = (event: CustomEvent<{ button: number }>) => {
+    if (event.detail.button === GamepadButton.BUMPER_LEFT) {
+      event.preventDefault();
+      event.stopPropagation();
+      shiftDeckyTab(-1);
+    } else if (event.detail.button === GamepadButton.BUMPER_RIGHT) {
+      event.preventDefault();
+      event.stopPropagation();
+      shiftDeckyTab(1);
+    }
+  };
+
   return (
     <PanelSection title="Decky Mod Manager">
-      <Tabs
-        activeTab={tab}
-        autoFocusContents
-        onShowTab={(nextTab: string) => {
-          const next = nextTab as Tab;
-          setTab(next);
-          if (next === "mods") refreshDeckyMods();
+      <Focusable
+        flow-children="column"
+        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+        onButtonDown={handleDeckyShellButtonDown}
+        actionDescriptionMap={{
+          [GamepadButton.BUMPER_LEFT]: "Previous Tab",
+          [GamepadButton.BUMPER_RIGHT]: "Next Tab"
         }}
-        tabs={[
-          { id: "main", title: "Manage", content: mainContent },
-          { id: "mods", title: "Mods", content: modsContent },
-          { id: "settings", title: "Settings", content: settingsContent },
-          { id: "debug", title: "Debug", content: debugContent }
-        ]}
-      />
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={refresh}>
-          Refresh
-        </ButtonItem>
-      </PanelSectionRow>
+        style={deckyPanelFrameStyle}
+      >
+        <Focusable flow-children="row" noFocusRing style={deckyTabBarStyle}>
+          {tabItems.map((item) => (
+            <Focusable
+              key={item.id}
+              onActivate={() => showDeckyTab(item.id)}
+              onClick={() => showDeckyTab(item.id)}
+              preferredFocus={item.id === tab}
+              style={deckyTabButtonStyle(tab === item.id)}
+            >
+              {item.title}
+            </Focusable>
+          ))}
+        </Focusable>
+        {deckyTabBody(activeTabContent)}
+      </Focusable>
     </PanelSection>
   );
 }

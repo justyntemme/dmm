@@ -89,6 +89,12 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
+	if _, err := conn.Exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON"); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
 	db := &DB{conn: conn}
 	if err := db.Migrate(context.Background()); err != nil {
 		_ = conn.Close()

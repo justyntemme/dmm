@@ -131,8 +131,6 @@ func detectExternalMarkers(gamePath string) []string {
 		pattern string
 	}{
 		{label: "vortex deployment", pattern: "vortex.deployment*.json"},
-		{label: "native mod folder", pattern: "Mods"},
-		{label: "native mod folder", pattern: "mods"},
 		{label: "bethesda plugin list", pattern: "plugins.txt"},
 		{label: "bethesda load order", pattern: "loadorder.txt"},
 		{label: "fallout script extender", pattern: "f4se_loader.exe"},

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,6 +78,8 @@ type nexusClient interface {
 type nexusClientFactory func(apiKey string) nexusClient
 
 var errLegacyStagedMod = errors.New("staged mod lacks install-plan target mappings")
+
+var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
 
 type installerChoiceRequiredError struct {
 	Kind      string
@@ -224,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
+	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
@@ -1988,6 +1992,58 @@ func writeWebSocketEvent(ctx context.Context, conn *websocket.Conn, event events
 	return conn.Write(ctx, websocket.MessageText, b)
 }
 
+type clientEventRequest struct {
+	Message string         `json:"message"`
+	Detail  map[string]any `json:"detail"`
+}
+
+func (s *Server) handleClientEvent(w http.ResponseWriter, r *http.Request) {
+	var req clientEventRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		http.Error(w, "invalid client event payload", http.StatusBadRequest)
+		return
+	}
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		http.Error(w, "message is required", http.StatusBadRequest)
+		return
+	}
+	s.logger.Info("web client event", "message", message, "detail", redactedClientEventDetail(req.Detail), "remote", r.RemoteAddr)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func redactedClientEventDetail(detail map[string]any) map[string]string {
+	if len(detail) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(detail))
+	for key, value := range detail {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if isSensitiveClientEventKey(key) {
+			out[key] = "[redacted]"
+			continue
+		}
+		out[key] = redactClientEventValue(fmt.Sprint(value))
+	}
+	return out
+}
+
+func isSensitiveClientEventKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "url", "source_url", "nxm_url", "api_key", "key", "token":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactClientEventValue(value string) string {
+	return clientEventSensitiveQueryPattern.ReplaceAllString(value, "${1}[redacted]")
+}
+
 func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimSpace(r.PathValue("jobID"))
 	if jobID == "" {
@@ -3643,15 +3699,11 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 }
 
 func shouldLogRequest(r *http.Request, status int) bool {
-	if status >= http.StatusBadRequest || r.Method != http.MethodGet {
-		return true
-	}
 	switch r.URL.Path {
-	case "/api/health", "/api/jobs", "/api/events/ws":
-		return false
-	default:
-		return true
+	case "/api/health", "/api/jobs", "/api/events/ws", "/api/client-events":
+		return status >= http.StatusBadRequest
 	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

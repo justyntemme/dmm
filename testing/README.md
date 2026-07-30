@@ -108,9 +108,9 @@ The Deck-side installer validates the package shape before touching the live plu
 /home/deck/.local/share/decky-mod-manager/backups/plugin-installs/
 ```
 
-It then replaces `/home/deck/homebrew/plugins/decky-mod-manager` and restarts Decky Plugin Loader. DMM app data, logs, downloads, staging, and SQLite state under `/home/deck/.local/share/decky-mod-manager` and `/home/deck/.local/state/decky-mod-manager` are not removed by plugin installation.
+It then replaces `/home/deck/homebrew/plugins/decky-mod-manager` and reboots the Steam Deck. The reboot is intentional for this test installer because Gaming Mode sometimes keeps stale Decky frontend state after only restarting Decky Plugin Loader. DMM app data, logs, downloads, staging, and SQLite state under `/home/deck/.local/share/decky-mod-manager` and `/home/deck/.local/state/decky-mod-manager` are not removed by plugin installation.
 
-Before restarting Decky Plugin Loader, the installer runs `live_installed_package_check.sh` when that script is available. If the installed plugin does not match the package, it restores the backup and exits with an error instead of leaving a stale or partial plugin install.
+Before rebooting, the installer runs `live_installed_package_check.sh` when that script is available. If the installed plugin does not match the package, it restores the backup and exits with an error instead of leaving a stale or partial plugin install.
 
 To install the ZIP instead of the tarball:
 

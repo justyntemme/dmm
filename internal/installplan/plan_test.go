@@ -175,6 +175,42 @@ func TestStardewPlannerAcceptsRelaxedSMAPIManifest(t *testing.T) {
 	}
 }
 
+func TestStardewPlannerAcceptsCommentedSMAPIManifestLikeVortex(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "GenericModConfigMenu", "manifest.json"), `{
+  /*
+   | This file is automatically updated by ModManifestBuilder.
+   */
+  "$schema": "https://smapi.io/schemas/manifest.json",
+  "UniqueID": "spacechase0.GenericModConfigMenu",
+  "Name": "Generic Mod Config Menu",
+  "Version": "1.16.0",
+  "MinimumApiVersion": "4.1",
+  "EntryDll": "GenericModConfigMenu.dll"
+}`)
+	writeFile(t, filepath.Join(root, "GenericModConfigMenu", "GenericModConfigMenu.dll"), "dll")
+
+	plan, err := Build("413150", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:stardewvalley:stardew-valley-installer" {
+		t.Fatalf("planner id = %q", plan.PlannerID)
+	}
+	found := false
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRelative == "Mods/GenericModConfigMenu/GenericModConfigMenu.dll" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
+	if len(plan.Metadata) != 1 || plan.Metadata[0].UniqueID != "spacechase0.GenericModConfigMenu" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+}
+
 func TestStardewPlannerBuildsRootFolderInstructionsFromVortexMetadata(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "LegacyXNB", "Content", "Characters", "Abigail.xnb"), "xnb")
@@ -368,14 +404,29 @@ func TestManifestDisplayNameFromPlanFallsBackToUniqueID(t *testing.T) {
 	}
 }
 
-func TestStardewPlannerRejectsEmptyManifest(t *testing.T) {
+func TestStardewPlannerAcceptsManifestWithoutIdentityLikeVortex(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "Mod", "manifest.json"), `{}`)
 	writeFile(t, filepath.Join(root, "Mod", "mod.dll"), "dll")
 
-	_, err := Build("413150", root)
-	if err == nil {
-		t.Fatal("expected unsupported manifest")
+	plan, err := Build("413150", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:stardewvalley:stardew-valley-installer" {
+		t.Fatalf("planner id = %q", plan.PlannerID)
+	}
+	if len(plan.Metadata) != 0 {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+	found := false
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRelative == "Mods/Mod/mod.dll" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
 

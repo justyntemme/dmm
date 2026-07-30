@@ -24,7 +24,8 @@ Environment overrides:
   BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
 
 The install requires sudo because Decky plugin files are root-owned and the
-Decky plugin loader must be restarted.
+Steam Deck is rebooted after a successful install so Gaming Mode reloads the
+Decky plugin bundle cleanly.
 USAGE
 }
 
@@ -115,16 +116,7 @@ else
   echo "Skipping installed package verification; ${SCRIPT_DIR}/live_installed_package_check.sh is missing." >&2
 fi
 
-echo "==> Restarting Decky plugin loader"
-if sudo systemctl restart plugin_loader.service 2>/dev/null; then
-  echo "Restarted plugin_loader.service"
-elif sudo systemctl restart plugin_loader-release.service 2>/dev/null; then
-  echo "Restarted plugin_loader-release.service"
-else
-  sudo pkill -f '/home/deck/homebrew/services/PluginLoader' || true
-  nohup sudo /home/deck/homebrew/services/PluginLoader >/tmp/decky-pluginloader.log 2>&1 &
-  echo "Restarted PluginLoader process directly"
-fi
-
 echo "==> Installed ${PLUGIN_NAME}"
-echo "Open the Decky sidebar in Gaming Mode and look for Decky Mod Manager."
+echo "==> Rebooting Steam Deck so Steam, Decky Loader, and the plugin UI reload cleanly"
+sync
+sudo shutdown -r now

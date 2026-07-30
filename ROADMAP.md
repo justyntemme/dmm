@@ -30,7 +30,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Like Vortex, DMM must separate download, install planning, staging, and deployment. A downloaded Nexus archive is not automatically a deployable mod until a game/provider installer plan has identified its mod type, deployable files, and target mapping.
 - The Go backend publishes required launch-tool actions, while the Decky frontend executes Steam frontend-only capabilities such as setting Steam launch options. This is an explicit service contract, not an ad hoc callback path.
 - The next architecture step is a durable backend queue plus typed domain events delivered over WebSocket. The queue owns work execution, retries, cancellation, and crash recovery; WebSocket owns realtime phone/tablet updates and Decky modal flows such as FOMOD choices.
-- Game list favorites and sorting are MVP polish after the realtime update slice; mobile web should default to `Recent` sorting and support favorites plus `A-Z`/`Z-A`.
+- Game list favorites and sorting are implemented for the phone/tablet web drawer: mobile web defaults to `Recent`, supports favorites pinned above normal games, and offers `A-Z`/`Z-A` sorting.
 
 ### Decky Mods UX Requirements
 
@@ -109,7 +109,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Stardew Valley deployment preview is profile-aware and shows kept, added, replaced, removed, and conflicting deployment artifacts.
 - Switching to a profile with no enabled mods can still generate remove actions for the current deployed profile instead of erroring.
 - Endpoint-level coverage proves deploying an empty profile removes the current profile's DMM-owned links, clears active deployment files, and leaves staged mod records untouched.
-- Known gap: deleting/removing all staged mods can still leave a stale active deployment manifest because deployment planning currently errors before reconciling manifest-owned files when no staged mod rows remain.
+- Reset managed mods reconciles DMM-owned deployment manifests, removes DMM-owned deployed artifacts, clears installed mod rows and staging folders, clears installer candidates, and keeps cached downloads available for recovery.
 - Stardew Valley deployment can be explicitly applied from the preview when there are no conflicts.
 - Manual and automatic deployment refuse no-op plans that contain only kept/skipped files, so users do not get misleading zero-change deploy jobs.
 - Deployment manifests are persisted in SQLite.
@@ -117,7 +117,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Existing DMM-owned links are manageable during profile transitions; unmanaged files remain conflicts.
 - Duplicate target files are resolved deterministically by simple profile mod priority; priority is profile-scoped and editable in the Plugins tab, and losing mappings are shown as skipped preview actions.
 - Purge removes only manifest-owned files and leaves unmanaged files and parent directories intact.
-- Job list and SSE updates for request/download state.
+- Job list and WebSocket domain events for request/download state.
 - Archive inspection for ZIP safety checks.
 - ZIP extraction support.
 - Extensionless Nexus CDN archive paths are detected by file signature, so valid ZIP/7z/RAR downloads are not rejected only because the URL path is a GUID.
@@ -150,7 +150,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
 - Auto-install and auto-enable settings belong in the Decky plugin Settings tab, not in the phone/tablet web app.
 - Endpoint-level coverage proves a captured Nexus request immediately downloads/caches the archive, then either waits for local install approval or auto-installs from cached state.
 - Endpoint-level coverage proves auto-enable can install, enable, deploy DMM-owned symlinks, record the deployment manifest, and clear the pending import.
-- Decky plugin polls backend install jobs and emits Gaming Mode toast notifications for request/download/install transitions while the plugin is loaded.
+- Decky plugin receives backend domain events over WebSocket and emits Gaming Mode toast notifications for request/download/install transitions while the plugin is loaded.
 - Deploy, purge, and staged-mod removal now require an explicit in-app confirmation that summarizes the game-folder or staging impact before the API call runs.
 - Manual and automatic deployment publish throttled per-file job progress while applying profile changes, so large deploys do not appear frozen in the phone/tablet UI or Decky job notifications.
 - The default web landing surface now prioritizes pending install requests and gives a direct path to choose a game when no requests are waiting.
@@ -237,11 +237,10 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed: manual and automatic deploys publish throttled per-file progress messages while profile changes are applied.
 
 7. Rollback and repair
-   - Status: partially complete.
-   - Completed: apply-time backup restoration, manifest-based purge, and repair of missing/broken DMM-owned links.
+   - Status: mostly complete for MVP.
+   - Completed: apply-time backup restoration, manifest-based purge, repair of missing/broken DMM-owned links, and game-level reset of DMM-managed mods.
    - Completed locally: deployment planning can reconcile an active manifest with zero installed/enabled profile mods by producing remove actions for DMM-owned deployed files instead of returning `no installed profile mods are available to apply`.
-   - Remaining: deleting a staged mod that has active deployed files must either block with a clear "apply/purge first" message or run a safe remove-and-reconcile flow that removes only manifest-owned artifacts before deleting staging.
-   - Remaining: add a game-level "Reset DMM-managed mods" action that purges the active deployment manifest, disables/removes profile mod associations, clears staged mod rows and staging folders as requested, and leaves cached downloads available for recovery unless the user explicitly chooses to delete them too.
+   - Completed: deleting an installed profile mod now applies the selected profile through the backend so DMM-owned deployed files are reconciled before the user sees the mod list update.
    - Remaining: explicit user-visible rollback jobs.
    - Decision needed: rollback UX model: last-deployment rollback only, named restore points, or profile-transition history.
 
@@ -269,7 +268,7 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Completed: diagnostics can report that enabled Stardew SMAPI mods require SMAPI files and a SMAPI launch path.
    - Completed: extension metadata marks SMAPI as the default/primary launch tool when enabled mod metadata requires SMAPI.
    - Completed: backend runtime-action endpoints declare the desired launch-tool change for Decky without editing Steam config files.
-   - Completed: Decky frontend polls required launch actions and uses Steam's frontend API when available.
+   - Completed: Decky frontend syncs required launch actions and uses Steam's frontend API when available.
    - Completed: SMAPI launch-root files can be extension-marked as copy deployments, preserving VFS symlinks for normal mod files while avoiding .NET host resolution through staging.
    - Completed: live-verified Stardew launches through SMAPI in Gaming Mode after DMM deployment.
 
@@ -286,11 +285,10 @@ Install a Nexus Mods "Mod Manager Download" / `nxm://` mod from Gaming Mode on S
    - Remaining validation: launch Stardew Valley and confirm the deployed mod behavior is visible in game, then purge and redeploy from the live game folder once the in-game check has passed.
 
 12. Game list favorites and sorting
-   - Status: last MVP polish item.
-   - Remaining: persist per-user favorite games and pin them to the top of the game drawer/list.
-   - Remaining: add a game sort dropdown with `A-Z`, `Z-A`, and `Recent`.
-   - Remaining: define `Recent` as either recently selected in DMM or recently played from Steam metadata, preferring the lower-friction DMM-local history for MVP unless Steam metadata is already available in the discovery model.
-   - Priority note: this should be implemented after core Nexus install, profile deployment, FOMOD choice handling, launch setup, and live validation are stable.
+   - Status: complete for MVP.
+   - Completed: phone/tablet web game drawer persists local favorites and pins them to the top of the list.
+   - Completed: phone/tablet web game drawer supports `Recent`, `A-Z`, and `Z-A` sorting.
+   - Completed: `Recent` uses DMM-local game selection history for MVP.
 
 ## MVP Acceptance Criteria
 

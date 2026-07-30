@@ -3,7 +3,12 @@ module github.com/justyntemme/decky-mod-manager
 go 1.26.2
 
 require (
-	github.com/coder/websocket v1.8.15 // indirect
+	github.com/coder/websocket v1.8.15
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
+	modernc.org/sqlite v1.54.0
+)
+
+require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -13,5 +18,4 @@ require (
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.54.0 // indirect
 )

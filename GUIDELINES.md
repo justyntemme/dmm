@@ -29,6 +29,8 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Do not add compatibility shims for old backend/frontend status shapes, deprecated local config keys, stale package layouts, or abandoned in-flight implementation paths unless they are needed to recover the current developer test device.
 - If a pre-MVP breaking change invalidates local test data, prefer a clear migration reset, diagnostic note, or one-time developer cleanup command over permanent compatibility code.
 - Backward compatibility becomes a product requirement only after an explicit release/versioning policy exists.
+- Use one active implementation paradigm for each product path. Do not keep old code paths, fallback behavior, or parallel update strategies alive after a newer architecture is selected; remove the old path and fix the selected path when it breaks.
+- Temporary developer rescue tools are allowed only when explicitly scoped outside normal runtime behavior and documented as disposable.
 
 ## Commit Strategy
 
@@ -482,7 +484,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 3. Scaffold Go module and package structure.
 4. Implement config, data directories, logging, SQLite, and backend health endpoint.
 5. Implement Steam library and installed-game discovery.
-6. Implement job system with persisted state and SSE status stream.
+6. Implement job system with persisted state and WebSocket domain events.
 7. Implement Nexus URL parsing for HTTPS and `nxm://`.
 8. Implement Nexus API-key discovery/config and metadata/download flow.
 9. Implement archive inspection and safe extraction.

@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/tailscale/hujson"
 )
 
 type Plan struct {
@@ -489,7 +491,7 @@ func manifestModRoots(extractedRoot string, match MatchSpec, extractors []Metada
 		if match.ExcludeLocaleManifest && hasPathSegment(path, "locale") {
 			return nil
 		}
-		if !isManifestWithIdentity(path, extractors) {
+		if !isReadableManifestJSON(path) {
 			return nil
 		}
 		candidates = append(candidates, filepath.Dir(path))
@@ -519,20 +521,9 @@ func manifestModRoots(extractedRoot string, match MatchSpec, extractors []Metada
 	return roots, nil
 }
 
-func isManifestWithIdentity(path string, extractors []MetadataExtractorSpec) bool {
-	for _, metadata := range metadataFromExtractors(extractors, path, filepath.Dir(path), filepath.Base(path), filepath.Base(path)) {
-		if strings.TrimSpace(metadata.Name) != "" || strings.TrimSpace(metadata.UniqueID) != "" {
-			return true
-		}
-	}
-	var manifest struct {
-		Name     string `json:"Name"`
-		UniqueID string `json:"UniqueID"`
-	}
-	if !readManifestJSON(path, &manifest) {
-		return false
-	}
-	return strings.TrimSpace(manifest.Name) != "" || strings.TrimSpace(manifest.UniqueID) != ""
+func isReadableManifestJSON(path string) bool {
+	var manifest map[string]any
+	return readManifestJSON(path, &manifest)
 }
 
 func ManifestDisplayName(path string) string {
@@ -646,45 +637,11 @@ func ReadManifestJSON(path string, out any) bool {
 	if err != nil {
 		return false
 	}
-	body = normalizeRelaxedManifestJSON(body)
-	return json.Unmarshal(body, out) == nil
-}
-
-func normalizeRelaxedManifestJSON(body []byte) []byte {
 	body = trimUTF8BOM(body)
-	out := make([]byte, 0, len(body))
-	inString := false
-	escaped := false
-	for i := 0; i < len(body); i++ {
-		ch := body[i]
-		if inString {
-			out = append(out, ch)
-			if escaped {
-				escaped = false
-				continue
-			}
-			switch ch {
-			case '\\':
-				escaped = true
-			case '"':
-				inString = false
-			}
-			continue
-		}
-		if ch == '"' {
-			inString = true
-			out = append(out, ch)
-			continue
-		}
-		if ch == ',' {
-			next := nextNonSpace(body, i+1)
-			if next == '}' || next == ']' {
-				continue
-			}
-		}
-		out = append(out, ch)
+	if standardized, err := hujson.Standardize(body); err == nil {
+		body = standardized
 	}
-	return out
+	return json.Unmarshal(body, out) == nil
 }
 
 func trimUTF8BOM(body []byte) []byte {
@@ -692,18 +649,6 @@ func trimUTF8BOM(body []byte) []byte {
 		return body[3:]
 	}
 	return body
-}
-
-func nextNonSpace(body []byte, start int) byte {
-	for i := start; i < len(body); i++ {
-		switch body[i] {
-		case ' ', '\n', '\r', '\t':
-			continue
-		default:
-			return body[i]
-		}
-	}
-	return 0
 }
 
 func manifestStagingRoot(extractedRoot, modRoot, manifestFileName string) string {

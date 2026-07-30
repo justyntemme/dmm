@@ -41,7 +41,7 @@ func TestDetectExternalMarkers(t *testing.T) {
 	}
 
 	markers := detectExternalMarkers(dir)
-	if len(markers) != 2 {
+	if len(markers) != 1 {
 		t.Fatalf("markers = %v", markers)
 	}
 }
