@@ -247,12 +247,30 @@ const deckyRuntimeStyles = `
   box-sizing: border-box;
   min-width: 0;
 }
+.dmm-sidebar-row {
+  contain: inline-size;
+}
+.dmm-sidebar-row:focus-within {
+  background: rgba(39, 54, 74, 0.86) !important;
+  border-color: #7dd3fc !important;
+  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.42) !important;
+}
 .dmm-focus-card {
   outline: none;
+  max-width: 100%;
+  min-width: 0;
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  width: 100%;
 }
 .dmm-focus-card > * {
   min-width: 0;
+}
+.dmm-action-grid,
+.dmm-action-grid > *,
+.dmm-action-grid .dmm-focus-card {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 .dmm-focus-card-focused {
   background: #27364a !important;
@@ -341,17 +359,6 @@ const deckySidebarSurfaceStyle: CSSProperties = {
   boxSizing: "border-box",
   display: "grid",
   gap: "10px",
-  maxWidth: "100%",
-  minWidth: 0,
-  overflowX: "hidden",
-  overflowY: "visible",
-  width: "100%"
-};
-
-const deckyRowShellStyle: CSSProperties = {
-  boxSizing: "border-box",
-  display: "grid",
-  gap: "6px",
   maxWidth: "100%",
   minWidth: 0,
   overflowX: "hidden",
@@ -1666,7 +1673,7 @@ function Content() {
                 const focused = focusedGameID === game.app_id;
                 const favorite = favoriteGameIDs.has(game.app_id);
                 return (
-                  <div key={game.app_id} className="dmm-sidebar-surface" style={deckyCompositeRowStyle(focused, favorite)}>
+                  <div key={game.app_id} className="dmm-sidebar-surface dmm-sidebar-row" style={deckyCompositeRowStyle(focused, favorite)}>
                     <Focusable
                       className="dmm-focus-card"
                       focusClassName="dmm-focus-card-focused"
@@ -1759,7 +1766,7 @@ function Content() {
                   const focused = focusedCandidateID === candidate.id;
                   const installer = installerForCandidate(candidate);
                   return (
-                    <div key={candidate.id} style={deckyRowShellStyle}>
+                    <div key={candidate.id} className="dmm-sidebar-row" style={deckyCompositeRowStyle(focused)}>
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
@@ -1789,7 +1796,7 @@ function Content() {
                           </div>
                         )}
                       </Focusable>
-                      <Focusable flow-children="row" style={deckyActionGridStyle(installer ? 2 : 1)}>
+                      <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(installer ? 2 : 1)}>
                         {installer && (
                           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => openDeckyInstallerChoice(candidate)} onClick={() => openDeckyInstallerChoice(candidate)} style={deckyCompactActionStyle("neutral", focused)}>
                             Open Choices
@@ -1854,7 +1861,7 @@ function Content() {
                   const focused = focusedModID === mod.id;
                   const toggleActionID = `${mod.id}:toggle`;
                   return (
-                    <div key={mod.id} className="dmm-sidebar-surface" style={deckyCompositeRowStyle(focused, mod.enabled)}>
+                    <div key={mod.id} className="dmm-sidebar-surface dmm-sidebar-row" style={deckyCompositeRowStyle(focused, mod.enabled)}>
                       <Focusable
                         className="dmm-focus-card"
                         focusClassName="dmm-focus-card-focused"
@@ -1936,7 +1943,7 @@ function Content() {
                       >
                         {mod.enabled ? "Disable" : "Enable"}
                       </Focusable>
-                      <Focusable flow-children="row" style={deckyActionGridStyle(2)}>
+                      <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(2)}>
                         <Focusable
                           className="dmm-focus-card"
                           focusClassName="dmm-focus-card-focused"
