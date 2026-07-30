@@ -1552,6 +1552,33 @@ h2 {
   color: #a1a1aa;
 }
 
+.profile-recovery-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  border: 1px solid #365244;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #132018;
+}
+
+.profile-recovery-banner strong,
+.profile-recovery-banner p {
+  overflow-wrap: anywhere;
+}
+
+.profile-recovery-banner p {
+  margin: 3px 0 0;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+}
+
+.profile-recovery-banner button {
+  min-height: 36px;
+}
+
 .deploy-preview {
   display: grid;
   gap: 8px;
@@ -1903,6 +1930,14 @@ dd {
 
   .request-actions {
     justify-items: start;
+  }
+
+  .profile-recovery-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-recovery-banner button {
+    width: 100%;
   }
 
   .mod-actions {

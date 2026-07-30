@@ -2471,6 +2471,15 @@
               {/each}
             </section>
           {/if}
+          {#if deploymentStatus?.restore_available}
+            <section class="profile-recovery-banner" aria-label="Restore last applied state">
+              <div>
+                <strong>Restore available</strong>
+                <p>{deploymentStatus.restore_summary ?? "Return this game to the last DMM-applied state."}</p>
+              </div>
+              <button type="button" on:click={askRestoreDeployment}>Restore</button>
+            </section>
+          {/if}
           <section class="management-grid">
             <div class="management-card profile-card">
               <div class="card-heading">
