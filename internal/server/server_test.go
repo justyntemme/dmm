@@ -674,6 +674,51 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	}
 }
 
+func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
+	srv := newTestServer(t)
+	for i := 0; i < cap(srv.downloadSlots); i++ {
+		srv.downloadSlots <- struct{}{}
+	}
+	defer func() {
+		for len(srv.downloadSlots) > 0 {
+			<-srv.downloadSlots
+		}
+	}()
+
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "239",
+		FileID:     "100",
+	}
+	job := srv.jobs.CreateWithPayload("captured-install", "Captured mod", capturedInstallJobPayload(srv.games, resolved))
+	if _, ok := srv.jobs.Wait(job.ID, "Ready to download"); !ok {
+		t.Fatal("failed to put job in waiting state")
+	}
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: resolved,
+		DownloadLinks: []nexus.DownloadLink{{
+			Name: "blocked test link",
+			URI:  "http://127.0.0.1:1/mod.zip",
+		}},
+		Source: "test",
+	})
+
+	queued, err := srv.startCapturedInstallDownload(job.ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.Status != jobs.StatusQueued {
+		t.Fatalf("queued job status = %s", queued.Status)
+	}
+	cancel := srv.cancelActiveJob(job.ID)
+	if cancel == nil {
+		t.Fatal("expected active queued job cancel")
+	}
+	cancel()
+	waitForJobStatus(t, srv, job.ID, jobs.StatusCanceled)
+}
+
 func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -1529,7 +1574,7 @@ func TestRetryCapturedInstallAfterDownloadFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("startCapturedInstallDownload() error = %v", err)
 	}
-	if started.Status != jobs.StatusRunning {
+	if started.Status != jobs.StatusQueued {
 		t.Fatalf("started job = %+v", started)
 	}
 	failed := waitForJobStatus(t, srv, job.ID, jobs.StatusFailed)
@@ -1832,7 +1877,7 @@ func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T)
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.DownloadStarted || !body.AutoInstall || body.Job.Status != jobs.StatusRunning {
+	if !body.DownloadStarted || !body.AutoInstall || body.Job.Status != jobs.StatusQueued {
 		t.Fatalf("immediate download response = %+v", body)
 	}
 	if body.Job.Payload["app_id"] != "413150" || body.Job.Payload["game_domain"] != "stardewvalley" || body.Job.Payload["mod_id"] != "541" || body.Job.Payload["file_id"] != "160470" {
@@ -1909,7 +1954,7 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.DownloadStarted || body.AutoInstall || body.Job.Status != jobs.StatusRunning {
+	if !body.DownloadStarted || body.AutoInstall || body.Job.Status != jobs.StatusQueued {
 		t.Fatalf("immediate download response = %+v", body)
 	}
 

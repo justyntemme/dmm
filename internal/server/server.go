@@ -60,6 +60,7 @@ type Server struct {
 
 	activeMu      sync.Mutex
 	activeCancels map[string]context.CancelFunc
+	downloadSlots chan struct{}
 }
 
 type capturedInstall struct {
@@ -82,6 +83,8 @@ type nexusClientFactory func(apiKey string) nexusClient
 var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan target mappings")
 
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
+
+const maxConcurrentCapturedDownloads = 2
 
 const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
@@ -152,6 +155,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
+		downloadSlots:    make(chan struct{}, maxConcurrentCapturedDownloads),
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
@@ -4190,12 +4194,12 @@ func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.
 		return jobs.Job{}, errCapturedInstallEmptyLink
 	}
 
-	job, ok := s.jobs.Run(jobID, "Downloading archive from "+pending.Resolved.GameDomain)
+	job, ok := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusWaiting}, jobs.StatusQueued, "Queued for archive download from "+pending.Resolved.GameDomain)
 	if !ok {
 		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
 	s.logger.Info(
-		"captured install download started",
+		"captured install download queued",
 		"job_id", jobID,
 		"action_source", actionSource,
 		"request_source", pending.Source,
@@ -4348,10 +4352,22 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		"files",
 		pending.Resolved.FileID,
 	)
+	if !s.acquireCapturedDownloadSlot(ctx) {
+		s.logger.Info("captured install download canceled before slot", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+		s.jobs.Cancel(jobID, "Canceled by user")
+		s.forgetCapturedInstall(jobID)
+		return
+	}
+	if _, ok := s.jobs.Run(jobID, "Downloading archive from "+pending.Resolved.GameDomain); !ok {
+		s.releaseCapturedDownloadSlot()
+		s.logger.Warn("captured install download job missing after queue", "job_id", jobID)
+		return
+	}
 	result, err := download.Fetch(ctx, download.Options{
 		URL:     link.URI,
 		DestDir: destDir,
 	})
+	s.releaseCapturedDownloadSlot()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			s.logger.Info("captured install download canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
@@ -4402,6 +4418,22 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		return
 	}
 	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func (s *Server) acquireCapturedDownloadSlot(ctx context.Context) bool {
+	select {
+	case s.downloadSlots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (s *Server) releaseCapturedDownloadSlot() {
+	select {
+	case <-s.downloadSlots:
+	default:
+	}
 }
 
 func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, result download.Result, installSource string) {
