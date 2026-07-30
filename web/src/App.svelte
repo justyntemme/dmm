@@ -187,6 +187,7 @@
     source_mod_id: string;
     source_file_id: string;
     installer_kind: string;
+    reuse_scope: string;
     choices_json: string;
     updated_at: string;
   };
@@ -2025,6 +2026,11 @@
     return request.status;
   }
 
+  function installerPresetScopeLabel(preset: InstallerChoicePreset) {
+    if (preset.reuse_scope === "exact_file") return "Exact file only";
+    return "Manual review";
+  }
+
   function candidateStatusLabel(candidate: InstallCandidate) {
     if (candidate.status === "needs_choices") return "Needs choices";
     if (candidate.status === "blocked") return "Blocked";
@@ -2810,7 +2816,7 @@
                     <div>
                       <strong>{preset.installer_kind.toUpperCase()} choices</strong>
                       <p>{preset.source_game_domain}/mods/{preset.source_mod_id}/files/{preset.source_file_id}</p>
-                      <small>Updated {new Date(preset.updated_at).toLocaleString()}</small>
+                      <small>{installerPresetScopeLabel(preset)} · Updated {new Date(preset.updated_at).toLocaleString()}</small>
                     </div>
                     <div class="request-actions">
                       <span>Saved</span>

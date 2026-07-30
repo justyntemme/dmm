@@ -114,6 +114,7 @@ type InstallerChoicePreset struct {
 	SourceModID      string `json:"source_mod_id"`
 	SourceFileID     string `json:"source_file_id"`
 	InstallerKind    string `json:"installer_kind"`
+	ReuseScope       string `json:"reuse_scope"`
 	ChoicesJSON      string `json:"choices_json"`
 	CreatedAt        string `json:"created_at"`
 	UpdatedAt        string `json:"updated_at"`
@@ -1233,6 +1234,7 @@ ORDER BY icp.updated_at DESC, icp.id DESC
 		); err != nil {
 			return nil, err
 		}
+		preset.ReuseScope = "exact_file"
 		out = append(out, preset)
 	}
 	return out, rows.Err()

@@ -3320,7 +3320,7 @@ func TestInstallerChoicePresetAPIListsAndDeletes(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &presets); err != nil {
 		t.Fatal(err)
 	}
-	if len(presets) != 1 || presets[0].SourceModID != "999" || presets[0].InstallerKind != "fomod" {
+	if len(presets) != 1 || presets[0].SourceModID != "999" || presets[0].InstallerKind != "fomod" || presets[0].ReuseScope != "exact_file" {
 		t.Fatalf("presets = %+v", presets)
 	}
 
