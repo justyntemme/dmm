@@ -291,6 +291,80 @@ func TestBuildPlanSkipsConditionalFilesFromMissingFileDependencies(t *testing.T)
 	}
 }
 
+func TestBuildPlanAppliesConditionalFilesFromGameDependency(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <gameDependency version="1.10.2" />
+        </dependencies>
+        <files>
+          <file source="current-game.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`)
+	writeFile(t, filepath.Join(root, "current-game.txt"), "current")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installer.ConditionalPatterns) != 1 || len(installer.ConditionalPatterns[0].Dependencies.GameDependencies) != 1 {
+		t.Fatalf("game dependencies were not parsed: %+v", installer.ConditionalPatterns)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:     "fallout4-data-root",
+		PlannerID:   "vortex:fallout4:fomod",
+		TargetRoot:  "Data",
+		GameVersion: "1.10.984.0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Data/current-game.txt" {
+		t.Fatalf("game dependency did not install expected file: %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanSkipsConditionalFilesWhenGameVersionIsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <gameDependency version="1.10.2" />
+        </dependencies>
+        <files>
+          <file source="current-game.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`)
+	writeFile(t, filepath.Join(root, "current-game.txt"), "current")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 0 {
+		t.Fatalf("missing game version satisfied dependency: %+v", plan.Instructions)
+	}
+}
+
 func TestBuildPlanValidatesSelectExactlyOne(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>

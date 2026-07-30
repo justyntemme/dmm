@@ -26,6 +26,7 @@ type Registrar interface {
 	RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec)
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
 	RegisterLaunchTool(LaunchToolSpec)
+	RegisterGameVersionProvider(GameVersionProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
@@ -69,6 +70,26 @@ type LaunchToolSpec struct {
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
+}
+
+type GameVersionProviderSpec struct {
+	ID       string
+	Name     string
+	Provider GameVersionProviderFunc
+}
+
+type GameVersionProviderFunc func(context.Context, GameVersionInput) (GameVersionResult, error)
+
+type GameVersionInput struct {
+	AppID        string
+	GamePath     string
+	LibraryPath  string
+	SteamBuildID string
+}
+
+type GameVersionResult struct {
+	Version string
+	Source  string
 }
 
 type PluginActivationSpec struct {

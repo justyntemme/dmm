@@ -120,6 +120,8 @@ CREATE TABLE pending_imports (
 		column string
 	}{
 		{"games", "state"},
+		{"games", "version"},
+		{"games", "steam_build_id"},
 		{"mods", "source_game_domain"},
 		{"mods", "source_mod_id"},
 		{"mod_versions", "source_file_id"},
@@ -271,6 +273,8 @@ func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 		InstallDir:  "MGS_TPP",
 		LibraryPath: "/steam",
 		Path:        "/steam/steamapps/common/MGS_TPP",
+		Version:     "1.0.15",
+		BuildID:     "165000",
 		State:       "clean_candidate",
 	}})
 	if err != nil {
@@ -291,6 +295,13 @@ func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 	}
 	if len(profiles) != 1 || !profiles[0].IsDefault {
 		t.Fatalf("profiles = %+v", profiles)
+	}
+	game, err := db.GameBySteamApp(context.Background(), "287700")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if game.Version != "1.0.15" || game.SteamBuildID != "165000" {
+		t.Fatalf("game version/build = %+v", game)
 	}
 }
 

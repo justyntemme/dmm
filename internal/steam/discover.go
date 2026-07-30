@@ -20,6 +20,8 @@ type Game struct {
 	InstallDir  string   `json:"install_dir"`
 	LibraryPath string   `json:"library_path"`
 	Path        string   `json:"path"`
+	Version     string   `json:"version"`
+	BuildID     string   `json:"build_id"`
 	State       string   `json:"state"`
 	Markers     []string `json:"markers,omitempty"`
 }
@@ -58,6 +60,7 @@ func Discover(ctx context.Context) ([]Game, error) {
 				InstallDir:  installDir,
 				LibraryPath: lib.Path,
 				Path:        path,
+				BuildID:     values["buildid"],
 				State:       state,
 				Markers:     markers,
 			}

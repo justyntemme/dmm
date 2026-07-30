@@ -53,6 +53,16 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ModTypes:           []string{"mod"},
 				ProviderModTypes:   []string{"loader-mod"},
 			})
+			r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+				ID:   "sample-version",
+				Name: "Sample version detector",
+				Provider: func(_ context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+					if input.AppID != "100" || input.GamePath != "/games/sample" || input.SteamBuildID != "build-1" {
+						t.Fatalf("version input = %+v", input)
+					}
+					return sdk.GameVersionResult{Version: "1.2.0", Source: "test"}, nil
+				},
+			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
 				ID:               "sample-plugins",
 				Name:             "Sample plugins.txt",
@@ -128,6 +138,19 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
+	}
+	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].ID != "sample-version" {
+		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
+	}
+	version, ran, err := registry.DetectGameVersion(context.Background(), "100", sdk.GameVersionInput{
+		GamePath:     "/games/sample",
+		SteamBuildID: "build-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ran || version.Version != "1.2.0" || version.Source != "test" {
+		t.Fatalf("detected version = %+v, ran = %v", version, ran)
 	}
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)

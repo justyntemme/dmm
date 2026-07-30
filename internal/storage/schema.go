@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS games (
 	install_dir TEXT NOT NULL,
 	library_path TEXT NOT NULL,
 	game_path TEXT NOT NULL,
+	version TEXT NOT NULL DEFAULT '',
+	steam_build_id TEXT NOT NULL DEFAULT '',
 	state TEXT NOT NULL DEFAULT 'clean_candidate',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

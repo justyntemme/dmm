@@ -80,6 +80,13 @@ func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
 }
 
+func (r *Registrar) RegisterGameVersionProvider(spec sdk.GameVersionProviderSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.GameVersionProviders = append(r.extension.GameVersionProviders, spec)
+}
+
 func (r *Registrar) RegisterPluginActivation(spec sdk.PluginActivationSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -142,6 +149,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
+	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
@@ -151,6 +159,21 @@ func validateExtension(extension Extension) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("game version provider id is required"))
+			continue
+		}
+		if spec.Provider == nil {
+			errs = append(errs, errors.New("game version provider "+id+" function is required"))
+		}
+	}
+	return errs
 }
 
 func validateInstallPlanSpec(spec installplan.GameSpec) []error {

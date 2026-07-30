@@ -67,6 +67,7 @@ type DependencyGroup struct {
 	Operator              string            `json:"operator,omitempty"`
 	FlagDependencies      []FlagDependency  `json:"flag_dependencies,omitempty"`
 	FileDependencies      []FileDependency  `json:"file_dependencies,omitempty"`
+	GameDependencies      []GameDependency  `json:"game_dependencies,omitempty"`
 	NestedDependencies    []DependencyGroup `json:"nested_dependencies,omitempty"`
 	UnsupportedDependency bool              `json:"unsupported_dependency,omitempty"`
 }
@@ -81,6 +82,10 @@ type FileDependency struct {
 	State string `json:"state"`
 }
 
+type GameDependency struct {
+	Version string `json:"version"`
+}
+
 type FileStateResolver func(relative string) string
 
 type PlanOptions struct {
@@ -88,6 +93,7 @@ type PlanOptions struct {
 	PlannerID         string
 	TargetRoot        string
 	StopFolders       []string
+	GameVersion       string
 	FileStates        map[string]string
 	FileStateResolver FileStateResolver
 }
@@ -353,7 +359,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		}
 	}
 	for _, pattern := range installer.ConditionalPatterns {
-		if !dependencyGroupMatches(pattern.Dependencies, selectedFlags, options.FileStates, options.FileStateResolver) {
+		if !dependencyGroupMatchesWithGameVersion(pattern.Dependencies, selectedFlags, options.FileStates, options.FileStateResolver, options.GameVersion) {
 			continue
 		}
 		for _, entry := range pattern.Files {
@@ -576,7 +582,7 @@ func (c conditionalFileInstallsXML) patterns() []ConditionalPattern {
 func (d dependenciesXML) group() DependencyGroup {
 	group := DependencyGroup{
 		Operator:              normalizeDependencyOperator(d.Operator),
-		UnsupportedDependency: len(d.GameDependencies) > 0,
+		UnsupportedDependency: false,
 	}
 	for _, dependency := range d.FlagDependencies {
 		flag := strings.TrimSpace(dependency.Flag)
@@ -601,6 +607,13 @@ func (d dependenciesXML) group() DependencyGroup {
 			State: normalizeDependencyState(dependency.State),
 		})
 	}
+	for _, dependency := range d.GameDependencies {
+		version := strings.TrimSpace(dependency.Version)
+		if version == "" {
+			continue
+		}
+		group.GameDependencies = append(group.GameDependencies, GameDependency{Version: version})
+	}
 	return group
 }
 
@@ -615,6 +628,10 @@ func (f fileXML) entry(isFolder bool) FileEntry {
 }
 
 func dependencyGroupMatches(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver) bool {
+	return dependencyGroupMatchesWithGameVersion(group, flags, fileStates, fileStateResolver, "")
+}
+
+func dependencyGroupMatchesWithGameVersion(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver, gameVersion string) bool {
 	if group.UnsupportedDependency {
 		return false
 	}
@@ -625,8 +642,11 @@ func dependencyGroupMatches(group DependencyGroup, flags map[string]string, file
 	for _, dependency := range group.FileDependencies {
 		results = append(results, fileDependencyMatches(dependency, fileStates, fileStateResolver))
 	}
+	for _, dependency := range group.GameDependencies {
+		results = append(results, gameDependencyMatches(dependency, gameVersion))
+	}
 	for _, nested := range group.NestedDependencies {
-		results = append(results, dependencyGroupMatches(nested, flags, fileStates, fileStateResolver))
+		results = append(results, dependencyGroupMatchesWithGameVersion(nested, flags, fileStates, fileStateResolver, gameVersion))
 	}
 	if len(results) == 0 {
 		return true
@@ -647,6 +667,85 @@ func dependencyGroupMatches(group DependencyGroup, flags map[string]string, file
 		}
 		return true
 	}
+}
+
+func gameDependencyMatches(dependency GameDependency, gameVersion string) bool {
+	required := strings.TrimSpace(dependency.Version)
+	current := strings.TrimSpace(gameVersion)
+	if required == "" || current == "" {
+		return false
+	}
+	return compareLooseVersions(current, required) >= 0
+}
+
+func compareLooseVersions(a, b string) int {
+	left := versionSegments(a)
+	right := versionSegments(b)
+	maxLen := len(left)
+	if len(right) > maxLen {
+		maxLen = len(right)
+	}
+	for i := 0; i < maxLen; i++ {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		if l == r {
+			continue
+		}
+		li, lnum := parseVersionNumber(l)
+		ri, rnum := parseVersionNumber(r)
+		switch {
+		case lnum && rnum:
+			if li < ri {
+				return -1
+			}
+			if li > ri {
+				return 1
+			}
+		case lnum != rnum:
+			if lnum && li == 0 && r == "" {
+				continue
+			}
+			if rnum && ri == 0 && l == "" {
+				continue
+			}
+			if lnum {
+				return 1
+			}
+			return -1
+		default:
+			cmp := strings.Compare(strings.ToLower(l), strings.ToLower(r))
+			if cmp < 0 {
+				return -1
+			}
+			if cmp > 0 {
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
+func versionSegments(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == '.' || r == '-' || r == '_' || r == '+' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+}
+
+func parseVersionNumber(value string) (int, bool) {
+	if strings.TrimSpace(value) == "" {
+		return 0, true
+	}
+	number, err := strconv.Atoi(strings.TrimSpace(value))
+	return number, err == nil
 }
 
 func flagDependencyMatches(dependency FlagDependency, flags map[string]string) bool {

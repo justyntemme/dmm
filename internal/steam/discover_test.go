@@ -14,6 +14,7 @@ func TestParseACF(t *testing.T) {
 	"appid"		"292030"
 	"name"		"The Witcher 3: Wild Hunt"
 	"installdir"		"The Witcher 3"
+	"buildid"		"17234567"
 }`), 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +29,9 @@ func TestParseACF(t *testing.T) {
 	}
 	if values["installdir"] != "The Witcher 3" {
 		t.Fatalf("installdir = %q", values["installdir"])
+	}
+	if values["buildid"] != "17234567" {
+		t.Fatalf("buildid = %q", values["buildid"])
 	}
 }
 

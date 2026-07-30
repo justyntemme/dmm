@@ -21,21 +21,25 @@ type Extension struct {
 	SteamAppIDs  []string
 	NexusDomains []string
 
-	InstallPlan         installplan.GameSpec
-	RuntimeRequirements gamehandler.GameSpec
-	InstallerChoices    []sdk.InstallerChoiceSpec
-	LaunchTools         []sdk.LaunchToolSpec
-	PluginActivations   []sdk.PluginActivationSpec
-	Sources             []sdk.SourceRef
-	Merges              []sdk.MergeSpec
-	LoadOrders          []sdk.LoadOrderSpec
-	EventHandlers       []sdk.EventHandlerSpec
+	InstallPlan          installplan.GameSpec
+	RuntimeRequirements  gamehandler.GameSpec
+	InstallerChoices     []sdk.InstallerChoiceSpec
+	LaunchTools          []sdk.LaunchToolSpec
+	GameVersionProviders []sdk.GameVersionProviderSpec
+	PluginActivations    []sdk.PluginActivationSpec
+	Sources              []sdk.SourceRef
+	Merges               []sdk.MergeSpec
+	LoadOrders           []sdk.LoadOrderSpec
+	EventHandlers        []sdk.EventHandlerSpec
 }
 
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
+type GameVersionProviderSpec = sdk.GameVersionProviderSpec
+type GameVersionInput = sdk.GameVersionInput
+type GameVersionResult = sdk.GameVersionResult
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
@@ -61,6 +65,7 @@ type ExtensionCapabilities struct {
 	InstallerChoices    []FeatureSummary `json:"installer_choices,omitempty"`
 	RuntimeRequirements []FeatureSummary `json:"runtime_requirements,omitempty"`
 	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
+	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
@@ -249,6 +254,33 @@ func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSp
 	return LaunchToolSpec{}, false
 }
 
+func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk.GameVersionInput) (sdk.GameVersionResult, bool, error) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return sdk.GameVersionResult{}, false, nil
+	}
+	input.AppID = strings.TrimSpace(appID)
+	for _, provider := range extension.GameVersionProviders {
+		if provider.Provider == nil {
+			continue
+		}
+		result, err := provider.Provider(ctx, input)
+		if err != nil {
+			return sdk.GameVersionResult{}, true, err
+		}
+		if strings.TrimSpace(result.Version) == "" {
+			continue
+		}
+		result.Version = strings.TrimSpace(result.Version)
+		result.Source = strings.TrimSpace(result.Source)
+		if result.Source == "" {
+			result.Source = strings.TrimSpace(provider.ID)
+		}
+		return result, true, nil
+	}
+	return sdk.GameVersionResult{}, false, nil
+}
+
 func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok || len(extension.PluginActivations) == 0 {
@@ -376,6 +408,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, tool := range extension.LaunchTools {
 		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{ID: tool.ID, Name: tool.Name})
 	}
+	for _, provider := range extension.GameVersionProviders {
+		summary.Capabilities.GameVersions = append(summary.Capabilities.GameVersions, FeatureSummary{ID: provider.ID, Name: provider.Name})
+	}
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
 	}
@@ -393,6 +428,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
+	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)

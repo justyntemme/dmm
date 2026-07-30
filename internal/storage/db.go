@@ -30,12 +30,14 @@ type Profile struct {
 }
 
 type Game struct {
-	ID          int64  `json:"id"`
-	SteamAppID  string `json:"steam_app_id"`
-	Name        string `json:"name"`
-	LibraryPath string `json:"library_path"`
-	GamePath    string `json:"game_path"`
-	State       string `json:"state"`
+	ID           int64  `json:"id"`
+	SteamAppID   string `json:"steam_app_id"`
+	Name         string `json:"name"`
+	LibraryPath  string `json:"library_path"`
+	GamePath     string `json:"game_path"`
+	Version      string `json:"version"`
+	SteamBuildID string `json:"steam_build_id"`
+	State        string `json:"state"`
 }
 
 type InstalledMod struct {
@@ -136,6 +138,8 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		definition string
 	}{
 		{table: "games", name: "state", definition: "TEXT NOT NULL DEFAULT 'clean_candidate'"},
+		{table: "games", name: "version", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "games", name: "steam_build_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mods", name: "source_game_domain", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mods", name: "source_mod_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mod_versions", name: "source_file_id", definition: "TEXT NOT NULL DEFAULT ''"},
@@ -294,16 +298,18 @@ func (db *DB) SyncGames(ctx context.Context, games []steam.Game) error {
 			continue
 		}
 		_, err := tx.ExecContext(ctx, `
-INSERT INTO games (steam_app_id, name, install_dir, library_path, game_path, state, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO games (steam_app_id, name, install_dir, library_path, game_path, version, steam_build_id, state, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(steam_app_id) DO UPDATE SET
 	name = excluded.name,
 	install_dir = excluded.install_dir,
 	library_path = excluded.library_path,
 	game_path = excluded.game_path,
+	version = excluded.version,
+	steam_build_id = excluded.steam_build_id,
 	state = excluded.state,
 	updated_at = CURRENT_TIMESTAMP
-`, game.AppID, game.Name, game.InstallDir, game.LibraryPath, game.Path, game.State)
+`, game.AppID, game.Name, game.InstallDir, game.LibraryPath, game.Path, game.Version, game.BuildID, game.State)
 		if err != nil {
 			return err
 		}
@@ -354,7 +360,7 @@ func (db *DB) GameCount(ctx context.Context) (int, error) {
 
 func (db *DB) Games(ctx context.Context) ([]Game, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT id, steam_app_id, name, library_path, game_path, state
+SELECT id, steam_app_id, name, library_path, game_path, version, steam_build_id, state
 FROM games
 ORDER BY LOWER(name), steam_app_id
 `)
@@ -365,7 +371,7 @@ ORDER BY LOWER(name), steam_app_id
 	var games []Game
 	for rows.Next() {
 		var game Game
-		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.LibraryPath, &game.GamePath, &game.State); err != nil {
+		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State); err != nil {
 			return nil, err
 		}
 		if steam.IsHelperApp(game.SteamAppID, game.Name, "") {
@@ -572,10 +578,10 @@ func (db *DB) DeletePendingImport(ctx context.Context, jobID string) error {
 func (db *DB) GameBySteamApp(ctx context.Context, appID string) (Game, error) {
 	var game Game
 	err := db.conn.QueryRowContext(ctx, `
-SELECT id, steam_app_id, name, library_path, game_path, state
+SELECT id, steam_app_id, name, library_path, game_path, version, steam_build_id, state
 FROM games
 WHERE steam_app_id = ?
-`, appID).Scan(&game.ID, &game.SteamAppID, &game.Name, &game.LibraryPath, &game.GamePath, &game.State)
+`, appID).Scan(&game.ID, &game.SteamAppID, &game.Name, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State)
 	return game, err
 }
 

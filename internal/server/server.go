@@ -313,6 +313,8 @@ type gameResponse struct {
 	InstallDir   string   `json:"install_dir"`
 	LibraryPath  string   `json:"library_path"`
 	Path         string   `json:"path"`
+	Version      string   `json:"version,omitempty"`
+	SteamBuildID string   `json:"steam_build_id,omitempty"`
 	State        string   `json:"state"`
 	Markers      []string `json:"markers,omitempty"`
 	NexusDomains []string `json:"nexus_domains,omitempty"`
@@ -1241,6 +1243,7 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.detectGameVersions(r.Context(), games)
 	if err := s.db.SyncGames(r.Context(), games); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -1253,12 +1256,35 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 			InstallDir:   game.InstallDir,
 			LibraryPath:  game.LibraryPath,
 			Path:         game.Path,
+			Version:      game.Version,
+			SteamBuildID: game.BuildID,
 			State:        game.State,
 			Markers:      game.Markers,
 			NexusDomains: s.games.NexusDomainsForSteamAppID(game.AppID),
 		})
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func (s *Server) detectGameVersions(ctx context.Context, games []steam.Game) {
+	for i := range games {
+		game := &games[i]
+		result, ran, err := s.games.DetectGameVersion(ctx, game.AppID, gameext.GameVersionInput{
+			AppID:        game.AppID,
+			GamePath:     game.Path,
+			LibraryPath:  game.LibraryPath,
+			SteamBuildID: game.BuildID,
+		})
+		if err != nil {
+			s.logger.Warn("game version detection failed", "app_id", game.AppID, "name", game.Name, "error", err)
+			continue
+		}
+		if !ran || strings.TrimSpace(result.Version) == "" {
+			continue
+		}
+		game.Version = strings.TrimSpace(result.Version)
+		s.logger.Info("game version detected", "app_id", game.AppID, "version", game.Version, "source", result.Source)
+	}
 }
 
 func (s *Server) handleLaunchActions(w http.ResponseWriter, r *http.Request) {
@@ -1937,6 +1963,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		PlannerID:         choiceSpec.ID,
 		TargetRoot:        choiceSpec.TargetRoot,
 		StopFolders:       choiceSpec.StopFolders,
+		GameVersion:       game.Version,
 		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	})
 	if err != nil {
