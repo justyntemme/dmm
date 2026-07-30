@@ -261,6 +261,57 @@ function deckyTabButtonStyle(active: boolean): CSSProperties {
   };
 }
 
+const deckyFocusableCardBase: CSSProperties = {
+  borderRadius: "6px",
+  boxSizing: "border-box",
+  color: "#f8fafc",
+  minWidth: 0,
+  overflow: "hidden",
+  width: "100%"
+};
+
+function deckyFocusableCardStyle(focused: boolean, active = false): CSSProperties {
+  const highlighted = focused || active;
+  return {
+    ...deckyFocusableCardBase,
+    background: active ? "#0f766e" : focused ? "#27364a" : "#1f2937",
+    border: `1px solid ${highlighted ? "#7dd3fc" : "#374151"}`,
+    boxShadow: focused ? "inset 0 0 0 1px rgba(125, 211, 252, 0.45)" : "none"
+  };
+}
+
+const deckyTwoLineTextStyle: CSSProperties = {
+  display: "-webkit-box",
+  lineHeight: 1.18,
+  maxHeight: "2.36em",
+  minWidth: 0,
+  overflow: "hidden",
+  overflowWrap: "anywhere",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+  wordBreak: "break-word"
+};
+
+function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused = false): CSSProperties {
+  const danger = kind === "danger";
+  return {
+    ...deckyFocusableCardBase,
+    alignItems: "center",
+    background: danger ? "#3f1d1d" : focused ? "#27364a" : "#1f2937",
+    border: `1px solid ${danger ? "#7f1d1d" : focused ? "#7dd3fc" : "#374151"}`,
+    color: danger ? "#fecaca" : "#f8fafc",
+    display: "flex",
+    fontSize: "12px",
+    fontWeight: 800,
+    justifyContent: "center",
+    lineHeight: 1.1,
+    minHeight: "38px",
+    padding: "8px 6px",
+    textAlign: "center",
+    whiteSpace: "normal"
+  };
+}
+
 function deckyTabBody(content: ReactNode) {
   return (
     <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckyTabBodyStyle}>
@@ -831,6 +882,9 @@ function Content() {
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
+  const [focusedGameID, setFocusedGameID] = useState<string>("");
+  const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
+  const [focusedModAction, setFocusedModAction] = useState<string>("");
 
   async function refresh() {
     try {
@@ -1361,39 +1415,40 @@ function Content() {
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
             {visibleManagedGames.map((game) => (
-              <div key={game.app_id} style={{ display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) 42px", marginBottom: "8px", width: "100%" }}>
+              <div key={game.app_id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) 40px", marginBottom: "8px", minWidth: 0, width: "100%" }}>
                 <Focusable
                   onActivate={() => selectDeckyGame(game.app_id)}
+                  onGamepadFocus={() => setFocusedGameID(game.app_id)}
+                  onFocus={() => setFocusedGameID(game.app_id)}
+                  onMouseEnter={() => setFocusedGameID(game.app_id)}
                   style={{
-                    background: "#1f2937",
-                    border: "1px solid #374151",
-                    borderRadius: "6px",
-                    color: "#f8fafc",
+                    ...deckyFocusableCardStyle(focusedGameID === game.app_id),
                     fontWeight: 800,
-                    minWidth: 0,
-                    overflow: "hidden",
                     padding: "10px",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    width: "100%"
                   }}
                 >
-                  {game.name}
+                  <div style={deckyTwoLineTextStyle}>{game.name}</div>
                 </Focusable>
                 <Focusable
                   onActivate={() => toggleDeckyFavoriteGame(game.app_id)}
+                  onGamepadFocus={() => setFocusedGameID(game.app_id)}
+                  onFocus={() => setFocusedGameID(game.app_id)}
+                  onMouseEnter={() => setFocusedGameID(game.app_id)}
                   style={{
                     alignItems: "center",
                     background: favoriteGameIDs.has(game.app_id) ? "#0f766e" : "#1f2937",
-                    border: "1px solid #374151",
+                    border: `1px solid ${focusedGameID === game.app_id ? "#7dd3fc" : "#374151"}`,
                     borderRadius: "6px",
+                    boxSizing: "border-box",
                     color: "#f8fafc",
                     display: "flex",
                     fontSize: "18px",
                     fontWeight: 900,
                     justifyContent: "center",
                     minHeight: "38px",
-                    width: "42px"
+                    minWidth: 0,
+                    overflow: "hidden",
+                    width: "40px"
                   }}
                 >
                   {favoriteGameIDs.has(game.app_id) ? "★" : "☆"}
@@ -1435,18 +1490,17 @@ function Content() {
                   <Focusable
                     key={profile.id}
                     onActivate={() => selectDeckyProfile(profile)}
+                    onGamepadFocus={() => setFocusedProfileID(profile.id)}
+                    onFocus={() => setFocusedProfileID(profile.id)}
+                    onMouseEnter={() => setFocusedProfileID(profile.id)}
                     style={{
-                      background: profile.is_default ? "#0f766e" : "#1f2937",
-                      border: "1px solid #374151",
-                      borderRadius: "6px",
-                      color: "#f8fafc",
+                      ...deckyFocusableCardStyle(focusedProfileID === profile.id, profile.is_default),
                       fontWeight: 800,
                       marginBottom: "8px",
                       padding: "10px",
-                      width: "100%"
                     }}
                   >
-                    {profile.name}
+                    <div style={deckyTwoLineTextStyle}>{profile.name}</div>
                   </Focusable>
                 ))}
               </div>
@@ -1464,30 +1518,30 @@ function Content() {
           )}
           {visibleDeckyMods.length > 0 && (
             <PanelSectionRow>
-              <Focusable flow-children="column" style={{ display: "grid", gap: "8px", paddingRight: "4px", width: "100%" }}>
+              <Focusable flow-children="column" style={{ boxSizing: "border-box", display: "grid", gap: "8px", paddingRight: "4px", width: "100%" }}>
                 {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
-                    <div key={mod.id} style={{ display: "grid", gap: "6px", width: "100%" }}>
+                    <div key={mod.id} style={{ boxSizing: "border-box", display: "grid", gap: "6px", minWidth: 0, width: "100%" }}>
                       <Focusable
                         onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
                         onGamepadFocus={() => setFocusedModID(mod.id)}
+                        onFocus={() => setFocusedModID(mod.id)}
+                        onMouseEnter={() => setFocusedModID(mod.id)}
                         style={{
-                          alignItems: "center",
-                          background: focused ? "#27364a" : "#161b22",
-                          border: `1px solid ${focused ? "#7dd3fc" : "#303741"}`,
-                          borderRadius: "6px",
-                          display: "flex",
+                          ...deckyFocusableCardStyle(focused),
+                          alignItems: "start",
+                          display: "grid",
                           gap: "10px",
+                          gridTemplateColumns: "minmax(0, 1fr) 44px",
                           minHeight: "58px",
                           opacity: busyModID === mod.id ? 0.65 : 1,
                           padding: "10px",
-                          width: "100%"
                         }}
                       >
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: "#f8fafc", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mod.name}</div>
-                          <div style={{ color: "#a1a1aa", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{mod.name}</div>
+                          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, marginTop: "4px", minWidth: 0, overflowWrap: "anywhere" }}>
                             {mod.enabled ? "Enabled" : "Disabled"} · Priority {mod.priority} · {deckyModStateLabel(mod)}
                           </div>
                         </div>
@@ -1499,6 +1553,7 @@ function Content() {
                             display: "flex",
                             height: "22px",
                             justifyContent: mod.enabled ? "flex-end" : "flex-start",
+                            justifySelf: "end",
                             padding: "2px",
                             width: "42px"
                           }}
@@ -1507,16 +1562,40 @@ function Content() {
                         </div>
                       </Focusable>
                       {focused && (
-                        <Focusable flow-children="row" style={{ display: "grid", gap: "6px", gridTemplateColumns: "1fr 1fr", width: "100%" }}>
+                        <Focusable flow-children="row" style={{ boxSizing: "border-box", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", minWidth: 0, width: "100%" }}>
                           <Focusable
                             onActivate={() => reinstallDeckyMod(mod)}
-                            style={{ background: "#1f2937", border: "1px solid #374151", borderRadius: "6px", color: "#f8fafc", fontWeight: 800, padding: "8px", textAlign: "center" }}
+                            onGamepadFocus={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:reinstall`);
+                            }}
+                            onFocus={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:reinstall`);
+                            }}
+                            onMouseEnter={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:reinstall`);
+                            }}
+                            style={deckyCompactActionStyle("neutral", focusedModAction === `${mod.id}:reinstall`)}
                           >
                             Reinstall
                           </Focusable>
                           <Focusable
                             onActivate={() => askRemoveDeckyMod(mod)}
-                            style={{ background: "#3f1d1d", border: "1px solid #7f1d1d", borderRadius: "6px", color: "#fecaca", fontWeight: 800, padding: "8px", textAlign: "center" }}
+                            onGamepadFocus={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:remove`);
+                            }}
+                            onFocus={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:remove`);
+                            }}
+                            onMouseEnter={() => {
+                              setFocusedModID(mod.id);
+                              setFocusedModAction(`${mod.id}:remove`);
+                            }}
+                            style={deckyCompactActionStyle("danger", focusedModAction === `${mod.id}:remove`)}
                           >
                             Remove
                           </Focusable>
