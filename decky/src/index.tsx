@@ -340,7 +340,7 @@ const deckyRouteTabBodyStyle: CSSProperties = {
   minHeight: 0,
   overflowX: "hidden",
   overflowY: "auto",
-  padding: "16px 28px 88px",
+  padding: "16px 28px 124px",
   scrollPaddingTop: "8px",
   width: "100%"
 };
@@ -1523,11 +1523,11 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           color: "#f8fafc",
           display: "grid",
           gap: "12px",
-          maxHeight: "72vh",
-          overflowX: "hidden",
-          overflowY: "auto",
+          gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+          height: "min(760px, 82vh)",
+          maxHeight: "82vh",
+          overflow: "hidden",
           padding: "4px",
-          scrollPaddingBlock: "12px",
           width: "100%"
         }}
       >
@@ -1542,7 +1542,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             Close
           </Focusable>
         </div>
-        <div style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "10px", padding: "10px", width: "100%" }}>
+        <div style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "10px", padding: "10px", width: "100%" }}>
           <TextField label="Search Nexus Mods" value={query} bShowClearAction onChange={(event) => setQuery(event.currentTarget.value)} />
           <div style={{ alignItems: "stretch", display: "grid", gap: "8px", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 118px", width: "100%" }}>
             <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleSort} onClick={cycleSort} style={deckyCompactActionStyle("neutral")}>
@@ -1566,11 +1566,15 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           flow-children="down"
           navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
           style={{
+            alignContent: "start",
             boxSizing: "border-box",
             display: "grid",
+            gridAutoRows: "max-content",
             gap: "10px",
+            minHeight: 0,
             overflowX: "hidden",
-            overflowY: "visible",
+            overflowY: "auto",
+            paddingBottom: "18px",
             paddingRight: "6px",
             scrollPaddingBlock: "10px",
             width: "100%"
@@ -1583,7 +1587,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             const files = filesByMod[mod.mod_id] ?? [];
             const filesOpen = selectedModID === mod.mod_id;
             return (
-              <div key={mod.mod_id} className="dmm-sidebar-row" style={{ ...deckyCompositeRowStyle(filesOpen), background: "#111827", padding: "10px" }}>
+              <div key={mod.mod_id} className="dmm-sidebar-row" style={{ ...deckyCompositeRowStyle(filesOpen), background: "#111827", minHeight: "158px", padding: "10px" }}>
                 <div style={{ alignItems: "start", display: "grid", gap: "12px", gridTemplateColumns: "132px minmax(0, 1fr)", width: "100%" }}>
                   <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "74px", overflow: "hidden", width: "132px" }}>
                     {mod.thumbnail_url ? (
@@ -1617,7 +1621,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                     {files.map((file) => {
                       const fileKey = `${mod.mod_id}:${file.file_id}`;
                       return (
-                        <div key={file.file_id} style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "8px", padding: "10px", width: "100%" }}>
+                        <div key={file.file_id} style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "8px", padding: "10px", width: "100%" }}>
                           <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
                           <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
                             {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
@@ -2472,44 +2476,44 @@ function DeckyModManagerRoute() {
   }, [selectedDeckyGameID, visibleDeckyModIDs, focusedModID]);
 
   const mainContent = (
-    <>
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={toggleServer}>
+    <PanelSectionRow>
+      <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px", paddingBottom: "24px" }}>
+        <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={toggleServer} onClick={toggleServer} style={deckyCompactActionStyle("neutral")}>
           {status?.running ? "Stop Server" : "Start Server"}
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={retryLaunchSetup} disabled={!status?.running}>
-          Retry Launch Setup
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <a
-          href="https://www.nexusmods.com"
-          onClick={(event) => {
-            event.preventDefault();
-            openNexus();
+        </Focusable>
+        <Focusable
+          className="dmm-focus-card"
+          focusClassName="dmm-focus-card-focused"
+          onActivate={() => {
+            if (status?.running) void retryLaunchSetup();
           }}
-          style={{ color: "#7dd3fc", display: "block", fontWeight: 800, padding: "10px 0", textDecoration: "underline" }}
+          onClick={() => {
+            if (status?.running) void retryLaunchSetup();
+          }}
+          style={{ ...deckyCompactActionStyle("neutral"), opacity: status?.running ? 1 : 0.5 }}
+        >
+          Retry Launch Setup
+        </Focusable>
+        <Focusable
+          className="dmm-focus-card"
+          focusClassName="dmm-focus-card-focused"
+          onActivate={() => openNexus()}
+          onClick={() => openNexus()}
+          style={deckyCompactActionStyle("neutral")}
         >
           Open Nexus Mods
-        </a>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div>
+        </Focusable>
+        <div style={{ background: "#111827", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "3px", padding: "8px", width: "100%" }}>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
-          {status?.pid && <div>PID: {status.pid}</div>}
           <div>URL: {status?.url ?? "Unavailable"}</div>
-          {status?.backend && <div>Games: {status.backend.game_count}</div>}
-          {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
-          {launchResult && <div style={{ color: "#72e0a2", marginTop: "8px", overflowWrap: "anywhere" }}>{launchResult}</div>}
-          {error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{error}</div>}
-          {status?.error && <div style={{ color: "#f87171", marginTop: "8px", overflowWrap: "anywhere" }}>{status.error}</div>}
+          {status?.pid && <div>PID: {status.pid}</div>}
+          {status?.backend && <div>Games: {status.backend.game_count} · Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
+          {launchResult && <div style={{ color: "#72e0a2", marginTop: "4px", overflowWrap: "anywhere" }}>{launchResult}</div>}
+          {error && <div style={{ color: "#f87171", marginTop: "4px", overflowWrap: "anywhere" }}>{error}</div>}
+          {status?.error && <div style={{ color: "#f87171", marginTop: "4px", overflowWrap: "anywhere" }}>{status.error}</div>}
         </div>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div style={{ display: "grid", gap: "8px", width: "100%" }}>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>Nexus Link</div>
+        <div style={{ background: "#111827", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "6px", padding: "8px", width: "100%" }}>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1, textTransform: "uppercase" }}>Nexus Link</div>
           <input
             aria-label="Nexus URL"
             placeholder="Paste Nexus URL or nxm:// link"
@@ -2520,11 +2524,11 @@ function DeckyModManagerRoute() {
           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={addCapturedInstall} onClick={addCapturedInstall} style={deckyCompactActionStyle("neutral")}>
             Add Nexus Link
           </Focusable>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install actions and choices appear in Action Center.</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>Downloads immediately; install choices appear in Action Center.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
         </div>
-      </PanelSectionRow>
-    </>
+      </div>
+    </PanelSectionRow>
   );
 
   const modsContent = (
