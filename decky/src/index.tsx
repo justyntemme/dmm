@@ -2462,8 +2462,8 @@ function DeckyModManagerRoute() {
       }
       return;
     }
-    if (!focusedGameID || !visibleManagedGames.some((game) => game.app_id === focusedGameID)) {
-      setFocusedGameID(visibleManagedGames[0].app_id);
+    if (focusedGameID && !visibleManagedGames.some((game) => game.app_id === focusedGameID)) {
+      setFocusedGameID("");
     }
   }, [selectedDeckyGameID, visibleManagedGameIDs, focusedGameID]);
 
@@ -2560,7 +2560,7 @@ function DeckyModManagerRoute() {
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
             <Focusable flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
-              {visibleManagedGames.map((game, index) => {
+              {visibleManagedGames.map((game) => {
                 const focused = focusedGameID === game.app_id;
                 const favorite = favoriteGameIDs.has(game.app_id);
                 return (
@@ -2585,7 +2585,6 @@ function DeckyModManagerRoute() {
                     onGamepadFocus={() => setFocusedGameID(game.app_id)}
                     onFocus={() => setFocusedGameID(game.app_id)}
                     onMouseEnter={() => setFocusedGameID(game.app_id)}
-                    preferredFocus={focused || (index === 0 && !focusedGameID)}
                     style={{
                       ...deckyCompositeRowStyle(focused, favorite),
                       padding: "10px"
