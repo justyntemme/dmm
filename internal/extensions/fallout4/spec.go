@@ -1,9 +1,14 @@
 package fallout4
 
 import (
+	"context"
+	"path/filepath"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/peversion"
 )
 
 const (
@@ -92,11 +97,31 @@ func Register(r sdk.Registrar) {
 		Name:     "Fallout 4 persistent subgraph offsets",
 		Patterns: []string{"**/PersistantSubgraphInfoAndOffsetData.txt"},
 	})
+	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+		ID:       "fallout4-exe-version",
+		Name:     "Fallout4.exe file version",
+		Provider: gameVersion,
+	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "bethesda-merge-mods", Name: "Bethesda plugin/mod merge support"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bethesda-plugin-load-order", Name: "Bethesda plugin load order"})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return sdk.GameVersionResult{}, nil
+	}
+	version, err := peversion.FileVersion(filepath.Join(gamePath, "Fallout4.exe"))
+	if err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	return sdk.GameVersionResult{Version: version, Source: "Fallout4.exe"}, nil
 }
 
 func modTypes() []installplan.ModTypeSpec {

@@ -100,6 +100,14 @@ func TestExtensionRegistersIgnoredConflictPattern(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersGameVersionProvider(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	if !containsFeature(summary.Capabilities.GameVersions, "fallout4-exe-version") {
+		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
+	}
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {
@@ -122,6 +130,15 @@ func contains(values []string, want string) bool {
 func containsLaunchTool(extension gameext.Extension, want string) bool {
 	for _, tool := range extension.LaunchTools {
 		if tool.ID == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFeature(values []gameext.FeatureSummary, want string) bool {
+	for _, value := range values {
+		if value.ID == want {
 			return true
 		}
 	}
