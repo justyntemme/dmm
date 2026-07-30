@@ -4504,7 +4504,10 @@ var (
 
 const capturedDownloadMaxAttemptsPerLink = 3
 
-var capturedDownloadRetryBaseDelay = 250 * time.Millisecond
+var (
+	capturedDownloadRetryBaseDelay = 250 * time.Millisecond
+	capturedDownloadMaxRetryAfter  = 30 * time.Second
+)
 
 func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.Job, error) {
 	pending, ok := s.capturedInstall(jobID)
@@ -4790,7 +4793,7 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 			if !retryable || linkAttempt == capturedDownloadMaxAttemptsPerLink {
 				break
 			}
-			delay := capturedDownloadRetryDelay(linkAttempt)
+			delay := capturedDownloadRetryDelay(linkAttempt, err)
 			if delay > 0 {
 				s.jobs.Run(jobID, fmt.Sprintf("Download from %s failed; retrying in %s", pending.Resolved.GameDomain, delay))
 			}
@@ -4805,7 +4808,14 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 	return download.Result{}, lastErr
 }
 
-func capturedDownloadRetryDelay(attempt int) time.Duration {
+func capturedDownloadRetryDelay(attempt int, err error) time.Duration {
+	var statusErr *download.StatusError
+	if errors.As(err, &statusErr) && statusErr.RetryAfter > 0 {
+		if capturedDownloadMaxRetryAfter > 0 && statusErr.RetryAfter > capturedDownloadMaxRetryAfter {
+			return capturedDownloadMaxRetryAfter
+		}
+		return statusErr.RetryAfter
+	}
 	if capturedDownloadRetryBaseDelay <= 0 || attempt <= 0 {
 		return 0
 	}

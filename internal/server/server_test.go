@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1866,6 +1867,27 @@ func TestCapturedInstallDownloadFailureIsRetainedAfterRetryExhaustion(t *testing
 	}
 	if _, ok := srv.capturedInstalls[job.ID]; !ok {
 		t.Fatalf("captured install %s was not retained for retry", job.ID)
+	}
+}
+
+func TestCapturedDownloadRetryDelayUsesRetryAfter(t *testing.T) {
+	previousBase := capturedDownloadRetryBaseDelay
+	previousMax := capturedDownloadMaxRetryAfter
+	capturedDownloadRetryBaseDelay = 250 * time.Millisecond
+	capturedDownloadMaxRetryAfter = 5 * time.Second
+	t.Cleanup(func() {
+		capturedDownloadRetryBaseDelay = previousBase
+		capturedDownloadMaxRetryAfter = previousMax
+	})
+
+	if got := capturedDownloadRetryDelay(1, &download.StatusError{StatusCode: http.StatusTooManyRequests, RetryAfter: 2 * time.Second}); got != 2*time.Second {
+		t.Fatalf("retry-after delay = %s", got)
+	}
+	if got := capturedDownloadRetryDelay(1, &download.StatusError{StatusCode: http.StatusTooManyRequests, RetryAfter: 10 * time.Second}); got != 5*time.Second {
+		t.Fatalf("clamped retry-after delay = %s", got)
+	}
+	if got := capturedDownloadRetryDelay(2, errors.New("temporary transport failure")); got != 500*time.Millisecond {
+		t.Fatalf("fallback retry delay = %s", got)
 	}
 }
 

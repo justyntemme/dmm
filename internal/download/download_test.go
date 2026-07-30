@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestFetchWritesDownload(t *testing.T) {
@@ -86,6 +87,7 @@ func TestFetchRejectsOversizedDownload(t *testing.T) {
 
 func TestFetchReturnsStatusError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "2")
 		http.Error(w, "temporary failure", http.StatusBadGateway)
 	}))
 	defer server.Close()
@@ -103,6 +105,9 @@ func TestFetchReturnsStatusError(t *testing.T) {
 	}
 	if statusErr.StatusCode != http.StatusBadGateway {
 		t.Fatalf("status = %d", statusErr.StatusCode)
+	}
+	if statusErr.RetryAfter != 2*time.Second {
+		t.Fatalf("retry after = %s", statusErr.RetryAfter)
 	}
 	if !IsRetryable(err) {
 		t.Fatal("expected 502 to be retryable")

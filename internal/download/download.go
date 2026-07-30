@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,7 @@ type Result struct {
 type StatusError struct {
 	StatusCode int
 	Status     string
+	RetryAfter time.Duration
 }
 
 func (err *StatusError) Error() string {
@@ -107,7 +109,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return Result{}, &StatusError{StatusCode: resp.StatusCode, Status: resp.Status}
+		return Result{}, &StatusError{StatusCode: resp.StatusCode, Status: resp.Status, RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 
 	name := safeFileName(opts.FileName)
@@ -180,4 +182,26 @@ func contentDispositionFileName(value string) string {
 		return ""
 	}
 	return params["filename"]
+}
+
+func parseRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0
+	}
+	delay := when.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	return delay
 }
