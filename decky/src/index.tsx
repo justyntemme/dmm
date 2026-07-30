@@ -16,7 +16,7 @@ import {
 } from "@decky/ui";
 import { call, definePlugin, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { CSSProperties, ReactNode, useEffect, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 
 declare const SteamClient:
   | {
@@ -229,6 +229,8 @@ type Tab = "main" | "mods" | "settings" | "debug";
 type GameSort = "recent" | "az" | "za";
 
 const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
+const deckyGameListWindowSize = 18;
+const deckyModListWindowSize = 12;
 
 const deckyPanelFrameStyle: CSSProperties = {
   alignSelf: "stretch",
@@ -451,13 +453,6 @@ function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
   };
 }
 
-function scrollDeckyDataRowIntoView(attribute: string, value: string) {
-  window.requestAnimationFrame(() => {
-    const row = document.querySelector(`[${attribute}="${value}"]`) as HTMLElement | null;
-    row?.scrollIntoView({ block: "nearest" });
-  });
-}
-
 function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused = false): CSSProperties {
   const danger = kind === "danger";
   return {
@@ -599,6 +594,18 @@ function compactNumber(value: number | undefined) {
   const normalized = Number(value ?? 0);
   if (!Number.isFinite(normalized)) return "0";
   return normalized.toLocaleString(undefined, { maximumFractionDigits: 0, notation: normalized >= 10_000 ? "compact" : "standard" });
+}
+
+function windowedList<T>(items: T[], focusedIndex: number, maxItems: number) {
+  const total = items.length;
+  if (total <= maxItems) {
+    return { items, start: 0, end: total, total };
+  }
+  const safeIndex = Math.max(0, Math.min(total - 1, focusedIndex < 0 ? 0 : focusedIndex));
+  const half = Math.floor(maxItems / 2);
+  const start = Math.max(0, Math.min(total - maxItems, safeIndex - half));
+  const end = Math.min(total, start + maxItems);
+  return { items: items.slice(start, end), start, end, total };
 }
 
 function formatBytes(value: number | undefined) {
@@ -1826,14 +1833,16 @@ function Content() {
   const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
-  const normalizedGameSearch = gameSearch.trim().toLowerCase();
-  const visibleManagedGames = [...managedGames]
-    .filter((game) => {
+  const favoriteGameKey = [...favoriteGameIDs].sort().join("|");
+  const visibleManagedGames = useMemo(() => {
+    const normalizedGameSearch = gameSearch.trim().toLowerCase();
+    const favoriteIDs = new Set(favoriteGameKey ? favoriteGameKey.split("|") : []);
+    return [...managedGames].filter((game) => {
       if (!normalizedGameSearch) return true;
       return game.name.toLowerCase().includes(normalizedGameSearch) || game.app_id.includes(normalizedGameSearch);
     })
     .sort((a, b) => {
-      const favoriteDelta = Number(favoriteGameIDs.has(b.app_id)) - Number(favoriteGameIDs.has(a.app_id));
+      const favoriteDelta = Number(favoriteIDs.has(b.app_id)) - Number(favoriteIDs.has(a.app_id));
       if (favoriteDelta !== 0) return favoriteDelta;
       if (gameSort === "az") return a.name.localeCompare(b.name);
       if (gameSort === "za") return b.name.localeCompare(a.name);
@@ -1841,13 +1850,19 @@ function Content() {
       if (recentDelta !== 0) return recentDelta;
       return a.name.localeCompare(b.name);
     });
-  const normalizedModSearch = modSearch.trim().toLowerCase();
-  const visibleDeckyMods = normalizedModSearch
-    ? deckyMods.filter((mod) =>
+  }, [managedGames, gameSearch, favoriteGameKey, gameSort, gameRecent]);
+  const visibleDeckyMods = useMemo(() => {
+    const normalizedModSearch = modSearch.trim().toLowerCase();
+    if (!normalizedModSearch) return deckyMods;
+    return deckyMods.filter((mod) =>
         [mod.name, mod.status, mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
-      )
-    : deckyMods;
+      );
+  }, [deckyMods, modSearch]);
+  const focusedGameIndex = visibleManagedGames.findIndex((game) => game.app_id === focusedGameID);
+  const focusedModIndex = visibleDeckyMods.findIndex((mod) => mod.id === focusedModID);
+  const renderedManagedGames = windowedList(visibleManagedGames, focusedGameIndex, deckyGameListWindowSize);
+  const renderedDeckyMods = windowedList(visibleDeckyMods, focusedModIndex, deckyModListWindowSize);
   const visibleManagedGameIDs = visibleManagedGames.map((game) => game.app_id).join("|");
   const visibleDeckyModIDs = visibleDeckyMods.map((mod) => String(mod.id)).join("|");
 
@@ -1891,7 +1906,6 @@ function Content() {
     const nextGame = visibleManagedGames[nextIndex];
     if (nextGame) {
       setFocusedGameID(nextGame.app_id);
-      scrollDeckyDataRowIntoView("data-dmm-game-id", nextGame.app_id);
     }
   }
 
@@ -1906,7 +1920,6 @@ function Content() {
     if (nextMod) {
       setFocusedModID(nextMod.id);
       setFocusedModAction("");
-      scrollDeckyDataRowIntoView("data-dmm-mod-id", String(nextMod.id));
     }
   }
 
@@ -1992,8 +2005,14 @@ function Content() {
             </ButtonItem>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
+            {visibleManagedGames.length > renderedManagedGames.items.length && (
+              <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
+                Showing {renderedManagedGames.start + 1}-{renderedManagedGames.end} of {renderedManagedGames.total}
+              </div>
+            )}
             <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyGameListDirection} style={deckySidebarListStyle}>
-              {visibleManagedGames.map((game, index) => {
+              {renderedManagedGames.items.map((game, index) => {
+                const absoluteIndex = renderedManagedGames.start + index;
                 const focused = focusedGameID === game.app_id;
                 const favorite = favoriteGameIDs.has(game.app_id);
                 return (
@@ -2036,7 +2055,7 @@ function Content() {
                       onGamepadFocus={() => setFocusedGameID(game.app_id)}
                       onFocus={() => setFocusedGameID(game.app_id)}
                       onMouseEnter={() => setFocusedGameID(game.app_id)}
-                      preferredFocus={focused || (index === 0 && !focusedGameID)}
+                      preferredFocus={focused || (absoluteIndex === 0 && !focusedGameID)}
                       style={{
                         ...deckyFocusableCardStyle(focused, favorite),
                         display: "grid",
@@ -2246,8 +2265,13 @@ function Content() {
           )}
           {visibleDeckyMods.length > 0 && (
             <PanelSectionRow>
+              {visibleDeckyMods.length > renderedDeckyMods.items.length && (
+                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, marginBottom: "8px" }}>
+                  Showing {renderedDeckyMods.start + 1}-{renderedDeckyMods.end} of {renderedDeckyMods.total}
+                </div>
+              )}
               <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyModListDirection} style={deckySidebarListStyle}>
-                {visibleDeckyMods.map((mod) => {
+                {renderedDeckyMods.items.map((mod) => {
                   const focused = focusedModID === mod.id;
                   const toggleActionID = `${mod.id}:toggle`;
                   return (
