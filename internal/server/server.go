@@ -64,12 +64,13 @@ type Server struct {
 }
 
 type capturedInstall struct {
-	Resolved      catalog.ResolvedDownload
-	DownloadLinks []nexus.DownloadLink
-	Source        string
-	ArchivePath   string
-	ArchiveSHA256 string
-	ArchiveBytes  int64
+	Resolved        catalog.ResolvedDownload
+	DownloadLinks   []nexus.DownloadLink
+	Source          string
+	ArchiveFileName string
+	ArchivePath     string
+	ArchiveSHA256   string
+	ArchiveBytes    int64
 }
 
 type nexusClient interface {
@@ -157,12 +158,13 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
-			Resolved:      pending.Resolved,
-			DownloadLinks: pending.DownloadLinks,
-			Source:        pending.Source,
-			ArchivePath:   pending.ArchivePath,
-			ArchiveSHA256: pending.ArchiveSHA256,
-			ArchiveBytes:  pending.ArchiveBytes,
+			Resolved:        pending.Resolved,
+			DownloadLinks:   pending.DownloadLinks,
+			Source:          pending.Source,
+			ArchiveFileName: pending.ArchiveFileName,
+			ArchivePath:     pending.ArchivePath,
+			ArchiveSHA256:   pending.ArchiveSHA256,
+			ArchiveBytes:    pending.ArchiveBytes,
 		}
 	}
 	srv.jobs = jobs.NewManagerWithSeed(storedJobs, func(job jobs.Job) {
@@ -4307,6 +4309,9 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if len(pending.DownloadLinks) > 0 {
 			payload["download_links"] = pending.DownloadLinks
 		}
+		if pending.ArchiveFileName != "" {
+			payload["archive_file_name"] = pending.ArchiveFileName
+		}
 		writeJSON(w, http.StatusAccepted, payload)
 		return
 	}
@@ -4321,20 +4326,26 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	apiKey := s.cfg.Nexus.APIKey
 	s.cfgMu.RUnlock()
 	if apiKey != "" {
-		links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
+		client := s.nexus(apiKey)
+		links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
 			job, _ = s.jobs.Fail(job.ID, err.Error())
 			payload["job"] = job
 			writeJSON(w, http.StatusAccepted, payload)
 			return
 		}
+		archiveFileName := s.nexusArchiveFileName(r.Context(), client, resolved)
 		payload["download_links"] = links
+		if archiveFileName != "" {
+			payload["archive_file_name"] = archiveFileName
+		}
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+resolved.GameDomain)
 		payload["job"] = job
 		s.rememberCapturedInstall(job.ID, capturedInstall{
-			Resolved:      resolved,
-			DownloadLinks: links,
-			Source:        source,
+			Resolved:        resolved,
+			DownloadLinks:   links,
+			Source:          source,
+			ArchiveFileName: archiveFileName,
 		})
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
@@ -4359,6 +4370,29 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		Source:   source,
 	})
 	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) nexusArchiveFileName(ctx context.Context, client nexusClient, resolved catalog.ResolvedDownload) string {
+	fileID := strings.TrimSpace(resolved.FileID)
+	if fileID == "" {
+		return ""
+	}
+	files, err := client.Files(ctx, resolved.GameDomain, resolved.ModID)
+	if err != nil {
+		s.logger.Warn("nexus archive filename lookup failed", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID, "error", err)
+		return ""
+	}
+	for _, file := range files.Files {
+		if strconv.FormatInt(file.FileID, 10) == fileID {
+			name := strings.TrimSpace(file.FileName)
+			if name == "" {
+				s.logger.Info("nexus archive filename empty", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID)
+			}
+			return name
+		}
+	}
+	s.logger.Info("nexus archive filename not found", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID)
+	return ""
 }
 
 func (s *Server) findCapturedInstall(resolved catalog.ResolvedDownload) (jobs.Job, capturedInstall, bool) {
@@ -4632,13 +4666,14 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 	s.capturedInstalls[jobID] = pending
 	s.ensureCapturedInstallJobPayload(jobID, pending.Resolved)
 	if err := s.db.SaveCapturedInstall(context.Background(), storage.CapturedInstall{
-		JobID:         jobID,
-		Resolved:      pending.Resolved,
-		DownloadLinks: pending.DownloadLinks,
-		Source:        pending.Source,
-		ArchivePath:   pending.ArchivePath,
-		ArchiveSHA256: pending.ArchiveSHA256,
-		ArchiveBytes:  pending.ArchiveBytes,
+		JobID:           jobID,
+		Resolved:        pending.Resolved,
+		DownloadLinks:   pending.DownloadLinks,
+		Source:          pending.Source,
+		ArchiveFileName: pending.ArchiveFileName,
+		ArchivePath:     pending.ArchivePath,
+		ArchiveSHA256:   pending.ArchiveSHA256,
+		ArchiveBytes:    pending.ArchiveBytes,
 	}); err != nil {
 		s.logger.Warn("persist captured install failed", "job_id", jobID, "error", err)
 	}
@@ -4775,8 +4810,10 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 			message := fmt.Sprintf("Downloading archive from %s (%d/%d, try %d/%d)", pending.Resolved.GameDomain, index+1, total, linkAttempt, capturedDownloadMaxAttemptsPerLink)
 			s.jobs.Run(jobID, message)
 			result, err := download.Fetch(ctx, download.Options{
-				URL:     uri,
-				DestDir: destDir,
+				URL:      uri,
+				DestDir:  destDir,
+				FileName: pending.ArchiveFileName,
+				Resume:   true,
 			})
 			if err == nil {
 				if attempts > 1 {

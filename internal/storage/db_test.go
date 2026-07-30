@@ -132,6 +132,7 @@ CREATE TABLE captured_installs (
 		{"jobs", "payload_json"},
 		{"captured_installs", "download_links_json"},
 		{"captured_installs", "source"},
+		{"captured_installs", "archive_file_name"},
 	} {
 		exists, err := db.hasColumn(context.Background(), item.table, item.column)
 		if err != nil {

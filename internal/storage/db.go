@@ -113,13 +113,14 @@ type InstallerChoicePreset struct {
 }
 
 type CapturedInstall struct {
-	JobID         string                   `json:"job_id"`
-	Resolved      catalog.ResolvedDownload `json:"resolved"`
-	DownloadLinks []nexus.DownloadLink     `json:"download_links"`
-	Source        string                   `json:"source"`
-	ArchivePath   string                   `json:"archive_path"`
-	ArchiveSHA256 string                   `json:"archive_sha256"`
-	ArchiveBytes  int64                    `json:"archive_bytes"`
+	JobID           string                   `json:"job_id"`
+	Resolved        catalog.ResolvedDownload `json:"resolved"`
+	DownloadLinks   []nexus.DownloadLink     `json:"download_links"`
+	Source          string                   `json:"source"`
+	ArchiveFileName string                   `json:"archive_file_name"`
+	ArchivePath     string                   `json:"archive_path"`
+	ArchiveSHA256   string                   `json:"archive_sha256"`
+	ArchiveBytes    int64                    `json:"archive_bytes"`
 }
 
 type ExtensionSnapshot struct {
@@ -204,6 +205,7 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "captured_installs", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "captured_installs", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "captured_installs", name: "archive_file_name", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
@@ -668,23 +670,24 @@ func (db *DB) SaveCapturedInstall(ctx context.Context, pending CapturedInstall) 
 		return err
 	}
 	_, err = db.conn.ExecContext(ctx, `
-INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(job_id) DO UPDATE SET
 	resolved_json = excluded.resolved_json,
 	download_links_json = excluded.download_links_json,
 	source = excluded.source,
+	archive_file_name = excluded.archive_file_name,
 	archive_path = excluded.archive_path,
 	archive_sha256 = excluded.archive_sha256,
 	archive_bytes = excluded.archive_bytes,
 	updated_at = CURRENT_TIMESTAMP
-`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes)
+`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchiveFileName, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes)
 	return err
 }
 
 func (db *DB) ListCapturedInstalls(ctx context.Context) ([]CapturedInstall, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes
+SELECT job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes
 FROM captured_installs
 ORDER BY updated_at DESC, created_at DESC
 `)
@@ -696,7 +699,7 @@ ORDER BY updated_at DESC, created_at DESC
 	for rows.Next() {
 		var pending CapturedInstall
 		var resolved, links string
-		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes); err != nil {
+		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchiveFileName, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(resolved), &pending.Resolved); err != nil {

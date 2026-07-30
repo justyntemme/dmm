@@ -85,6 +85,81 @@ func TestFetchRejectsOversizedDownload(t *testing.T) {
 	}
 }
 
+func TestFetchResumesPartialDownload(t *testing.T) {
+	var gotRange string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		if gotRange != "bytes=4-" {
+			http.Error(w, "range required", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("ive"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	partPath := filepath.Join(dir, "mod.zip.part")
+	if err := os.WriteFile(partPath, []byte("arch"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Fetch(context.Background(), Options{
+		URL:      server.URL + "/mod.zip",
+		DestDir:  dir,
+		FileName: "mod.zip",
+		Resume:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRange != "bytes=4-" {
+		t.Fatalf("range = %q", gotRange)
+	}
+	body, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "archive" {
+		t.Fatalf("body = %q", string(body))
+	}
+	if _, err := os.Stat(partPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial still exists: %v", err)
+	}
+}
+
+func TestFetchResumableRestartsWhenServerIgnoresRange(t *testing.T) {
+	var gotRange string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		_, _ = w.Write([]byte("archive"))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.zip.part"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Fetch(context.Background(), Options{
+		URL:      server.URL + "/mod.zip",
+		DestDir:  dir,
+		FileName: "mod.zip",
+		Resume:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRange != "bytes=5-" {
+		t.Fatalf("range = %q", gotRange)
+	}
+	body, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "archive" {
+		t.Fatalf("body = %q", string(body))
+	}
+}
+
 func TestFetchReturnsStatusError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "2")

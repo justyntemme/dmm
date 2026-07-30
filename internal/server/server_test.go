@@ -2396,6 +2396,10 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 	srv.cfgMu.Unlock()
 	srv.nexus = func(apiKey string) nexusClient {
 		return fakeNexusClient{
+			files: nexus.FilesResponse{Files: []nexus.ModFile{{
+				FileID:   160470,
+				FileName: "Lookup Anything-541-1-0.zip",
+			}}},
 			links: []nexus.DownloadLink{{
 				Name:      "Local archive",
 				ShortName: "local",
@@ -2415,6 +2419,7 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 	var body struct {
 		DownloadStarted bool     `json:"download_started"`
 		AutoInstall     bool     `json:"auto_install"`
+		ArchiveFileName string   `json:"archive_file_name"`
 		Job             jobs.Job `json:"job"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -2422,6 +2427,9 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 	}
 	if !body.DownloadStarted || body.AutoInstall || body.Job.Status != jobs.StatusQueued {
 		t.Fatalf("immediate download response = %+v", body)
+	}
+	if body.ArchiveFileName != "Lookup Anything-541-1-0.zip" {
+		t.Fatalf("archive file name = %q", body.ArchiveFileName)
 	}
 
 	waiting := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusWaiting)
@@ -2431,6 +2439,9 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 	pending, ok := srv.capturedInstall(body.Job.ID)
 	if !ok || pending.ArchivePath == "" {
 		t.Fatalf("captured install = %+v ok=%v", pending, ok)
+	}
+	if pending.ArchiveFileName != "Lookup Anything-541-1-0.zip" || filepath.Base(pending.ArchivePath) != "Lookup Anything-541-1-0.zip" {
+		t.Fatalf("pending archive = %+v", pending)
 	}
 	if mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150"); err != nil {
 		t.Fatal(err)

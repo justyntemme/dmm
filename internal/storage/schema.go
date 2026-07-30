@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS captured_installs (
 	resolved_json TEXT NOT NULL,
 	download_links_json TEXT NOT NULL DEFAULT '[]',
 	source TEXT NOT NULL DEFAULT '',
+	archive_file_name TEXT NOT NULL DEFAULT '',
 	archive_path TEXT NOT NULL DEFAULT '',
 	archive_sha256 TEXT NOT NULL DEFAULT '',
 	archive_bytes INTEGER NOT NULL DEFAULT 0,
