@@ -1,6 +1,9 @@
 package sdk
 
 import (
+	"context"
+
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -93,6 +96,39 @@ type LoadOrderSpec struct {
 }
 
 type EventHandlerSpec struct {
-	Event string
-	Name  string
+	Event   string
+	Name    string
+	Handler EventHandlerFunc
+}
+
+type EventHandlerFunc func(context.Context, EventHandlerInput) (EventHandlerResult, error)
+
+type EventHandlerInput struct {
+	Event        string
+	AppID        string
+	GamePath     string
+	ProfileID    int64
+	StagingRoot  string
+	WorkDir      string
+	Source       string
+	Mappings     []deploy.FileMapping
+	ManagedFiles []deploy.AppliedFile
+	Mods         []DeploymentMod
+}
+
+type DeploymentMod struct {
+	ID               int64
+	Name             string
+	ModType          string
+	Enabled          bool
+	Priority         int
+	StagingPath      string
+	SourceGameDomain string
+	SourceModID      string
+	SourceFileID     string
+}
+
+type EventHandlerResult struct {
+	Mappings []deploy.FileMapping
+	Messages []string
 }

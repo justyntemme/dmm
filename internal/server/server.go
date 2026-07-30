@@ -2180,6 +2180,9 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 		"files":         len(applied),
 		"source":        source,
 	})
+	if err := s.runDeploymentEventHandlers(ctx, appID, "did-deploy", source, plan, applied); err != nil {
+		s.logger.Warn("post-deployment extension event failed", "job_id", jobID, "app_id", appID, "source", source, "event", "did-deploy", "error", err)
+	}
 	launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, appID, jobID)
 	if launchErr != nil {
 		s.logger.Warn("post-deployment launch action status failed", "job_id", jobID, "app_id", appID, "source", source, "error", launchErr)
@@ -2259,6 +2262,9 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 		"action": "purged",
 		"files":  len(files),
 	})
+	if err := s.runDeploymentEventHandlers(r.Context(), appID, "did-purge", "purge", deploy.Plan{}, files); err != nil {
+		s.logger.Warn("post-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", "did-purge", "error", err)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
 }
 
@@ -4129,6 +4135,11 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	mappings = append(mappings, activationMappings...)
+	hookMappings, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy")
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	mappings = append(mappings, hookMappings...)
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, managedFiles)
@@ -4139,6 +4150,113 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, nil)
 	}
 	return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+}
+
+func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) ([]deploy.FileMapping, error) {
+	if !s.games.HasEventHandlerForSteamApp(game.SteamAppID, event) {
+		return nil, nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return nil, err
+	}
+	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", game.SteamAppID, strconv.FormatInt(profileID, 10), strings.TrimSpace(event))
+	if err := os.RemoveAll(workDir); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return nil, err
+	}
+	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
+		GamePath:     game.GamePath,
+		ProfileID:    profileID,
+		StagingRoot:  stagingRoot,
+		WorkDir:      workDir,
+		Source:       "deploy-plan",
+		Mappings:     append([]deploy.FileMapping(nil), mappings...),
+		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
+		Mods:         deploymentModsForHooks(mods),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, message := range result.Messages {
+		if message = strings.TrimSpace(message); message != "" {
+			s.logger.Info("extension deployment event message", "app_id", game.SteamAppID, "event", event, "message", message)
+		}
+	}
+	if len(result.Mappings) > 0 {
+		s.logger.Info("extension deployment event returned mappings", "app_id", game.SteamAppID, "event", event, "mappings", len(result.Mappings), "work_dir", workDir)
+	}
+	return result.Mappings, nil
+}
+
+func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, source string, plan deploy.Plan, applied []deploy.AppliedFile) error {
+	if !s.games.HasEventHandlerForSteamApp(appID, event) {
+		return nil
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	profileID, err := s.activeProfileID(ctx, appID, mods)
+	if err != nil {
+		return err
+	}
+	stagingRoot := strings.TrimSpace(plan.StagingRoot)
+	if stagingRoot == "" {
+		stagingRoot = filepath.Join(s.cfg.DataDir, "staging")
+	}
+	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", appID, strconv.FormatInt(profileID, 10), strings.TrimSpace(event))
+	if err := os.RemoveAll(workDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return err
+	}
+	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
+		GamePath:     game.GamePath,
+		ProfileID:    profileID,
+		StagingRoot:  stagingRoot,
+		WorkDir:      workDir,
+		Source:       source,
+		ManagedFiles: append([]deploy.AppliedFile(nil), applied...),
+		Mods:         deploymentModsForHooks(mods),
+	})
+	if err != nil {
+		return err
+	}
+	for _, message := range result.Messages {
+		if message = strings.TrimSpace(message); message != "" {
+			s.logger.Info("extension deployment event message", "app_id", appID, "event", event, "message", message)
+		}
+	}
+	if len(result.Mappings) > 0 {
+		s.logger.Warn("extension deployment event returned ignored post-event mappings", "app_id", appID, "event", event, "mappings", len(result.Mappings))
+	}
+	return nil
+}
+
+func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod {
+	out := make([]gameext.DeploymentMod, 0, len(mods))
+	for _, mod := range mods {
+		out = append(out, gameext.DeploymentMod{
+			ID:               mod.ID,
+			Name:             mod.Name,
+			ModType:          installedModType(mod),
+			Enabled:          mod.Enabled,
+			Priority:         mod.Priority,
+			StagingPath:      mod.StagingPath,
+			SourceGameDomain: mod.SourceGameDomain,
+			SourceModID:      mod.SourceModID,
+			SourceFileID:     mod.SourceFileID,
+		})
+	}
+	return out
 }
 
 type pluginActivationEntry struct {

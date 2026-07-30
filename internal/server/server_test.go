@@ -25,8 +25,10 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -3604,6 +3606,94 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	}
 	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "Example.esp") {
 		t.Fatalf("loadorder.txt body = %q", string(body))
+	}
+}
+
+func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Hook Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999001"
+	var willDeployCalls int
+	var didDeployCalls int
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:   "hookgame",
+		Name: "Hook Game",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"hookgame"},
+				VortexGameID: "hookgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "hook-root", TargetRoot: ""})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: "will-deploy",
+				Name:  "Generate hook file",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					willDeployCalls++
+					if input.AppID != appID || input.ProfileID == 0 || input.WorkDir == "" {
+						t.Fatalf("will-deploy input = %+v", input)
+					}
+					sourcePath := filepath.Join(input.WorkDir, "generated", "hook.ini")
+					if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+						return sdk.EventHandlerResult{}, err
+					}
+					if err := os.WriteFile(sourcePath, []byte("enabled=true\n"), 0o600); err != nil {
+						return sdk.EventHandlerResult{}, err
+					}
+					return sdk.EventHandlerResult{
+						Mappings: []deploy.FileMapping{{
+							SourcePath:     sourcePath,
+							TargetRelative: "Generated/hook.ini",
+							Strategy:       deploy.StrategyCopy,
+						}},
+						Messages: []string{"generated hook file"},
+					}, nil
+				},
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: "did-deploy",
+				Name:  "Observe deploy",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					didDeployCalls++
+					if input.Source != "manual" || len(input.ManagedFiles) == 0 {
+						t.Fatalf("did-deploy input = %+v", input)
+					}
+					return sdk.EventHandlerResult{Messages: []string{"observed deploy"}}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Hook Game",
+		InstallDir:  "Hook Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("deploy status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if willDeployCalls != 1 || didDeployCalls != 1 {
+		t.Fatalf("hook calls will=%d did=%d", willDeployCalls, didDeployCalls)
+	}
+	body, err := os.ReadFile(filepath.Join(gamePath, "Generated", "hook.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "enabled=true\n" {
+		t.Fatalf("generated file = %q", string(body))
 	}
 }
 

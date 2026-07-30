@@ -37,6 +37,9 @@ type PluginActivationSpec = sdk.PluginActivationSpec
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
+type EventHandlerInput = sdk.EventHandlerInput
+type EventHandlerResult = sdk.EventHandlerResult
+type DeploymentMod = sdk.DeploymentMod
 
 type ExtensionSummary struct {
 	ID           string                `json:"id"`
@@ -248,6 +251,46 @@ func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpe
 		return PluginActivationSpec{}, false
 	}
 	return extension.PluginActivations[0], true
+}
+
+func (r Registry) HasEventHandlerForSteamApp(appID, event string) bool {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return false
+	}
+	event = canonical(event)
+	for _, handler := range extension.EventHandlers {
+		if canonical(handler.Event) == event && handler.Handler != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return sdk.EventHandlerResult{}, nil
+	}
+	event = canonical(event)
+	if event == "" {
+		return sdk.EventHandlerResult{}, nil
+	}
+	input.AppID = strings.TrimSpace(appID)
+	input.Event = event
+	var out sdk.EventHandlerResult
+	for _, handler := range extension.EventHandlers {
+		if canonical(handler.Event) != event || handler.Handler == nil {
+			continue
+		}
+		next, err := handler.Handler(ctx, input)
+		if err != nil {
+			return out, err
+		}
+		out.Mappings = append(out.Mappings, next.Mappings...)
+		out.Messages = append(out.Messages, next.Messages...)
+	}
+	return out, nil
 }
 
 func MissingLaunchToolFiles(gamePath string, tool LaunchToolSpec) []string {

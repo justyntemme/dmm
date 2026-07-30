@@ -1,9 +1,11 @@
 package gameext
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -61,7 +63,19 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			})
 			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
 			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
-			r.RegisterEventHandler(sdk.EventHandlerSpec{Event: "will-deploy", Name: "Prepare"})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: "will-deploy",
+				Name:  "Prepare",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					if input.AppID != "100" || input.Event != "will-deploy" {
+						t.Fatalf("hook input = %+v", input)
+					}
+					return sdk.EventHandlerResult{
+						Mappings: []deploy.FileMapping{{SourceRelative: "generated.txt", TargetRelative: "generated.txt"}},
+						Messages: []string{"prepared"},
+					}, nil
+				},
+			})
 		},
 	})
 	if err != nil {
@@ -112,6 +126,16 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
+	}
+	if !registry.HasEventHandlerForSteamApp("100", "will-deploy") || registry.HasEventHandlerForSteamApp("100", "did-deploy") {
+		t.Fatalf("event handler predicates are wrong")
+	}
+	hookResult, err := registry.RunEventHandlers(context.Background(), "100", "will-deploy", sdk.EventHandlerInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hookResult.Mappings) != 1 || hookResult.Mappings[0].TargetRelative != "generated.txt" || len(hookResult.Messages) != 1 {
+		t.Fatalf("hook result = %+v", hookResult)
 	}
 }
 
