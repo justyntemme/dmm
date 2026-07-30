@@ -64,6 +64,7 @@ for target in "${tmp_dir}"/*.js; do
     for needle in \
       "Installed, disabled in this profile" \
       "Add From Nexus" \
+      "Browse Nexus" \
       "Advanced Deployment Tools" \
       "These Deck behavior switches are managed from the Decky sidebar settings."
     do

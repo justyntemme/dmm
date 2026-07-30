@@ -95,6 +95,21 @@
     size: number;
   };
 
+  type NexusSearchSort = "downloads" | "updated" | "endorsements" | "name" | "relevance";
+
+  type NexusModResult = {
+    mod_id: number;
+    name: string;
+    summary: string;
+    version: string;
+    thumbnail_url: string;
+    downloads: number;
+    endorsements: number;
+    updated_at: string;
+    supports_vortex: boolean;
+    url: string;
+  };
+
   type InstalledMod = {
     id: number;
     name: string;
@@ -289,6 +304,15 @@
   let lastImportURL = "";
   let resolvedImport = "";
   let nexusFiles: NexusFile[] = [];
+  let nexusSearchQuery = "";
+  let nexusSearchSort: NexusSearchSort = "downloads";
+  let nexusSearchResults: NexusModResult[] = [];
+  let nexusSearchTotal = 0;
+  let nexusSearchBusy = false;
+  let nexusSearchError = "";
+  let selectedNexusModID: number | null = null;
+  let nexusFilesByMod: Record<number, NexusFile[]> = {};
+  let busyNexusFileKey = "";
   let downloadLinks: DownloadLink[] = [];
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
@@ -589,6 +613,11 @@
     drawer = null;
     resolvedImport = "";
     nexusFiles = [];
+    nexusSearchResults = [];
+    nexusSearchTotal = 0;
+    selectedNexusModID = null;
+    nexusFilesByMod = {};
+    busyNexusFileKey = "";
     downloadLinks = [];
     deployPlan = null;
     deploymentStatus = null;
@@ -828,6 +857,122 @@
     nextURL.searchParams.set("file_id", String(file.file_id));
     importURL = nextURL.toString();
     await resolveImport();
+  }
+
+  function selectedNexusDomain() {
+    return selectedGame?.nexus_domains?.[0] ?? "";
+  }
+
+  function nexusFileURL(modID: number, fileID: number) {
+    const domain = selectedNexusDomain();
+    return `https://www.nexusmods.com/${encodeURIComponent(domain)}/mods/${modID}?file_id=${fileID}`;
+  }
+
+  function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
+    if (current === "downloads") return "updated";
+    if (current === "updated") return "endorsements";
+    if (current === "endorsements") return "name";
+    if (current === "name") return "relevance";
+    return "downloads";
+  }
+
+  function nexusSortLabel(sort: NexusSearchSort) {
+    if (sort === "updated") return "Updated";
+    if (sort === "endorsements") return "Endorsements";
+    if (sort === "name") return "Name";
+    if (sort === "relevance") return "Relevance";
+    return "Downloads";
+  }
+
+  function compactNumber(value: number | undefined) {
+    if (!value) return "0";
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+    return String(value);
+  }
+
+  function formatBytes(value: number | undefined) {
+    if (!value || value < 0) return "unknown size";
+    if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${value} B`;
+  }
+
+  async function searchNexusMods(nextSort = nexusSearchSort) {
+    if (!selectedGame) return;
+    nexusSearchBusy = true;
+    nexusSearchError = "";
+    try {
+      const params = new URLSearchParams({
+        q: nexusSearchQuery,
+        sort: nextSort,
+        count: "20",
+        offset: "0",
+        vortex_only: "true"
+      });
+      const result = await getJSON<{ mods: NexusModResult[]; total_count: number }>(`/api/games/${selectedGame.app_id}/nexus/mods?${params.toString()}`);
+      nexusSearchResults = result.mods ?? [];
+      nexusSearchTotal = result.total_count ?? nexusSearchResults.length;
+      if (nexusSearchResults.length === 0) {
+        nexusSearchError = "No Vortex-compatible Nexus mods matched this search.";
+      }
+    } catch (err) {
+      nexusSearchError = err instanceof Error ? err.message : String(err);
+      nexusSearchResults = [];
+      nexusSearchTotal = 0;
+    } finally {
+      nexusSearchBusy = false;
+    }
+  }
+
+  function cycleNexusSort() {
+    const next = nextNexusSort(nexusSearchSort);
+    nexusSearchSort = next;
+    void searchNexusMods(next);
+  }
+
+  async function loadNexusModFiles(mod: NexusModResult) {
+    if (!selectedGame) return;
+    selectedNexusModID = mod.mod_id;
+    nexusSearchError = "";
+    if (nexusFilesByMod[mod.mod_id]) return;
+    busyNexusFileKey = `files:${mod.mod_id}`;
+    try {
+      const result = await getJSON<{ files: NexusFile[] }>(`/api/games/${selectedGame.app_id}/nexus/mods/${mod.mod_id}/files`);
+      nexusFilesByMod = { ...nexusFilesByMod, [mod.mod_id]: result.files ?? [] };
+      if ((result.files ?? []).length === 0) nexusSearchError = "This Nexus mod did not return installable files.";
+    } catch (err) {
+      nexusSearchError = err instanceof Error ? err.message : String(err);
+    } finally {
+      busyNexusFileKey = "";
+    }
+  }
+
+  async function addNexusSearchFile(mod: NexusModResult, file: NexusFile) {
+    if (!selectedGame || !selectedNexusDomain()) return;
+    const key = `${mod.mod_id}:${file.file_id}`;
+    busyNexusFileKey = key;
+    nexusSearchError = "";
+    try {
+      const response = await fetch("/api/imports/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: nexusFileURL(mod.mod_id, file.file_id) })
+      });
+      if (!response.ok) {
+        nexusSearchError = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
+      resolvedImport = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
+      await refreshJobsAndSelectedGame();
+    } catch (err) {
+      nexusSearchError = err instanceof Error ? err.message : String(err);
+    } finally {
+      busyNexusFileKey = "";
+    }
   }
 
   async function clearInstallRequests() {
@@ -1799,6 +1944,56 @@
                 <button type="submit">Add Mod</button>
               </form>
               <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Downloads that need unsupported installer logic will be kept as blocked install candidates.</p>
+              {#if selectedNexusDomain()}
+                <details class="nexus-browser">
+                  <summary>
+                    <span>Browse Nexus</span>
+                    <small>{selectedNexusDomain()}</small>
+                  </summary>
+                  <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
+                    <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
+                    <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
+                    <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
+                  </form>
+                  {#if nexusSearchResults.length > 0}
+                    <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} Vortex-compatible results.</p>
+                    <div class="nexus-results">
+                      {#each nexusSearchResults as mod}
+                        {@const files = nexusFilesByMod[mod.mod_id] ?? []}
+                        {@const filesOpen = selectedNexusModID === mod.mod_id}
+                        <article class:open={filesOpen}>
+                          <button type="button" class="nexus-result-main" on:click={() => loadNexusModFiles(mod)}>
+                            <span>
+                              <strong>{mod.name}</strong>
+                              {#if mod.summary}<small>{mod.summary}</small>{/if}
+                              <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
+                            </span>
+                            <b>{busyNexusFileKey === `files:${mod.mod_id}` ? "Loading" : filesOpen ? "Hide" : "Files"}</b>
+                          </button>
+                          {#if filesOpen && files.length > 0}
+                            <div class="nexus-file-list">
+                              {#each files as file}
+                                <button type="button" on:click={() => addNexusSearchFile(mod, file)} disabled={busyNexusFileKey === `${mod.mod_id}:${file.file_id}`}>
+                                  <span>
+                                    <strong>{file.name || file.file_name}</strong>
+                                    <small>{file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}</small>
+                                  </span>
+                                  <em>{busyNexusFileKey === `${mod.mod_id}:${file.file_id}` ? "Adding" : "Add"}</em>
+                                </button>
+                              {/each}
+                            </div>
+                          {/if}
+                        </article>
+                      {/each}
+                    </div>
+                  {/if}
+                  {#if nexusSearchError}
+                    <p class="hint warning-copy">{nexusSearchError}</p>
+                  {/if}
+                </details>
+              {:else}
+                <p class="hint">This game does not have an extension-owned Nexus domain yet.</p>
+              {/if}
               {#if resolvedImport}
                 <p class="hint">Resolved {resolvedImport}</p>
               {/if}
