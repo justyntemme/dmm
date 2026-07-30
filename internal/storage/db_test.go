@@ -723,9 +723,11 @@ func TestRecordDeploymentPersistsChecksum(t *testing.T) {
 	}
 	if _, err := db.RecordDeployment(context.Background(), "413150", "symlink", []deploy.AppliedFile{{
 		SourcePath:     "/staging/file.txt",
+		RestorePath:    "/staging/restore-file.txt",
 		TargetPath:     "/game/Mods/file.txt",
 		Strategy:       "symlink",
 		ChecksumSHA256: "file-sum",
+		RestoreSHA256:  "restore-sum",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -733,7 +735,7 @@ func TestRecordDeploymentPersistsChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 || files[0].ChecksumSHA256 != "file-sum" {
+	if len(files) != 1 || files[0].ChecksumSHA256 != "file-sum" || files[0].RestorePath != "/staging/restore-file.txt" || files[0].RestoreSHA256 != "restore-sum" {
 		t.Fatalf("files = %+v", files)
 	}
 }

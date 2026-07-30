@@ -143,9 +143,11 @@ CREATE TABLE IF NOT EXISTS deployed_files (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	deployment_id INTEGER NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
 	source_path TEXT NOT NULL,
+	restore_path TEXT NOT NULL DEFAULT '',
 	target_path TEXT NOT NULL,
 	link_type TEXT NOT NULL,
 	checksum_sha256 TEXT NOT NULL DEFAULT '',
+	restore_sha256 TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(deployment_id, target_path)
 );

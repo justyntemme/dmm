@@ -163,6 +163,8 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "install_candidates", name: "installer_json", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "install_candidates", name: "choices_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "deployed_files", name: "restore_path", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "deployed_files", name: "restore_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "captured_installs", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "captured_installs", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
@@ -1341,9 +1343,9 @@ VALUES (?, ?, 'deployed', ?)
 	}
 	for _, file := range files {
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO deployed_files (deployment_id, source_path, target_path, link_type, checksum_sha256)
-VALUES (?, ?, ?, ?, ?)
-`, deploymentID, file.SourcePath, file.TargetPath, string(file.Strategy), file.ChecksumSHA256); err != nil {
+INSERT INTO deployed_files (deployment_id, source_path, restore_path, target_path, link_type, checksum_sha256, restore_sha256)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`, deploymentID, file.SourcePath, file.RestorePath, file.TargetPath, string(file.Strategy), file.ChecksumSHA256, file.RestoreSHA256); err != nil {
 			return 0, err
 		}
 	}
@@ -1352,7 +1354,7 @@ VALUES (?, ?, ?, ?, ?)
 
 func (db *DB) LatestDeploymentFilesForSteamApp(ctx context.Context, appID string) ([]deploy.AppliedFile, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT df.source_path, df.target_path, df.link_type, df.checksum_sha256
+SELECT df.source_path, df.restore_path, df.target_path, df.link_type, df.checksum_sha256, df.restore_sha256
 FROM deployed_files df
 JOIN deployments d ON d.id = df.deployment_id
 JOIN games g ON g.id = d.game_id
@@ -1376,7 +1378,7 @@ ORDER BY df.target_path DESC
 	for rows.Next() {
 		var file deploy.AppliedFile
 		var strategy string
-		if err := rows.Scan(&file.SourcePath, &file.TargetPath, &strategy, &file.ChecksumSHA256); err != nil {
+		if err := rows.Scan(&file.SourcePath, &file.RestorePath, &file.TargetPath, &strategy, &file.ChecksumSHA256, &file.RestoreSHA256); err != nil {
 			return nil, err
 		}
 		file.Strategy = deploy.Strategy(strategy)

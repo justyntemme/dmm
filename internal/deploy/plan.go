@@ -20,6 +20,7 @@ const (
 type FileMapping struct {
 	SourceRelative string   `json:"source_relative"`
 	SourcePath     string   `json:"source_path,omitempty"`
+	RestorePath    string   `json:"restore_path,omitempty"`
 	TargetRoot     string   `json:"target_root,omitempty"`
 	TargetRelative string   `json:"target_relative"`
 	TargetPolicy   string   `json:"target_policy,omitempty"`
@@ -31,6 +32,7 @@ type FileMapping struct {
 
 type Action struct {
 	SourcePath     string   `json:"source_path"`
+	RestorePath    string   `json:"restore_path,omitempty"`
 	TargetPath     string   `json:"target_path"`
 	TargetRoot     string   `json:"target_root,omitempty"`
 	TargetRelative string   `json:"target_relative"`
@@ -42,7 +44,8 @@ type Action struct {
 }
 
 const (
-	TargetPolicyKeepExisting = "keep-existing"
+	TargetPolicyKeepExisting  = "keep-existing"
+	TargetPolicyPatchExisting = "patch-existing"
 )
 
 type Plan struct {
@@ -119,6 +122,14 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			}
 			sourcePath = filepath.Join(stagingRoot, sourceRel)
 		}
+		restorePath := ""
+		if strings.TrimSpace(mapping.RestorePath) != "" {
+			restorePath = filepath.Clean(mapping.RestorePath)
+			rel, err := filepath.Rel(stagingRoot, restorePath)
+			if err != nil || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+				return Plan{}, errors.New("restore path is outside staging root")
+			}
+		}
 		targetRel, err := cleanRelative(mapping.TargetRelative)
 		if err != nil {
 			return Plan{}, err
@@ -130,6 +141,7 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		plan.TargetRoots[targetRootLabel] = mappingTargetRoot
 		action := Action{
 			SourcePath:     sourcePath,
+			RestorePath:    restorePath,
 			TargetPath:     filepath.Join(mappingTargetRoot, targetRel),
 			TargetRoot:     targetRootLabel,
 			TargetRelative: filepath.ToSlash(targetRel),
@@ -147,6 +159,18 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 				continue
 			}
 			if managed {
+				action.Operation = "replace"
+				plan.Actions = append(plan.Actions, action)
+				continue
+			}
+			if mapping.TargetPolicy == TargetPolicyPatchExisting {
+				if restorePath == "" {
+					action.Conflict = true
+					action.ConflictReason = "target already exists; patch mapping did not provide restore content"
+					plan.Conflicts = append(plan.Conflicts, action)
+					plan.Actions = append(plan.Actions, action)
+					continue
+				}
 				action.Operation = "replace"
 				plan.Actions = append(plan.Actions, action)
 				continue
@@ -185,6 +209,7 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		}
 		plan.Actions = append(plan.Actions, Action{
 			SourcePath:     file.SourcePath,
+			RestorePath:    file.RestorePath,
 			TargetPath:     targetKey,
 			TargetRoot:     targetRootLabel,
 			TargetRelative: filepath.ToSlash(rel),

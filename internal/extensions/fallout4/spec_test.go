@@ -1,11 +1,15 @@
 package fallout4_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -105,6 +109,41 @@ func TestExtensionRegistersGameVersionProvider(t *testing.T) {
 	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
 	if !containsFeature(summary.Capabilities.GameVersions, "fallout4-exe-version") {
 		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
+	}
+}
+
+func TestExtensionWillDeployGeneratesArchiveInvalidationMapping(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "steamapps", "common", "Fallout 4")
+	documentsRoot := filepath.Join(root, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
+	iniPath := filepath.Join(documentsRoot, "Fallout4.ini")
+	writeFile(t, iniPath, "[General]\nsLanguage=en\n")
+
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(fallout4.Extension())})
+	result, err := registry.RunEventHandlers(context.Background(), fallout4.SteamAppID, "will-deploy", sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		LibraryPath: root,
+		WorkDir:     filepath.Join(root, "work"),
+		Mappings: []deploy.FileMapping{{
+			TargetRelative: "Data/Example.esp",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	if mapping.TargetRoot != documentsRoot || mapping.TargetRelative != "Fallout4.ini" || mapping.RestorePath == "" {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	body, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "bInvalidateOlderFiles=1") || !strings.Contains(string(body), "sResourceDataDirsFinal=") {
+		t.Fatalf("generated ini = %q", body)
 	}
 }
 

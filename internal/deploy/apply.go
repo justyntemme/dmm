@@ -9,13 +9,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type AppliedFile struct {
 	SourcePath     string   `json:"source_path"`
+	RestorePath    string   `json:"restore_path,omitempty"`
 	TargetPath     string   `json:"target_path"`
 	Strategy       Strategy `json:"strategy"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
+	RestoreSHA256  string   `json:"restore_sha256,omitempty"`
 }
 
 type RepairIssue struct {
@@ -87,11 +90,18 @@ func ApplyPreparedWithProgress(plan Plan, progress ProgressFunc) (*AppliedDeploy
 			if backup != nil {
 				backups = append(backups, *backup)
 			}
+			if strings.TrimSpace(action.RestorePath) != "" {
+				if err := restoreManagedOriginal(action); err != nil {
+					_ = restoreBackups(backups)
+					return nil, err
+				}
+			}
 			completeAction()
 			continue
 		}
 		file := AppliedFile{
 			SourcePath:     action.SourcePath,
+			RestorePath:    action.RestorePath,
 			TargetPath:     action.TargetPath,
 			Strategy:       action.Strategy,
 			ChecksumSHA256: action.ChecksumSHA256,
@@ -99,6 +109,11 @@ func ApplyPreparedWithProgress(plan Plan, progress ProgressFunc) (*AppliedDeploy
 		if file.ChecksumSHA256 == "" {
 			if sum, err := fileSHA256(file.SourcePath); err == nil {
 				file.ChecksumSHA256 = sum
+			}
+		}
+		if strings.TrimSpace(file.RestorePath) != "" {
+			if sum, err := fileSHA256(file.RestorePath); err == nil {
+				file.RestoreSHA256 = sum
 			}
 		}
 		if action.Operation == "keep" {
@@ -193,6 +208,12 @@ func fileSHA256(path string) (string, error) {
 
 func Purge(files []AppliedFile) error {
 	for i := len(files) - 1; i >= 0; i-- {
+		if strings.TrimSpace(files[i].RestorePath) != "" {
+			if err := restoreAppliedOriginal(files[i]); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := os.Remove(files[i].TargetPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -242,7 +263,9 @@ func repairFile(file AppliedFile) error {
 			if file.Strategy == StrategyHardlink && os.SameFile(sourceSt, targetSt) {
 				return nil
 			}
-			return errors.New("target exists and is not a DMM-managed symlink")
+			if file.Strategy != StrategyCopy {
+				return errors.New("target exists and is not a DMM-managed symlink")
+			}
 		}
 		if err := os.Remove(file.TargetPath); err != nil {
 			return err
@@ -254,16 +277,22 @@ func repairFile(file AppliedFile) error {
 		return err
 	}
 	return applyAction(Action{
-		SourcePath: file.SourcePath,
-		TargetPath: file.TargetPath,
-		Strategy:   file.Strategy,
-		Operation:  "add",
+		SourcePath:  file.SourcePath,
+		RestorePath: file.RestorePath,
+		TargetPath:  file.TargetPath,
+		Strategy:    file.Strategy,
+		Operation:   "add",
 	})
 }
 
 func verifyFile(file AppliedFile) error {
 	if _, err := os.Stat(file.SourcePath); err != nil {
 		return fmt.Errorf("verify %s: source: %w", file.TargetPath, err)
+	}
+	if strings.TrimSpace(file.RestorePath) != "" {
+		if _, err := os.Stat(file.RestorePath); err != nil {
+			return fmt.Errorf("verify %s: restore source: %w", file.TargetPath, err)
+		}
 	}
 	st, err := os.Lstat(file.TargetPath)
 	if err != nil {
@@ -371,6 +400,42 @@ func applyAction(action Action) error {
 	default:
 		return os.Link(action.SourcePath, action.TargetPath)
 	}
+}
+
+func restoreManagedOriginal(action Action) error {
+	if strings.TrimSpace(action.RestorePath) == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(action.TargetPath), 0o700); err != nil {
+		return err
+	}
+	return copyFile(action.RestorePath, action.TargetPath)
+}
+
+func restoreAppliedOriginal(file AppliedFile) error {
+	if strings.TrimSpace(file.RestorePath) == "" {
+		return nil
+	}
+	if err := verifyFile(file); err != nil {
+		return fmt.Errorf("refusing to restore original for %s: target changed since DMM deployment: %w", file.TargetPath, err)
+	}
+	backup, err := backupTarget(file.TargetPath)
+	if err != nil {
+		return err
+	}
+	if err := restoreManagedOriginal(Action{
+		RestorePath: file.RestorePath,
+		TargetPath:  file.TargetPath,
+	}); err != nil {
+		if backup != nil {
+			_ = restoreBackups([]backupFile{*backup})
+		}
+		return err
+	}
+	if backup != nil {
+		removeBackups([]backupFile{*backup})
+	}
+	return nil
 }
 
 func copyFile(source, target string) error {

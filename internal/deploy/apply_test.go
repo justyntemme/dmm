@@ -41,6 +41,99 @@ func TestApplyAndPurgeSymlink(t *testing.T) {
 	}
 }
 
+func TestApplyAndPurgePatchExistingRestoresOriginal(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	if err := os.MkdirAll(filepath.Join(staging, "generated"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(staging, "generated", "Fallout4.ini")
+	restore := filepath.Join(staging, "generated", "restore-Fallout4.ini")
+	targetPath := filepath.Join(target, "Fallout4.ini")
+	if err := os.WriteFile(source, []byte("[Archive]\nbInvalidateOlderFiles=1\nsResourceDataDirsFinal=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(restore, []byte("[Archive]\nSResourceArchiveList=Fallout4 - Misc.ba2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte("[Archive]\nSResourceArchiveList=Fallout4 - Misc.ba2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, target, StrategySymlink, []FileMapping{{
+		SourcePath:     source,
+		RestorePath:    restore,
+		TargetRelative: "Fallout4.ini",
+		TargetPolicy:   TargetPolicyPatchExisting,
+		Strategy:       StrategyCopy,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 || len(plan.Actions) != 1 || plan.Actions[0].Operation != "replace" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	applied, err := Apply(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "[Archive]\nbInvalidateOlderFiles=1\nsResourceDataDirsFinal=\n" {
+		t.Fatalf("patched target = %q", body)
+	}
+	if err := Purge(applied); err != nil {
+		t.Fatal(err)
+	}
+	body, err = os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "[Archive]\nSResourceArchiveList=Fallout4 - Misc.ba2\n" {
+		t.Fatalf("restored target = %q", body)
+	}
+}
+
+func TestPurgePatchExistingRefusesChangedTarget(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "patched.ini")
+	restore := filepath.Join(root, "restore.ini")
+	target := filepath.Join(root, "Fallout4.ini")
+	if err := os.WriteFile(source, []byte("patched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(restore, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("user changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Purge([]AppliedFile{{
+		SourcePath:     source,
+		RestorePath:    restore,
+		TargetPath:     target,
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: "wrong",
+	}})
+	if err == nil {
+		t.Fatal("expected purge to refuse changed target")
+	}
+	body, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(body) != "user changed" {
+		t.Fatalf("target body = %q", body)
+	}
+}
+
 func TestApplySkipsConflicts(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")

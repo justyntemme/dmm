@@ -170,6 +170,75 @@ func TestBuildPlanSupportsManagedExternalTargetRoot(t *testing.T) {
 	}
 }
 
+func TestBuildPlanPatchExistingRequiresRestoreForUnmanagedTarget(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	game := filepath.Join(root, "game")
+	source := filepath.Join(staging, "generated", "Fallout4.ini")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(game, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("[Archive]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, "Fallout4.ini"), []byte("[General]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, game, StrategySymlink, []FileMapping{{
+		SourcePath:     source,
+		TargetRelative: "Fallout4.ini",
+		TargetPolicy:   TargetPolicyPatchExisting,
+		Strategy:       StrategyCopy,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 1 || !strings.Contains(plan.Conflicts[0].ConflictReason, "restore content") {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+}
+
+func TestBuildPlanPatchExistingKeepsRestorePath(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	game := filepath.Join(root, "game")
+	source := filepath.Join(staging, "generated", "Fallout4.ini")
+	restore := filepath.Join(staging, "generated", "restore-Fallout4.ini")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(game, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("[Archive]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(restore, []byte("[General]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(game, "Fallout4.ini"), []byte("[General]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, game, StrategySymlink, []FileMapping{{
+		SourcePath:     source,
+		RestorePath:    restore,
+		TargetRelative: "Fallout4.ini",
+		TargetPolicy:   TargetPolicyPatchExisting,
+		Strategy:       StrategyCopy,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 || len(plan.Actions) != 1 || plan.Actions[0].RestorePath != restore || plan.Actions[0].Operation != "replace" {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
 func TestBuildPlanJSONUsesEmptyArrays(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")

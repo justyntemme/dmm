@@ -102,6 +102,17 @@ func Register(r sdk.Registrar) {
 		Name:     "Fallout4.exe file version",
 		Provider: gameVersion,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event: "will-deploy",
+		Name:  "Apply Fallout 4 archive invalidation settings",
+		Handler: gamebryo.ArchiveInvalidationHandler(gamebryo.ArchiveInvalidationOptions{
+			ID:          "fallout4-archive-invalidation",
+			Name:        "Fallout 4 archive invalidation",
+			MyGamesPath: "Fallout4",
+			ININame:     "Fallout4.ini",
+			DataRoot:    "Data",
+		}),
+	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "bethesda-merge-mods", Name: "Bethesda plugin/mod merge support"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bethesda-plugin-load-order", Name: "Bethesda plugin load order"})
 	for _, ref := range sources() {
@@ -212,6 +223,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Gamebryo plugin activation support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-plugin-management/src/util/gameSupport.ts",
+		},
+		{
+			Name: "Vortex Gamebryo archive invalidation support",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
 		},
 	}
 }
