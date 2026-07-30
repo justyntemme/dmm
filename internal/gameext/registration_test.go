@@ -197,6 +197,34 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 }
 
+func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "workshop-only",
+		Name:    "Workshop Only",
+		Version: "0.1.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs: []string{"108600"},
+				Workshop: sdk.SteamWorkshopSpec{
+					AllowCoexistence: true,
+					Actions:          sdk.StandardSteamWorkshopActions(),
+				},
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(extension.NexusDomains) != 0 {
+		t.Fatalf("workshop-only extension should not invent Nexus domains: %+v", extension.NexusDomains)
+	}
+	workshop, ok := NewRegistry([]Extension{extension}).SteamWorkshopForSteamApp("108600")
+	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 4 {
+		t.Fatalf("workshop capability = %+v ok=%v", workshop, ok)
+	}
+}
+
 func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 	_, err := CompileExtension(sdk.Extension{
 		ID:   "bad",
