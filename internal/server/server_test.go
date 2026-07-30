@@ -1059,7 +1059,7 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 		t.Fatalf("snapshot event = %+v", snapshot)
 	}
 
-	job := srv.jobs.CreateWithPayload("captured-install", "Install request", jobs.JobPayload{"app_id": "413150"})
+	job := srv.jobs.CreateWithPayload("captured-install", "Captured mod", jobs.JobPayload{"app_id": "413150"})
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; ready to install")
 
 	for {
@@ -1093,7 +1093,7 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 
 func TestEventsWebSocketFreshConnectionDoesNotReplayExistingJobEvents(t *testing.T) {
 	srv := newTestServer(t)
-	existing := srv.jobs.CreateWithPayload("captured-install", "Install request", jobs.JobPayload{"app_id": "413150"})
+	existing := srv.jobs.CreateWithPayload("captured-install", "Captured mod", jobs.JobPayload{"app_id": "413150"})
 	srv.jobs.Wait(existing.ID, "Downloaded archive; ready to install")
 
 	httpServer := httptest.NewServer(srv.Handler())
@@ -1380,7 +1380,7 @@ func TestCapturedInstallAllowsDifferentFileID(t *testing.T) {
 
 func TestRememberCapturedInstallBackfillsJobPayload(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("captured-install", "Install request")
+	job := srv.jobs.Create("captured-install", "Captured mod")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
 
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
@@ -1572,7 +1572,7 @@ func TestInstallCapturedInstallWithoutDownloadLinks(t *testing.T) {
 
 func TestInstallCapturedInstallRejectsTerminalJobWithStalePendingState(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
@@ -1625,7 +1625,7 @@ func TestInstallCapturedInstallInstallsCachedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
 	resolved := catalog.ResolvedDownload{
 		Catalog:    "nexus",
@@ -1701,7 +1701,7 @@ func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
@@ -1788,7 +1788,7 @@ func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 	}))
 	defer downloadServer.Close()
 
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
@@ -1889,7 +1889,7 @@ func TestUnsupportedCapturedInstallFailureIsNotRetryable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/2400")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/2400")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded SMAPI installer; ready to install")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
@@ -1998,7 +1998,7 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("captured-install", "Install request: fallout4/mods/999")
+	job := srv.jobs.Create("captured-install", "Captured mod: fallout4/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
@@ -2134,7 +2134,7 @@ func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("captured-install", "Install request: fallout4/mods/999")
+	job := srv.jobs.Create("captured-install", "Captured mod: fallout4/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved:    resolved,
@@ -2462,7 +2462,7 @@ func TestInstallDuplicateCapturedInstallsShowsOneInstalledMod(t *testing.T) {
 		FileID:     "160470",
 	}
 	for i := 0; i < 2; i++ {
-		job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+		job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
 		srv.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:    resolved,
@@ -2526,7 +2526,7 @@ func TestRestagingExistingCapturedInstallPreservesEnabledState(t *testing.T) {
 	}
 	installCached := func() storage.InstalledMod {
 		t.Helper()
-		job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+		job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
 		srv.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:    resolved,
@@ -3600,7 +3600,7 @@ func TestResetGameModsPurgesDMMStateAndKeepsDownloads(t *testing.T) {
 		ModID:      "123",
 		FileID:     "456",
 	}
-	pendingJob := srv.jobs.CreateWithPayload("captured-install", "Install request: stardewvalley/mods/123", capturedInstallJobPayload(srv.games, pendingResolved))
+	pendingJob := srv.jobs.CreateWithPayload("captured-install", "Captured mod: stardewvalley/mods/123", capturedInstallJobPayload(srv.games, pendingResolved))
 	pendingJob, _ = srv.jobs.Wait(pendingJob.ID, "Ready for install")
 	srv.rememberCapturedInstall(pendingJob.ID, capturedInstall{
 		Resolved:      pendingResolved,
@@ -4264,7 +4264,7 @@ func TestRunningCapturedInstallRestoresAsWaitingAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
 	resolved := catalog.ResolvedDownload{
 		Catalog:    "nexus",
 		GameDomain: "stardewvalley",
@@ -4716,7 +4716,7 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSteamLaunchOptions(t, "413150", steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI"))
-	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/999")
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
 	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{

@@ -197,7 +197,7 @@ func TestJobsPersistPayload(t *testing.T) {
 	job := jobs.Job{
 		ID:      "job-1",
 		Type:    "captured-install",
-		Title:   "Install request: stardewvalley/mods/541",
+		Title:   "Captured mod: stardewvalley/mods/541",
 		Status:  jobs.StatusWaiting,
 		Message: "Ready to install",
 		Payload: jobs.JobPayload{
