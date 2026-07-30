@@ -2203,10 +2203,10 @@ function DeckyModManagerRoute() {
     let modal: { Close: () => void } | null = null;
     const closeModal = () => modal?.Close();
     modal = showModal(
-      <ConfirmModal
-        strTitle="Clear Installer Items"
-        strDescription="DMM will remove blocked installer items and choice requests for this game. Downloaded archives are kept in the cache."
-        strOKButtonText="Clear Items"
+        <ConfirmModal
+          strTitle="Clear Installer Items"
+          strDescription="DMM will remove blocked installer items and installer-choice actions for this game. Downloaded archives are kept in the cache."
+          strOKButtonText="Clear Items"
         strCancelButtonText="Cancel"
         onOK={() => {
           closeModal();
