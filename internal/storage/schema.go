@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS install_candidates (
 	status TEXT NOT NULL,
 	reason TEXT NOT NULL DEFAULT '',
 	installer_json TEXT NOT NULL DEFAULT '',
+	choices_json TEXT NOT NULL DEFAULT '{}',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(game_id, catalog, source_mod_id, source_file_id)
@@ -168,6 +169,19 @@ CREATE TABLE IF NOT EXISTS jobs (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS domain_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL,
+	app_id TEXT NOT NULL DEFAULT '',
+	job_id TEXT NOT NULL DEFAULT '',
+	payload_json TEXT NOT NULL DEFAULT 'null',
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_domain_events_app_id ON domain_events(app_id);
+CREATE INDEX IF NOT EXISTS idx_domain_events_job_id ON domain_events(job_id);
 
 CREATE TABLE IF NOT EXISTS pending_imports (
 	job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,

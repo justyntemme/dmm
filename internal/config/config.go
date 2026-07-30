@@ -17,6 +17,7 @@ type Config struct {
 
 	Nexus   NexusConfig   `json:"nexus"`
 	Install InstallConfig `json:"install"`
+	UI      UIConfig      `json:"ui"`
 }
 
 type NexusConfig struct {
@@ -26,6 +27,12 @@ type NexusConfig struct {
 type InstallConfig struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
+}
+
+type UIConfig struct {
+	FavoriteGameIDs []string         `json:"favorite_game_ids"`
+	RecentGames     map[string]int64 `json:"recent_games"`
+	GameSort        string           `json:"game_sort"`
 }
 
 func Load() (Config, error) {
@@ -86,6 +93,10 @@ func Defaults() Config {
 		Install: InstallConfig{
 			AutoInstallCapturedDownloads: true,
 			AutoEnableInstalledMods:      false,
+		},
+		UI: UIConfig{
+			RecentGames: map[string]int64{},
+			GameSort:    "recent",
 		},
 	}
 }

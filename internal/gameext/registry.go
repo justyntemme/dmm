@@ -21,6 +21,9 @@ type Extension struct {
 	RuntimeRequirements gamehandler.GameSpec
 	LaunchTools         []LaunchToolSpec
 	Sources             []SourceRef
+	Merges              []MergeSpec
+	LoadOrders          []LoadOrderSpec
+	EventHandlers       []EventHandlerSpec
 }
 
 type SourceRef struct {

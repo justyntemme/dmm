@@ -8,6 +8,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 )
@@ -173,6 +174,43 @@ func TestJobsPersistPayload(t *testing.T) {
 	}
 	if restored[0].Payload["app_id"] != "413150" || restored[0].Payload["game_domain"] != "stardewvalley" {
 		t.Fatalf("payload = %+v", restored[0].Payload)
+	}
+}
+
+func TestDomainEventsPersistInIDOrder(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	first, err := db.AppendDomainEvent(context.Background(), events.Event{
+		Type:    events.TypeGameChanged,
+		AppID:   "413150",
+		Payload: events.MustPayload(map[string]any{"action": "updated"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := db.AppendDomainEvent(context.Background(), events.Event{
+		Type:    events.TypeJobUpdated,
+		AppID:   "413150",
+		JobID:   "job-1",
+		Payload: events.MustPayload(map[string]any{"status": "waiting"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID <= 0 || second.ID <= first.ID {
+		t.Fatalf("event ids = %d, %d", first.ID, second.ID)
+	}
+
+	restored, err := db.ListDomainEventsAfter(context.Background(), first.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || restored[0].ID != second.ID || restored[0].JobID != "job-1" {
+		t.Fatalf("restored events = %+v", restored)
 	}
 }
 

@@ -32,6 +32,8 @@ FILES=(
   "${TARBALL}"
   "${ZIP}"
   "${ROOT_DIR}/testing/install_decky_plugin_from_package.sh"
+  "${ROOT_DIR}/testing/install_decky_privileged_wrapper.sh"
+  "${ROOT_DIR}/testing/install_decky_testing_sudoers.sh"
   "${ROOT_DIR}/testing/deck_package_smoke.sh"
   "${ROOT_DIR}/testing/deck_rehearsal.sh"
   "${ROOT_DIR}/testing/live_status.sh"
@@ -86,6 +88,18 @@ Then run:
   ./deck_package_smoke.sh
   ./deck_rehearsal.sh
   ./install_decky_plugin_from_package.sh
+
+For unattended overnight testing, install the temporary narrow sudoers rule:
+
+  ./install_decky_testing_sudoers.sh
+
+Then package installs can run without a sudo prompt through the root-owned wrapper:
+
+  sudo /opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install
+
+Remove the temporary rule when done:
+
+  sudo ~/.testing/install_decky_testing_sudoers.sh --remove
 
 After installing, start the server from Decky and run:
 

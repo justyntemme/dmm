@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+type Type string
+
 const (
 	TypeJobsSnapshot       = "jobs.snapshot"
 	TypeJobUpdated         = "job.updated"
@@ -18,7 +20,7 @@ const (
 
 type Event struct {
 	ID        int64           `json:"id"`
-	Type      string          `json:"type"`
+	Type      Type            `json:"type"`
 	AppID     string          `json:"app_id,omitempty"`
 	JobID     string          `json:"job_id,omitempty"`
 	Payload   json.RawMessage `json:"payload,omitempty"`
@@ -49,17 +51,24 @@ func NewBus(maxHistory int) *Bus {
 	}
 }
 
+func NewBusWithHistory(maxHistory int, history []Event) *Bus {
+	bus := NewBus(maxHistory)
+	for _, event := range history {
+		bus.appendLocked(event)
+	}
+	return bus
+}
+
 func (b *Bus) Publish(event Event) Event {
 	b.mu.Lock()
-	b.nextID++
-	event.ID = b.nextID
+	if event.ID <= 0 {
+		b.nextID++
+		event.ID = b.nextID
+	}
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
 	}
-	b.history = append(b.history, event)
-	if len(b.history) > b.maxHistory {
-		b.history = b.history[len(b.history)-b.maxHistory:]
-	}
+	b.appendLocked(event)
 	subscribers := make([]chan Event, 0, len(b.subscribers))
 	for ch := range b.subscribers {
 		subscribers = append(subscribers, ch)
@@ -73,6 +82,16 @@ func (b *Bus) Publish(event Event) Event {
 		}
 	}
 	return event
+}
+
+func (b *Bus) appendLocked(event Event) {
+	if event.ID > b.nextID {
+		b.nextID = event.ID
+	}
+	b.history = append(b.history, event)
+	if len(b.history) > b.maxHistory {
+		b.history = b.history[len(b.history)-b.maxHistory:]
+	}
 }
 
 func (b *Bus) Subscribe(afterID int64) *Subscription {

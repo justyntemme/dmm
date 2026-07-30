@@ -55,7 +55,9 @@ section "Testing script syntax"
     testing/live_installed_package_check.sh \
     testing/live_post_install_check.sh \
     testing/install_decky_plugin.sh \
-    testing/install_decky_plugin_from_package.sh
+    testing/install_decky_plugin_from_package.sh \
+    testing/install_decky_privileged_wrapper.sh \
+    testing/install_decky_testing_sudoers.sh
 )
 
 section "MVP UI product audit"
@@ -69,6 +71,8 @@ section "Deck testing artifact coverage"
   cd "${ROOT_DIR}"
   for script in \
     install_decky_plugin_from_package.sh \
+    install_decky_privileged_wrapper.sh \
+    install_decky_testing_sudoers.sh \
     deck_package_smoke.sh \
     deck_rehearsal.sh \
     live_status.sh \

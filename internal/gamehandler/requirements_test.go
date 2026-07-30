@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	. "github.com/justyntemme/decky-mod-manager/internal/gamehandler"
-	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 )
 
 var stardewRuntimeRegistry = NewRegistry([]GameSpec{stardewvalley.Extension().RuntimeRequirements})

@@ -61,3 +61,21 @@ func TestSubscribeReplaysFullBoundedHistoryWithoutBlocking(t *testing.T) {
 		}
 	}
 }
+
+func TestNewBusWithHistoryPreservesEventIDs(t *testing.T) {
+	bus := NewBusWithHistory(4, []Event{
+		{ID: 7, Type: TypeGameChanged},
+		{ID: 8, Type: TypeJobUpdated},
+	})
+	next := bus.Publish(Event{Type: TypeDeploymentChanged})
+	if next.ID != 9 {
+		t.Fatalf("next event id = %d, want 9", next.ID)
+	}
+
+	sub := bus.Subscribe(7)
+	defer sub.Close()
+	got := <-sub.C
+	if got.ID != 8 {
+		t.Fatalf("replayed event id = %d, want 8", got.ID)
+	}
+}

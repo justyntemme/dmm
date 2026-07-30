@@ -24,8 +24,8 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
-	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -1441,7 +1441,7 @@ func TestRecoverDownloadsStagesExtensionlessArchive(t *testing.T) {
 	}
 }
 
-func TestRecoverDownloadsRestagesLegacyInstalledModWithoutTargets(t *testing.T) {
+func TestRecoverDownloadsRestagesInvalidInstalledModWithoutTargets(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1463,7 +1463,7 @@ func TestRecoverDownloadsRestagesLegacyInstalledModWithoutTargets(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	legacyStagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	invalidStagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
 	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
@@ -1475,8 +1475,8 @@ func TestRecoverDownloadsRestagesLegacyInstalledModWithoutTargets(t *testing.T) 
 		Name:         "Lookup Anything",
 		Version:      "160470",
 		ArchivePath:  archivePath,
-		StagingPath:  legacyStagingPath,
-		ManifestJSON: `[{"path":"LookupAnything/manifest.json","size":26,"sha256":"legacy"}]`,
+		StagingPath:  invalidStagingPath,
+		ManifestJSON: `[{"path":"LookupAnything/manifest.json","size":26,"sha256":"invalid"}]`,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1663,6 +1663,15 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	choiceJob := srv.ensureInstallerChoiceJob("413150", candidate)
+
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/choices", bytes.NewBufferString(`{"selections":{"step-1-group-1":["step-1-group-1-plugin-1"]}}`))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveReq.RemoteAddr = "127.0.0.1:1"
+	saveRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("save status = %d, body = %s", saveRec.Code, saveRec.Body.String())
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -3654,7 +3663,7 @@ func TestApplyInstallPlanGeneratesFileFromGamePath(t *testing.T) {
 	}
 }
 
-func TestLegacyManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testing.T) {
+func TestInvalidManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

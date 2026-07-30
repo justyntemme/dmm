@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/justyntemme/decky-mod-manager/internal/games/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	. "github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -387,7 +387,7 @@ func TestRegistrySupportIsSpecDriven(t *testing.T) {
 
 func TestManifestDisplayNameFromPlanUsesGenericMetadata(t *testing.T) {
 	plan := Plan{Metadata: []ModMetadata{
-		{UniqueID: "author.fallback"},
+		{UniqueID: "author.default"},
 		{Name: "Display Name", UniqueID: "author.display"},
 	}}
 
@@ -397,9 +397,9 @@ func TestManifestDisplayNameFromPlanUsesGenericMetadata(t *testing.T) {
 }
 
 func TestManifestDisplayNameFromPlanFallsBackToUniqueID(t *testing.T) {
-	plan := Plan{Metadata: []ModMetadata{{UniqueID: "author.fallback"}}}
+	plan := Plan{Metadata: []ModMetadata{{UniqueID: "author.default"}}}
 
-	if got := ManifestDisplayNameFromPlan(plan); got != "author.fallback" {
+	if got := ManifestDisplayNameFromPlan(plan); got != "author.default" {
 		t.Fatalf("display name = %q", got)
 	}
 }

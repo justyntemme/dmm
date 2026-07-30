@@ -5,6 +5,11 @@
     game_count: number;
     install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
     nexus: { api_key_configured: boolean };
+    ui?: {
+      favorite_game_ids?: string[];
+      recent_games?: Record<string, number>;
+      game_sort?: GameSort;
+    };
   };
 
   type Game = {
@@ -106,6 +111,7 @@
     status: string;
     reason: string;
     installer_json?: string;
+    choices_json?: string;
   };
 
   type FomodInstaller = {
@@ -229,12 +235,10 @@
   };
 
   type Drawer = "games" | "settings" | null;
-  type Surface = "requests" | "game" | "settings";
-  type GameModule = "plugins" | "requests" | "profiles" | "review" | "paths";
+  type Surface = "actions" | "game" | "settings";
+  type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
   type SettingsPage = "overview" | "jobs" | "install" | "nexus";
   type GameSort = "recent" | "az" | "za";
-
-  const gamePreferencesKey = "dmm.gamePreferences.v1";
 
   let status: Status | null = null;
   let games: Game[] = [];
@@ -257,7 +261,7 @@
   let error = "";
   let drawer: Drawer = null;
   let confirmation: Confirmation | null = null;
-  let surface: Surface = "requests";
+  let surface: Surface = "actions";
   let activeGameModule: GameModule = "plugins";
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
@@ -281,11 +285,13 @@
   $: reviewCount = games.length - cleanCount;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   $: installRequests = jobs.filter((job) => job.type === "pending-import" && !["completed", "canceled"].includes(job.status));
+  $: actionItems = jobs.filter((job) => ["pending-import", "installer-choice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
+  $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: filteredGames = sortDrawerGames(games.filter((game) => {
@@ -293,7 +299,7 @@
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
   }));
-  $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "requests" ? "Install Requests" : selectedGame?.name ?? "Select a Game";
+  $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "actions" ? "Action Center" : selectedGame?.name ?? "Select a Game";
   $: deployableActions = getDeployableActions(deployPlan);
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
   $: disabledMods = installedMods.filter((mod) => !mod.enabled);
@@ -330,6 +336,7 @@
         getJSON<Game[]>("/api/games")
       ]);
       status = nextStatus;
+      applyUIPreferences(nextStatus);
       games = nextGames;
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
@@ -456,7 +463,12 @@
       return;
     }
     if (event.type === "job.updated") {
-      if (isJob(event.payload)) upsertJob(event.payload);
+      if (isJob(event.payload)) {
+        upsertJob(event.payload);
+        if (selectedGame && jobMatchesGame(event.payload, selectedGame)) {
+          scheduleSelectedGameRefresh(event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice");
+        }
+      }
       return;
     }
     if (event.type === "launch.changed") {
@@ -517,45 +529,34 @@
     await previewDeploy();
   }
 
-  function loadGamePreferences() {
-    try {
-      const raw = localStorage.getItem(gamePreferencesKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { favorites?: unknown; recent?: unknown; sort?: unknown };
-      if (Array.isArray(parsed.favorites)) {
-        favoriteGameIDs = new Set(parsed.favorites.filter((item): item is string => typeof item === "string" && item.trim() !== ""));
-      }
-      if (parsed.recent && typeof parsed.recent === "object") {
-        const entries = Object.entries(parsed.recent as Record<string, unknown>)
-          .map(([appID, value]) => [appID, Number(value)] as const)
-          .filter(([appID, value]) => appID.trim() !== "" && Number.isFinite(value));
-        gameRecent = Object.fromEntries(entries);
-      }
-      if (parsed.sort === "recent" || parsed.sort === "az" || parsed.sort === "za") {
-        gameSort = parsed.sort;
-      }
-    } catch (_err) {
-      favoriteGameIDs = new Set();
-      gameRecent = {};
-      gameSort = "recent";
-    }
+  function applyUIPreferences(nextStatus: Status) {
+    favoriteGameIDs = new Set((nextStatus.ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== ""));
+    gameRecent = nextStatus.ui?.recent_games ?? {};
+    gameSort = nextStatus.ui?.game_sort === "az" || nextStatus.ui?.game_sort === "za" ? nextStatus.ui.game_sort : "recent";
   }
 
-  function saveGamePreferences() {
-    try {
-      localStorage.setItem(gamePreferencesKey, JSON.stringify({
-        favorites: Array.from(favoriteGameIDs),
-        recent: gameRecent,
-        sort: gameSort
-      }));
-    } catch (_err) {
-      // Browser storage can be unavailable in private contexts; the drawer still works without persistence.
+  async function saveGamePreferences(nextFavorites = favoriteGameIDs, nextRecent = gameRecent, nextSort = gameSort) {
+    const response = await fetch("/api/settings/ui", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        favorite_game_ids: Array.from(nextFavorites),
+        recent_games: nextRecent,
+        game_sort: nextSort
+      })
+    });
+    if (!response.ok) {
+      logClientEvent("ui preferences save failed", { status: response.status });
+      return;
     }
+    const nextStatus = await response.json() as Status;
+    status = nextStatus;
+    applyUIPreferences(nextStatus);
   }
 
   function setGameSort(nextSort: GameSort) {
     gameSort = nextSort;
-    saveGamePreferences();
+    void saveGamePreferences(favoriteGameIDs, gameRecent, nextSort);
   }
 
   function isFavoriteGame(appID: string) {
@@ -570,13 +571,13 @@
       next.add(appID);
     }
     favoriteGameIDs = next;
-    saveGamePreferences();
+    void saveGamePreferences(next, gameRecent, gameSort);
   }
 
   function markGameRecent(appID: string) {
     const next = { ...gameRecent, [appID]: Date.now() };
     gameRecent = Object.fromEntries(Object.entries(next).sort((a, b) => b[1] - a[1]).slice(0, 50));
-    saveGamePreferences();
+    void saveGamePreferences(favoriteGameIDs, gameRecent, gameSort);
   }
 
   function openSettings(page: SettingsPage) {
@@ -585,8 +586,8 @@
     drawer = null;
   }
 
-  function openRequests() {
-    surface = "requests";
+  function openActionCenter() {
+    surface = "actions";
     drawer = null;
   }
 
@@ -808,6 +809,16 @@
     return out;
   }
 
+  function storedCandidateSelections(candidate: InstallCandidate) {
+    if (!candidate.choices_json) return null;
+    try {
+      const parsed = JSON.parse(candidate.choices_json) as Record<string, string[]>;
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
   function preferredFomodType(type: string | undefined) {
     const normalized = (type ?? "").trim().toLowerCase();
     return normalized === "required" || normalized === "recommended";
@@ -823,7 +834,7 @@
   }
 
   function candidateCurrentSelections(candidate: InstallCandidate, installer: FomodInstaller) {
-    return candidateSelections[candidate.id] ?? defaultCandidateSelections(installer);
+    return candidateSelections[candidate.id] ?? storedCandidateSelections(candidate) ?? defaultCandidateSelections(installer);
   }
 
   function isCandidatePluginSelected(candidate: InstallCandidate, installer: FomodInstaller, group: FomodGroup, plugin: FomodPlugin) {
@@ -844,6 +855,23 @@
       next[group.id] = Array.from(selected);
     }
     candidateSelections = { ...candidateSelections, [candidate.id]: next };
+    void saveCandidateSelections(candidate, next);
+  }
+
+  async function saveCandidateSelections(candidate: InstallCandidate, selections: Record<string, string[]>) {
+    if (!selectedGame) return;
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/choices`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selections })
+      });
+      if (!response.ok) {
+        logClientEvent("installer choices save failed", { candidate_id: candidate.id, status: response.status });
+      }
+    } catch (err) {
+      logClientEvent("installer choices save failed", { candidate_id: candidate.id, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   async function applyInstallCandidate(candidate: InstallCandidate) {
@@ -869,6 +897,26 @@
       const result = await response.json();
       upsertJob(result.job);
       candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
+      await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setInstallCandidateBusy(candidate.id, false);
+    }
+  }
+
+  async function retryInstallCandidate(candidate: InstallCandidate) {
+    if (!selectedGame) return;
+    error = "";
+    setInstallCandidateBusy(candidate.id, true);
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/retry`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
       await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -1098,7 +1146,7 @@
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads"].includes(job.type)) {
+    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null);
     }
   }
@@ -1174,6 +1222,22 @@
     return nexusDomainsForGame(game).some((domain) => haystack.includes(domain.toLowerCase().replace(/[^a-z0-9]/g, "")));
   }
 
+  function gameForJob(job: Job) {
+    const payloadAppID = job.payload?.app_id;
+    if (payloadAppID) {
+      const exact = games.find((game) => game.app_id === payloadAppID);
+      if (exact) return exact;
+    }
+    return games.find((game) => requestMatchesGame(job, game)) ?? null;
+  }
+
+  async function openActionItem(job: Job) {
+    const game = gameForJob(job);
+    if (!game) return;
+    await selectGame(game);
+    activeGameModule = "actions";
+  }
+
   function jobMatchesGame(job: Job, game: Game) {
     if (job.payload?.app_id && job.payload.app_id === game.app_id) return true;
     const domain = job.payload?.game_domain?.toLowerCase();
@@ -1186,8 +1250,14 @@
   }
 
   function modStatusText(mod: InstalledMod) {
-    if (mod.status === "needs_recovery") return "Needs recovery before it can be applied";
+    if (mod.status === "needs_recovery") return "Needs repair";
+    if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
     return mod.status;
+  }
+
+  function modProfileStateText(mod: InstalledMod) {
+    if (mod.status === "needs_recovery") return "Needs repair before it can be used";
+    return mod.enabled ? "Enabled in this profile" : "Installed, disabled in this profile";
   }
 
   function primaryModMetadata(mod: InstalledMod) {
@@ -1209,6 +1279,9 @@
   }
 
   function requestNextStep(request: Job) {
+    if (request.type === "installer-choice") {
+      return "Choose installer options to finish adding this mod to the selected profile.";
+    }
     if (request.status === "waiting") {
       return "Approve install to add this downloaded mod to the selected profile.";
     }
@@ -1222,6 +1295,7 @@
   }
 
   function requestStatusLabel(request: Job) {
+    if (request.type === "installer-choice" && request.status === "waiting") return "Needs choices";
     if (request.status === "waiting") return "Needs approval";
     if (request.status === "running") return "Processing";
     if (request.status === "queued") return "Queued";
@@ -1262,7 +1336,6 @@
   }
 
   onMount(() => {
-    loadGamePreferences();
     refresh();
     connectEvents();
     const refreshOnFocus = () => {
@@ -1350,7 +1423,7 @@
         </div>
         <nav class="settings-nav" aria-label="Settings">
           <button type="button" class:active={activeSettingsPage === "overview"} on:click={() => openSettings("overview")}>Overview</button>
-          <button type="button" on:click={openRequests}>Install Requests</button>
+          <button type="button" on:click={openActionCenter}>Action Center</button>
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
           <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
@@ -1371,27 +1444,27 @@
 
   {#if loading}
     <section class="empty-state">Loading...</section>
-  {:else if surface === "requests"}
+  {:else if surface === "actions"}
     <section class="settings-screen">
       <article class="workspace-panel">
         <div class="panel-heading">
-          <h2>Install Requests</h2>
-          <span>{installRequests.length} pending</span>
+          <h2>Action Center</h2>
+          <span>{actionItems.length} open</span>
         </div>
         {#if installRequests.length > 0}
-          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Requests</button>
+          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Captures</button>
         {/if}
-        {#if installRequests.length === 0}
+        {#if actionItems.length === 0}
           <div class="request-home">
             <div class="empty-state inline-empty">
-              <h2>No Install Requests</h2>
-              <p class="hint">Open a game to paste a Nexus URL, or capture an nxm:// link from the Decky plugin browser flow.</p>
+              <h2>No Actions Needed</h2>
+              <p class="hint">Open a game to paste a Nexus URL, or capture an nxm:// link from the Deck browser flow.</p>
             </div>
             <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
           </div>
         {:else}
           <div class="request-list">
-            {#each installRequests as request}
+            {#each actionItems as request}
               <article class:failed-request={request.status === "failed"}>
                 <div>
                   <strong>{request.title}</strong>
@@ -1401,10 +1474,15 @@
 	                  </div>
 	                  <div class="request-actions">
 	                    <span>{requestStatusLabel(request)}</span>
-	                    {#if request.status === "waiting"}
-	                      <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
+	                    {#if request.type === "installer-choice"}
+	                      <button type="button" on:click={() => openActionItem(request)}>{gameForJob(request) ? "Open Choices" : "Choose Game"}</button>
 	                    {/if}
-	                    {#if request.status === "failed"}
+	                    {#if request.status === "waiting"}
+	                      {#if request.type === "pending-import"}
+	                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
+	                      {/if}
+	                    {/if}
+	                    {#if request.type === "pending-import" && request.status === "failed"}
 	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
 	                    {/if}
 	                    {#if canCancelJob(request)}
@@ -1485,7 +1563,7 @@
 
       <nav class="module-tabs" aria-label="Game modules">
         <button type="button" class:active={activeGameModule === "plugins"} on:click={() => (activeGameModule = "plugins")}>Mods</button>
-        <button type="button" class:active={activeGameModule === "requests"} on:click={() => (activeGameModule = "requests")}>Requests</button>
+        <button type="button" class:active={activeGameModule === "actions"} on:click={() => (activeGameModule = "actions")}>Actions</button>
         <button type="button" class:active={activeGameModule === "profiles"} on:click={() => (activeGameModule = "profiles")}>Profiles</button>
         <button type="button" class:active={activeGameModule === "review"} on:click={() => (activeGameModule = "review")}>Review</button>
         <button type="button" class:active={activeGameModule === "paths"} on:click={() => (activeGameModule = "paths")}>Paths</button>
@@ -1517,7 +1595,7 @@
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <div><strong>{selectedGameRequests.length}</strong><span>Requests</span></div>
+                <div><strong>{selectedGameActionItems.length}</strong><span>Actions</span></div>
               </div>
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
@@ -1535,7 +1613,7 @@
             <div class="management-card import-card">
               <div class="card-heading">
                 <h3>Add From Nexus</h3>
-                <span>{selectedGameRequests.length} pending</span>
+                <span>{selectedGameActionItems.length} open</span>
               </div>
               <form class="stacked-form" on:submit|preventDefault={resolveImport}>
                 <textarea bind:value={importURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
@@ -1562,7 +1640,7 @@
           </section>
 
           {#if installedMods.length === 0}
-            <p class="hint">No profile mods yet. Approve an install request to add a supported Nexus mod to this profile.</p>
+            <p class="hint">No profile mods yet. Capture or paste a Nexus mod link to add a supported mod to this profile.</p>
           {:else}
             <section class="mod-section">
               <div class="card-heading">
@@ -1591,7 +1669,7 @@
                           {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
                         </div>
                       {/if}
-                      <small>{mod.enabled ? "Enabled in this profile" : "Disabled in this profile"} · {modStatusText(mod)}</small>
+                      <small>{modProfileStateText(mod)}</small>
                     </div>
                     <div class="mod-actions">
                       <span class:warning-status={mod.status === "needs_recovery"}>{modStatusText(mod)}</span>
@@ -1648,7 +1726,7 @@
 	              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
 	              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
 	              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
-              <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameRequests.length === 0}>Reset Managed Mods</button>
+              <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameActionItems.length === 0}>Reset Managed Mods</button>
               <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
             </div>
             {#if deployPlan}
@@ -1667,21 +1745,21 @@
             {/if}
           </details>
         </article>
-      {:else if activeGameModule === "requests"}
+      {:else if activeGameModule === "actions"}
         <article class="workspace-panel">
           <div class="panel-heading">
-            <h2>Install Requests</h2>
-            <span>{selectedGameRequests.length} pending · {installCandidates.length} need attention</span>
+            <h2>Action Center</h2>
+            <span>{selectedGameActionItems.length} open · {installCandidates.length} installers</span>
           </div>
           {#if selectedGameRequests.length > 0}
-            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Requests</button>
+            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Captures</button>
           {/if}
-          {#if selectedGameRequests.length === 0 && installCandidates.length === 0}
-            <p class="hint">No install requests or blocked install candidates matched this game.</p>
+          {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
+            <p class="hint">No install actions need attention for this game.</p>
           {/if}
-          {#if selectedGameRequests.length > 0}
+          {#if selectedGameActionItems.length > 0}
             <div class="request-list">
-              {#each selectedGameRequests as request}
+              {#each selectedGameActionItems as request}
                 <article class:failed-request={request.status === "failed"}>
                   <div>
                     <strong>{request.title}</strong>
@@ -1691,10 +1769,13 @@
                   </div>
                     <div class="request-actions">
                       <span>{requestStatusLabel(request)}</span>
-                      {#if request.status === "waiting"}
+                      {#if request.type === "installer-choice"}
+                        <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
+                      {/if}
+                      {#if request.type === "pending-import" && request.status === "waiting"}
                         <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
                       {/if}
-                      {#if request.status === "failed"}
+                      {#if request.type === "pending-import" && request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
                       {/if}
                       {#if canCancelJob(request)}
@@ -1756,6 +1837,10 @@
                       {#if installer}
                         <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
                           {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
+                        </button>
+                      {:else if candidate.status === "blocked"}
+                        <button type="button" on:click={() => retryInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
+                          {isInstallCandidateBusy(candidate) ? "Retrying..." : "Retry Install"}
                         </button>
                       {/if}
                     </div>

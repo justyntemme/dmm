@@ -42,12 +42,19 @@ type BackendStatus = {
       auto_install_captured_downloads: boolean;
       auto_enable_installed_mods: boolean;
     };
+    ui?: UISettings;
   } | null;
   logs?: {
     plugin: string;
     backend: string;
   };
   error?: string;
+};
+
+type UISettings = {
+  favorite_game_ids?: string[];
+  recent_games?: Record<string, number>;
+  game_sort?: GameSort;
 };
 
 type Dependency = {
@@ -131,6 +138,7 @@ type InstallCandidate = {
   status: string;
   reason: string;
   installer_json?: string;
+  choices_json?: string;
   source_game_domain: string;
   source_mod_id: string;
   source_file_id: string;
@@ -191,6 +199,7 @@ type LaunchStatus = {
 };
 
 type Tab = "main" | "mods" | "settings" | "debug";
+type GameSort = "recent" | "az" | "za";
 
 const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
 
@@ -325,6 +334,24 @@ function eventMatchesAppID(event: DomainEvent, appID: string) {
   return !event.app_id || event.app_id === appID;
 }
 
+function deckyModStateLabel(mod: ManagedMod) {
+  if (mod.status === "needs_recovery") return "Needs repair";
+  if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
+  return mod.status || (mod.enabled ? "Enabled" : "Installed");
+}
+
+function nextGameSort(current: GameSort): GameSort {
+  if (current === "recent") return "az";
+  if (current === "az") return "za";
+  return "recent";
+}
+
+function gameSortLabel(sort: GameSort) {
+  if (sort === "az") return "A-Z";
+  if (sort === "za") return "Z-A";
+  return "Recent";
+}
+
 function unregisterSteamCallback(registration: unknown) {
   if (typeof registration === "function") {
     registration();
@@ -394,6 +421,16 @@ function defaultFomodSelections(installer: FomodInstaller): Record<string, strin
     }
   }
   return out;
+}
+
+function storedFomodSelections(candidate: InstallCandidate): Record<string, string[]> | null {
+  if (!candidate.choices_json) return null;
+  try {
+    const parsed = JSON.parse(candidate.choices_json) as Record<string, string[]>;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
 }
 
 async function maybeShowInstallToast(job: Job, { seed = false, source = "event" } = {}) {
@@ -496,7 +533,7 @@ async function syncLaunchActions(options: { force?: boolean; sink?: LaunchResult
 
 function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; closeModal: () => void; onApplied: () => void }) {
   const installer = installerForCandidate(props.candidate);
-  const [selections, setSelections] = useState<Record<string, string[]>>(() => (installer ? defaultFomodSelections(installer) : {}));
+  const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? (installer ? defaultFomodSelections(installer) : {}));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -511,14 +548,32 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
       const next = { ...current };
       if (type === "selectexactlyone" || type === "selectatmostone") {
         next[group.id] = checked ? [plugin.id] : [];
+        void saveChoices(next);
         return next;
       }
       const selected = new Set(next[group.id] ?? []);
       if (checked) selected.add(plugin.id);
       else selected.delete(plugin.id);
       next[group.id] = Array.from(selected);
+      void saveChoices(next);
       return next;
     });
+  }
+
+  async function saveChoices(nextSelections: Record<string, string[]>) {
+    try {
+      const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string }>(
+        "save_install_candidate_choices",
+        props.appID,
+        props.candidate.id,
+        nextSelections
+      );
+      if (!result.ok) {
+        await logFrontendEvent("installer choice modal save failed", { app_id: props.appID, candidate_id: props.candidate.id, error: result.error || "" });
+      }
+    } catch (err) {
+      await logFrontendEvent("installer choice modal save threw", { app_id: props.appID, candidate_id: props.candidate.id, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   async function applyChoices() {
@@ -598,6 +653,17 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
 
 async function maybeShowInstallerChoiceModal(job: Job) {
   if (job.type !== "installer-choice" || job.status !== "waiting") return;
+  let status: BackendStatus | null = null;
+  try {
+    status = await call<[], BackendStatus>("status");
+  } catch (err) {
+    await logFrontendEvent("installer choice modal status check failed", { job_id: job.id, error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  if (!status?.backend?.install.auto_enable_installed_mods) {
+    await logFrontendEvent("installer choice modal skipped because auto enable is off", { job_id: job.id });
+    return;
+  }
   const appID = String(job.payload?.app_id ?? "").trim();
   const candidateID = Number.parseInt(String(job.payload?.candidate_id ?? ""), 10);
   if (!appID || !Number.isFinite(candidateID)) return;
@@ -609,12 +675,14 @@ async function maybeShowInstallerChoiceModal(job: Job) {
     if (!result.ok) {
       shownInstallerChoiceModals.delete(key);
       await logFrontendEvent("installer choice candidates load failed", { app_id: appID, candidate_id: candidateID, error: result.error || "" });
+      showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
       return;
     }
     const candidate = result.candidates.find((item) => item.id === candidateID);
     if (!candidate || !installerForCandidate(candidate)) {
       shownInstallerChoiceModals.delete(key);
       await logFrontendEvent("installer choice candidate missing installer json", { app_id: appID, candidate_id: candidateID });
+      showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
       return;
     }
     let modal: { Close: () => void } | null = null;
@@ -639,6 +707,7 @@ async function maybeShowInstallerChoiceModal(job: Job) {
   } catch (err) {
     shownInstallerChoiceModals.delete(key);
     await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidateID, error: err instanceof Error ? err.message : String(err) });
+    showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
   }
 }
 
@@ -756,18 +825,72 @@ function Content() {
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
+  const [gameSearch, setGameSearch] = useState<string>("");
+  const [gameSort, setGameSortState] = useState<GameSort>("recent");
+  const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
+  const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
 
   async function refresh() {
     try {
       setError("");
-      setStatus(await call<[], BackendStatus>("status"));
+      const nextStatus = await call<[], BackendStatus>("status");
+      setStatus(nextStatus);
+      applyDeckyUIPreferences(nextStatus);
       setDependencies(await call<[], Dependency[]>("dependencies"));
       setNXM(await call<[], NXMStatus>("nxm_status"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function applyDeckyUIPreferences(nextStatus: BackendStatus) {
+    const ui = nextStatus.backend?.ui;
+    setFavoriteGameIDs(new Set((ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== "")));
+    setGameRecent(ui?.recent_games ?? {});
+    setGameSortState(ui?.game_sort === "az" || ui?.game_sort === "za" ? ui.game_sort : "recent");
+  }
+
+  async function saveDeckyUIPreferences(nextFavorites = favoriteGameIDs, nextRecent = gameRecent, nextSort = gameSort) {
+    try {
+      const result = await call<[string[], Record<string, number>, GameSort], { ok: boolean; error?: string; status?: BackendStatus }>(
+        "set_ui_preferences",
+        Array.from(nextFavorites),
+        nextRecent,
+        nextSort
+      );
+      if (!result.ok) {
+        await logFrontendEvent("decky ui preferences save failed", { error: result.error || "" });
+        return;
+      }
+      if (result.status) {
+        setStatus(result.status);
+        applyDeckyUIPreferences(result.status);
+      }
+    } catch (err) {
+      await logFrontendEvent("decky ui preferences save threw", { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  function markDeckyGameRecent(appID: string) {
+    const next = Object.fromEntries(Object.entries({ ...gameRecent, [appID]: Date.now() }).sort((a, b) => b[1] - a[1]).slice(0, 50));
+    setGameRecent(next);
+    void saveDeckyUIPreferences(favoriteGameIDs, next, gameSort);
+  }
+
+  function toggleDeckyFavoriteGame(appID: string) {
+    const next = new Set(favoriteGameIDs);
+    if (next.has(appID)) next.delete(appID);
+    else next.add(appID);
+    setFavoriteGameIDs(next);
+    void saveDeckyUIPreferences(next, gameRecent, gameSort);
+  }
+
+  function cycleDeckyGameSort() {
+    const next = nextGameSort(gameSort);
+    setGameSortState(next);
+    void saveDeckyUIPreferences(favoriteGameIDs, gameRecent, next);
   }
 
   async function loadDeckyGames() {
@@ -825,6 +948,7 @@ function Content() {
       setModsResult("");
       setModSearch("");
       setSelectedDeckyGameID(appID);
+      markDeckyGameRecent(appID);
       await loadDeckyGameState(appID);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -881,6 +1005,76 @@ function Content() {
         setModsResult(applyMessage);
       }
       if (result.apply?.job) showInstallToast(result.apply.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  function askRemoveDeckyMod(mod: ManagedMod) {
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle={`Remove ${mod.name}`}
+        strDescription="DMM will remove this mod from the selected profile and apply the profile. Cached downloads are kept for recovery."
+        strOKButtonText="Remove Mod"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void removeDeckyMod(mod);
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Remove Mod", bNeverPopOut: true }
+    );
+  }
+
+  async function removeDeckyMod(mod: ManagedMod) {
+    if (!selectedDeckyGameID) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyModID(mod.id);
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; apply?: ProfileApplyResult } }>("remove_game_mod", selectedDeckyGameID, mod.id);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to remove mod.");
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      const applyMessage = result.result?.apply?.message || "Mod removed. Restart the game if it is already running.";
+      if (result.result?.apply?.status === "blocked" || result.result?.apply?.status === "failed") setError(applyMessage);
+      else setModsResult(applyMessage);
+      if (result.result?.job) showInstallToast(result.result.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  async function reinstallDeckyMod(mod: ManagedMod) {
+    if (!selectedDeckyGameID) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyModID(mod.id);
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>("reinstall_game_mod", selectedDeckyGameID, mod.id);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to reinstall mod.");
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      const job = result.result?.job;
+      if (job) {
+        setModsResult(job.message || "Reinstall complete.");
+        showInstallToast(job);
+      } else {
+        setModsResult("Reinstall complete.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -998,12 +1192,12 @@ function Content() {
       setImportResult("");
       const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_pending_import", importUrl);
       if (!result.ok) {
-        setError(result.error ?? "Unable to add install request.");
+        setError(result.error ?? "Unable to capture Nexus link.");
         return;
       }
       setImportUrl("");
       const job = result.result?.job;
-      setImportResult(job?.message || job?.title || "Install request added.");
+      setImportResult(job?.message || job?.title || "Nexus link captured.");
       if (job) {
         const stateKey = `${job.status}:${job.message || ""}`;
         notifiedInstallJobStates.set(job.id, stateKey);
@@ -1049,6 +1243,7 @@ function Content() {
       setRunningGame(running);
       if (!running || tab !== "mods" || !managedGames.some((game) => game.app_id === running.app_id) || selectedDeckyGameID === running.app_id) return;
       setSelectedDeckyGameID(running.app_id);
+      markDeckyGameRecent(running.app_id);
       void loadDeckyGameState(running.app_id);
     };
     syncRunningGame();
@@ -1060,6 +1255,21 @@ function Content() {
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
+  const normalizedGameSearch = gameSearch.trim().toLowerCase();
+  const visibleManagedGames = [...managedGames]
+    .filter((game) => {
+      if (!normalizedGameSearch) return true;
+      return game.name.toLowerCase().includes(normalizedGameSearch) || game.app_id.includes(normalizedGameSearch);
+    })
+    .sort((a, b) => {
+      const favoriteDelta = Number(favoriteGameIDs.has(b.app_id)) - Number(favoriteGameIDs.has(a.app_id));
+      if (favoriteDelta !== 0) return favoriteDelta;
+      if (gameSort === "az") return a.name.localeCompare(b.name);
+      if (gameSort === "za") return b.name.localeCompare(a.name);
+      const recentDelta = (gameRecent[b.app_id] ?? 0) - (gameRecent[a.app_id] ?? 0);
+      if (recentDelta !== 0) return recentDelta;
+      return a.name.localeCompare(b.name);
+    });
   const normalizedModSearch = modSearch.trim().toLowerCase();
   const visibleDeckyMods = normalizedModSearch
     ? deckyMods.filter((mod) =>
@@ -1108,9 +1318,9 @@ function Content() {
         <div style={{ display: "grid", gap: "10px", width: "100%" }}>
           <TextField label="Nexus URL" value={importUrl} bShowClearAction description="Paste a Nexus mod page URL or nxm:// link." onChange={(event) => setImportUrl(event.currentTarget.value)} />
           <ButtonItem layout="below" onClick={addPendingImport}>
-            Add Install Request
+            Add Nexus Link
           </ButtonItem>
-          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Adds the URL to Install Requests for phone or tablet approval.</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install approvals and choices appear in Action Center.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
         </div>
       </PanelSectionRow>
@@ -1144,24 +1354,51 @@ function Content() {
         <PanelSectionRow>
           <div style={{ paddingRight: "4px", width: "100%" }}>
             <div style={{ fontWeight: 800, marginBottom: "8px" }}>Select Game</div>
+            <TextField label="Search Games" value={gameSearch} bShowClearAction onChange={(event) => setGameSearch(event.currentTarget.value)} />
+            <ButtonItem layout="below" onClick={cycleDeckyGameSort}>
+              Sort: {gameSortLabel(gameSort)}
+            </ButtonItem>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
-            {managedGames.map((game) => (
-              <Focusable
-                key={game.app_id}
-                onActivate={() => selectDeckyGame(game.app_id)}
-                style={{
-                  background: "#1f2937",
-                  border: "1px solid #374151",
-                  borderRadius: "6px",
-                  color: "#f8fafc",
-                  fontWeight: 800,
-                  marginBottom: "8px",
-                  padding: "10px",
-                  width: "100%"
-                }}
-              >
-                {game.name}
-              </Focusable>
+            {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
+            {visibleManagedGames.map((game) => (
+              <div key={game.app_id} style={{ display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) 42px", marginBottom: "8px", width: "100%" }}>
+                <Focusable
+                  onActivate={() => selectDeckyGame(game.app_id)}
+                  style={{
+                    background: "#1f2937",
+                    border: "1px solid #374151",
+                    borderRadius: "6px",
+                    color: "#f8fafc",
+                    fontWeight: 800,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    padding: "10px",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    width: "100%"
+                  }}
+                >
+                  {game.name}
+                </Focusable>
+                <Focusable
+                  onActivate={() => toggleDeckyFavoriteGame(game.app_id)}
+                  style={{
+                    alignItems: "center",
+                    background: favoriteGameIDs.has(game.app_id) ? "#0f766e" : "#1f2937",
+                    border: "1px solid #374151",
+                    borderRadius: "6px",
+                    color: "#f8fafc",
+                    display: "flex",
+                    fontSize: "18px",
+                    fontWeight: 900,
+                    justifyContent: "center",
+                    minHeight: "38px",
+                    width: "42px"
+                  }}
+                >
+                  {favoriteGameIDs.has(game.app_id) ? "★" : "☆"}
+                </Focusable>
+              </div>
             ))}
           </div>
         </PanelSectionRow>
@@ -1231,45 +1468,61 @@ function Content() {
                 {visibleDeckyMods.map((mod) => {
                   const focused = focusedModID === mod.id;
                   return (
-                    <Focusable
-                      key={mod.id}
-                      onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
-                      onGamepadFocus={() => setFocusedModID(mod.id)}
-                      onGamepadBlur={() => setFocusedModID((current) => (current === mod.id ? null : current))}
-                      style={{
-                        alignItems: "center",
-                        background: focused ? "#27364a" : "#161b22",
-                        border: `1px solid ${focused ? "#7dd3fc" : "#303741"}`,
-                        borderRadius: "6px",
-                        display: "flex",
-                        gap: "10px",
-                        minHeight: "58px",
-                        opacity: busyModID === mod.id ? 0.65 : 1,
-                        padding: "10px",
-                        width: "100%"
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: "#f8fafc", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mod.name}</div>
-                        <div style={{ color: "#a1a1aa", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {mod.enabled ? "Enabled" : "Disabled"} · Priority {mod.priority} · {mod.status}
-                        </div>
-                      </div>
-                      <div
+                    <div key={mod.id} style={{ display: "grid", gap: "6px", width: "100%" }}>
+                      <Focusable
+                        onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                        onGamepadFocus={() => setFocusedModID(mod.id)}
                         style={{
                           alignItems: "center",
-                          background: mod.enabled ? "#0f766e" : "#3f3f46",
-                          borderRadius: "999px",
+                          background: focused ? "#27364a" : "#161b22",
+                          border: `1px solid ${focused ? "#7dd3fc" : "#303741"}`,
+                          borderRadius: "6px",
                           display: "flex",
-                          height: "22px",
-                          justifyContent: mod.enabled ? "flex-end" : "flex-start",
-                          padding: "2px",
-                          width: "42px"
+                          gap: "10px",
+                          minHeight: "58px",
+                          opacity: busyModID === mod.id ? 0.65 : 1,
+                          padding: "10px",
+                          width: "100%"
                         }}
                       >
-                        <div style={{ background: "#f8fafc", borderRadius: "999px", height: "18px", width: "18px" }} />
-                      </div>
-                    </Focusable>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: "#f8fafc", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mod.name}</div>
+                          <div style={{ color: "#a1a1aa", fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {mod.enabled ? "Enabled" : "Disabled"} · Priority {mod.priority} · {deckyModStateLabel(mod)}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            alignItems: "center",
+                            background: mod.enabled ? "#0f766e" : "#3f3f46",
+                            borderRadius: "999px",
+                            display: "flex",
+                            height: "22px",
+                            justifyContent: mod.enabled ? "flex-end" : "flex-start",
+                            padding: "2px",
+                            width: "42px"
+                          }}
+                        >
+                          <div style={{ background: "#f8fafc", borderRadius: "999px", height: "18px", width: "18px" }} />
+                        </div>
+                      </Focusable>
+                      {focused && (
+                        <Focusable flow-children="row" style={{ display: "grid", gap: "6px", gridTemplateColumns: "1fr 1fr", width: "100%" }}>
+                          <Focusable
+                            onActivate={() => reinstallDeckyMod(mod)}
+                            style={{ background: "#1f2937", border: "1px solid #374151", borderRadius: "6px", color: "#f8fafc", fontWeight: 800, padding: "8px", textAlign: "center" }}
+                          >
+                            Reinstall
+                          </Focusable>
+                          <Focusable
+                            onActivate={() => askRemoveDeckyMod(mod)}
+                            style={{ background: "#3f1d1d", border: "1px solid #7f1d1d", borderRadius: "6px", color: "#fecaca", fontWeight: 800, padding: "8px", textAlign: "center" }}
+                          >
+                            Remove
+                          </Focusable>
+                        </Focusable>
+                      )}
+                    </div>
                   );
                 })}
               </Focusable>

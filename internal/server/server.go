@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,7 +78,7 @@ type nexusClient interface {
 
 type nexusClientFactory func(apiKey string) nexusClient
 
-var errLegacyStagedMod = errors.New("staged mod lacks install-plan target mappings")
+var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan target mappings")
 
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
 
@@ -119,7 +120,12 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			return nil, err
 		}
 	}
-	eventBus := events.NewBus(512)
+	storedEvents, err := db.ListDomainEventsAfter(context.Background(), 0, 512)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	eventBus := events.NewBusWithHistory(512, storedEvents)
 	srv := &Server{
 		cfg:    cfg,
 		logger: logger,
@@ -202,15 +208,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
 	mux.HandleFunc("PUT /api/settings/install", s.handleUpdateInstallSettings)
+	mux.HandleFunc("PUT /api/settings/ui", s.handleUpdateUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
+	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
 	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
+	mux.HandleFunc("PUT /api/games/{appID}/install-candidates/{candidateID}/choices", s.handleSaveInstallCandidateChoices)
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/apply", s.handleApplyInstallCandidate)
+	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/retry", s.handleRetryInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
@@ -343,6 +353,10 @@ type applyInstallCandidateRequest struct {
 	Selections map[string][]string `json:"selections"`
 }
 
+type saveInstallCandidateChoicesRequest struct {
+	Selections map[string][]string `json:"selections"`
+}
+
 type applyGameLaunchResponse struct {
 	Applied bool                     `json:"applied"`
 	Queued  bool                     `json:"queued"`
@@ -404,7 +418,7 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	markLegacyStagedMods(mods)
+	markUndeployableInstalledMods(mods)
 	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -770,10 +784,7 @@ func pendingImportJobPayload(gameRegistry games.Registry, resolved catalog.Resol
 }
 
 func (s *Server) publishJobEvent(job jobs.Job) {
-	if s.events == nil {
-		return
-	}
-	s.events.Publish(events.Event{
+	s.publishEvent(events.Event{
 		Type:    events.TypeJobUpdated,
 		AppID:   strings.TrimSpace(job.Payload["app_id"]),
 		JobID:   job.ID,
@@ -781,15 +792,24 @@ func (s *Server) publishJobEvent(job jobs.Job) {
 	})
 }
 
-func (s *Server) publishGameEvent(eventType, appID string, payload any) {
-	if s.events == nil {
-		return
-	}
-	s.events.Publish(events.Event{
+func (s *Server) publishGameEvent(eventType events.Type, appID string, payload any) {
+	s.publishEvent(events.Event{
 		Type:    eventType,
 		AppID:   strings.TrimSpace(appID),
 		Payload: events.MustPayload(payload),
 	})
+}
+
+func (s *Server) publishEvent(event events.Event) {
+	if s.events == nil || s.db == nil {
+		return
+	}
+	stored, err := s.db.AppendDomainEvent(context.Background(), event)
+	if err != nil {
+		s.logger.Warn("domain event persistence failed", "type", event.Type, "app_id", event.AppID, "job_id", event.JobID, "error", err)
+		return
+	}
+	s.events.Publish(stored)
 }
 
 func (s *Server) publishInstallCandidatesChanged(appID, action string, count int) {
@@ -822,6 +842,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
 		},
+		"ui": cfg.UI,
 	})
 }
 
@@ -836,6 +857,12 @@ type updateSecuritySettingsRequest struct {
 type updateInstallSettingsRequest struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
+}
+
+type updateUISettingsRequest struct {
+	FavoriteGameIDs []string         `json:"favorite_game_ids"`
+	RecentGames     map[string]int64 `json:"recent_games"`
+	GameSort        string           `json:"game_sort"`
 }
 
 type createProfileRequest struct {
@@ -954,6 +981,87 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 	s.handleStatus(w, r)
 }
 
+func (s *Server) handleUpdateUISettings(w http.ResponseWriter, r *http.Request) {
+	var req updateUISettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	ui := config.UIConfig{
+		FavoriteGameIDs: normalizedGameIDs(req.FavoriteGameIDs, 100),
+		RecentGames:     normalizedRecentGames(req.RecentGames, 100),
+		GameSort:        normalizedGameSort(req.GameSort),
+	}
+	s.cfgMu.Lock()
+	s.cfg.UI = ui
+	cfg := s.cfg
+	s.cfgMu.Unlock()
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("ui settings updated", "favorites", len(ui.FavoriteGameIDs), "recent", len(ui.RecentGames), "sort", ui.GameSort)
+	s.handleStatus(w, r)
+}
+
+func normalizedGameIDs(values []string, limit int) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func normalizedRecentGames(values map[string]int64, limit int) map[string]int64 {
+	if len(values) == 0 {
+		return map[string]int64{}
+	}
+	type entry struct {
+		appID string
+		at    int64
+	}
+	entries := make([]entry, 0, len(values))
+	for appID, at := range values {
+		appID = strings.TrimSpace(appID)
+		if appID == "" || at <= 0 {
+			continue
+		}
+		entries = append(entries, entry{appID: appID, at: at})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].at > entries[j].at
+	})
+	if limit > 0 && len(entries) > limit {
+		entries = entries[:limit]
+	}
+	out := make(map[string]int64, len(entries))
+	for _, entry := range entries {
+		out[entry.appID] = entry.at
+	}
+	return out
+}
+
+func normalizedGameSort(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case "az", "za":
+		return strings.TrimSpace(strings.ToLower(value))
+	default:
+		return "recent"
+	}
+}
+
 func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deps.CheckArchiveTools())
 }
@@ -1029,7 +1137,7 @@ func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	markLegacyStagedMods(mods)
+	markUndeployableInstalledMods(mods)
 	writeJSON(w, http.StatusOK, gameModResponses(mods))
 }
 
@@ -1166,6 +1274,94 @@ func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"removed": mod, "apply": apply})
 }
 
+func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
+	if appID == "" || err != nil || installedModID <= 0 {
+		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.InstalledModForSteamApp(r.Context(), appID, installedModID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "installed mod was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if strings.TrimSpace(mod.ArchivePath) == "" {
+		http.Error(w, "installed mod has no cached archive to reinstall", http.StatusConflict)
+		return
+	}
+	info, err := os.Stat(mod.ArchivePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	job := s.jobs.CreateWithPayload("reinstall", "Reinstall: "+mod.Name, gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Reinstalling "+mod.Name+" from cached archive")
+	s.logger.Info("installed mod reinstall started", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "archive_path", mod.ArchivePath)
+	pending := pendingImport{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    mod.Catalog,
+			SourceURL:  mod.ArchivePath,
+			GameDomain: mod.SourceGameDomain,
+			ModID:      mod.SourceModID,
+			FileID:     mod.SourceFileID,
+		},
+		Source:        "installed-mod-reinstall",
+		ArchivePath:   mod.ArchivePath,
+		ArchiveBytes:  info.Size(),
+		ArchiveSHA256: "",
+	}
+	staged, err := s.stagePendingImport(r.Context(), job.ID, pending, pending.downloadResult())
+	if err != nil {
+		s.logger.Warn("installed mod reinstall failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
+		var choice installerChoiceRequiredError
+		if errors.As(err, &choice) {
+			installerJSON, _ := json.Marshal(choice.Installer)
+			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+				SteamAppID:    appID,
+				Resolved:      pending.Resolved,
+				Name:          mod.Name,
+				ArchivePath:   mod.ArchivePath,
+				Status:        "needs_choices",
+				Reason:        choice.Error(),
+				InstallerJSON: string(installerJSON),
+			})
+			if recordErr == nil {
+				s.ensureInstallerChoiceJob(appID, candidate)
+				s.publishInstallCandidatesChanged(appID, "choices_required", 1)
+			}
+		}
+		var unsupported installplan.UnsupportedError
+		if errors.As(err, &unsupported) {
+			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+				SteamAppID:    appID,
+				Resolved:      pending.Resolved,
+				Name:          mod.Name,
+				ArchivePath:   mod.ArchivePath,
+				Status:        "blocked",
+				Reason:        unsupported.Error(),
+				ChoicesJSON:   "{}",
+				InstallerJSON: "",
+			}); recordErr == nil {
+				s.publishInstallCandidatesChanged(appID, "blocked", 1)
+			}
+		}
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	s.completeInstalledModJob(r.Context(), job.ID, staged, nil)
+	if finalJob, ok := s.jobs.Get(job.ID); ok {
+		job = finalJob
+	}
+	s.logger.Info("installed mod reinstall completed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "restaged_mod_id", staged.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": staged})
+}
+
 func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
 	appID := r.PathValue("appID")
 	if appID == "" {
@@ -1204,6 +1400,37 @@ func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
+func (s *Server) handleSaveInstallCandidateChoices(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	candidateID, err := strconv.ParseInt(r.PathValue("candidateID"), 10, 64)
+	if appID == "" || err != nil || candidateID <= 0 {
+		http.Error(w, "valid appID and candidateID are required", http.StatusBadRequest)
+		return
+	}
+	var req saveInstallCandidateChoicesRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	choicesJSON, err := json.Marshal(req.Selections)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	candidate, err := s.db.SaveInstallCandidateChoices(r.Context(), appID, candidateID, string(choicesJSON))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "install candidate was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("installer candidate choices saved", "app_id", appID, "candidate_id", candidateID, "groups", len(req.Selections))
+	s.publishInstallCandidatesChanged(appID, "choices_saved", 1)
+	writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate})
+}
+
 func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	candidateID, err := strconv.ParseInt(r.PathValue("candidateID"), 10, 64)
@@ -1231,6 +1458,23 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "install candidate does not require choices", http.StatusConflict)
 		return
 	}
+	selections, err := installCandidateSelections(candidate, req.Selections)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.Selections) > 0 {
+		choicesJSON, marshalErr := json.Marshal(req.Selections)
+		if marshalErr != nil {
+			writeError(w, http.StatusBadRequest, marshalErr)
+			return
+		}
+		candidate, err = s.db.SaveInstallCandidateChoices(r.Context(), appID, candidate.ID, string(choicesJSON))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	job, ok := s.findInstallerChoiceJob(candidate.ID)
 	if ok && job.Status == jobs.StatusRunning {
 		http.Error(w, "installer choices are already being applied", http.StatusConflict)
@@ -1245,7 +1489,7 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	job, _ = s.jobs.Run(job.ID, "Applying installer choices for "+candidate.Name)
 	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status)
 
-	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, req.Selections)
+	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, selections)
 	if err != nil {
 		s.logger.Warn("installer candidate apply failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -1263,6 +1507,147 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	}
 	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+}
+
+func installCandidateSelections(candidate storage.InstallCandidate, requestSelections map[string][]string) (map[string][]string, error) {
+	if len(requestSelections) > 0 {
+		return requestSelections, nil
+	}
+	raw := strings.TrimSpace(candidate.ChoicesJSON)
+	if raw == "" {
+		return map[string][]string{}, nil
+	}
+	var stored map[string][]string
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return nil, errors.New("stored installer choices could not be parsed")
+	}
+	if stored == nil {
+		stored = map[string][]string{}
+	}
+	return stored, nil
+}
+
+func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	candidateID, err := strconv.ParseInt(r.PathValue("candidateID"), 10, 64)
+	if appID == "" || err != nil || candidateID <= 0 {
+		http.Error(w, "valid appID and candidateID are required", http.StatusBadRequest)
+		return
+	}
+	candidate, err := s.db.InstallCandidateForSteamApp(r.Context(), appID, candidateID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "install candidate was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if candidate.Status == "needs_choices" {
+		http.Error(w, "installer choices are required; apply choices instead of retrying", http.StatusConflict)
+		return
+	}
+	job := s.jobs.CreateWithPayload("install-candidate", "Retry install: "+candidate.Name, installCandidateJobPayload(appID, candidate))
+	job, _ = s.jobs.Run(job.ID, "Retrying install planning for "+candidate.Name)
+	s.logger.Info("install candidate retry started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status, "reason", candidate.Reason)
+	mod, retryErr := s.retryInstallCandidate(r.Context(), job.ID, candidate)
+	if retryErr != nil {
+		s.logger.Warn("install candidate retry failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", retryErr)
+		job, _ = s.jobs.Fail(job.ID, retryErr.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
+		s.logger.Warn("install candidate retry cleanup failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+	} else {
+		s.publishInstallCandidatesChanged(appID, "retried", 1)
+	}
+	s.completeInstalledModJob(r.Context(), job.ID, mod, nil)
+	if finalJob, ok := s.jobs.Get(job.ID); ok {
+		job = finalJob
+	}
+	s.logger.Info("install candidate retry completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+}
+
+func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate) (storage.InstalledMod, error) {
+	if strings.TrimSpace(candidate.ArchivePath) == "" {
+		return storage.InstalledMod{}, errors.New("install candidate archive path is missing")
+	}
+	info, err := os.Stat(candidate.ArchivePath)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	pending := pendingImport{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    candidate.Catalog,
+			SourceURL:  candidate.ArchivePath,
+			GameDomain: candidate.SourceGameDomain,
+			ModID:      candidate.SourceModID,
+			FileID:     candidate.SourceFileID,
+		},
+		Source:        "install-candidate-retry",
+		ArchivePath:   candidate.ArchivePath,
+		ArchiveSHA256: candidate.ChecksumSHA256,
+		ArchiveBytes:  info.Size(),
+	}
+	result := pending.downloadResult()
+	staged, err := s.stagePendingImport(ctx, jobID, pending, result)
+	if err == nil {
+		return staged, nil
+	}
+	var choice installerChoiceRequiredError
+	if errors.As(err, &choice) {
+		installerJSON, _ := json.Marshal(choice.Installer)
+		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+			SteamAppID:    candidate.SteamAppID,
+			Resolved:      pending.Resolved,
+			Name:          candidate.Name,
+			ArchivePath:   candidate.ArchivePath,
+			ArchiveSHA256: candidate.ChecksumSHA256,
+			Status:        "needs_choices",
+			Reason:        choice.Error(),
+			InstallerJSON: string(installerJSON),
+			ChoicesJSON:   candidate.ChoicesJSON,
+		})
+		if recordErr != nil {
+			return storage.InstalledMod{}, recordErr
+		}
+		choiceJob := s.ensureInstallerChoiceJob(candidate.SteamAppID, updated)
+		s.logger.Info("install candidate retry now requires choices", "job_id", jobID, "choice_job_id", choiceJob.ID, "app_id", candidate.SteamAppID, "candidate_id", updated.ID)
+		s.publishInstallCandidatesChanged(candidate.SteamAppID, "choices_required", 1)
+		return storage.InstalledMod{}, choice
+	}
+	var unsupported installplan.UnsupportedError
+	if errors.As(err, &unsupported) {
+		_, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+			SteamAppID:    candidate.SteamAppID,
+			Resolved:      pending.Resolved,
+			Name:          candidate.Name,
+			ArchivePath:   candidate.ArchivePath,
+			ArchiveSHA256: candidate.ChecksumSHA256,
+			Status:        "blocked",
+			Reason:        unsupported.Error(),
+			InstallerJSON: candidate.InstallerJSON,
+			ChoicesJSON:   candidate.ChoicesJSON,
+		})
+		if recordErr != nil {
+			return storage.InstalledMod{}, recordErr
+		}
+		s.publishInstallCandidatesChanged(candidate.SteamAppID, "blocked", 1)
+	}
+	return storage.InstalledMod{}, err
+}
+
+func installCandidateJobPayload(appID string, candidate storage.InstallCandidate) jobs.JobPayload {
+	payload := installerChoiceJobPayload(appID, candidate)
+	payload["candidate_status"] = strings.TrimSpace(candidate.Status)
+	for key, value := range payload {
+		if strings.TrimSpace(value) == "" {
+			delete(payload, key)
+		}
+	}
+	return payload
 }
 
 func installerChoiceJobPayload(appID string, candidate storage.InstallCandidate) jobs.JobPayload {
@@ -1595,7 +1980,9 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 	applied := deployment.Files
 	if err := deploy.Verify(applied); err != nil {
 		s.logger.Warn("deployment verification failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+		rollbackErr := deployment.Rollback()
+		s.recordDeploymentRollback(ctx, appID, jobID, source, "deployment verification failed", rollbackErr)
+		if rollbackErr != nil {
 			s.logger.Warn("deployment rollback after verification failed", "job_id", jobID, "app_id", appID, "source", source, "error", rollbackErr)
 		}
 		return deploymentApplyResult{Applied: applied}, err
@@ -1604,7 +1991,9 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 	deploymentID, err := s.db.RecordDeployment(ctx, appID, plan.Strategy, applied)
 	if err != nil {
 		s.logger.Warn("deployment manifest record failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
-		if rollbackErr := deployment.Rollback(); rollbackErr != nil {
+		rollbackErr := deployment.Rollback()
+		s.recordDeploymentRollback(ctx, appID, jobID, source, "deployment manifest record failed", rollbackErr)
+		if rollbackErr != nil {
 			s.logger.Warn("deployment rollback after manifest failure failed", "job_id", jobID, "app_id", appID, "source", source, "error", rollbackErr)
 		}
 		return deploymentApplyResult{Applied: applied}, err
@@ -1622,6 +2011,35 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 		s.logger.Warn("post-deployment launch action status failed", "job_id", jobID, "app_id", appID, "source", source, "error", launchErr)
 	}
 	return deploymentApplyResult{Applied: applied, DeploymentID: deploymentID, Launch: launchStatus}, nil
+}
+
+func (s *Server) recordDeploymentRollback(ctx context.Context, appID, parentJobID, source, reason string, rollbackErr error) {
+	payload := gameJobPayload(appID)
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["parent_job_id"] = strings.TrimSpace(parentJobID)
+	payload["source"] = strings.TrimSpace(source)
+	payload["reason"] = strings.TrimSpace(reason)
+	job := s.jobs.CreateWithPayload("rollback", "Restore files after failed profile apply", payload)
+	job, _ = s.jobs.Run(job.ID, "Restoring DMM-managed files")
+	eventPayload := map[string]any{
+		"action":        "rollback_completed",
+		"parent_job_id": parentJobID,
+		"source":        source,
+		"reason":        reason,
+	}
+	if rollbackErr != nil {
+		job, _ = s.jobs.Fail(job.ID, "Rollback failed: "+rollbackErr.Error())
+		eventPayload["action"] = "rollback_failed"
+		eventPayload["error"] = rollbackErr.Error()
+		s.logger.Warn("deployment rollback job failed", "job_id", job.ID, "parent_job_id", parentJobID, "app_id", appID, "source", source, "reason", reason, "error", rollbackErr)
+	} else {
+		job, _ = s.jobs.Complete(job.ID, "Restored DMM-managed files after failed apply")
+		s.logger.Info("deployment rollback job completed", "job_id", job.ID, "parent_job_id", parentJobID, "app_id", appID, "source", source, "reason", reason)
+	}
+	eventPayload["job_id"] = job.ID
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, eventPayload)
 }
 
 func plural(count int) string {
@@ -1967,6 +2385,11 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("event websocket snapshot write failed", "remote", r.RemoteAddr, "error", err)
 		return
 	}
+	replayedThrough, err := s.replayStoredEvents(ctx, conn, afterID)
+	if err != nil {
+		s.logger.Warn("event websocket replay failed", "remote", r.RemoteAddr, "after_id", afterID, "error", err)
+		return
+	}
 
 	for {
 		select {
@@ -1976,10 +2399,35 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			if event.ID <= replayedThrough {
+				continue
+			}
 			if err := writeWebSocketEvent(ctx, conn, event); err != nil {
 				s.logger.Warn("event websocket write failed", "remote", r.RemoteAddr, "event_id", event.ID, "type", event.Type, "error", err)
 				return
 			}
+		}
+	}
+}
+
+func (s *Server) replayStoredEvents(ctx context.Context, conn *websocket.Conn, afterID int64) (int64, error) {
+	const pageSize = 1000
+	replayedThrough := afterID
+	for {
+		stored, err := s.db.ListDomainEventsAfter(ctx, replayedThrough, pageSize)
+		if err != nil {
+			return replayedThrough, err
+		}
+		for _, event := range stored {
+			if err := writeWebSocketEvent(ctx, conn, event); err != nil {
+				return replayedThrough, err
+			}
+			if event.ID > replayedThrough {
+				replayedThrough = event.ID
+			}
+		}
+		if len(stored) < pageSize {
+			return replayedThrough, nil
 		}
 	}
 }
@@ -2209,7 +2657,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("pending-import", "Install request: "+resolved.GameDomain+"/mods/"+resolved.ModID, pendingImportJobPayload(s.games, resolved))
+	job := s.jobs.CreateWithPayload("pending-import", "Captured mod: "+resolved.GameDomain+"/mods/"+resolved.ModID, pendingImportJobPayload(s.games, resolved))
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
@@ -2313,13 +2761,13 @@ func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):
-			http.Error(w, "install request was not found; capture the Nexus link again", http.StatusNotFound)
+			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
 		case errors.Is(err, errPendingImportJobNotFound):
-			http.Error(w, "install request job was not found", http.StatusNotFound)
+			http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		case errors.Is(err, errPendingImportNotWaiting):
-			http.Error(w, "install request is not waiting for approval", http.StatusConflict)
+			http.Error(w, "captured mod action is not waiting for approval", http.StatusConflict)
 		case errors.Is(err, errPendingImportNoArchive):
-			http.Error(w, "install request has no downloaded archive yet", http.StatusBadRequest)
+			http.Error(w, "captured mod action has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}
@@ -2336,20 +2784,20 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 	}
 	job, ok := s.jobs.Get(jobID)
 	if !ok {
-		http.Error(w, "install request job was not found", http.StatusNotFound)
+		http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		return
 	}
 	if job.Type != "pending-import" {
-		http.Error(w, "only install requests can be retried", http.StatusBadRequest)
+		http.Error(w, "only captured mod jobs can be retried", http.StatusBadRequest)
 		return
 	}
 	if job.Status != jobs.StatusFailed {
-		http.Error(w, "only failed install requests can be retried", http.StatusConflict)
+		http.Error(w, "only failed captured mod jobs can be retried", http.StatusConflict)
 		return
 	}
 	pending, ok := s.pendingImport(jobID)
 	if !ok {
-		http.Error(w, "install request no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
+		http.Error(w, "captured mod job no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
 		return
 	}
 	var message string
@@ -2359,7 +2807,7 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 		message = "Retry requested; downloading archive again"
 	}
 	if _, ok := s.jobs.Wait(jobID, message); !ok {
-		http.Error(w, "install request job was not found", http.StatusNotFound)
+		http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		return
 	}
 	var retried jobs.Job
@@ -2372,17 +2820,17 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):
-			http.Error(w, "install request was not found; capture the Nexus link again", http.StatusNotFound)
+			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
 		case errors.Is(err, errPendingImportJobNotFound):
-			http.Error(w, "install request job was not found", http.StatusNotFound)
+			http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		case errors.Is(err, errPendingImportNotWaiting):
-			http.Error(w, "install request is not retryable right now", http.StatusConflict)
+			http.Error(w, "captured mod action is not retryable right now", http.StatusConflict)
 		case errors.Is(err, errPendingImportNoLinks):
-			http.Error(w, "install request has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
+			http.Error(w, "captured mod action has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
 		case errors.Is(err, errPendingImportEmptyLink):
-			http.Error(w, "install request download link is empty", http.StatusBadRequest)
+			http.Error(w, "captured mod action download link is empty", http.StatusBadRequest)
 		case errors.Is(err, errPendingImportNoArchive):
-			http.Error(w, "install request has no downloaded archive yet", http.StatusBadRequest)
+			http.Error(w, "captured mod action has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}
@@ -2734,7 +3182,7 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 			"message":          message,
 		})
 	}
-	if !s.autoEnableInstalledMods() {
+	if !s.autoEnableInstalledMods() && !staged.Enabled {
 		message := "Installed " + staged.Name + " disabled; enable it to deploy"
 		s.jobs.Complete(jobID, message)
 		publishInstalled(false, message)
@@ -2796,7 +3244,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			installedFiles[mod.SourceModID+"/"+mod.SourceFileID] = struct{}{}
 			continue
 		}
-		s.logger.Info("download recovery will restage legacy installed mod without install-plan targets", "job_id", jobID, "app_id", appID, "installed_mod_id", mod.ID, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+		s.logger.Info("download recovery will restage installed mod without install-plan targets", "job_id", jobID, "app_id", appID, "installed_mod_id", mod.ID, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
 	}
 
 	root := filepath.Join(s.cfg.DataDir, "downloads", "nexus", domain, "mods")
@@ -3132,7 +3580,7 @@ func generateFileFromGamePath(gamePath string, instruction installplan.Instructi
 	if sourceRel == "." || sourceRel == ".." || filepath.IsAbs(sourceRel) || strings.HasPrefix(filepath.ToSlash(sourceRel), "../") {
 		return errors.New("install plan contains an unsafe generated source path")
 	}
-	data := []byte(instruction.GeneratedFallback)
+	data := []byte(instruction.GeneratedDefaultContent)
 	if strings.TrimSpace(gamePath) != "" {
 		sourcePath := filepath.Join(gamePath, sourceRel)
 		if sourceData, err := os.ReadFile(sourcePath); err == nil {
@@ -3371,7 +3819,7 @@ func hasInstallPlanTargets(manifestJSON string) bool {
 	return true
 }
 
-func markLegacyStagedMods(mods []storage.InstalledMod) {
+func markUndeployableInstalledMods(mods []storage.InstalledMod) {
 	for i := range mods {
 		if !hasInstallPlanTargets(mods[i].ManifestJSON) {
 			mods[i].Status = "needs_recovery"
@@ -3466,7 +3914,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 
 	var mappings []deploy.FileMapping
 	enabledMods := 0
-	legacyMods := 0
+	undeployableMods := 0
 	for _, mod := range mods {
 		if !mod.Enabled {
 			continue
@@ -3474,9 +3922,9 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		enabledMods++
 		next, err := s.deployMappingsForInstalledMod(mod)
 		if err != nil {
-			if errors.Is(err, errLegacyStagedMod) {
-				s.logger.Info("skipping legacy staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
-				legacyMods++
+			if errors.Is(err, errUndeployableInstalledMod) {
+				s.logger.Info("skipping staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+				undeployableMods++
 				continue
 			}
 			return deploy.Plan{}, err
@@ -3487,7 +3935,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
 		}
-		if enabledMods > 0 && legacyMods == enabledMods {
+		if enabledMods > 0 && undeployableMods == enabledMods {
 			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
 		return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, nil)
@@ -3509,7 +3957,7 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 			}
 			targetRelative := strings.TrimSpace(file.TargetRelative)
 			if targetRelative == "" {
-				return nil, fmt.Errorf("%w: staged mod %q was created without install-plan target mappings; recover downloads or reinstall this mod with the current DMM build", errLegacyStagedMod, mod.Name)
+				return nil, fmt.Errorf("%w: installed mod %q has no target mapping; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
 			}
 			mappings = append(mappings, deploy.FileMapping{
 				SourcePath:     filepath.Join(stagingPath, filepath.FromSlash(file.Path)),
@@ -3523,7 +3971,7 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 		}
 		return mappings, nil
 	}
-	return nil, fmt.Errorf("%w: staged mod %q does not have a deployable manifest; recover downloads or reinstall this mod with the current DMM build", errLegacyStagedMod, mod.Name)
+	return nil, fmt.Errorf("%w: installed mod %q does not have a deployable manifest; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
 }
 
 func hasDeployableActions(plan deploy.Plan) bool {

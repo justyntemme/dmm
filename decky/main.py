@@ -25,13 +25,24 @@ class Plugin:
 
     async def _main(self):
         self._log("plugin loaded")
+        asyncio.create_task(self._autostart_server())
 
     async def _unload(self):
         self._log("plugin unloading")
         await self.stop_server()
 
+    async def _autostart_server(self):
+        try:
+            result = await self._start_server("plugin autostart")
+            self._log(f"plugin autostart result running={result.get('running')} pid={result.get('pid')} error={result.get('error')}")
+        except Exception as exc:
+            self._log(f"plugin autostart failed: {self._redact_url(str(exc))}")
+
     async def start_server(self):
-        self._log("start_server requested")
+        return await self._start_server("manual start")
+
+    async def _start_server(self, reason):
+        self._log(f"start_server requested reason={reason}")
         if self.backend_process and self.backend_process.poll() is None:
             self._log("backend already running")
             return await self.status()
@@ -216,7 +227,7 @@ class Plugin:
         payload = json.dumps({"url": url, "source": "decky-plugin"}).encode("utf-8")
         result, error = self._backend_json_result("POST", "/api/imports/pending", payload)
         if result is None:
-            return {"ok": False, "error": error or "Unable to add install request."}
+            return {"ok": False, "error": error or "Unable to capture Nexus link."}
         job = result.get("job") if isinstance(result, dict) else None
         self._log(f"add pending import accepted job={job}")
         return {"ok": True, "result": result}
@@ -296,6 +307,22 @@ class Plugin:
         self._log(f"installer choices applied app_id={app_id} candidate_id={candidate_id}")
         return {"ok": True, "result": result}
 
+    async def save_install_candidate_choices(self, app_id, candidate_id, selections):
+        app_id = str(app_id or "").strip()
+        candidate_id = str(candidate_id or "").strip()
+        if not app_id or not candidate_id:
+            return {"ok": False, "error": "app_id and candidate_id are required."}
+        if not isinstance(selections, dict):
+            selections = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"selections": selections}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates/{urllib.parse.quote(candidate_id)}/choices", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to save installer choices."}
+        self._log(f"installer choices saved app_id={app_id} candidate_id={candidate_id} groups={len(selections)}")
+        return {"ok": True, "candidate": result.get("candidate")}
+
     async def set_default_profile(self, profile_id):
         profile_id = str(profile_id or "").strip()
         if not profile_id:
@@ -322,6 +349,32 @@ class Plugin:
             return {"ok": False, "error": error or "Unable to update mod."}
         self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)}")
         return {"ok": True, "mod": result.get("mod"), "apply": result.get("apply")}
+
+    async def remove_game_mod(self, app_id, installed_mod_id):
+        app_id = str(app_id or "").strip()
+        installed_mod_id = str(installed_mod_id or "").strip()
+        if not app_id or not installed_mod_id:
+            return {"ok": False, "error": "app_id and installed_mod_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("DELETE", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to remove mod."}
+        self._log(f"mod removed app_id={app_id} installed_mod_id={installed_mod_id}")
+        return {"ok": True, "result": result}
+
+    async def reinstall_game_mod(self, app_id, installed_mod_id):
+        app_id = str(app_id or "").strip()
+        installed_mod_id = str(installed_mod_id or "").strip()
+        if not app_id or not installed_mod_id:
+            return {"ok": False, "error": "app_id and installed_mod_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}/reinstall", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to reinstall mod."}
+        self._log(f"mod reinstalled app_id={app_id} installed_mod_id={installed_mod_id}")
+        return {"ok": True, "result": result}
 
     async def launch_actions(self):
         if not self._backend_responds():
@@ -368,7 +421,7 @@ class Plugin:
     async def dependencies(self):
         return [
             self._dependency("7-Zip", "7z", "Extracts .7z and many Nexus archive formats."),
-            self._dependency("bsdtar", "bsdtar", "Extracts tar/zip archives and is useful as a fallback."),
+            self._dependency("bsdtar", "bsdtar", "Extracts tar and zip archives."),
             self._dependency("unzip", "unzip", "Extracts .zip archives."),
             self._dependency("unrar", "unrar", "Extracts .rar archives when available."),
         ]
@@ -447,6 +500,33 @@ class Plugin:
         return {
             "ok": True,
             "status": result,
+        }
+
+    async def set_ui_preferences(self, favorite_game_ids, recent_games, game_sort):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        if not isinstance(favorite_game_ids, list):
+            favorite_game_ids = []
+        if not isinstance(recent_games, dict):
+            recent_games = {}
+        payload = json.dumps({
+            "favorite_game_ids": [str(item).strip() for item in favorite_game_ids if str(item).strip()],
+            "recent_games": {str(key).strip(): int(value) for key, value in recent_games.items() if str(key).strip()},
+            "game_sort": str(game_sort or "recent").strip(),
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/ui", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to update UI preferences.",
+            }
+        self._log(f"ui preferences updated favorites={len(favorite_game_ids)} recent={len(recent_games)} sort={game_sort}")
+        return {
+            "ok": True,
+            "status": await self.status(),
         }
 
     async def diagnostics(self):

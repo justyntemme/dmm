@@ -34,7 +34,7 @@ type Instruction struct {
 	Kind                     string `json:"kind,omitempty"`
 	SourcePath               string `json:"source_path,omitempty"`
 	GenerateFromGameRelative string `json:"generate_from_game_relative,omitempty"`
-	GeneratedFallback        string `json:"generated_fallback,omitempty"`
+	GeneratedDefaultContent  string `json:"generated_default_content,omitempty"`
 	StagingRelative          string `json:"staging_relative"`
 	TargetRelative           string `json:"target_relative"`
 	TargetPolicy             string `json:"target_policy,omitempty"`
@@ -128,7 +128,7 @@ type PayloadSpec struct {
 type GeneratedFileSpec struct {
 	FromGameRelative string
 	Destination      string
-	Fallback         string
+	DefaultContent   string
 }
 
 type TargetPolicySpec struct {
@@ -460,7 +460,7 @@ func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 		plan.Instructions = append(plan.Instructions, Instruction{
 			Kind:                     InstructionKindGenerateFromGameFile,
 			GenerateFromGameRelative: filepath.ToSlash(generated.FromGameRelative),
-			GeneratedFallback:        generated.Fallback,
+			GeneratedDefaultContent:  generated.DefaultContent,
 			StagingRelative:          destination,
 			TargetRelative:           filepath.ToSlash(filepath.Join(installer.TargetRoot, destination)),
 			TargetPolicy:             targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, destination))),
@@ -851,13 +851,13 @@ func canonicalGameID(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func firstNonEmpty(values []string, fallback string) string {
+func firstNonEmpty(values []string, defaultValue string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return value
 		}
 	}
-	return fallback
+	return defaultValue
 }
 
 func firstNonEmptyString(values ...string) string {
