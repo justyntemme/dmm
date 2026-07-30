@@ -171,6 +171,149 @@ func TestStardewRuntimeRequirementsSkipInstalledManifestDependency(t *testing.T)
 	}
 }
 
+func TestStardewRuntimeRequirementsWarnForOutdatedManifestDependency(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				ContentPackFor: &ModDependency{
+					UniqueID:       "Pathoschild.ContentPatcher",
+					MinimumVersion: "2.0.0",
+					Required:       true,
+				},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher",
+				UniqueID: "Pathoschild.ContentPatcher",
+				Version:  "1.29.0",
+			}},
+		},
+	})
+	req, ok := reqByID(reqs, "stardew-mod-dependency:Pathoschild.ContentPatcher")
+	if !ok || req.Status != RequirementOutdated || !strings.Contains(strings.Join(req.Details, "\n"), "Installed version 1.29.0") {
+		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
+func TestStardewRuntimeRequirementsSkipDependencyAtMinimumVersion(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				ContentPackFor: &ModDependency{
+					UniqueID:       "Pathoschild.ContentPatcher",
+					MinimumVersion: "2.0.0",
+					Required:       true,
+				},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher",
+				UniqueID: "Pathoschild.ContentPatcher",
+				Version:  "2.0.0",
+			}},
+		},
+	})
+	for _, req := range reqs {
+		if req.ID == "stardew-mod-dependency:Pathoschild.ContentPatcher" {
+			t.Fatalf("dependency should be satisfied: %+v", reqs)
+		}
+	}
+}
+
+func TestStardewRuntimeRequirementsUsesHighestInstalledDependencyVersion(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				ContentPackFor: &ModDependency{
+					UniqueID:       "Pathoschild.ContentPatcher",
+					MinimumVersion: "1.10.0",
+					Required:       true,
+				},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher Old",
+				UniqueID: "Pathoschild.ContentPatcher",
+				Version:  "1.2.0",
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher New",
+				UniqueID: "Pathoschild.ContentPatcher",
+				Version:  "1.10.0",
+			}},
+		},
+	})
+	for _, req := range reqs {
+		if req.ID == "stardew-mod-dependency:Pathoschild.ContentPatcher" {
+			t.Fatalf("highest installed dependency version should satisfy requirement: %+v", reqs)
+		}
+	}
+}
+
+func TestStardewRuntimeRequirementsWarnForPrereleaseBelowRelease(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				ContentPackFor: &ModDependency{
+					UniqueID:       "Pathoschild.ContentPatcher",
+					MinimumVersion: "2.0.0",
+					Required:       true,
+				},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher",
+				UniqueID: "Pathoschild.ContentPatcher",
+				Version:  "2.0.0-beta.1",
+			}},
+		},
+	})
+	if reqStatus(reqs, "stardew-mod-dependency:Pathoschild.ContentPatcher") != RequirementOutdated {
+		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
 func reqByID(reqs []RuntimeRequirement, id string) (RuntimeRequirement, bool) {
 	for _, req := range reqs {
 		if req.ID == id {

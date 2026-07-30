@@ -9,8 +9,9 @@ import (
 type RequirementStatus string
 
 const (
-	RequirementOK      RequirementStatus = "ok"
-	RequirementMissing RequirementStatus = "missing"
+	RequirementOK       RequirementStatus = "ok"
+	RequirementMissing  RequirementStatus = "missing"
+	RequirementOutdated RequirementStatus = "outdated"
 )
 
 type RuntimeRequirement struct {
@@ -182,11 +183,14 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 			if uniqueID == "" {
 				continue
 			}
-			installed[strings.ToLower(uniqueID)] = metadata
+			key := strings.ToLower(uniqueID)
+			if current, ok := installed[key]; !ok || semanticVersionLess(current.Version, metadata.Version) {
+				installed[key] = metadata
+			}
 		}
 	}
 
-	missing := map[string]RuntimeRequirement{}
+	problems := map[string]RuntimeRequirement{}
 	for _, mod := range mods {
 		if !mod.Enabled {
 			continue
@@ -200,36 +204,56 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 				if uniqueID == "" {
 					continue
 				}
-				if _, ok := installed[strings.ToLower(uniqueID)]; ok {
-					continue
-				}
 				id := idPrefix + uniqueID
-				if _, ok := missing[id]; ok {
+				installedMetadata, ok := installed[strings.ToLower(uniqueID)]
+				if !ok {
+					if _, ok := problems[id]; ok {
+						continue
+					}
+					problems[id] = RuntimeRequirement{
+						ID:       id,
+						Name:     uniqueID,
+						Kind:     reqKind,
+						Required: true,
+						Status:   RequirementMissing,
+						Message:  message,
+						Details:  dependencyDetails(metadata, dependency),
+					}
 					continue
 				}
-				missing[id] = RuntimeRequirement{
+
+				if !dependencyVersionTooOld(installedMetadata, dependency) {
+					continue
+				}
+				details := dependencyDetails(metadata, dependency)
+				if strings.TrimSpace(installedMetadata.Version) != "" {
+					details = append(details, "Installed version "+strings.TrimSpace(installedMetadata.Version))
+				} else {
+					details = append(details, "Installed version unknown")
+				}
+				problems[id] = RuntimeRequirement{
 					ID:       id,
 					Name:     uniqueID,
 					Kind:     reqKind,
 					Required: true,
-					Status:   RequirementMissing,
-					Message:  message,
-					Details:  dependencyDetails(metadata, dependency),
+					Status:   RequirementOutdated,
+					Message:  "Required mod dependency is enabled, but its version is too old for this profile.",
+					Details:  details,
 				}
 			}
 		}
 	}
-	if len(missing) == 0 {
+	if len(problems) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(missing))
-	for key := range missing {
+	keys := make([]string, 0, len(problems))
+	for key := range problems {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	requirements := make([]RuntimeRequirement, 0, len(keys))
 	for _, key := range keys {
-		requirements = append(requirements, missing[key])
+		requirements = append(requirements, problems[key])
 	}
 	return requirements
 }
@@ -258,4 +282,12 @@ func dependencyDetails(metadata ModMetadata, dependency ModDependency) []string 
 		details = append(details, "Minimum version "+dependency.MinimumVersion)
 	}
 	return details
+}
+
+func dependencyVersionTooOld(installed ModMetadata, dependency ModDependency) bool {
+	minimum := strings.TrimSpace(dependency.MinimumVersion)
+	if minimum == "" {
+		return false
+	}
+	return semanticVersionLess(installed.Version, minimum)
 }
