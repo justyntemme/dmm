@@ -130,6 +130,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				ID:                "bad:installer",
 				VortexInstallerID: "bad-installer",
 				ModType:           "missing-type",
+				InstructionMode:   installplan.InstructionCustom,
 				GeneratedFiles: []installplan.GeneratedFileSpec{{
 					FromGameRelative: "/abs/source.json",
 					Destination:      "ok.json",
@@ -161,6 +162,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 	}
 	for _, want := range []string{
 		"mod type mod target root: path traversal is not allowed",
+		"installer bad:installer custom builder is required",
 		"references undeclared mod type missing-type",
 		"generated source path: absolute path is not allowed",
 		"installer choice bad:fomod references undeclared mod type missing-choice-type",

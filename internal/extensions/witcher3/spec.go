@@ -50,6 +50,7 @@ func Register(r sdk.Registrar) {
 
 func modTypes() []installplan.ModTypeSpec {
 	return []installplan.ModTypeSpec{
+		{ID: "witcher3menumodroot", TargetRoot: ""},
 		{ID: "witcher3tl", TargetRoot: ""},
 		{ID: "witcher3dlc", TargetRoot: ""},
 		{ID: "witcher3-mod-root", TargetRoot: "Mods"},
@@ -74,10 +75,39 @@ func installers() []installplan.InstallerSpec {
 			Priority:          30,
 			ModType:           "witcher3tl",
 			NameSource:        installplan.NameSourceArchive,
-			Match: installplan.MatchSpec{
-				RequireTopLevelDirs: []string{"Mods"},
-			},
-			InstructionMode: installplan.InstructionRootFolder,
+			CustomMatch:       matchTopLevelMod,
+			CustomBuild:       buildTopLevelMod,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+		{
+			ID:                "vortex:witcher3:witcher3menumodroot",
+			VortexInstallerID: "witcher3menumodroot",
+			Priority:          20,
+			ModType:           "witcher3menumodroot",
+			NameSource:        installplan.NameSourceArchive,
+			CustomMatch:       matchMenuModRoot,
+			CustomBuild:       buildMenuModRoot,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+		{
+			ID:                "vortex:witcher3:witcher3mixed",
+			VortexInstallerID: "witcher3mixed",
+			Priority:          25,
+			ModType:           "witcher3menumodroot",
+			NameSource:        installplan.NameSourceArchive,
+			CustomMatch:       matchMixedModAndDLC,
+			CustomBuild:       buildMixedModAndDLC,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+		{
+			ID:                "vortex:witcher3:witcher3content",
+			VortexInstallerID: "witcher3content",
+			Priority:          50,
+			ModType:           "witcher3tl",
+			NameSource:        installplan.NameSourceArchive,
+			CustomMatch:       matchContentOnly,
+			CustomBuild:       buildContentOnly,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:witcher3:witcher3dlcmod",
@@ -85,10 +115,9 @@ func installers() []installplan.InstallerSpec {
 			Priority:          60,
 			ModType:           "witcher3dlc",
 			NameSource:        installplan.NameSourceArchive,
-			Match: installplan.MatchSpec{
-				RequireTopLevelDirs: []string{"DLC"},
-			},
-			InstructionMode: installplan.InstructionRootFolder,
+			CustomMatch:       matchDLCMod,
+			CustomBuild:       buildDLCMod,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:witcher3:mods-root",

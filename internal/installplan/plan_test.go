@@ -562,6 +562,53 @@ func TestArchiveRootInstallerDoesNotStripWhenFilesDoNotShareAWrapper(t *testing.
 	}
 }
 
+func TestCustomInstallerBuildsPlanFromExtensionHook(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "content", "file.txt"), "content")
+	called := false
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"999999"},
+		VortexGameID: "customgame",
+		ModTypes: []ModTypeSpec{
+			{ID: "custom-mod", TargetRoot: "Mods"},
+		},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:customgame:custom",
+			VortexInstallerID: "custom",
+			ModType:           "custom-mod",
+			InstructionMode:   InstructionCustom,
+			CustomBuild: func(input BuildInput) (Plan, error) {
+				called = true
+				return Plan{
+					GameID:    input.GameID,
+					ModType:   input.Installer.ModType,
+					PlannerID: input.Installer.ID,
+					Instructions: []Instruction{{
+						Kind:            InstructionKindCopy,
+						SourcePath:      filepath.Join(input.ExtractedRoot, "content", "file.txt"),
+						StagingRelative: "custom/file.txt",
+						TargetRelative:  filepath.ToSlash(filepath.Join(input.TargetRoot, "custom", "file.txt")),
+					}},
+				}, nil
+			},
+		}},
+	}})
+
+	plan, err := registry.Build("customgame", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("custom build hook was not called")
+	}
+	if plan.PlannerID != "vortex:customgame:custom" || plan.ModType != "custom-mod" || len(plan.Instructions) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if plan.Instructions[0].TargetRelative != "Mods/custom/file.txt" {
+		t.Fatalf("target = %q", plan.Instructions[0].TargetRelative)
+	}
+}
+
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

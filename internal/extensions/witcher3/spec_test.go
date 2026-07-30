@@ -26,6 +26,20 @@ func TestExtensionPlansTopLevelModsArchive(t *testing.T) {
 	assertTarget(t, plan.Instructions, "Mods/modExample/content/scripts/example.ws")
 }
 
+func TestExtensionPlansWrappedModsArchive(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "Mods", "modExample", "content", "scripts", "example.ws"), "script")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "witcher3tl" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan.Instructions, "Mods/modExample/content/scripts/example.ws")
+}
+
 func TestExtensionPlansTopLevelDLCArchive(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "DLC", "DLCExample", "content", "example.bundle"), "bundle")
@@ -38,6 +52,66 @@ func TestExtensionPlansTopLevelDLCArchive(t *testing.T) {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
 	assertTarget(t, plan.Instructions, "DLC/DLCExample/content/example.bundle")
+}
+
+func TestExtensionPlansDLCArchiveWithoutTopLevelDLCFolder(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "DLCExample", "content", "example.bundle"), "bundle")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "witcher3dlc" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan.Instructions, "DLC/DLCExample/content/example.bundle")
+}
+
+func TestExtensionPlansContentOnlyArchive(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "content", "scripts", "example.ws"), "script")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "witcher3tl" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan.Instructions, "Mods/mod/scripts/example.ws")
+}
+
+func TestExtensionPlansMixedModAndDLCArchive(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "modExample", "content", "scripts", "example.ws"), "script")
+	writeFile(t, filepath.Join(root, "dlcExample", "content", "example.bundle"), "bundle")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "witcher3menumodroot" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan.Instructions, "Mods/modExample/content/scripts/example.ws")
+	assertTarget(t, plan.Instructions, "DLC/dlcExample/content/example.bundle")
+}
+
+func TestExtensionPlansMenuModArchive(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "FriendlyHUD", "bin", "config", "r4game", "user_config_matrix", "pc", "input.xml"), "input")
+	writeFile(t, filepath.Join(root, "FriendlyHUD", "content", "scripts", "friendly.ws"), "script")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "witcher3menumodroot" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan.Instructions, "bin/config/r4game/user_config_matrix/pc/input.xml")
+	assertTarget(t, plan.Instructions, "Mods/FriendlyHUD/content/scripts/friendly.ws")
 }
 
 func TestExtensionBlocksScriptMergerModArchive(t *testing.T) {

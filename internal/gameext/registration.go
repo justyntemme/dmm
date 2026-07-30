@@ -168,6 +168,9 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		if strings.TrimSpace(installer.VortexInstallerID) == "" {
 			errs = append(errs, errors.New("installer "+id+" Vortex installer id is required"))
 		}
+		if installer.InstructionMode == installplan.InstructionCustom && installer.CustomBuild == nil {
+			errs = append(errs, errors.New("installer "+id+" custom builder is required"))
+		}
 		modType := strings.TrimSpace(installer.ModType)
 		if modType != "" {
 			if _, ok := declaredModTypes[modType]; !ok {

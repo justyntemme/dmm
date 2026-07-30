@@ -111,7 +111,20 @@ type InstallerSpec struct {
 	MetadataExtractors []MetadataExtractorSpec
 	InstructionMode    InstructionMode
 	UnsupportedReason  string
+	CustomMatch        CustomMatchFunc
+	CustomBuild        CustomBuildFunc
 }
+
+type CustomMatchFunc func(extractedRoot string) bool
+
+type BuildInput struct {
+	GameID        string
+	ExtractedRoot string
+	Installer     InstallerSpec
+	TargetRoot    string
+}
+
+type CustomBuildFunc func(BuildInput) (Plan, error)
 
 type MatchSpec struct {
 	ManifestFileName      string
@@ -157,6 +170,7 @@ const (
 	InstructionRootFolder      InstructionMode = "root-folder"
 	InstructionArchiveRoot     InstructionMode = "archive-root"
 	InstructionEmbeddedZip     InstructionMode = "embedded-zip"
+	InstructionCustom          InstructionMode = "custom"
 	InstructionUnsupported     InstructionMode = "unsupported"
 )
 
@@ -300,6 +314,16 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 		return buildArchiveRootPlan(plan, installer, extractedRoot)
 	case InstructionEmbeddedZip:
 		return buildEmbeddedZipPlan(plan, installer, extractedRoot)
+	case InstructionCustom:
+		if installer.CustomBuild == nil {
+			return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " does not have a custom builder")
+		}
+		return installer.CustomBuild(BuildInput{
+			GameID:        plan.GameID,
+			ExtractedRoot: extractedRoot,
+			Installer:     installer,
+			TargetRoot:    installer.TargetRoot,
+		})
 	default:
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " uses an unsupported instruction mode")
 	}
@@ -777,6 +801,9 @@ func manifestStagingRoot(extractedRoot, modRoot, manifestFileName string) string
 }
 
 func matchesInstaller(extractedRoot string, installer InstallerSpec) bool {
+	if installer.CustomMatch != nil {
+		return installer.CustomMatch(extractedRoot)
+	}
 	match := installer.Match
 	for _, dir := range match.RequireTopLevelDirs {
 		if _, ok := findRootFolderMatch(extractedRoot, []string{dir}); !ok {
