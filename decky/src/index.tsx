@@ -280,6 +280,27 @@ type WorkshopState = {
   items: WorkshopItem[];
 };
 
+type PluginLoadOrder = {
+  app_id?: string;
+  supported: boolean;
+  activation_id?: string;
+  name?: string;
+  target_root?: string;
+  plugins_file?: string;
+  load_order_file?: string;
+  plugins: PluginLoadOrderEntry[];
+  warnings?: string[];
+};
+
+type PluginLoadOrderEntry = {
+  name: string;
+  source: string;
+  installed_mod_id?: number;
+  mod_id?: string;
+  priority: number;
+  active: boolean;
+};
+
 type WorkshopActionJob = Job & {
   payload?: {
     app_id?: string;
@@ -1840,6 +1861,7 @@ function DeckyModManagerRoute() {
   const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
+  const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [modSort, setModSort] = useState<DeckyModSort>("profile");
@@ -1956,13 +1978,15 @@ function DeckyModManagerRoute() {
       setDeckyInstallCandidates([]);
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
+      setDeckyLoadOrder(null);
       return null;
     }
-    const [profilesResult, modsResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
-      call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID)
+      call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
+      call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID)
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
@@ -1987,6 +2011,11 @@ function DeckyModManagerRoute() {
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
     }
+    if (loadOrderResult.ok && loadOrderResult.load_order) {
+      setDeckyLoadOrder(loadOrderResult.load_order);
+    } else {
+      setDeckyLoadOrder(null);
+    }
     void syncWorkshopStateForApp(appID).then((synced) => {
       if (synced) {
         void call<[string], { ok: boolean; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID).then((next) => {
@@ -1999,7 +2028,8 @@ function DeckyModManagerRoute() {
     return {
       mods: modsResult.mods,
       candidates: candidatesResult.ok ? candidatesResult.candidates : [],
-      workshopItems: workshopResult.ok ? workshopResult.items : []
+      workshopItems: workshopResult.ok ? workshopResult.items : [],
+      loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null
     };
   }
 
@@ -3050,6 +3080,42 @@ function DeckyModManagerRoute() {
                   );
                 })}
               </Focusable>
+            </PanelSectionRow>
+          )}
+          {deckyLoadOrder?.supported && (
+            <PanelSectionRow>
+              <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, background: "#111827", border: "1px solid #303741", borderRadius: "6px", padding: "10px" }}>
+                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+                  <div style={{ fontWeight: 800 }}>Plugin Load Order</div>
+                  <div style={{ color: "#7dd3fc", fontSize: "11px", fontWeight: 800 }}>{deckyLoadOrder.plugins.length} plugin{deckyLoadOrder.plugins.length === 1 ? "" : "s"}</div>
+                </div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>
+                  {deckyLoadOrder.name || "Extension activation"} · {deckyLoadOrder.plugins_file || "plugins.txt"} / {deckyLoadOrder.load_order_file || "loadorder.txt"}
+                </div>
+                {deckyLoadOrder.warnings?.map((warning) => (
+                  <div key={warning} style={{ color: "#fbbf24", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>{warning}</div>
+                ))}
+                {deckyLoadOrder.plugins.length === 0 ? (
+                  <div style={{ color: "#a1a1aa", fontSize: "11px" }}>No active plugin files are in this profile.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: "6px", width: "100%" }}>
+                    {deckyLoadOrder.plugins.slice(0, 8).map((plugin, index) => (
+                      <div key={`${plugin.source}:${plugin.name}:${index}`} style={{ alignItems: "start", background: "#0b1220", border: "1px solid #263243", borderRadius: "6px", display: "grid", gap: "8px", gridTemplateColumns: "24px minmax(0, 1fr)", padding: "7px" }}>
+                        <div style={{ color: "#7dd3fc", fontSize: "11px", fontWeight: 900, textAlign: "center" }}>{index + 1}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{plugin.name}</div>
+                          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>
+                            {plugin.source === "native" ? "Native" : `DMM mod ${plugin.mod_id || plugin.installed_mod_id || ""}`} · Priority {plugin.priority}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {deckyLoadOrder.plugins.length > 8 && (
+                      <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{deckyLoadOrder.plugins.length - 8} more plugin{deckyLoadOrder.plugins.length - 8 === 1 ? "" : "s"} in phone/tablet advanced view.</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </PanelSectionRow>
           )}
           {deckyWorkshopItems.length > 0 && visibleWorkshopItems.length === 0 && (

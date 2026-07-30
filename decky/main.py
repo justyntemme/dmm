@@ -327,6 +327,21 @@ class Plugin:
             return {"ok": True, "mods": result}
         return {"ok": False, "error": "Unexpected mods response.", "mods": []}
 
+    async def game_load_order(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "load_order": {"supported": False, "plugins": []}}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "load_order": {"supported": False, "plugins": []}}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/load-order")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load plugin load order.", "load_order": {"supported": False, "plugins": []}}
+        plugins = result.get("plugins")
+        if not isinstance(plugins, list):
+            return {"ok": False, "error": "Unexpected load order response.", "load_order": {"supported": False, "plugins": []}}
+        self._log(f"plugin load order loaded app_id={app_id} supported={bool(result.get('supported'))} plugins={len(plugins)}")
+        return {"ok": True, "load_order": result}
+
     async def check_game_mod_updates(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:
