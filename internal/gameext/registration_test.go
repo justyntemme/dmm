@@ -68,6 +68,20 @@ func TestNewExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
 		t.Fatalf("launch tool provider lookup = %+v %v", tool, ok)
 	}
+	summaries := registry.ExtensionSummaries()
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %+v", summaries)
+	}
+	summary := summaries[0]
+	if summary.ID != "sample" || summary.VortexGameID != "samplegame" {
+		t.Fatalf("summary identity = %+v", summary)
+	}
+	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "sample:installer" {
+		t.Fatalf("installer capabilities = %+v", summary.Capabilities.Installers)
+	}
+	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
+		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
+	}
 }
 
 func TestNewExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {

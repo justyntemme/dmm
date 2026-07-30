@@ -158,6 +158,62 @@ func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	}
 }
 
+func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/extensions", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	type featureResponse struct {
+		ID string `json:"id"`
+	}
+	featureIDsContain := func(features []featureResponse, id string) bool {
+		for _, feature := range features {
+			if feature.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	var body []struct {
+		ID           string   `json:"id"`
+		SteamAppIDs  []string `json:"steam_app_ids"`
+		NexusDomains []string `json:"nexus_domains"`
+		Capabilities struct {
+			Installers          []featureResponse `json:"installers"`
+			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
+			LaunchTools         []featureResponse `json:"launch_tools"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != 1 || body[0].ID != "stardewvalley" {
+		t.Fatalf("extensions = %+v", body)
+	}
+	if len(body[0].SteamAppIDs) != 1 || body[0].SteamAppIDs[0] != "413150" {
+		t.Fatalf("steam ids = %+v", body[0].SteamAppIDs)
+	}
+	if len(body[0].NexusDomains) != 1 || body[0].NexusDomains[0] != "stardewvalley" {
+		t.Fatalf("nexus domains = %+v", body[0].NexusDomains)
+	}
+	if !featureIDsContain(body[0].Capabilities.Installers, "vortex:stardewvalley:stardew-valley-installer") {
+		t.Fatalf("installers = %+v", body[0].Capabilities.Installers)
+	}
+	if !featureIDsContain(body[0].Capabilities.RuntimeRequirements, "stardew-smapi-installed") {
+		t.Fatalf("runtime requirements = %+v", body[0].Capabilities.RuntimeRequirements)
+	}
+	if !featureIDsContain(body[0].Capabilities.LaunchTools, "smapi") {
+		t.Fatalf("launch tools = %+v", body[0].Capabilities.LaunchTools)
+	}
+}
+
 func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 	cases := []struct {
 		name   string

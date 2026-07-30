@@ -211,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings/ui", s.handleUISettings)
 	mux.HandleFunc("PATCH /api/settings/ui", s.handlePatchUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
+	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
@@ -1142,6 +1143,10 @@ func normalizedGameSort(value string) string {
 
 func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deps.CheckArchiveTools())
+}
+
+func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.games.ExtensionSummaries())
 }
 
 func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {

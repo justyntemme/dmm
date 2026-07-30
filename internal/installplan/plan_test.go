@@ -11,7 +11,7 @@ import (
 	. "github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-var stardewPlanner = NewRegistry([]GameSpec{stardewvalley.InstallPlanSpec()})
+var stardewPlanner = NewRegistry([]GameSpec{stardewvalley.Extension().InstallPlan})
 
 func Build(gameID, extractedRoot string) (Plan, error) {
 	return stardewPlanner.Build(gameID, extractedRoot)

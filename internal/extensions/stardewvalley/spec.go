@@ -71,18 +71,6 @@ func Register(r *gameext.Registrar) {
 	}
 }
 
-func InstallPlanSpec() installplan.GameSpec {
-	return installplan.GameSpec{
-		SteamAppIDs:  []string{SteamAppID},
-		VortexGameID: VortexGameID,
-		Deployment: installplan.DeploymentSpec{
-			AllowNeedsReviewState: true,
-		},
-		ModTypes:   modTypes(),
-		Installers: installers(),
-	}
-}
-
 func modTypes() []installplan.ModTypeSpec {
 	return []installplan.ModTypeSpec{
 		{ID: "SMAPI", TargetRoot: ""},
