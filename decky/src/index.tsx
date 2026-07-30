@@ -2,13 +2,13 @@ import {
   ButtonItem,
   ConfirmModal,
   Focusable,
+  GamepadButton,
   ModalRoot,
   Navigation,
   NavEntryPositionPreferences,
   PanelSection,
   PanelSectionRow,
   Router,
-  Tabs,
   TextField,
   ToggleField,
   showModal,
@@ -17,7 +17,7 @@ import {
 } from "@decky/ui";
 import { call, definePlugin, routerHook, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
+import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 declare const SteamClient:
   | {
@@ -276,6 +276,7 @@ type WorkshopActionJob = Job & {
 
 type Tab = "main" | "mods" | "settings" | "debug";
 type GameSort = "recent" | "az" | "za";
+type DeckyModSort = "profile" | "az" | "za" | "enabled";
 
 const DMM_DECKY_ROUTE = "/decky-mod-manager";
 const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
@@ -309,9 +310,25 @@ const deckyRouteShellStyle: CSSProperties = {
 
 const deckyRouteContentStyle: CSSProperties = {
   boxSizing: "border-box",
+  display: "grid",
+  gap: "10px",
+  gridTemplateRows: "40px minmax(0, 1fr)",
   height: "calc(100% - 40px)",
   marginTop: "40px",
   overflow: "hidden",
+  paddingTop: "4px",
+  width: "100%"
+};
+
+const deckyRouteTabBarStyle: CSSProperties = {
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "6px",
+  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+  maxWidth: "100%",
+  minWidth: 0,
+  overflow: "hidden",
+  padding: "0 28px",
   width: "100%"
 };
 
@@ -327,6 +344,27 @@ const deckyRouteTabBodyStyle: CSSProperties = {
   scrollPaddingTop: "8px",
   width: "100%"
 };
+
+function deckyRouteTabButtonStyle(active: boolean): CSSProperties {
+  return {
+    ...deckyFocusableCardBase,
+    alignItems: "center",
+    background: active ? "#0f766e" : "#1f2937",
+    border: `1px solid ${active ? "#5eead4" : "#374151"}`,
+    color: "#f8fafc",
+    display: "flex",
+    fontSize: "11px",
+    fontWeight: 900,
+    height: "36px",
+    justifyContent: "center",
+    letterSpacing: 0,
+    lineHeight: 1,
+    padding: "0 4px",
+    textAlign: "center",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap"
+  };
+}
 
 const deckyRuntimeStyles = `
 .dmm-sidebar-surface,
@@ -630,6 +668,20 @@ function gameSortLabel(sort: GameSort) {
   return "Recent";
 }
 
+function nextDeckyModSort(current: DeckyModSort): DeckyModSort {
+  if (current === "profile") return "az";
+  if (current === "az") return "za";
+  if (current === "za") return "enabled";
+  return "profile";
+}
+
+function deckyModSortLabel(sort: DeckyModSort) {
+  if (sort === "az") return "A-Z";
+  if (sort === "za") return "Z-A";
+  if (sort === "enabled") return "Enabled First";
+  return "Profile Order";
+}
+
 function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
   if (current === "downloads") return "unique_downloads";
   if (current === "unique_downloads") return "popular";
@@ -689,16 +741,16 @@ function nexusFileURL(gameDomain: string, modID: number, fileID: number) {
   return `https://www.nexusmods.com/${encodeURIComponent(gameDomain)}/mods/${modID}?file_id=${fileID}`;
 }
 
-function focusDeckyElement(selector: string, logDetail: Record<string, string | number | boolean> = {}) {
+function focusDeckyRef(ref: { current: HTMLElement | null }, label: string, logDetail: Record<string, string | number | boolean> = {}) {
   window.setTimeout(() => {
-    const target = document.querySelector<HTMLElement>(selector);
+    const target = ref.current;
     if (!target) {
-      void logFrontendEvent("decky focus target missing", { selector, ...logDetail });
+      void logFrontendEvent("decky focus ref missing", { label, ...logDetail });
       return;
     }
     target.focus();
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
-    void logFrontendEvent("decky focus target applied", { selector, ...logDetail });
+    void logFrontendEvent("decky focus ref applied", { label, ...logDetail });
   }, 80);
 }
 
@@ -1706,6 +1758,7 @@ function openDeckyModManagerRoute() {
 }
 
 function DeckyModManagerRoute() {
+  const selectedDeckyGameRef = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<Tab>("main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
@@ -1725,6 +1778,7 @@ function DeckyModManagerRoute() {
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
+  const [modSort, setModSort] = useState<DeckyModSort>("profile");
   const [gameSearch, setGameSearch] = useState<string>("");
   const [gameSort, setGameSortState] = useState<GameSort>("recent");
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
@@ -1799,6 +1853,10 @@ function DeckyModManagerRoute() {
     void patchDeckyUIPreferences({ game_sort: next });
   }
 
+  function cycleDeckyModSort() {
+    setModSort((current) => nextDeckyModSort(current));
+  }
+
   function clearSelectedDeckyGame() {
     setSelectedDeckyGameID("");
     setFocusedModID(null);
@@ -1830,7 +1888,7 @@ function DeckyModManagerRoute() {
       setDeckyInstallCandidates([]);
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
-      return;
+      return null;
     }
     const [profilesResult, modsResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
@@ -1840,11 +1898,11 @@ function DeckyModManagerRoute() {
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
-      return;
+      return null;
     }
     if (!modsResult.ok) {
       setError(modsResult.error ?? "Unable to load mods.");
-      return;
+      return null;
     }
     setDeckyProfiles(profilesResult.profiles);
     setDeckyMods(modsResult.mods);
@@ -1870,6 +1928,11 @@ function DeckyModManagerRoute() {
         });
       }
     });
+    return {
+      mods: modsResult.mods,
+      candidates: candidatesResult.ok ? candidatesResult.candidates : [],
+      workshopItems: workshopResult.ok ? workshopResult.items : []
+    };
   }
 
   async function refreshDeckyMods(appID = selectedDeckyGameID) {
@@ -1895,9 +1958,9 @@ function DeckyModManagerRoute() {
       setModsResult("");
       setModSearch("");
       setSelectedDeckyGameID(appID);
-      focusDeckyElement("[data-dmm-selected-game-primary='true']", { app_id: appID, source: "select-game" });
       markDeckyGameRecent(appID);
       await loadDeckyGameState(appID);
+      focusDeckyRef(selectedDeckyGameRef, "selected-game", { app_id: appID, source: "select-game" });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -2308,7 +2371,7 @@ function DeckyModManagerRoute() {
 
   useEffect(() => {
     if (tab !== "mods" || !selectedDeckyGameID) return;
-    focusDeckyElement("[data-dmm-selected-game-primary='true']", { app_id: selectedDeckyGameID, source: "selected-game-render" });
+    focusDeckyRef(selectedDeckyGameRef, "selected-game", { app_id: selectedDeckyGameID, source: "selected-game-render" });
   }, [tab, selectedDeckyGameID]);
 
   useEffect(() => {
@@ -2366,12 +2429,21 @@ function DeckyModManagerRoute() {
   }, [managedGames, gameSearch, favoriteGameKey, gameSort, gameRecent]);
   const visibleDeckyMods = useMemo(() => {
     const normalizedModSearch = modSearch.trim().toLowerCase();
-    if (!normalizedModSearch) return deckyMods;
-    return deckyMods.filter((mod) =>
+    const filtered = deckyMods.filter((mod) =>
+      !normalizedModSearch ||
         [mod.name, mod.status, mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       );
-  }, [deckyMods, modSearch]);
+    return [...filtered].sort((a, b) => {
+      if (modSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
+      if (modSort === "za") return b.name.localeCompare(a.name) || a.priority - b.priority;
+      if (modSort === "enabled") {
+        const enabledDelta = Number(b.enabled) - Number(a.enabled);
+        if (enabledDelta !== 0) return enabledDelta;
+      }
+      return a.priority - b.priority || a.name.localeCompare(b.name);
+    });
+  }, [deckyMods, modSearch, modSort]);
   const visibleWorkshopItems = useMemo(() => {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     if (!normalizedModSearch) return deckyWorkshopItems;
@@ -2534,6 +2606,7 @@ function DeckyModManagerRoute() {
         <>
           <PanelSectionRow>
             <Focusable
+              ref={selectedDeckyGameRef}
               className="dmm-sidebar-surface dmm-sidebar-row"
               data-dmm-selected-game-primary="true"
               focusClassName="dmm-sidebar-row-focused"
@@ -2569,6 +2642,16 @@ function DeckyModManagerRoute() {
               </div>
             </Focusable>
           </PanelSectionRow>
+          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
+            <PanelSectionRow>
+              <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
+                <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
+                <ButtonItem layout="below" onClick={cycleDeckyModSort}>
+                  Sort: {deckyModSortLabel(modSort)}
+                </ButtonItem>
+              </div>
+            </PanelSectionRow>
+          )}
           <PanelSectionRow>
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
           </PanelSectionRow>
@@ -2645,11 +2728,6 @@ function DeckyModManagerRoute() {
                   );
                 })}
               </div>
-            </PanelSectionRow>
-          )}
-          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
-            <PanelSectionRow>
-              <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
             </PanelSectionRow>
           )}
           {deckyProfiles.length > 1 && (
@@ -2989,28 +3067,67 @@ function DeckyModManagerRoute() {
     { id: "settings", title: deckyTabLabels.settings, content: settingsContent },
     { id: "debug", title: deckyTabLabels.debug, content: debugContent }
   ];
+  const activeTabItem = tabItems.find((item) => item.id === tab) ?? tabItems[0];
+
+  function showDeckyRouteTab(next: Tab, source: string) {
+    if (next === tab) return;
+    setTab(next);
+    void logFrontendEvent("decky route tab changed", { tab: next, source });
+  }
+
+  function cycleDeckyRouteTab(delta: -1 | 1, source: string) {
+    const currentIndex = Math.max(0, deckyTabOrder.indexOf(tab));
+    const nextIndex = (currentIndex + delta + deckyTabOrder.length) % deckyTabOrder.length;
+    showDeckyRouteTab(deckyTabOrder[nextIndex], source);
+  }
+
+  function handleDeckyRouteButtonDown(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.BUMPER_LEFT) {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleDeckyRouteTab(-1, "bumper-left");
+      return;
+    }
+    if (event.detail.button === GamepadButton.BUMPER_RIGHT) {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleDeckyRouteTab(1, "bumper-right");
+    }
+  }
 
   return (
-    <Focusable flow-children="down" style={deckyRouteShellStyle}>
+    <Focusable flow-children="down" onButtonDown={handleDeckyRouteButtonDown} style={deckyRouteShellStyle}>
       <style>{deckyRuntimeStyles}</style>
       <div style={deckyRouteContentStyle}>
-        <Tabs
-          activeTab={tab}
-          autoFocusContents
-          onShowTab={(next: string) => {
-            if (deckyTabOrder.includes(next as Tab)) setTab(next as Tab);
-          }}
-          tabs={tabItems.map((item) => ({
-            id: item.id,
-            title: item.title,
-            content: deckyTabBody(
-              item.id,
-              item.content,
-              item.id === "mods" ? selectedDeckyGameID || "game-list" : item.id,
-              item.id === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined
-            )
-          }))}
-        />
+        <Focusable flow-children="right" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckyRouteTabBarStyle}>
+          {tabItems.map((item) => {
+            const active = item.id === tab;
+            return (
+              <Focusable
+                key={item.id}
+                className="dmm-focus-card"
+                focusClassName="dmm-focus-card-focused"
+                onActivate={() => showDeckyRouteTab(item.id, "tab-button")}
+                onClick={() => showDeckyRouteTab(item.id, "tab-click")}
+                onOKButton={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  showDeckyRouteTab(item.id, "tab-ok");
+                }}
+                preferredFocus={active}
+                style={deckyRouteTabButtonStyle(active)}
+              >
+                {item.title}
+              </Focusable>
+            );
+          })}
+        </Focusable>
+        {deckyTabBody(
+          activeTabItem.id,
+          activeTabItem.content,
+          activeTabItem.id === "mods" ? selectedDeckyGameID || "game-list" : activeTabItem.id,
+          activeTabItem.id === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined
+        )}
       </div>
     </Focusable>
   );
