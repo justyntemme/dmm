@@ -332,13 +332,13 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 		return nil
 	}
 	if _, err := exec.LookPath("7z"); err != nil {
-		return errors.New("unrar or 7z is required to extract this RAR archive. Install an archive helper from the Decky plugin Dependencies view, then retry the request.")
+		return errors.New("unrar or 7z is required to extract this RAR archive. Install an archive helper from the Decky plugin Dependencies view, then retry the install.")
 	}
 	return extractWith7z(ctx, filePath, destDir)
 }
 
 func missing7zMessage(action string) string {
-	return "7z is required to " + action + ". Install 7-Zip/p7zip from the Decky plugin Dependencies view, then retry the request."
+	return "7z is required to " + action + ". Install 7-Zip/p7zip from the Decky plugin Dependencies view, then retry the install."
 }
 
 func helperCommandError(tool, action string, out []byte) error {

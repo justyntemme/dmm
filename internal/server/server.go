@@ -4667,9 +4667,9 @@ func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Reque
 	}
 	var message string
 	if pendingArchiveReady(pending) {
-		message = "Retry requested; installing cached archive"
+		message = "Retry started; installing cached archive"
 	} else {
-		message = "Retry requested; downloading archive again"
+		message = "Retry started; downloading archive again"
 	}
 	if _, ok := s.jobs.Wait(jobID, message); !ok {
 		http.Error(w, "captured mod job was not found", http.StatusNotFound)
