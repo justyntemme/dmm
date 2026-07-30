@@ -1184,6 +1184,11 @@
     }
   }
 
+  function selectionCount(selections: Record<string, string[]> | null | undefined) {
+    if (!selections) return 0;
+    return Object.values(selections).reduce((total, group) => total + (Array.isArray(group) ? group.length : 0), 0);
+  }
+
   function fomodGroupType(group: FomodGroup) {
     return (group.type ?? "").trim().toLowerCase();
   }
@@ -2486,11 +2491,15 @@
               <div class="request-list">
                 {#each installCandidates as candidate}
                   {@const installer = installerForCandidate(candidate)}
+                  {@const selectedChoiceCount = selectionCount(candidateCurrentSelections(candidate))}
                   <article class="failed-request">
                     <div>
                       <strong>{candidate.name}</strong>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
+                      {#if selectedChoiceCount > 0}
+                        <p class="preset-selection-note">{selectedChoiceCount} choice{selectedChoiceCount === 1 ? "" : "s"} preselected from DMM's saved/default installer state.</p>
+                      {/if}
                       {#if installer}
                         <div class="installer-choices">
                           {#each visibleFomodSteps(installer) as step}

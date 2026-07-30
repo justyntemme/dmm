@@ -902,6 +902,11 @@ function storedFomodSelections(candidate: InstallCandidate): Record<string, stri
   }
 }
 
+function selectionCount(selections: Record<string, string[]> | null | undefined) {
+  if (!selections) return 0;
+  return Object.values(selections).reduce((total, group) => total + (Array.isArray(group) ? group.length : 0), 0);
+}
+
 async function maybeShowJobToast(job: Job, { seed = false, source = "event" } = {}) {
   if (!isNotifiableJob(job)) return;
   const stateKey = `${job.status}:${job.message || ""}`;
@@ -1202,6 +1207,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
   const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const selectedChoices = selectionCount(selections);
 
   function pluginSelected(group: FomodGroup, plugin: FomodPlugin) {
     return (selections[group.id] ?? []).includes(plugin.id);
@@ -1281,6 +1287,11 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
       strDescription={
         <div style={{ display: "grid", gap: "12px", maxHeight: "62vh", overflowY: "auto", paddingRight: "4px" }}>
           <div style={{ color: "#a1a1aa" }}>{props.candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
+          {selectedChoices > 0 && (
+            <div style={{ border: "1px solid #365244", borderRadius: "6px", color: "#99f6e4", padding: "8px" }}>
+              {selectedChoices} choice{selectedChoices === 1 ? "" : "s"} preselected from DMM's saved/default installer state.
+            </div>
+          )}
           {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this request.</div>}
           {installer && visibleFomodSteps(installer).map((step) => (
             <section key={step.id} style={{ display: "grid", gap: "8px" }}>

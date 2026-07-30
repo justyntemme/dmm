@@ -1130,6 +1130,14 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.preset-selection-note {
+  border: 1px solid #365244;
+  border-radius: 8px;
+  padding: 8px;
+  color: #76dfa6;
+  background: #132018;
+}
+
 .recovery-card {
   display: grid;
   gap: 10px;
