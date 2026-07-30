@@ -59,6 +59,17 @@ type InstalledMod struct {
 	Status           string `json:"status"`
 }
 
+type ModUpdate struct {
+	InstalledModID   int64  `json:"installed_mod_id"`
+	Status           string `json:"status"`
+	LatestFileID     string `json:"latest_file_id,omitempty"`
+	LatestFileName   string `json:"latest_file_name,omitempty"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	LatestUploadedAt int64  `json:"latest_uploaded_at,omitempty"`
+	Message          string `json:"message,omitempty"`
+	CheckedAt        string `json:"checked_at"`
+}
+
 type DeploymentSummary struct {
 	ID          int64  `json:"id"`
 	ProfileID   int64  `json:"profile_id"`
@@ -1172,6 +1183,72 @@ ORDER BY pm.priority ASC, m.name ASC
 		mods = append(mods, mod)
 	}
 	return mods, rows.Err()
+}
+
+func (db *DB) UpsertModUpdate(ctx context.Context, update ModUpdate) error {
+	update.Status = strings.TrimSpace(update.Status)
+	update.LatestFileID = strings.TrimSpace(update.LatestFileID)
+	update.LatestFileName = strings.TrimSpace(update.LatestFileName)
+	update.LatestVersion = strings.TrimSpace(update.LatestVersion)
+	update.Message = strings.TrimSpace(update.Message)
+	update.CheckedAt = strings.TrimSpace(update.CheckedAt)
+	if update.InstalledModID <= 0 {
+		return errors.New("installed mod id is required")
+	}
+	if update.Status == "" {
+		return errors.New("mod update status is required")
+	}
+	if update.CheckedAt == "" {
+		update.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO mod_updates (installed_mod_id, status, latest_file_id, latest_file_name, latest_version, latest_uploaded_at, message, checked_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(installed_mod_id) DO UPDATE SET
+	status = excluded.status,
+	latest_file_id = excluded.latest_file_id,
+	latest_file_name = excluded.latest_file_name,
+	latest_version = excluded.latest_version,
+	latest_uploaded_at = excluded.latest_uploaded_at,
+	message = excluded.message,
+	checked_at = excluded.checked_at
+`, update.InstalledModID, update.Status, update.LatestFileID, update.LatestFileName, update.LatestVersion, update.LatestUploadedAt, update.Message, update.CheckedAt)
+	return err
+}
+
+func (db *DB) ModUpdatesForSteamApp(ctx context.Context, appID string) (map[int64]ModUpdate, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT mu.installed_mod_id, mu.status, mu.latest_file_id, mu.latest_file_name, mu.latest_version,
+	mu.latest_uploaded_at, mu.message, mu.checked_at
+FROM mod_updates mu
+JOIN installed_mods im ON im.id = mu.installed_mod_id
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id
+JOIN games g ON g.id = m.game_id
+WHERE g.steam_app_id = ?
+`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]ModUpdate{}
+	for rows.Next() {
+		var update ModUpdate
+		if err := rows.Scan(
+			&update.InstalledModID,
+			&update.Status,
+			&update.LatestFileID,
+			&update.LatestFileName,
+			&update.LatestVersion,
+			&update.LatestUploadedAt,
+			&update.Message,
+			&update.CheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		out[update.InstalledModID] = update
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) DeleteInstalledModForSteamApp(ctx context.Context, appID string, installedModID int64) (InstalledMod, error) {

@@ -99,6 +99,17 @@ CREATE TABLE IF NOT EXISTS installed_mods (
 	UNIQUE(mod_version_id)
 );
 
+CREATE TABLE IF NOT EXISTS mod_updates (
+	installed_mod_id INTEGER PRIMARY KEY REFERENCES installed_mods(id) ON DELETE CASCADE,
+	status TEXT NOT NULL,
+	latest_file_id TEXT NOT NULL DEFAULT '',
+	latest_file_name TEXT NOT NULL DEFAULT '',
+	latest_version TEXT NOT NULL DEFAULT '',
+	latest_uploaded_at INTEGER NOT NULL DEFAULT 0,
+	message TEXT NOT NULL DEFAULT '',
+	checked_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS install_candidates (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,

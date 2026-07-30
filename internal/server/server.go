@@ -261,6 +261,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/workshop/items/{itemID}/actions/{kind}", s.handleQueueSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
+	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
@@ -1904,7 +1905,12 @@ func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	markUndeployableInstalledMods(mods)
-	writeJSON(w, http.StatusOK, gameModResponses(mods))
+	updates, err := s.db.ModUpdatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gameModResponses(mods, updates))
 }
 
 type gameModResponse struct {
@@ -1924,6 +1930,17 @@ type gameModResponse struct {
 	ModType          string                   `json:"mod_type,omitempty"`
 	PlannerID        string                   `json:"planner_id,omitempty"`
 	Metadata         []gameModMetadataSummary `json:"metadata,omitempty"`
+	Update           *gameModUpdateSummary    `json:"update,omitempty"`
+}
+
+type gameModUpdateSummary struct {
+	Status           string `json:"status"`
+	LatestFileID     string `json:"latest_file_id,omitempty"`
+	LatestFileName   string `json:"latest_file_name,omitempty"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	LatestUploadedAt int64  `json:"latest_uploaded_at,omitempty"`
+	Message          string `json:"message,omitempty"`
+	CheckedAt        string `json:"checked_at,omitempty"`
 }
 
 type gameModMetadataSummary struct {
@@ -1945,7 +1962,7 @@ type gameModDependencySummary struct {
 	Required       bool   `json:"required"`
 }
 
-func gameModResponses(mods []storage.InstalledMod) []gameModResponse {
+func gameModResponses(mods []storage.InstalledMod, updates map[int64]storage.ModUpdate) []gameModResponse {
 	out := make([]gameModResponse, 0, len(mods))
 	for _, mod := range mods {
 		resp := gameModResponse{
@@ -1967,6 +1984,17 @@ func gameModResponses(mods []storage.InstalledMod) []gameModResponse {
 			resp.ModType = strings.TrimSpace(manifest.ModType)
 			resp.PlannerID = strings.TrimSpace(manifest.PlannerID)
 			resp.Metadata = gameModMetadataSummaries(manifest.Metadata)
+		}
+		if update, ok := updates[mod.ID]; ok {
+			resp.Update = &gameModUpdateSummary{
+				Status:           update.Status,
+				LatestFileID:     update.LatestFileID,
+				LatestFileName:   update.LatestFileName,
+				LatestVersion:    update.LatestVersion,
+				LatestUploadedAt: update.LatestUploadedAt,
+				Message:          update.Message,
+				CheckedAt:        update.CheckedAt,
+			}
 		}
 		out = append(out, resp)
 	}
@@ -2009,6 +2037,175 @@ func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetad
 		out = append(out, next)
 	}
 	return out
+}
+
+type modUpdateCheckResponse struct {
+	Checked int                          `json:"checked"`
+	Results []gameModUpdateCheckResponse `json:"results"`
+}
+
+type gameModUpdateCheckResponse struct {
+	InstalledModID   int64  `json:"installed_mod_id"`
+	Name             string `json:"name"`
+	Status           string `json:"status"`
+	CurrentFileID    string `json:"current_file_id,omitempty"`
+	CurrentVersion   string `json:"current_version,omitempty"`
+	LatestFileID     string `json:"latest_file_id,omitempty"`
+	LatestFileName   string `json:"latest_file_name,omitempty"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	LatestUploadedAt int64  `json:"latest_uploaded_at,omitempty"`
+	Message          string `json:"message,omitempty"`
+	CheckedAt        string `json:"checked_at"`
+}
+
+func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
+	if apiKey == "" {
+		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	client := s.nexus(apiKey)
+	checkedAt := time.Now().UTC().Format(time.RFC3339)
+	resp := modUpdateCheckResponse{
+		Results: make([]gameModUpdateCheckResponse, 0, len(mods)),
+	}
+	for _, mod := range mods {
+		if mod.Catalog != "nexus" || strings.TrimSpace(mod.SourceGameDomain) == "" || strings.TrimSpace(mod.SourceModID) == "" || strings.TrimSpace(mod.SourceFileID) == "" {
+			result := gameModUpdateCheckResponse{
+				InstalledModID: mod.ID,
+				Name:           mod.Name,
+				Status:         "unsupported",
+				CurrentFileID:  mod.SourceFileID,
+				CurrentVersion: mod.Version,
+				Message:        "Update checks are only available for Nexus mods installed from a known Nexus file.",
+				CheckedAt:      checkedAt,
+			}
+			resp.Results = append(resp.Results, result)
+			continue
+		}
+		s.logger.Info("nexus mod update check requested", "app_id", appID, "installed_mod_id", mod.ID, "game_domain", mod.SourceGameDomain, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+		files, err := client.Files(r.Context(), mod.SourceGameDomain, mod.SourceModID)
+		result := updateCheckResultForInstalledMod(mod, files.Files, checkedAt, err)
+		if err := s.db.UpsertModUpdate(r.Context(), storage.ModUpdate{
+			InstalledModID:   result.InstalledModID,
+			Status:           result.Status,
+			LatestFileID:     result.LatestFileID,
+			LatestFileName:   result.LatestFileName,
+			LatestVersion:    result.LatestVersion,
+			LatestUploadedAt: result.LatestUploadedAt,
+			Message:          result.Message,
+			CheckedAt:        result.CheckedAt,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		resp.Checked++
+		resp.Results = append(resp.Results, result)
+	}
+	s.logger.Info("game mod update check completed", "app_id", appID, "checked", resp.Checked, "results", len(resp.Results))
+	s.publishGameEvent(events.TypeModUpdatesChanged, appID, map[string]any{
+		"checked": resp.Checked,
+	})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func updateCheckResultForInstalledMod(mod storage.InstalledMod, files []nexus.ModFile, checkedAt string, checkErr error) gameModUpdateCheckResponse {
+	result := gameModUpdateCheckResponse{
+		InstalledModID: mod.ID,
+		Name:           mod.Name,
+		Status:         "unknown",
+		CurrentFileID:  mod.SourceFileID,
+		CurrentVersion: mod.Version,
+		CheckedAt:      checkedAt,
+	}
+	if checkErr != nil {
+		result.Status = "error"
+		result.Message = "Update check failed: " + checkErr.Error()
+		return result
+	}
+	latest, current, ok := latestComparableNexusFile(files, mod.SourceFileID)
+	if !ok {
+		result.Message = "Nexus did not return a comparable file for this installed mod."
+		return result
+	}
+	result.LatestFileID = strconv.FormatInt(latest.FileID, 10)
+	result.LatestFileName = strings.TrimSpace(latest.FileName)
+	result.LatestVersion = strings.TrimSpace(latest.Version)
+	result.LatestUploadedAt = latest.UploadedAt
+	if current == nil {
+		result.Message = "The installed Nexus file is no longer listed; review the mod page before updating."
+		return result
+	}
+	if result.LatestFileID == mod.SourceFileID {
+		result.Status = "current"
+		result.Message = "Installed file is current."
+		return result
+	}
+	result.Status = "available"
+	version := result.LatestVersion
+	if version == "" {
+		version = result.LatestFileID
+	}
+	result.Message = "Update available: " + version
+	return result
+}
+
+func latestComparableNexusFile(files []nexus.ModFile, currentFileID string) (nexus.ModFile, *nexus.ModFile, bool) {
+	currentID, _ := strconv.ParseInt(strings.TrimSpace(currentFileID), 10, 64)
+	var current *nexus.ModFile
+	for i := range files {
+		if files[i].FileID == currentID && currentID > 0 {
+			item := files[i]
+			current = &item
+			break
+		}
+	}
+	categoryID := int64(0)
+	if current != nil {
+		categoryID = current.CategoryID
+	} else if hasNexusFileCategory(files, 1) {
+		categoryID = 1
+	}
+	var latest nexus.ModFile
+	found := false
+	for _, file := range files {
+		if categoryID != 0 && file.CategoryID != categoryID {
+			continue
+		}
+		if !found || newerNexusFile(file, latest) {
+			latest = file
+			found = true
+		}
+	}
+	return latest, current, found
+}
+
+func hasNexusFileCategory(files []nexus.ModFile, categoryID int64) bool {
+	for _, file := range files {
+		if file.CategoryID == categoryID {
+			return true
+		}
+	}
+	return false
+}
+
+func newerNexusFile(left, right nexus.ModFile) bool {
+	if left.UploadedAt != right.UploadedAt {
+		return left.UploadedAt > right.UploadedAt
+	}
+	return left.FileID > right.FileID
 }
 
 func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {

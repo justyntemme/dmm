@@ -522,6 +522,76 @@ func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
 	}
 }
 
+func TestModUpdatesForSteamApp(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "100",
+		},
+		Name:          "NPC Map Locations",
+		Version:       "1.0.0",
+		ArchivePath:   "/downloads/mod.zip",
+		ArchiveSHA256: "archive-sum",
+		StagingPath:   "/staging/mod",
+		ManifestJSON:  "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertModUpdate(context.Background(), ModUpdate{
+		InstalledModID:   mod.ID,
+		Status:           "available",
+		LatestFileID:     "101",
+		LatestFileName:   "npc-map.zip",
+		LatestVersion:    "1.1.0",
+		LatestUploadedAt: 1234,
+		Message:          "Version 1.1.0 is available",
+		CheckedAt:        "2026-07-30T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	updates, err := db.ModUpdatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	update, ok := updates[mod.ID]
+	if !ok || update.Status != "available" || update.LatestFileID != "101" || update.LatestVersion != "1.1.0" {
+		t.Fatalf("update = %+v ok=%v", update, ok)
+	}
+
+	if _, err := db.DeleteInstalledModForSteamApp(context.Background(), "413150", mod.ID); err != nil {
+		t.Fatal(err)
+	}
+	updates, err = db.ModUpdatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) != 0 {
+		t.Fatalf("updates after delete = %+v", updates)
+	}
+}
+
 func TestSetProfileModStateRejectsCrossGameProfile(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

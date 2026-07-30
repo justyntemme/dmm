@@ -17,6 +17,7 @@ const (
 	TypeLaunchChanged      = "launch.changed"
 	TypeWorkshopChanged    = "workshop.changed"
 	TypeInstallChanged     = "install.changed"
+	TypeModUpdatesChanged  = "mod_updates.changed"
 	TypeUIChanged          = "ui.changed"
 )
 

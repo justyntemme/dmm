@@ -538,6 +538,13 @@ h2 {
   text-align: right;
 }
 
+.card-heading-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  min-width: 0;
+}
+
 .hint,
 .path-panel p {
   margin: 0;
@@ -802,6 +809,37 @@ h2 {
   border-color: #59451d;
   color: #f5d78c;
   background: #211b10;
+}
+
+.mod-update-status {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0;
+  border-left: 3px solid #3f3f46;
+  padding-left: 8px;
+}
+
+.mod-update-status > span {
+  color: #d4d4d8;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.mod-update-status.available-update {
+  border-left-color: #76dfa6;
+}
+
+.mod-update-status.available-update > span {
+  color: #76dfa6;
+}
+
+.mod-update-status.failed-update {
+  border-left-color: #f87171;
+}
+
+.mod-update-status.failed-update > span {
+  color: #fecaca;
 }
 
 .mod-actions > span {

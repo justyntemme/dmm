@@ -327,6 +327,21 @@ class Plugin:
             return {"ok": True, "mods": result}
         return {"ok": False, "error": "Unexpected mods response.", "mods": []}
 
+    async def check_game_mod_updates(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "results": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "results": []}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/mods/check-updates")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to check mod updates.", "results": []}
+        results = result.get("results")
+        if not isinstance(results, list):
+            return {"ok": False, "error": "Unexpected update check response.", "results": []}
+        self._log(f"mod updates checked app_id={app_id} checked={result.get('checked')} results={len(results)}")
+        return {"ok": True, "checked": int(result.get("checked") or 0), "results": results}
+
     async def game_workshop(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

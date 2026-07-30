@@ -125,6 +125,17 @@
     mod_type?: string;
     planner_id?: string;
     metadata?: ModMetadata[];
+    update?: ModUpdate;
+  };
+
+  type ModUpdate = {
+    status: string;
+    latest_file_id?: string;
+    latest_file_name?: string;
+    latest_version?: string;
+    latest_uploaded_at?: number;
+    message?: string;
+    checked_at?: string;
   };
 
   type ModDependency = {
@@ -349,6 +360,8 @@
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
+  let modUpdateBusy = false;
+  let modUpdateMessage = "";
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
@@ -580,7 +593,7 @@
       scheduleSelectedGameRefresh(false, true);
       return;
     }
-    if (["profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
+    if (["profile_mods.changed", "deployment.changed", "install.changed", "mod_updates.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
       scheduleSelectedGameRefresh(true, true);
     }
   }
@@ -830,6 +843,34 @@
     installedMods = installedMods.filter((item) => item.id !== mod.id);
     handleProfileApplyResult(result.apply);
     await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function checkModUpdates() {
+    if (!selectedGame || modUpdateBusy) return;
+    error = "";
+    modUpdateMessage = "";
+    modUpdateBusy = true;
+    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/check-updates`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      modUpdateBusy = false;
+      return;
+    }
+    const result: { checked: number; results: Array<{ installed_mod_id: number } & ModUpdate> } = await response.json();
+    const updates = new Map(result.results.map((item) => [item.installed_mod_id, {
+      status: item.status,
+      latest_file_id: item.latest_file_id,
+      latest_file_name: item.latest_file_name,
+      latest_version: item.latest_version,
+      latest_uploaded_at: item.latest_uploaded_at,
+      message: item.message,
+      checked_at: item.checked_at
+    } as ModUpdate]));
+    installedMods = installedMods.map((mod) => updates.has(mod.id) ? { ...mod, update: updates.get(mod.id) } : mod);
+    const available = result.results.filter((item) => item.status === "available").length;
+    modUpdateMessage = available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${result.checked} Nexus mod${result.checked === 1 ? "" : "s"}.`;
+    modUpdateBusy = false;
+    await refreshSelectedGame();
   }
 
   function handleProfileApplyResult(result: ProfileApplyResult | null | undefined) {
@@ -1635,6 +1676,23 @@
     return mod.enabled ? "Enabled in this profile" : "Installed, disabled in this profile";
   }
 
+  function modUpdateLabel(update: ModUpdate | undefined) {
+    if (!update) return "Not checked";
+    if (update.status === "available") return "Update Available";
+    if (update.status === "current") return "Current";
+    if (update.status === "error") return "Check Failed";
+    if (update.status === "unsupported") return "Not Supported";
+    return "Unknown";
+  }
+
+  function modUpdateDetail(update: ModUpdate | undefined) {
+    if (!update) return "Update status has not been checked yet.";
+    if (update.message) return update.message;
+    if (update.status === "available") return `Latest file ${update.latest_version || update.latest_file_id || "available"}`;
+    if (update.status === "current") return "Installed file is current.";
+    return "Review the mod page before updating.";
+  }
+
   function primaryModMetadata(mod: InstalledMod) {
     return mod.metadata?.find((metadata) => metadata.unique_id || metadata.name) ?? null;
   }
@@ -2080,8 +2138,12 @@
             <section class="mod-section">
               <div class="card-heading">
                 <h3>Mods</h3>
-                <span>{selectedProfile?.name ?? "Default"}</span>
+                <div class="card-heading-actions">
+                  <span>{selectedProfile?.name ?? "Default"}</span>
+                  <button type="button" class="secondary-action compact" on:click={checkModUpdates} disabled={modUpdateBusy || installedMods.length === 0}>{modUpdateBusy ? "Checking..." : "Check Updates"}</button>
+                </div>
               </div>
+              {#if modUpdateMessage}<p class="hint">{modUpdateMessage}</p>{/if}
               <div class="mod-list">
                 {#each installedMods as mod}
                   {@const metadata = primaryModMetadata(mod)}
@@ -2104,6 +2166,10 @@
                           {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
                         </div>
                       {/if}
+                      <div class:available-update={mod.update?.status === "available"} class:failed-update={mod.update?.status === "error"} class="mod-update-status">
+                        <span>{modUpdateLabel(mod.update)}</span>
+                        <small>{modUpdateDetail(mod.update)}</small>
+                      </div>
                       <small>{modProfileStateText(mod)}</small>
                     </div>
                     <div class="mod-actions">

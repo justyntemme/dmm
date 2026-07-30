@@ -146,6 +146,17 @@ type ManagedMod = {
   source_game_domain: string;
   source_mod_id: string;
   source_file_id: string;
+  update?: ModUpdate;
+};
+
+type ModUpdate = {
+  status: string;
+  latest_file_id?: string;
+  latest_file_name?: string;
+  latest_version?: string;
+  latest_uploaded_at?: number;
+  message?: string;
+  checked_at?: string;
 };
 
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
@@ -669,6 +680,23 @@ function deckyModStateLabel(mod: ManagedMod) {
   if (mod.status === "needs_recovery") return "Needs repair";
   if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
   return mod.status || (mod.enabled ? "Enabled" : "Installed");
+}
+
+function deckyModUpdateLabel(update?: ModUpdate) {
+  if (!update) return "Not checked";
+  if (update.status === "available") return "Update available";
+  if (update.status === "current") return "Current";
+  if (update.status === "error") return "Check failed";
+  if (update.status === "unsupported") return "Not supported";
+  return "Unknown";
+}
+
+function deckyModUpdateDetail(update?: ModUpdate) {
+  if (!update) return "Use Check Updates to query Nexus.";
+  if (update.message) return update.message;
+  if (update.status === "available") return `Latest ${update.latest_version || update.latest_file_id || "file"}`;
+  if (update.status === "current") return "Installed file is current.";
+  return "Review the mod page before updating.";
 }
 
 function nextGameSort(current: GameSort): GameSort {
@@ -1668,7 +1696,7 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
     }
     await maybeShowInstallerChoiceModal(event.payload);
   }
-  if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type)) {
+  if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "mod_updates.changed"].includes(event.type)) {
     await syncLaunchActions();
   }
   if (event.type === "job.updated") {
@@ -1786,6 +1814,7 @@ function DeckyModManagerRoute() {
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [modUpdateBusy, setModUpdateBusy] = useState<boolean>(false);
   const [busyWorkshopKey, setBusyWorkshopKey] = useState<string>("");
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
   const [focusedGameID, setFocusedGameID] = useState<string>("");
@@ -2141,6 +2170,41 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function checkDeckyModUpdates() {
+    if (!selectedDeckyGameID || modUpdateBusy) return;
+    try {
+      setError("");
+      setModsResult("");
+      setModUpdateBusy(true);
+      const result = await call<[string], { ok: boolean; error?: string; checked?: number; results: Array<{ installed_mod_id: number } & ModUpdate> }>("check_game_mod_updates", selectedDeckyGameID);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to check updates.");
+        return;
+      }
+      const updates = new Map<number, ModUpdate>();
+      for (const item of result.results ?? []) {
+        updates.set(item.installed_mod_id, {
+          status: item.status,
+          latest_file_id: item.latest_file_id,
+          latest_file_name: item.latest_file_name,
+          latest_version: item.latest_version,
+          latest_uploaded_at: item.latest_uploaded_at,
+          message: item.message,
+          checked_at: item.checked_at
+        });
+      }
+      setDeckyMods((items) => items.map((mod) => updates.has(mod.id) ? { ...mod, update: updates.get(mod.id) } : mod));
+      const available = (result.results ?? []).filter((item) => item.status === "available").length;
+      const checked = result.checked ?? 0;
+      setModsResult(available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${checked} Nexus mod${checked === 1 ? "" : "s"}.`);
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModUpdateBusy(false);
+    }
+  }
+
   function workshopItemName(item: WorkshopItem) {
     return (item.title || item.published_file_id || "Workshop item").trim();
   }
@@ -2384,7 +2448,7 @@ function DeckyModManagerRoute() {
         return;
       }
       if (!event || tab !== "mods" || !selectedDeckyGameID || !status?.running) return;
-      if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
+      if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed", "mod_updates.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
         void loadDeckyGameState(selectedDeckyGameID);
       }
     };
@@ -2657,6 +2721,9 @@ function DeckyModManagerRoute() {
                 <ButtonItem layout="below" onClick={cycleDeckyModSort}>
                   Sort: {deckyModSortLabel(modSort)}
                 </ButtonItem>
+                <ButtonItem layout="below" onClick={checkDeckyModUpdates} disabled={modUpdateBusy || deckyMods.length === 0}>
+                  {modUpdateBusy ? "Checking Updates..." : "Check Updates"}
+                </ButtonItem>
               </div>
             </PanelSectionRow>
           )}
@@ -2850,6 +2917,9 @@ function DeckyModManagerRoute() {
                         <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
                           Priority {mod.priority} · {deckyModStateLabel(mod)}
                         </span>
+                      </div>
+                      <div style={{ color: mod.update?.status === "available" ? "#99f6e4" : mod.update?.status === "error" ? "#fca5a5" : "#a1a1aa", fontSize: "11px", fontWeight: 700, lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        {deckyModUpdateLabel(mod.update)} · {deckyModUpdateDetail(mod.update)}
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
                         A {mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove

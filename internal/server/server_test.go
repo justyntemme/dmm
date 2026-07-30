@@ -593,6 +593,87 @@ func TestGameNexusModFilesUsesConfiguredAPIKey(t *testing.T) {
 	}
 }
 
+func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Nexus.APIKey = "secret"
+	srv.cfgMu.Unlock()
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "100",
+		},
+		Name:         "NPC Map Locations",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "npc-map.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "npc-map"),
+		ManifestJSON: "{}",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotKey string
+	srv.nexus = func(apiKey string) nexusClient {
+		gotKey = apiKey
+		return fakeNexusClient{
+			files: nexus.FilesResponse{Files: []nexus.ModFile{
+				{FileID: 100, Name: "NPC Map Locations", Version: "1.0.0", CategoryID: 1, FileName: "npc-map-1.zip", UploadedAt: 1000},
+				{FileID: 101, Name: "NPC Map Locations", Version: "1.1.0", CategoryID: 1, FileName: "npc-map-2.zip", UploadedAt: 2000},
+				{FileID: 900, Name: "Optional", Version: "9.0.0", CategoryID: 3, FileName: "optional.zip", UploadedAt: 3000},
+			}},
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if gotKey != "secret" {
+		t.Fatalf("apiKey = %q", gotKey)
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Checked != 1 || len(body.Results) != 1 {
+		t.Fatalf("body = %+v", body)
+	}
+	if body.Results[0].Status != "available" || body.Results[0].LatestFileID != "101" || body.Results[0].LatestVersion != "1.1.0" {
+		t.Fatalf("result = %+v", body.Results[0])
+	}
+
+	modsReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods", nil)
+	modsReq.RemoteAddr = "127.0.0.1:1"
+	modsRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(modsRec, modsReq)
+	if modsRec.Code != http.StatusOK {
+		t.Fatalf("mods status = %d, body = %s", modsRec.Code, modsRec.Body.String())
+	}
+	var mods []gameModResponse
+	if err := json.Unmarshal(modsRec.Body.Bytes(), &mods); err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Update == nil || mods[0].Update.Status != "available" || mods[0].Update.LatestFileID != "101" {
+		t.Fatalf("mods = %+v", mods)
+	}
+}
+
 func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	srv := newTestServer(t)
 
