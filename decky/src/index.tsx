@@ -2,19 +2,20 @@ import {
   ButtonItem,
   ConfirmModal,
   Focusable,
-  GamepadButton,
+  ModalRoot,
   Navigation,
   NavEntryPositionPreferences,
   PanelSection,
   PanelSectionRow,
   Router,
+  Tabs,
   TextField,
   ToggleField,
   showModal,
   staticClasses,
   type GamepadEvent
 } from "@decky/ui";
-import { call, definePlugin, toaster } from "@decky/api";
+import { call, definePlugin, routerHook, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
 import { CSSProperties, ReactNode, useEffect, useMemo, useState } from "react";
 
@@ -147,7 +148,8 @@ type ManagedMod = {
   source_file_id: string;
 };
 
-type NexusSearchSort = "downloads" | "updated" | "endorsements" | "name" | "relevance";
+type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
+type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 
 type NexusModResult = {
   mod_id: number;
@@ -275,50 +277,53 @@ type WorkshopActionJob = Job & {
 type Tab = "main" | "mods" | "settings" | "debug";
 type GameSort = "recent" | "az" | "za";
 
+const DMM_DECKY_ROUTE = "/decky-mod-manager";
 const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
-const deckyGameListWindowSize = 18;
-const deckyModListWindowSize = 12;
+const deckyTabLabels: Record<Tab, string> = {
+  main: "Manage",
+  mods: "Mods",
+  settings: "Settings",
+  debug: "Debug"
+};
 
-const deckyPanelFrameStyle: CSSProperties = {
+const deckyQuickAccessFrameStyle: CSSProperties = {
   alignSelf: "stretch",
   boxSizing: "border-box",
-  display: "flex",
+  display: "grid",
   flexDirection: "column",
   gap: "8px",
-  height: "calc(100vh - 112px)",
-  maxHeight: "calc(100vh - 112px)",
   maxWidth: "100%",
-  minHeight: 0,
   minWidth: 0,
+  overflowX: "hidden",
+  overflowY: "visible",
+  width: "100%"
+};
+
+const deckyRouteShellStyle: CSSProperties = {
+  background: "#0b1220",
+  boxSizing: "border-box",
+  color: "#f8fafc",
+  minHeight: "100%",
+  minWidth: "100%"
+};
+
+const deckyRouteContentStyle: CSSProperties = {
+  boxSizing: "border-box",
+  height: "calc(100% - 40px)",
+  marginTop: "40px",
   overflow: "hidden",
   width: "100%"
 };
 
-const deckyTabBarStyle: CSSProperties = {
-  alignSelf: "stretch",
-  background: "#0b1120",
+const deckyRouteTabBodyStyle: CSSProperties = {
   boxSizing: "border-box",
   display: "grid",
-  flex: "0 0 auto",
-  gap: "4px",
-  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-  minWidth: 0,
-  paddingBottom: "2px",
-  position: "sticky",
-  top: 0,
-  width: "100%",
-  zIndex: 2
-};
-
-const deckyTabBodyStyle: CSSProperties = {
-  boxSizing: "border-box",
-  display: "block",
-  flex: "1 1 auto",
+  gap: "12px",
+  maxWidth: "100%",
   minHeight: 0,
   overflowX: "hidden",
   overflowY: "auto",
-  paddingBottom: "16px",
-  paddingRight: "4px",
+  padding: "16px 28px 28px",
   scrollPaddingTop: "8px",
   width: "100%"
 };
@@ -375,11 +380,12 @@ const deckyRuntimeStyles = `
 .dmm-sidebar-row div {
   min-width: 0;
 }
-.dmm-focus-card-focused {
-  background: #27364a !important;
-  border-color: #7dd3fc !important;
-  box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
-}
+  .dmm-focus-card-focused,
+  .dmm-decky-tab-focused {
+    background: #27364a !important;
+    border-color: #7dd3fc !important;
+    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
+  }
 .dmm-focus-card:focus,
 .dmm-focus-card:focus-visible,
 .dmm-focus-card:focus-within {
@@ -388,31 +394,6 @@ const deckyRuntimeStyles = `
   box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
 }
 `;
-
-function deckyTabButtonStyle(active: boolean): CSSProperties {
-  return {
-    alignItems: "center",
-    background: active ? "#0f766e" : "#1f2937",
-    border: `1px solid ${active ? "#5eead4" : "#374151"}`,
-    borderRadius: "6px",
-    boxSizing: "border-box",
-    color: "#f8fafc",
-    display: "flex",
-    fontSize: "11px",
-    fontWeight: 800,
-    height: "34px",
-    justifyContent: "center",
-    lineHeight: 1,
-    minWidth: 0,
-    overflow: "hidden",
-    padding: "0 4px",
-    textAlign: "center",
-    textOverflow: "ellipsis",
-    textTransform: "uppercase",
-    whiteSpace: "nowrap",
-    width: "100%"
-  };
-}
 
 const deckyFocusableCardBase: CSSProperties = {
   borderRadius: "6px",
@@ -532,14 +513,16 @@ function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused
   };
 }
 
-function deckyTabBody(content: ReactNode, onCancelButton?: (event: GamepadEvent) => void) {
+function deckyTabBody(tab: Tab, content: ReactNode, contentKey: string, onCancelButton?: (event: GamepadEvent) => void) {
   return (
     <Focusable
-      flow-children="column"
-      navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+      key={`${tab}:${contentKey}`}
+      flow-children="down"
+      navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
       onCancelActionDescription={onCancelButton ? "Back" : undefined}
       onCancelButton={onCancelButton}
-      style={deckyTabBodyStyle}
+      preferredFocus
+      style={deckyRouteTabBodyStyle}
     >
       {content}
     </Focusable>
@@ -648,37 +631,45 @@ function gameSortLabel(sort: GameSort) {
 }
 
 function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
-  if (current === "downloads") return "updated";
-  if (current === "updated") return "endorsements";
-  if (current === "endorsements") return "name";
+  if (current === "downloads") return "unique_downloads";
+  if (current === "unique_downloads") return "popular";
+  if (current === "popular") return "updated";
+  if (current === "updated") return "name";
   if (current === "name") return "relevance";
   return "downloads";
 }
 
 function nexusSortLabel(sort: NexusSearchSort) {
+  if (sort === "unique_downloads") return "Unique Downloads";
+  if (sort === "popular") return "Most Popular";
   if (sort === "updated") return "Updated";
-  if (sort === "endorsements") return "Endorsed";
-  if (sort === "name") return "Name";
+  if (sort === "name") return "A-Z";
   if (sort === "relevance") return "Relevant";
   return "Downloads";
+}
+
+function nextNexusTimeWindow(current: NexusTimeWindow): NexusTimeWindow {
+  if (current === "all") return "one_week";
+  if (current === "one_week") return "three_weeks";
+  if (current === "three_weeks") return "one_month";
+  if (current === "one_month") return "three_months";
+  if (current === "three_months") return "one_year";
+  return "all";
+}
+
+function nexusTimeWindowLabel(window: NexusTimeWindow) {
+  if (window === "one_week") return "1 Week";
+  if (window === "three_weeks") return "3 Weeks";
+  if (window === "one_month") return "1 Month";
+  if (window === "three_months") return "3 Months";
+  if (window === "one_year") return "1 Year";
+  return "All Time";
 }
 
 function compactNumber(value: number | undefined) {
   const normalized = Number(value ?? 0);
   if (!Number.isFinite(normalized)) return "0";
   return normalized.toLocaleString(undefined, { maximumFractionDigits: 0, notation: normalized >= 10_000 ? "compact" : "standard" });
-}
-
-function windowedList<T>(items: T[], focusedIndex: number, maxItems: number) {
-  const total = items.length;
-  if (total <= maxItems) {
-    return { items, start: 0, end: total, total };
-  }
-  const safeIndex = Math.max(0, Math.min(total - 1, focusedIndex < 0 ? 0 : focusedIndex));
-  const half = Math.floor(maxItems / 2);
-  const start = Math.max(0, Math.min(total - maxItems, safeIndex - half));
-  const end = Math.min(total, start + maxItems);
-  return { items: items.slice(start, end), start, end, total };
 }
 
 function formatBytes(value: number | undefined) {
@@ -696,6 +687,19 @@ function formatBytes(value: number | undefined) {
 
 function nexusFileURL(gameDomain: string, modID: number, fileID: number) {
   return `https://www.nexusmods.com/${encodeURIComponent(gameDomain)}/mods/${modID}?file_id=${fileID}`;
+}
+
+function focusDeckyElement(selector: string, logDetail: Record<string, string | number | boolean> = {}) {
+  window.setTimeout(() => {
+    const target = document.querySelector<HTMLElement>(selector);
+    if (!target) {
+      void logFrontendEvent("decky focus target missing", { selector, ...logDetail });
+      return;
+    }
+    target.focus();
+    target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    void logFrontendEvent("decky focus target applied", { selector, ...logDetail });
+  }, 80);
 }
 
 function unregisterSteamCallback(registration: unknown) {
@@ -1315,37 +1319,45 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
 function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; closeModal: () => void }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<NexusSearchSort>("downloads");
+  const [timeWindow, setTimeWindow] = useState<NexusTimeWindow>("all");
   const [mods, setMods] = useState<NexusModResult[]>([]);
   const [totalCount, setTotalCount] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [selectedModID, setSelectedModID] = useState<number | null>(null);
   const [filesByMod, setFilesByMod] = useState<Record<number, NexusModFile[]>>({});
   const [busy, setBusy] = useState(false);
   const [busyFileKey, setBusyFileKey] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const pageSize = 20;
 
-  async function searchMods(nextSort = sort) {
+  async function searchMods(nextSort = sort, nextWindow = timeWindow, nextOffset = 0, append = false) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const result = await call<[string, string, string, number, number], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
+      const result = await call<[string, string, string, string, number, number], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
         "nexus_mods",
         props.appID,
         query,
         nextSort,
-        20,
-        0
+        nextWindow,
+        pageSize,
+        nextOffset
       );
       if (!result.ok) {
         setError(result.error || "Unable to search Nexus Mods.");
-        setMods([]);
-        setTotalCount(0);
+        if (!append) {
+          setMods([]);
+          setTotalCount(0);
+        }
         return;
       }
-      setMods(result.mods ?? []);
+      const nextMods = result.mods ?? [];
+      setMods((current) => append ? [...current, ...nextMods] : nextMods);
       setTotalCount(result.total_count ?? result.mods?.length ?? 0);
-      if ((result.mods ?? []).length === 0) setMessage("No Vortex-compatible mods matched this search.");
+      setOffset(nextOffset + nextMods.length);
+      if (nextMods.length === 0 && !append) setMessage("No Vortex-compatible mods matched this search.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1381,16 +1393,44 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     setMessage("");
     try {
       const url = nexusFileURL(props.gameDomain, mod.mod_id, file.file_id);
+      await logFrontendEvent("nexus browser install requested", {
+        app_id: props.appID,
+        game_domain: props.gameDomain,
+        mod_id: mod.mod_id,
+        file_id: file.file_id
+      });
       const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url);
       if (!result.ok) {
         setError(result.error || "Unable to add this Nexus file.");
+        await logFrontendEvent("nexus browser install failed", {
+          app_id: props.appID,
+          game_domain: props.gameDomain,
+          mod_id: mod.mod_id,
+          file_id: file.file_id,
+          error: result.error || ""
+        });
         return;
       }
       const job = result.result?.job;
       if (job) showJobToast(job);
+      await logFrontendEvent("nexus browser install queued", {
+        app_id: props.appID,
+        game_domain: props.gameDomain,
+        mod_id: mod.mod_id,
+        file_id: file.file_id,
+        job_id: job?.id || "",
+        status: job?.status || ""
+      });
       setMessage(job?.message || `${file.name || file.file_name || mod.name} was sent to DMM.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      await logFrontendEvent("nexus browser install threw", {
+        app_id: props.appID,
+        game_domain: props.gameDomain,
+        mod_id: mod.mod_id,
+        file_id: file.file_id,
+        error: err instanceof Error ? err.message : String(err)
+      });
     } finally {
       setBusyFileKey("");
     }
@@ -1399,61 +1439,130 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   function cycleSort() {
     const next = nextNexusSort(sort);
     setSort(next);
-    void searchMods(next);
+    setOffset(0);
+    void searchMods(next, timeWindow, 0, false);
+  }
+
+  function cycleTimeWindow() {
+    const next = nextNexusTimeWindow(timeWindow);
+    setTimeWindow(next);
+    setOffset(0);
+    void searchMods(sort, next, 0, false);
+  }
+
+  function submitSearch() {
+    setOffset(0);
+    void searchMods(sort, timeWindow, 0, false);
+  }
+
+  function loadMore() {
+    if (busy || offset >= totalCount) return;
+    void searchMods(sort, timeWindow, offset, true);
   }
 
   useEffect(() => {
-    void searchMods("downloads");
+    void searchMods("downloads", "all", 0, false);
   }, []);
 
   return (
-    <ConfirmModal
-      strTitle={`Browse ${props.gameName}`}
-      strDescription={
-        <div style={{ display: "grid", gap: "12px", maxHeight: "70vh", overflowX: "hidden", overflowY: "auto", paddingRight: "6px", width: "100%" }}>
-          <div style={{ alignItems: "end", display: "grid", gap: "8px", gridTemplateColumns: "minmax(0, 1fr) 120px 104px", width: "100%" }}>
-            <TextField label="Search Nexus" value={query} bShowClearAction onChange={(event) => setQuery(event.currentTarget.value)} />
+    <ModalRoot closeModal={props.closeModal} onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable
+        flow-children="down"
+        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+        style={{
+          boxSizing: "border-box",
+          color: "#f8fafc",
+          display: "grid",
+          gap: "12px",
+          gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+          height: "72vh",
+          maxHeight: "72vh",
+          minHeight: 0,
+          overflow: "hidden",
+          padding: "4px",
+          width: "100%"
+        }}
+      >
+        <div style={{ alignItems: "start", display: "grid", gap: "12px", gridTemplateColumns: "minmax(0, 1fr) 104px", width: "100%" }}>
+          <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
+            <div style={{ color: "#f8fafc", fontSize: "18px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{props.gameName}</div>
+            <div style={{ color: "#a1a1aa", fontSize: "12px", lineHeight: 1.25 }}>
+              Showing {mods.length} of {compactNumber(totalCount)} Vortex-compatible result{totalCount === 1 ? "" : "s"} from {props.gameDomain}.
+            </div>
+          </div>
+          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={props.closeModal} onClick={props.closeModal} style={deckyCompactActionStyle("neutral")}>
+            Close
+          </Focusable>
+        </div>
+        <div style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "10px", padding: "10px", width: "100%" }}>
+          <TextField label="Search Nexus Mods" value={query} bShowClearAction onChange={(event) => setQuery(event.currentTarget.value)} />
+          <div style={{ alignItems: "stretch", display: "grid", gap: "8px", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 118px", width: "100%" }}>
             <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleSort} onClick={cycleSort} style={deckyCompactActionStyle("neutral")}>
-              {nexusSortLabel(sort)}
+              Sort: {nexusSortLabel(sort)}
             </Focusable>
-            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => searchMods()} onClick={() => searchMods()} style={deckyCompactActionStyle("neutral", busy)}>
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleTimeWindow} onClick={cycleTimeWindow} style={deckyCompactActionStyle("neutral")}>
+              Updated: {nexusTimeWindowLabel(timeWindow)}
+            </Focusable>
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" preferredFocus onActivate={submitSearch} onClick={submitSearch} style={deckyCompactActionStyle("neutral", busy)}>
               {busy ? "Searching" : "Search"}
             </Focusable>
           </div>
-          <div style={{ color: "#a1a1aa", fontSize: "12px" }}>
-            Showing {mods.length} of {compactNumber(totalCount)} Vortex-compatible Nexus result{totalCount === 1 ? "" : "s"} for {props.gameDomain}.
+        </div>
+        {(error || message) && (
+          <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
+            {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
+            {message && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{message}</div>}
           </div>
-          {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
-          {message && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{message}</div>}
+        )}
+        <Focusable
+          flow-children="down"
+          navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+          style={{
+            boxSizing: "border-box",
+            display: "grid",
+            gap: "10px",
+            minHeight: 0,
+            overflowX: "hidden",
+            overflowY: "auto",
+            paddingRight: "6px",
+            scrollPaddingBlock: "10px",
+            width: "100%"
+          }}
+        >
+          {mods.length === 0 && !busy && !error && (
+            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Vortex-compatible mods matched this search.</div>
+          )}
           {mods.map((mod) => {
             const files = filesByMod[mod.mod_id] ?? [];
             const filesOpen = selectedModID === mod.mod_id;
             return (
-              <div key={mod.mod_id} className="dmm-sidebar-row" style={{ ...deckyCompositeRowStyle(filesOpen), background: "#111827" }}>
-                <div style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "112px minmax(0, 1fr)", width: "100%" }}>
-                  <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "63px", overflow: "hidden", width: "112px" }}>
+              <div key={mod.mod_id} className="dmm-sidebar-row" style={{ ...deckyCompositeRowStyle(filesOpen), background: "#111827", padding: "10px" }}>
+                <div style={{ alignItems: "start", display: "grid", gap: "12px", gridTemplateColumns: "132px minmax(0, 1fr)", width: "100%" }}>
+                  <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "74px", overflow: "hidden", width: "132px" }}>
                     {mod.thumbnail_url ? (
                       <img src={mod.thumbnail_url} style={{ height: "100%", objectFit: "cover", width: "100%" }} />
                     ) : (
                       <div style={{ alignItems: "center", color: "#71717a", display: "flex", fontSize: "11px", height: "100%", justifyContent: "center", textAlign: "center" }}>No image</div>
                     )}
                   </div>
-                  <div style={{ display: "grid", gap: "5px", minWidth: 0 }}>
-                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{mod.name}</div>
+                  <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
+                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{mod.name}</div>
                     <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, maxHeight: "3.75em", overflow: "hidden", overflowWrap: "anywhere" }}>{mod.summary}</div>
-                    <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "8px" }}>
+                    <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "10px" }}>
                       <span>v{mod.version || "unknown"}</span>
                       <span>{compactNumber(mod.downloads)} downloads</span>
                       <span>{compactNumber(mod.endorsements)} endorsements</span>
+                      <span>{mod.updated_at ? `Updated ${new Date(mod.updated_at).toLocaleDateString()}` : "Updated unknown"}</span>
                     </div>
                   </div>
                 </div>
-                <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(2)}>
+                <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(2)}>
                   <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => Navigation.NavigateToExternalWeb(mod.url)} onClick={() => Navigation.NavigateToExternalWeb(mod.url)} style={deckyCompactActionStyle("neutral")}>
                     Open Page
                   </Focusable>
                   <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => loadFiles(mod)} onClick={() => loadFiles(mod)} style={deckyCompactActionStyle("neutral", filesOpen || busyFileKey === `files:${mod.mod_id}`)}>
-                    {busyFileKey === `files:${mod.mod_id}` ? "Loading" : filesOpen ? "Refresh Files" : "Files"}
+                    {busyFileKey === `files:${mod.mod_id}` ? "Loading Files" : filesOpen ? "Refresh Files" : "Show Files"}
                   </Focusable>
                 </Focusable>
                 {filesOpen && (
@@ -1462,13 +1571,13 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                     {files.map((file) => {
                       const fileKey = `${mod.mod_id}:${file.file_id}`;
                       return (
-                        <div key={file.file_id} style={{ border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "6px", padding: "8px", width: "100%" }}>
+                        <div key={file.file_id} style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "8px", padding: "10px", width: "100%" }}>
                           <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
                           <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
                             {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
                           </div>
                           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => installFile(mod, file)} onClick={() => installFile(mod, file)} style={deckyCompactActionStyle("neutral", busyFileKey === fileKey)}>
-                            {busyFileKey === fileKey ? "Adding" : "Install"}
+                            {busyFileKey === fileKey ? "Adding To DMM" : "Install With DMM"}
                           </Focusable>
                         </div>
                       );
@@ -1478,14 +1587,14 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
               </div>
             );
           })}
-        </div>
-      }
-      strOKButtonText="Close"
-      strCancelButtonText="Close"
-      onOK={props.closeModal}
-      onCancel={props.closeModal}
-      closeModal={props.closeModal}
-    />
+          {mods.length > 0 && offset < totalCount && (
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={loadMore} onClick={loadMore} style={deckyCompactActionStyle("neutral", busy)}>
+              {busy ? "Loading More" : "Load More"}
+            </Focusable>
+          )}
+        </Focusable>
+      </Focusable>
+    </ModalRoot>
   );
 }
 
@@ -1591,7 +1700,12 @@ function stopBackgroundMonitors() {
   logFrontendEvent("background monitors stopped");
 }
 
-function Content() {
+function openDeckyModManagerRoute() {
+  Router.CloseSideMenus();
+  Router.Navigate(DMM_DECKY_ROUTE);
+}
+
+function DeckyModManagerRoute() {
   const [tab, setTab] = useState<Tab>("main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
@@ -1621,7 +1735,6 @@ function Content() {
   const [focusedGameID, setFocusedGameID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
   const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
-  const [focusedModAction, setFocusedModAction] = useState<string>("");
 
   async function refresh() {
     try {
@@ -1689,7 +1802,6 @@ function Content() {
   function clearSelectedDeckyGame() {
     setSelectedDeckyGameID("");
     setFocusedModID(null);
-    setFocusedModAction("");
     setFocusedCandidateID(null);
     setModSearch("");
   }
@@ -1783,6 +1895,7 @@ function Content() {
       setModsResult("");
       setModSearch("");
       setSelectedDeckyGameID(appID);
+      focusDeckyElement("[data-dmm-selected-game-primary='true']", { app_id: appID, source: "select-game" });
       markDeckyGameRecent(appID);
       await loadDeckyGameState(appID);
     } catch (err) {
@@ -2188,6 +2301,17 @@ function Content() {
   }, []);
 
   useEffect(() => {
+    if (tab === "mods" && status?.running) {
+      void refreshDeckyMods();
+    }
+  }, [tab, status?.running]);
+
+  useEffect(() => {
+    if (tab !== "mods" || !selectedDeckyGameID) return;
+    focusDeckyElement("[data-dmm-selected-game-primary='true']", { app_id: selectedDeckyGameID, source: "selected-game-render" });
+  }, [tab, selectedDeckyGameID]);
+
+  useEffect(() => {
     const listener = (rawEvent: Event) => {
       const event = (rawEvent as CustomEvent<DomainEvent>).detail;
       if (event?.type === "ui.changed") {
@@ -2256,10 +2380,6 @@ function Content() {
         .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
     );
   }, [deckyWorkshopItems, modSearch]);
-  const focusedGameIndex = visibleManagedGames.findIndex((game) => game.app_id === focusedGameID);
-  const focusedModIndex = visibleDeckyMods.findIndex((mod) => mod.id === focusedModID);
-  const renderedManagedGames = windowedList(visibleManagedGames, focusedGameIndex, deckyGameListWindowSize);
-  const renderedDeckyMods = windowedList(visibleDeckyMods, focusedModIndex, deckyModListWindowSize);
   const visibleManagedGameIDs = visibleManagedGames.map((game) => game.app_id).join("|");
   const visibleDeckyModIDs = visibleDeckyMods.map((mod) => String(mod.id)).join("|");
 
@@ -2278,51 +2398,12 @@ function Content() {
   useEffect(() => {
     if (!selectedDeckyGameID || visibleDeckyMods.length === 0) {
       if (focusedModID !== null) setFocusedModID(null);
-      setFocusedModAction("");
       return;
     }
     if (focusedModID === null || !visibleDeckyMods.some((mod) => mod.id === focusedModID)) {
       setFocusedModID(visibleDeckyMods[0].id);
-      setFocusedModAction("");
     }
   }, [selectedDeckyGameID, visibleDeckyModIDs, focusedModID]);
-
-  function nextDirectionalIndex(currentIndex: number, length: number, direction: -1 | 1) {
-    if (length <= 0) return -1;
-    if (currentIndex < 0) return direction > 0 ? 0 : -1;
-    return Math.max(0, Math.min(length - 1, currentIndex + direction));
-  }
-
-  function handleDeckyGameListDirection(event: GamepadEvent) {
-    const button = event.detail.button;
-    if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
-    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
-    const currentIndex = visibleManagedGames.findIndex((game) => game.app_id === focusedGameID);
-    const nextIndex = nextDirectionalIndex(currentIndex, visibleManagedGames.length, direction);
-    if (nextIndex < 0 || nextIndex === currentIndex) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const nextGame = visibleManagedGames[nextIndex];
-    if (nextGame) {
-      setFocusedGameID(nextGame.app_id);
-    }
-  }
-
-  function handleDeckyModListDirection(event: GamepadEvent) {
-    const button = event.detail.button;
-    if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
-    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
-    const currentIndex = visibleDeckyMods.findIndex((mod) => mod.id === focusedModID);
-    const nextIndex = nextDirectionalIndex(currentIndex, visibleDeckyMods.length, direction);
-    if (nextIndex < 0 || nextIndex === currentIndex) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const nextMod = visibleDeckyMods[nextIndex];
-    if (nextMod) {
-      setFocusedModID(nextMod.id);
-      setFocusedModAction("");
-    }
-  }
 
   const mainContent = (
     <>
@@ -2406,14 +2487,8 @@ function Content() {
             </ButtonItem>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
-            {visibleManagedGames.length > renderedManagedGames.items.length && (
-              <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
-                Showing {renderedManagedGames.start + 1}-{renderedManagedGames.end} of {renderedManagedGames.total}
-              </div>
-            )}
-            <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyGameListDirection} style={deckySidebarListStyle}>
-              {renderedManagedGames.items.map((game, index) => {
-                const absoluteIndex = renderedManagedGames.start + index;
+            <Focusable flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
+              {visibleManagedGames.map((game, index) => {
                 const focused = focusedGameID === game.app_id;
                 const favorite = favoriteGameIDs.has(game.app_id);
                 return (
@@ -2422,75 +2497,32 @@ function Content() {
                     className="dmm-sidebar-surface dmm-sidebar-row"
                     data-dmm-game-id={game.app_id}
                     focusClassName="dmm-sidebar-row-focused"
-                    focusWithinClassName="dmm-sidebar-row-focused"
-                    flow-children="column"
-                    noFocusRing
-                    onActivate={() => selectDeckyGame(game.app_id)}
+                    onActivate={() => void selectDeckyGame(game.app_id)}
+                    onClick={() => void selectDeckyGame(game.app_id)}
                     onOKButton={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
                       void selectDeckyGame(game.app_id);
                     }}
+                    onSecondaryActionDescription={favorite ? "Unfavorite" : "Favorite"}
+                    onSecondaryButton={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      toggleDeckyFavoriteGame(game.app_id);
+                    }}
                     onGamepadFocus={() => setFocusedGameID(game.app_id)}
                     onFocus={() => setFocusedGameID(game.app_id)}
                     onMouseEnter={() => setFocusedGameID(game.app_id)}
-                    preferredFocus={focused}
-                    style={deckyCompositeRowStyle(focused, favorite)}
+                    preferredFocus={focused || (index === 0 && !focusedGameID)}
+                    style={{
+                      ...deckyCompositeRowStyle(focused, favorite),
+                      padding: "10px"
+                    }}
                   >
-                    <Focusable
-                      className="dmm-focus-card"
-                      focusClassName="dmm-focus-card-focused"
-                      onActivate={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        selectDeckyGame(game.app_id);
-                      }}
-                      onClick={() => {
-                        void selectDeckyGame(game.app_id);
-                      }}
-                      onOKButton={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void selectDeckyGame(game.app_id);
-                      }}
-                      onGamepadFocus={() => setFocusedGameID(game.app_id)}
-                      onFocus={() => setFocusedGameID(game.app_id)}
-                      onMouseEnter={() => setFocusedGameID(game.app_id)}
-                      preferredFocus={focused || (absoluteIndex === 0 && !focusedGameID)}
-                      style={{
-                        ...deckyFocusableCardStyle(focused, favorite),
-                        display: "grid",
-                        gap: "4px",
-                        minHeight: "48px",
-                        padding: "10px",
-                      }}
-                    >
-                      <div style={deckyTwoLineTextStyle}>{game.name}</div>
-                      <div style={{ color: favorite ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
-                        {favorite ? "Favorite" : `App ${game.app_id}`}
-                      </div>
-                    </Focusable>
-                    <Focusable
-                      className="dmm-focus-card"
-                      focusClassName="dmm-focus-card-focused"
-                      onActivate={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleDeckyFavoriteGame(game.app_id);
-                      }}
-                      onClick={() => toggleDeckyFavoriteGame(game.app_id)}
-                      onOKButton={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleDeckyFavoriteGame(game.app_id);
-                      }}
-                      onGamepadFocus={() => setFocusedGameID(game.app_id)}
-                      onFocus={() => setFocusedGameID(game.app_id)}
-                      onMouseEnter={() => setFocusedGameID(game.app_id)}
-                      style={deckyCompactActionStyle("neutral")}
-                    >
-                      {favorite ? "Unfavorite" : "Favorite"}
-                    </Focusable>
+                    <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{game.name}</div>
+                    <div style={{ color: favorite ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                      {favorite ? "Favorite" : `App ${game.app_id}`} · A Select · Y {favorite ? "Unfavorite" : "Favorite"}
+                    </div>
                   </Focusable>
                 );
               })}
@@ -2498,16 +2530,44 @@ function Content() {
           </div>
         </PanelSectionRow>
       )}
-      {status?.running && selectedDeckyGameID && (
+          {status?.running && selectedDeckyGameID && (
         <>
           <PanelSectionRow>
-            <div style={{ alignItems: "center", display: "flex", gap: "10px", width: "100%" }}>
+            <Focusable
+              className="dmm-sidebar-surface dmm-sidebar-row"
+              data-dmm-selected-game-primary="true"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => {
+                if (selectedNexusDomain) openDeckyNexusBrowser();
+              }}
+              onClick={() => {
+                if (selectedNexusDomain) openDeckyNexusBrowser();
+              }}
+              onCancelActionDescription="Change Game"
+              onCancelButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                clearSelectedDeckyGame();
+              }}
+              preferredFocus
+              style={{
+                ...deckyCompositeRowStyle(false, true),
+                alignItems: "center",
+                display: "grid",
+                gap: "10px",
+                gridTemplateColumns: "74px minmax(0, 1fr)",
+                padding: "10px"
+              }}
+            >
               <img src={steamHeaderImage(selectedDeckyGameID)} style={{ borderRadius: "5px", height: "42px", objectFit: "cover", width: "74px" }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{selectedProfile ? `Profile: ${selectedProfile.name}` : "No profile"}</div>
                 <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedDeckyGame?.name ?? selectedDeckyGameID}</div>
+                <div style={{ color: selectedNexusDomain ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, marginTop: "4px", overflowWrap: "anywhere" }}>
+                  {selectedNexusDomain ? "A Browse Nexus · B Change Game" : "B Change Game"}
+                </div>
               </div>
-            </div>
+            </Focusable>
           </PanelSectionRow>
           <PanelSectionRow>
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
@@ -2546,76 +2606,41 @@ function Content() {
                       key={candidate.id}
                       className="dmm-sidebar-row"
                       focusClassName="dmm-sidebar-row-focused"
-                      focusWithinClassName="dmm-sidebar-row-focused"
-                      flow-children="column"
-                      noFocusRing
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (installer) openDeckyInstallerChoice(candidate);
+                      }}
+                      onClick={() => {
+                        if (installer) openDeckyInstallerChoice(candidate);
+                      }}
+                      onSecondaryActionDescription="Clear Items"
+                      onSecondaryButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        askClearDeckyInstallCandidates();
+                      }}
                       onGamepadFocus={() => setFocusedCandidateID(candidate.id)}
                       onFocus={() => setFocusedCandidateID(candidate.id)}
                       onMouseEnter={() => setFocusedCandidateID(candidate.id)}
                       preferredFocus={focused}
-                      style={deckyCompositeRowStyle(focused)}
+                      style={{
+                        ...deckyCompositeRowStyle(focused),
+                        padding: "10px"
+                      }}
                     >
-                      <Focusable
-                        className="dmm-focus-card"
-                        focusClassName="dmm-focus-card-focused"
-                        onActivate={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          if (installer) openDeckyInstallerChoice(candidate);
-                        }}
-                        onClick={() => {
-                          if (installer) openDeckyInstallerChoice(candidate);
-                        }}
-                        onGamepadFocus={() => setFocusedCandidateID(candidate.id)}
-                        onFocus={() => setFocusedCandidateID(candidate.id)}
-                        onMouseEnter={() => setFocusedCandidateID(candidate.id)}
-                        style={{
-                          ...deckyFocusableCardStyle(focused),
-                          display: "grid",
-                          gap: "5px",
-                          padding: "10px"
-                        }}
-                      >
-                        <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{candidate.name}</div>
-                        <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                          {candidate.status === "blocked" ? "Blocked installer" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}
+                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{candidate.name}</div>
+                      <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        {candidate.status === "blocked" ? "Blocked installer" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}
+                      </div>
+                      {candidate.reason && (
+                        <div style={{ color: candidate.status === "blocked" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {candidate.reason}
                         </div>
-                        {candidate.reason && (
-                          <div style={{ color: candidate.status === "blocked" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                            {candidate.reason}
-                          </div>
-                        )}
-                      </Focusable>
-                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
-                        {installer && (
-                          <Focusable
-                            className="dmm-focus-card"
-                            focusClassName="dmm-focus-card-focused"
-                            onActivate={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openDeckyInstallerChoice(candidate);
-                            }}
-                            onClick={() => openDeckyInstallerChoice(candidate)}
-                            style={deckyCompactActionStyle("neutral", focused)}
-                          >
-                            Open Choices
-                          </Focusable>
-                        )}
-                        <Focusable
-                          className="dmm-focus-card"
-                          focusClassName="dmm-focus-card-focused"
-                          onActivate={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            askClearDeckyInstallCandidates();
-                          }}
-                          onClick={askClearDeckyInstallCandidates}
-                          style={deckyCompactActionStyle("danger")}
-                        >
-                          Clear Items
-                        </Focusable>
-                      </Focusable>
+                      )}
+                      <div style={{ color: installer ? "#99f6e4" : "#fca5a5", fontSize: "11px", fontWeight: 800, lineHeight: 1.25 }}>
+                        {installer ? "A Open Choices" : "Review on phone/tablet"} · Y Clear Items
+                      </div>
                     </Focusable>
                   );
                 })}
@@ -2666,198 +2691,83 @@ function Content() {
           )}
           {visibleDeckyMods.length > 0 && (
             <PanelSectionRow>
-              {visibleDeckyMods.length > renderedDeckyMods.items.length && (
-                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, marginBottom: "8px" }}>
-                  Showing {renderedDeckyMods.start + 1}-{renderedDeckyMods.end} of {renderedDeckyMods.total}
-                </div>
-              )}
-              <Focusable flow-children="column" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} onGamepadDirection={handleDeckyModListDirection} style={deckySidebarListStyle}>
-                {renderedDeckyMods.items.map((mod) => {
+              <Focusable flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
+                {visibleDeckyMods.map((mod, index) => {
                   const focused = focusedModID === mod.id;
-                  const toggleActionID = `${mod.id}:toggle`;
                   return (
                     <Focusable
                       key={mod.id}
                       className="dmm-sidebar-surface dmm-sidebar-row"
                       data-dmm-mod-id={String(mod.id)}
                       focusClassName="dmm-sidebar-row-focused"
-                      focusWithinClassName="dmm-sidebar-row-focused"
-                      flow-children="column"
-                      noFocusRing
-                      onActivate={() => toggleDeckyMod(mod, !mod.enabled)}
+                      onActivate={() => void toggleDeckyMod(mod, !mod.enabled)}
+                      onClick={() => void toggleDeckyMod(mod, !mod.enabled)}
                       onOKButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         void toggleDeckyMod(mod, !mod.enabled);
                       }}
+                      onSecondaryActionDescription="Reinstall"
+                      onSecondaryButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void reinstallDeckyMod(mod);
+                      }}
+                      onOptionsActionDescription="Remove"
+                      onOptionsButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        askRemoveDeckyMod(mod);
+                      }}
+                      onMenuActionDescription="Remove"
+                      onMenuButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        askRemoveDeckyMod(mod);
+                      }}
                       onGamepadFocus={() => {
                         setFocusedModID(mod.id);
-                        setFocusedModAction("");
                       }}
                       onFocus={() => {
                         setFocusedModID(mod.id);
-                        setFocusedModAction("");
                       }}
                       onMouseEnter={() => {
                         setFocusedModID(mod.id);
-                        setFocusedModAction("");
                       }}
-                      preferredFocus={focused}
-                      style={deckyCompositeRowStyle(focused, mod.enabled)}
+                      preferredFocus={focused || (index === 0 && focusedModID === null)}
+                      style={{
+                        ...deckyCompositeRowStyle(focused, mod.enabled),
+                        opacity: busyModID === mod.id ? 0.65 : 1,
+                        padding: "10px"
+                      }}
                     >
-                      <Focusable
-                        className="dmm-focus-card"
-                        focusClassName="dmm-focus-card-focused"
-                        onActivate={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onClick={() => {
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onOKButton={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onGamepadBlur={() => {
-                          if (focusedModID === mod.id) setFocusedModAction("");
-                        }}
-                        onGamepadFocus={() => setFocusedModID(mod.id)}
-                        onFocus={() => setFocusedModID(mod.id)}
-                        onMouseEnter={() => setFocusedModID(mod.id)}
-                        style={{
-                          ...deckyFocusableCardStyle(focused, mod.enabled),
-                          display: "grid",
-                          gap: "6px",
-                          maxWidth: "100%",
-                          minHeight: "58px",
-                          opacity: busyModID === mod.id ? 0.65 : 1,
-                          padding: "10px",
-                        }}
-                      >
-                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{mod.name}</div>
-                        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-                          <span
-                            style={{
-                              background: mod.enabled ? "#0f766e" : "#3f3f46",
-                              border: `1px solid ${mod.enabled ? "#5eead4" : "#52525b"}`,
-                              borderRadius: "999px",
-                              color: "#f8fafc",
-                              fontSize: "11px",
-                              fontWeight: 800,
-                              lineHeight: 1,
-                              maxWidth: "100%",
-                              overflow: "hidden",
-                              padding: "5px 8px",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap"
-                            }}
-                          >
-                            {mod.enabled ? "Enabled" : "Disabled"}
-                          </span>
-                          <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                            Priority {mod.priority} · {deckyModStateLabel(mod)}
-                          </span>
-                        </div>
-                      </Focusable>
-                      <Focusable
-                        className="dmm-focus-card"
-                        focusClassName="dmm-focus-card-focused"
-                        onActivate={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onClick={() => {
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onOKButton={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void toggleDeckyMod(mod, !mod.enabled);
-                        }}
-                        onGamepadFocus={() => {
-                          setFocusedModID(mod.id);
-                          setFocusedModAction(toggleActionID);
-                        }}
-                        onFocus={() => {
-                          setFocusedModID(mod.id);
-                          setFocusedModAction(toggleActionID);
-                        }}
-                        onMouseEnter={() => {
-                          setFocusedModID(mod.id);
-                          setFocusedModAction(toggleActionID);
-                        }}
-                        style={deckyCompactActionStyle("neutral", focusedModAction === toggleActionID)}
-                      >
-                        {mod.enabled ? "Disable" : "Enable"}
-                      </Focusable>
-                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
-                        <Focusable
-                          className="dmm-focus-card"
-                          focusClassName="dmm-focus-card-focused"
-                          onActivate={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void reinstallDeckyMod(mod);
+                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{mod.name}</div>
+                      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                        <span
+                          style={{
+                            background: mod.enabled ? "#0f766e" : "#3f3f46",
+                            border: `1px solid ${mod.enabled ? "#5eead4" : "#52525b"}`,
+                            borderRadius: "999px",
+                            color: "#f8fafc",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            lineHeight: 1,
+                            maxWidth: "100%",
+                            overflow: "hidden",
+                            padding: "5px 8px",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap"
                           }}
-                          onClick={() => {
-                            void reinstallDeckyMod(mod);
-                          }}
-                          onOKButton={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void reinstallDeckyMod(mod);
-                          }}
-                          onGamepadFocus={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:reinstall`);
-                          }}
-                          onFocus={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:reinstall`);
-                          }}
-                          onMouseEnter={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:reinstall`);
-                          }}
-                          style={deckyCompactActionStyle("neutral", focusedModAction === `${mod.id}:reinstall`)}
                         >
-                          Reinstall
-                        </Focusable>
-                        <Focusable
-                          className="dmm-focus-card"
-                          focusClassName="dmm-focus-card-focused"
-                          onActivate={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            askRemoveDeckyMod(mod);
-                          }}
-                          onClick={() => askRemoveDeckyMod(mod)}
-                          onOKButton={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            askRemoveDeckyMod(mod);
-                          }}
-                          onGamepadFocus={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:remove`);
-                          }}
-                          onFocus={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:remove`);
-                          }}
-                          onMouseEnter={() => {
-                            setFocusedModID(mod.id);
-                            setFocusedModAction(`${mod.id}:remove`);
-                          }}
-                          style={deckyCompactActionStyle("danger", focusedModAction === `${mod.id}:remove`)}
-                        >
-                          Remove
-                        </Focusable>
-                      </Focusable>
+                          {mod.enabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                          Priority {mod.priority} · {deckyModStateLabel(mod)}
+                        </span>
+                      </div>
+                      <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                        A {mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove
+                      </div>
                     </Focusable>
                   );
                 })}
@@ -2884,76 +2794,53 @@ function Content() {
                   const toggleKind = disabled ? "enable" : "disable";
                   const toggleKey = `${item.published_file_id}:${toggleKind}`;
                   const unsubscribeKey = `${item.published_file_id}:unsubscribe`;
+                  const busy = busyWorkshopKey === toggleKey || busyWorkshopKey === unsubscribeKey;
                   return (
                     <Focusable
                       key={item.published_file_id}
                       className="dmm-sidebar-row"
                       focusClassName="dmm-sidebar-row-focused"
-                      focusWithinClassName="dmm-sidebar-row-focused"
-                      flow-children="column"
-                      noFocusRing
-                      style={deckyCompositeRowStyle(false, !disabled)}
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void queueDeckyWorkshopAction(item, toggleKind);
+                      }}
+                      onClick={() => queueDeckyWorkshopAction(item, toggleKind)}
+                      onSecondaryActionDescription="Unsubscribe"
+                      onSecondaryButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        askUnsubscribeWorkshopItem(item);
+                      }}
+                      style={{
+                        ...deckyCompositeRowStyle(false, !disabled),
+                        opacity: busy ? 0.65 : 1,
+                        padding: "10px"
+                      }}
                     >
-                      <Focusable
-                        className="dmm-focus-card"
-                        focusClassName="dmm-focus-card-focused"
-                        style={{
-                          ...deckyFocusableCardStyle(false, !disabled),
-                          display: "grid",
-                          gap: "6px",
-                          opacity: busyWorkshopKey.startsWith(`${item.published_file_id}:`) ? 0.65 : 1,
-                          padding: "10px"
-                        }}
-                      >
-                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{workshopItemName(item)}</div>
-                        <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-                          <span
-                            style={{
-                              background: disabled ? "#3f3f46" : "#0f766e",
-                              border: `1px solid ${disabled ? "#52525b" : "#5eead4"}`,
-                              borderRadius: "999px",
-                              color: "#f8fafc",
-                              fontSize: "11px",
-                              fontWeight: 800,
-                              lineHeight: 1,
-                              padding: "5px 8px"
-                            }}
-                          >
-                            {item.disabled_known ? (disabled ? "Disabled" : "Enabled") : "Steam managed"}
-                          </span>
-                          <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                            {item.downloaded ? "Downloaded" : "Subscribed"} · {item.published_file_id}
-                          </span>
-                        </div>
-                      </Focusable>
-                      <Focusable className="dmm-action-grid" flow-children="column" style={deckyActionGridStyle(1)}>
-                        <Focusable
-                          className="dmm-focus-card"
-                          focusClassName="dmm-focus-card-focused"
-                          onActivate={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void queueDeckyWorkshopAction(item, toggleKind);
+                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{workshopItemName(item)}</div>
+                      <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                        <span
+                          style={{
+                            background: disabled ? "#3f3f46" : "#0f766e",
+                            border: `1px solid ${disabled ? "#52525b" : "#5eead4"}`,
+                            borderRadius: "999px",
+                            color: "#f8fafc",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            lineHeight: 1,
+                            padding: "5px 8px"
                           }}
-                          onClick={() => queueDeckyWorkshopAction(item, toggleKind)}
-                          style={deckyCompactActionStyle("neutral", busyWorkshopKey === toggleKey)}
                         >
-                          {busyWorkshopKey === toggleKey ? "Queueing" : disabled ? "Enable" : "Disable"}
-                        </Focusable>
-                        <Focusable
-                          className="dmm-focus-card"
-                          focusClassName="dmm-focus-card-focused"
-                          onActivate={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            askUnsubscribeWorkshopItem(item);
-                          }}
-                          onClick={() => askUnsubscribeWorkshopItem(item)}
-                          style={deckyCompactActionStyle("danger", busyWorkshopKey === unsubscribeKey)}
-                        >
-                          {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
-                        </Focusable>
-                      </Focusable>
+                          {item.disabled_known ? (disabled ? "Disabled" : "Enabled") : "Steam managed"}
+                        </span>
+                        <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {item.downloaded ? "Downloaded" : "Subscribed"} · {item.published_file_id}
+                        </span>
+                      </div>
+                      <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                        A {busyWorkshopKey === toggleKey ? "Queueing" : disabled ? "Enable" : "Disable"} · Y {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
+                      </div>
                     </Focusable>
                   );
                 })}
@@ -3097,62 +2984,101 @@ function Content() {
   );
 
   const tabItems: { id: Tab; title: string; content: ReactNode }[] = [
-    { id: "main", title: "Manage", content: mainContent },
-    { id: "mods", title: "Mods", content: modsContent },
-    { id: "settings", title: "Settings", content: settingsContent },
-    { id: "debug", title: "Debug", content: debugContent }
+    { id: "main", title: deckyTabLabels.main, content: mainContent },
+    { id: "mods", title: deckyTabLabels.mods, content: modsContent },
+    { id: "settings", title: deckyTabLabels.settings, content: settingsContent },
+    { id: "debug", title: deckyTabLabels.debug, content: debugContent }
   ];
-  const activeTabContent = tabItems.find((item) => item.id === tab)?.content ?? mainContent;
-  const showDeckyTab = (next: Tab) => {
-    if (next === tab) return;
-    setTab(next);
-    if (next === "mods") refreshDeckyMods();
-  };
-  const shiftDeckyTab = (direction: -1 | 1) => {
-    const index = deckyTabOrder.indexOf(tab);
-    const current = index >= 0 ? index : 0;
-    const next = deckyTabOrder[(current + direction + deckyTabOrder.length) % deckyTabOrder.length];
-    showDeckyTab(next);
-  };
-  const handleDeckyShellButtonDown = (event: CustomEvent<{ button: number }>) => {
-    if (event.detail.button === GamepadButton.BUMPER_LEFT) {
-      event.preventDefault();
-      event.stopPropagation();
-      shiftDeckyTab(-1);
-    } else if (event.detail.button === GamepadButton.BUMPER_RIGHT) {
-      event.preventDefault();
-      event.stopPropagation();
-      shiftDeckyTab(1);
-    }
-  };
 
   return (
-    <PanelSection title="Decky Mod Manager">
+    <Focusable flow-children="down" style={deckyRouteShellStyle}>
       <style>{deckyRuntimeStyles}</style>
-      <Focusable
-        flow-children="column"
-        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
-        onButtonDown={handleDeckyShellButtonDown}
-        actionDescriptionMap={{
-          [GamepadButton.BUMPER_LEFT]: "Previous Tab",
-          [GamepadButton.BUMPER_RIGHT]: "Next Tab"
-        }}
-        style={deckyPanelFrameStyle}
-      >
-        <Focusable flow-children="row" noFocusRing style={deckyTabBarStyle}>
-          {tabItems.map((item) => (
-            <Focusable
-              key={item.id}
-              onActivate={() => showDeckyTab(item.id)}
-              onClick={() => showDeckyTab(item.id)}
-              preferredFocus={item.id === tab}
-              style={deckyTabButtonStyle(tab === item.id)}
-            >
-              {item.title}
-            </Focusable>
-          ))}
-        </Focusable>
-        {deckyTabBody(activeTabContent, tab === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined)}
+      <div style={deckyRouteContentStyle}>
+        <Tabs
+          activeTab={tab}
+          autoFocusContents
+          onShowTab={(next: string) => {
+            if (deckyTabOrder.includes(next as Tab)) setTab(next as Tab);
+          }}
+          tabs={tabItems.map((item) => ({
+            id: item.id,
+            title: item.title,
+            content: deckyTabBody(
+              item.id,
+              item.content,
+              item.id === "mods" ? selectedDeckyGameID || "game-list" : item.id,
+              item.id === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined
+            )
+          }))}
+        />
+      </div>
+    </Focusable>
+  );
+}
+
+function QuickAccessContent() {
+  const [status, setStatus] = useState<BackendStatus | null>(null);
+  const [error, setError] = useState("");
+
+  async function refreshStatus() {
+    try {
+      setError("");
+      setStatus(await call<[], BackendStatus>("status"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function toggleServer() {
+    try {
+      setError("");
+      const method = status?.running ? "stop_server" : "start_server";
+      const next = await call<[], BackendStatus>(method);
+      setStatus(next);
+      if (method === "start_server") {
+        await seedJobNotifications({ seed: true });
+        await syncLaunchActions();
+        connectEventMonitor();
+      } else {
+        closeEventMonitor();
+      }
+      await refreshStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  useEffect(() => {
+    void refreshStatus();
+    const listener = () => void refreshStatus();
+    window.addEventListener(DMM_EVENT_NAME, listener);
+    return () => window.removeEventListener(DMM_EVENT_NAME, listener);
+  }, []);
+
+  return (
+    <PanelSection>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable flow-children="down" style={deckyQuickAccessFrameStyle}>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={openDeckyModManagerRoute}>
+            Open DMM
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={toggleServer}>
+            {status?.running ? "Stop Server" : "Start Server"}
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div style={{ display: "grid", gap: "6px", width: "100%" }}>
+            <div>Status: {status?.running ? "Running" : "Stopped"}</div>
+            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Phone URL: {status?.url ?? "Unavailable"}</div>
+            {status?.backend && <div>Games: {status.backend.game_count}</div>}
+            {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
+            {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
+            {status?.error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{status.error}</div>}
+          </div>
+        </PanelSectionRow>
       </Focusable>
     </PanelSection>
   );
@@ -3160,13 +3086,15 @@ function Content() {
 
 export default definePlugin(() => {
   startBackgroundMonitors();
+  routerHook.addRoute(DMM_DECKY_ROUTE, DeckyModManagerRoute);
   return {
     name: "Decky Mod Manager",
-    titleView: <div className={staticClasses.Title}>Decky Mod Manager</div>,
+    title: <div className={staticClasses.Title}>Decky Mod Manager</div>,
     alwaysRender: true,
-    content: <Content />,
+    content: <QuickAccessContent />,
     icon: <FaPowerOff />,
     onDismount() {
+      routerHook.removeRoute(DMM_DECKY_ROUTE);
       stopBackgroundMonitors();
     }
   };

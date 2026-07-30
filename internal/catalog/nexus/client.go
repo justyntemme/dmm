@@ -75,6 +75,7 @@ type ModSearchRequest struct {
 	GameDomain string
 	Query      string
 	Sort       string
+	TimeWindow string
 	Count      int
 	Offset     int
 	VortexOnly bool
@@ -132,6 +133,7 @@ func (c *Client) SearchMods(ctx context.Context, req ModSearchRequest) (ModSearc
 	req.GameDomain = strings.TrimSpace(strings.ToLower(req.GameDomain))
 	req.Query = strings.TrimSpace(req.Query)
 	req.Sort = strings.TrimSpace(strings.ToLower(req.Sort))
+	req.TimeWindow = strings.TrimSpace(strings.ToLower(req.TimeWindow))
 	if req.GameDomain == "" {
 		return ModSearchResponse{}, errors.New("nexus game domain is required")
 	}
@@ -159,7 +161,10 @@ func (c *Client) SearchMods(ctx context.Context, req ModSearchRequest) (ModSearc
 	if err := c.postGraphQL(ctx, nexusModsSearchQuery, variables, &graphQLResp); err != nil {
 		return ModSearchResponse{}, err
 	}
-	out := ModSearchResponse{TotalCount: graphQLResp.Data.Mods.TotalCount}
+	out := ModSearchResponse{
+		TotalCount: graphQLResp.Data.Mods.TotalCount,
+		Mods:       []ModSearchResult{},
+	}
 	for _, mod := range graphQLResp.Data.Mods.Nodes {
 		if req.VortexOnly && !mod.SupportsVortex {
 			continue
@@ -208,20 +213,55 @@ func nexusModsFilter(req ModSearchRequest) map[string]any {
 			"op":    "EQUALS",
 		}}
 	}
+	if updatedAfter, ok := nexusModsUpdatedAfter(req.TimeWindow, time.Now().UTC()); ok {
+		filter["updatedAt"] = []map[string]any{{
+			"value": updatedAfter.Format(time.DateOnly),
+			"op":    "GTE",
+		}}
+	}
 	return filter
+}
+
+func nexusModsUpdatedAfter(window string, now time.Time) (time.Time, bool) {
+	switch strings.TrimSpace(strings.ToLower(window)) {
+	case "one_day", "1d", "day":
+		return now.AddDate(0, 0, -1), true
+	case "one_week", "1w", "week":
+		return now.AddDate(0, 0, -7), true
+	case "two_weeks", "2w", "fortnight":
+		return now.AddDate(0, 0, -14), true
+	case "three_weeks", "3w":
+		return now.AddDate(0, 0, -21), true
+	case "one_month", "1m", "month", "four_weeks", "4w":
+		return now.AddDate(0, -1, 0), true
+	case "three_months", "3m":
+		return now.AddDate(0, -3, 0), true
+	case "one_year", "1y", "year":
+		return now.AddDate(-1, 0, 0), true
+	default:
+		return time.Time{}, false
+	}
 }
 
 func nexusModsSort(sortValue string, hasQuery bool) []map[string]any {
 	field := "downloads"
 	direction := "DESC"
 	switch sortValue {
-	case "name":
+	case "name", "az", "a-z":
 		field = "name"
 		direction = "ASC"
 	case "updated", "updated_at":
 		field = "updatedAt"
-	case "endorsements":
+	case "created", "new":
+		field = "createdAt"
+	case "endorsements", "popular":
 		field = "endorsements"
+	case "unique_downloads", "unique-downloads", "uniqueDownloads":
+		field = "uniqueDownloads"
+	case "random":
+		return []map[string]any{{
+			"random": map[string]any{},
+		}}
 	case "relevance":
 		field = "relevance"
 	default:

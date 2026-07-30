@@ -1085,6 +1085,7 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	sortValue := strings.TrimSpace(r.URL.Query().Get("sort"))
+	timeWindow := strings.TrimSpace(r.URL.Query().Get("time_window"))
 	count := parseBoundedQueryInt(r.URL.Query().Get("count"), 20, 1, 50)
 	offset := parseBoundedQueryInt(r.URL.Query().Get("offset"), 0, 0, 5000)
 	vortexOnly := parseQueryBoolDefault(r.URL.Query().Get("vortex_only"), true)
@@ -1098,6 +1099,7 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 		"game_domain", gameDomain,
 		"query_present", query != "",
 		"sort", sortValue,
+		"time_window", timeWindow,
 		"count", count,
 		"offset", offset,
 		"vortex_only", vortexOnly,
@@ -1106,6 +1108,7 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 		GameDomain: gameDomain,
 		Query:      query,
 		Sort:       sortValue,
+		TimeWindow: timeWindow,
 		Count:      count,
 		Offset:     offset,
 		VortexOnly: vortexOnly,
@@ -5175,15 +5178,17 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 	if !ok {
 		return nil, nil
 	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	entries := pluginActivationEntries(spec, mappings, native)
+	if len(entries) == 0 {
+		if len(native) > 0 {
+			s.logger.Info("plugin activation generation skipped without DMM-managed plugins", "app_id", game.SteamAppID, "activation_id", spec.ID, "native_plugins", len(native))
+		}
+		return nil, nil
+	}
 	targetRoot, err := protonLocalAppDataTargetRoot(game, spec)
 	if err != nil {
 		return nil, err
-	}
-	native := installedNativePluginNames(game.GamePath, spec)
-	entries := pluginActivationEntries(spec, mappings, native)
-	managed := hasManagedPluginActivationFiles(targetRoot, spec, managedFiles)
-	if len(entries) == 0 && len(native) == 0 && !managed {
-		return nil, nil
 	}
 	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
 	if err != nil {

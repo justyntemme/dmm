@@ -513,14 +513,14 @@ func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/nexus/mods?q=smapi&sort=updated&count=500&offset=-10&vortex_only=false", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/nexus/mods?q=smapi&sort=updated&time_window=three_weeks&count=500&offset=-10&vortex_only=false", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if captured.GameDomain != "stardewvalley" || captured.Query != "smapi" || captured.Sort != "updated" {
+	if captured.GameDomain != "stardewvalley" || captured.Query != "smapi" || captured.Sort != "updated" || captured.TimeWindow != "three_weeks" {
 		t.Fatalf("request = %+v", captured)
 	}
 	if captured.Count != 50 || captured.Offset != 0 || captured.VortexOnly {

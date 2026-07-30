@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestClientSetsAPIKey(t *testing.T) {
@@ -95,7 +96,8 @@ func TestSearchModsUsesGraphQLAndFiltersVortexResults(t *testing.T) {
 	got, err := client.SearchMods(context.Background(), ModSearchRequest{
 		GameDomain: "stardewvalley",
 		Query:      "smapi",
-		Sort:       "downloads",
+		Sort:       "popular",
+		TimeWindow: "three_months",
 		Count:      2,
 		VortexOnly: true,
 	})
@@ -119,8 +121,48 @@ func TestSearchModsUsesGraphQLAndFiltersVortexResults(t *testing.T) {
 		t.Fatalf("count = %v", variables["count"])
 	}
 	filter := variables["filter"].(map[string]any)
-	if filter["op"] != "AND" || filter["gameDomainName"] == nil || filter["nameStemmed"] == nil || filter["supportsVortex"] == nil {
+	if filter["op"] != "AND" || filter["gameDomainName"] == nil || filter["nameStemmed"] == nil || filter["supportsVortex"] == nil || filter["updatedAt"] == nil {
 		t.Fatalf("filter = %+v", filter)
+	}
+	updated := filter["updatedAt"].([]any)[0].(map[string]any)
+	if updated["op"] != "GTE" {
+		t.Fatalf("updatedAt filter = %+v", updated)
+	}
+	if _, err := time.Parse(time.DateOnly, updated["value"].(string)); err != nil {
+		t.Fatalf("updatedAt value = %q: %v", updated["value"], err)
+	}
+	sort := variables["sort"].([]any)[0].(map[string]any)
+	if sort["endorsements"] == nil {
+		t.Fatalf("sort = %+v", sort)
+	}
+}
+
+func TestSearchModsReturnsEmptySliceForNoResults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"mods":{"totalCount":0,"nodes":[]}}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("", WithGraphQLURL(server.URL))
+	got, err := client.SearchMods(context.Background(), ModSearchRequest{
+		GameDomain: "stardewvalley",
+		Count:      3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TotalCount != 0 {
+		t.Fatalf("total_count = %d", got.TotalCount)
+	}
+	if got.Mods == nil || len(got.Mods) != 0 {
+		t.Fatalf("mods = %#v", got.Mods)
+	}
+	body, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"mods":null`) {
+		t.Fatalf("mods serialized as null: %s", body)
 	}
 }
 
