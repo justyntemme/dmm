@@ -1434,6 +1434,10 @@ h2 {
   gap: 8px;
 }
 
+.mod-actions {
+  width: min(178px, 100%);
+}
+
 .mod-actions label {
   display: inline-flex;
   align-items: center;
@@ -1460,11 +1464,17 @@ h2 {
 }
 
 .mod-toggle {
+  justify-content: space-between;
+  width: 100%;
   min-width: 74px;
   border: 1px solid #365244;
   border-radius: 8px;
   padding: 8px 10px;
   background: #132018;
+}
+
+.mod-actions .secondary-action.compact {
+  width: 100%;
 }
 
 .mod-advanced {
@@ -1489,7 +1499,7 @@ h2 {
 
 .mod-advanced-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
@@ -1896,6 +1906,7 @@ dd {
   }
 
   .mod-actions {
+    width: 100%;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     justify-items: stretch;

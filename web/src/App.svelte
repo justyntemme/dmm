@@ -450,6 +450,7 @@
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
+  let busyMods: Record<number, "toggle" | "remove" | "reinstall"> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
   let initialRefreshComplete = false;
@@ -463,6 +464,15 @@
   let eventReconnectTimer: number | null = null;
   let eventReconnectDelay = 1000;
   let lastEventID = 0;
+
+  function setBusyMod(modID: number, action: "toggle" | "remove" | "reinstall") {
+    busyMods = { ...busyMods, [modID]: action };
+  }
+
+  function clearBusyMod(modID: number) {
+    const { [modID]: _removed, ...rest } = busyMods;
+    busyMods = rest;
+  }
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
@@ -961,19 +971,26 @@
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
     if (!selectedProfile) return;
     error = "";
-    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled })
-    });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    setBusyMod(mod.id, "toggle");
+    try {
+      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: ProfileModUpdateResult = await response.json();
+      installedMods = installedMods.map((item) => (item.id === result.mod.id ? result.mod : item));
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearBusyMod(mod.id);
     }
-    const result: ProfileModUpdateResult = await response.json();
-    installedMods = installedMods.map((item) => (item.id === result.mod.id ? result.mod : item));
-    handleProfileApplyResult(result.apply);
-    await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function moveModInProfile(mod: InstalledMod, direction: -1 | 1) {
@@ -1002,15 +1019,46 @@
   async function removeInstalledMod(mod: InstalledMod) {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}`, { method: "DELETE" });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    setBusyMod(mod.id, "remove");
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: { removed: InstalledMod; apply: ProfileApplyResult } = await response.json();
+      installedMods = installedMods.filter((item) => item.id !== mod.id);
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearBusyMod(mod.id);
     }
-    const result: { removed: InstalledMod; apply: ProfileApplyResult } = await response.json();
-    installedMods = installedMods.filter((item) => item.id !== mod.id);
-    handleProfileApplyResult(result.apply);
-    await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function reinstallInstalledMod(mod: InstalledMod) {
+    if (!selectedGame) return;
+    error = "";
+    setBusyMod(mod.id, "reinstall");
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/reinstall`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: { job?: Job; mod?: InstalledMod } = await response.json();
+      if (result.job) upsertJob(result.job);
+      if (result.mod) {
+        installedMods = installedMods.map((item) => (item.id === mod.id ? result.mod as InstalledMod : item));
+        if (!installedMods.some((item) => item.id === result.mod?.id)) installedMods = [...installedMods, result.mod];
+      }
+      await refreshSelectedGame({ refreshPreview: true, refreshJobs: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearBusyMod(mod.id);
+    }
   }
 
   async function checkModUpdates() {
@@ -2578,11 +2626,17 @@
                       <small>{modProfileStateText(mod)}</small>
                     </div>
                     <div class="mod-actions">
-                      <span class:warning-status={mod.status === "needs_recovery"}>{modStatusText(mod)}</span>
+                      <span class:warning-status={mod.status === "needs_recovery"}>{busyMods[mod.id] ? "Working" : modStatusText(mod)}</span>
                       <label class="mod-toggle">
-                        <input type="checkbox" checked={mod.enabled} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
-                        <em>{mod.enabled ? "On" : "Off"}</em>
+                        <input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
+                        <em>{busyMods[mod.id] === "toggle" ? "Saving" : mod.enabled ? "On" : "Off"}</em>
                       </label>
+                      <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
+                        {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
+                      </button>
+                      <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
+                        {busyMods[mod.id] === "remove" ? "Removing..." : "Remove"}
+                      </button>
                     </div>
                     <details class="mod-advanced">
                       <summary>Advanced</summary>
@@ -2590,7 +2644,6 @@
                       <div class="mod-advanced-actions">
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
-                        <button type="button" class="secondary-action compact danger-action" on:click={() => askRemoveInstalledMod(mod)}>Remove</button>
                       </div>
                     </details>
                   </article>
