@@ -105,7 +105,7 @@ request("PUT", "/api/settings/install", {
 })
 print("\nAuto-install is enabled for this check.")
 print("Now use the Deck browser to click a fresh Nexus Mod Manager Download link.")
-print("This script will pass when the new request runs/completes without stopping at manual install approval.")
+print("This script will pass when the new request runs/completes without stopping at manual install confirmation.")
 
 seen_states = {}
 deadline = time.monotonic() + timeout
@@ -133,7 +133,7 @@ try:
         status_name = job.get("status")
         validate_job_payload(job)
         if status_name == "waiting":
-            print("\nFAIL: captured request is waiting for manual install approval even though auto-install is enabled.", file=sys.stderr)
+            print("\nFAIL: captured request is waiting for manual install confirmation even though auto-install is enabled.", file=sys.stderr)
             exit_code = 1
             break
         if status_name in ("queued", "running"):
@@ -141,7 +141,7 @@ try:
             continue
         if status_name == "completed":
             diagnostics = request("GET", f"/api/games/{app_id}/diagnostics")
-            print("\nPASS: request completed without manual install approval.")
+            print("\nPASS: request completed without manual install confirmation.")
             print(
                 "summary: "
                 f"staged={diagnostics.get('staged_mods')} "
