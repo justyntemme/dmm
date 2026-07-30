@@ -89,6 +89,14 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersGameVersionProvider(t *testing.T) {
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	if !containsFeature(summary.Capabilities.GameVersions, "skyrimse-exe-version") {
+		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
+	}
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {
@@ -102,6 +110,15 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFeature(features []gameext.FeatureSummary, want string) bool {
+	for _, feature := range features {
+		if feature.ID == want {
 			return true
 		}
 	}
