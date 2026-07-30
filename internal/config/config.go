@@ -27,6 +27,7 @@ type NexusConfig struct {
 type InstallConfig struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
+	AutoShowFOMODInstallers      bool `json:"auto_show_fomod_installers"`
 }
 
 type UIConfig struct {
@@ -93,6 +94,7 @@ func Defaults() Config {
 		Install: InstallConfig{
 			AutoInstallCapturedDownloads: true,
 			AutoEnableInstalledMods:      false,
+			AutoShowFOMODInstallers:      true,
 		},
 		UI: UIConfig{
 			RecentGames: map[string]int64{},

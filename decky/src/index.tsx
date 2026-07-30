@@ -42,6 +42,7 @@ type BackendStatus = {
     install: {
       auto_install_captured_downloads: boolean;
       auto_enable_installed_mods: boolean;
+      auto_show_fomod_installers: boolean;
     };
     ui?: UISettings;
   } | null;
@@ -793,8 +794,8 @@ async function maybeShowInstallerChoiceModal(job: Job) {
     await logFrontendEvent("installer choice modal status check failed", { job_id: job.id, error: err instanceof Error ? err.message : String(err) });
     return;
   }
-  if (!status?.backend?.install.auto_enable_installed_mods) {
-    await logFrontendEvent("installer choice modal skipped because auto enable is off", { job_id: job.id });
+  if (!status?.backend?.install.auto_show_fomod_installers) {
+    await logFrontendEvent("installer choice modal skipped because auto display is off", { job_id: job.id });
     return;
   }
   const appID = String(job.payload?.app_id ?? "").trim();
@@ -1351,6 +1352,17 @@ function Content() {
       setError("");
       const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_enable_installed_mods", autoEnable);
       if (!result.ok) setError(result.error ?? "Unable to update enable settings.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function setAutoShowFOMODInstallers(autoShow: boolean) {
+    try {
+      setError("");
+      const result = await call<[boolean], { ok: boolean; error?: string; status?: unknown }>("set_auto_show_fomod_installers", autoShow);
+      if (!result.ok) setError(result.error ?? "Unable to update FOMOD installer settings.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1917,6 +1929,7 @@ function Content() {
           <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
           <div>Install captured downloads: {status?.backend?.install.auto_install_captured_downloads ? "Automatic" : "Approval required"}</div>
           <div>Enable installed mods: {status?.backend?.install.auto_enable_installed_mods ? "Automatic" : "Manual"}</div>
+          <div>FOMOD installers: {status?.backend?.install.auto_show_fomod_installers ? "Auto display" : "Action Center"}</div>
           <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
         </div>
       </PanelSectionRow>
@@ -1936,6 +1949,15 @@ function Content() {
           checked={status?.backend?.install.auto_enable_installed_mods ?? false}
           disabled={!status?.running}
           onChange={setAutoEnableInstalledMods}
+        />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ToggleField
+          label="Auto-display FOMOD installers"
+          description="When installer choices are required, DMM opens a Decky modal automatically. Closing it leaves the item in Action Center."
+          checked={status?.backend?.install.auto_show_fomod_installers ?? true}
+          disabled={!status?.running}
+          onChange={setAutoShowFOMODInstallers}
         />
       </PanelSectionRow>
       <PanelSectionRow>

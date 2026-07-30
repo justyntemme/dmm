@@ -472,6 +472,7 @@ class Plugin:
         payload = json.dumps({
             "auto_install_captured_downloads": bool(auto_install),
             "auto_enable_installed_mods": bool(install.get("auto_enable_installed_mods", False)),
+            "auto_show_fomod_installers": bool(install.get("auto_show_fomod_installers", True)),
         }).encode("utf-8")
         result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
         if result is None:
@@ -501,6 +502,7 @@ class Plugin:
         payload = json.dumps({
             "auto_install_captured_downloads": bool(install.get("auto_install_captured_downloads", False)),
             "auto_enable_installed_mods": bool(auto_enable),
+            "auto_show_fomod_installers": bool(install.get("auto_show_fomod_installers", True)),
         }).encode("utf-8")
         result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
         if result is None:
@@ -509,6 +511,36 @@ class Plugin:
                 "error": error or "Unable to update enable settings.",
             }
         self._log(f"auto-enable installed mods set to {bool(auto_enable)}")
+        return {
+            "ok": True,
+            "status": result,
+        }
+
+    async def set_auto_show_fomod_installers(self, auto_show):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        status, status_error = self._backend_json_result("GET", "/api/status")
+        if not isinstance(status, dict):
+            return {
+                "ok": False,
+                "error": status_error or "Unable to load current install settings.",
+            }
+        install = status.get("install") if isinstance(status.get("install"), dict) else {}
+        payload = json.dumps({
+            "auto_install_captured_downloads": bool(install.get("auto_install_captured_downloads", False)),
+            "auto_enable_installed_mods": bool(install.get("auto_enable_installed_mods", False)),
+            "auto_show_fomod_installers": bool(auto_show),
+        }).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/install", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to update FOMOD installer settings.",
+            }
+        self._log(f"auto-show FOMOD installers set to {bool(auto_show)}")
         return {
             "ok": True,
             "status": result,

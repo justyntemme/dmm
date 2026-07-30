@@ -68,7 +68,7 @@ func TestUpdateSecuritySettings(t *testing.T) {
 func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/install", bytes.NewBufferString(`{"auto_install_captured_downloads":true,"auto_enable_installed_mods":true}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/install", bytes.NewBufferString(`{"auto_install_captured_downloads":true,"auto_enable_installed_mods":true,"auto_show_fomod_installers":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -82,6 +82,7 @@ func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
 		Install struct {
 			AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 			AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
+			AutoShowFOMODInstallers      bool `json:"auto_show_fomod_installers"`
 		} `json:"install"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -93,6 +94,9 @@ func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
 	if !body.Install.AutoEnableInstalledMods {
 		t.Fatal("auto_enable_installed_mods was not updated")
 	}
+	if !body.Install.AutoShowFOMODInstallers {
+		t.Fatal("auto_show_fomod_installers was not updated")
+	}
 
 	saved, err := config.Load()
 	if err != nil {
@@ -103,6 +107,9 @@ func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
 	}
 	if !saved.Install.AutoEnableInstalledMods {
 		t.Fatal("auto_enable_installed_mods was not persisted")
+	}
+	if !saved.Install.AutoShowFOMODInstallers {
+		t.Fatal("auto_show_fomod_installers was not persisted")
 	}
 }
 

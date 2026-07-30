@@ -863,6 +863,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"install": map[string]any{
 			"auto_install_captured_downloads": cfg.Install.AutoInstallCapturedDownloads,
 			"auto_enable_installed_mods":      cfg.Install.AutoEnableInstalledMods,
+			"auto_show_fomod_installers":      cfg.Install.AutoShowFOMODInstallers,
 		},
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
@@ -882,6 +883,7 @@ type updateSecuritySettingsRequest struct {
 type updateInstallSettingsRequest struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
+	AutoShowFOMODInstallers      bool `json:"auto_show_fomod_installers"`
 }
 
 type patchUISettingsRequest struct {
@@ -994,6 +996,7 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 	s.cfgMu.Lock()
 	s.cfg.Install.AutoInstallCapturedDownloads = req.AutoInstallCapturedDownloads
 	s.cfg.Install.AutoEnableInstalledMods = req.AutoEnableInstalledMods
+	s.cfg.Install.AutoShowFOMODInstallers = req.AutoShowFOMODInstallers
 	cfg := s.cfg
 	s.cfgMu.Unlock()
 	if err := config.Save(cfg); err != nil {
@@ -1004,6 +1007,7 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 		"install settings updated",
 		"auto_install_captured_downloads", req.AutoInstallCapturedDownloads,
 		"auto_enable_installed_mods", req.AutoEnableInstalledMods,
+		"auto_show_fomod_installers", req.AutoShowFOMODInstallers,
 	)
 	s.handleStatus(w, r)
 }
