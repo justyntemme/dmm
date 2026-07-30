@@ -120,11 +120,6 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	storedJobs, err = cleanupObsoleteRestoredJobs(context.Background(), db, storedJobs, logger)
-	if err != nil {
-		_ = db.Close()
-		return nil, err
-	}
 	storedPending = capturedInstallsForJobs(storedPending, storedJobs)
 	storedJobs = normalizeRestoredJobs(storedJobs, storedPending, gameRegistry)
 	for _, job := range storedJobs {
@@ -183,28 +178,6 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	return srv, nil
 }
 
-func cleanupObsoleteRestoredJobs(ctx context.Context, db *storage.DB, storedJobs []jobs.Job, logger *slog.Logger) ([]jobs.Job, error) {
-	out := storedJobs[:0]
-	var removed int
-	for _, job := range storedJobs {
-		if !obsoleteRestoredJob(job) {
-			out = append(out, job)
-			continue
-		}
-		if err := db.DeleteCapturedInstall(ctx, job.ID); err != nil {
-			return nil, err
-		}
-		if err := db.DeleteJob(ctx, job.ID); err != nil {
-			return nil, err
-		}
-		removed++
-	}
-	if removed > 0 {
-		logger.Info("obsolete pre-mvp jobs removed", "jobs", removed)
-	}
-	return out, nil
-}
-
 func capturedInstallsForJobs(storedPending []storage.CapturedInstall, storedJobs []jobs.Job) []storage.CapturedInstall {
 	validJobs := make(map[string]struct{}, len(storedJobs))
 	for _, job := range storedJobs {
@@ -217,19 +190,6 @@ func capturedInstallsForJobs(storedPending []storage.CapturedInstall, storedJobs
 		}
 	}
 	return out
-}
-
-func obsoleteRestoredJob(job jobs.Job) bool {
-	switch strings.TrimSpace(job.Type) {
-	case "pending-import", "launch-config":
-		return true
-	}
-	if job.Type != "deploy" {
-		return false
-	}
-	title := strings.TrimSpace(job.Title)
-	message := strings.TrimSpace(job.Message)
-	return strings.EqualFold(title, "Deploy staged mods") || strings.HasPrefix(message, "Deployed ")
 }
 
 func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.CapturedInstall, gameRegistry games.Registry) []jobs.Job {

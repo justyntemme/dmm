@@ -3201,29 +3201,6 @@ func TestNormalizeRestoredJobsRestoresSteamWorkshopActionsAsWaiting(t *testing.T
 	}
 }
 
-func TestObsoleteRestoredJobPredicateRemovesPreMVPLegacyJobs(t *testing.T) {
-	cases := []jobs.Job{
-		{Type: "pending-import", Title: "Install request: stardewvalley/mods/239"},
-		{Type: "launch-config", Title: "Configure launch tool"},
-		{Type: "deploy", Title: "Deploy staged mods"},
-		{Type: "deploy", Title: "Apply profile changes", Message: "Deployed 63 files"},
-	}
-	for _, job := range cases {
-		if !obsoleteRestoredJob(job) {
-			t.Fatalf("obsoleteRestoredJob(%+v) = false, want true", job)
-		}
-	}
-	for _, job := range []jobs.Job{
-		{Type: "captured-install", Title: "Captured mod: stardewvalley/mods/239"},
-		{Type: "deploy", Title: "Apply profile changes"},
-		{Type: jobTypeSteamWorkshopAction, Title: "Disable Workshop item"},
-	} {
-		if obsoleteRestoredJob(job) {
-			t.Fatalf("obsoleteRestoredJob(%+v) = true, want false", job)
-		}
-	}
-}
-
 func TestRunningCapturedInstallRestoresAsWaitingAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
