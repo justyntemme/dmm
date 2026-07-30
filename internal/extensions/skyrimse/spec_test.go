@@ -48,6 +48,30 @@ func TestExtensionPlansTopLevelDataArchiveWithoutDuplicatingDataPath(t *testing.
 	assertTarget(t, plan.Instructions, "Data/Textures/example.dds")
 }
 
+func TestExtensionPlansScriptExtenderArchiveIntoGameRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "skse64_2_02_06", "skse64_loader.exe"), "loader")
+	writeFile(t, filepath.Join(root, "skse64_2_02_06", "skse64_steam_loader.dll"), "dll")
+	writeFile(t, filepath.Join(root, "skse64_2_02_06", "Data", "SKSE", "Plugins", "example.dll"), "plugin")
+	writeFile(t, filepath.Join(root, "outside-readme.txt"), "outside")
+
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("489830", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "skyrimse-script-extender" || plan.PlannerID != "vortex:skyrimse:script-extender" {
+		t.Fatalf("script extender plan = %+v", plan)
+	}
+	assertTarget(t, plan.Instructions, "skse64_loader.exe")
+	assertTarget(t, plan.Instructions, "skse64_steam_loader.dll")
+	assertTarget(t, plan.Instructions, "Data/SKSE/Plugins/example.dll")
+	assertNoTarget(t, plan.Instructions, "outside-readme.txt")
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != "script-extender" || plan.Metadata[0].UniqueID != "skse64" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+}
+
 func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	extension := gameext.MustCompileExtension(skyrimse.Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
@@ -147,6 +171,15 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, instructions)
+}
+
+func assertNoTarget(t *testing.T, instructions []installplan.Instruction, target string) {
+	t.Helper()
+	for _, instruction := range instructions {
+		if instruction.TargetRelative == target {
+			t.Fatalf("unexpected target %q in %+v", target, instructions)
+		}
+	}
 }
 
 func contains(values []string, want string) bool {

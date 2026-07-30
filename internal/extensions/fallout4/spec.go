@@ -145,6 +145,14 @@ func modTypes() []installplan.ModTypeSpec {
 
 func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
+		gamebryo.ScriptExtenderInstaller(gamebryo.ScriptExtenderInstallerOptions{
+			ID:                "vortex:fallout4:script-extender",
+			VortexInstallerID: "script-extender-installer",
+			Name:              "Fallout 4 Script Extender (F4SE)",
+			ModType:           "fallout4-script-extender",
+			LoaderExecutable:  "f4se_loader.exe",
+			ToolID:            "f4se",
+		}),
 		{
 			ID:                "vortex:fallout4:data-folder",
 			VortexInstallerID: "game-query-mod-path:data-folder",
@@ -227,6 +235,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Gamebryo archive invalidation support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
+		},
+		{
+			Name: "Vortex script extender installer",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/script-extender-installer/src/installer.ts",
 		},
 	}
 }

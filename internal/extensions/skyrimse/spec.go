@@ -138,6 +138,14 @@ func modTypes() []installplan.ModTypeSpec {
 
 func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
+		gamebryo.ScriptExtenderInstaller(gamebryo.ScriptExtenderInstallerOptions{
+			ID:                "vortex:skyrimse:script-extender",
+			VortexInstallerID: "script-extender-installer",
+			Name:              "Skyrim Script Extender 64 (SKSE64)",
+			ModType:           "skyrimse-script-extender",
+			LoaderExecutable:  "skse64_loader.exe",
+			ToolID:            "skse64",
+		}),
 		{
 			ID:                "vortex:skyrimse:data-folder",
 			VortexInstallerID: "game-query-mod-path:data-folder",
@@ -212,6 +220,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Gamebryo archive invalidation support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
+		},
+		{
+			Name: "Vortex script extender installer",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/script-extender-installer/src/installer.ts",
 		},
 	}
 }
