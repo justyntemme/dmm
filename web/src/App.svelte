@@ -1342,7 +1342,7 @@
       return "Choose installer options to finish adding this mod to the selected profile.";
     }
     if (request.status === "waiting") {
-      return "Install this downloaded mod into the selected profile, or cancel it and keep the archive cache untouched.";
+      return "Add this downloaded mod to the selected profile, or cancel it and keep the archive cache untouched.";
     }
     if (request.status === "running" || request.status === "queued") {
       return "DMM is downloading or installing this mod. It will appear in the profile when ready.";
@@ -1511,7 +1511,7 @@
           <span>{actionItems.length} open</span>
         </div>
         {#if installRequests.length > 0}
-          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Captured Installs</button>
+          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
         {/if}
         {#if actionItems.length === 0}
           <div class="request-home">
@@ -1538,7 +1538,7 @@
 	                    {/if}
 	                    {#if request.status === "waiting"}
 	                      {#if request.type === "pending-import"}
-	                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
+	                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
 	                      {/if}
 	                    {/if}
 	                    {#if request.type === "pending-import" && request.status === "failed"}
@@ -1659,7 +1659,7 @@
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
               {:else if hasPendingProfileChanges}
-                <p class="deploy-message">This profile is ready to apply. Enable or disable any mod to apply it automatically, or open Advanced Deployment Tools.</p>
+                <p class="deploy-message">This profile has changes ready. Enabling or disabling a mod applies the profile automatically; Advanced Deployment Tools can apply it now.</p>
               {:else if deploymentStatus?.deployed}
                 <p class="deploy-message success">This profile is applied to the game.</p>
               {:else if enabledMods.length === 0}
@@ -1825,7 +1825,7 @@
             <span>{selectedGameActionItems.length} open · {installCandidates.length} installers</span>
           </div>
           {#if selectedGameRequests.length > 0}
-            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Captured Installs</button>
+            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <p class="hint">No install actions need attention for this game.</p>
@@ -1846,7 +1846,7 @@
                         <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
                       {/if}
                       {#if request.type === "pending-import" && request.status === "waiting"}
-                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Approve Install"}</button>
+                        <button type="button" on:click={() => approveInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
                       {/if}
                       {#if request.type === "pending-import" && request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
