@@ -340,7 +340,7 @@ const deckyRouteTabBodyStyle: CSSProperties = {
   minHeight: 0,
   overflowX: "hidden",
   overflowY: "auto",
-  padding: "16px 28px 28px",
+  padding: "16px 28px 88px",
   scrollPaddingTop: "8px",
   width: "100%"
 };
@@ -550,6 +550,21 @@ function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused
     whiteSpace: "normal"
   };
 }
+
+const deckyCompactInputStyle: CSSProperties = {
+  background: "#171b21",
+  border: "1px solid #343b46",
+  borderRadius: "6px",
+  boxSizing: "border-box",
+  color: "#f8fafc",
+  fontSize: "12px",
+  lineHeight: 1.2,
+  minHeight: "38px",
+  minWidth: 0,
+  outline: "none",
+  padding: "8px 10px",
+  width: "100%"
+};
 
 function deckyTabBody(tab: Tab, content: ReactNode, contentKey: string, onCancelButton?: (event: GamepadEvent) => void) {
   return (
@@ -1527,12 +1542,11 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           color: "#f8fafc",
           display: "grid",
           gap: "12px",
-          gridTemplateRows: "auto auto auto minmax(0, 1fr)",
-          height: "72vh",
           maxHeight: "72vh",
-          minHeight: 0,
-          overflow: "hidden",
+          overflowX: "hidden",
+          overflowY: "auto",
           padding: "4px",
+          scrollPaddingBlock: "12px",
           width: "100%"
         }}
       >
@@ -1574,9 +1588,8 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             boxSizing: "border-box",
             display: "grid",
             gap: "10px",
-            minHeight: 0,
             overflowX: "hidden",
-            overflowY: "auto",
+            overflowY: "visible",
             paddingRight: "6px",
             scrollPaddingBlock: "10px",
             width: "100%"
@@ -2514,12 +2527,19 @@ function DeckyModManagerRoute() {
         </div>
       </PanelSectionRow>
       <PanelSectionRow>
-        <div style={{ display: "grid", gap: "10px", width: "100%" }}>
-          <TextField label="Nexus URL" value={importUrl} bShowClearAction description="Paste a Nexus mod page URL or nxm:// link." onChange={(event) => setImportUrl(event.currentTarget.value)} />
-          <ButtonItem layout="below" onClick={addCapturedInstall}>
+        <div style={{ display: "grid", gap: "8px", width: "100%" }}>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>Nexus Link</div>
+          <input
+            aria-label="Nexus URL"
+            placeholder="Paste Nexus URL or nxm:// link"
+            style={deckyCompactInputStyle}
+            value={importUrl}
+            onChange={(event) => setImportUrl(event.currentTarget.value)}
+          />
+          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={addCapturedInstall} onClick={addCapturedInstall} style={deckyCompactActionStyle("neutral")}>
             Add Nexus Link
-          </ButtonItem>
-          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install actions and choices appear in Action Center.</div>
+          </Focusable>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install actions and choices appear in Action Center.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
         </div>
       </PanelSectionRow>
