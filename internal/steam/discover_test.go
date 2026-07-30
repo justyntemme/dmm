@@ -100,4 +100,7 @@ func TestDetectWorkshop(t *testing.T) {
 	if len(info.SampleItemIDs) != 2 || info.SampleItemIDs[0] != "12345" || info.SampleItemIDs[1] != "67890" {
 		t.Fatalf("sample ids = %+v", info.SampleItemIDs)
 	}
+	if len(info.ItemIDs) != 2 || info.ItemIDs[0] != "12345" || info.ItemIDs[1] != "67890" {
+		t.Fatalf("item ids = %+v", info.ItemIDs)
+	}
 }

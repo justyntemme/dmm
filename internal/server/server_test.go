@@ -363,6 +363,58 @@ func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	}
 }
 
+func TestGameSteamWorkshopUsesDetectedItemsBeforeDeckySync(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "233860"
+	libraryPath := t.TempDir()
+	contentPath := filepath.Join(libraryPath, "steamapps", "workshop", "content", appID)
+	for _, itemID := range []string{"20", "10"} {
+		if err := os.MkdirAll(filepath.Join(contentPath, itemID), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifestPath := filepath.Join(libraryPath, "steamapps", "workshop", "appworkshop_"+appID+".acf")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, []byte(`"AppWorkshop" {}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Kenshi",
+		InstallDir:  "Kenshi",
+		LibraryPath: libraryPath,
+		Path:        filepath.Join(libraryPath, "steamapps", "common", "Kenshi"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/workshop", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Info  *steam.WorkshopInfo         `json:"info"`
+		Items []storage.SteamWorkshopItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Info == nil || body.Info.ItemCount != 2 {
+		t.Fatalf("workshop info = %+v", body.Info)
+	}
+	if len(body.Items) != 2 || body.Items[0].PublishedFileID != "10" || body.Items[1].PublishedFileID != "20" {
+		t.Fatalf("items = %+v", body.Items)
+	}
+	if body.Items[0].DisabledKnown || !body.Items[0].Downloaded || body.Items[0].Title != "Workshop item 10" {
+		t.Fatalf("placeholder item = %+v", body.Items[0])
+	}
+}
+
 func TestSteamWorkshopActionQueueContract(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

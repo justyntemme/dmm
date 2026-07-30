@@ -33,6 +33,7 @@ type WorkshopInfo struct {
 	ManifestPath        string   `json:"manifest_path,omitempty"`
 	ItemCount           int      `json:"item_count"`
 	SampleItemIDs       []string `json:"sample_item_ids,omitempty"`
+	ItemIDs             []string `json:"-"`
 	CoexistenceAllowed  bool     `json:"coexistence_allowed"`
 	ManagementSupported bool     `json:"management_supported"`
 	Message             string   `json:"message,omitempty"`
@@ -103,6 +104,7 @@ func DetectWorkshop(libraryPath, appID string) WorkshopInfo {
 		info.Detected = true
 		info.ContentPath = filepath.ToSlash(contentPath)
 		entries, _ := os.ReadDir(contentPath)
+		itemIDs := make([]string, 0, len(entries))
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				continue
@@ -111,12 +113,15 @@ func DetectWorkshop(libraryPath, appID string) WorkshopInfo {
 			if id == "" {
 				continue
 			}
-			info.ItemCount++
-			if len(info.SampleItemIDs) < 12 {
-				info.SampleItemIDs = append(info.SampleItemIDs, id)
-			}
+			itemIDs = append(itemIDs, id)
 		}
-		sort.Strings(info.SampleItemIDs)
+		sort.Strings(itemIDs)
+		info.ItemIDs = itemIDs
+		info.ItemCount = len(itemIDs)
+		info.SampleItemIDs = append(info.SampleItemIDs, itemIDs...)
+		if len(info.SampleItemIDs) > 12 {
+			info.SampleItemIDs = info.SampleItemIDs[:12]
+		}
 	}
 	if st, err := os.Stat(manifestPath); err == nil && !st.IsDir() {
 		info.Detected = true

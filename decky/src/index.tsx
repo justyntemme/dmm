@@ -3159,6 +3159,7 @@ function DeckyModManagerRoute() {
                   const toggleKey = `${item.published_file_id}:${toggleKind}`;
                   const unsubscribeKey = `${item.published_file_id}:unsubscribe`;
                   const busy = busyWorkshopKey === toggleKey || busyWorkshopKey === unsubscribeKey;
+                  const toggleSupported = deckyWorkshopSupported && item.disabled_known;
                   return (
                     <Focusable
                       key={item.published_file_id}
@@ -3167,9 +3168,11 @@ function DeckyModManagerRoute() {
                       onActivate={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        void queueDeckyWorkshopAction(item, toggleKind);
+                        if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
                       }}
-                      onClick={() => queueDeckyWorkshopAction(item, toggleKind)}
+                      onClick={() => {
+                        if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
+                      }}
                       onSecondaryActionDescription="Unsubscribe"
                       onSecondaryButton={(event) => {
                         event.preventDefault();
@@ -3203,7 +3206,7 @@ function DeckyModManagerRoute() {
                         </span>
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                        A {busyWorkshopKey === toggleKey ? "Queueing" : disabled ? "Enable" : "Disable"} · Y {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
+                        A {busyWorkshopKey === toggleKey ? "Queueing" : toggleSupported ? (disabled ? "Enable" : "Disable") : "Sync Needed"} · Y {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
                       </div>
                     </Focusable>
                   );

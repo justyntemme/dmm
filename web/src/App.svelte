@@ -2779,6 +2779,7 @@
               {#each workshopItems as item}
                 {@const disabled = item.disabled_known && item.disabled_locally}
                 {@const toggleKind = disabled ? "enable" : "disable"}
+                {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
                 <article>
                   <div>
                     <strong>{workshopItemName(item)}</strong>
@@ -2787,8 +2788,8 @@
                   </div>
                   <div class="request-actions">
                     <span>{workshopItemStatus(item)}</span>
-                    <button type="button" disabled={!workshopState?.supported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
-                      {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : disabled ? "Enable" : "Disable"}
+                    <button type="button" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
+                      {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}
                     </button>
                     <button type="button" class="secondary-action compact danger-action" disabled={!workshopState?.supported || isWorkshopActionBusy(item, "unsubscribe")} on:click={() => askUnsubscribeWorkshopItem(item)}>
                       {isWorkshopActionBusy(item, "unsubscribe") ? "Queueing..." : "Unsubscribe"}

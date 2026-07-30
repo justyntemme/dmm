@@ -1940,6 +1940,9 @@ func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWor
 	if items == nil {
 		items = []storage.SteamWorkshopItem{}
 	}
+	if len(items) == 0 {
+		items = steamWorkshopDetectedItems(info, appID)
+	}
 	spec, ok := s.games.SteamWorkshopForSteamApp(appID)
 	resp := steamWorkshopStateResponse{
 		AppID:     appID,
@@ -1951,6 +1954,30 @@ func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWor
 		resp.Actions = steamWorkshopActionReplies(spec.Actions)
 	}
 	return resp, nil
+}
+
+func steamWorkshopDetectedItems(info *steam.WorkshopInfo, appID string) []storage.SteamWorkshopItem {
+	if info == nil || !info.Detected || len(info.ItemIDs) == 0 {
+		return []storage.SteamWorkshopItem{}
+	}
+	items := make([]storage.SteamWorkshopItem, 0, len(info.ItemIDs))
+	for i, itemID := range info.ItemIDs {
+		itemID = strings.TrimSpace(itemID)
+		if itemID == "" {
+			continue
+		}
+		items = append(items, storage.SteamWorkshopItem{
+			SteamAppID:      appID,
+			PublishedFileID: itemID,
+			Title:           "Workshop item " + itemID,
+			Subscribed:      true,
+			Downloaded:      strings.TrimSpace(info.ContentPath) != "",
+			DisabledKnown:   false,
+			Position:        i,
+			RawJSON:         "{}",
+		})
+	}
+	return items
 }
 
 func steamWorkshopActionReplies(actions []gameext.SteamWorkshopActionSpec) []steamWorkshopActionSpecReply {
