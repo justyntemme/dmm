@@ -2481,9 +2481,9 @@
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
                 <button type="button" class="summary-action" on:click={() => (activeGameModule = "actions")} aria-label="Open Action Center for this game">
-                  <strong>{selectedGameActionItems.length}</strong>
-                  <span>Actions</span>
-                  <em>Open</em>
+                  <strong>{selectedGameActionItems.length > 0 ? selectedGameActionItems.length : "Open"}</strong>
+                  <span>{selectedGameActionItems.length > 0 ? "Actions" : "Action Center"}</span>
+                  <em>{selectedGameActionItems.length > 0 ? "Review" : "Open"}</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
