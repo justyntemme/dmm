@@ -3707,8 +3707,10 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 		SampleFiles            []string `json:"sample_files"`
 		ApplyRollbackOnFailure bool     `json:"apply_rollback_on_failure"`
 		RepairAvailable        bool     `json:"repair_available"`
+		RestoreAvailable       bool     `json:"restore_available"`
 		PurgeAvailable         bool     `json:"purge_available"`
 		RecoverySummary        string   `json:"recovery_summary"`
+		RestoreSummary         string   `json:"restore_summary"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -3716,7 +3718,7 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 	if !body.Deployed || body.FileCount != 1 || body.Strategy != string(deploy.StrategySymlink) {
 		t.Fatalf("deployment status = %+v", body)
 	}
-	if !body.ApplyRollbackOnFailure || !body.RepairAvailable || !body.PurgeAvailable || body.RecoverySummary == "" {
+	if !body.ApplyRollbackOnFailure || !body.RepairAvailable || !body.RestoreAvailable || !body.PurgeAvailable || body.RecoverySummary == "" || body.RestoreSummary == "" {
 		t.Fatalf("recovery status = %+v", body)
 	}
 	if len(body.SampleFiles) != 1 || !strings.Contains(body.SampleFiles[0], "LookupAnything") {
@@ -3738,6 +3740,7 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 		FileCount              int  `json:"file_count"`
 		ApplyRollbackOnFailure bool `json:"apply_rollback_on_failure"`
 		RepairAvailable        bool `json:"repair_available"`
+		RestoreAvailable       bool `json:"restore_available"`
 		PurgeAvailable         bool `json:"purge_available"`
 	}
 	if err := json.Unmarshal(purgedRec.Body.Bytes(), &purgedBody); err != nil {
@@ -3746,8 +3749,75 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 	if purgedBody.Deployed || purgedBody.FileCount != 0 {
 		t.Fatalf("purged deployment status = %+v", purgedBody)
 	}
-	if !purgedBody.ApplyRollbackOnFailure || purgedBody.RepairAvailable || purgedBody.PurgeAvailable {
+	if !purgedBody.ApplyRollbackOnFailure || purgedBody.RepairAvailable || purgedBody.RestoreAvailable || purgedBody.PurgeAvailable {
 		t.Fatalf("purged recovery status = %+v", purgedBody)
+	}
+}
+
+func TestRestoreDeployEndpointRestoresLastAppliedState(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(srv.cfg.DataDir, "staging", "LookupAnything", "manifest.json")
+	targetPath := filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte(`{"Name":"User Changed It"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: sourcePath,
+		TargetPath: targetPath,
+		Strategy:   deploy.StrategyCopy,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy/restore", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job    jobs.Job `json:"job"`
+		Result struct {
+			Repaired []deploy.AppliedFile `json:"repaired"`
+			Issues   []deploy.RepairIssue `json:"issues"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Type != "rollback" || body.Job.Status != jobs.StatusCompleted {
+		t.Fatalf("job = %+v", body.Job)
+	}
+	if len(body.Result.Repaired) != 1 || len(body.Result.Issues) != 0 {
+		t.Fatalf("restore result = %+v", body.Result)
+	}
+	got, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{"Name":"Lookup Anything"}` {
+		t.Fatalf("target = %q", string(got))
 	}
 }
 

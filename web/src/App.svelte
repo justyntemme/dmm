@@ -212,8 +212,10 @@
     sample_files?: string[];
     apply_rollback_on_failure: boolean;
     repair_available: boolean;
+    restore_available: boolean;
     purge_available: boolean;
     recovery_summary?: string;
+    restore_summary?: string;
   };
 
   type RuntimeRequirement = {
@@ -1358,6 +1360,30 @@
     if (deployPlan) await previewDeploy();
   }
 
+  async function restoreDeployment() {
+    if (!selectedGame || !deploymentStatus?.restore_available) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/restore`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+  }
+
+  function askRestoreDeployment() {
+    if (!selectedGame || !deploymentStatus?.restore_available) return;
+    confirmation = {
+      title: "Restore last applied state",
+      message: `DMM will restore ${selectedGame.name}'s DMM-owned files to the active deployment manifest.`,
+      detail: deploymentStatus.restore_summary ?? "Only files recorded in DMM's active deployment manifest are touched. Unmanaged files are left alone.",
+      confirmLabel: "Restore State",
+      run: restoreDeployment
+    };
+  }
+
   async function applyLaunchSetup() {
     if (!selectedGame || !launchSetupAvailable) return;
     error = "";
@@ -2131,6 +2157,7 @@
               <div class="deploy-actions utility-actions">
                 <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Now</button>
                 <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
+                <button type="button" class="secondary-action" on:click={askRestoreDeployment} disabled={!deploymentStatus?.restore_available}>Restore Last Applied State</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
                 <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
                 <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Purge Managed Files</button>

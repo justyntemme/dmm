@@ -274,6 +274,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
 	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
 	mux.HandleFunc("POST /api/games/{appID}/deploy/repair", s.handleRepairDeploy)
+	mux.HandleFunc("POST /api/games/{appID}/deploy/restore", s.handleRestoreDeploy)
 	mux.HandleFunc("POST /api/games/{appID}/reset", s.handleResetGameMods)
 	mux.HandleFunc("GET /api/games/{appID}/launch", s.handleGameLaunchStatus)
 	mux.HandleFunc("POST /api/games/{appID}/launch/apply", s.handleApplyGameLaunch)
@@ -314,8 +315,10 @@ type deploymentStatusResponse struct {
 	SampleFiles            []string `json:"sample_files,omitempty"`
 	ApplyRollbackOnFailure bool     `json:"apply_rollback_on_failure"`
 	RepairAvailable        bool     `json:"repair_available"`
+	RestoreAvailable       bool     `json:"restore_available"`
 	PurgeAvailable         bool     `json:"purge_available"`
 	RecoverySummary        string   `json:"recovery_summary,omitempty"`
+	RestoreSummary         string   `json:"restore_summary,omitempty"`
 }
 
 type deployPreviewSummary struct {
@@ -469,8 +472,10 @@ func (s *Server) deploymentStatus(ctx context.Context, appID string) (deployment
 	}
 	if status.Deployed {
 		status.RepairAvailable = true
+		status.RestoreAvailable = true
 		status.PurgeAvailable = true
-		status.RecoverySummary = "DMM can repair missing managed files or purge this DMM-owned deployment. Failed applies roll back automatically before the job is reported as failed."
+		status.RecoverySummary = "DMM can restore the last applied manifest, repair missing managed files, or purge this DMM-owned deployment. Failed applies roll back automatically before the job is reported as failed."
+		status.RestoreSummary = "Restore last applied state rewrites only DMM-owned files recorded in the active deployment manifest."
 	} else {
 		status.RecoverySummary = "No active DMM-owned deployment is recorded. Failed applies still roll back automatically before the job is reported as failed."
 	}
@@ -3172,6 +3177,51 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
 		"action":   "repaired",
 		"repaired": len(result.Repaired),
+	})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+}
+
+func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
+	appID := r.PathValue("appID")
+	if strings.TrimSpace(appID) == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(files) == 0 {
+		http.Error(w, "no deployed manifest is available to restore", http.StatusNotFound)
+		return
+	}
+	job := s.jobs.CreateWithPayload("rollback", "Restore last applied state", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Restoring DMM-owned files for "+appID)
+	s.logger.Info("restore confirmed", "job_id", job.ID, "app_id", appID, "files", len(files))
+	result, err := deploy.Repair(files)
+	if err != nil {
+		s.logger.Warn("restore failed", "job_id", job.ID, "app_id", appID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		return
+	}
+	if len(result.Issues) > 0 {
+		message := "Restored " + strconv.Itoa(len(result.Repaired)) + " files; " + strconv.Itoa(len(result.Issues)) + " issues need review"
+		s.logger.Warn("restore completed with issues", "job_id", job.ID, "app_id", appID, "restored", len(result.Repaired), "issues", len(result.Issues))
+		job, _ = s.jobs.Fail(job.ID, message)
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+		return
+	}
+	message := "Last applied state already matches " + strconv.Itoa(len(files)) + " managed files"
+	if len(result.Repaired) > 0 {
+		message = "Restored " + strconv.Itoa(len(result.Repaired)) + " managed files to the last applied state"
+	}
+	s.logger.Info("restore completed", "job_id", job.ID, "app_id", appID, "restored", len(result.Repaired), "files", len(files))
+	job, _ = s.jobs.Complete(job.ID, message)
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":   "restored",
+		"restored": len(result.Repaired),
 	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
 }

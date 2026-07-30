@@ -395,3 +395,33 @@ func TestRepairRefusesUnmanagedRegularFile(t *testing.T) {
 		t.Fatalf("target was overwritten: %q", string(body))
 	}
 }
+
+func TestRepairRestoresChangedManagedCopy(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.txt")
+	target := filepath.Join(root, "Mods", "file.txt")
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Repair([]AppliedFile{{SourcePath: source, TargetPath: target, Strategy: StrategyCopy}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Issues) != 0 || len(result.Repaired) != 1 {
+		t.Fatalf("repair result = %+v", result)
+	}
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "source" {
+		t.Fatalf("target = %q, want restored source", string(body))
+	}
+}
