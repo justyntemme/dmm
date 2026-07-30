@@ -4305,6 +4305,45 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 	}
 }
 
+func TestGenerateFileFromGamePathWritesDefaultContentWithoutSource(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "enabled.txt")
+	err := generateFileFromGamePath("", installplan.Instruction{
+		GeneratedDefaultContent: "1\n",
+	}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "1\n" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestGenerateFileFromGamePathPrefersExistingGameFile(t *testing.T) {
+	gamePath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(gamePath, "source.txt"), []byte("game file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "generated.txt")
+	err := generateFileFromGamePath(gamePath, installplan.Instruction{
+		GenerateFromGameRelative: "source.txt",
+		GeneratedDefaultContent:  "default",
+	}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "game file" {
+		t.Fatalf("body = %q", body)
+	}
+}
+
 func TestApplyInstallPlanGeneratesFileFromGamePath(t *testing.T) {
 	gamePath := t.TempDir()
 	if err := os.WriteFile(filepath.Join(gamePath, "Stardew Valley.deps.json"), []byte(`{"runtime":"game"}`), 0o600); err != nil {

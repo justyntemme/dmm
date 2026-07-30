@@ -3964,15 +3964,17 @@ func applyInstallPlan(plan installplan.Plan, stagingPath string, gamePath string
 }
 
 func generateFileFromGamePath(gamePath string, instruction installplan.Instruction, target string) error {
-	sourceRel := filepath.Clean(filepath.FromSlash(instruction.GenerateFromGameRelative))
-	if sourceRel == "." || sourceRel == ".." || filepath.IsAbs(sourceRel) || strings.HasPrefix(filepath.ToSlash(sourceRel), "../") {
-		return errors.New("install plan contains an unsafe generated source path")
-	}
 	data := []byte(instruction.GeneratedDefaultContent)
-	if strings.TrimSpace(gamePath) != "" {
-		sourcePath := filepath.Join(gamePath, sourceRel)
-		if sourceData, err := os.ReadFile(sourcePath); err == nil {
-			data = sourceData
+	if strings.TrimSpace(instruction.GenerateFromGameRelative) != "" {
+		sourceRel := filepath.Clean(filepath.FromSlash(instruction.GenerateFromGameRelative))
+		if sourceRel == "." || sourceRel == ".." || filepath.IsAbs(sourceRel) || strings.HasPrefix(filepath.ToSlash(sourceRel), "../") {
+			return errors.New("install plan contains an unsafe generated source path")
+		}
+		if strings.TrimSpace(gamePath) != "" {
+			sourcePath := filepath.Join(gamePath, sourceRel)
+			if sourceData, err := os.ReadFile(sourcePath); err == nil {
+				data = sourceData
+			}
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
