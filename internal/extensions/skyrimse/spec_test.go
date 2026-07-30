@@ -11,6 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -120,6 +121,26 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	}
 }
 
+func TestExtensionReportsSKSERuntimeRequirement(t *testing.T) {
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	mods := []gamehandler.RuntimeMod{{Enabled: true, ModType: "skyrimse-script-extender"}}
+	requirements := registry.RuntimeRequirements(context.Background(), skyrimse.SteamAppID, t.TempDir(), mods)
+	requirement, ok := runtimeRequirementByID(requirements, "skyrimse-skse64-installed")
+	if !ok || requirement.Status != gamehandler.RequirementMissing {
+		t.Fatalf("requirements = %+v", requirements)
+	}
+
+	gamePath := t.TempDir()
+	writeFile(t, filepath.Join(gamePath, "skse64_loader.exe"), "loader")
+	writeFile(t, filepath.Join(gamePath, "SkyrimSE.exe"), "game")
+	requirements = registry.RuntimeRequirements(context.Background(), skyrimse.SteamAppID, gamePath, mods)
+	requirement, ok = runtimeRequirementByID(requirements, "skyrimse-skse64-installed")
+	if !ok || requirement.Status != gamehandler.RequirementOK || len(requirement.Details) != 2 {
+		t.Fatalf("requirements = %+v", requirements)
+	}
+}
+
 func TestExtensionRegistersGameVersionProvider(t *testing.T) {
 	extension := gameext.MustCompileExtension(skyrimse.Extension())
 	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
@@ -207,6 +228,15 @@ func containsLaunchTool(extension gameext.Extension, want string) bool {
 		}
 	}
 	return false
+}
+
+func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirement, want string) (gamehandler.RuntimeRequirement, bool) {
+	for _, requirement := range requirements {
+		if requirement.ID == want {
+			return requirement, true
+		}
+	}
+	return gamehandler.RuntimeRequirement{}, false
 }
 
 func writeFile(t *testing.T, path string, contents string) {

@@ -11,6 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -120,6 +121,26 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	}
 }
 
+func TestExtensionReportsF4SERuntimeRequirement(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	mods := []gamehandler.RuntimeMod{{Enabled: true, ModType: "fallout4-script-extender"}}
+	requirements := registry.RuntimeRequirements(context.Background(), fallout4.SteamAppID, t.TempDir(), mods)
+	requirement, ok := runtimeRequirementByID(requirements, "fallout4-f4se-installed")
+	if !ok || requirement.Status != gamehandler.RequirementMissing {
+		t.Fatalf("requirements = %+v", requirements)
+	}
+
+	gamePath := t.TempDir()
+	writeFile(t, filepath.Join(gamePath, "f4se_loader.exe"), "loader")
+	writeFile(t, filepath.Join(gamePath, "Fallout4.exe"), "game")
+	requirements = registry.RuntimeRequirements(context.Background(), fallout4.SteamAppID, gamePath, mods)
+	requirement, ok = runtimeRequirementByID(requirements, "fallout4-f4se-installed")
+	if !ok || requirement.Status != gamehandler.RequirementOK || len(requirement.Details) != 2 {
+		t.Fatalf("requirements = %+v", requirements)
+	}
+}
+
 func TestExtensionRegistersIgnoredConflictPattern(t *testing.T) {
 	extension := gameext.MustCompileExtension(fallout4.Extension())
 	patterns := gameext.NewRegistry([]gameext.Extension{extension}).ConflictIgnorePatternsForSteamApp(fallout4.SteamAppID)
@@ -215,6 +236,15 @@ func containsFeature(values []gameext.FeatureSummary, want string) bool {
 		}
 	}
 	return false
+}
+
+func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirement, want string) (gamehandler.RuntimeRequirement, bool) {
+	for _, requirement := range requirements {
+		if requirement.ID == want {
+			return requirement, true
+		}
+	}
+	return gamehandler.RuntimeRequirement{}, false
 }
 
 func writeFile(t *testing.T, path string, contents string) {

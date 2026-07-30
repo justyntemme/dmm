@@ -1,12 +1,14 @@
 package gamebryo
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/peversion"
 )
@@ -18,6 +20,18 @@ type ScriptExtenderInstallerOptions struct {
 	ModType           string
 	LoaderExecutable  string
 	ToolID            string
+}
+
+type ScriptExtenderRuntimeRequirementOptions struct {
+	ID            string
+	Name          string
+	Kind          string
+	ModType       string
+	Message       string
+	OKMessage     string
+	HelpURL       string
+	InstallHint   string
+	RequiredFiles []string
 }
 
 func ScriptExtenderInstaller(opts ScriptExtenderInstallerOptions) installplan.InstallerSpec {
@@ -34,6 +48,23 @@ func ScriptExtenderInstaller(opts ScriptExtenderInstallerOptions) installplan.In
 		},
 		CustomBuild: func(input installplan.BuildInput) (installplan.Plan, error) {
 			return buildScriptExtenderPlan(input, opts)
+		},
+	}
+}
+
+func ScriptExtenderRuntimeRequirement(opts ScriptExtenderRuntimeRequirementOptions) gamehandler.RuntimeRequirementSpec {
+	return gamehandler.RuntimeRequirementSpec{
+		ID:          strings.TrimSpace(opts.ID),
+		Name:        strings.TrimSpace(opts.Name),
+		Kind:        firstNonEmpty(strings.TrimSpace(opts.Kind), "script-extender"),
+		Required:    true,
+		ModTypes:    []string{strings.TrimSpace(opts.ModType)},
+		Message:     strings.TrimSpace(opts.Message),
+		OKMessage:   strings.TrimSpace(opts.OKMessage),
+		HelpURL:     strings.TrimSpace(opts.HelpURL),
+		InstallHint: strings.TrimSpace(opts.InstallHint),
+		Check: func(ctx context.Context, gamePath string) []string {
+			return requiredGameFiles(ctx, gamePath, opts.RequiredFiles)
 		},
 	}
 }
@@ -165,4 +196,36 @@ func mustListScriptExtenderFiles(root string) []string {
 		return nil
 	}
 	return files
+}
+
+func requiredGameFiles(ctx context.Context, gamePath string, requiredFiles []string) []string {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" || len(requiredFiles) == 0 {
+		return nil
+	}
+	details := make([]string, 0, len(requiredFiles))
+	for _, rel := range requiredFiles {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || rel == "." || strings.HasPrefix(rel, "../") {
+			return nil
+		}
+		path := filepath.Join(gamePath, filepath.FromSlash(rel))
+		if _, err := os.Stat(path); err != nil {
+			return nil
+		}
+		details = append(details, "Found "+rel)
+	}
+	return details
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

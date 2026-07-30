@@ -46,6 +46,16 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirementOptions{
+		ID:            "fallout4-f4se-installed",
+		Name:          "Fallout 4 Script Extender",
+		ModType:       "fallout4-script-extender",
+		Message:       "Fallout 4 Script Extender files are not deployed to the Fallout 4 install folder. F4SE mods will not load until F4SE is installed and deployed.",
+		OKMessage:     "Fallout 4 Script Extender files are present in the Fallout 4 install folder.",
+		HelpURL:       "https://f4se.silverlock.org/",
+		InstallHint:   "Install F4SE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
+		RequiredFiles: []string{"f4se_loader.exe", "Fallout4.exe"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout4:fomod",
 		Name:        "FOMOD installer",

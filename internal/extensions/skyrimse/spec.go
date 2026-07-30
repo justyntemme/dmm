@@ -47,6 +47,16 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirementOptions{
+		ID:            "skyrimse-skse64-installed",
+		Name:          "Skyrim Script Extender 64",
+		ModType:       "skyrimse-script-extender",
+		Message:       "Skyrim Script Extender files are not deployed to the Skyrim Special Edition install folder. SKSE mods will not load until SKSE64 is installed and deployed.",
+		OKMessage:     "Skyrim Script Extender 64 files are present in the Skyrim Special Edition install folder.",
+		HelpURL:       "https://skse.silverlock.org/",
+		InstallHint:   "Install SKSE64 through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
+		RequiredFiles: []string{"skse64_loader.exe", "SkyrimSE.exe"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:skyrimse:fomod",
 		Name:        "FOMOD installer",
