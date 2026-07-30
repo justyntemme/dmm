@@ -199,6 +199,7 @@ type FomodInstaller = {
 type FomodStep = {
   id: string;
   name: string;
+  visible?: boolean;
   groups?: FomodGroup[];
 };
 
@@ -778,7 +779,7 @@ function fomodGroupInputType(group: FomodGroup) {
 
 function defaultFomodSelections(installer: FomodInstaller): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const step of installer.steps ?? []) {
+  for (const step of visibleFomodSteps(installer)) {
     for (const group of step.groups ?? []) {
       const plugins = group.plugins ?? [];
       const type = fomodGroupType(group);
@@ -796,6 +797,10 @@ function defaultFomodSelections(installer: FomodInstaller): Record<string, strin
     }
   }
   return out;
+}
+
+function visibleFomodSteps(installer: FomodInstaller) {
+  return (installer.steps ?? []).filter((step) => step.visible !== false);
 }
 
 function storedFomodSelections(candidate: InstallCandidate): Record<string, string[]> | null {
@@ -1184,7 +1189,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
         <div style={{ display: "grid", gap: "12px", maxHeight: "62vh", overflowY: "auto", paddingRight: "4px" }}>
           <div style={{ color: "#a1a1aa" }}>{props.candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
           {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this request.</div>}
-          {installer?.steps?.map((step) => (
+          {installer && visibleFomodSteps(installer).map((step) => (
             <section key={step.id} style={{ display: "grid", gap: "8px" }}>
               <div style={{ fontWeight: 800 }}>{step.name}</div>
               {step.groups?.map((group) => (

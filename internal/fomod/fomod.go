@@ -25,9 +25,11 @@ type Installer struct {
 }
 
 type Step struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name"`
-	Groups []Group `json:"groups"`
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Visible    bool             `json:"visible"`
+	Visibility *DependencyGroup `json:"visibility,omitempty"`
+	Groups     []Group          `json:"groups"`
 }
 
 type Group struct {
@@ -48,10 +50,12 @@ type Plugin struct {
 }
 
 type FileEntry struct {
-	Source      string `json:"source"`
-	Destination string `json:"destination,omitempty"`
-	Priority    int    `json:"priority,omitempty"`
-	IsFolder    bool   `json:"is_folder,omitempty"`
+	Source          string `json:"source"`
+	Destination     string `json:"destination,omitempty"`
+	Priority        int    `json:"priority,omitempty"`
+	AlwaysInstall   bool   `json:"always_install,omitempty"`
+	InstallIfUsable bool   `json:"install_if_usable,omitempty"`
+	IsFolder        bool   `json:"is_folder,omitempty"`
 }
 
 type Flag struct {
@@ -117,6 +121,7 @@ type installStepsXML struct {
 
 type installStepXML struct {
 	Name               string                `xml:"name,attr"`
+	Visible            dependenciesXML       `xml:"visible"`
 	OptionalFileGroups optionalFileGroupsXML `xml:"optionalFileGroups"`
 }
 
@@ -171,9 +176,11 @@ type fileContainerXML struct {
 }
 
 type fileXML struct {
-	Source      string `xml:"source,attr"`
-	Destination string `xml:"destination,attr"`
-	Priority    string `xml:"priority,attr"`
+	Source          string `xml:"source,attr"`
+	Destination     string `xml:"destination,attr"`
+	AlwaysInstall   string `xml:"alwaysInstall,attr"`
+	InstallIfUsable string `xml:"installIfUsable,attr"`
+	Priority        string `xml:"priority,attr"`
 }
 
 type conditionFlagsXML struct {
@@ -254,12 +261,17 @@ func Parse(root string) (Installer, error) {
 	}
 	for stepIndex, stepXML := range cfg.InstallSteps.Steps {
 		step := Step{
-			ID:     fmt.Sprintf("step-%d", stepIndex+1),
-			Name:   strings.TrimSpace(stepXML.Name),
-			Groups: []Group{},
+			ID:      fmt.Sprintf("step-%d", stepIndex+1),
+			Name:    strings.TrimSpace(stepXML.Name),
+			Visible: true,
+			Groups:  []Group{},
 		}
 		if step.Name == "" {
 			step.Name = fmt.Sprintf("Step %d", stepIndex+1)
+		}
+		if stepXML.Visible.present() {
+			visible := stepXML.Visible.group()
+			step.Visibility = &visible
 		}
 		for groupIndex, groupXML := range stepXML.OptionalFileGroups.Groups {
 			group := Group{
@@ -301,6 +313,9 @@ func DefaultSelectionsWithOptions(installer Installer, options PlanOptions) map[
 	out := map[string][]string{}
 	selectedFlags := map[string]string{}
 	for _, step := range installer.Steps {
+		if !stepIsVisible(step, selectedFlags, options) {
+			continue
+		}
 		for _, group := range step.Groups {
 			types := effectivePluginTypes(group.Plugins, selectedFlags, options)
 			switch strings.ToLower(group.Type) {
@@ -326,6 +341,29 @@ func DefaultSelectionsWithOptions(installer Installer, options PlanOptions) map[
 				}
 			}
 			for _, plugin := range selectedPluginsByID(group.Plugins, out[group.ID]) {
+				mergeFlags(selectedFlags, plugin.Flags)
+			}
+		}
+	}
+	return out
+}
+
+func EvaluatedInstaller(installer Installer, selections map[string][]string, options PlanOptions) Installer {
+	if selections == nil {
+		selections = DefaultSelectionsWithOptions(installer, options)
+	}
+	selectedFlags := map[string]string{}
+	out := installer
+	out.Steps = make([]Step, 0, len(installer.Steps))
+	for _, step := range installer.Steps {
+		visible := stepIsVisible(step, selectedFlags, options)
+		step.Visible = visible
+		out.Steps = append(out.Steps, step)
+		if !visible {
+			continue
+		}
+		for _, group := range step.Groups {
+			for _, plugin := range selectedPluginsByID(group.Plugins, selections[group.ID]) {
 				mergeFlags(selectedFlags, plugin.Flags)
 			}
 		}
@@ -371,18 +409,33 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 	}
 	selectedFlags := map[string]string{}
 	for _, step := range installer.Steps {
+		if !stepIsVisible(step, selectedFlags, options) {
+			continue
+		}
 		for _, group := range step.Groups {
-			selected, err := selectedPlugins(group, selections[group.ID], selectedFlags, options)
+			types := effectivePluginTypes(group.Plugins, selectedFlags, options)
+			selected, err := selectedPluginsWithTypes(group, selections[group.ID], types)
 			if err != nil {
 				return installplan.Plan{}, err
 			}
-			for _, plugin := range selected {
-				mergeFlags(selectedFlags, plugin.Flags)
+			selectedByID := pluginsByID(selected)
+			for _, plugin := range group.Plugins {
+				includePlugin := false
+				if _, ok := selectedByID[plugin.ID]; ok {
+					includePlugin = true
+					mergeFlags(selectedFlags, plugin.Flags)
+				}
 				for _, entry := range plugin.Files {
+					if !includePlugin && !entry.AlwaysInstall && !(entry.InstallIfUsable && isSelectablePluginType(types[plugin.ID])) {
+						continue
+					}
 					if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
+			}
+			for _, plugin := range selected {
+				mergeFlags(selectedFlags, plugin.Flags)
 			}
 		}
 	}
@@ -397,17 +450,23 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		}
 	}
 	sort.SliceStable(plan.Instructions, func(i, j int) bool {
+		if plan.Instructions[i].Priority != plan.Instructions[j].Priority {
+			return plan.Instructions[i].Priority < plan.Instructions[j].Priority
+		}
 		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
 	})
 	return plan, nil
 }
 
 func selectedPlugins(group Group, ids []string, flags map[string]string, options PlanOptions) ([]Plugin, error) {
+	return selectedPluginsWithTypes(group, ids, effectivePluginTypes(group.Plugins, flags, options))
+}
+
+func selectedPluginsWithTypes(group Group, ids []string, types map[string]string) ([]Plugin, error) {
 	selected := map[string]struct{}{}
 	for _, id := range ids {
 		selected[strings.TrimSpace(id)] = struct{}{}
 	}
-	types := effectivePluginTypes(group.Plugins, flags, options)
 	var out []Plugin
 	for _, plugin := range group.Plugins {
 		if _, ok := selected[plugin.ID]; ok {
@@ -485,6 +544,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 				SourcePath:      path,
 				StagingRelative: targetRel,
 				TargetRelative:  targetRelative(targetRoot, targetRel),
+				Priority:        entry.Priority,
 			})
 			return nil
 		})
@@ -494,6 +554,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 		SourcePath:      sourcePath,
 		StagingRelative: destRel,
 		TargetRelative:  targetRelative(targetRoot, destRel),
+		Priority:        entry.Priority,
 	})
 	return nil
 }
@@ -682,13 +743,32 @@ func (d dependenciesXML) group() DependencyGroup {
 	return group
 }
 
+func (d dependenciesXML) present() bool {
+	return strings.TrimSpace(d.Operator) != "" ||
+		len(d.FlagDependencies) > 0 ||
+		len(d.FileDependencies) > 0 ||
+		len(d.GameDependencies) > 0 ||
+		len(d.Dependencies) > 0
+}
+
 func (f fileXML) entry(isFolder bool) FileEntry {
 	priority, _ := strconv.Atoi(strings.TrimSpace(f.Priority))
 	return FileEntry{
-		Source:      strings.TrimSpace(filepath.ToSlash(f.Source)),
-		Destination: strings.TrimSpace(filepath.ToSlash(f.Destination)),
-		Priority:    priority,
-		IsFolder:    isFolder,
+		Source:          strings.TrimSpace(filepath.ToSlash(f.Source)),
+		Destination:     strings.TrimSpace(filepath.ToSlash(f.Destination)),
+		Priority:        priority,
+		AlwaysInstall:   parseXMLBool(f.AlwaysInstall),
+		InstallIfUsable: parseXMLBool(f.InstallIfUsable),
+		IsFolder:        isFolder,
+	}
+}
+
+func parseXMLBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -900,6 +980,21 @@ func effectivePluginType(plugin Plugin, flags map[string]string, options PlanOpt
 		}
 	}
 	return strings.TrimSpace(plugin.Type)
+}
+
+func stepIsVisible(step Step, flags map[string]string, options PlanOptions) bool {
+	if step.Visibility == nil {
+		return true
+	}
+	return dependencyGroupMatchesWithGameVersion(*step.Visibility, flags, options.FileStates, options.FileStateResolver, options.GameVersion)
+}
+
+func pluginsByID(plugins []Plugin) map[string]Plugin {
+	out := make(map[string]Plugin, len(plugins))
+	for _, plugin := range plugins {
+		out[plugin.ID] = plugin
+	}
+	return out
 }
 
 func selectedPluginsByID(plugins []Plugin, ids []string) []Plugin {

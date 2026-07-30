@@ -169,6 +169,7 @@
   type FomodStep = {
     id: string;
     name: string;
+    visible?: boolean;
     groups?: FomodGroup[];
   };
 
@@ -1008,7 +1009,7 @@
 
   function defaultCandidateSelections(installer: FomodInstaller): Record<string, string[]> {
     const out: Record<string, string[]> = {};
-    for (const step of installer.steps ?? []) {
+    for (const step of visibleFomodSteps(installer)) {
       for (const group of step.groups ?? []) {
         const plugins = group.plugins ?? [];
         const type = group.type.toLowerCase();
@@ -1050,6 +1051,10 @@
   function fomodGroupInputType(group: FomodGroup) {
     const type = fomodGroupType(group);
     return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
+  }
+
+  function visibleFomodSteps(installer: FomodInstaller) {
+    return (installer.steps ?? []).filter((step) => step.visible !== false);
   }
 
   function candidateCurrentSelections(candidate: InstallCandidate, installer: FomodInstaller) {
@@ -2191,7 +2196,7 @@
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
                       {#if installer}
                         <div class="installer-choices">
-                          {#each installer.steps ?? [] as step}
+                          {#each visibleFomodSteps(installer) as step}
                             <section>
                               <h4>{step.name}</h4>
                               {#each step.groups ?? [] as group}

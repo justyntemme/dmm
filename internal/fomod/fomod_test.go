@@ -531,6 +531,156 @@ func TestBuildPlanRejectsNotUsableDependencyTypeSelection(t *testing.T) {
 	}
 }
 
+func TestBuildPlanSkipsInvisibleSteps(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Base">
+      <optionalFileGroups>
+        <group name="Base" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="A">
+              <conditionFlags><flag name="variant">A</flag></conditionFlags>
+              <files><file source="a.txt" /></files>
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+            </plugin>
+            <plugin name="B">
+              <conditionFlags><flag name="variant">B</flag></conditionFlags>
+              <files><file source="b.txt" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+    <installStep name="Patch">
+      <visible><flagDependency flag="variant" value="B" /></visible>
+      <optionalFileGroups>
+        <group name="Patch" type="SelectAny">
+          <plugins>
+            <plugin name="Patch"><files><file source="patch.txt" /></files><typeDescriptor><type name="Recommended" /></typeDescriptor></plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	writeFile(t, filepath.Join(root, "a.txt"), "a")
+	writeFile(t, filepath.Join(root, "b.txt"), "b")
+	writeFile(t, filepath.Join(root, "patch.txt"), "patch")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installer.Steps[1].Visibility == nil {
+		t.Fatalf("visibility was not parsed: %+v", installer.Steps[1])
+	}
+	defaults := DefaultSelections(installer)
+	if _, ok := defaults[installer.Steps[1].Groups[0].ID]; ok {
+		t.Fatalf("hidden step received default selections: %+v", defaults)
+	}
+	evaluated := EvaluatedInstaller(installer, defaults, PlanOptions{})
+	if !evaluated.Steps[0].Visible || evaluated.Steps[1].Visible {
+		t.Fatalf("visible flags = %+v", evaluated.Steps)
+	}
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := instructionTargets(plan)
+	if !targets["Data/a.txt"] || targets["Data/patch.txt"] {
+		t.Fatalf("invisible step targets = %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanHonorsAlwaysInstallAndInstallIfUsable(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Options">
+      <optionalFileGroups>
+        <group name="Options" type="SelectAny">
+          <plugins>
+            <plugin name="Unselected">
+              <files>
+                <file source="always.txt" alwaysInstall="true" />
+                <file source="usable.txt" installIfUsable="true" />
+                <file source="normal.txt" />
+              </files>
+              <typeDescriptor><type name="Optional" /></typeDescriptor>
+            </plugin>
+            <plugin name="Blocked">
+              <files><file source="blocked.txt" installIfUsable="true" /></files>
+              <typeDescriptor><type name="NotUsable" /></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	for _, name := range []string{"always.txt", "usable.txt", "normal.txt", "blocked.txt"} {
+		writeFile(t, filepath.Join(root, name), name)
+	}
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildPlan("fallout4", root, installer, map[string][]string{
+		installer.Steps[0].Groups[0].ID: {},
+	}, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := instructionTargets(plan)
+	if !targets["Data/always.txt"] || !targets["Data/usable.txt"] {
+		t.Fatalf("always/installIfUsable files missing from %+v", plan.Instructions)
+	}
+	if targets["Data/normal.txt"] || targets["Data/blocked.txt"] {
+		t.Fatalf("unwanted files installed from %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanOrdersFOMODFilePriorityLowToHigh(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="low.txt" destination="same.txt" priority="0" />
+    <file source="high.txt" destination="same.txt" priority="10" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "low.txt"), "low")
+	writeFile(t, filepath.Join(root, "high.txt"), "high")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 2 {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
+	if plan.Instructions[0].Priority != 0 || plan.Instructions[1].Priority != 10 {
+		t.Fatalf("priority order = %+v", plan.Instructions)
+	}
+	if filepath.Base(plan.Instructions[1].SourcePath) != "high.txt" {
+		t.Fatalf("higher priority file should be staged last: %+v", plan.Instructions)
+	}
+}
+
 func TestParseUTF16ModuleConfig(t *testing.T) {
 	root := t.TempDir()
 	xml := `<config><moduleName>UTF16 Installer</moduleName></config>`

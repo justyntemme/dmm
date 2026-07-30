@@ -39,6 +39,7 @@ type Instruction struct {
 	TargetRelative           string `json:"target_relative"`
 	TargetPolicy             string `json:"target_policy,omitempty"`
 	DeployStrategy           string `json:"deploy_strategy,omitempty"`
+	Priority                 int    `json:"priority,omitempty"`
 }
 
 type ModMetadata struct {

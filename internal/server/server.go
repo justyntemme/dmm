@@ -2002,8 +2002,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		s.logger.Warn("installed mod reinstall failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
-			installerJSON, _ := json.Marshal(choice.Installer)
-			choicesJSON := s.installerChoicesJSON(context.Background(), appID, job.ID, choice.Installer)
+			installerJSON, choicesJSON := s.installerChoiceStateJSON(context.Background(), appID, job.ID, choice.Installer, nil)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -2011,7 +2010,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 				ArchivePath:   mod.ArchivePath,
 				Status:        "needs_choices",
 				Reason:        choice.Error(),
-				InstallerJSON: string(installerJSON),
+				InstallerJSON: installerJSON,
 				ChoicesJSON:   choicesJSON,
 			})
 			if recordErr == nil {
@@ -2101,7 +2100,20 @@ func (s *Server) handleSaveInstallCandidateChoices(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	candidate, err := s.db.SaveInstallCandidateChoices(r.Context(), appID, candidateID, string(choicesJSON))
+	candidate, err := s.db.InstallCandidateForSteamApp(r.Context(), appID, candidateID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "install candidate was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	installerJSON := candidate.InstallerJSON
+	if installer, ok := fomodInstallerFromCandidate(candidate); ok {
+		installerJSON = s.evaluatedInstallerJSON(r.Context(), appID, "", installer, req.Selections)
+	}
+	candidate, err = s.db.SaveInstallCandidateChoicesAndInstaller(r.Context(), appID, candidateID, string(choicesJSON), installerJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "install candidate was not found", http.StatusNotFound)
@@ -2211,37 +2223,79 @@ func installCandidateSelections(candidate storage.InstallCandidate, requestSelec
 	return stored, nil
 }
 
-func (s *Server) installerChoicesJSON(ctx context.Context, appID, jobID string, installer fomod.Installer) string {
-	choicesJSON, err := s.defaultInstallerChoicesJSON(ctx, appID, installer)
+func fomodInstallerFromCandidate(candidate storage.InstallCandidate) (fomod.Installer, bool) {
+	if strings.TrimSpace(candidate.InstallerJSON) == "" {
+		return fomod.Installer{}, false
+	}
+	var installer fomod.Installer
+	if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
+		return fomod.Installer{}, false
+	}
+	return installer, true
+}
+
+func (s *Server) installerChoiceStateJSON(ctx context.Context, appID, jobID string, installer fomod.Installer, selections map[string][]string) (string, string) {
+	choicesJSON := "{}"
+	if selections == nil {
+		defaults, err := s.defaultInstallerChoicesJSON(ctx, appID, installer)
+		if err != nil {
+			s.logger.Warn("installer default choices unavailable", "job_id", jobID, "app_id", appID, "error", err)
+		} else {
+			choicesJSON = defaults
+			if err := json.Unmarshal([]byte(defaults), &selections); err != nil {
+				s.logger.Warn("installer default choices decode failed", "job_id", jobID, "app_id", appID, "error", err)
+			}
+		}
+	}
+	return s.evaluatedInstallerJSON(ctx, appID, jobID, installer, selections), choicesJSON
+}
+
+func (s *Server) evaluatedInstallerJSON(ctx context.Context, appID, jobID string, installer fomod.Installer, selections map[string][]string) string {
+	options, err := s.fomodPlanOptions(ctx, appID)
 	if err != nil {
-		s.logger.Warn("installer default choices unavailable", "job_id", jobID, "app_id", appID, "error", err)
+		s.logger.Warn("installer visibility unavailable", "job_id", jobID, "app_id", appID, "error", err)
+		body, _ := json.Marshal(installer)
+		return string(body)
+	}
+	evaluated := fomod.EvaluatedInstaller(installer, selections, options)
+	body, err := json.Marshal(evaluated)
+	if err != nil {
+		s.logger.Warn("installer visibility marshal failed", "job_id", jobID, "app_id", appID, "error", err)
 		return "{}"
 	}
-	return choicesJSON
+	return string(body)
 }
 
 func (s *Server) defaultInstallerChoicesJSON(ctx context.Context, appID string, installer fomod.Installer) (string, error) {
-	choiceSpec, ok := s.games.InstallerChoiceForSteamApp(appID, "fomod")
-	if !ok {
-		return "", errors.New("game extension does not support FOMOD installer choices")
-	}
-	game, err := s.db.GameBySteamApp(ctx, appID)
+	options, err := s.fomodPlanOptions(ctx, appID)
 	if err != nil {
 		return "", err
 	}
-	selections := fomod.DefaultSelectionsWithOptions(installer, fomod.PlanOptions{
+	selections := fomod.DefaultSelectionsWithOptions(installer, options)
+	body, err := json.Marshal(selections)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func (s *Server) fomodPlanOptions(ctx context.Context, appID string) (fomod.PlanOptions, error) {
+	choiceSpec, ok := s.games.InstallerChoiceForSteamApp(appID, "fomod")
+	if !ok {
+		return fomod.PlanOptions{}, errors.New("game extension does not support FOMOD installer choices")
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return fomod.PlanOptions{}, err
+	}
+	return fomod.PlanOptions{
 		ModType:           choiceSpec.ModType,
 		PlannerID:         choiceSpec.ID,
 		TargetRoot:        choiceSpec.TargetRoot,
 		StopFolders:       choiceSpec.StopFolders,
 		GameVersion:       game.Version,
 		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
-	})
-	body, err := json.Marshal(selections)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	}, nil
 }
 
 func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Request) {
@@ -2315,11 +2369,15 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	}
 	var choice installerChoiceRequiredError
 	if errors.As(err, &choice) {
-		installerJSON, _ := json.Marshal(choice.Installer)
 		choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
 		if choicesJSON == "" || choicesJSON == "{}" {
-			choicesJSON = s.installerChoicesJSON(ctx, candidate.SteamAppID, jobID, choice.Installer)
+			_, choicesJSON = s.installerChoiceStateJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, nil)
 		}
+		var selections map[string][]string
+		if err := json.Unmarshal([]byte(choicesJSON), &selections); err != nil {
+			selections = nil
+		}
+		installerJSON := s.evaluatedInstallerJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, selections)
 		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 			SteamAppID:    candidate.SteamAppID,
 			Resolved:      pending.Resolved,
@@ -2328,7 +2386,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			ArchiveSHA256: candidate.ChecksumSHA256,
 			Status:        "needs_choices",
 			Reason:        choice.Error(),
-			InstallerJSON: string(installerJSON),
+			InstallerJSON: installerJSON,
 			ChoicesJSON:   choicesJSON,
 		})
 		if recordErr != nil {
@@ -4034,9 +4092,8 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 		)
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
-			installerJSON, _ := json.Marshal(choice.Installer)
 			appID := s.appIDForPending(pending)
-			choicesJSON := s.installerChoicesJSON(context.Background(), appID, jobID, choice.Installer)
+			installerJSON, choicesJSON := s.installerChoiceStateJSON(context.Background(), appID, jobID, choice.Installer, nil)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -4045,7 +4102,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 				ArchiveSHA256: result.SHA256,
 				Status:        "needs_choices",
 				Reason:        choice.Error(),
-				InstallerJSON: string(installerJSON),
+				InstallerJSON: installerJSON,
 				ChoicesJSON:   choicesJSON,
 			})
 			if recordErr != nil {
@@ -4234,8 +4291,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			if _, err := s.stageCapturedInstall(ctx, jobID, pending, result); err != nil {
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
-					installerJSON, _ := json.Marshal(choice.Installer)
-					choicesJSON := s.installerChoicesJSON(ctx, appID, jobID, choice.Installer)
+					installerJSON, choicesJSON := s.installerChoiceStateJSON(ctx, appID, jobID, choice.Installer, nil)
 					candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 						SteamAppID:    appID,
 						Resolved:      pending.Resolved,
@@ -4244,7 +4300,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 						ArchiveSHA256: sum,
 						Status:        "needs_choices",
 						Reason:        choice.Error(),
-						InstallerJSON: string(installerJSON),
+						InstallerJSON: installerJSON,
 						ChoicesJSON:   choicesJSON,
 					})
 					if recordErr != nil {

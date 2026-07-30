@@ -1032,8 +1032,13 @@ func (db *DB) DeleteInstallCandidate(ctx context.Context, candidateID int64) err
 }
 
 func (db *DB) SaveInstallCandidateChoices(ctx context.Context, appID string, candidateID int64, choicesJSON string) (InstallCandidate, error) {
+	return db.SaveInstallCandidateChoicesAndInstaller(ctx, appID, candidateID, choicesJSON, "")
+}
+
+func (db *DB) SaveInstallCandidateChoicesAndInstaller(ctx context.Context, appID string, candidateID int64, choicesJSON string, installerJSON string) (InstallCandidate, error) {
 	appID = strings.TrimSpace(appID)
 	choicesJSON = strings.TrimSpace(choicesJSON)
+	installerJSON = strings.TrimSpace(installerJSON)
 	if appID == "" || candidateID <= 0 {
 		return InstallCandidate{}, errors.New("valid app id and candidate id are required")
 	}
@@ -1043,11 +1048,24 @@ func (db *DB) SaveInstallCandidateChoices(ctx context.Context, appID string, can
 	if !json.Valid([]byte(choicesJSON)) {
 		return InstallCandidate{}, errors.New("install candidate choices must be valid JSON")
 	}
-	result, err := db.conn.ExecContext(ctx, `
+	if installerJSON != "" && !json.Valid([]byte(installerJSON)) {
+		return InstallCandidate{}, errors.New("install candidate installer must be valid JSON")
+	}
+	query := `
 UPDATE install_candidates
 SET choices_json = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND game_id IN (SELECT id FROM games WHERE steam_app_id = ?)
-`, choicesJSON, candidateID, appID)
+`
+	args := []any{choicesJSON, candidateID, appID}
+	if installerJSON != "" {
+		query = `
+UPDATE install_candidates
+SET choices_json = ?, installer_json = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND game_id IN (SELECT id FROM games WHERE steam_app_id = ?)
+`
+		args = []any{choicesJSON, installerJSON, candidateID, appID}
+	}
+	result, err := db.conn.ExecContext(ctx, query, args...)
 	if err != nil {
 		return InstallCandidate{}, err
 	}
