@@ -1605,7 +1605,7 @@ function Content() {
           <ButtonItem layout="below" onClick={addPendingImport}>
             Add Nexus Link
           </ButtonItem>
-          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install approvals and choices appear in Action Center.</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install actions and choices appear in Action Center.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
         </div>
       </PanelSectionRow>
@@ -1988,8 +1988,8 @@ function Content() {
         <div>
           <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
           <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
-          <div>Install captured downloads: {status?.backend?.install.auto_install_captured_downloads ? "Automatic" : "Approval required"}</div>
-          <div>Enable installed mods: {status?.backend?.install.auto_enable_installed_mods ? "Automatic" : "Manual"}</div>
+          <div>Captured installs: {status?.backend?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</div>
+          <div>New mod state: {status?.backend?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</div>
           <div>FOMOD installers: {status?.backend?.install.auto_show_fomod_installers ? "Auto display" : "Action Center"}</div>
           <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
         </div>
@@ -1997,7 +1997,7 @@ function Content() {
       <PanelSectionRow>
         <ToggleField
           label="Auto-install captured downloads"
-          description="NXM links always download immediately. This skips phone approval for the local install step."
+          description="NXM links always download immediately. This installs the cached archive without asking first."
           checked={status?.backend?.install.auto_install_captured_downloads ?? false}
           disabled={!status?.running}
           onChange={setAutoInstallCapturedDownloads}
@@ -2006,7 +2006,7 @@ function Content() {
       <PanelSectionRow>
         <ToggleField
           label="Auto-enable installed mods"
-          description="New installs are enabled and deployed automatically when there are no conflicts."
+          description="New installs are enabled and deployed automatically when no choices or conflicts block them."
           checked={status?.backend?.install.auto_enable_installed_mods ?? false}
           disabled={!status?.running}
           onChange={setAutoEnableInstalledMods}

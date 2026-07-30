@@ -67,7 +67,7 @@ func TestUpdateSecuritySettings(t *testing.T) {
 	}
 }
 
-func TestUpdateInstallSettingsPersistsDownloadApprovalDefaults(t *testing.T) {
+func TestUpdateInstallSettingsPersistsInstallBehaviorDefaults(t *testing.T) {
 	srv := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/install", bytes.NewBufferString(`{"auto_install_captured_downloads":true,"auto_enable_installed_mods":true,"auto_show_fomod_installers":true}`))
@@ -359,7 +359,7 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 	}
 
 	job := srv.jobs.CreateWithPayload("pending-import", "Install request", jobs.JobPayload{"app_id": "413150"})
-	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; approve install")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; ready to install")
 
 	for {
 		_, data, err = conn.Read(ctx)
@@ -565,7 +565,7 @@ func TestPendingImportCapturesNXMLink(t *testing.T) {
 		t.Fatalf("expected pending import guidance, body = %s", rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"waiting"`)) {
-		t.Fatalf("expected waiting install request, body = %s", rec.Body.String())
+		t.Fatalf("expected waiting install action, body = %s", rec.Body.String())
 	}
 	var body struct {
 		Job jobs.Job `json:"job"`
@@ -635,7 +635,7 @@ func TestPendingImportAllowsDifferentFileID(t *testing.T) {
 func TestRememberPendingImportBackfillsJobPayload(t *testing.T) {
 	srv := newTestServer(t)
 	job := srv.jobs.Create("pending-import", "Install request")
-	job, _ = srv.jobs.Wait(job.ID, "Ready for approval")
+	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
 
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
@@ -721,7 +721,7 @@ func TestClearPendingImportsPreservesCompletedHistory(t *testing.T) {
 	completed := srv.jobs.Create("pending-import", "Completed install")
 	completed, _ = srv.jobs.Complete(completed.ID, "Staged Lookup Anything")
 	waiting := srv.jobs.Create("pending-import", "Waiting install")
-	waiting, _ = srv.jobs.Wait(waiting.ID, "Ready for approval")
+	waiting, _ = srv.jobs.Wait(waiting.ID, "Ready to install")
 	failed := srv.jobs.Create("pending-import", "Failed install")
 	failed, _ = srv.jobs.Fail(failed.ID, "unsupported archive format")
 	srv.rememberPendingImport(waiting.ID, pendingImport{
@@ -827,7 +827,7 @@ func TestApprovePendingImportWithoutDownloadLinks(t *testing.T) {
 func TestApprovePendingImportRejectsTerminalJobWithStalePendingState(t *testing.T) {
 	srv := newTestServer(t)
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-	job, _ = srv.jobs.Wait(job.ID, "Ready for approval")
+	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -880,7 +880,7 @@ func TestApprovePendingImportInstallsCachedArchive(t *testing.T) {
 	}
 
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; approve install to add it disabled")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
 	resolved := catalog.ResolvedDownload{
 		Catalog:    "nexus",
 		GameDomain: "stardewvalley",
@@ -956,7 +956,7 @@ func TestApprovePendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	}
 
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; approve install to add it disabled")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -1042,7 +1042,7 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 	defer downloadServer.Close()
 
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-	job, _ = srv.jobs.Wait(job.ID, "Ready for approval from stardewvalley")
+	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -1112,7 +1112,7 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 	}
 
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/2400")
-	job, _ = srv.jobs.Wait(job.ID, "Downloaded SMAPI installer; approve install")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded SMAPI installer; ready to install")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -1200,7 +1200,7 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	}
 
 	job := srv.jobs.Create("pending-import", "Install request: fallout4/mods/999")
-	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; approve install")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -1334,7 +1334,7 @@ func TestPendingImportDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	}
 }
 
-func TestPendingImportDownloadsImmediatelyAndWaitsForInstallApproval(t *testing.T) {
+func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1393,7 +1393,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallApproval(t *testing.
 	}
 
 	waiting := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusWaiting)
-	if !strings.Contains(waiting.Message, "approve install") {
+	if !strings.Contains(waiting.Message, "install it") {
 		t.Fatalf("waiting job = %+v", waiting)
 	}
 	pending, ok := srv.pendingImport(body.Job.ID)
@@ -1403,7 +1403,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallApproval(t *testing.
 	if mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150"); err != nil {
 		t.Fatal(err)
 	} else if len(mods) != 0 {
-		t.Fatalf("mods before approval = %+v", mods)
+		t.Fatalf("mods before install confirmation = %+v", mods)
 	}
 
 	approve := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+body.Job.ID+"/approve", nil)
@@ -1422,7 +1422,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallApproval(t *testing.
 		t.Fatal(err)
 	}
 	if len(mods) != 1 || mods[0].Enabled {
-		t.Fatalf("mods after approval = %+v", mods)
+		t.Fatalf("mods after install confirmation = %+v", mods)
 	}
 }
 
@@ -1453,7 +1453,7 @@ func TestApproveDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; approve install")
+		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
 		srv.rememberPendingImport(job.ID, pendingImport{
 			Resolved:    resolved,
 			Source:      "test",
@@ -1517,7 +1517,7 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 	approveCached := func() storage.InstalledMod {
 		t.Helper()
 		job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
-		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; approve install")
+		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
 		srv.rememberPendingImport(job.ID, pendingImport{
 			Resolved:    resolved,
 			Source:      "test",
@@ -3100,7 +3100,7 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	}
 	writeSteamLaunchOptions(t, "413150", steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI"))
 	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/999")
-	job, _ = srv.jobs.Wait(job.ID, "Ready for approval from stardewvalley")
+	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",

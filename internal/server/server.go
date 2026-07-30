@@ -191,7 +191,7 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Pendin
 		case jobs.StatusQueued, jobs.StatusRunning:
 			job.Status = jobs.StatusWaiting
 			if strings.TrimSpace(pending.ArchivePath) != "" {
-				job.Message = "Interrupted; downloaded archive is ready for install approval"
+				job.Message = "Interrupted; downloaded archive is ready to install"
 			} else if len(pending.DownloadLinks) > 0 {
 				job.Message = "Interrupted; ready to retry download"
 			} else {
@@ -2943,7 +2943,7 @@ func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	job, err := s.startPendingImportInstall(jobID, "user-approved install")
+	job, err := s.startPendingImportInstall(jobID, "user-confirmed install")
 	if err != nil {
 		switch {
 		case errors.Is(err, errPendingImportNotFound):
@@ -2951,7 +2951,7 @@ func (s *Server) handleApprovePendingImport(w http.ResponseWriter, r *http.Reque
 		case errors.Is(err, errPendingImportJobNotFound):
 			http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		case errors.Is(err, errPendingImportNotWaiting):
-			http.Error(w, "captured mod action is not waiting for approval", http.StatusConflict)
+			http.Error(w, "captured mod action is not ready to install", http.StatusConflict)
 		case errors.Is(err, errPendingImportNoArchive):
 			http.Error(w, "captured mod action has no downloaded archive yet", http.StatusBadRequest)
 		default:
@@ -3028,13 +3028,13 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 var (
 	errPendingImportNotFound    = errors.New("pending import was not found")
 	errPendingImportJobNotFound = errors.New("pending import job was not found")
-	errPendingImportNotWaiting  = errors.New("pending import is not waiting for approval")
+	errPendingImportNotWaiting  = errors.New("pending import is not ready for this action")
 	errPendingImportNoLinks     = errors.New("pending import has no download links")
 	errPendingImportEmptyLink   = errors.New("pending import download link is empty")
 	errPendingImportNoArchive   = errors.New("pending import has no downloaded archive")
 )
 
-func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.Job, error) {
+func (s *Server) startPendingImportDownload(jobID, actionSource string) (jobs.Job, error) {
 	pending, ok := s.pendingImport(jobID)
 	if !ok {
 		return jobs.Job{}, errPendingImportNotFound
@@ -3062,7 +3062,7 @@ func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.
 	s.logger.Info(
 		"pending import download started",
 		"job_id", jobID,
-		"source", approvalSource,
+		"action_source", actionSource,
 		"request_source", pending.Source,
 		"catalog", pending.Resolved.Catalog,
 		"game_domain", pending.Resolved.GameDomain,
@@ -3076,7 +3076,7 @@ func (s *Server) startPendingImportDownload(jobID, approvalSource string) (jobs.
 	return job, nil
 }
 
-func (s *Server) startPendingImportInstall(jobID, approvalSource string) (jobs.Job, error) {
+func (s *Server) startPendingImportInstall(jobID, actionSource string) (jobs.Job, error) {
 	pending, ok := s.pendingImport(jobID)
 	if !ok {
 		return jobs.Job{}, errPendingImportNotFound
@@ -3097,9 +3097,9 @@ func (s *Server) startPendingImportInstall(jobID, approvalSource string) (jobs.J
 		return jobs.Job{}, errPendingImportJobNotFound
 	}
 	s.logger.Info(
-		"pending import install approved",
+		"pending import install confirmed",
 		"job_id", jobID,
-		"approval_source", approvalSource,
+		"action_source", actionSource,
 		"request_source", pending.Source,
 		"catalog", pending.Resolved.Catalog,
 		"game_domain", pending.Resolved.GameDomain,
@@ -3114,7 +3114,7 @@ func (s *Server) startPendingImportInstall(jobID, approvalSource string) (jobs.J
 	s.trackActiveJob(jobID, cancel)
 	go func() {
 		defer s.untrackActiveJob(jobID)
-		s.installPendingImport(ctx, jobID, pending, pending.downloadResult(), approvalSource)
+		s.installPendingImport(ctx, jobID, pending, pending.downloadResult(), actionSource)
 	}()
 	return job, nil
 }
@@ -3254,7 +3254,7 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 	if !autoInstall {
 		name := modNameFromArchive(result.Path, pending.Resolved)
 		s.logger.Info(
-			"pending import downloaded and waiting for install approval",
+			"pending import downloaded and waiting for install confirmation",
 			"job_id", jobID,
 			"game_domain", pending.Resolved.GameDomain,
 			"mod_id", pending.Resolved.ModID,
@@ -3263,7 +3263,7 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 			"archive_sha256", result.SHA256,
 			"archive_bytes", result.BytesWritten,
 		)
-		s.jobs.Wait(jobID, "Downloaded "+name+"; approve install to add it disabled")
+		s.jobs.Wait(jobID, "Downloaded "+name+"; install it to add it disabled")
 		return
 	}
 	s.installPendingImport(ctx, jobID, pending, result, "auto-install captured download")

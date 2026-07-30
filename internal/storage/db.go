@@ -126,10 +126,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	return db.applyCompatibilityMigrations(ctx)
+	return db.applyAdditiveMigrations(ctx)
 }
 
-func (db *DB) applyCompatibilityMigrations(ctx context.Context) error {
+func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 	columns := []struct {
 		table      string
 		name       string

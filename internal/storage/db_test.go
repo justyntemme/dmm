@@ -197,7 +197,7 @@ func TestJobsPersistPayload(t *testing.T) {
 		Type:    "pending-import",
 		Title:   "Install request: stardewvalley/mods/541",
 		Status:  jobs.StatusWaiting,
-		Message: "Ready for approval",
+		Message: "Ready to install",
 		Payload: jobs.JobPayload{
 			"app_id":      "413150",
 			"catalog":     "nexus",

@@ -1327,20 +1327,20 @@
       return "Choose installer options to finish adding this mod to the selected profile.";
     }
     if (request.status === "waiting") {
-      return "Approve install to add this downloaded mod to the selected profile.";
+      return "Install this downloaded mod into the selected profile, or cancel it and keep the archive cache untouched.";
     }
     if (request.status === "running" || request.status === "queued") {
       return "DMM is downloading or installing this mod. It will appear in the profile when ready.";
     }
     if (request.status === "failed") {
-      return "The mod was not added. Retry the request if the download link is still valid, or clear it after saving anything useful.";
+      return "The mod was not added. Retry from the cached download when available, or clear it if this action is no longer needed.";
     }
     return "This request is retained in job history for diagnostics.";
   }
 
   function requestStatusLabel(request: Job) {
     if (request.type === "installer-choice" && request.status === "waiting") return "Needs choices";
-    if (request.status === "waiting") return "Needs approval";
+    if (request.status === "waiting") return "Ready to install";
     if (request.status === "running") return "Processing";
     if (request.status === "queued") return "Queued";
     if (request.status === "failed") return "Failed";
@@ -1469,7 +1469,7 @@
           <button type="button" class:active={activeSettingsPage === "overview"} on:click={() => openSettings("overview")}>Overview</button>
           <button type="button" on:click={openActionCenter}>Action Center</button>
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
-          <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install</button>
+          <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
         </nav>
       {/if}
@@ -1496,7 +1496,7 @@
           <span>{actionItems.length} open</span>
         </div>
         {#if installRequests.length > 0}
-          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Captures</button>
+          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Captured Installs</button>
         {/if}
         {#if actionItems.length === 0}
           <div class="request-home">
@@ -1549,7 +1549,7 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Auto install</dt><dd>{status?.install.auto_install_captured_downloads ? "Enabled" : "Approval required"}</dd></div>
+            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
           </dl>
         </article>
@@ -1579,10 +1579,10 @@
         </article>
       {:else if activeSettingsPage === "install"}
         <article class="workspace-panel">
-          <h2>Install</h2>
+          <h2>Install Behavior</h2>
           <dl class="settings-list">
-            <div><dt>Auto install captured downloads</dt><dd>{status?.install.auto_install_captured_downloads ? "Enabled" : "Approval required"}</dd></div>
-            <div><dt>Auto enable installed mods</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
+            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Ask first"}</dd></div>
+            <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
           </dl>
           <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
         </article>
@@ -1810,7 +1810,7 @@
             <span>{selectedGameActionItems.length} open · {installCandidates.length} installers</span>
           </div>
           {#if selectedGameRequests.length > 0}
-            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Captures</button>
+            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Captured Installs</button>
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <p class="hint">No install actions need attention for this game.</p>
