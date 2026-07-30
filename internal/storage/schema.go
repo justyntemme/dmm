@@ -129,6 +129,20 @@ CREATE TABLE IF NOT EXISTS install_candidates (
 	UNIQUE(game_id, catalog, source_mod_id, source_file_id)
 );
 
+CREATE TABLE IF NOT EXISTS installer_choice_presets (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+	catalog TEXT NOT NULL,
+	source_game_domain TEXT NOT NULL DEFAULT '',
+	source_mod_id TEXT NOT NULL DEFAULT '',
+	source_file_id TEXT NOT NULL DEFAULT '',
+	installer_kind TEXT NOT NULL,
+	choices_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(game_id, catalog, source_mod_id, source_file_id, installer_kind)
+);
+
 CREATE TABLE IF NOT EXISTS profile_mods (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

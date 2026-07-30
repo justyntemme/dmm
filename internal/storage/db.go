@@ -950,6 +950,13 @@ type RecordInstallCandidateParams struct {
 	ChoicesJSON   string
 }
 
+type InstallerChoicePresetParams struct {
+	SteamAppID    string
+	Resolved      catalog.ResolvedDownload
+	InstallerKind string
+	ChoicesJSON   string
+}
+
 func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCandidateParams) (InstallCandidate, error) {
 	params.SteamAppID = strings.TrimSpace(params.SteamAppID)
 	params.Name = strings.TrimSpace(params.Name)
@@ -998,6 +1005,63 @@ ON CONFLICT(game_id, catalog, source_mod_id, source_file_id) DO UPDATE SET
 		return InstallCandidate{}, err
 	}
 	return db.installCandidate(ctx, gameID, params.Resolved.Catalog, params.Resolved.ModID, params.Resolved.FileID)
+}
+
+func (db *DB) SaveInstallerChoicePreset(ctx context.Context, params InstallerChoicePresetParams) error {
+	params.SteamAppID = strings.TrimSpace(params.SteamAppID)
+	params.InstallerKind = strings.TrimSpace(params.InstallerKind)
+	params.ChoicesJSON = strings.TrimSpace(params.ChoicesJSON)
+	if params.SteamAppID == "" || params.Resolved.Catalog == "" || params.Resolved.ModID == "" || params.Resolved.FileID == "" || params.InstallerKind == "" {
+		return errors.New("steam app id, resolved file, and installer kind are required")
+	}
+	if params.ChoicesJSON == "" {
+		params.ChoicesJSON = "{}"
+	}
+	if !json.Valid([]byte(params.ChoicesJSON)) {
+		return errors.New("installer choice preset choices must be valid JSON")
+	}
+	var gameID int64
+	if err := db.conn.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, params.SteamAppID).Scan(&gameID); err != nil {
+		return err
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO installer_choice_presets (game_id, catalog, source_game_domain, source_mod_id, source_file_id, installer_kind, choices_json, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(game_id, catalog, source_mod_id, source_file_id, installer_kind) DO UPDATE SET
+	source_game_domain = excluded.source_game_domain,
+	choices_json = excluded.choices_json,
+	updated_at = CURRENT_TIMESTAMP
+`, gameID, params.Resolved.Catalog, params.Resolved.GameDomain, params.Resolved.ModID, params.Resolved.FileID, params.InstallerKind, params.ChoicesJSON)
+	return err
+}
+
+func (db *DB) InstallerChoicePreset(ctx context.Context, params InstallerChoicePresetParams) (string, bool, error) {
+	params.SteamAppID = strings.TrimSpace(params.SteamAppID)
+	params.InstallerKind = strings.TrimSpace(params.InstallerKind)
+	if params.SteamAppID == "" || params.Resolved.Catalog == "" || params.Resolved.ModID == "" || params.Resolved.FileID == "" || params.InstallerKind == "" {
+		return "", false, errors.New("steam app id, resolved file, and installer kind are required")
+	}
+	var choicesJSON string
+	err := db.conn.QueryRowContext(ctx, `
+SELECT icp.choices_json
+FROM installer_choice_presets icp
+JOIN games g ON g.id = icp.game_id
+WHERE g.steam_app_id = ?
+	AND icp.catalog = ?
+	AND icp.source_mod_id = ?
+	AND icp.source_file_id = ?
+	AND icp.installer_kind = ?
+`, params.SteamAppID, params.Resolved.Catalog, params.Resolved.ModID, params.Resolved.FileID, params.InstallerKind).Scan(&choicesJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if strings.TrimSpace(choicesJSON) == "" {
+		choicesJSON = "{}"
+	}
+	return choicesJSON, true, nil
 }
 
 func (db *DB) InstallCandidatesForSteamApp(ctx context.Context, appID string) ([]InstallCandidate, error) {

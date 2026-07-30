@@ -2369,7 +2369,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		s.logger.Warn("installed mod reinstall failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
-			installerJSON, choicesJSON := s.installerChoiceStateJSON(context.Background(), appID, job.ID, choice.Installer, nil)
+			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, job.ID, pending.Resolved, choice.Kind, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -2605,6 +2605,26 @@ func fomodInstallerFromCandidate(candidate storage.InstallCandidate) (fomod.Inst
 	return installer, true
 }
 
+func (s *Server) installerChoiceStateForResolved(ctx context.Context, appID, jobID string, resolved catalog.ResolvedDownload, installerKind string, installer fomod.Installer) (string, string) {
+	preset, ok, err := s.db.InstallerChoicePreset(ctx, storage.InstallerChoicePresetParams{
+		SteamAppID:    appID,
+		Resolved:      resolved,
+		InstallerKind: installerKind,
+	})
+	if err != nil {
+		s.logger.Warn("installer choice preset lookup failed", "job_id", jobID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID, "installer_kind", installerKind, "error", err)
+	} else if ok {
+		selections := map[string][]string{}
+		if err := json.Unmarshal([]byte(preset), &selections); err != nil {
+			s.logger.Warn("installer choice preset decode failed", "job_id", jobID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID, "installer_kind", installerKind, "error", err)
+		} else {
+			s.logger.Info("installer choice preset reused", "job_id", jobID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID, "installer_kind", installerKind)
+			return s.evaluatedInstallerJSON(ctx, appID, jobID, installer, selections), preset
+		}
+	}
+	return s.installerChoiceStateJSON(ctx, appID, jobID, installer, nil)
+}
+
 func (s *Server) installerChoiceStateJSON(ctx context.Context, appID, jobID string, installer fomod.Installer, selections map[string][]string) (string, string) {
 	choicesJSON := "{}"
 	if selections == nil {
@@ -2743,14 +2763,17 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	var choice installerChoiceRequiredError
 	if errors.As(err, &choice) {
 		choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
+		installerJSON := ""
 		if choicesJSON == "" || choicesJSON == "{}" {
-			_, choicesJSON = s.installerChoiceStateJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, nil)
+			installerJSON, choicesJSON = s.installerChoiceStateForResolved(ctx, candidate.SteamAppID, jobID, pending.Resolved, choice.Kind, choice.Installer)
 		}
 		var selections map[string][]string
 		if err := json.Unmarshal([]byte(choicesJSON), &selections); err != nil {
 			selections = nil
 		}
-		installerJSON := s.evaluatedInstallerJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, selections)
+		if installerJSON == "" {
+			installerJSON = s.evaluatedInstallerJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, selections)
+		}
 		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 			SteamAppID:    candidate.SteamAppID,
 			Resolved:      pending.Resolved,
@@ -2966,6 +2989,24 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		if err != nil {
 			return storage.InstalledMod{}, err
 		}
+	}
+	choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
+	if selections != nil {
+		if body, err := json.Marshal(selections); err == nil {
+			choicesJSON = string(body)
+		} else {
+			s.logger.Warn("installer choice preset marshal failed", "job_id", jobID, "app_id", candidate.SteamAppID, "candidate_id", candidate.ID, "error", err)
+		}
+	}
+	if err := s.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    candidate.SteamAppID,
+		Resolved:      resolved,
+		InstallerKind: inspection.InstallerKind,
+		ChoicesJSON:   choicesJSON,
+	}); err != nil {
+		s.logger.Warn("installer choice preset save failed", "job_id", jobID, "app_id", candidate.SteamAppID, "candidate_id", candidate.ID, "installer_kind", inspection.InstallerKind, "error", err)
+	} else {
+		s.logger.Info("installer choice preset saved", "job_id", jobID, "app_id", candidate.SteamAppID, "candidate_id", candidate.ID, "mod_id", candidate.SourceModID, "file_id", candidate.SourceFileID, "installer_kind", inspection.InstallerKind)
 	}
 	s.logger.Info(
 		"installer candidate staged",
@@ -4589,7 +4630,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
 			appID := s.appIDForPending(pending)
-			installerJSON, choicesJSON := s.installerChoiceStateJSON(context.Background(), appID, jobID, choice.Installer, nil)
+			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, jobID, pending.Resolved, choice.Kind, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -4790,7 +4831,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			if _, err := s.stageCapturedInstall(ctx, jobID, pending, result); err != nil {
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
-					installerJSON, choicesJSON := s.installerChoiceStateJSON(ctx, appID, jobID, choice.Installer, nil)
+					installerJSON, choicesJSON := s.installerChoiceStateForResolved(ctx, appID, jobID, pending.Resolved, choice.Kind, choice.Installer)
 					candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 						SteamAppID:    appID,
 						Resolved:      pending.Resolved,

@@ -2617,6 +2617,86 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	if len(candidates) != 0 {
 		t.Fatalf("candidate was not removed = %+v", candidates)
 	}
+	preset, ok, err := srv.db.InstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID: "377160",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		InstallerKind: "fomod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !strings.Contains(preset, "step-1-group-1-plugin-1") {
+		t.Fatalf("preset = %q ok=%v", preset, ok)
+	}
+}
+
+func TestInstallerChoiceStateReusesExactFilePreset(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Choice Mod</moduleName>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High"><typeDescriptor><type name="Recommended" /></typeDescriptor><files><file source="high.txt" destination="high.txt" /></files></plugin>
+            <plugin name="Low"><typeDescriptor><type name="Optional" /></typeDescriptor><files><file source="low.txt" destination="low.txt" /></files></plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"high.txt": "high",
+		"low.txt":  "low",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "fallout4",
+		ModID:      "999",
+		FileID:     "1000",
+	}
+	const savedChoices = `{"step-1-group-1":["step-1-group-1-plugin-2"]}`
+	if err := srv.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    "377160",
+		Resolved:      resolved,
+		InstallerKind: "fomod",
+		ChoicesJSON:   savedChoices,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, choicesJSON := srv.installerChoiceStateForResolved(context.Background(), "377160", "job-preset", resolved, "fomod", installer)
+	if choicesJSON != savedChoices {
+		t.Fatalf("choices = %s", choicesJSON)
+	}
 }
 
 func TestApplyFOMODInstallCandidateMatchesInactivePluginDependency(t *testing.T) {
