@@ -81,6 +81,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				Name:     "Sample ignored conflict",
 				Patterns: []string{"**/ignored.txt"},
 			})
+			r.RegisterSteamWorkshop(sdk.SteamWorkshopSpec{
+				AllowCoexistence: true,
+				Actions: []sdk.SteamWorkshopActionSpec{
+					{ID: "sample-workshop-unsubscribe", Name: "Unsubscribe Workshop item", Kind: "unsubscribe"},
+				},
+			})
 			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
 			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
@@ -169,6 +175,16 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if patterns := registry.ConflictIgnorePatternsForSteamApp("100"); len(patterns) != 1 || patterns[0] != "**/ignored.txt" {
 		t.Fatalf("conflict ignore patterns = %+v", patterns)
 	}
+	workshop, ok := registry.SteamWorkshopForSteamApp("100")
+	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 1 || workshop.Actions[0].Kind != "unsubscribe" {
+		t.Fatalf("workshop support = %+v ok=%v", workshop, ok)
+	}
+	if !registry.SteamWorkshopCoexistenceAllowed("100") {
+		t.Fatal("workshop coexistence was not allowed")
+	}
+	if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 1 {
+		t.Fatalf("workshop capabilities = %+v", summary.Capabilities.SteamWorkshop)
+	}
 	if !registry.HasEventHandlerForSteamApp("100", "will-deploy") || registry.HasEventHandlerForSteamApp("100", "did-deploy") {
 		t.Fatalf("event handler predicates are wrong")
 	}
@@ -230,6 +246,11 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				Name:     "Bad ignore",
 				Patterns: []string{"/abs.txt", "../outside.txt"},
 			})
+			r.RegisterSteamWorkshop(sdk.SteamWorkshopSpec{
+				Actions: []sdk.SteamWorkshopActionSpec{
+					{ID: "bad-workshop", Kind: "delete"},
+				},
+			})
 		},
 	})
 	if err == nil {
@@ -252,6 +273,8 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"plugin activation plugins native plugin manifest: absolute path is not allowed",
 		"conflict ignore ignore pattern: absolute patterns are not allowed",
 		"conflict ignore ignore pattern: path traversal is not allowed",
+		"steam workshop action bad-workshop name is required",
+		"steam workshop action bad-workshop kind must be subscribe, unsubscribe, enable, or disable",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)

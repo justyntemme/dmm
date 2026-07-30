@@ -28,6 +28,7 @@ type Extension struct {
 	GameVersionProviders []sdk.GameVersionProviderSpec
 	PluginActivations    []sdk.PluginActivationSpec
 	ConflictIgnores      []sdk.ConflictIgnoreSpec
+	SteamWorkshop        sdk.SteamWorkshopSpec
 	Sources              []sdk.SourceRef
 	Merges               []sdk.MergeSpec
 	LoadOrders           []sdk.LoadOrderSpec
@@ -40,6 +41,8 @@ type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
+type SteamWorkshopSpec = sdk.SteamWorkshopSpec
+type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
 type GameVersionInput = sdk.GameVersionInput
 type GameVersionResult = sdk.GameVersionResult
 type MergeSpec = sdk.MergeSpec
@@ -70,6 +73,7 @@ type ExtensionCapabilities struct {
 	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
+	SteamWorkshop       *WorkshopSummary `json:"steam_workshop,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
 	EventHandlers       []FeatureSummary `json:"event_handlers,omitempty"`
@@ -78,6 +82,11 @@ type ExtensionCapabilities struct {
 type FeatureSummary struct {
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`
+}
+
+type WorkshopSummary struct {
+	AllowCoexistence bool             `json:"allow_coexistence"`
+	Actions          []FeatureSummary `json:"actions,omitempty"`
 }
 
 type Registry struct {
@@ -318,6 +327,23 @@ func (r Registry) ConflictIgnorePatternsForSteamApp(appID string) []string {
 	return append([]string(nil), patterns...)
 }
 
+func (r Registry) SteamWorkshopForSteamApp(appID string) (SteamWorkshopSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return SteamWorkshopSpec{}, false
+	}
+	spec := extension.SteamWorkshop
+	if !spec.AllowCoexistence && len(spec.Actions) == 0 {
+		return SteamWorkshopSpec{}, false
+	}
+	return spec, true
+}
+
+func (r Registry) SteamWorkshopCoexistenceAllowed(appID string) bool {
+	spec, ok := r.SteamWorkshopForSteamApp(appID)
+	return ok && spec.AllowCoexistence
+}
+
 func (r Registry) HasEventHandlerForSteamApp(appID, event string) bool {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -445,6 +471,14 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, ignore := range extension.ConflictIgnores {
 		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
+	}
+	if extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0 {
+		workshop := &WorkshopSummary{AllowCoexistence: extension.SteamWorkshop.AllowCoexistence}
+		for _, action := range extension.SteamWorkshop.Actions {
+			workshop.Actions = append(workshop.Actions, FeatureSummary{ID: action.ID, Name: action.Name})
+		}
+		sortFeatureSummaries(workshop.Actions)
+		summary.Capabilities.SteamWorkshop = workshop
 	}
 	for _, merge := range extension.Merges {
 		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{ID: merge.ID, Name: merge.Name})

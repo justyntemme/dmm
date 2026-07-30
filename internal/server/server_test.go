@@ -3116,6 +3116,41 @@ func TestDeploymentAllowedUsesGameSpecDirtyStatePolicy(t *testing.T) {
 	}
 }
 
+func TestAnnotateSteamWorkshopSupportUsesExtensionPolicy(t *testing.T) {
+	srv := newTestServer(t)
+	games := []steam.Game{
+		{
+			AppID: fallout4.SteamAppID,
+			Name:  "Fallout 4",
+			State: "clean_candidate",
+			Workshop: steam.WorkshopInfo{
+				Detected:    true,
+				ContentPath: "/steam/steamapps/workshop/content/377160",
+				ItemCount:   2,
+			},
+		},
+		{
+			AppID: "999999",
+			Name:  "Unsupported Workshop Game",
+			State: "clean_candidate",
+			Workshop: steam.WorkshopInfo{
+				Detected:    true,
+				ContentPath: "/steam/steamapps/workshop/content/999999",
+				ItemCount:   1,
+			},
+		},
+	}
+
+	srv.annotateSteamWorkshopSupport(games)
+
+	if games[0].State != "clean_candidate" || !games[0].Workshop.CoexistenceAllowed || len(games[0].Markers) != 0 {
+		t.Fatalf("fallout workshop policy = %+v", games[0])
+	}
+	if games[1].State != "needs_review" || games[1].Workshop.CoexistenceAllowed || len(games[1].Markers) != 1 {
+		t.Fatalf("unsupported workshop policy = %+v", games[1])
+	}
+}
+
 func TestEffectiveStagingPathPrefersCurrentDataDir(t *testing.T) {
 	srv := newTestServer(t)
 	canonical := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")

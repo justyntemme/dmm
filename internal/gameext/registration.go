@@ -48,6 +48,14 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 		r.extension.InstallPlan.VortexGameID = r.extension.ID
 	}
 	r.extension.InstallPlan.Deployment = spec.Deployment
+	if spec.Workshop.AllowCoexistence || len(spec.Workshop.Actions) > 0 {
+		r.RegisterSteamWorkshop(spec.Workshop)
+	}
+}
+
+func (r *Registrar) RegisterSteamWorkshop(spec sdk.SteamWorkshopSpec) {
+	r.extension.SteamWorkshop.AllowCoexistence = spec.AllowCoexistence
+	r.extension.SteamWorkshop.Actions = append(r.extension.SteamWorkshop.Actions, spec.Actions...)
 }
 
 func (r *Registrar) RegisterInstaller(spec installplan.InstallerSpec) {
@@ -159,6 +167,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
+	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
 	for _, handler := range extension.EventHandlers {
@@ -167,6 +176,26 @@ func validateExtension(extension Extension) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func validateSteamWorkshop(spec sdk.SteamWorkshopSpec) []error {
+	var errs []error
+	for _, action := range spec.Actions {
+		id := strings.TrimSpace(action.ID)
+		if id == "" {
+			errs = append(errs, errors.New("steam workshop action id is required"))
+			continue
+		}
+		if strings.TrimSpace(action.Name) == "" {
+			errs = append(errs, errors.New("steam workshop action "+id+" name is required"))
+		}
+		switch strings.TrimSpace(action.Kind) {
+		case "subscribe", "unsubscribe", "enable", "disable":
+		default:
+			errs = append(errs, errors.New("steam workshop action "+id+" kind must be subscribe, unsubscribe, enable, or disable"))
+		}
+	}
+	return errs
 }
 
 func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {

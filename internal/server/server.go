@@ -295,6 +295,7 @@ type deployPreviewSummary struct {
 type gameDiagnosticsResponse struct {
 	AppID               string                           `json:"app_id"`
 	Game                storage.Game                     `json:"game"`
+	SteamWorkshop       *steam.WorkshopInfo              `json:"steam_workshop,omitempty"`
 	Profiles            []storage.Profile                `json:"profiles"`
 	ProfileCount        int                              `json:"profile_count"`
 	DefaultProfile      string                           `json:"default_profile,omitempty"`
@@ -311,16 +312,17 @@ type gameDiagnosticsResponse struct {
 }
 
 type gameResponse struct {
-	AppID        string   `json:"app_id"`
-	Name         string   `json:"name"`
-	InstallDir   string   `json:"install_dir"`
-	LibraryPath  string   `json:"library_path"`
-	Path         string   `json:"path"`
-	Version      string   `json:"version,omitempty"`
-	SteamBuildID string   `json:"steam_build_id,omitempty"`
-	State        string   `json:"state"`
-	Markers      []string `json:"markers,omitempty"`
-	NexusDomains []string `json:"nexus_domains,omitempty"`
+	AppID         string              `json:"app_id"`
+	Name          string              `json:"name"`
+	InstallDir    string              `json:"install_dir"`
+	LibraryPath   string              `json:"library_path"`
+	Path          string              `json:"path"`
+	Version       string              `json:"version,omitempty"`
+	SteamBuildID  string              `json:"steam_build_id,omitempty"`
+	State         string              `json:"state"`
+	Markers       []string            `json:"markers,omitempty"`
+	SteamWorkshop *steam.WorkshopInfo `json:"steam_workshop,omitempty"`
+	NexusDomains  []string            `json:"nexus_domains,omitempty"`
 }
 
 type gameLaunchStatusResponse struct {
@@ -457,6 +459,7 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	resp := gameDiagnosticsResponse{
 		AppID:             appID,
 		Game:              game,
+		SteamWorkshop:     s.steamWorkshopInfoForGame(game),
 		Profiles:          profiles,
 		ProfileCount:      len(profiles),
 		StagedMods:        len(mods),
@@ -498,6 +501,12 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.ValidationWarnings = gameDiagnosticsWarnings(resp)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) steamWorkshopInfoForGame(game storage.Game) *steam.WorkshopInfo {
+	info := steam.DetectWorkshop(game.LibraryPath, game.SteamAppID)
+	annotateSteamWorkshopInfo(&info, game.SteamAppID, s.games)
+	return workshopResponse(info)
 }
 
 func (s *Server) handleGameLaunchStatus(w http.ResponseWriter, r *http.Request) {
@@ -725,6 +734,9 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 	}
 	if resp.BlockedCandidates > 0 {
 		warnings = append(warnings, strconv.Itoa(resp.BlockedCandidates)+" downloaded archives are blocked by unsupported install planning")
+	}
+	if resp.SteamWorkshop != nil && resp.SteamWorkshop.Detected && !resp.SteamWorkshop.CoexistenceAllowed {
+		warnings = append(warnings, "Steam Workshop content is present, but this game extension has not declared DMM coexistence safe")
 	}
 	if resp.Preview.Error != "" {
 		warnings = append(warnings, "deployment preview is unavailable: "+resp.Preview.Error)
@@ -1348,6 +1360,7 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.detectGameVersions(r.Context(), games)
+	s.annotateSteamWorkshopSupport(games)
 	if err := s.db.SyncGames(r.Context(), games); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -1355,19 +1368,76 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	responses := make([]gameResponse, 0, len(games))
 	for _, game := range games {
 		responses = append(responses, gameResponse{
-			AppID:        game.AppID,
-			Name:         game.Name,
-			InstallDir:   game.InstallDir,
-			LibraryPath:  game.LibraryPath,
-			Path:         game.Path,
-			Version:      game.Version,
-			SteamBuildID: game.BuildID,
-			State:        game.State,
-			Markers:      game.Markers,
-			NexusDomains: s.games.NexusDomainsForSteamAppID(game.AppID),
+			AppID:         game.AppID,
+			Name:          game.Name,
+			InstallDir:    game.InstallDir,
+			LibraryPath:   game.LibraryPath,
+			Path:          game.Path,
+			Version:       game.Version,
+			SteamBuildID:  game.BuildID,
+			State:         game.State,
+			Markers:       game.Markers,
+			SteamWorkshop: workshopResponse(game.Workshop),
+			NexusDomains:  s.games.NexusDomainsForSteamAppID(game.AppID),
 		})
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func (s *Server) annotateSteamWorkshopSupport(games []steam.Game) {
+	for i := range games {
+		game := &games[i]
+		annotateSteamWorkshopInfo(&game.Workshop, game.AppID, s.games)
+		if game.Workshop.Detected && !game.Workshop.CoexistenceAllowed {
+			game.State = "needs_review"
+			game.Markers = appendMarker(game.Markers, steamWorkshopMarker(game.Workshop))
+		}
+	}
+}
+
+func annotateSteamWorkshopInfo(info *steam.WorkshopInfo, appID string, registry games.Registry) {
+	if info == nil || !info.Detected {
+		return
+	}
+	spec, ok := registry.SteamWorkshopForSteamApp(appID)
+	info.CoexistenceAllowed = ok && spec.AllowCoexistence
+	info.ManagementSupported = ok && len(spec.Actions) > 0
+	if info.CoexistenceAllowed {
+		info.Message = "Steam Workshop content detected; DMM will leave it untouched while managing DMM-owned files."
+		return
+	}
+	info.Message = "Steam Workshop content detected; this game extension has not declared coexistence safe yet."
+}
+
+func appendMarker(markers []string, marker string) []string {
+	marker = strings.TrimSpace(marker)
+	if marker == "" {
+		return markers
+	}
+	for _, existing := range markers {
+		if strings.EqualFold(strings.TrimSpace(existing), marker) {
+			return markers
+		}
+	}
+	return append(markers, marker)
+}
+
+func steamWorkshopMarker(info steam.WorkshopInfo) string {
+	if strings.TrimSpace(info.ContentPath) != "" {
+		return "steam workshop content: " + info.ContentPath
+	}
+	if strings.TrimSpace(info.ManifestPath) != "" {
+		return "steam workshop manifest: " + info.ManifestPath
+	}
+	return "steam workshop content"
+}
+
+func workshopResponse(info steam.WorkshopInfo) *steam.WorkshopInfo {
+	if !info.Detected {
+		return nil
+	}
+	next := info
+	return &next
 }
 
 func (s *Server) detectGameVersions(ctx context.Context, games []steam.Game) {

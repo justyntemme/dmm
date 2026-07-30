@@ -15,15 +15,27 @@ type Library struct {
 }
 
 type Game struct {
-	AppID       string   `json:"app_id"`
-	Name        string   `json:"name"`
-	InstallDir  string   `json:"install_dir"`
-	LibraryPath string   `json:"library_path"`
-	Path        string   `json:"path"`
-	Version     string   `json:"version"`
-	BuildID     string   `json:"build_id"`
-	State       string   `json:"state"`
-	Markers     []string `json:"markers,omitempty"`
+	AppID       string       `json:"app_id"`
+	Name        string       `json:"name"`
+	InstallDir  string       `json:"install_dir"`
+	LibraryPath string       `json:"library_path"`
+	Path        string       `json:"path"`
+	Version     string       `json:"version"`
+	BuildID     string       `json:"build_id"`
+	State       string       `json:"state"`
+	Markers     []string     `json:"markers,omitempty"`
+	Workshop    WorkshopInfo `json:"steam_workshop,omitempty"`
+}
+
+type WorkshopInfo struct {
+	Detected            bool     `json:"detected"`
+	ContentPath         string   `json:"content_path,omitempty"`
+	ManifestPath        string   `json:"manifest_path,omitempty"`
+	ItemCount           int      `json:"item_count"`
+	SampleItemIDs       []string `json:"sample_item_ids,omitempty"`
+	CoexistenceAllowed  bool     `json:"coexistence_allowed"`
+	ManagementSupported bool     `json:"management_supported"`
+	Message             string   `json:"message,omitempty"`
 }
 
 func Discover(ctx context.Context) ([]Game, error) {
@@ -63,6 +75,7 @@ func Discover(ctx context.Context) ([]Game, error) {
 				BuildID:     values["buildid"],
 				State:       state,
 				Markers:     markers,
+				Workshop:    DetectWorkshop(lib.Path, appID),
 			}
 			if IsHelperApp(game.AppID, game.Name, game.InstallDir) {
 				continue
@@ -75,6 +88,44 @@ func Discover(ctx context.Context) ([]Game, error) {
 		return strings.ToLower(games[i].Name) < strings.ToLower(games[j].Name)
 	})
 	return games, nil
+}
+
+func DetectWorkshop(libraryPath, appID string) WorkshopInfo {
+	libraryPath = strings.TrimSpace(libraryPath)
+	appID = strings.TrimSpace(appID)
+	if libraryPath == "" || appID == "" {
+		return WorkshopInfo{}
+	}
+	contentPath := filepath.Join(libraryPath, "steamapps", "workshop", "content", appID)
+	manifestPath := filepath.Join(libraryPath, "steamapps", "workshop", "appworkshop_"+appID+".acf")
+	info := WorkshopInfo{}
+	if st, err := os.Stat(contentPath); err == nil && st.IsDir() {
+		info.Detected = true
+		info.ContentPath = filepath.ToSlash(contentPath)
+		entries, _ := os.ReadDir(contentPath)
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			id := strings.TrimSpace(entry.Name())
+			if id == "" {
+				continue
+			}
+			info.ItemCount++
+			if len(info.SampleItemIDs) < 12 {
+				info.SampleItemIDs = append(info.SampleItemIDs, id)
+			}
+		}
+		sort.Strings(info.SampleItemIDs)
+	}
+	if st, err := os.Stat(manifestPath); err == nil && !st.IsDir() {
+		info.Detected = true
+		info.ManifestPath = filepath.ToSlash(manifestPath)
+	}
+	if info.Detected && info.Message == "" {
+		info.Message = "Steam Workshop content is present for this app."
+	}
+	return info
 }
 
 func DiscoverLibraries() ([]Library, error) {

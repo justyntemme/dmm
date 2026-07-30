@@ -21,7 +21,19 @@
     library_path: string;
     state: string;
     markers?: string[];
+    steam_workshop?: SteamWorkshop;
     nexus_domains?: string[];
+  };
+
+  type SteamWorkshop = {
+    detected: boolean;
+    content_path?: string;
+    manifest_path?: string;
+    item_count: number;
+    sample_item_ids?: string[];
+    coexistence_allowed: boolean;
+    management_supported: boolean;
+    message?: string;
   };
 
   type Profile = {
@@ -208,6 +220,7 @@
   };
 
   type GameDiagnostics = {
+    steam_workshop?: SteamWorkshop;
     runtime_requirements?: RuntimeRequirement[];
     validation_warnings?: string[];
   };
@@ -295,6 +308,11 @@
   $: actionItems = jobs.filter((job) => ["pending-import", "installer-choice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
+  $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
+    ? gameDiagnostics.steam_workshop
+    : selectedGame?.steam_workshop?.detected
+      ? selectedGame.steam_workshop
+      : null;
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
@@ -1979,6 +1997,27 @@
               {/each}
             </section>
           {/if}
+          {#if selectedWorkshop}
+            <section class="requirement-list" aria-label="Steam Workshop state">
+              <div class="panel-heading compact-heading">
+                <h3>Steam Workshop</h3>
+                <span>{selectedWorkshop.item_count} item{selectedWorkshop.item_count === 1 ? "" : "s"}</span>
+              </div>
+              <article class:requirement-missing={!selectedWorkshop.coexistence_allowed}>
+                <div>
+                  <strong>{selectedWorkshop.coexistence_allowed ? "Workshop content detected" : "Workshop content needs review"}</strong>
+                  <p>{selectedWorkshop.message ?? "Steam Workshop content is present for this game."}</p>
+                  <ul class="requirement-details">
+                    {#if selectedWorkshop.content_path}<li>{selectedWorkshop.content_path}</li>{/if}
+                    {#if selectedWorkshop.manifest_path}<li>{selectedWorkshop.manifest_path}</li>{/if}
+                    {#if selectedWorkshop.sample_item_ids?.length}<li>Sample items: {selectedWorkshop.sample_item_ids.join(", ")}</li>{/if}
+                  </ul>
+                  <small>{selectedWorkshop.management_supported ? "Workshop management is supported by this extension." : "DMM leaves Workshop subscription and enable state to Steam for now."}</small>
+                </div>
+                <span>{selectedWorkshop.coexistence_allowed ? "External" : "Review"}</span>
+              </article>
+            </section>
+          {/if}
           {#if visibleValidationWarnings.length}
             <section class="requirement-list" aria-label="Validation warnings">
               <div class="panel-heading compact-heading">
@@ -2001,7 +2040,7 @@
                 <span>{marker}</span>
               {/each}
             </div>
-          {:else if !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
+          {:else if !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
             <p class="hint">No review markers for this game.</p>
           {/if}
         </article>

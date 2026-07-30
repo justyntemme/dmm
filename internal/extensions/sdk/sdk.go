@@ -20,6 +20,7 @@ type RegistrationFunc func(Registrar)
 
 type Registrar interface {
 	RegisterGame(GameRegistration)
+	RegisterSteamWorkshop(SteamWorkshopSpec)
 	RegisterInstaller(installplan.InstallerSpec)
 	RegisterInstallerChoice(InstallerChoiceSpec)
 	RegisterModType(installplan.ModTypeSpec)
@@ -40,6 +41,18 @@ type GameRegistration struct {
 	NexusDomains []string
 	VortexGameID string
 	Deployment   installplan.DeploymentSpec
+	Workshop     SteamWorkshopSpec
+}
+
+type SteamWorkshopSpec struct {
+	AllowCoexistence bool
+	Actions          []SteamWorkshopActionSpec
+}
+
+type SteamWorkshopActionSpec struct {
+	ID   string
+	Name string
+	Kind string
 }
 
 type RuntimeDependencySpec struct {

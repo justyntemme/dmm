@@ -72,3 +72,32 @@ func TestDetectExternalMarkers(t *testing.T) {
 		t.Fatalf("markers = %v", markers)
 	}
 }
+
+func TestDetectWorkshop(t *testing.T) {
+	library := t.TempDir()
+	content := filepath.Join(library, "steamapps", "workshop", "content", "377160")
+	if err := os.MkdirAll(filepath.Join(content, "12345"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(content, "67890"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(library, "steamapps", "workshop", "appworkshop_377160.acf")
+	if err := os.WriteFile(manifest, []byte(`"AppWorkshop" {}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	info := DetectWorkshop(library, "377160")
+	if !info.Detected {
+		t.Fatalf("workshop not detected: %+v", info)
+	}
+	if info.ItemCount != 2 {
+		t.Fatalf("item count = %d, want 2", info.ItemCount)
+	}
+	if info.ContentPath == "" || info.ManifestPath == "" {
+		t.Fatalf("paths missing: %+v", info)
+	}
+	if len(info.SampleItemIDs) != 2 || info.SampleItemIDs[0] != "12345" || info.SampleItemIDs[1] != "67890" {
+		t.Fatalf("sample ids = %+v", info.SampleItemIDs)
+	}
+}

@@ -36,6 +36,9 @@ func Register(r sdk.Registrar) {
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
+		Workshop: sdk.SteamWorkshopSpec{
+			AllowCoexistence: true,
+		},
 	})
 	for _, modType := range modTypes() {
 		r.RegisterModType(modType)
