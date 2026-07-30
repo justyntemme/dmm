@@ -21,6 +21,7 @@ type Extension struct {
 
 	InstallPlan         installplan.GameSpec
 	RuntimeRequirements gamehandler.GameSpec
+	InstallerChoices    []sdk.InstallerChoiceSpec
 	LaunchTools         []sdk.LaunchToolSpec
 	PluginActivations   []sdk.PluginActivationSpec
 	Sources             []sdk.SourceRef
@@ -31,6 +32,7 @@ type Extension struct {
 
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
+type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
@@ -49,6 +51,7 @@ type ExtensionSummary struct {
 type ExtensionCapabilities struct {
 	ModTypes            []FeatureSummary `json:"mod_types,omitempty"`
 	Installers          []FeatureSummary `json:"installers,omitempty"`
+	InstallerChoices    []FeatureSummary `json:"installer_choices,omitempty"`
 	RuntimeRequirements []FeatureSummary `json:"runtime_requirements,omitempty"`
 	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
@@ -164,6 +167,20 @@ func (r Registry) NexusDomainsForSteamAppID(appID string) []string {
 
 func (r Registry) BuildInstallPlan(gameID, extractedRoot string) (installplan.Plan, error) {
 	return r.installPlans.Build(gameID, extractedRoot)
+}
+
+func (r Registry) InstallerChoiceForSteamApp(appID, kind string) (InstallerChoiceSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return InstallerChoiceSpec{}, false
+	}
+	kind = canonical(kind)
+	for _, spec := range extension.InstallerChoices {
+		if canonical(spec.Kind) == kind {
+			return spec, true
+		}
+	}
+	return InstallerChoiceSpec{}, false
 }
 
 func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, string) {
@@ -301,6 +318,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, installer := range extension.InstallPlan.Installers {
 		summary.Capabilities.Installers = append(summary.Capabilities.Installers, FeatureSummary{ID: installer.ID, Name: installer.VortexInstallerID})
 	}
+	for _, choice := range extension.InstallerChoices {
+		summary.Capabilities.InstallerChoices = append(summary.Capabilities.InstallerChoices, FeatureSummary{ID: choice.ID, Name: choice.Kind})
+	}
 	for _, requirement := range extension.RuntimeRequirements.RuntimeRequirements {
 		summary.Capabilities.RuntimeRequirements = append(summary.Capabilities.RuntimeRequirements, FeatureSummary{ID: requirement.ID, Name: requirement.Name})
 	}
@@ -321,6 +341,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	sortFeatureSummaries(summary.Capabilities.ModTypes)
 	sortFeatureSummaries(summary.Capabilities.Installers)
+	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)

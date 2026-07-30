@@ -1103,11 +1103,11 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
-		AppID:       "413150",
-		Name:        "Stardew Valley",
-		InstallDir:  "Stardew Valley",
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
 		LibraryPath: "/steam",
-		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
 		State:       "clean_candidate",
 	}}); err != nil {
 		t.Fatal(err)
@@ -1144,12 +1144,12 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/999")
+	job := srv.jobs.Create("pending-import", "Install request: fallout4/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; approve install")
 	srv.rememberPendingImport(job.ID, pendingImport{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
-			GameDomain: "stardewvalley",
+			GameDomain: "fallout4",
 			ModID:      "999",
 			FileID:     "1000",
 		},
@@ -1172,7 +1172,7 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	if _, ok := srv.pendingImports[job.ID]; ok {
 		t.Fatalf("pending import %s was not forgotten after installer choice capture", job.ID)
 	}
-	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1186,7 +1186,7 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	if choiceJob.Status != jobs.StatusWaiting || choiceJob.Type != "installer-choice" {
 		t.Fatalf("installer choice job = %+v", choiceJob)
 	}
-	if choiceJob.Payload["app_id"] != "413150" || choiceJob.Payload["candidate_id"] != strconv.FormatInt(candidates[0].ID, 10) || choiceJob.Payload["mod_id"] != "999" {
+	if choiceJob.Payload["app_id"] != "377160" || choiceJob.Payload["candidate_id"] != strconv.FormatInt(candidates[0].ID, 10) || choiceJob.Payload["mod_id"] != "999" {
 		t.Fatalf("installer choice payload = %+v", choiceJob.Payload)
 	}
 }
@@ -1729,11 +1729,11 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
-		AppID:       "413150",
-		Name:        "Stardew Valley",
-		InstallDir:  "Stardew Valley",
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
 		LibraryPath: "/steam",
-		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
 		State:       "clean_candidate",
 	}}); err != nil {
 		t.Fatal(err)
@@ -1782,10 +1782,10 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-		SteamAppID: "413150",
+		SteamAppID: "377160",
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
-			GameDomain: "stardewvalley",
+			GameDomain: "fallout4",
 			ModID:      "999",
 			FileID:     "1000",
 		},
@@ -1799,9 +1799,9 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	choiceJob := srv.ensureInstallerChoiceJob("413150", candidate)
+	choiceJob := srv.ensureInstallerChoiceJob("377160", candidate)
 
-	saveReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/choices", bytes.NewBufferString(`{"selections":{"step-1-group-1":["step-1-group-1-plugin-1"]}}`))
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/games/377160/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/choices", bytes.NewBufferString(`{"selections":{"step-1-group-1":["step-1-group-1-plugin-1"]}}`))
 	saveReq.Header.Set("Content-Type", "application/json")
 	saveReq.RemoteAddr = "127.0.0.1:1"
 	saveRec := httptest.NewRecorder()
@@ -1810,7 +1810,7 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 		t.Fatalf("save status = %d, body = %s", saveRec.Code, saveRec.Body.String())
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/games/377160/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -1827,7 +1827,7 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	if body.Job.ID != choiceJob.ID || body.Job.Status != jobs.StatusCompleted {
 		t.Fatalf("apply job = %+v, existing choice job = %+v", body.Job, choiceJob)
 	}
-	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1839,10 +1839,26 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 			t.Fatalf("missing staged file %s: %v", rel, err)
 		}
 	}
+	manifest, err := parseStagedManifest(mods[0].ManifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.ModType != "fallout4-data-root" || manifest.PlannerID != "vortex:fallout4:fomod" {
+		t.Fatalf("manifest = %+v", manifest)
+	}
+	foundDataTarget := false
+	for _, file := range manifest.Files {
+		if file.Path == "textures/variant.txt" && file.TargetRelative == "Data/textures/variant.txt" {
+			foundDataTarget = true
+		}
+	}
+	if !foundDataTarget {
+		t.Fatalf("manifest files missing Data target = %+v", manifest.Files)
+	}
 	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "Options", "Low", "variant.txt")); !os.IsNotExist(err) {
 		t.Fatalf("unselected option was staged: %v", err)
 	}
-	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1857,11 +1873,11 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	srv.cfg.Install.AutoEnableInstalledMods = true
 	srv.cfgMu.Unlock()
 
-	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	gamePath := filepath.Join(t.TempDir(), "Fallout 4")
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
-		AppID:       "413150",
-		Name:        "Stardew Valley",
-		InstallDir:  "Stardew Valley",
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
 		LibraryPath: "/steam",
 		Path:        gamePath,
 		State:       "clean_candidate",
@@ -1872,7 +1888,7 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	if err := archive.CreateTestZip(archivePath, map[string]string{
 		"fomod/ModuleConfig.xml": `<config>
   <moduleName>Choice Mod</moduleName>
-  <requiredInstallFiles><file source="Core/base.txt" destination="Mods/Choice/base.txt" /></requiredInstallFiles>
+  <requiredInstallFiles><file source="Core/base.txt" destination="Choice/base.txt" /></requiredInstallFiles>
 </config>`,
 		"Core/base.txt":  "base",
 		"fomod/info.xml": "<fomod />",
@@ -1892,10 +1908,10 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-		SteamAppID: "413150",
+		SteamAppID: "377160",
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
-			GameDomain: "stardewvalley",
+			GameDomain: "fallout4",
 			ModID:      "999",
 			FileID:     "1000",
 		},
@@ -1910,7 +1926,7 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/games/377160/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -1927,18 +1943,18 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	if body.Job.Status != jobs.StatusCompleted || !strings.Contains(body.Job.Message, "enabled, and deployed") {
 		t.Fatalf("job = %+v", body.Job)
 	}
-	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(mods) != 1 || !mods[0].Enabled {
 		t.Fatalf("mods = %+v", mods)
 	}
-	target := filepath.Join(gamePath, "Mods", "Choice", "base.txt")
+	target := filepath.Join(gamePath, "Data", "Choice", "base.txt")
 	if _, err := os.Readlink(target); err != nil {
 		t.Fatalf("expected auto-deployed symlink: %v", err)
 	}
-	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
 	}

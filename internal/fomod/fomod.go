@@ -51,6 +51,12 @@ type FileEntry struct {
 	IsFolder    bool   `json:"is_folder,omitempty"`
 }
 
+type PlanOptions struct {
+	ModType    string
+	PlannerID  string
+	TargetRoot string
+}
+
 type configXML struct {
 	ModuleName           string           `xml:"moduleName"`
 	RequiredInstallFiles fileContainerXML `xml:"requiredInstallFiles"`
@@ -205,26 +211,38 @@ func DefaultSelections(installer Installer) map[string][]string {
 	return out
 }
 
-func BuildPlan(gameID, root string, installer Installer, selections map[string][]string) (installplan.Plan, error) {
+func BuildPlan(gameID, root string, installer Installer, selections map[string][]string, options PlanOptions) (installplan.Plan, error) {
 	if strings.TrimSpace(gameID) == "" {
 		return installplan.Plan{}, errors.New("game id is required")
 	}
 	if strings.TrimSpace(root) == "" {
 		return installplan.Plan{}, errors.New("extracted root is required")
 	}
+	modType := strings.TrimSpace(options.ModType)
+	if modType == "" {
+		return installplan.Plan{}, errors.New("FOMOD plan mod type is required")
+	}
+	plannerID := strings.TrimSpace(options.PlannerID)
+	if plannerID == "" {
+		plannerID = "fomod"
+	}
+	targetRoot, err := cleanOptionalRoot(options.TargetRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
 	if selections == nil {
 		selections = DefaultSelections(installer)
 	}
 	plan := installplan.Plan{
 		GameID:       strings.TrimSpace(gameID),
-		ModType:      "fomod",
-		PlannerID:    "fomod",
+		ModType:      modType,
+		PlannerID:    plannerID,
 		NameSource:   installplan.NameSourceArchive,
 		DetectedFrom: []installplan.Detection{{Kind: "fomod-module-config", Path: installer.ModuleConfig, Reason: "FOMOD ModuleConfig.xml parsed"}},
 		Instructions: []installplan.Instruction{},
 	}
 	for _, entry := range installer.RequiredFiles {
-		if err := appendEntryInstructions(&plan, root, entry); err != nil {
+		if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
 			return installplan.Plan{}, err
 		}
 	}
@@ -236,7 +254,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 			}
 			for _, plugin := range selected {
 				for _, entry := range plugin.Files {
-					if err := appendEntryInstructions(&plan, root, entry); err != nil {
+					if err := appendEntryInstructions(&plan, root, targetRoot, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
@@ -281,7 +299,7 @@ func selectedPlugins(group Group, ids []string) ([]Plugin, error) {
 	return out, nil
 }
 
-func appendEntryInstructions(plan *installplan.Plan, root string, entry FileEntry) error {
+func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, entry FileEntry) error {
 	sourceRel, err := cleanRel(entry.Source)
 	if err != nil {
 		return err
@@ -316,7 +334,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, entry FileEntr
 				Kind:            installplan.InstructionKindCopy,
 				SourcePath:      path,
 				StagingRelative: targetRel,
-				TargetRelative:  targetRel,
+				TargetRelative:  targetRelative(targetRoot, targetRel),
 			})
 			return nil
 		})
@@ -325,9 +343,30 @@ func appendEntryInstructions(plan *installplan.Plan, root string, entry FileEntr
 		Kind:            installplan.InstructionKindCopy,
 		SourcePath:      sourcePath,
 		StagingRelative: destRel,
-		TargetRelative:  destRel,
+		TargetRelative:  targetRelative(targetRoot, destRel),
 	})
 	return nil
+}
+
+func targetRelative(targetRoot, destRel string) string {
+	targetRoot = strings.TrimSpace(filepath.ToSlash(targetRoot))
+	destRel = strings.TrimSpace(filepath.ToSlash(destRel))
+	if targetRoot == "" || pathHasRoot(destRel, targetRoot) {
+		return destRel
+	}
+	return filepath.ToSlash(filepath.Join(targetRoot, destRel))
+}
+
+func pathHasRoot(rel, root string) bool {
+	rel = strings.Trim(filepath.ToSlash(rel), "/")
+	root = strings.Trim(filepath.ToSlash(root), "/")
+	if root == "" {
+		return false
+	}
+	if strings.EqualFold(rel, root) {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(rel), strings.ToLower(root)+"/")
 }
 
 func findModuleConfig(root string) (string, error) {
@@ -417,6 +456,14 @@ func cleanRel(value string) (string, error) {
 		return "", errors.New("path traversal is not allowed")
 	}
 	return cleaned, nil
+}
+
+func cleanOptionalRoot(value string) (string, error) {
+	value = strings.TrimSpace(filepath.ToSlash(value))
+	if value == "" {
+		return "", nil
+	}
+	return cleanRel(value)
 }
 
 func decodeXML(data []byte) (string, error) {

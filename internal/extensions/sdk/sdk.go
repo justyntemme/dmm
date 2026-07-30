@@ -16,6 +16,7 @@ type RegistrationFunc func(Registrar)
 type Registrar interface {
 	RegisterGame(GameRegistration)
 	RegisterInstaller(installplan.InstallerSpec)
+	RegisterInstallerChoice(InstallerChoiceSpec)
 	RegisterModType(installplan.ModTypeSpec)
 	RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec)
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
@@ -44,6 +45,14 @@ type RuntimeDependencySpec struct {
 type SourceRef struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+}
+
+type InstallerChoiceSpec struct {
+	ID         string
+	Name       string
+	Kind       string
+	ModType    string
+	TargetRoot string
 }
 
 type LaunchToolSpec struct {

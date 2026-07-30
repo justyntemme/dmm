@@ -60,7 +60,10 @@ func TestParseAndBuildPlanUsesDefaultSelections(t *testing.T) {
 		t.Fatalf("defaults = %+v", defaults)
 	}
 
-	plan, err := BuildPlan("example", root, installer, defaults)
+	plan, err := BuildPlan("example", root, installer, defaults, PlanOptions{
+		ModType:   "example-mod",
+		PlannerID: "example:fomod",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +78,41 @@ func TestParseAndBuildPlanUsesDefaultSelections(t *testing.T) {
 	}
 	if targets["Options/Low/variant.txt"] {
 		t.Fatalf("unselected option was included: %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanAppliesExtensionTargetRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="loose.esp" />
+    <file source="already-data.esp" destination="Data/already-data.esp" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "loose.esp"), "plugin")
+	writeFile(t, filepath.Join(root, "already-data.esp"), "plugin")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("skyrimse", root, installer, nil, PlanOptions{
+		ModType:    "skyrimse-data-root",
+		PlannerID:  "vortex:skyrimse:fomod",
+		TargetRoot: "Data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]string{}
+	for _, instruction := range plan.Instructions {
+		targets[instruction.StagingRelative] = instruction.TargetRelative
+	}
+	if targets["loose.esp"] != "Data/loose.esp" {
+		t.Fatalf("loose target = %q, plan = %+v", targets["loose.esp"], plan.Instructions)
+	}
+	if targets["Data/already-data.esp"] != "Data/already-data.esp" {
+		t.Fatalf("prefixed target = %q, plan = %+v", targets["Data/already-data.esp"], plan.Instructions)
 	}
 }
 
@@ -103,6 +141,9 @@ func TestBuildPlanValidatesSelectExactlyOne(t *testing.T) {
 	group := installer.Steps[0].Groups[0]
 	_, err = BuildPlan("example", root, installer, map[string][]string{
 		group.ID: {group.Plugins[0].ID, group.Plugins[1].ID},
+	}, PlanOptions{
+		ModType:   "example-mod",
+		PlannerID: "example:fomod",
 	})
 	if err == nil {
 		t.Fatal("expected selection validation to fail")

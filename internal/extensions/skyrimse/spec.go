@@ -33,6 +33,13 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+		ID:         "vortex:skyrimse:fomod",
+		Name:       "FOMOD installer",
+		Kind:       "fomod",
+		ModType:    "skyrimse-data-root",
+		TargetRoot: "Data",
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "skse64",
 		Name:               "Skyrim Script Extender 64",

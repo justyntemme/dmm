@@ -59,6 +59,18 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	choice, ok := registry.InstallerChoiceForSteamApp(skyrimse.SteamAppID, "fomod")
+	if !ok {
+		t.Fatal("missing FOMOD installer choice capability")
+	}
+	if choice.ModType != "skyrimse-data-root" || choice.TargetRoot != "Data" {
+		t.Fatalf("choice = %+v", choice)
+	}
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {

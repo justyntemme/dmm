@@ -1839,6 +1839,10 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if inspection.InstallerKind != "fomod" {
 		return storage.InstalledMod{}, errors.New("only FOMOD installer candidates are supported")
 	}
+	choiceSpec, ok := s.games.InstallerChoiceForSteamApp(candidate.SteamAppID, "fomod")
+	if !ok {
+		return storage.InstalledMod{}, installplan.Unsupported("the " + candidate.SteamAppID + " extension does not support FOMOD installer choices yet")
+	}
 	var installer fomod.Installer
 	if strings.TrimSpace(candidate.InstallerJSON) != "" {
 		if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
@@ -1850,7 +1854,11 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 			return storage.InstalledMod{}, err
 		}
 	}
-	plan, err := fomod.BuildPlan(candidate.SteamAppID, extractPath, installer, selections)
+	plan, err := fomod.BuildPlan(candidate.SteamAppID, extractPath, installer, selections, fomod.PlanOptions{
+		ModType:    choiceSpec.ModType,
+		PlannerID:  choiceSpec.ID,
+		TargetRoot: choiceSpec.TargetRoot,
+	})
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
@@ -3550,6 +3558,9 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 	if inspection.RequiresInstaller {
 		s.logger.Info("pending import requires installer UI", "job_id", jobID, "installer_kind", inspection.InstallerKind, "extract_path", extractPath)
 		if inspection.InstallerKind == "fomod" {
+			if _, ok := s.games.InstallerChoiceForSteamApp(appID, "fomod"); !ok {
+				return storage.InstalledMod{}, installplan.Unsupported("the " + appID + " extension does not support FOMOD installer choices yet")
+			}
 			installer, err := fomod.Parse(extractPath)
 			if err != nil {
 				return storage.InstalledMod{}, installplan.Unsupported("fomod installer could not be parsed: " + err.Error())

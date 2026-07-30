@@ -26,6 +26,13 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ModType:           "mod",
 				InstructionMode:   installplan.InstructionManifestFolders,
 			})
+			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+				ID:         "sample:fomod",
+				Name:       "FOMOD installer",
+				Kind:       "fomod",
+				ModType:    "mod",
+				TargetRoot: "Mods",
+			})
 			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 				ID:       "sample-loader",
 				Name:     "Sample Loader",
@@ -94,6 +101,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "sample:installer" {
 		t.Fatalf("installer capabilities = %+v", summary.Capabilities.Installers)
 	}
+	if len(summary.Capabilities.InstallerChoices) != 1 || summary.Capabilities.InstallerChoices[0].ID != "sample:fomod" {
+		t.Fatalf("installer choice capabilities = %+v", summary.Capabilities.InstallerChoices)
+	}
+	if choice, ok := registry.InstallerChoiceForSteamApp("100", "fomod"); !ok || choice.TargetRoot != "Mods" {
+		t.Fatalf("installer choice lookup = %+v %v", choice, ok)
+	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
 	}
@@ -122,6 +135,12 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 					Destination:      "ok.json",
 				}},
 			})
+			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+				ID:         "bad:fomod",
+				Kind:       "fomod",
+				ModType:    "missing-choice-type",
+				TargetRoot: "../Data",
+			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "tool",
 				Name:               "Tool",
@@ -144,6 +163,8 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"mod type mod target root: path traversal is not allowed",
 		"references undeclared mod type missing-type",
 		"generated source path: absolute path is not allowed",
+		"installer choice bad:fomod references undeclared mod type missing-choice-type",
+		"installer choice bad:fomod target root: path traversal is not allowed",
 		"launch tool tool executable path: path traversal is not allowed",
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",

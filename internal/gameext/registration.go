@@ -52,6 +52,13 @@ func (r *Registrar) RegisterInstaller(spec installplan.InstallerSpec) {
 	r.extension.InstallPlan.Installers = append(r.extension.InstallPlan.Installers, spec)
 }
 
+func (r *Registrar) RegisterInstallerChoice(spec sdk.InstallerChoiceSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.InstallerChoices = append(r.extension.InstallerChoices, spec)
+}
+
 func (r *Registrar) RegisterModType(spec installplan.ModTypeSpec) {
 	r.extension.InstallPlan.ModTypes = append(r.extension.InstallPlan.ModTypes, spec)
 }
@@ -124,6 +131,7 @@ func validateExtension(extension Extension) error {
 		errs = append(errs, errors.New("extension must register at least one Nexus domain"))
 	}
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
+	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
@@ -181,6 +189,36 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 			if err := validateRelativePath(policy.TargetRelative); err != nil {
 				errs = append(errs, errors.New("installer "+id+" target policy path: "+err.Error()))
 			}
+		}
+	}
+	return errs
+}
+
+func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []installplan.ModTypeSpec) []error {
+	var errs []error
+	declaredModTypes := map[string]struct{}{}
+	for _, modType := range modTypes {
+		if id := strings.TrimSpace(modType.ID); id != "" {
+			declaredModTypes[id] = struct{}{}
+		}
+	}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("installer choice id is required"))
+			continue
+		}
+		if strings.TrimSpace(spec.Kind) == "" {
+			errs = append(errs, errors.New("installer choice "+id+" kind is required"))
+		}
+		modType := strings.TrimSpace(spec.ModType)
+		if modType == "" {
+			errs = append(errs, errors.New("installer choice "+id+" mod type is required"))
+		} else if _, ok := declaredModTypes[modType]; !ok {
+			errs = append(errs, errors.New("installer choice "+id+" references undeclared mod type "+modType))
+		}
+		if err := validateRelativeOrRoot(spec.TargetRoot); err != nil {
+			errs = append(errs, errors.New("installer choice "+id+" target root: "+err.Error()))
 		}
 	}
 	return errs

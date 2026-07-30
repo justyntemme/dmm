@@ -32,6 +32,13 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+		ID:         "vortex:fallout4:fomod",
+		Name:       "FOMOD installer",
+		Kind:       "fomod",
+		ModType:    "fallout4-data-root",
+		TargetRoot: "Data",
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "f4se",
 		Name:               "Fallout 4 Script Extender",
