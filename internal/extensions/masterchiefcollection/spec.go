@@ -1,0 +1,350 @@
+package masterchiefcollection
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+)
+
+const (
+	SteamAppID   = "976730"
+	VortexGameID = "halothemasterchiefcollection"
+	Name         = "Halo: The Master Chief Collection"
+
+	plugAndPlayModType = "halo-mcc-plug-and-play-modtype"
+	rootModType        = "halo-mcc-root"
+
+	modManifestFile = "ModManifest.txt"
+)
+
+func Extension() sdk.Extension {
+	return sdk.Extension{
+		ID:       VortexGameID,
+		Name:     Name,
+		Version:  "0.1.0",
+		BuildID:  "first-party-go",
+		Register: Register,
+	}
+}
+
+func Register(r sdk.Registrar) {
+	r.RegisterGame(sdk.GameRegistration{
+		SteamAppIDs:  []string{SteamAppID},
+		NexusDomains: []string{VortexGameID},
+		VortexGameID: VortexGameID,
+		Deployment: installplan.DeploymentSpec{
+			AllowNeedsReviewState: true,
+		},
+	})
+	r.RegisterModType(installplan.ModTypeSpec{ID: plugAndPlayModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: rootModType, TargetRoot: ""})
+	for _, installer := range installers() {
+		r.RegisterInstaller(installer)
+	}
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "haloassemblytool",
+		Name:               "Assembly",
+		ExecutableRelative: "Assembly.exe",
+		RequiredFiles:      []string{"Assembly.exe"},
+	})
+	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+		ID:       "mcc-build-tag",
+		Name:     "build_tag.txt",
+		Provider: gameVersion,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Update Halo MCC ModManifest.txt for managed plug-and-play mods",
+		Handler: willDeployManifest,
+	})
+	for _, ref := range sources() {
+		r.RegisterSource(ref)
+	}
+}
+
+func installers() []installplan.InstallerSpec {
+	return []installplan.InstallerSpec{
+		{
+			ID:                "vortex:masterchiefcollection:plug-and-play",
+			VortexInstallerID: "mcc-plug-and-play-installer",
+			Priority:          15,
+			ModType:           plugAndPlayModType,
+			NameSource:        installplan.NameSourceManifestDisplay,
+			CustomMatch:       matchPlugAndPlay,
+			CustomBuild:       buildPlugAndPlay,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+		{
+			ID:                "vortex:masterchiefcollection:mod-config",
+			VortexInstallerID: "masterchiefmodconfiginstaller",
+			Priority:          20,
+			ModType:           rootModType,
+			NameSource:        installplan.NameSourceArchive,
+			CustomMatch:       matchModConfig,
+			CustomBuild:       buildModConfig,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+		{
+			ID:                "vortex:masterchiefcollection:game-folder",
+			VortexInstallerID: "masterchiefinstaller",
+			Priority:          25,
+			ModType:           rootModType,
+			NameSource:        installplan.NameSourceArchive,
+			CustomMatch:       matchHaloGameFolder,
+			CustomBuild:       buildHaloGameFolder,
+			InstructionMode:   installplan.InstructionCustom,
+		},
+	}
+}
+
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return sdk.GameVersionResult{}, nil
+	}
+	data, err := os.ReadFile(filepath.Join(gamePath, "build_tag.txt"))
+	if err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	line := strings.TrimSpace(strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")[0])
+	return sdk.GameVersionResult{Version: line, Source: "build_tag.txt"}, nil
+}
+
+func willDeployManifest(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	paths := enabledPlugAndPlayStagingPaths(input.Mods)
+	if len(paths) == 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Halo MCC ModManifest.txt skipped because this profile has no enabled plug-and-play mods."}}, nil
+	}
+	configRoot, err := protonMCCConfigRoot(input)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	targetPath := filepath.Join(configRoot, modManifestFile)
+	managed, managedOK := managedRestoreForTarget(input.ManagedFiles, targetPath)
+	base, restoreContent, err := manifestBaseContent(targetPath, managed, managedOK)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	desiredLines := appendManifestLines(base, paths)
+	next := strings.Join(desiredLines, "\r\n")
+	current := ""
+	if data, err := os.ReadFile(targetPath); err == nil {
+		current = strings.TrimRight(string(data), "\r\n")
+	} else if !os.IsNotExist(err) {
+		return sdk.EventHandlerResult{}, err
+	}
+	if current == next && !managedOK {
+		return sdk.EventHandlerResult{Messages: []string{"Halo MCC ModManifest.txt already includes DMM-managed plug-and-play staging paths."}}, nil
+	}
+	sourcePath, err := writeHookFile(input.WorkDir, "mcc-manifest", modManifestFile, []byte(next))
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	mapping := deploy.FileMapping{
+		SourcePath:     sourcePath,
+		TargetRoot:     configRoot,
+		TargetRelative: modManifestFile,
+		TargetPolicy:   deploy.TargetPolicyPatchExisting,
+		Strategy:       deploy.StrategyCopy,
+		ChecksumSHA256: "",
+		SourceRelative: "",
+		InstalledModID: 0,
+		ModID:          "halo-mcc-modmanifest",
+		Priority:       -1,
+	}
+	if managedOK {
+		mapping.RestorePath = managed.RestorePath
+	} else if len(restoreContent) > 0 {
+		restorePath, err := writeHookFile(input.WorkDir, filepath.Join("mcc-manifest", "restore"), modManifestFile, restoreContent)
+		if err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		mapping.RestorePath = restorePath
+	}
+	return sdk.EventHandlerResult{
+		Mappings: []deploy.FileMapping{mapping},
+		Messages: []string{"Halo MCC ModManifest.txt generated from enabled DMM plug-and-play mods."},
+	}, nil
+}
+
+func enabledPlugAndPlayStagingPaths(mods []sdk.DeploymentMod) []string {
+	seen := map[string]struct{}{}
+	var paths []string
+	for _, mod := range mods {
+		if !mod.Enabled || !strings.EqualFold(strings.TrimSpace(mod.ModType), plugAndPlayModType) {
+			continue
+		}
+		path := protonWindowsPath(mod.StagingPath)
+		if path == "" {
+			continue
+		}
+		key := strings.ToLower(path)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func manifestBaseContent(targetPath string, managed deploy.AppliedFile, managedOK bool) ([]string, []byte, error) {
+	if managedOK && strings.TrimSpace(managed.RestorePath) != "" {
+		data, err := os.ReadFile(managed.RestorePath)
+		if err != nil {
+			return nil, nil, err
+		}
+		return manifestLines(data), nil, nil
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	return manifestLines(data), data, nil
+}
+
+func manifestLines(data []byte) []string {
+	body := strings.ReplaceAll(string(data), "\r\n", "\n")
+	body = strings.ReplaceAll(body, "\r", "\n")
+	var lines []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func appendManifestLines(existing, additions []string) []string {
+	out := make([]string, 0, len(existing)+len(additions))
+	seen := map[string]struct{}{}
+	for _, line := range existing {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key := strings.ToLower(line)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, line)
+	}
+	for _, line := range additions {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key := strings.ToLower(line)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, line)
+	}
+	return out
+}
+
+func protonMCCConfigRoot(input sdk.EventHandlerInput) (string, error) {
+	appID := strings.TrimSpace(input.AppID)
+	if appID == "" || strings.ContainsAny(appID, `/\`) || appID == "." || appID == ".." {
+		return "", errors.New("Steam app id is required to resolve Halo MCC Proton config path")
+	}
+	libraryPath := strings.TrimSpace(input.LibraryPath)
+	if libraryPath == "" {
+		libraryPath = inferSteamLibraryPath(input.GamePath)
+	}
+	if libraryPath == "" {
+		return "", errors.New("Steam library path is required to resolve Halo MCC Proton config path")
+	}
+	return filepath.Join(
+		libraryPath,
+		"steamapps",
+		"compatdata",
+		appID,
+		"pfx",
+		"drive_c",
+		"users",
+		"steamuser",
+		"AppData",
+		"LocalLow",
+		"MCC",
+		"Config",
+	), nil
+}
+
+func protonWindowsPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	path = filepath.Clean(path)
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return `Z:\` + strings.TrimLeft(strings.ReplaceAll(filepath.ToSlash(path), "/", `\`), `\`)
+}
+
+func managedRestoreForTarget(files []deploy.AppliedFile, targetPath string) (deploy.AppliedFile, bool) {
+	targetPath = filepath.Clean(targetPath)
+	for _, file := range files {
+		if strings.TrimSpace(file.RestorePath) == "" {
+			continue
+		}
+		if filepath.Clean(file.TargetPath) == targetPath {
+			return file, true
+		}
+	}
+	return deploy.AppliedFile{}, false
+}
+
+func writeHookFile(workDir, group, name string, contents []byte) (string, error) {
+	if strings.TrimSpace(workDir) == "" {
+		return "", errors.New("hook work directory is required")
+	}
+	path := filepath.Join(workDir, group, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func inferSteamLibraryPath(gamePath string) string {
+	gamePath = filepath.Clean(strings.TrimSpace(gamePath))
+	marker := string(filepath.Separator) + filepath.Join("steamapps", "common") + string(filepath.Separator)
+	idx := strings.Index(gamePath, marker)
+	if idx <= 0 {
+		return ""
+	}
+	return gamePath[:idx]
+}
+
+func sources() []sdk.SourceRef {
+	return []sdk.SourceRef{
+		{
+			Name: "Vortex Halo: The Master Chief Collection game extension",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-masterchiefcollection/src",
+		},
+	}
+}

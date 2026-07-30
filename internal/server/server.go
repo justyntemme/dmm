@@ -5986,6 +5986,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 		return gameext.EventHandlerResult{}, err
 	}
 	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
+		AppID:        game.SteamAppID,
 		GamePath:     game.GamePath,
 		LibraryPath:  game.LibraryPath,
 		ProfileID:    profileID,
@@ -6038,6 +6039,7 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 		return err
 	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
+		AppID:        appID,
 		GamePath:     game.GamePath,
 		LibraryPath:  game.LibraryPath,
 		ProfileID:    profileID,
