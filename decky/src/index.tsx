@@ -1308,11 +1308,17 @@ async function syncWorkshopActions() {
 }
 
 function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; closeModal: () => void; onApplied: () => void }) {
-  const installer = installerForCandidate(props.candidate);
+  const [candidate, setCandidate] = useState<InstallCandidate>(props.candidate);
+  const installer = installerForCandidate(candidate);
   const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const selectedChoices = selectionCount(selections);
+
+  useEffect(() => {
+    setCandidate(props.candidate);
+    setSelections(storedFomodSelections(props.candidate) ?? {});
+  }, [props.candidate.id]);
 
   function pluginSelected(group: FomodGroup, plugin: FomodPlugin) {
     return (selections[group.id] ?? []).includes(plugin.id);
@@ -1339,17 +1345,19 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
 
   async function saveChoices(nextSelections: Record<string, string[]>) {
     try {
-      const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string }>(
+      const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string; candidate?: InstallCandidate }>(
         "save_install_candidate_choices",
         props.appID,
-        props.candidate.id,
+        candidate.id,
         nextSelections
       );
       if (!result.ok) {
-        await logFrontendEvent("installer choice modal save failed", { app_id: props.appID, candidate_id: props.candidate.id, error: result.error || "" });
+        await logFrontendEvent("installer choice modal save failed", { app_id: props.appID, candidate_id: candidate.id, error: result.error || "" });
+        return;
       }
+      if (result.candidate) setCandidate(result.candidate);
     } catch (err) {
-      await logFrontendEvent("installer choice modal save threw", { app_id: props.appID, candidate_id: props.candidate.id, error: err instanceof Error ? err.message : String(err) });
+      await logFrontendEvent("installer choice modal save threw", { app_id: props.appID, candidate_id: candidate.id, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -1365,22 +1373,22 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
       const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>(
         "apply_install_candidate",
         props.appID,
-        props.candidate.id,
+        candidate.id,
         selections
       );
       if (!result.ok) {
         setMessage(result.error || "Unable to apply installer choices.");
-        await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: props.candidate.id, error: result.error || "" });
+        await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: candidate.id, error: result.error || "" });
         return;
       }
       if (result.result?.job) showJobToast(result.result.job);
-      await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: props.candidate.id });
+      await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: candidate.id });
       props.onApplied();
       props.closeModal();
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       setMessage(error);
-      await logFrontendEvent("installer choice modal apply threw", { app_id: props.appID, candidate_id: props.candidate.id, error });
+      await logFrontendEvent("installer choice modal apply threw", { app_id: props.appID, candidate_id: candidate.id, error });
     } finally {
       setBusy(false);
     }
@@ -1388,10 +1396,10 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
 
   return (
     <ConfirmModal
-      strTitle={props.candidate.name}
+      strTitle={candidate.name}
       strDescription={
         <div style={{ display: "grid", gap: "12px", maxHeight: "62vh", overflowY: "auto", paddingRight: "4px" }}>
-          <div style={{ color: "#a1a1aa" }}>{props.candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
+          <div style={{ color: "#a1a1aa" }}>{candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
           {selectedChoices > 0 && (
             <div style={{ border: "1px solid #365244", borderRadius: "6px", color: "#99f6e4", padding: "8px" }}>
               {selectedChoices} choice{selectedChoices === 1 ? "" : "s"} preselected from DMM's saved/default installer state.
@@ -1408,7 +1416,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
                     <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
                       <input
                         type={fomodGroupInputType(group)}
-                        name={`candidate-${props.candidate.id}-${group.id}`}
+                        name={`candidate-${candidate.id}-${group.id}`}
                         checked={pluginSelected(group, plugin)}
                         disabled={busy || fomodGroupType(group) === "selectall"}
                         onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}

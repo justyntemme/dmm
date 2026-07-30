@@ -1352,7 +1352,10 @@
       });
       if (!response.ok) {
         logClientEvent("installer choices save failed", { candidate_id: candidate.id, status: response.status });
+        return;
       }
+      const result = await response.json() as { candidate?: InstallCandidate };
+      if (result.candidate) replaceInstallCandidate(result.candidate);
     } catch (err) {
       logClientEvent("installer choices save failed", { candidate_id: candidate.id, error: err instanceof Error ? err.message : String(err) });
     }
@@ -1925,6 +1928,12 @@
       ...candidates,
       ...current.filter((candidate) => candidate.steam_app_id !== appID)
     ].sort((a, b) => b.id - a.id);
+  }
+
+  function replaceInstallCandidate(candidate: InstallCandidate) {
+    const replace = (items: InstallCandidate[]) => items.map((item) => (item.id === candidate.id ? candidate : item));
+    installCandidates = replace(installCandidates);
+    globalInstallCandidates = replace(globalInstallCandidates);
   }
 
   async function openActionItem(job: Job) {

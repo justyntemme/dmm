@@ -3223,6 +3223,156 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	}
 }
 
+func TestSaveInstallCandidateChoicesReturnsEvaluatedInstaller(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Conditional Choice Mod</moduleName>
+  <installSteps order="Explicit">
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="A">
+              <conditionFlags><flag name="variant">A</flag></conditionFlags>
+              <files><file source="a.txt" /></files>
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+            </plugin>
+            <plugin name="B">
+              <conditionFlags><flag name="variant">B</flag></conditionFlags>
+              <files><file source="b.txt" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+    <installStep name="Patch">
+      <visible><flagDependency flag="variant" value="B" /></visible>
+      <optionalFileGroups>
+        <group name="Patch" type="SelectAny">
+          <plugins>
+            <plugin name="Patch">
+              <files><file source="patch.txt" /></files>
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"a.txt":     "a",
+		"b.txt":     "b",
+		"patch.txt": "patch",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialInstallerJSON := srv.evaluatedInstallerJSON(context.Background(), "377160", "test-job", installer, nil)
+	var initialInstaller fomod.Installer
+	if err := json.Unmarshal([]byte(initialInstallerJSON), &initialInstaller); err != nil {
+		t.Fatal(err)
+	}
+	stepByName := func(installer fomod.Installer, name string) (fomod.Step, bool) {
+		for _, step := range installer.Steps {
+			if step.Name == name {
+				return step, true
+			}
+		}
+		return fomod.Step{}, false
+	}
+	patchStep, ok := stepByName(initialInstaller, "Patch")
+	if !ok || patchStep.Visible {
+		t.Fatalf("initial visibility = %+v", initialInstaller.Steps)
+	}
+	var variantGroupID string
+	var variantBID string
+	if variantStep, ok := stepByName(initialInstaller, "Variant"); ok {
+		for _, group := range variantStep.Groups {
+			if group.Name != "Variant" {
+				continue
+			}
+			variantGroupID = group.ID
+			for _, plugin := range group.Plugins {
+				if plugin.Name == "B" {
+					variantBID = plugin.ID
+				}
+			}
+		}
+	}
+	if variantGroupID == "" || variantBID == "" {
+		t.Fatalf("variant IDs were not parsed: %+v", initialInstaller.Steps)
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "377160",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		Name:          "Conditional Choice Mod",
+		ArchivePath:   archivePath,
+		ArchiveSHA256: "sum",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: initialInstallerJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saveBody, err := json.Marshal(map[string]any{
+		"selections": map[string][]string{variantGroupID: []string{variantBID}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/games/377160/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/choices", bytes.NewReader(saveBody))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveReq.RemoteAddr = "127.0.0.1:1"
+	saveRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("save status = %d, body = %s", saveRec.Code, saveRec.Body.String())
+	}
+	var body struct {
+		Candidate storage.InstallCandidate `json:"candidate"`
+	}
+	if err := json.Unmarshal(saveRec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	var updatedInstaller fomod.Installer
+	if err := json.Unmarshal([]byte(body.Candidate.InstallerJSON), &updatedInstaller); err != nil {
+		t.Fatal(err)
+	}
+	patchStep, ok = stepByName(updatedInstaller, "Patch")
+	if !ok || !patchStep.Visible {
+		t.Fatalf("updated visibility = %+v", updatedInstaller.Steps)
+	}
+	if !strings.Contains(body.Candidate.ChoicesJSON, variantBID) {
+		t.Fatalf("choices were not returned with candidate: %+v", body.Candidate)
+	}
+}
+
 func TestInstallerChoiceStateReusesExactFilePreset(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
