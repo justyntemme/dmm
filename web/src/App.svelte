@@ -598,11 +598,17 @@
       selectedGameRefreshTimer = null;
       selectedGameRefreshNeedsPreview = false;
       selectedGameRefreshNeedsJobs = false;
-      if (shouldRefreshJobs) {
-        jobs = await getJSON<Job[]>("/api/jobs");
+      try {
+        if (shouldRefreshJobs) {
+          jobs = await getJSON<Job[]>("/api/jobs");
+        }
+        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+        logClientEvent("selected game event refresh failed", { error });
+      } finally {
+        reconcileBusyState();
       }
-      await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
-      reconcileBusyState();
     }, 250);
   }
 
@@ -995,6 +1001,8 @@
       error = await response.text();
       return;
     }
+    installCandidates = [];
+    candidateSelections = {};
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
 
