@@ -998,7 +998,8 @@ h2 {
 }
 
 .deployment-summary div,
-.profile-summary div {
+.profile-summary div,
+.profile-summary button {
   display: grid;
   gap: 2px;
   min-height: 58px;
@@ -1006,6 +1007,17 @@ h2 {
   border-radius: 8px;
   padding: 8px;
   background: #20262e;
+}
+
+.profile-summary button {
+  cursor: pointer;
+  text-align: left;
+}
+
+.profile-summary button:focus-visible {
+  border-color: #76dfa6;
+  outline: 2px solid rgba(118, 223, 166, 0.35);
+  outline-offset: 2px;
 }
 
 .deployment-summary strong,

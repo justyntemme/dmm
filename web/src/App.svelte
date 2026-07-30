@@ -2216,7 +2216,10 @@
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <div><strong>{selectedGameActionItems.length}</strong><span>Actions</span></div>
+                <button type="button" on:click={() => (activeGameModule = "actions")}>
+                  <strong>{selectedGameActionItems.length}</strong>
+                  <span>Actions</span>
+                </button>
               </div>
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
