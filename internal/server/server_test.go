@@ -4208,6 +4208,56 @@ func TestDeployPlanIncludesDisabledLaunchToolProviderWhenRequired(t *testing.T) 
 	}
 }
 
+func TestBuildGameDeployPlanSkipsGamebryoActivationForNativeOnlyPlugins(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	libraryPath := filepath.Join(root, "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Fallout4.esm"), []byte("native"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "ccExample.esl"), []byte("native cc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Fallout4.ccc"), []byte("ccExample.esl\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appDataPath := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Fallout4")
+	if err := os.MkdirAll(appDataPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDataPath, "plugins.txt"), []byte("*stale-external.esp\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDataPath, "loadorder.txt"), []byte("Fallout4.esm\r\nccExample.esl\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+	if len(plan.Actions) != 0 {
+		t.Fatalf("native-only plugins should not create DMM deployment actions: %+v", plan.Actions)
+	}
+}
+
 func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()
