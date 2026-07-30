@@ -660,11 +660,15 @@ async function logFrontendEvent(message: string, detail: Record<string, string |
 }
 
 function loggedObjectKeys(value: unknown, limit = 80) {
-  if (!value || typeof value !== "object") return "";
+  return loggedObjectKeyList(value).slice(0, limit).join(",");
+}
+
+function loggedObjectKeyList(value: unknown) {
+  if (!value || typeof value !== "object") return [];
   try {
-    return Object.keys(value as Record<string, unknown>).sort().slice(0, limit).join(",");
+    return Object.keys(value as Record<string, unknown>).sort();
   } catch (_err) {
-    return "";
+    return [];
   }
 }
 
@@ -684,6 +688,8 @@ async function logSteamClientCapabilities() {
   for (const section of ["Apps", "GameSessions", "Workshop", "UGC", "RemoteStorage", "Cloud"]) {
     detail[section] = compactLogValue(loggedObjectKeys(root[section]));
   }
+  const appWorkshopMethods = loggedObjectKeyList(root.Apps).filter((key) => /workshop|subscrib|ugc/i.test(key));
+  detail.AppsWorkshop = compactLogValue(appWorkshopMethods.join(","));
   await logFrontendEvent("steam client capabilities", detail);
 }
 
