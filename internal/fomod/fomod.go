@@ -66,6 +66,7 @@ type ConditionalPattern struct {
 type DependencyGroup struct {
 	Operator              string            `json:"operator,omitempty"`
 	FlagDependencies      []FlagDependency  `json:"flag_dependencies,omitempty"`
+	FileDependencies      []FileDependency  `json:"file_dependencies,omitempty"`
 	NestedDependencies    []DependencyGroup `json:"nested_dependencies,omitempty"`
 	UnsupportedDependency bool              `json:"unsupported_dependency,omitempty"`
 }
@@ -75,11 +76,20 @@ type FlagDependency struct {
 	Value string `json:"value"`
 }
 
+type FileDependency struct {
+	File  string `json:"file"`
+	State string `json:"state"`
+}
+
+type FileStateResolver func(relative string) string
+
 type PlanOptions struct {
-	ModType     string
-	PlannerID   string
-	TargetRoot  string
-	StopFolders []string
+	ModType           string
+	PlannerID         string
+	TargetRoot        string
+	StopFolders       []string
+	FileStates        map[string]string
+	FileStateResolver FileStateResolver
 }
 
 type configXML struct {
@@ -343,7 +353,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		}
 	}
 	for _, pattern := range installer.ConditionalPatterns {
-		if !dependencyGroupMatches(pattern.Dependencies, selectedFlags) {
+		if !dependencyGroupMatches(pattern.Dependencies, selectedFlags, options.FileStates, options.FileStateResolver) {
 			continue
 		}
 		for _, entry := range pattern.Files {
@@ -566,7 +576,7 @@ func (c conditionalFileInstallsXML) patterns() []ConditionalPattern {
 func (d dependenciesXML) group() DependencyGroup {
 	group := DependencyGroup{
 		Operator:              normalizeDependencyOperator(d.Operator),
-		UnsupportedDependency: len(d.FileDependencies) > 0 || len(d.GameDependencies) > 0,
+		UnsupportedDependency: len(d.GameDependencies) > 0,
 	}
 	for _, dependency := range d.FlagDependencies {
 		flag := strings.TrimSpace(dependency.Flag)
@@ -581,6 +591,16 @@ func (d dependenciesXML) group() DependencyGroup {
 	for _, nested := range d.Dependencies {
 		group.NestedDependencies = append(group.NestedDependencies, nested.group())
 	}
+	for _, dependency := range d.FileDependencies {
+		file := strings.TrimSpace(filepath.ToSlash(dependency.File))
+		if file == "" {
+			continue
+		}
+		group.FileDependencies = append(group.FileDependencies, FileDependency{
+			File:  file,
+			State: normalizeDependencyState(dependency.State),
+		})
+	}
 	return group
 }
 
@@ -594,7 +614,7 @@ func (f fileXML) entry(isFolder bool) FileEntry {
 	}
 }
 
-func dependencyGroupMatches(group DependencyGroup, flags map[string]string) bool {
+func dependencyGroupMatches(group DependencyGroup, flags map[string]string, fileStates map[string]string, fileStateResolver FileStateResolver) bool {
 	if group.UnsupportedDependency {
 		return false
 	}
@@ -602,8 +622,11 @@ func dependencyGroupMatches(group DependencyGroup, flags map[string]string) bool
 	for _, dependency := range group.FlagDependencies {
 		results = append(results, flagDependencyMatches(dependency, flags))
 	}
+	for _, dependency := range group.FileDependencies {
+		results = append(results, fileDependencyMatches(dependency, fileStates, fileStateResolver))
+	}
 	for _, nested := range group.NestedDependencies {
-		results = append(results, dependencyGroupMatches(nested, flags))
+		results = append(results, dependencyGroupMatches(nested, flags, fileStates, fileStateResolver))
 	}
 	if len(results) == 0 {
 		return true
@@ -634,6 +657,59 @@ func flagDependencyMatches(dependency FlagDependency, flags map[string]string) b
 	want := strings.TrimSpace(dependency.Value)
 	got, ok := flags[flag]
 	return ok && strings.EqualFold(strings.TrimSpace(got), want)
+}
+
+func fileDependencyMatches(dependency FileDependency, fileStates map[string]string, fileStateResolver FileStateResolver) bool {
+	file := strings.TrimSpace(filepath.ToSlash(dependency.File))
+	if file == "" {
+		return false
+	}
+	state := dependencyStateForFile(file, fileStates, fileStateResolver)
+	want := normalizeDependencyState(dependency.State)
+	return state == want
+}
+
+func dependencyStateForFile(file string, fileStates map[string]string, fileStateResolver FileStateResolver) string {
+	key, err := cleanRel(file)
+	if err != nil {
+		return "missing"
+	}
+	if state, ok := lookupDependencyFileState(fileStates, key); ok {
+		return state
+	}
+	if fileStateResolver != nil {
+		return normalizeDependencyState(fileStateResolver(key))
+	}
+	return "missing"
+}
+
+func lookupDependencyFileState(fileStates map[string]string, file string) (string, bool) {
+	if len(fileStates) == 0 {
+		return "", false
+	}
+	candidates := []string{file, filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))}
+	for _, candidate := range candidates {
+		if state, ok := fileStates[candidate]; ok {
+			return normalizeDependencyState(state), true
+		}
+		for key, state := range fileStates {
+			if strings.EqualFold(filepath.ToSlash(filepath.Clean(filepath.FromSlash(key))), candidate) {
+				return normalizeDependencyState(state), true
+			}
+		}
+	}
+	return "", false
+}
+
+func normalizeDependencyState(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "inactive":
+		return "inactive"
+	case "missing":
+		return "missing"
+	default:
+		return "active"
+	}
 }
 
 func normalizeDependencyOperator(value string) string {

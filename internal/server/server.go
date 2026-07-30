@@ -1917,6 +1917,10 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if !ok {
 		return storage.InstalledMod{}, installplan.Unsupported("the " + candidate.SteamAppID + " extension does not support FOMOD installer choices yet")
 	}
+	game, err := s.db.GameBySteamApp(ctx, candidate.SteamAppID)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
 	var installer fomod.Installer
 	if strings.TrimSpace(candidate.InstallerJSON) != "" {
 		if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
@@ -1933,6 +1937,9 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		PlannerID:   choiceSpec.ID,
 		TargetRoot:  choiceSpec.TargetRoot,
 		StopFolders: choiceSpec.StopFolders,
+		FileStateResolver: func(relative string) string {
+			return fomodFileDependencyState(game.GamePath, choiceSpec.TargetRoot, relative)
+		},
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -1990,6 +1997,43 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
+}
+
+func fomodFileDependencyState(gamePath, targetRoot, relative string) string {
+	targetRel, err := fomodDependencyTargetRelative(targetRoot, relative)
+	if err != nil {
+		return "missing"
+	}
+	path := filepath.Join(gamePath, filepath.FromSlash(targetRel))
+	if info, err := os.Lstat(path); err == nil && !info.IsDir() {
+		return "active"
+	}
+	return "missing"
+}
+
+func fomodDependencyTargetRelative(targetRoot, relative string) (string, error) {
+	rel := strings.TrimSpace(filepath.ToSlash(relative))
+	if rel == "" || strings.HasPrefix(rel, "/") {
+		return "", errors.New("relative FOMOD dependency file path is required")
+	}
+	rel = filepath.ToSlash(filepath.Clean(filepath.FromSlash(rel)))
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", errors.New("FOMOD dependency file path is unsafe")
+	}
+	root := strings.Trim(strings.TrimSpace(filepath.ToSlash(targetRoot)), "/")
+	if root == "" || fomodDependencyPathHasRoot(rel, root) {
+		return rel, nil
+	}
+	return filepath.ToSlash(filepath.Join(root, rel)), nil
+}
+
+func fomodDependencyPathHasRoot(relative, root string) bool {
+	relative = strings.Trim(filepath.ToSlash(relative), "/")
+	root = strings.Trim(filepath.ToSlash(root), "/")
+	if root == "" {
+		return false
+	}
+	return strings.EqualFold(relative, root) || strings.HasPrefix(strings.ToLower(relative), strings.ToLower(root)+"/")
 }
 
 func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) {

@@ -218,7 +218,45 @@ func TestBuildPlanAppliesConditionalFilesFromSelectedFlags(t *testing.T) {
 	}
 }
 
-func TestBuildPlanDoesNotApplyUnsupportedConditionalDependencies(t *testing.T) {
+func TestBuildPlanAppliesConditionalFilesFromActiveFileDependencies(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <fileDependency file="Data/SomeOtherMod.esp" state="Active" />
+        </dependencies>
+        <files>
+          <file source="conditional.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`)
+	writeFile(t, filepath.Join(root, "conditional.txt"), "conditional")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
+		ModType:    "fallout4-data-root",
+		PlannerID:  "vortex:fallout4:fomod",
+		TargetRoot: "Data",
+		FileStates: map[string]string{
+			"Data/SomeOtherMod.esp": "Active",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Data/conditional.txt" {
+		t.Fatalf("conditional dependency did not install expected file: %+v", plan.Instructions)
+	}
+}
+
+func TestBuildPlanSkipsConditionalFilesFromMissingFileDependencies(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
   <conditionalFileInstalls>
@@ -249,7 +287,7 @@ func TestBuildPlanDoesNotApplyUnsupportedConditionalDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(plan.Instructions) != 0 {
-		t.Fatalf("unsupported conditional dependency installed files: %+v", plan.Instructions)
+		t.Fatalf("missing conditional dependency installed files: %+v", plan.Instructions)
 	}
 }
 
