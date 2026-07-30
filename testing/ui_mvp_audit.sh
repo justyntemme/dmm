@@ -61,7 +61,7 @@ require_text "$DECKY_APP" "Server Access" \
 require_text "$DECKY_APP" "Dependencies" \
   "Decky plugin must retain dependency status"
 require_text "$DECKY_APP" "Auto-install captured downloads" \
-  "Decky plugin must expose automatic install approval"
+  "Decky plugin must expose automatic captured-install behavior"
 require_text "$DECKY_APP" "Auto-enable installed mods" \
   "Decky plugin must expose automatic enable/deploy behavior"
 
