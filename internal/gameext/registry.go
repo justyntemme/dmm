@@ -202,6 +202,15 @@ func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, 
 	return r.installPlans.DeploymentAllowedForSteamAppState(appID, state)
 }
 
+func (r Registry) DeploymentStrategyForSteamApp(appID string) (string, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return "", false
+	}
+	strategy := strings.TrimSpace(extension.InstallPlan.Deployment.DefaultStrategy)
+	return strategy, strategy != ""
+}
+
 func (r Registry) RuntimeRequirements(ctx context.Context, steamAppID, gamePath string, mods []gamehandler.RuntimeMod) []gamehandler.RuntimeRequirement {
 	return r.runtimeRequirements.RuntimeRequirements(ctx, steamAppID, gamePath, mods)
 }

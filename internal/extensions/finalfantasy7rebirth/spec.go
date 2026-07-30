@@ -31,6 +31,10 @@ func Register(r sdk.Registrar) {
 		SteamAppIDs:  []string{SteamAppID},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
+		Deployment: installplan.DeploymentSpec{
+			AllowNeedsReviewState: true,
+			DefaultStrategy:       installplan.DeployStrategyCopy,
+		},
 	})
 	for _, modType := range modTypes() {
 		r.RegisterModType(modType)

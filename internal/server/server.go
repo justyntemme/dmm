@@ -4406,6 +4406,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
+	defaultStrategy := s.defaultDeploymentStrategy(appID)
 
 	var mappings []deploy.FileMapping
 	runtimeMods := runtimeModsForRequirements(mods)
@@ -4452,16 +4453,31 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	mappings = append(mappings, hookMappings...)
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
-			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, managedFiles)
+			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, managedFiles)
 		}
 		if deployableMods > 0 && undeployableMods == deployableMods {
 			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
-		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, nil)
+		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, nil)
 	}
-	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, deploy.StrategySymlink, mappings, managedFiles, deploy.BuildOptions{
+	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, defaultStrategy, mappings, managedFiles, deploy.BuildOptions{
 		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
 	})
+}
+
+func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
+	strategy, ok := s.games.DeploymentStrategyForSteamApp(appID)
+	if !ok {
+		return deploy.StrategySymlink
+	}
+	switch strings.TrimSpace(strategy) {
+	case installplan.DeployStrategyHardlink:
+		return deploy.StrategyHardlink
+	case installplan.DeployStrategyCopy:
+		return deploy.StrategyCopy
+	default:
+		return deploy.StrategySymlink
+	}
 }
 
 func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) ([]deploy.FileMapping, error) {

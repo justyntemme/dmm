@@ -25,6 +25,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
@@ -3110,6 +3111,9 @@ func TestDeploymentAllowedUsesGameSpecDirtyStatePolicy(t *testing.T) {
 	if err := srv.deploymentAllowedForGame(storage.Game{SteamAppID: "413150", State: "needs_review"}); err != nil {
 		t.Fatalf("expected Stardew spec to allow review-state deployment, got %v", err)
 	}
+	if err := srv.deploymentAllowedForGame(storage.Game{SteamAppID: fallout4.SteamAppID, State: "needs_review"}); err != nil {
+		t.Fatalf("expected Fallout 4 spec to allow review-state deployment, got %v", err)
+	}
 }
 
 func TestEffectiveStagingPathPrefersCurrentDataDir(t *testing.T) {
@@ -4352,6 +4356,57 @@ func TestDeployPlanUsesStoredInstallPlanTargetMapping(t *testing.T) {
 	}
 	if plan.Actions[0].TargetRelative != "Content/Data/content.json" {
 		t.Fatalf("target relative = %q", plan.Actions[0].TargetRelative)
+	}
+}
+
+func TestDeployPlanUsesExtensionDefaultDeploymentStrategy(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), finalfantasy7rebirth.Name)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       finalfantasy7rebirth.SteamAppID,
+		Name:        finalfantasy7rebirth.Name,
+		InstallDir:  finalfantasy7rebirth.Name,
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", finalfantasy7rebirth.VortexGameID, "mods", "1", "files", "1")
+	sourcePath := filepath.Join(stagingPath, "End", "Content", "Paks", "~mods", "Example_P.pak")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("pak"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `[{"path":"End/Content/Paks/~mods/Example_P.pak","target_relative":"End/Content/Paks/~mods/Example_P.pak","size":3,"sha256":"abc"}]`
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: finalfantasy7rebirth.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: finalfantasy7rebirth.VortexGameID,
+			ModID:      "1",
+			FileID:     "1",
+		},
+		Name:         "FF7 Pak",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "ff7.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), finalfantasy7rebirth.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Strategy != deploy.StrategyCopy {
+		t.Fatalf("plan strategy = %q", plan.Strategy)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Strategy != deploy.StrategyCopy {
+		t.Fatalf("actions = %+v", plan.Actions)
 	}
 }
 

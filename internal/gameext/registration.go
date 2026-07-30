@@ -186,6 +186,11 @@ func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {
 
 func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 	var errs []error
+	switch strings.TrimSpace(spec.Deployment.DefaultStrategy) {
+	case "", installplan.DeployStrategyHardlink, installplan.DeployStrategySymlink, installplan.DeployStrategyCopy:
+	default:
+		errs = append(errs, errors.New("deployment default strategy must be hardlink, symlink, or copy"))
+	}
 	declaredModTypes := map[string]struct{}{}
 	for _, modType := range spec.ModTypes {
 		id := strings.TrimSpace(modType.ID)

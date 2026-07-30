@@ -89,6 +89,7 @@ type GameSpec struct {
 
 type DeploymentSpec struct {
 	AllowNeedsReviewState bool
+	DefaultStrategy       string
 }
 
 type ModTypeSpec struct {
@@ -186,7 +187,9 @@ const (
 )
 
 const (
-	DeployStrategyCopy = "copy"
+	DeployStrategyHardlink = "hardlink"
+	DeployStrategySymlink  = "symlink"
+	DeployStrategyCopy     = "copy"
 )
 
 const (
