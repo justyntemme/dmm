@@ -42,9 +42,11 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "witcher3-xml-menu-merge", Name: "Witcher 3 XML/menu merge"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "witcher3-mods-settings", Name: "Witcher 3 mods.settings load order"})
-	for _, event := range []string{"will-deploy", "did-deploy", "did-purge", "profile-will-change", "mods-disabled"} {
-		r.RegisterEventHandler(sdk.EventHandlerSpec{Event: event, Name: "Witcher 3 " + event})
-	}
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Generate Witcher 3 mods.settings",
+		Handler: willDeploy,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -146,6 +148,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Witcher 3 common merge/load-order constants",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/common.ts",
+		},
+		{
+			Name: "Vortex Witcher 3 lifecycle and load-order hooks",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/eventHandlers.ts",
 		},
 	}
 }

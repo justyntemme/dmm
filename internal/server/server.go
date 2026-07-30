@@ -4175,6 +4175,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 	}
 	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
 		GamePath:     game.GamePath,
+		LibraryPath:  game.LibraryPath,
 		ProfileID:    profileID,
 		StagingRoot:  stagingRoot,
 		WorkDir:      workDir,
@@ -4226,6 +4227,7 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
 		GamePath:     game.GamePath,
+		LibraryPath:  game.LibraryPath,
 		ProfileID:    profileID,
 		StagingRoot:  stagingRoot,
 		WorkDir:      workDir,

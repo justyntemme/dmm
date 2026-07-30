@@ -109,6 +109,7 @@ type EventHandlerInput struct {
 	Event        string
 	AppID        string
 	GamePath     string
+	LibraryPath  string
 	ProfileID    int64
 	StagingRoot  string
 	WorkDir      string

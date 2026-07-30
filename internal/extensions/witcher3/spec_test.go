@@ -1,12 +1,15 @@
 package witcher3_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -125,6 +128,53 @@ func TestExtensionBlocksScriptMergerModArchive(t *testing.T) {
 	var unsupported installplan.UnsupportedError
 	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "tool, not a mod") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestExtensionWillDeployGeneratesManagedModsSettings(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	if !registry.HasEventHandlerForSteamApp("292030", "will-deploy") {
+		t.Fatal("expected Witcher 3 will-deploy handler")
+	}
+	if registry.HasEventHandlerForSteamApp("292030", "did-deploy") {
+		t.Fatal("did-deploy should not be advertised until it has an implementation")
+	}
+
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "will-deploy", sdk.EventHandlerInput{
+		LibraryPath: root,
+		WorkDir:     workDir,
+		Mappings: []deploy.FileMapping{
+			{TargetRelative: "Mods/modLate/content/scripts/late.ws", ModID: "200", Priority: 20},
+			{TargetRelative: "DLC/dlcExample/content/bundle.bundle", ModID: "999", Priority: 1},
+			{TargetRelative: "Mods/modEarly/content/scripts/early.ws", ModID: "100", Priority: 10},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v, want one mods.settings mapping", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	wantRoot := filepath.Join(root, "steamapps", "compatdata", "292030", "pfx", "drive_c", "users", "steamuser", "Documents", "The Witcher 3")
+	if mapping.TargetRoot != wantRoot || mapping.TargetRelative != "mods.settings" || mapping.Strategy != deploy.StrategyCopy {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	bodyBytes, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
+	if !strings.Contains(body, "[modEarly]\r\nEnabled=1\r\nPriority=1\r\nVK=100") {
+		t.Fatalf("mods.settings missing first entry:\n%s", body)
+	}
+	if !strings.Contains(body, "[modLate]\r\nEnabled=1\r\nPriority=2\r\nVK=200") {
+		t.Fatalf("mods.settings missing second entry:\n%s", body)
+	}
+	if strings.Contains(body, "dlcExample") {
+		t.Fatalf("mods.settings included DLC entry:\n%s", body)
 	}
 }
 
