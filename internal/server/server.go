@@ -4518,8 +4518,7 @@ func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.
 		return jobs.Job{}, errCapturedInstallNoLinks
 	}
 
-	link := pending.DownloadLinks[0]
-	if strings.TrimSpace(link.URI) == "" {
+	if !hasUsableDownloadLink(pending.DownloadLinks) {
 		return jobs.Job{}, errCapturedInstallEmptyLink
 	}
 
@@ -4540,8 +4539,17 @@ func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.trackActiveJob(jobID, cancel)
-	go s.downloadCapturedInstall(ctx, jobID, pending, link)
+	go s.downloadCapturedInstall(ctx, jobID, pending)
 	return job, nil
+}
+
+func hasUsableDownloadLink(links []nexus.DownloadLink) bool {
+	for _, link := range links {
+		if strings.TrimSpace(link.URI) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.Job, error) {
@@ -4669,7 +4677,7 @@ func (s *Server) forgetCapturedInstall(jobID string) {
 	}
 }
 
-func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, link nexus.DownloadLink) {
+func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pending capturedInstall) {
 	defer s.untrackActiveJob(jobID)
 	destDir := filepath.Join(
 		s.cfg.DataDir,
@@ -4692,10 +4700,7 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		s.logger.Warn("captured install download job missing after queue", "job_id", jobID)
 		return
 	}
-	result, err := download.Fetch(ctx, download.Options{
-		URL:     link.URI,
-		DestDir: destDir,
-	})
+	result, err := s.fetchCapturedInstallArchive(ctx, jobID, pending, destDir)
 	s.releaseCapturedDownloadSlot()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -4747,6 +4752,39 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		return
 	}
 	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, pending capturedInstall, destDir string) (download.Result, error) {
+	var lastErr error
+	attempts := 0
+	total := len(pending.DownloadLinks)
+	for index, link := range pending.DownloadLinks {
+		uri := strings.TrimSpace(link.URI)
+		if uri == "" {
+			continue
+		}
+		attempts++
+		s.jobs.Run(jobID, fmt.Sprintf("Downloading archive from %s (%d/%d)", pending.Resolved.GameDomain, index+1, total))
+		result, err := download.Fetch(ctx, download.Options{
+			URL:     uri,
+			DestDir: destDir,
+		})
+		if err == nil {
+			if attempts > 1 {
+				s.logger.Info("captured install download succeeded after mirror retry", "job_id", jobID, "attempt", attempts, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName)
+			}
+			return result, nil
+		}
+		lastErr = err
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return download.Result{}, err
+		}
+		s.logger.Warn("captured install download mirror failed", "job_id", jobID, "attempt", attempts, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "mirror", link.ShortName, "error", err)
+	}
+	if attempts == 0 {
+		return download.Result{}, errCapturedInstallNoLinks
+	}
+	return download.Result{}, lastErr
 }
 
 func (s *Server) acquireCapturedDownloadSlot(ctx context.Context) bool {

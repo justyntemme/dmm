@@ -762,6 +762,71 @@ func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	waitForJobStatus(t, srv, job.ID, jobs.StatusCanceled)
 }
 
+func TestCapturedInstallDownloadTriesNextMirror(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.cfgMu.Unlock()
+	archivePath := filepath.Join(t.TempDir(), "mirror.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"Mod/manifest.json": `{"Name":"Mirror Test"}`,
+		"Mod/Mod.dll":       "dll",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var failedHits int
+	var successHits int
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bad.zip" {
+			failedHits++
+			http.Error(w, "temporary mirror failure", http.StatusBadGateway)
+			return
+		}
+		successHits++
+		http.ServeFile(w, r, archivePath)
+	}))
+	defer downloadServer.Close()
+
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "239",
+		FileID:     "100",
+	}
+	job := srv.jobs.CreateWithPayload("captured-install", "Captured mod", capturedInstallJobPayload(srv.games, resolved))
+	job, _ = srv.jobs.Wait(job.ID, "Ready to download")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: resolved,
+		DownloadLinks: []nexus.DownloadLink{
+			{Name: "Bad mirror", ShortName: "bad", URI: downloadServer.URL + "/bad.zip"},
+			{Name: "Good mirror", ShortName: "good", URI: downloadServer.URL + "/good.zip"},
+		},
+		Source: "test",
+	})
+
+	started, err := srv.startCapturedInstallDownload(job.ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Status != jobs.StatusQueued {
+		t.Fatalf("started job = %+v", started)
+	}
+	waiting := waitForJobStatus(t, srv, job.ID, jobs.StatusWaiting)
+	if !strings.Contains(waiting.Message, "Downloaded") {
+		t.Fatalf("waiting job = %+v", waiting)
+	}
+	if failedHits != 1 || successHits != 1 {
+		t.Fatalf("mirror hits: failed=%d success=%d", failedHits, successHits)
+	}
+	pending, ok := srv.capturedInstall(job.ID)
+	if !ok || pending.ArchivePath == "" {
+		t.Fatalf("captured install = %+v ok=%v", pending, ok)
+	}
+	if _, err := os.Stat(pending.ArchivePath); err != nil {
+		t.Fatalf("cached archive missing: %v", err)
+	}
+}
+
 func TestDeploySettingsOverrideAndReset(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
