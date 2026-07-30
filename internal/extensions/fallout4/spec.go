@@ -77,6 +77,11 @@ func Register(r sdk.Registrar) {
 		NativePlugins:        nativePlugins(),
 		SupportsLightPlugins: true,
 	}))
+	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
+		ID:       "fallout4-persistent-subgraph-offsets",
+		Name:     "Fallout 4 persistent subgraph offsets",
+		Patterns: []string{"**/PersistantSubgraphInfoAndOffsetData.txt"},
+	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "bethesda-merge-mods", Name: "Bethesda plugin/mod merge support"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bethesda-plugin-load-order", Name: "Bethesda plugin load order"})
 	for _, ref := range sources() {

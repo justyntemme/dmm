@@ -73,6 +73,44 @@ func TestBuildPlanSkipsExistingTargetWhenPolicyKeepsExisting(t *testing.T) {
 	}
 }
 
+func TestBuildPlanSkipsExistingTargetWhenConflictPatternIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	if err := os.MkdirAll(filepath.Join(staging, "mod", "Meshes", "AnimTextData", "AnimationOffsets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(target, "Data", "Meshes", "AnimTextData", "AnimationOffsets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rel := filepath.Join("Meshes", "AnimTextData", "AnimationOffsets", "PersistantSubgraphInfoAndOffsetData.txt")
+	if err := os.WriteFile(filepath.Join(staging, "mod", rel), []byte("mod"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "Data", rel), []byte("game"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlanWithOptions(staging, target, StrategySymlink, []FileMapping{{
+		SourceRelative: filepath.ToSlash(filepath.Join("mod", rel)),
+		TargetRelative: filepath.ToSlash(filepath.Join("Data", rel)),
+	}}, nil, BuildOptions{
+		IgnoreConflictPatterns: []string{"**/PersistantSubgraphInfoAndOffsetData.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].Operation != "skip" || plan.Actions[0].Conflict {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	if !strings.Contains(plan.Actions[0].ConflictReason, "ignored by extension") {
+		t.Fatalf("skip reason = %q", plan.Actions[0].ConflictReason)
+	}
+}
+
 func TestBuildPlanUsesMappingStrategyOverride(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")
@@ -420,6 +458,46 @@ func TestBuildPlanSkipsDuplicateTargetByPriority(t *testing.T) {
 		t.Fatalf("winner = %+v", add)
 	}
 	if skip.Operation != "skip" || skip.TargetRelative != "Mods/file.txt" {
+		t.Fatalf("skip = %+v", skip)
+	}
+}
+
+func TestBuildPlanLabelsIgnoredDuplicateTarget(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	for _, dir := range []string{
+		filepath.Join(staging, "low"),
+		filepath.Join(staging, "high"),
+	} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const targetRel = "Data/Meshes/AnimTextData/AnimationOffsets/PersistantSubgraphInfoAndOffsetData.txt"
+	if err := os.WriteFile(filepath.Join(staging, "low", "file.txt"), []byte("low"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "high", "file.txt"), []byte("high"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlanWithOptions(staging, target, StrategySymlink, []FileMapping{
+		{SourceRelative: "low/file.txt", TargetRelative: targetRel, Priority: 10},
+		{SourceRelative: "high/file.txt", TargetRelative: targetRel, Priority: 1},
+	}, nil, BuildOptions{
+		IgnoreConflictPatterns: []string{"**/PersistantSubgraphInfoAndOffsetData.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var skip Action
+	for _, action := range plan.Actions {
+		if action.Operation == "skip" {
+			skip = action
+		}
+	}
+	if !strings.Contains(skip.ConflictReason, "ignored by extension") {
 		t.Fatalf("skip = %+v", skip)
 	}
 }

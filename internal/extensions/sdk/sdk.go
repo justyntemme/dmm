@@ -28,6 +28,7 @@ type Registrar interface {
 	RegisterLaunchTool(LaunchToolSpec)
 	RegisterGameVersionProvider(GameVersionProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
+	RegisterConflictIgnore(ConflictIgnoreSpec)
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
 	RegisterLoadOrder(LoadOrderSpec)
@@ -106,6 +107,12 @@ type PluginActivationSpec struct {
 	SupportsLightPlugins   bool
 	SupportsMediumMasters  bool
 	SupportsBlueprintFiles bool
+}
+
+type ConflictIgnoreSpec struct {
+	ID       string
+	Name     string
+	Patterns []string
 }
 
 type MergeSpec struct {

@@ -4459,7 +4459,9 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		}
 		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, nil)
 	}
-	return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, deploy.StrategySymlink, mappings, managedFiles, deploy.BuildOptions{
+		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
+	})
 }
 
 func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) ([]deploy.FileMapping, error) {

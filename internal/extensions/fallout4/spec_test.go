@@ -89,6 +89,14 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersIgnoredConflictPattern(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	patterns := gameext.NewRegistry([]gameext.Extension{extension}).ConflictIgnorePatternsForSteamApp(fallout4.SteamAppID)
+	if !contains(patterns, "**/PersistantSubgraphInfoAndOffsetData.txt") {
+		t.Fatalf("ignored conflict patterns = %+v", patterns)
+	}
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {

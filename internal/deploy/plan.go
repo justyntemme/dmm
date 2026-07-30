@@ -3,6 +3,7 @@ package deploy
 import (
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -53,6 +54,10 @@ type Plan struct {
 	Conflicts   []Action          `json:"conflicts"`
 }
 
+type BuildOptions struct {
+	IgnoreConflictPatterns []string
+}
+
 type mappingCandidate struct {
 	mapping FileMapping
 	index   int
@@ -63,6 +68,10 @@ func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []Fil
 }
 
 func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy, mappings []FileMapping, managedFiles []AppliedFile) (Plan, error) {
+	return BuildPlanWithOptions(stagingRoot, targetRoot, strategy, mappings, managedFiles, BuildOptions{})
+}
+
+func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, mappings []FileMapping, managedFiles []AppliedFile, options BuildOptions) (Plan, error) {
 	if stagingRoot == "" || targetRoot == "" {
 		return Plan{}, errors.New("stagingRoot and targetRoot are required")
 	}
@@ -88,7 +97,7 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 		managedByTarget[filepath.Clean(file.TargetPath)] = file
 	}
 	desiredTargets := make(map[string]struct{}, len(mappings))
-	winners, skipped, err := prioritizeMappings(mappings)
+	winners, skipped, err := prioritizeMappings(mappings, options.IgnoreConflictPatterns)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -145,6 +154,12 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 			if mapping.TargetPolicy == TargetPolicyKeepExisting {
 				action.Operation = "skip"
 				action.ConflictReason = "target already exists; keeping existing file"
+				plan.Actions = append(plan.Actions, action)
+				continue
+			}
+			if ignoredConflictTarget(action.TargetRelative, options.IgnoreConflictPatterns) {
+				action.Operation = "skip"
+				action.ConflictReason = "target already exists; ignored by extension conflict rules"
 				plan.Actions = append(plan.Actions, action)
 				continue
 			}
@@ -252,7 +267,7 @@ func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {
 	return fallback
 }
 
-func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error) {
+func prioritizeMappings(mappings []FileMapping, ignoreConflictPatterns []string) ([]FileMapping, []Action, error) {
 	byTarget := map[string]mappingCandidate{}
 	var skipped []Action
 	for i, mapping := range mappings {
@@ -269,10 +284,14 @@ func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error)
 		}
 		winner, loser := chooseMappingWinner(current, next)
 		byTarget[key] = winner
+		reason := "overridden by mod priority"
+		if ignoredConflictTarget(filepath.ToSlash(targetRel), ignoreConflictPatterns) {
+			reason = "ignored by extension conflict rules"
+		}
 		skipped = append(skipped, Action{
 			TargetRelative: filepath.ToSlash(targetRel),
 			Operation:      "skip",
-			ConflictReason: "overridden by mod priority",
+			ConflictReason: reason,
 			ChecksumSHA256: loser.mapping.ChecksumSHA256,
 		})
 	}
@@ -288,6 +307,32 @@ func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error)
 		out = append(out, item.mapping)
 	}
 	return out, skipped, nil
+}
+
+func ignoredConflictTarget(targetRelative string, patterns []string) bool {
+	target := strings.ToLower(filepath.ToSlash(strings.TrimSpace(targetRelative)))
+	if target == "" {
+		return false
+	}
+	for _, pattern := range patterns {
+		pattern = strings.ToLower(filepath.ToSlash(strings.TrimSpace(pattern)))
+		if pattern == "" {
+			continue
+		}
+		if strings.HasPrefix(pattern, "**/") {
+			suffix := strings.TrimPrefix(pattern, "**/")
+			if target == suffix || strings.HasSuffix(target, "/"+suffix) {
+				return true
+			}
+		}
+		if ok, err := path.Match(pattern, target); err == nil && ok {
+			return true
+		}
+		if pattern == target {
+			return true
+		}
+	}
+	return false
 }
 
 func chooseMappingWinner(a, b mappingCandidate) (winner, loser mappingCandidate) {

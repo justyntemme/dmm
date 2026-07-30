@@ -94,6 +94,13 @@ func (r *Registrar) RegisterPluginActivation(spec sdk.PluginActivationSpec) {
 	r.extension.PluginActivations = append(r.extension.PluginActivations, spec)
 }
 
+func (r *Registrar) RegisterConflictIgnore(spec sdk.ConflictIgnoreSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ConflictIgnores = append(r.extension.ConflictIgnores, spec)
+}
+
 func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
 	if strings.TrimSpace(ref.Name) == "" && strings.TrimSpace(ref.URL) == "" {
 		return
@@ -151,6 +158,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
+	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
 	for _, handler := range extension.EventHandlers {
@@ -317,6 +325,29 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 	return errs
 }
 
+func validateConflictIgnores(specs []sdk.ConflictIgnoreSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("conflict ignore id is required"))
+			continue
+		}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("conflict ignore "+id+" name is required"))
+		}
+		if len(spec.Patterns) == 0 {
+			errs = append(errs, errors.New("conflict ignore "+id+" must declare at least one pattern"))
+		}
+		for _, pattern := range spec.Patterns {
+			if err := validateConflictPattern(pattern); err != nil {
+				errs = append(errs, errors.New("conflict ignore "+id+" pattern: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
 func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 	var errs []error
 	for _, tool := range tools {
@@ -343,6 +374,22 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateConflictPattern(pattern string) error {
+	pattern = strings.TrimSpace(filepath.ToSlash(pattern))
+	if pattern == "" {
+		return errors.New("pattern is required")
+	}
+	if strings.HasPrefix(pattern, "/") {
+		return errors.New("absolute patterns are not allowed")
+	}
+	for _, segment := range strings.Split(pattern, "/") {
+		if segment == "." || segment == ".." {
+			return errors.New("path traversal is not allowed")
+		}
+	}
+	return nil
 }
 
 func defaultString(value, fallback string) string {

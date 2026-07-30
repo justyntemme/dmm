@@ -73,6 +73,11 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				Format:           "fallout4",
 				PluginExtensions: []string{".esm", ".esp", ".esl"},
 			})
+			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
+				ID:       "sample-ignore",
+				Name:     "Sample ignored conflict",
+				Patterns: []string{"**/ignored.txt"},
+			})
 			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
 			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
@@ -155,6 +160,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
 	}
+	if len(summary.Capabilities.ConflictIgnores) != 1 || summary.Capabilities.ConflictIgnores[0].ID != "sample-ignore" {
+		t.Fatalf("conflict ignore capabilities = %+v", summary.Capabilities.ConflictIgnores)
+	}
+	if patterns := registry.ConflictIgnorePatternsForSteamApp("100"); len(patterns) != 1 || patterns[0] != "**/ignored.txt" {
+		t.Fatalf("conflict ignore patterns = %+v", patterns)
+	}
 	if !registry.HasEventHandlerForSteamApp("100", "will-deploy") || registry.HasEventHandlerForSteamApp("100", "did-deploy") {
 		t.Fatalf("event handler predicates are wrong")
 	}
@@ -208,6 +219,11 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				Format:           "weird",
 				PluginExtensions: []string{"esp"},
 			})
+			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
+				ID:       "ignore",
+				Name:     "Bad ignore",
+				Patterns: []string{"/abs.txt", "../outside.txt"},
+			})
 		},
 	})
 	if err == nil {
@@ -227,6 +243,8 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",
 		"plugin activation plugins plugin extension must be a file extension",
+		"conflict ignore ignore pattern: absolute patterns are not allowed",
+		"conflict ignore ignore pattern: path traversal is not allowed",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)

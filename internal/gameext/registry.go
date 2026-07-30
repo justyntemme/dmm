@@ -27,6 +27,7 @@ type Extension struct {
 	LaunchTools          []sdk.LaunchToolSpec
 	GameVersionProviders []sdk.GameVersionProviderSpec
 	PluginActivations    []sdk.PluginActivationSpec
+	ConflictIgnores      []sdk.ConflictIgnoreSpec
 	Sources              []sdk.SourceRef
 	Merges               []sdk.MergeSpec
 	LoadOrders           []sdk.LoadOrderSpec
@@ -37,6 +38,7 @@ type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
+type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
 type GameVersionInput = sdk.GameVersionInput
 type GameVersionResult = sdk.GameVersionResult
@@ -67,6 +69,7 @@ type ExtensionCapabilities struct {
 	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
 	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
+	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
 	EventHandlers       []FeatureSummary `json:"event_handlers,omitempty"`
@@ -289,6 +292,23 @@ func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpe
 	return extension.PluginActivations[0], true
 }
 
+func (r Registry) ConflictIgnorePatternsForSteamApp(appID string) []string {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil
+	}
+	var patterns []string
+	for _, spec := range extension.ConflictIgnores {
+		for _, pattern := range spec.Patterns {
+			pattern = strings.TrimSpace(pattern)
+			if pattern != "" {
+				patterns = append(patterns, pattern)
+			}
+		}
+	}
+	return append([]string(nil), patterns...)
+}
+
 func (r Registry) HasEventHandlerForSteamApp(appID, event string) bool {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -414,6 +434,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
 	}
+	for _, ignore := range extension.ConflictIgnores {
+		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
+	}
 	for _, merge := range extension.Merges {
 		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{ID: merge.ID, Name: merge.Name})
 	}
@@ -430,6 +453,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
+	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
