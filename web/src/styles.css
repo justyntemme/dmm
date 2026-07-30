@@ -479,19 +479,17 @@ h2 {
 }
 
 .module-tabs {
-  position: sticky;
-  top: 65px;
-  z-index: 10;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
-  border-bottom: 1px solid #242a31;
-  padding: 8px 0;
-  background: rgba(15, 17, 21, 0.96);
-  backdrop-filter: blur(10px);
+  border: 1px solid #242a31;
+  border-radius: 8px;
+  padding: 6px;
+  background: #15191f;
 }
 
 .module-tabs button {
+  display: block;
   min-height: 38px;
   padding: 0 8px;
   color: #d4d4d8;
