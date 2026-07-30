@@ -1843,6 +1843,7 @@ function DeckyModManagerRoute() {
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [modSort, setModSort] = useState<DeckyModSort>("profile");
+  const [modOrderMode, setModOrderMode] = useState<boolean>(false);
   const [gameSearch, setGameSearch] = useState<string>("");
   const [gameSort, setGameSortState] = useState<GameSort>("recent");
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
@@ -1919,6 +1920,7 @@ function DeckyModManagerRoute() {
   }
 
   function cycleDeckyModSort() {
+    if (modOrderMode) return;
     setModSort((current) => nextDeckyModSort(current));
   }
 
@@ -1927,6 +1929,7 @@ function DeckyModManagerRoute() {
     setFocusedModID(null);
     setFocusedCandidateID(null);
     setModSearch("");
+    setModOrderMode(false);
   }
 
   function handleDeckyTabCancel(event: GamepadEvent) {
@@ -2022,6 +2025,7 @@ function DeckyModManagerRoute() {
       setError("");
       setModsResult("");
       setModSearch("");
+      setModOrderMode(false);
       setSelectedDeckyGameID(appID);
       markDeckyGameRecent(appID);
       await loadDeckyGameState(appID);
@@ -2075,6 +2079,59 @@ function DeckyModManagerRoute() {
       }
       await loadDeckyGameState(selectedDeckyGameID);
       const applyMessage = result.apply?.message || "Profile changes applied. Restart the game if it is already running.";
+      if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
+        setError(applyMessage);
+      } else {
+        setModsResult(applyMessage);
+      }
+      if (result.apply?.job) showJobToast(result.apply.job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  function toggleDeckyModOrderMode() {
+    setModOrderMode((current) => {
+      const next = !current;
+      if (next) setModSort("profile");
+      setModsResult(next ? "Order mode enabled. Move focused mods in the selected profile." : "Order mode disabled.");
+      return next;
+    });
+  }
+
+  async function moveDeckyModInProfile(mod: ManagedMod, direction: -1 | 1) {
+    const profile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0];
+    if (!selectedDeckyGameID || !profile) return;
+    const ordered = [...deckyMods].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    const from = ordered.findIndex((item) => item.id === mod.id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ordered.length) {
+      setModsResult(direction < 0 ? "This mod is already first in the profile." : "This mod is already last in the profile.");
+      return;
+    }
+    [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+    try {
+      setError("");
+      setModsResult("");
+      setBusyModID(mod.id);
+      const result = await call<[string, number, number[]], { ok: boolean; error?: string; mods?: ManagedMod[]; apply?: ProfileApplyResult }>(
+        "set_profile_mod_order",
+        selectedDeckyGameID,
+        profile.id,
+        ordered.map((item) => item.id)
+      );
+      if (!result.ok) {
+        await logFrontendEvent("decky mod order failed", { app_id: selectedDeckyGameID, mod_id: mod.id, error: result.error || "" });
+        setError(result.error ?? "Unable to update mod order.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      setFocusedModID(mod.id);
+      if (result.mods) setDeckyMods(result.mods);
+      await loadDeckyGameState(selectedDeckyGameID);
+      const applyMessage = result.apply?.message || "Profile order applied. Restart the game if it is already running.";
       if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
         setError(applyMessage);
       } else {
@@ -2527,6 +2584,7 @@ function DeckyModManagerRoute() {
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
   const favoriteGameKey = [...favoriteGameIDs].sort().join("|");
+  const effectiveModSort = modOrderMode ? "profile" : modSort;
   const visibleManagedGames = useMemo(() => {
     const normalizedGameSearch = gameSearch.trim().toLowerCase();
     const favoriteIDs = new Set(favoriteGameKey ? favoriteGameKey.split("|") : []);
@@ -2552,15 +2610,15 @@ function DeckyModManagerRoute() {
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       );
     return [...filtered].sort((a, b) => {
-      if (modSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
-      if (modSort === "za") return b.name.localeCompare(a.name) || a.priority - b.priority;
-      if (modSort === "enabled") {
+      if (effectiveModSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
+      if (effectiveModSort === "za") return b.name.localeCompare(a.name) || a.priority - b.priority;
+      if (effectiveModSort === "enabled") {
         const enabledDelta = Number(b.enabled) - Number(a.enabled);
         if (enabledDelta !== 0) return enabledDelta;
       }
       return a.priority - b.priority || a.name.localeCompare(b.name);
     });
-  }, [deckyMods, modSearch, modSort]);
+  }, [deckyMods, modSearch, effectiveModSort]);
   const visibleWorkshopItems = useMemo(() => {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     if (!normalizedModSearch) return deckyWorkshopItems;
@@ -2770,7 +2828,10 @@ function DeckyModManagerRoute() {
               <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
                 <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
                 <ButtonItem layout="below" onClick={cycleDeckyModSort}>
-                  Sort: {deckyModSortLabel(modSort)}
+                  Sort: {deckyModSortLabel(effectiveModSort)}
+                </ButtonItem>
+                <ButtonItem layout="below" onClick={toggleDeckyModOrderMode}>
+                  Order Mode: {modOrderMode ? "On" : "Off"}
                 </ButtonItem>
                 <ButtonItem layout="below" onClick={checkDeckyModUpdates} disabled={modUpdateBusy || deckyMods.length === 0}>
                   {modUpdateBusy ? "Checking Updates..." : "Check Updates"}
@@ -2904,30 +2965,40 @@ function DeckyModManagerRoute() {
                       className="dmm-sidebar-surface dmm-sidebar-row"
                       data-dmm-mod-id={String(mod.id)}
                       focusClassName="dmm-sidebar-row-focused"
-                      onActivate={() => void toggleDeckyMod(mod, !mod.enabled)}
-                      onClick={() => void toggleDeckyMod(mod, !mod.enabled)}
+                      onActivate={() => {
+                        if (modOrderMode) void moveDeckyModInProfile(mod, -1);
+                        else void toggleDeckyMod(mod, !mod.enabled);
+                      }}
+                      onClick={() => {
+                        if (modOrderMode) void moveDeckyModInProfile(mod, -1);
+                        else void toggleDeckyMod(mod, !mod.enabled);
+                      }}
                       onOKButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        void toggleDeckyMod(mod, !mod.enabled);
+                        if (modOrderMode) void moveDeckyModInProfile(mod, -1);
+                        else void toggleDeckyMod(mod, !mod.enabled);
                       }}
-                      onSecondaryActionDescription="Reinstall"
+                      onSecondaryActionDescription={modOrderMode ? "Move Down" : "Reinstall"}
                       onSecondaryButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        void reinstallDeckyMod(mod);
+                        if (modOrderMode) void moveDeckyModInProfile(mod, 1);
+                        else void reinstallDeckyMod(mod);
                       }}
-                      onOptionsActionDescription="Remove"
+                      onOptionsActionDescription={modOrderMode ? "Done Ordering" : "Remove"}
                       onOptionsButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        askRemoveDeckyMod(mod);
+                        if (modOrderMode) setModOrderMode(false);
+                        else askRemoveDeckyMod(mod);
                       }}
-                      onMenuActionDescription="Remove"
+                      onMenuActionDescription={modOrderMode ? "Done Ordering" : "Remove"}
                       onMenuButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        askRemoveDeckyMod(mod);
+                        if (modOrderMode) setModOrderMode(false);
+                        else askRemoveDeckyMod(mod);
                       }}
                       onGamepadFocus={() => {
                         setFocusedModID(mod.id);
@@ -2973,7 +3044,7 @@ function DeckyModManagerRoute() {
                         {deckyModUpdateLabel(mod.update)} · {deckyModUpdateDetail(mod.update)}
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                        A {mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove
+                        {modOrderMode ? "A Move Up · Y Move Down · Options Done" : `A ${mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove`}
                       </div>
                     </Focusable>
                   );
