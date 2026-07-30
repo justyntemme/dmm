@@ -15,6 +15,7 @@ const (
 	TypeProfileModsChanged = "profile_mods.changed"
 	TypeDeploymentChanged  = "deployment.changed"
 	TypeLaunchChanged      = "launch.changed"
+	TypeWorkshopChanged    = "workshop.changed"
 	TypeInstallChanged     = "install.changed"
 	TypeUIChanged          = "ui.changed"
 )

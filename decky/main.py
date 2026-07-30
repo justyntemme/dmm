@@ -436,6 +436,62 @@ class Plugin:
         self._log(f"mod reinstalled app_id={app_id} installed_mod_id={installed_mod_id}")
         return {"ok": True, "result": result}
 
+    async def sync_workshop(self, app_id, items):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not isinstance(items, list):
+            items = []
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"items": items}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/games/{urllib.parse.quote(app_id)}/workshop/sync", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to sync Steam Workshop state."}
+        self._log(f"workshop synced app_id={app_id} items={len(items)}")
+        return {"ok": True, "result": result}
+
+    async def workshop_actions(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "actions": []}
+        result, error = self._backend_json_result("GET", "/api/workshop/actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load Steam Workshop actions.", "actions": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected Steam Workshop actions response.", "actions": []}
+        if actions:
+            self._log(f"workshop actions available count={len(actions)}")
+        return {"ok": True, "actions": actions}
+
+    async def start_workshop_action(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required.", "proceed": False}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "proceed": False}
+        result, error = self._backend_json_result("POST", f"/api/workshop/actions/{urllib.parse.quote(job_id)}/start", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to start Steam Workshop action.", "proceed": False}
+        proceed = bool(result.get("proceed")) if isinstance(result, dict) else False
+        self._log(f"workshop action start job_id={job_id} proceed={proceed}")
+        return {"ok": True, "proceed": proceed, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def record_workshop_action(self, job_id, report):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not isinstance(report, dict):
+            report = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps(report).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/workshop/actions/{urllib.parse.quote(job_id)}/complete", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to record Steam Workshop action."}
+        self._log(f"workshop action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
+        return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
+
     async def launch_actions(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "actions": []}

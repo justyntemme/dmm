@@ -264,6 +264,110 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	}
 }
 
+func TestSteamWorkshopActionQueueContract(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	syncReq := httptest.NewRequest(http.MethodPut, "/api/games/377160/workshop/sync", bytes.NewBufferString(`{"items":[{"published_file_id":"123","subscribed":true,"downloaded":true,"disabled_known":true,"disabled_locally":false,"position":0}]}`))
+	syncReq.Header.Set("Content-Type", "application/json")
+	syncReq.RemoteAddr = "127.0.0.1:1"
+	syncRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("sync status = %d, body = %s", syncRec.Code, syncRec.Body.String())
+	}
+
+	queueReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/123/actions/disable", nil)
+	queueReq.RemoteAddr = "127.0.0.1:1"
+	queueRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(queueRec, queueReq)
+	if queueRec.Code != http.StatusAccepted {
+		t.Fatalf("queue status = %d, body = %s", queueRec.Code, queueRec.Body.String())
+	}
+	var queued struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(queueRec.Body.Bytes(), &queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Job.Type != jobTypeSteamWorkshopAction || queued.Job.Payload["kind"] != "disable" || queued.Job.Payload["item_id"] != "123" {
+		t.Fatalf("queued job = %+v", queued.Job)
+	}
+
+	actionsReq := httptest.NewRequest(http.MethodGet, "/api/workshop/actions", nil)
+	actionsReq.RemoteAddr = "127.0.0.1:1"
+	actionsRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(actionsRec, actionsReq)
+	if actionsRec.Code != http.StatusOK {
+		t.Fatalf("actions status = %d, body = %s", actionsRec.Code, actionsRec.Body.String())
+	}
+	var actions struct {
+		Actions []jobs.Job `json:"actions"`
+	}
+	if err := json.Unmarshal(actionsRec.Body.Bytes(), &actions); err != nil {
+		t.Fatal(err)
+	}
+	if len(actions.Actions) != 1 || actions.Actions[0].ID != queued.Job.ID {
+		t.Fatalf("actions = %+v", actions.Actions)
+	}
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+queued.Job.ID+"/start", nil)
+	startReq.RemoteAddr = "127.0.0.1:1"
+	startRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(startRec, startReq)
+	if startRec.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d, body = %s", startRec.Code, startRec.Body.String())
+	}
+	var started struct {
+		Proceed bool     `json:"proceed"`
+		Job     jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(startRec.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	if !started.Proceed || started.Job.Status != jobs.StatusRunning {
+		t.Fatalf("started = %+v", started)
+	}
+
+	secondStartReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+queued.Job.ID+"/start", nil)
+	secondStartReq.RemoteAddr = "127.0.0.1:1"
+	secondStartRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(secondStartRec, secondStartReq)
+	if secondStartRec.Code != http.StatusOK {
+		t.Fatalf("second start status = %d, body = %s", secondStartRec.Code, secondStartRec.Body.String())
+	}
+	var secondStarted struct {
+		Proceed bool `json:"proceed"`
+	}
+	if err := json.Unmarshal(secondStartRec.Body.Bytes(), &secondStarted); err != nil {
+		t.Fatal(err)
+	}
+	if secondStarted.Proceed {
+		t.Fatal("second start should not proceed")
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/workshop/actions/"+queued.Job.ID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeReq.RemoteAddr = "127.0.0.1:1"
+	completeRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(completeRec, completeReq)
+	if completeRec.Code != http.StatusOK {
+		t.Fatalf("complete status = %d, body = %s", completeRec.Code, completeRec.Body.String())
+	}
+	completed, ok := srv.jobs.Get(queued.Job.ID)
+	if !ok || completed.Status != jobs.StatusCompleted {
+		t.Fatalf("completed job = %+v ok=%v", completed, ok)
+	}
+}
+
 func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
 	srv := newTestServer(t)
 	var captured nexus.ModSearchRequest

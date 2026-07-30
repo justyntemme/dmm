@@ -83,6 +83,8 @@ var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan t
 
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
 
+const jobTypeSteamWorkshopAction = "steam-workshop-action"
+
 type installerChoiceRequiredError struct {
 	Kind      string
 	Installer fomod.Installer
@@ -200,6 +202,14 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Captur
 			}
 			job.UpdatedAt = time.Now().UTC()
 		}
+		if job.Type == jobTypeSteamWorkshopAction {
+			switch job.Status {
+			case jobs.StatusQueued, jobs.StatusRunning:
+				job.Status = jobs.StatusWaiting
+				job.Message = "Interrupted; waiting for Decky to apply the Steam Workshop action"
+				job.UpdatedAt = time.Now().UTC()
+			}
+		}
 		storedJobs[i] = job
 	}
 	return storedJobs
@@ -220,8 +230,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
+	mux.HandleFunc("GET /api/workshop/actions", s.handleSteamWorkshopActions)
+	mux.HandleFunc("POST /api/workshop/actions/{jobID}/start", s.handleStartSteamWorkshopAction)
+	mux.HandleFunc("POST /api/workshop/actions/{jobID}/complete", s.handleCompleteSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods/{modID}/files", s.handleGameNexusModFiles)
+	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
+	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
+	mux.HandleFunc("POST /api/games/{appID}/workshop/items/{itemID}/actions/{kind}", s.handleQueueSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
@@ -323,6 +339,31 @@ type gameResponse struct {
 	Markers       []string            `json:"markers,omitempty"`
 	SteamWorkshop *steam.WorkshopInfo `json:"steam_workshop,omitempty"`
 	NexusDomains  []string            `json:"nexus_domains,omitempty"`
+}
+
+type steamWorkshopStateResponse struct {
+	AppID     string                         `json:"app_id"`
+	Supported bool                           `json:"supported"`
+	Info      *steam.WorkshopInfo            `json:"info,omitempty"`
+	Items     []storage.SteamWorkshopItem    `json:"items"`
+	Actions   []steamWorkshopActionSpecReply `json:"actions,omitempty"`
+}
+
+type steamWorkshopActionSpecReply struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+type steamWorkshopSyncRequest struct {
+	Items []storage.SteamWorkshopItem `json:"items"`
+}
+
+type steamWorkshopActionReport struct {
+	Applied bool                        `json:"applied"`
+	Error   string                      `json:"error"`
+	Source  string                      `json:"source"`
+	Items   []storage.SteamWorkshopItem `json:"items,omitempty"`
 }
 
 type gameLaunchStatusResponse struct {
@@ -1438,6 +1479,261 @@ func workshopResponse(info steam.WorkshopInfo) *steam.WorkshopInfo {
 	}
 	next := info
 	return &next
+}
+
+func (s *Server) handleGameSteamWorkshop(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	state, err := s.steamWorkshopState(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+func (s *Server) handleSyncGameSteamWorkshop(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	var req steamWorkshopSyncRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	cleaned := make([]storage.SteamWorkshopItem, 0, len(req.Items))
+	for i, item := range req.Items {
+		item.SteamAppID = appID
+		item.PublishedFileID = strings.TrimSpace(item.PublishedFileID)
+		if item.PublishedFileID == "" {
+			continue
+		}
+		item.Title = strings.TrimSpace(item.Title)
+		item.RawJSON = strings.TrimSpace(item.RawJSON)
+		if item.RawJSON == "" || !json.Valid([]byte(item.RawJSON)) {
+			item.RawJSON = "{}"
+		}
+		if item.Position < 0 {
+			item.Position = i
+		}
+		cleaned = append(cleaned, item)
+	}
+	items, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, cleaned)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("steam workshop state synced", "app_id", appID, "items", len(items))
+	s.publishGameEvent(events.TypeWorkshopChanged, appID, map[string]any{
+		"action": "synced",
+		"count":  len(items),
+	})
+	state, err := s.steamWorkshopState(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, state)
+}
+
+func (s *Server) handleQueueSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	itemID := strings.TrimSpace(r.PathValue("itemID"))
+	kind := strings.TrimSpace(r.PathValue("kind"))
+	if appID == "" || itemID == "" || kind == "" {
+		http.Error(w, "appID, itemID, and kind are required", http.StatusBadRequest)
+		return
+	}
+	action, ok := s.steamWorkshopActionForKind(appID, kind)
+	if !ok {
+		http.Error(w, "this game extension does not support Steam Workshop action "+kind, http.StatusConflict)
+		return
+	}
+	if existing, ok := s.findActiveSteamWorkshopAction(appID, itemID, kind); ok {
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": existing, "duplicate": true})
+		return
+	}
+	job := s.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, action.Name, steamWorkshopActionPayload(appID, itemID, action))
+	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to apply Steam Workshop action")
+	s.logger.Info("steam workshop action queued", "job_id", job.ID, "app_id", appID, "item_id", itemID, "kind", kind, "action_id", action.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+}
+
+func (s *Server) handleSteamWorkshopActions(w http.ResponseWriter, r *http.Request) {
+	out := []jobs.Job{}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeSteamWorkshopAction {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusWaiting:
+			out = append(out, job)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actions": out})
+}
+
+func (s *Server) handleStartSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "Steam Workshop action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeSteamWorkshopAction {
+		http.Error(w, "job is not a Steam Workshop action", http.StatusBadRequest)
+		return
+	}
+	started, proceed := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusQueued, jobs.StatusWaiting}, jobs.StatusRunning, "Applying Steam Workshop action through Decky")
+	if !proceed {
+		writeJSON(w, http.StatusOK, map[string]any{"job": started, "proceed": false})
+		return
+	}
+	s.logger.Info("steam workshop action started", "job_id", jobID, "app_id", started.Payload["app_id"], "item_id", started.Payload["item_id"], "kind", started.Payload["kind"])
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": started, "proceed": true})
+}
+
+func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "Steam Workshop action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeSteamWorkshopAction {
+		http.Error(w, "job is not a Steam Workshop action", http.StatusBadRequest)
+		return
+	}
+	var req steamWorkshopActionReport
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	appID := strings.TrimSpace(job.Payload["app_id"])
+	if len(req.Items) > 0 && appID != "" {
+		if _, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, req.Items); err != nil {
+			s.logger.Warn("steam workshop action state sync failed", "job_id", jobID, "app_id", appID, "error", err)
+		}
+	}
+	if req.Applied {
+		job, _ = s.jobs.Complete(jobID, "Steam Workshop action applied")
+		s.logger.Info("steam workshop action completed", "job_id", jobID, "app_id", appID, "item_id", job.Payload["item_id"], "kind", job.Payload["kind"], "source", req.Source)
+		if appID != "" {
+			s.publishGameEvent(events.TypeWorkshopChanged, appID, map[string]any{
+				"action":  "applied",
+				"job_id":  jobID,
+				"kind":    job.Payload["kind"],
+				"item_id": job.Payload["item_id"],
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		return
+	}
+	message := strings.TrimSpace(req.Error)
+	if message == "" {
+		message = "Steam Workshop action failed"
+	}
+	job, _ = s.jobs.Fail(jobID, message)
+	s.logger.Warn("steam workshop action failed", "job_id", jobID, "app_id", appID, "item_id", job.Payload["item_id"], "kind", job.Payload["kind"], "error", message, "source", req.Source)
+	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+}
+
+func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWorkshopStateResponse, error) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return steamWorkshopStateResponse{}, err
+	}
+	info := s.steamWorkshopInfoForGame(game)
+	items, err := s.db.SteamWorkshopItemsForSteamApp(ctx, appID)
+	if err != nil {
+		return steamWorkshopStateResponse{}, err
+	}
+	if items == nil {
+		items = []storage.SteamWorkshopItem{}
+	}
+	spec, ok := s.games.SteamWorkshopForSteamApp(appID)
+	resp := steamWorkshopStateResponse{
+		AppID:     appID,
+		Supported: ok && len(spec.Actions) > 0,
+		Info:      info,
+		Items:     items,
+	}
+	if ok {
+		resp.Actions = steamWorkshopActionReplies(spec.Actions)
+	}
+	return resp, nil
+}
+
+func steamWorkshopActionReplies(actions []gameext.SteamWorkshopActionSpec) []steamWorkshopActionSpecReply {
+	out := make([]steamWorkshopActionSpecReply, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, steamWorkshopActionSpecReply{
+			ID:   strings.TrimSpace(action.ID),
+			Name: strings.TrimSpace(action.Name),
+			Kind: strings.TrimSpace(action.Kind),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Kind < out[j].Kind
+	})
+	return out
+}
+
+func (s *Server) steamWorkshopActionForKind(appID, kind string) (gameext.SteamWorkshopActionSpec, bool) {
+	kind = strings.TrimSpace(kind)
+	spec, ok := s.games.SteamWorkshopForSteamApp(appID)
+	if !ok {
+		return gameext.SteamWorkshopActionSpec{}, false
+	}
+	for _, action := range spec.Actions {
+		if strings.TrimSpace(action.Kind) == kind {
+			return action, true
+		}
+	}
+	return gameext.SteamWorkshopActionSpec{}, false
+}
+
+func (s *Server) findActiveSteamWorkshopAction(appID, itemID, kind string) (jobs.Job, bool) {
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeSteamWorkshopAction {
+			continue
+		}
+		if job.Payload["app_id"] != appID || job.Payload["item_id"] != itemID || job.Payload["kind"] != kind {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusWaiting, jobs.StatusRunning:
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
+}
+
+func steamWorkshopActionPayload(appID, itemID string, action gameext.SteamWorkshopActionSpec) jobs.JobPayload {
+	return jobs.JobPayload{
+		"app_id":      strings.TrimSpace(appID),
+		"item_id":     strings.TrimSpace(itemID),
+		"action_id":   strings.TrimSpace(action.ID),
+		"action_name": strings.TrimSpace(action.Name),
+		"kind":        strings.TrimSpace(action.Kind),
+	}
 }
 
 func (s *Server) detectGameVersions(ctx context.Context, games []steam.Game) {

@@ -49,10 +49,26 @@ type SteamWorkshopSpec struct {
 	Actions          []SteamWorkshopActionSpec
 }
 
+const (
+	SteamWorkshopActionSubscribe   = "subscribe"
+	SteamWorkshopActionUnsubscribe = "unsubscribe"
+	SteamWorkshopActionEnable      = "enable"
+	SteamWorkshopActionDisable     = "disable"
+)
+
 type SteamWorkshopActionSpec struct {
 	ID   string
 	Name string
 	Kind string
+}
+
+func StandardSteamWorkshopActions() []SteamWorkshopActionSpec {
+	return []SteamWorkshopActionSpec{
+		{ID: "steam-workshop-enable", Name: "Enable Workshop item", Kind: SteamWorkshopActionEnable},
+		{ID: "steam-workshop-disable", Name: "Disable Workshop item", Kind: SteamWorkshopActionDisable},
+		{ID: "steam-workshop-subscribe", Name: "Subscribe Workshop item", Kind: SteamWorkshopActionSubscribe},
+		{ID: "steam-workshop-unsubscribe", Name: "Unsubscribe Workshop item", Kind: SteamWorkshopActionUnsubscribe},
+	}
 }
 
 type RuntimeDependencySpec struct {

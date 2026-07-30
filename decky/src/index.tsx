@@ -22,12 +22,32 @@ declare const SteamClient:
   | {
       Apps?: {
         SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
+        GetSubscribedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
+        GetDownloadedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
+        SetWorkshopItemsDisabledLocally?: (appid: number, itemIds: string[], disabled: boolean) => void;
+        SetWorkshopItemsLoadOrder?: (appid: number, itemIds: string[]) => void;
+        SubscribeWorkshopItem?: (appid: number, itemId: string, subscribed: boolean) => void;
+        DownloadWorkshopItem?: (appid: number, itemId: string, highPriority: boolean) => void;
       };
       GameSessions?: {
         RegisterForAppLifetimeNotifications?: (callback: (notification: { unAppID: number; bRunning: boolean }) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
       };
     }
   | undefined;
+
+type SteamWorkshopClientItem = {
+  unAppID?: number;
+  appid?: number;
+  ulPublishedFileID?: string;
+  publishedfileid?: string;
+  published_file_id?: string;
+  title?: string;
+  strTitle?: string;
+  bDisabledLocally?: boolean;
+  bDisabled?: boolean;
+  disabled?: boolean;
+  disabled_locally?: boolean;
+};
 
 type BackendStatus = {
   running: boolean;
@@ -223,6 +243,27 @@ type LaunchStatus = {
     source_extension: string;
   };
   action?: LaunchAction;
+};
+
+type WorkshopItem = {
+  steam_app_id?: string;
+  published_file_id: string;
+  title?: string;
+  subscribed: boolean;
+  downloaded: boolean;
+  disabled_locally: boolean;
+  disabled_known: boolean;
+  position: number;
+  raw_json?: string;
+};
+
+type WorkshopActionJob = Job & {
+  payload?: {
+    app_id?: string;
+    item_id?: string;
+    kind?: "subscribe" | "unsubscribe" | "enable" | "disable" | string;
+    action_name?: string;
+  };
 };
 
 type Tab = "main" | "mods" | "settings" | "debug";
@@ -542,6 +583,8 @@ const notifiedJobStates = new Map<string, string>();
 const shownInstallerChoiceModals = new Set<string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
+const completedWorkshopActions = new Set<string>();
+const workshopActionAttempts = new Map<string, number>();
 const DMM_EVENT_NAME = "dmm-domain-event";
 const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
 let eventMonitorSocket: WebSocket | null = null;
@@ -694,7 +737,7 @@ async function logSteamClientCapabilities() {
 }
 
 function isNotifiableJob(job: Job) {
-  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type);
+  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type);
 }
 
 function isJob(value: unknown): value is Job {
@@ -856,6 +899,202 @@ async function syncLaunchActions(options: { force?: boolean; sink?: LaunchResult
     }
   } catch (_err) {
     await logFrontendEvent("launch action sync failed", { error: _err instanceof Error ? _err.message : String(_err) });
+  }
+}
+
+function workshopIDFromClientItem(item: SteamWorkshopClientItem): string {
+  const raw = item.ulPublishedFileID ?? item.publishedfileid ?? item.published_file_id ?? "";
+  return String(raw).trim();
+}
+
+function workshopTitleFromClientItem(item: SteamWorkshopClientItem): string {
+  const title = item.title ?? item.strTitle ?? "";
+  return String(title).trim();
+}
+
+function workshopDisabledState(item: SteamWorkshopClientItem): { known: boolean; value: boolean } {
+  for (const key of ["bDisabledLocally", "disabled_locally", "bDisabled", "disabled"] as const) {
+    const value = item[key];
+    if (typeof value === "boolean") return { known: true, value };
+    if (typeof value === "number") return { known: true, value: value !== 0 };
+  }
+  return { known: false, value: false };
+}
+
+function workshopRawJSON(item: SteamWorkshopClientItem): string {
+  const raw: Record<string, string | number | boolean> = {};
+  for (const key of ["unAppID", "appid", "ulPublishedFileID", "publishedfileid", "published_file_id", "title", "strTitle", "bDisabledLocally", "bDisabled", "disabled", "disabled_locally"] as const) {
+    const value = item[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      raw[key] = value;
+    }
+  }
+  return JSON.stringify(raw);
+}
+
+function mergeWorkshopItems(appID: string, subscribed: SteamWorkshopClientItem[], downloaded: SteamWorkshopClientItem[]): WorkshopItem[] {
+  const byID = new Map<string, WorkshopItem>();
+  subscribed.forEach((item, index) => {
+    const id = workshopIDFromClientItem(item);
+    if (!id) return;
+    const disabled = workshopDisabledState(item);
+    byID.set(id, {
+      steam_app_id: appID,
+      published_file_id: id,
+      title: workshopTitleFromClientItem(item),
+      subscribed: true,
+      downloaded: false,
+      disabled_locally: disabled.value,
+      disabled_known: disabled.known,
+      position: index,
+      raw_json: workshopRawJSON(item)
+    });
+  });
+  downloaded.forEach((item, index) => {
+    const id = workshopIDFromClientItem(item);
+    if (!id) return;
+    const disabled = workshopDisabledState(item);
+    const existing = byID.get(id);
+    byID.set(id, {
+      steam_app_id: appID,
+      published_file_id: id,
+      title: existing?.title || workshopTitleFromClientItem(item),
+      subscribed: existing?.subscribed ?? false,
+      downloaded: true,
+      disabled_locally: disabled.known ? disabled.value : existing?.disabled_locally ?? false,
+      disabled_known: disabled.known || existing?.disabled_known || false,
+      position: existing?.position ?? subscribed.length + index,
+      raw_json: existing?.raw_json || workshopRawJSON(item)
+    });
+  });
+  return Array.from(byID.values()).sort((a, b) => a.position - b.position || a.published_file_id.localeCompare(b.published_file_id));
+}
+
+async function syncWorkshopStateForApp(appID: string) {
+  const appid = Number.parseInt(appID, 10);
+  const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
+  if (!Number.isFinite(appid) || !steamApps) return false;
+  if (typeof steamApps.GetSubscribedWorkshopItems !== "function" && typeof steamApps.GetDownloadedWorkshopItems !== "function") {
+    await logFrontendEvent("workshop sync steam api unavailable", { app_id: appID });
+    return false;
+  }
+
+  let subscribed: SteamWorkshopClientItem[] = [];
+  let downloaded: SteamWorkshopClientItem[] = [];
+  try {
+    if (typeof steamApps.GetSubscribedWorkshopItems === "function") {
+      subscribed = await steamApps.GetSubscribedWorkshopItems(appid);
+    }
+  } catch (err) {
+    await logFrontendEvent("workshop subscribed sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
+  }
+  try {
+    if (typeof steamApps.GetDownloadedWorkshopItems === "function") {
+      downloaded = await steamApps.GetDownloadedWorkshopItems(appid);
+    }
+  } catch (err) {
+    await logFrontendEvent("workshop downloaded sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
+  }
+
+  const items = mergeWorkshopItems(appID, subscribed ?? [], downloaded ?? []);
+  const result = await call<[string, WorkshopItem[]], { ok: boolean; error?: string }>("sync_workshop", appID, items);
+  if (!result.ok) {
+    await logFrontendEvent("workshop sync backend rejected", { app_id: appID, error: result.error || "" });
+    return false;
+  }
+  await logFrontendEvent("workshop state synced", { app_id: appID, subscribed: subscribed.length, downloaded: downloaded.length, items: items.length });
+  return true;
+}
+
+async function executeWorkshopAction(job: WorkshopActionJob) {
+  const appID = String(job.payload?.app_id ?? "").trim();
+  const itemID = String(job.payload?.item_id ?? "").trim();
+  const kind = String(job.payload?.kind ?? "").trim();
+  const appid = Number.parseInt(appID, 10);
+  const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
+  if (!Number.isFinite(appid) || !itemID || !steamApps) {
+    throw new Error("Steam Workshop API is unavailable in this Decky context.");
+  }
+  if (kind === "enable") {
+    if (typeof steamApps.SetWorkshopItemsDisabledLocally !== "function") throw new Error("Steam Workshop enable API is unavailable.");
+    steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], false);
+    return;
+  }
+  if (kind === "disable") {
+    if (typeof steamApps.SetWorkshopItemsDisabledLocally !== "function") throw new Error("Steam Workshop disable API is unavailable.");
+    steamApps.SetWorkshopItemsDisabledLocally(appid, [itemID], true);
+    return;
+  }
+  if (kind === "subscribe") {
+    if (typeof steamApps.SubscribeWorkshopItem !== "function") throw new Error("Steam Workshop subscribe API is unavailable.");
+    steamApps.SubscribeWorkshopItem(appid, itemID, true);
+    if (typeof steamApps.DownloadWorkshopItem === "function") {
+      steamApps.DownloadWorkshopItem(appid, itemID, true);
+    }
+    return;
+  }
+  if (kind === "unsubscribe") {
+    if (typeof steamApps.SubscribeWorkshopItem !== "function") throw new Error("Steam Workshop unsubscribe API is unavailable.");
+    steamApps.SubscribeWorkshopItem(appid, itemID, false);
+    return;
+  }
+  throw new Error(`Unsupported Steam Workshop action: ${kind}`);
+}
+
+async function syncWorkshopActions() {
+  try {
+    const result = await call<[], { ok: boolean; error?: string; actions: WorkshopActionJob[] }>("workshop_actions");
+    if (!result.ok) {
+      await logFrontendEvent("workshop action sync returned not ok", { error: result.error || "" });
+      return;
+    }
+    if (result.actions.length > 0) {
+      await logFrontendEvent("workshop action sync found actions", { count: result.actions.length });
+    }
+    for (const action of result.actions) {
+      const key = `${action.id}:${action.payload?.app_id || ""}:${action.payload?.item_id || ""}:${action.payload?.kind || ""}`;
+      if (completedWorkshopActions.has(key)) continue;
+      const now = Date.now();
+      const previousAttempt = workshopActionAttempts.get(key) ?? 0;
+      if (previousAttempt > 0 && now - previousAttempt < 30_000) continue;
+      workshopActionAttempts.set(key, now);
+
+      const started = await call<[string], { ok: boolean; error?: string; proceed?: boolean; job?: WorkshopActionJob }>("start_workshop_action", action.id);
+      if (!started.ok || !started.proceed) {
+        if (!started.ok) await logFrontendEvent("workshop action start returned not ok", { job_id: action.id, error: started.error || "" });
+        continue;
+      }
+      try {
+        await logFrontendEvent("workshop action applying", { job_id: action.id, app_id: action.payload?.app_id || "", item_id: action.payload?.item_id || "", kind: action.payload?.kind || "" });
+        await executeWorkshopAction(action);
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        if (action.payload?.app_id) {
+          await syncWorkshopStateForApp(action.payload.app_id);
+        }
+        const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_workshop_action", action.id, {
+          applied: true,
+          source: "decky-auto"
+        });
+        if (report.ok) {
+          completedWorkshopActions.add(key);
+          showLaunchToast("DMM Workshop action applied", action.payload?.action_name || "Steam Workshop action applied");
+          await logFrontendEvent("workshop action applied", { job_id: action.id, app_id: action.payload?.app_id || "", item_id: action.payload?.item_id || "", kind: action.payload?.kind || "" });
+        } else {
+          await logFrontendEvent("workshop action report returned not ok", { job_id: action.id, error: report.error || "" });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        showLaunchToast("DMM Workshop action failed", message, true);
+        await logFrontendEvent("workshop action failed", { job_id: action.id, error: message });
+        await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_workshop_action", action.id, {
+          applied: false,
+          error: message,
+          source: "decky-auto"
+        });
+      }
+    }
+  } catch (err) {
+    await logFrontendEvent("workshop action sync failed", { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -1251,6 +1490,9 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
   if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type)) {
     await syncLaunchActions();
   }
+  if (event.type === "job.updated") {
+    await syncWorkshopActions();
+  }
   window.dispatchEvent(new CustomEvent(DMM_EVENT_NAME, { detail: event }));
 }
 
@@ -1320,6 +1562,7 @@ function startBackgroundMonitors() {
   logSteamClientCapabilities();
   seedJobNotifications({ seed: true });
   syncLaunchActions();
+  syncWorkshopActions();
   connectEventMonitor();
 }
 
@@ -1475,6 +1718,7 @@ function Content() {
       setDeckyInstallCandidates([]);
       setError(candidatesResult.error ?? "Unable to load installer items.");
     }
+    void syncWorkshopStateForApp(appID);
   }
 
   async function refreshDeckyMods(appID = selectedDeckyGameID) {

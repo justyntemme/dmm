@@ -98,6 +98,20 @@ type ExtensionSnapshot struct {
 	CapabilitiesJSON string `json:"capabilities_json"`
 }
 
+type SteamWorkshopItem struct {
+	ID              int64  `json:"id"`
+	GameID          int64  `json:"game_id"`
+	SteamAppID      string `json:"steam_app_id"`
+	PublishedFileID string `json:"published_file_id"`
+	Title           string `json:"title,omitempty"`
+	Subscribed      bool   `json:"subscribed"`
+	Downloaded      bool   `json:"downloaded"`
+	DisabledLocally bool   `json:"disabled_locally"`
+	DisabledKnown   bool   `json:"disabled_known"`
+	Position        int    `json:"position"`
+	RawJSON         string `json:"raw_json,omitempty"`
+}
+
 func Open(path string) (*DB, error) {
 	if err := ensureParent(path); err != nil {
 		return nil, err
@@ -282,6 +296,94 @@ ORDER BY id
 			return nil, err
 		}
 		out = append(out, snapshot)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items []SteamWorkshopItem) ([]SteamWorkshopItem, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return nil, errors.New("steam app id is required")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var gameID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, appID).Scan(&gameID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM steam_workshop_items WHERE game_id = ?`, gameID); err != nil {
+		return nil, err
+	}
+	for i, item := range items {
+		publishedFileID := strings.TrimSpace(item.PublishedFileID)
+		if publishedFileID == "" {
+			continue
+		}
+		title := strings.TrimSpace(item.Title)
+		rawJSON := strings.TrimSpace(item.RawJSON)
+		if rawJSON == "" || !json.Valid([]byte(rawJSON)) {
+			rawJSON = "{}"
+		}
+		position := item.Position
+		if position < 0 {
+			position = i
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO steam_workshop_items (
+	game_id,
+	published_file_id,
+	title,
+	subscribed,
+	downloaded,
+	disabled_locally,
+	disabled_known,
+	position,
+	raw_json,
+	updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`, gameID, publishedFileID, title, boolInt(item.Subscribed), boolInt(item.Downloaded), boolInt(item.DisabledLocally), boolInt(item.DisabledKnown), position, rawJSON); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return db.SteamWorkshopItemsForSteamApp(ctx, appID)
+}
+
+func (db *DB) SteamWorkshopItemsForSteamApp(ctx context.Context, appID string) ([]SteamWorkshopItem, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return nil, errors.New("steam app id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT swi.id, swi.game_id, g.steam_app_id, swi.published_file_id, swi.title, swi.subscribed, swi.downloaded, swi.disabled_locally, swi.disabled_known, swi.position, swi.raw_json
+FROM steam_workshop_items swi
+JOIN games g ON g.id = swi.game_id
+WHERE g.steam_app_id = ?
+ORDER BY swi.position ASC, swi.published_file_id ASC
+`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SteamWorkshopItem
+	for rows.Next() {
+		var item SteamWorkshopItem
+		var subscribed, downloaded, disabledLocally, disabledKnown int
+		if err := rows.Scan(&item.ID, &item.GameID, &item.SteamAppID, &item.PublishedFileID, &item.Title, &subscribed, &downloaded, &disabledLocally, &disabledKnown, &item.Position, &item.RawJSON); err != nil {
+			return nil, err
+		}
+		item.Subscribed = subscribed != 0
+		item.Downloaded = downloaded != 0
+		item.DisabledLocally = disabledLocally != 0
+		item.DisabledKnown = disabledKnown != 0
+		out = append(out, item)
 	}
 	return out, rows.Err()
 }
@@ -1366,4 +1468,11 @@ func safeCatalogSourceURL(resolved catalog.ResolvedDownload) string {
 
 func ensureParent(path string) error {
 	return mkdirAll(filepath.Dir(path))
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

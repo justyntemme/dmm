@@ -147,6 +147,32 @@ func (m *Manager) Cancel(id, message string) (Job, bool) {
 	return m.update(id, StatusCanceled, message)
 }
 
+func (m *Manager) TransitionIf(id string, allowed []Status, next Status, message string) (Job, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, ok := m.jobs[id]
+	if !ok {
+		return Job{}, false
+	}
+	matches := len(allowed) == 0
+	for _, status := range allowed {
+		if job.Status == status {
+			matches = true
+			break
+		}
+	}
+	if !matches {
+		return job, false
+	}
+	job.Status = next
+	job.Message = message
+	job.UpdatedAt = time.Now().UTC()
+	m.jobs[id] = job
+	m.persistLocked(job)
+	return job, true
+}
+
 func (m *Manager) update(id string, status Status, message string) (Job, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

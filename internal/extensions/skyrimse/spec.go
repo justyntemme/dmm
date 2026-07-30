@@ -38,6 +38,7 @@ func Register(r sdk.Registrar) {
 		},
 		Workshop: sdk.SteamWorkshopSpec{
 			AllowCoexistence: true,
+			Actions:          sdk.StandardSteamWorkshopActions(),
 		},
 	})
 	for _, modType := range modTypes() {

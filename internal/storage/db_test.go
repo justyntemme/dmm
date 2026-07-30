@@ -223,6 +223,48 @@ func TestJobsPersistPayload(t *testing.T) {
 	}
 }
 
+func TestReplaceSteamWorkshopItemsForSteamApp(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := db.ReplaceSteamWorkshopItems(context.Background(), "377160", []SteamWorkshopItem{
+		{PublishedFileID: "20", Subscribed: true, Downloaded: true, DisabledLocally: true, DisabledKnown: true, Position: 2, RawJSON: `{"id":"20"}`},
+		{PublishedFileID: "10", Title: "Workshop Ten", Subscribed: true, Downloaded: false, Position: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].PublishedFileID != "10" || items[1].PublishedFileID != "20" {
+		t.Fatalf("items = %+v", items)
+	}
+	if !items[1].DisabledKnown || !items[1].DisabledLocally || !items[1].Downloaded {
+		t.Fatalf("disabled/downloaded flags = %+v", items[1])
+	}
+
+	items, err = db.ReplaceSteamWorkshopItems(context.Background(), "377160", []SteamWorkshopItem{
+		{PublishedFileID: "30", Subscribed: true, Downloaded: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].PublishedFileID != "30" {
+		t.Fatalf("replacement did not clear old items: %+v", items)
+	}
+}
+
 func TestDomainEventsPersistInIDOrder(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {
