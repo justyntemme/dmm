@@ -304,8 +304,8 @@
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
-  $: installRequests = jobs.filter((job) => job.type === "pending-import" && !["completed", "canceled"].includes(job.status));
-  $: actionItems = jobs.filter((job) => ["pending-import", "installer-choice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
+  $: installRequests = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
+  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
   $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
@@ -315,7 +315,7 @@
       : null;
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
-        if (job.type === "pending-import") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        if (job.type === "captured-install") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
         return ["installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
@@ -804,12 +804,12 @@
 
   async function clearInstallRequests() {
     error = "";
-    const response = await fetch("/api/imports/pending", { method: "DELETE" });
+    const response = await fetch("/api/captured-installs", { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
     }
-    jobs = jobs.filter((job) => job.type !== "pending-import" || ["completed", "canceled"].includes(job.status));
+    jobs = jobs.filter((job) => job.type !== "captured-install" || ["completed", "canceled"].includes(job.status));
     await refresh();
   }
 
@@ -1007,7 +1007,7 @@
     setJobBusy(request.id, true);
     markJobProcessing(request, "Installing downloaded archive...");
     try {
-      const response = await fetch(`/api/imports/pending/${request.id}/install`, { method: "POST" });
+      const response = await fetch(`/api/captured-installs/${request.id}/install`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1030,7 +1030,7 @@
     setJobBusy(request.id, true);
     markJobProcessing(request, "Retrying captured install...");
     try {
-      const response = await fetch(`/api/imports/pending/${request.id}/retry`, { method: "POST" });
+      const response = await fetch(`/api/captured-installs/${request.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1200,14 +1200,14 @@
   function upsertJob(job: Job) {
     const existing = jobs.find((item) => item.id === job.id);
     const changed = !existing || existing.status !== job.status || existing.message !== job.message || existing.updated_at !== job.updated_at;
-    if (job.type === "pending-import" && job.status === "canceled" && job.message === "Cleared") {
+    if (job.type === "captured-install" && job.status === "canceled" && job.message === "Cleared") {
       jobs = jobs.filter((item) => item.id !== job.id);
       return;
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     reconcileBusyState();
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
+    if (["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null, job.status === "completed");
     }
   }
@@ -1555,11 +1555,11 @@
 	                      <button type="button" on:click={() => openActionItem(request)}>{gameForJob(request) ? "Open Choices" : "Choose Game"}</button>
 	                    {/if}
 	                    {#if request.status === "waiting"}
-	                      {#if request.type === "pending-import"}
+	                      {#if request.type === "captured-install"}
 	                        <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
 	                      {/if}
 	                    {/if}
-	                    {#if request.type === "pending-import" && request.status === "failed"}
+	                    {#if request.type === "captured-install" && request.status === "failed"}
 	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
 	                    {/if}
 	                    {#if canCancelJob(request)}
@@ -1863,10 +1863,10 @@
                       {#if request.type === "installer-choice"}
                         <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
                       {/if}
-                      {#if request.type === "pending-import" && request.status === "waiting"}
+                      {#if request.type === "captured-install" && request.status === "waiting"}
                         <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
                       {/if}
-                      {#if request.type === "pending-import" && request.status === "failed"}
+                      {#if request.type === "captured-install" && request.status === "failed"}
                         <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
                       {/if}
                       {#if canCancelJob(request)}

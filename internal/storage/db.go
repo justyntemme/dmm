@@ -76,7 +76,7 @@ type InstallCandidate struct {
 	ChoicesJSON      string `json:"choices_json,omitempty"`
 }
 
-type PendingImport struct {
+type CapturedInstall struct {
 	JobID         string                   `json:"job_id"`
 	Resolved      catalog.ResolvedDownload `json:"resolved"`
 	DownloadLinks []nexus.DownloadLink     `json:"download_links"`
@@ -150,11 +150,11 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "install_candidates", name: "choices_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
-		{table: "pending_imports", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
-		{table: "pending_imports", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
-		{table: "pending_imports", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
-		{table: "pending_imports", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
-		{table: "pending_imports", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "captured_installs", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
+		{table: "captured_installs", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "captured_installs", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "captured_installs", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "captured_installs", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "extension_snapshots", name: "version", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "extension_snapshots", name: "build_id", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
@@ -518,7 +518,7 @@ LIMIT ?
 	return out, rows.Err()
 }
 
-func (db *DB) SavePendingImport(ctx context.Context, pending PendingImport) error {
+func (db *DB) SaveCapturedInstall(ctx context.Context, pending CapturedInstall) error {
 	resolved, err := json.Marshal(pending.Resolved)
 	if err != nil {
 		return err
@@ -528,7 +528,7 @@ func (db *DB) SavePendingImport(ctx context.Context, pending PendingImport) erro
 		return err
 	}
 	_, err = db.conn.ExecContext(ctx, `
-INSERT INTO pending_imports (job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes, updated_at)
+INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(job_id) DO UPDATE SET
 	resolved_json = excluded.resolved_json,
@@ -542,19 +542,19 @@ ON CONFLICT(job_id) DO UPDATE SET
 	return err
 }
 
-func (db *DB) ListPendingImports(ctx context.Context) ([]PendingImport, error) {
+func (db *DB) ListCapturedInstalls(ctx context.Context) ([]CapturedInstall, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 SELECT job_id, resolved_json, download_links_json, source, archive_path, archive_sha256, archive_bytes
-FROM pending_imports
+FROM captured_installs
 ORDER BY updated_at DESC, created_at DESC
 `)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []PendingImport
+	var out []CapturedInstall
 	for rows.Next() {
-		var pending PendingImport
+		var pending CapturedInstall
 		var resolved, links string
 		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes); err != nil {
 			return nil, err
@@ -570,8 +570,8 @@ ORDER BY updated_at DESC, created_at DESC
 	return out, rows.Err()
 }
 
-func (db *DB) DeletePendingImport(ctx context.Context, jobID string) error {
-	_, err := db.conn.ExecContext(ctx, `DELETE FROM pending_imports WHERE job_id = ?`, jobID)
+func (db *DB) DeleteCapturedInstall(ctx context.Context, jobID string) error {
+	_, err := db.conn.ExecContext(ctx, `DELETE FROM captured_installs WHERE job_id = ?`, jobID)
 	return err
 }
 

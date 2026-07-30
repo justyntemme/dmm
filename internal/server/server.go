@@ -55,14 +55,14 @@ type Server struct {
 	catalogs []catalog.RemoteModCatalog
 	games    games.Registry
 
-	pendingMu      sync.Mutex
-	pendingImports map[string]pendingImport
+	pendingMu        sync.Mutex
+	capturedInstalls map[string]capturedInstall
 
 	activeMu      sync.Mutex
 	activeCancels map[string]context.CancelFunc
 }
 
-type pendingImport struct {
+type capturedInstall struct {
 	Resolved      catalog.ResolvedDownload
 	DownloadLinks []nexus.DownloadLink
 	Source        string
@@ -108,7 +108,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	storedPending, err := db.ListPendingImports(context.Background())
+	storedPending, err := db.ListCapturedInstalls(context.Background())
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -144,11 +144,11 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		},
 		games: gameRegistry,
 
-		pendingImports: map[string]pendingImport{},
-		activeCancels:  map[string]context.CancelFunc{},
+		capturedInstalls: map[string]capturedInstall{},
+		activeCancels:    map[string]context.CancelFunc{},
 	}
 	for _, pending := range storedPending {
-		srv.pendingImports[pending.JobID] = pendingImport{
+		srv.capturedInstalls[pending.JobID] = capturedInstall{
 			Resolved:      pending.Resolved,
 			DownloadLinks: pending.DownloadLinks,
 			Source:        pending.Source,
@@ -163,30 +163,30 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		}
 		srv.publishJobEvent(job)
 	}, func(job jobs.Job) {
-		if err := db.DeletePendingImport(context.Background(), job.ID); err != nil {
-			logger.Warn("delete pending import failed", "job_id", job.ID, "error", err)
+		if err := db.DeleteCapturedInstall(context.Background(), job.ID); err != nil {
+			logger.Warn("delete captured install failed", "job_id", job.ID, "error", err)
 		}
 		if err := db.DeleteJob(context.Background(), job.ID); err != nil {
 			logger.Warn("delete job failed", "job_id", job.ID, "error", err)
 		}
 		srv.publishJobEvent(job)
 	})
-	logger.Info("state restored", "jobs", len(storedJobs), "pending_imports", len(storedPending))
+	logger.Info("state restored", "jobs", len(storedJobs), "captured_installs", len(storedPending))
 	return srv, nil
 }
 
-func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.PendingImport, gameRegistry games.Registry) []jobs.Job {
-	pendingByID := make(map[string]storage.PendingImport, len(storedPending))
+func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.CapturedInstall, gameRegistry games.Registry) []jobs.Job {
+	pendingByID := make(map[string]storage.CapturedInstall, len(storedPending))
 	for _, pending := range storedPending {
 		pendingByID[pending.JobID] = pending
 	}
 	for i, job := range storedJobs {
 		pending, hasPending := pendingByID[job.ID]
-		if job.Type != "pending-import" || !hasPending {
+		if job.Type != "captured-install" || !hasPending {
 			continue
 		}
 		if len(job.Payload) == 0 {
-			job.Payload = pendingImportJobPayload(gameRegistry, pending.Resolved)
+			job.Payload = capturedInstallJobPayload(gameRegistry, pending.Resolved)
 		}
 		switch job.Status {
 		case jobs.StatusQueued, jobs.StatusRunning:
@@ -249,11 +249,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
-	mux.HandleFunc("DELETE /api/imports/pending", s.handleClearPendingImports)
+	mux.HandleFunc("DELETE /api/captured-installs", s.handleClearCapturedInstalls)
 	mux.HandleFunc("POST /api/imports/resolve", s.handleResolveImport)
-	mux.HandleFunc("POST /api/imports/pending", s.handlePendingImport)
-	mux.HandleFunc("POST /api/imports/pending/{jobID}/install", s.handleInstallPendingImport)
-	mux.HandleFunc("POST /api/imports/pending/{jobID}/retry", s.handleRetryPendingImport)
+	mux.HandleFunc("POST /api/captured-installs", s.handleCapturedInstall)
+	mux.HandleFunc("POST /api/captured-installs/{jobID}/install", s.handleInstallCapturedInstall)
+	mux.HandleFunc("POST /api/captured-installs/{jobID}/retry", s.handleRetryCapturedInstall)
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
 	mux.Handle("/", s.staticHandler())
 	return lanOnlyMiddleware(func() bool {
@@ -486,7 +486,7 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
 			continue
 		}
-		if job.Type == "pending-import" && s.jobMatchesAppID(job, appID) {
+		if job.Type == "captured-install" && s.jobMatchesAppID(job, appID) {
 			resp.ActiveInstallJobs++
 		}
 		if (job.Type == "deploy" || job.Type == "purge" || job.Type == "repair") && s.jobMatchesAppID(job, appID) {
@@ -781,11 +781,11 @@ func (s *Server) jobMatchesAppID(job jobs.Job, appID string) bool {
 	if strings.Contains(job.Title, appID) || strings.Contains(job.Message, appID) {
 		return true
 	}
-	if job.Type != "pending-import" {
+	if job.Type != "captured-install" {
 		return false
 	}
 	s.pendingMu.Lock()
-	pending, ok := s.pendingImports[job.ID]
+	pending, ok := s.capturedInstalls[job.ID]
 	s.pendingMu.Unlock()
 	if !ok {
 		return false
@@ -801,7 +801,7 @@ func gameJobPayload(appID string) jobs.JobPayload {
 	return jobs.JobPayload{"app_id": appID}
 }
 
-func pendingImportJobPayload(gameRegistry games.Registry, resolved catalog.ResolvedDownload) jobs.JobPayload {
+func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.ResolvedDownload) jobs.JobPayload {
 	payload := jobs.JobPayload{
 		"catalog":     strings.TrimSpace(resolved.Catalog),
 		"game_domain": strings.TrimSpace(resolved.GameDomain),
@@ -956,7 +956,7 @@ type resetGameModsResponse struct {
 	InstalledModsRemoved     int      `json:"installed_mods_removed"`
 	StagingPathsRemoved      int      `json:"staging_paths_removed"`
 	InstallCandidatesCleared int64    `json:"install_candidates_cleared"`
-	PendingImportsCleared    int      `json:"pending_imports_cleared"`
+	CapturedInstallsCleared  int      `json:"captured_installs_cleared"`
 }
 
 func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Request) {
@@ -1671,7 +1671,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 	job := s.jobs.CreateWithPayload("reinstall", "Reinstall: "+mod.Name, gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Reinstalling "+mod.Name+" from cached archive")
 	s.logger.Info("installed mod reinstall started", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "archive_path", mod.ArchivePath)
-	pending := pendingImport{
+	pending := capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    mod.Catalog,
 			SourceURL:  mod.ArchivePath,
@@ -1684,7 +1684,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		ArchiveBytes:  info.Size(),
 		ArchiveSHA256: "",
 	}
-	staged, err := s.stagePendingImport(r.Context(), job.ID, pending, pending.downloadResult())
+	staged, err := s.stageCapturedInstall(r.Context(), job.ID, pending, pending.downloadResult())
 	if err != nil {
 		s.logger.Warn("installed mod reinstall failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
 		var choice installerChoiceRequiredError
@@ -1947,7 +1947,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	pending := pendingImport{
+	pending := capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    candidate.Catalog,
 			SourceURL:  candidate.ArchivePath,
@@ -1961,7 +1961,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 		ArchiveBytes:  info.Size(),
 	}
 	result := pending.downloadResult()
-	staged, err := s.stagePendingImport(ctx, jobID, pending, result)
+	staged, err := s.stageCapturedInstall(ctx, jobID, pending, result)
 	if err == nil {
 		return staged, nil
 	}
@@ -2759,7 +2759,7 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 	if deletedCandidates > 0 {
 		s.publishInstallCandidatesChanged(appID, "reset", int(deletedCandidates))
 	}
-	result.PendingImportsCleared = s.clearPendingImportsForSteamApp(appID)
+	result.CapturedInstallsCleared = s.clearCapturedInstallsForSteamApp(appID)
 
 	message := "Reset DMM-managed mods: " + strconv.Itoa(result.InstalledModsRemoved) + " mod" + plural(result.InstalledModsRemoved) + " removed"
 	job, _ = s.jobs.Complete(job.ID, message)
@@ -2772,7 +2772,7 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		"installed_mods_removed", result.InstalledModsRemoved,
 		"staging_paths_removed", result.StagingPathsRemoved,
 		"install_candidates_cleared", result.InstallCandidatesCleared,
-		"pending_imports_cleared", result.PendingImportsCleared,
+		"captured_installs_cleared", result.CapturedInstallsCleared,
 	)
 	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
 		"action": "reset",
@@ -2791,8 +2791,8 @@ func (s *Server) finishResetFailure(w http.ResponseWriter, jobID string, result 
 	writeJSON(w, http.StatusAccepted, result)
 }
 
-func (s *Server) clearPendingImportsForSteamApp(appID string) int {
-	removed := s.jobs.ClearTypeWhere("pending-import", func(job jobs.Job) bool {
+func (s *Server) clearCapturedInstallsForSteamApp(appID string) int {
+	removed := s.jobs.ClearTypeWhere("captured-install", func(job jobs.Job) bool {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
 			return false
 		}
@@ -2800,7 +2800,7 @@ func (s *Server) clearPendingImportsForSteamApp(appID string) int {
 	})
 	s.pendingMu.Lock()
 	for _, job := range removed {
-		delete(s.pendingImports, job.ID)
+		delete(s.capturedInstalls, job.ID)
 	}
 	s.pendingMu.Unlock()
 	for _, job := range removed {
@@ -3069,16 +3069,16 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	if cancel := s.cancelActiveJob(jobID); cancel != nil {
 		cancel()
 	}
-	if job.Type == "pending-import" {
-		s.forgetPendingImport(jobID)
+	if job.Type == "captured-install" {
+		s.forgetCapturedInstall(jobID)
 	}
 	canceled, _ := s.jobs.Cancel(jobID, "Canceled by user")
 	s.logger.Info("job canceled", "job_id", jobID, "type", job.Type)
 	writeJSON(w, http.StatusOK, map[string]any{"job": canceled})
 }
 
-func (s *Server) handleClearPendingImports(w http.ResponseWriter, r *http.Request) {
-	removed := s.jobs.ClearTypeWhere("pending-import", func(job jobs.Job) bool {
+func (s *Server) handleClearCapturedInstalls(w http.ResponseWriter, r *http.Request) {
+	removed := s.jobs.ClearTypeWhere("captured-install", func(job jobs.Job) bool {
 		return job.Status != jobs.StatusCompleted && job.Status != jobs.StatusCanceled
 	})
 	s.pendingMu.Lock()
@@ -3086,10 +3086,10 @@ func (s *Server) handleClearPendingImports(w http.ResponseWriter, r *http.Reques
 		if cancel := s.cancelActiveJob(job.ID); cancel != nil {
 			cancel()
 		}
-		delete(s.pendingImports, job.ID)
+		delete(s.capturedInstalls, job.ID)
 	}
 	s.pendingMu.Unlock()
-	s.logger.Info("pending imports cleared", "count", len(removed))
+	s.logger.Info("captured installs cleared", "count", len(removed))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"cleared": len(removed),
 	})
@@ -3171,7 +3171,7 @@ func (s *Server) handleResolveImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, payload)
 }
 
-func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	var req resolveImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -3184,13 +3184,13 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 	}
 	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
 	if err != nil {
-		s.logger.Warn("pending import parse failed", "error", err, "source", req.Source)
+		s.logger.Warn("captured install parse failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	source := strings.TrimSpace(req.Source)
 	s.logger.Info(
-		"pending import requested",
+		"captured install requested",
 		"source", source,
 		"catalog", resolved.Catalog,
 		"game_domain", resolved.GameDomain,
@@ -3201,8 +3201,8 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "downloads for catalog "+resolved.Catalog+" are not supported yet", http.StatusBadRequest)
 		return
 	}
-	if job, pending, ok := s.findPendingImport(resolved); ok {
-		s.logger.Info("pending import duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
 			"job":      job,
 			"resolved": pending.Resolved,
@@ -3215,7 +3215,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("pending-import", "Captured mod: "+resolved.GameDomain+"/mods/"+resolved.ModID, pendingImportJobPayload(s.games, resolved))
+	job := s.jobs.CreateWithPayload("captured-install", "Captured mod: "+resolved.GameDomain+"/mods/"+resolved.ModID, capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
@@ -3235,7 +3235,7 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		payload["download_links"] = links
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+resolved.GameDomain)
 		payload["job"] = job
-		s.rememberPendingImport(job.ID, pendingImport{
+		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:      resolved,
 			DownloadLinks: links,
 			Source:        source,
@@ -3243,9 +3243,9 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
 		s.cfgMu.RUnlock()
-		started, err := s.startPendingImportDownload(job.ID, "captured nexus link")
+		started, err := s.startCapturedInstallDownload(job.ID, "captured nexus link")
 		if err != nil {
-			s.logger.Warn("pending import immediate download failed", "job_id", job.ID, "error", err)
+			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
 			payload["job"] = job
 		} else {
@@ -3258,17 +3258,17 @@ func (s *Server) handlePendingImport(w http.ResponseWriter, r *http.Request) {
 	}
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
 	payload["job"] = job
-	s.rememberPendingImport(job.ID, pendingImport{
+	s.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: resolved,
 		Source:   source,
 	})
 	writeJSON(w, http.StatusAccepted, payload)
 }
 
-func (s *Server) findPendingImport(resolved catalog.ResolvedDownload) (jobs.Job, pendingImport, bool) {
+func (s *Server) findCapturedInstall(resolved catalog.ResolvedDownload) (jobs.Job, capturedInstall, bool) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	for jobID, pending := range s.pendingImports {
+	for jobID, pending := range s.capturedInstalls {
 		if pending.Resolved.Catalog != resolved.Catalog ||
 			pending.Resolved.GameDomain != resolved.GameDomain ||
 			pending.Resolved.ModID != resolved.ModID ||
@@ -3276,15 +3276,15 @@ func (s *Server) findPendingImport(resolved catalog.ResolvedDownload) (jobs.Job,
 			continue
 		}
 		job, ok := s.jobs.Get(jobID)
-		if !ok || !pendingImportIsActive(job.Status) {
+		if !ok || !capturedInstallIsActive(job.Status) {
 			continue
 		}
 		return job, pending, true
 	}
-	return jobs.Job{}, pendingImport{}, false
+	return jobs.Job{}, capturedInstall{}, false
 }
 
-func pendingImportIsActive(status jobs.Status) bool {
+func capturedInstallIsActive(status jobs.Status) bool {
 	switch status {
 	case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
 		return true
@@ -3308,23 +3308,23 @@ func (s *Server) resolveCatalogURL(ctx context.Context, rawURL string) (catalog.
 	return catalog.ResolvedDownload{}, errors.New("no remote mod catalogs are configured")
 }
 
-func (s *Server) handleInstallPendingImport(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleInstallCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimSpace(r.PathValue("jobID"))
 	if jobID == "" {
 		http.Error(w, "jobID is required", http.StatusBadRequest)
 		return
 	}
 
-	job, err := s.startPendingImportInstall(jobID, "user-started install")
+	job, err := s.startCapturedInstallInstall(jobID, "user-started install")
 	if err != nil {
 		switch {
-		case errors.Is(err, errPendingImportNotFound):
+		case errors.Is(err, errCapturedInstallNotFound):
 			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
-		case errors.Is(err, errPendingImportJobNotFound):
+		case errors.Is(err, errCapturedInstallJobNotFound):
 			http.Error(w, "captured mod job was not found", http.StatusNotFound)
-		case errors.Is(err, errPendingImportNotWaiting):
+		case errors.Is(err, errCapturedInstallNotWaiting):
 			http.Error(w, "captured mod action is not ready to install", http.StatusConflict)
-		case errors.Is(err, errPendingImportNoArchive):
+		case errors.Is(err, errCapturedInstallNoArchive):
 			http.Error(w, "captured mod action has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
@@ -3334,7 +3334,7 @@ func (s *Server) handleInstallPendingImport(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
 }
 
-func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimSpace(r.PathValue("jobID"))
 	if jobID == "" {
 		http.Error(w, "jobID is required", http.StatusBadRequest)
@@ -3345,7 +3345,7 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 		http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		return
 	}
-	if job.Type != "pending-import" {
+	if job.Type != "captured-install" {
 		http.Error(w, "only captured mod jobs can be retried", http.StatusBadRequest)
 		return
 	}
@@ -3353,7 +3353,7 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 		http.Error(w, "only failed captured mod jobs can be retried", http.StatusConflict)
 		return
 	}
-	pending, ok := s.pendingImport(jobID)
+	pending, ok := s.capturedInstall(jobID)
 	if !ok {
 		http.Error(w, "captured mod job no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
 		return
@@ -3371,23 +3371,23 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 	var retried jobs.Job
 	var err error
 	if pendingArchiveReady(pending) {
-		retried, err = s.startPendingImportInstall(jobID, "retry install")
+		retried, err = s.startCapturedInstallInstall(jobID, "retry install")
 	} else {
-		retried, err = s.startPendingImportDownload(jobID, "retry download")
+		retried, err = s.startCapturedInstallDownload(jobID, "retry download")
 	}
 	if err != nil {
 		switch {
-		case errors.Is(err, errPendingImportNotFound):
+		case errors.Is(err, errCapturedInstallNotFound):
 			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
-		case errors.Is(err, errPendingImportJobNotFound):
+		case errors.Is(err, errCapturedInstallJobNotFound):
 			http.Error(w, "captured mod job was not found", http.StatusNotFound)
-		case errors.Is(err, errPendingImportNotWaiting):
+		case errors.Is(err, errCapturedInstallNotWaiting):
 			http.Error(w, "captured mod action is not retryable right now", http.StatusConflict)
-		case errors.Is(err, errPendingImportNoLinks):
+		case errors.Is(err, errCapturedInstallNoLinks):
 			http.Error(w, "captured mod action has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
-		case errors.Is(err, errPendingImportEmptyLink):
+		case errors.Is(err, errCapturedInstallEmptyLink):
 			http.Error(w, "captured mod action download link is empty", http.StatusBadRequest)
-		case errors.Is(err, errPendingImportNoArchive):
+		case errors.Is(err, errCapturedInstallNoArchive):
 			http.Error(w, "captured mod action has no downloaded archive yet", http.StatusBadRequest)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
@@ -3398,41 +3398,41 @@ func (s *Server) handleRetryPendingImport(w http.ResponseWriter, r *http.Request
 }
 
 var (
-	errPendingImportNotFound    = errors.New("pending import was not found")
-	errPendingImportJobNotFound = errors.New("pending import job was not found")
-	errPendingImportNotWaiting  = errors.New("pending import is not ready for this action")
-	errPendingImportNoLinks     = errors.New("pending import has no download links")
-	errPendingImportEmptyLink   = errors.New("pending import download link is empty")
-	errPendingImportNoArchive   = errors.New("pending import has no downloaded archive")
+	errCapturedInstallNotFound    = errors.New("captured install was not found")
+	errCapturedInstallJobNotFound = errors.New("captured install job was not found")
+	errCapturedInstallNotWaiting  = errors.New("captured install is not ready for this action")
+	errCapturedInstallNoLinks     = errors.New("captured install has no download links")
+	errCapturedInstallEmptyLink   = errors.New("captured install download link is empty")
+	errCapturedInstallNoArchive   = errors.New("captured install has no downloaded archive")
 )
 
-func (s *Server) startPendingImportDownload(jobID, actionSource string) (jobs.Job, error) {
-	pending, ok := s.pendingImport(jobID)
+func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.Job, error) {
+	pending, ok := s.capturedInstall(jobID)
 	if !ok {
-		return jobs.Job{}, errPendingImportNotFound
+		return jobs.Job{}, errCapturedInstallNotFound
 	}
 	currentJob, ok := s.jobs.Get(jobID)
 	if !ok {
-		return jobs.Job{}, errPendingImportJobNotFound
+		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
 	if currentJob.Status != jobs.StatusWaiting {
-		return jobs.Job{}, errPendingImportNotWaiting
+		return jobs.Job{}, errCapturedInstallNotWaiting
 	}
 	if len(pending.DownloadLinks) == 0 {
-		return jobs.Job{}, errPendingImportNoLinks
+		return jobs.Job{}, errCapturedInstallNoLinks
 	}
 
 	link := pending.DownloadLinks[0]
 	if strings.TrimSpace(link.URI) == "" {
-		return jobs.Job{}, errPendingImportEmptyLink
+		return jobs.Job{}, errCapturedInstallEmptyLink
 	}
 
 	job, ok := s.jobs.Run(jobID, "Downloading archive from "+pending.Resolved.GameDomain)
 	if !ok {
-		return jobs.Job{}, errPendingImportJobNotFound
+		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
 	s.logger.Info(
-		"pending import download started",
+		"captured install download started",
 		"job_id", jobID,
 		"action_source", actionSource,
 		"request_source", pending.Source,
@@ -3444,32 +3444,32 @@ func (s *Server) startPendingImportDownload(jobID, actionSource string) (jobs.Jo
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.trackActiveJob(jobID, cancel)
-	go s.downloadPendingImport(ctx, jobID, pending, link)
+	go s.downloadCapturedInstall(ctx, jobID, pending, link)
 	return job, nil
 }
 
-func (s *Server) startPendingImportInstall(jobID, actionSource string) (jobs.Job, error) {
-	pending, ok := s.pendingImport(jobID)
+func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.Job, error) {
+	pending, ok := s.capturedInstall(jobID)
 	if !ok {
-		return jobs.Job{}, errPendingImportNotFound
+		return jobs.Job{}, errCapturedInstallNotFound
 	}
 	currentJob, ok := s.jobs.Get(jobID)
 	if !ok {
-		return jobs.Job{}, errPendingImportJobNotFound
+		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
 	if currentJob.Status != jobs.StatusWaiting {
-		return jobs.Job{}, errPendingImportNotWaiting
+		return jobs.Job{}, errCapturedInstallNotWaiting
 	}
 	if !pendingArchiveReady(pending) {
-		return jobs.Job{}, errPendingImportNoArchive
+		return jobs.Job{}, errCapturedInstallNoArchive
 	}
 
 	job, ok := s.jobs.Run(jobID, "Installing downloaded archive from "+pending.Resolved.GameDomain)
 	if !ok {
-		return jobs.Job{}, errPendingImportJobNotFound
+		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
 	s.logger.Info(
-		"pending import install confirmed",
+		"captured install install confirmed",
 		"job_id", jobID,
 		"action_source", actionSource,
 		"request_source", pending.Source,
@@ -3486,12 +3486,12 @@ func (s *Server) startPendingImportInstall(jobID, actionSource string) (jobs.Job
 	s.trackActiveJob(jobID, cancel)
 	go func() {
 		defer s.untrackActiveJob(jobID)
-		s.installPendingImport(ctx, jobID, pending, pending.downloadResult(), actionSource)
+		s.installCapturedInstall(ctx, jobID, pending, pending.downloadResult(), actionSource)
 	}()
 	return job, nil
 }
 
-func pendingArchiveReady(pending pendingImport) bool {
+func pendingArchiveReady(pending capturedInstall) bool {
 	path := strings.TrimSpace(pending.ArchivePath)
 	if path == "" {
 		return false
@@ -3500,7 +3500,7 @@ func pendingArchiveReady(pending pendingImport) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-func (pending pendingImport) downloadResult() download.Result {
+func (pending capturedInstall) downloadResult() download.Result {
 	return download.Result{
 		Path:         pending.ArchivePath,
 		SHA256:       pending.ArchiveSHA256,
@@ -3508,19 +3508,19 @@ func (pending pendingImport) downloadResult() download.Result {
 	}
 }
 
-func (s *Server) pendingImport(jobID string) (pendingImport, bool) {
+func (s *Server) capturedInstall(jobID string) (capturedInstall, bool) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	pending, ok := s.pendingImports[jobID]
+	pending, ok := s.capturedInstalls[jobID]
 	return pending, ok
 }
 
-func (s *Server) rememberPendingImport(jobID string, pending pendingImport) {
+func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	s.pendingImports[jobID] = pending
-	s.ensurePendingImportJobPayload(jobID, pending.Resolved)
-	if err := s.db.SavePendingImport(context.Background(), storage.PendingImport{
+	s.capturedInstalls[jobID] = pending
+	s.ensureCapturedInstallJobPayload(jobID, pending.Resolved)
+	if err := s.db.SaveCapturedInstall(context.Background(), storage.CapturedInstall{
 		JobID:         jobID,
 		Resolved:      pending.Resolved,
 		DownloadLinks: pending.DownloadLinks,
@@ -3529,20 +3529,20 @@ func (s *Server) rememberPendingImport(jobID string, pending pendingImport) {
 		ArchiveSHA256: pending.ArchiveSHA256,
 		ArchiveBytes:  pending.ArchiveBytes,
 	}); err != nil {
-		s.logger.Warn("persist pending import failed", "job_id", jobID, "error", err)
+		s.logger.Warn("persist captured install failed", "job_id", jobID, "error", err)
 	}
 }
 
-func (s *Server) ensurePendingImportJobPayload(jobID string, resolved catalog.ResolvedDownload) {
+func (s *Server) ensureCapturedInstallJobPayload(jobID string, resolved catalog.ResolvedDownload) {
 	job, ok := s.jobs.Get(jobID)
-	if !ok || job.Type != "pending-import" {
+	if !ok || job.Type != "captured-install" {
 		return
 	}
 	next := jobs.JobPayload{}
 	for key, value := range job.Payload {
 		next[key] = value
 	}
-	for key, value := range pendingImportJobPayload(s.games, resolved) {
+	for key, value := range capturedInstallJobPayload(s.games, resolved) {
 		if strings.TrimSpace(next[key]) == "" {
 			next[key] = value
 		}
@@ -3560,20 +3560,20 @@ func (s *Server) ensurePendingImportJobPayload(jobID string, resolved catalog.Re
 		}
 	}
 	if _, ok := s.jobs.SetPayload(jobID, next); !ok {
-		s.logger.Warn("pending import job payload update failed", "job_id", jobID)
+		s.logger.Warn("captured install job payload update failed", "job_id", jobID)
 	}
 }
 
-func (s *Server) forgetPendingImport(jobID string) {
+func (s *Server) forgetCapturedInstall(jobID string) {
 	s.pendingMu.Lock()
-	delete(s.pendingImports, jobID)
+	delete(s.capturedInstalls, jobID)
 	s.pendingMu.Unlock()
-	if err := s.db.DeletePendingImport(context.Background(), jobID); err != nil {
-		s.logger.Warn("delete pending import failed", "job_id", jobID, "error", err)
+	if err := s.db.DeleteCapturedInstall(context.Background(), jobID); err != nil {
+		s.logger.Warn("delete captured install failed", "job_id", jobID, "error", err)
 	}
 }
 
-func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pending pendingImport, link nexus.DownloadLink) {
+func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, link nexus.DownloadLink) {
 	defer s.untrackActiveJob(jobID)
 	destDir := filepath.Join(
 		s.cfg.DataDir,
@@ -3591,13 +3591,13 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 	})
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			s.logger.Info("pending import download canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+			s.logger.Info("captured install download canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
 			s.jobs.Cancel(jobID, "Canceled by user")
-			s.forgetPendingImport(jobID)
+			s.forgetCapturedInstall(jobID)
 			return
 		}
 		s.logger.Warn(
-			"pending import download failed",
+			"captured install download failed",
 			"job_id", jobID,
 			"game_domain", pending.Resolved.GameDomain,
 			"mod_id", pending.Resolved.ModID,
@@ -3608,7 +3608,7 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		return
 	}
 	s.logger.Info(
-		"pending import downloaded",
+		"captured install downloaded",
 		"job_id", jobID,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -3619,14 +3619,14 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 	pending.ArchivePath = result.Path
 	pending.ArchiveSHA256 = result.SHA256
 	pending.ArchiveBytes = result.BytesWritten
-	s.rememberPendingImport(jobID, pending)
+	s.rememberCapturedInstall(jobID, pending)
 	s.cfgMu.RLock()
 	autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
 	s.cfgMu.RUnlock()
 	if !autoInstall {
 		name := modNameFromArchive(result.Path, pending.Resolved)
 		s.logger.Info(
-			"pending import downloaded and waiting for install confirmation",
+			"captured install downloaded and waiting for install confirmation",
 			"job_id", jobID,
 			"game_domain", pending.Resolved.GameDomain,
 			"mod_id", pending.Resolved.ModID,
@@ -3638,16 +3638,16 @@ func (s *Server) downloadPendingImport(ctx context.Context, jobID string, pendin
 		s.jobs.Wait(jobID, "Downloaded "+name+"; install it to add it disabled")
 		return
 	}
-	s.installPendingImport(ctx, jobID, pending, result, "auto-install captured download")
+	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
 }
 
-func (s *Server) installPendingImport(ctx context.Context, jobID string, pending pendingImport, result download.Result, installSource string) {
+func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, result download.Result, installSource string) {
 	if _, ok := s.jobs.Run(jobID, "Installing downloaded archive from "+pending.Resolved.GameDomain); !ok {
-		s.logger.Warn("pending import install job missing", "job_id", jobID)
+		s.logger.Warn("captured install install job missing", "job_id", jobID)
 		return
 	}
 	s.logger.Info(
-		"pending import install started",
+		"captured install install started",
 		"job_id", jobID,
 		"install_source", installSource,
 		"game_domain", pending.Resolved.GameDomain,
@@ -3657,16 +3657,16 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 		"archive_sha256", result.SHA256,
 		"archive_bytes", result.BytesWritten,
 	)
-	staged, err := s.stagePendingImport(ctx, jobID, pending, result)
+	staged, err := s.stageCapturedInstall(ctx, jobID, pending, result)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
-			s.logger.Info("pending import install canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
+			s.logger.Info("captured install install canceled", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
 			s.jobs.Cancel(jobID, "Canceled by user")
-			s.forgetPendingImport(jobID)
+			s.forgetCapturedInstall(jobID)
 			return
 		}
 		s.logger.Warn(
-			"pending import staging failed",
+			"captured install staging failed",
 			"job_id", jobID,
 			"game_domain", pending.Resolved.GameDomain,
 			"mod_id", pending.Resolved.ModID,
@@ -3695,7 +3695,7 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 				s.publishInstallCandidatesChanged(appID, "created", 1)
 			}
 			s.jobs.Complete(jobID, "Downloaded "+modNameFromArchive(result.Path, pending.Resolved)+"; installer choices required")
-			s.forgetPendingImport(jobID)
+			s.forgetCapturedInstall(jobID)
 			return
 		}
 		var unsupported installplan.UnsupportedError
@@ -3714,14 +3714,14 @@ func (s *Server) installPendingImport(ctx context.Context, jobID string, pending
 				s.publishInstallCandidatesChanged(s.appIDForPending(pending), "created", 1)
 			}
 			s.jobs.Fail(jobID, err.Error())
-			s.forgetPendingImport(jobID)
+			s.forgetCapturedInstall(jobID)
 			return
 		}
 		s.jobs.Fail(jobID, err.Error())
 		return
 	}
 	s.completeInstalledModJob(ctx, jobID, staged, func() {
-		s.forgetPendingImport(jobID)
+		s.forgetCapturedInstall(jobID)
 	})
 }
 
@@ -3853,7 +3853,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			if err != nil {
 				return staged, skipped, err
 			}
-			pending := pendingImport{
+			pending := capturedInstall{
 				Resolved: catalog.ResolvedDownload{
 					Catalog:    "nexus",
 					SourceURL:  archivePath,
@@ -3870,7 +3870,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			if info, err := os.Stat(archivePath); err == nil {
 				result.BytesWritten = info.Size()
 			}
-			if _, err := s.stagePendingImport(ctx, jobID, pending, result); err != nil {
+			if _, err := s.stageCapturedInstall(ctx, jobID, pending, result); err != nil {
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
 					installerJSON, _ := json.Marshal(choice.Installer)
@@ -3950,7 +3950,7 @@ func newestFileInDir(dir string) (string, error) {
 	return bestPath, nil
 }
 
-func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending pendingImport, result download.Result) (storage.InstalledMod, error) {
+func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, result download.Result) (storage.InstalledMod, error) {
 	if err := ctx.Err(); err != nil {
 		return storage.InstalledMod{}, err
 	}
@@ -3982,7 +3982,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		return storage.InstalledMod{}, err
 	}
 	s.logger.Info(
-		"pending import extraction started",
+		"captured install extraction started",
 		"job_id", jobID,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -3995,7 +3995,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		return storage.InstalledMod{}, err
 	}
 	s.logger.Info(
-		"pending import archive extracted",
+		"captured install archive extracted",
 		"job_id", jobID,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -4009,7 +4009,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		"warnings", strings.Join(inspection.Warnings, " | "),
 	)
 	if inspection.RequiresInstaller {
-		s.logger.Info("pending import requires installer UI", "job_id", jobID, "installer_kind", inspection.InstallerKind, "extract_path", extractPath)
+		s.logger.Info("captured install requires installer UI", "job_id", jobID, "installer_kind", inspection.InstallerKind, "extract_path", extractPath)
 		if inspection.InstallerKind == "fomod" {
 			if _, ok := s.games.InstallerChoiceForSteamApp(appID, "fomod"); !ok {
 				return storage.InstalledMod{}, installplan.Unsupported("the " + appID + " extension does not support FOMOD installer choices yet")
@@ -4030,11 +4030,11 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 	}
 	installPlan, err := s.games.BuildInstallPlan(appID, extractPath)
 	if err != nil {
-		s.logger.Info("pending import has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
+		s.logger.Info("captured install has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
 		return storage.InstalledMod{}, err
 	}
 	s.logger.Info(
-		"pending import install plan accepted",
+		"captured install install plan accepted",
 		"job_id", jobID,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -4083,7 +4083,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		}
 	}
 	s.logger.Info(
-		"pending import staged",
+		"captured install staged",
 		"job_id", jobID,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -4208,7 +4208,7 @@ func (s *Server) steamAppIDForNexusDomain(domain string) (string, bool) {
 	return s.games.SteamAppIDForNexusDomain(strings.ToLower(strings.TrimSpace(domain)))
 }
 
-func (s *Server) appIDForPending(pending pendingImport) string {
+func (s *Server) appIDForPending(pending capturedInstall) string {
 	appID, _ := s.steamAppIDForNexusDomain(pending.Resolved.GameDomain)
 	return appID
 }

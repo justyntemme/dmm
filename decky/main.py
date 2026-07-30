@@ -219,17 +219,17 @@ class Plugin:
 
     async def add_pending_import(self, url):
         url = str(url or "").strip()
-        self._log(f"add pending import requested url={self._redact_url(url)}")
+        self._log(f"add captured install requested url={self._redact_url(url)}")
         if not url:
             return {"ok": False, "error": "Nexus URL is required."}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
         payload = json.dumps({"url": url, "source": "decky-plugin"}).encode("utf-8")
-        result, error = self._backend_json_result("POST", "/api/imports/pending", payload)
+        result, error = self._backend_json_result("POST", "/api/captured-installs", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to capture Nexus link."}
         job = result.get("job") if isinstance(result, dict) else None
-        self._log(f"add pending import accepted job={job}")
+        self._log(f"add captured install accepted job={job}")
         return {"ok": True, "result": result}
 
     async def jobs(self):

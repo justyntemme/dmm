@@ -36,7 +36,7 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post("http://127.0.0.1:17942/api/imports/pending", "application/json", bytes.NewReader(body))
+	resp, err := client.Post("http://127.0.0.1:17942/api/captured-installs", "application/json", bytes.NewReader(body))
 	if err != nil {
 		logf(logFile, "backend post failed error=%s", err)
 		fmt.Fprintln(os.Stderr, err)

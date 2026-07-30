@@ -644,7 +644,7 @@ async function logFrontendEvent(message: string, detail: Record<string, string |
 }
 
 function isInstallNotificationJob(job: Job) {
-  return job.type === "pending-import" || job.type === "installer-choice";
+  return job.type === "captured-install" || job.type === "installer-choice";
 }
 
 function isJob(value: unknown): value is Job {
@@ -1759,7 +1759,7 @@ function Content() {
     }
   }
 
-  async function addPendingImport() {
+  async function addCapturedInstall() {
     try {
       setError("");
       setImportResult("");
@@ -1962,7 +1962,7 @@ function Content() {
       <PanelSectionRow>
         <div style={{ display: "grid", gap: "10px", width: "100%" }}>
           <TextField label="Nexus URL" value={importUrl} bShowClearAction description="Paste a Nexus mod page URL or nxm:// link." onChange={(event) => setImportUrl(event.currentTarget.value)} />
-          <ButtonItem layout="below" onClick={addPendingImport}>
+          <ButtonItem layout="below" onClick={addCapturedInstall}>
             Add Nexus Link
           </ButtonItem>
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Captures the URL and starts the download. Install actions and choices appear in Action Center.</div>

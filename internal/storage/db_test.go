@@ -95,7 +95,7 @@ CREATE TABLE jobs (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
-CREATE TABLE pending_imports (
+CREATE TABLE captured_installs (
 	job_id TEXT PRIMARY KEY,
 	resolved_json TEXT NOT NULL,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -130,8 +130,8 @@ CREATE TABLE pending_imports (
 		{"installed_mods", "checksum_manifest_json"},
 		{"profile_mods", "priority"},
 		{"jobs", "payload_json"},
-		{"pending_imports", "download_links_json"},
-		{"pending_imports", "source"},
+		{"captured_installs", "download_links_json"},
+		{"captured_installs", "source"},
 	} {
 		exists, err := db.hasColumn(context.Background(), item.table, item.column)
 		if err != nil {
@@ -196,7 +196,7 @@ func TestJobsPersistPayload(t *testing.T) {
 
 	job := jobs.Job{
 		ID:      "job-1",
-		Type:    "pending-import",
+		Type:    "captured-install",
 		Title:   "Install request: stardewvalley/mods/541",
 		Status:  jobs.StatusWaiting,
 		Message: "Ready to install",

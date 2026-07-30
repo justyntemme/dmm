@@ -199,7 +199,7 @@ CREATE TABLE IF NOT EXISTS extension_snapshots (
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS pending_imports (
+CREATE TABLE IF NOT EXISTS captured_installs (
 	job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
 	resolved_json TEXT NOT NULL,
 	download_links_json TEXT NOT NULL DEFAULT '[]',

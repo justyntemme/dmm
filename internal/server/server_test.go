@@ -403,7 +403,7 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 		{name: "web client event", method: http.MethodPost, path: "/api/client-events", status: http.StatusOK, want: false},
 		{name: "status read", method: http.MethodGet, path: "/api/status", status: http.StatusOK, want: true},
 		{name: "polling error", method: http.MethodGet, path: "/api/health", status: http.StatusInternalServerError, want: true},
-		{name: "mutation", method: http.MethodPost, path: "/api/imports/pending", status: http.StatusAccepted, want: true},
+		{name: "mutation", method: http.MethodPost, path: "/api/captured-installs", status: http.StatusAccepted, want: true},
 	}
 
 	for _, tc := range cases {
@@ -450,7 +450,7 @@ func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 		t.Fatalf("snapshot event = %+v", snapshot)
 	}
 
-	job := srv.jobs.CreateWithPayload("pending-import", "Install request", jobs.JobPayload{"app_id": "413150"})
+	job := srv.jobs.CreateWithPayload("captured-install", "Install request", jobs.JobPayload{"app_id": "413150"})
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; ready to install")
 
 	for {
@@ -616,7 +616,7 @@ func TestResolveImportUsesRegisteredCatalogResolver(t *testing.T) {
 	}
 }
 
-func TestPendingImportRejectsCatalogWithoutDownloadProvider(t *testing.T) {
+func TestCapturedInstallRejectsCatalogWithoutDownloadProvider(t *testing.T) {
 	srv := newTestServer(t)
 	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
 		resolved: catalog.ResolvedDownload{
@@ -628,7 +628,7 @@ func TestPendingImportRejectsCatalogWithoutDownloadProvider(t *testing.T) {
 		},
 	}}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -641,10 +641,10 @@ func TestPendingImportRejectsCatalogWithoutDownloadProvider(t *testing.T) {
 	}
 }
 
-func TestPendingImportCapturesNXMLink(t *testing.T) {
+func TestCapturedInstallCapturesNXMLink(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"nxm-handler"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"nxm-handler"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -654,7 +654,7 @@ func TestPendingImportCapturesNXMLink(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("Captured; configure Nexus API key")) {
-		t.Fatalf("expected pending import guidance, body = %s", rec.Body.String())
+		t.Fatalf("expected captured install guidance, body = %s", rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"waiting"`)) {
 		t.Fatalf("expected waiting install action, body = %s", rec.Body.String())
@@ -670,12 +670,12 @@ func TestPendingImportCapturesNXMLink(t *testing.T) {
 	}
 }
 
-func TestPendingImportReusesDuplicateWaitingRequest(t *testing.T) {
+func TestCapturedInstallReusesDuplicateWaitingRequest(t *testing.T) {
 	srv := newTestServer(t)
 	body := `{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"nxm-handler"}`
 
 	create := func() string {
-		req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(body))
+		req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "127.0.0.1:1"
 		rec := httptest.NewRecorder()
@@ -704,13 +704,13 @@ func TestPendingImportReusesDuplicateWaitingRequest(t *testing.T) {
 	}
 }
 
-func TestPendingImportAllowsDifferentFileID(t *testing.T) {
+func TestCapturedInstallAllowsDifferentFileID(t *testing.T) {
 	srv := newTestServer(t)
 	for _, raw := range []string{
 		`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1","source":"test"}`,
 		`{"url":"nxm://stardewvalley/mods/3753/files/135999?key=test&expires=1","source":"test"}`,
 	} {
-		req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(raw))
+		req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(raw))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "127.0.0.1:1"
 		rec := httptest.NewRecorder()
@@ -724,12 +724,12 @@ func TestPendingImportAllowsDifferentFileID(t *testing.T) {
 	}
 }
 
-func TestRememberPendingImportBackfillsJobPayload(t *testing.T) {
+func TestRememberCapturedInstallBackfillsJobPayload(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("pending-import", "Install request")
+	job := srv.jobs.Create("captured-install", "Install request")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
 
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -748,7 +748,7 @@ func TestRememberPendingImportBackfillsJobPayload(t *testing.T) {
 	}
 }
 
-func TestClearPendingImports(t *testing.T) {
+func TestClearCapturedInstalls(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
@@ -769,7 +769,7 @@ func TestClearPendingImports(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
+	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
 	create.Header.Set("Content-Type", "application/json")
 	create.RemoteAddr = "127.0.0.1:1"
 	createRec := httptest.NewRecorder()
@@ -778,7 +778,7 @@ func TestClearPendingImports(t *testing.T) {
 		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
 	}
 
-	clear := httptest.NewRequest(http.MethodDelete, "/api/imports/pending", nil)
+	clear := httptest.NewRequest(http.MethodDelete, "/api/captured-installs", nil)
 	clear.RemoteAddr = "127.0.0.1:1"
 	clearRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(clearRec, clear)
@@ -800,23 +800,23 @@ func TestClearPendingImports(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restarted.db.Close()
-	if len(restarted.pendingImports) != 0 {
-		t.Fatalf("pending imports restored after clear = %+v", restarted.pendingImports)
+	if len(restarted.capturedInstalls) != 0 {
+		t.Fatalf("captured installs restored after clear = %+v", restarted.capturedInstalls)
 	}
 	if jobs := restarted.jobs.List(); len(jobs) != 0 {
 		t.Fatalf("jobs restored after clear = %+v", jobs)
 	}
 }
 
-func TestClearPendingImportsPreservesCompletedHistory(t *testing.T) {
+func TestClearCapturedInstallsPreservesCompletedHistory(t *testing.T) {
 	srv := newTestServer(t)
-	completed := srv.jobs.Create("pending-import", "Completed install")
+	completed := srv.jobs.Create("captured-install", "Completed install")
 	completed, _ = srv.jobs.Complete(completed.ID, "Staged Lookup Anything")
-	waiting := srv.jobs.Create("pending-import", "Waiting install")
+	waiting := srv.jobs.Create("captured-install", "Waiting install")
 	waiting, _ = srv.jobs.Wait(waiting.ID, "Ready to install")
-	failed := srv.jobs.Create("pending-import", "Failed install")
+	failed := srv.jobs.Create("captured-install", "Failed install")
 	failed, _ = srv.jobs.Fail(failed.ID, "unsupported archive format")
-	srv.rememberPendingImport(waiting.ID, pendingImport{
+	srv.rememberCapturedInstall(waiting.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -826,7 +826,7 @@ func TestClearPendingImportsPreservesCompletedHistory(t *testing.T) {
 		Source: "test",
 	})
 
-	clear := httptest.NewRequest(http.MethodDelete, "/api/imports/pending", nil)
+	clear := httptest.NewRequest(http.MethodDelete, "/api/captured-installs", nil)
 	clear.RemoteAddr = "127.0.0.1:1"
 	clearRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(clearRec, clear)
@@ -843,15 +843,15 @@ func TestClearPendingImportsPreservesCompletedHistory(t *testing.T) {
 	if list[0].ID != completed.ID || list[0].Status != jobs.StatusCompleted {
 		t.Fatalf("completed history was not preserved: %+v", list)
 	}
-	if len(srv.pendingImports) != 0 {
-		t.Fatalf("pending imports after clear = %+v", srv.pendingImports)
+	if len(srv.capturedInstalls) != 0 {
+		t.Fatalf("captured installs after clear = %+v", srv.capturedInstalls)
 	}
 }
 
-func TestCancelPendingImportRemovesStoredRequest(t *testing.T) {
+func TestCancelCapturedInstallRemovesStoredRequest(t *testing.T) {
 	srv := newTestServer(t)
 
-	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
+	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
 	create.Header.Set("Content-Type", "application/json")
 	create.RemoteAddr = "127.0.0.1:1"
 	createRec := httptest.NewRecorder()
@@ -878,15 +878,15 @@ func TestCancelPendingImportRemovesStoredRequest(t *testing.T) {
 	if !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"status":"canceled"`)) {
 		t.Fatalf("expected canceled job, body = %s", cancelRec.Body.String())
 	}
-	if _, ok := srv.pendingImports[created.Job.ID]; ok {
-		t.Fatalf("pending import %s was not removed", created.Job.ID)
+	if _, ok := srv.capturedInstalls[created.Job.ID]; ok {
+		t.Fatalf("captured install %s was not removed", created.Job.ID)
 	}
 }
 
-func TestInstallPendingImportWithoutDownloadLinks(t *testing.T) {
+func TestInstallCapturedInstallWithoutDownloadLinks(t *testing.T) {
 	srv := newTestServer(t)
 
-	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
+	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
 	create.Header.Set("Content-Type", "application/json")
 	create.RemoteAddr = "127.0.0.1:1"
 	createRec := httptest.NewRecorder()
@@ -904,7 +904,7 @@ func TestInstallPendingImportWithoutDownloadLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+created.Job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+created.Job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -916,11 +916,11 @@ func TestInstallPendingImportWithoutDownloadLinks(t *testing.T) {
 	}
 }
 
-func TestInstallPendingImportRejectsTerminalJobWithStalePendingState(t *testing.T) {
+func TestInstallCapturedInstallRejectsTerminalJobWithStalePendingState(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -935,7 +935,7 @@ func TestInstallPendingImportRejectsTerminalJobWithStalePendingState(t *testing.
 	})
 	job, _ = srv.jobs.Fail(job.ID, "unsupported archive format")
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -951,7 +951,7 @@ func TestInstallPendingImportRejectsTerminalJobWithStalePendingState(t *testing.
 	}
 }
 
-func TestInstallPendingImportInstallsCachedArchive(t *testing.T) {
+func TestInstallCapturedInstallInstallsCachedArchive(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -971,7 +971,7 @@ func TestInstallPendingImportInstallsCachedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
 	resolved := catalog.ResolvedDownload{
 		Catalog:    "nexus",
@@ -979,13 +979,13 @@ func TestInstallPendingImportInstallsCachedArchive(t *testing.T) {
 		ModID:      "541",
 		FileID:     "160470",
 	}
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved:    resolved,
 		Source:      "test",
 		ArchivePath: archivePath,
 	})
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -1017,12 +1017,12 @@ func TestInstallPendingImportInstallsCachedArchive(t *testing.T) {
 	if manifest.PlannerID != "vortex:stardewvalley:stardew-valley-installer" || len(manifest.DetectedFrom) != 1 || manifest.DetectedFrom[0].Path != "LookupAnything/manifest.json" {
 		t.Fatalf("stored install-plan metadata = %+v", manifest)
 	}
-	if _, ok := srv.pendingImports[job.ID]; ok {
-		t.Fatalf("pending import %s was not forgotten after staging", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten after staging", job.ID)
 	}
 }
 
-func TestInstallPendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
+func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()
 	srv.cfg.Install.AutoEnableInstalledMods = true
@@ -1047,9 +1047,9 @@ func TestInstallPendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -1060,7 +1060,7 @@ func TestInstallPendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -1098,12 +1098,12 @@ func TestInstallPendingImportAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	if len(files) != 2 {
 		t.Fatalf("deployment files = %+v", files)
 	}
-	if _, ok := srv.pendingImports[job.ID]; ok {
-		t.Fatalf("pending import %s was not forgotten after auto-enable deploy", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten after auto-enable deploy", job.ID)
 	}
 }
 
-func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
+func TestRetryCapturedInstallAfterDownloadFailure(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1133,9 +1133,9 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 	}))
 	defer downloadServer.Close()
 
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -1149,9 +1149,9 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 		Source: "test",
 	})
 
-	started, err := srv.startPendingImportDownload(job.ID, "test download")
+	started, err := srv.startCapturedInstallDownload(job.ID, "test download")
 	if err != nil {
-		t.Fatalf("startPendingImportDownload() error = %v", err)
+		t.Fatalf("startCapturedInstallDownload() error = %v", err)
 	}
 	if started.Status != jobs.StatusRunning {
 		t.Fatalf("started job = %+v", started)
@@ -1160,11 +1160,11 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 	if !strings.Contains(failed.Message, "502") {
 		t.Fatalf("failed job = %+v", failed)
 	}
-	if _, ok := srv.pendingImports[job.ID]; !ok {
-		t.Fatalf("pending import %s was not retained for retry", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; !ok {
+		t.Fatalf("captured install %s was not retained for retry", job.ID)
 	}
 
-	retry := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/retry", nil)
+	retry := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/retry", nil)
 	retry.RemoteAddr = "127.0.0.1:1"
 	retryRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(retryRec, retry)
@@ -1178,12 +1178,12 @@ func TestRetryPendingImportAfterDownloadFailure(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("download attempts = %d", attempts)
 	}
-	if _, ok := srv.pendingImports[job.ID]; ok {
-		t.Fatalf("pending import %s was not forgotten after retry success", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten after retry success", job.ID)
 	}
 }
 
-func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
+func TestUnsupportedCapturedInstallFailureIsNotRetryable(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1203,9 +1203,9 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/2400")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/2400")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded SMAPI installer; ready to install")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -1216,7 +1216,7 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -1227,8 +1227,8 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 	if !strings.Contains(failed.Message, "no Vortex installer metadata matched this archive") {
 		t.Fatalf("failed job = %+v", failed)
 	}
-	if _, ok := srv.pendingImports[job.ID]; ok {
-		t.Fatalf("unsupported pending import %s was retained for retry", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("unsupported captured install %s was retained for retry", job.ID)
 	}
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -1238,7 +1238,7 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 
-	retry := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/retry", nil)
+	retry := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/retry", nil)
 	retry.RemoteAddr = "127.0.0.1:1"
 	retryRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(retryRec, retry)
@@ -1247,7 +1247,7 @@ func TestUnsupportedPendingImportFailureIsNotRetryable(t *testing.T) {
 	}
 }
 
-func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
+func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "377160",
@@ -1291,9 +1291,9 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	job := srv.jobs.Create("pending-import", "Install request: fallout4/mods/999")
+	job := srv.jobs.Create("captured-install", "Install request: fallout4/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "fallout4",
@@ -1304,7 +1304,7 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 		ArchivePath: archivePath,
 	})
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -1316,8 +1316,8 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	if !strings.Contains(completed.Message, "installer choices required") {
 		t.Fatalf("completed job = %+v", completed)
 	}
-	if _, ok := srv.pendingImports[job.ID]; ok {
-		t.Fatalf("pending import %s was not forgotten after installer choice capture", job.ID)
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten after installer choice capture", job.ID)
 	}
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
@@ -1338,7 +1338,7 @@ func TestFOMODPendingImportCreatesInstallerChoiceJob(t *testing.T) {
 	}
 }
 
-func TestPendingImportDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
+func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
 	if err := os.MkdirAll(gamePath, 0o700); err != nil {
@@ -1387,7 +1387,7 @@ func TestPendingImportDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/541/files/160470?key=test&expires=999","source":"test"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/541/files/160470?key=test&expires=999","source":"test"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -1414,8 +1414,8 @@ func TestPendingImportDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	if !strings.Contains(completed.Message, "Installed Lookup Anything disabled") {
 		t.Fatalf("job message = %q", completed.Message)
 	}
-	if _, ok := srv.pendingImports[body.Job.ID]; ok {
-		t.Fatalf("pending import %s was not forgotten", body.Job.ID)
+	if _, ok := srv.capturedInstalls[body.Job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten", body.Job.ID)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -1426,7 +1426,7 @@ func TestPendingImportDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	}
 }
 
-func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *testing.T) {
+func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1464,7 +1464,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/541/files/160470?key=test&expires=999","source":"test"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/541/files/160470?key=test&expires=999","source":"test"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -1488,9 +1488,9 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 	if !strings.Contains(waiting.Message, "install it") {
 		t.Fatalf("waiting job = %+v", waiting)
 	}
-	pending, ok := srv.pendingImport(body.Job.ID)
+	pending, ok := srv.capturedInstall(body.Job.ID)
 	if !ok || pending.ArchivePath == "" {
-		t.Fatalf("pending import = %+v ok=%v", pending, ok)
+		t.Fatalf("captured install = %+v ok=%v", pending, ok)
 	}
 	if mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150"); err != nil {
 		t.Fatal(err)
@@ -1498,7 +1498,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 		t.Fatalf("mods before install confirmation = %+v", mods)
 	}
 
-	installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+body.Job.ID+"/install", nil)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+body.Job.ID+"/install", nil)
 	installReq.RemoteAddr = "127.0.0.1:1"
 	installRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(installRec, installReq)
@@ -1518,7 +1518,7 @@ func TestPendingImportDownloadsImmediatelyAndWaitsForInstallConfirmation(t *test
 	}
 }
 
-func TestInstallDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
+func TestInstallDuplicateCapturedInstallsShowsOneInstalledMod(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1544,15 +1544,15 @@ func TestInstallDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
 		FileID:     "160470",
 	}
 	for i := 0; i < 2; i++ {
-		job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+		job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
-		srv.rememberPendingImport(job.ID, pendingImport{
+		srv.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:    resolved,
 			Source:      "test",
 			ArchivePath: archivePath,
 		})
 
-		installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+		installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 		installReq.RemoteAddr = "127.0.0.1:1"
 		installRec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(installRec, installReq)
@@ -1581,7 +1581,7 @@ func TestInstallDuplicatePendingImportsShowsOneInstalledMod(t *testing.T) {
 	}
 }
 
-func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
+func TestRestagingExistingCapturedInstallPreservesEnabledState(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -1608,14 +1608,14 @@ func TestRestagingExistingPendingImportPreservesEnabledState(t *testing.T) {
 	}
 	installCached := func() storage.InstalledMod {
 		t.Helper()
-		job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+		job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 		job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; ready to install")
-		srv.rememberPendingImport(job.ID, pendingImport{
+		srv.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:    resolved,
 			Source:      "test",
 			ArchivePath: archivePath,
 		})
-		installReq := httptest.NewRequest(http.MethodPost, "/api/imports/pending/"+job.ID+"/install", nil)
+		installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
 		installReq.RemoteAddr = "127.0.0.1:1"
 		installRec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(installRec, installReq)
@@ -1663,7 +1663,7 @@ func TestFailedStagingCleansPartialExtraction(t *testing.T) {
 	if err := createDuplicateEntryZip(archivePath); err != nil {
 		t.Fatal(err)
 	}
-	pending := pendingImport{
+	pending := capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
@@ -1673,7 +1673,7 @@ func TestFailedStagingCleansPartialExtraction(t *testing.T) {
 		Source: "test",
 	}
 
-	_, err := srv.stagePendingImport(context.Background(), "job-test", pending, download.Result{Path: archivePath})
+	_, err := srv.stageCapturedInstall(context.Background(), "job-test", pending, download.Result{Path: archivePath})
 	if err == nil {
 		t.Fatal("expected duplicate-entry archive to fail staging")
 	}
@@ -2474,9 +2474,9 @@ func TestResetGameModsPurgesDMMStateAndKeepsDownloads(t *testing.T) {
 		ModID:      "123",
 		FileID:     "456",
 	}
-	pendingJob := srv.jobs.CreateWithPayload("pending-import", "Install request: stardewvalley/mods/123", pendingImportJobPayload(srv.games, pendingResolved))
+	pendingJob := srv.jobs.CreateWithPayload("captured-install", "Install request: stardewvalley/mods/123", capturedInstallJobPayload(srv.games, pendingResolved))
 	pendingJob, _ = srv.jobs.Wait(pendingJob.ID, "Ready for install")
-	srv.rememberPendingImport(pendingJob.ID, pendingImport{
+	srv.rememberCapturedInstall(pendingJob.ID, capturedInstall{
 		Resolved:      pendingResolved,
 		DownloadLinks: []nexus.DownloadLink{{URI: "https://example.invalid/mod.zip"}},
 		Source:        "test",
@@ -2491,7 +2491,7 @@ func TestResetGameModsPurgesDMMStateAndKeepsDownloads(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"installed_mods_removed":1`)) ||
 		!bytes.Contains(rec.Body.Bytes(), []byte(`"install_candidates_cleared":1`)) ||
-		!bytes.Contains(rec.Body.Bytes(), []byte(`"pending_imports_cleared":1`)) {
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"captured_installs_cleared":1`)) {
 		t.Fatalf("reset body = %s", rec.Body.String())
 	}
 	if _, err := os.Lstat(targetPath); !os.IsNotExist(err) {
@@ -2517,8 +2517,8 @@ func TestResetGameModsPurgesDMMStateAndKeepsDownloads(t *testing.T) {
 	if len(candidates) != 0 {
 		t.Fatalf("candidates after reset = %+v", candidates)
 	}
-	if _, ok := srv.pendingImport(pendingJob.ID); ok {
-		t.Fatalf("pending import survived reset")
+	if _, ok := srv.capturedInstall(pendingJob.ID); ok {
+		t.Fatalf("captured install survived reset")
 	}
 	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -2958,7 +2958,7 @@ func TestStardewRecoveredDownloadDeployAndPurgeEndpoints(t *testing.T) {
 	}
 }
 
-func TestPendingImportPersistsAcrossRestart(t *testing.T) {
+func TestCapturedInstallPersistsAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
@@ -2977,7 +2977,7 @@ func TestPendingImportPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	create := httptest.NewRequest(http.MethodPost, "/api/imports/pending", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/239/files/165575?key=test&expires=1","source":"test"}`))
+	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/239/files/165575?key=test&expires=1","source":"test"}`))
 	create.Header.Set("Content-Type", "application/json")
 	create.RemoteAddr = "127.0.0.1:1"
 	createRec := httptest.NewRecorder()
@@ -3003,8 +3003,8 @@ func TestPendingImportPersistsAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restarted.db.Close()
-	if _, ok := restarted.pendingImports[created.Job.ID]; !ok {
-		t.Fatalf("pending import %s was not restored", created.Job.ID)
+	if _, ok := restarted.capturedInstalls[created.Job.ID]; !ok {
+		t.Fatalf("captured install %s was not restored", created.Job.ID)
 	}
 	jobs := restarted.jobs.List()
 	if len(jobs) != 1 || jobs[0].ID != created.Job.ID || jobs[0].Status != "waiting" {
@@ -3022,7 +3022,7 @@ func TestPendingImportPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestRunningPendingImportRestoresAsWaitingAfterRestart(t *testing.T) {
+func TestRunningCapturedInstallRestoresAsWaitingAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
@@ -3041,14 +3041,14 @@ func TestRunningPendingImportRestoresAsWaitingAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/541")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/541")
 	resolved := catalog.ResolvedDownload{
 		Catalog:    "nexus",
 		GameDomain: "stardewvalley",
 		ModID:      "541",
 		FileID:     "160470",
 	}
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: resolved,
 		DownloadLinks: []nexus.DownloadLink{{
 			Name: "Local test archive",
@@ -3081,8 +3081,8 @@ func TestRunningPendingImportRestoresAsWaitingAfterRestart(t *testing.T) {
 	if jobs[0].Payload["app_id"] != "413150" || jobs[0].Payload["mod_id"] != "541" || jobs[0].Payload["file_id"] != "160470" {
 		t.Fatalf("restored job payload = %+v", jobs[0].Payload)
 	}
-	if _, ok := restarted.pendingImports[job.ID]; !ok {
-		t.Fatalf("pending import %s was not restored", job.ID)
+	if _, ok := restarted.capturedInstalls[job.ID]; !ok {
+		t.Fatalf("captured install %s was not restored", job.ID)
 	}
 	if err := restarted.db.Close(); err != nil {
 		t.Fatal(err)
@@ -3374,9 +3374,9 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSteamLaunchOptions(t, "413150", steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI"))
-	job := srv.jobs.Create("pending-import", "Install request: stardewvalley/mods/999")
+	job := srv.jobs.Create("captured-install", "Install request: stardewvalley/mods/999")
 	job, _ = srv.jobs.Wait(job.ID, "Ready to install from stardewvalley")
-	srv.rememberPendingImport(job.ID, pendingImport{
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
 			GameDomain: "stardewvalley",
