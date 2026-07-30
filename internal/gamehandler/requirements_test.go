@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	. "github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 )
 
-var stardewRuntimeRegistry = NewRegistry([]GameSpec{stardewvalley.Extension().RuntimeRequirements})
+var stardewRuntimeRegistry = NewRegistry([]GameSpec{gameext.MustCompileExtension(stardewvalley.Extension()).RuntimeRequirements})
 
 func RuntimeRequirements(ctx context.Context, steamAppID, gamePath string, mods []RuntimeMod) []RuntimeRequirement {
 	return stardewRuntimeRegistry.RuntimeRequirements(ctx, steamAppID, gamePath, mods)

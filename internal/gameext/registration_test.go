@@ -4,43 +4,48 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-func TestNewExtensionRegistersVortexStyleDomains(t *testing.T) {
-	extension, err := NewExtension("sample", "Sample Game", func(r *Registrar) {
-		r.RegisterGame(GameRegistration{
-			SteamAppIDs:  []string{"100", "100"},
-			NexusDomains: []string{"samplegame", "samplegame"},
-			VortexGameID: "samplegame",
-		})
-		r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "Mods"})
-		r.RegisterInstaller(installplan.InstallerSpec{
-			ID:                "sample:installer",
-			VortexInstallerID: "sample-installer",
-			ModType:           "mod",
-			InstructionMode:   installplan.InstructionManifestFolders,
-		})
-		r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
-			ID:       "sample-loader",
-			Name:     "Sample Loader",
-			Kind:     "mod-loader",
-			Required: true,
-			ModTypes: []string{"mod"},
-		})
-		r.RegisterLaunchTool(LaunchToolSpec{
-			ID:                 "loader",
-			Name:               "Sample Loader",
-			ExecutableRelative: "loader",
-			RequiredFiles:      []string{"loader", "loader.dll"},
-			DefaultPrimary:     true,
-			ModTypes:           []string{"mod"},
-			ProviderModTypes:   []string{"loader-mod"},
-		})
-		r.RegisterMerge(MergeSpec{ID: "merge", Name: "Merge"})
-		r.RegisterLoadOrder(LoadOrderSpec{ID: "load-order", Name: "Load Order"})
-		r.RegisterEventHandler(EventHandlerSpec{Event: "will-deploy", Name: "Prepare"})
+func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:   "sample",
+		Name: "Sample Game",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"100", "100"},
+				NexusDomains: []string{"samplegame", "samplegame"},
+				VortexGameID: "samplegame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "Mods"})
+			r.RegisterInstaller(installplan.InstallerSpec{
+				ID:                "sample:installer",
+				VortexInstallerID: "sample-installer",
+				ModType:           "mod",
+				InstructionMode:   installplan.InstructionManifestFolders,
+			})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:       "sample-loader",
+				Name:     "Sample Loader",
+				Kind:     "mod-loader",
+				Required: true,
+				ModTypes: []string{"mod"},
+			})
+			r.RegisterLaunchTool(sdk.LaunchToolSpec{
+				ID:                 "loader",
+				Name:               "Sample Loader",
+				ExecutableRelative: "loader",
+				RequiredFiles:      []string{"loader", "loader.dll"},
+				DefaultPrimary:     true,
+				ModTypes:           []string{"mod"},
+				ProviderModTypes:   []string{"loader-mod"},
+			})
+			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
+			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{Event: "will-deploy", Name: "Prepare"})
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,28 +89,32 @@ func TestNewExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 }
 
-func TestNewExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
-	_, err := NewExtension("bad", "Bad Game", func(r *Registrar) {
-		r.RegisterGame(GameRegistration{
-			SteamAppIDs:  []string{"200"},
-			NexusDomains: []string{"badgame"},
-			VortexGameID: "badgame",
-		})
-		r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "../outside"})
-		r.RegisterInstaller(installplan.InstallerSpec{
-			ID:                "bad:installer",
-			VortexInstallerID: "bad-installer",
-			ModType:           "missing-type",
-			GeneratedFiles: []installplan.GeneratedFileSpec{{
-				FromGameRelative: "/abs/source.json",
-				Destination:      "ok.json",
-			}},
-		})
-		r.RegisterLaunchTool(LaunchToolSpec{
-			ID:                 "tool",
-			Name:               "Tool",
-			ExecutableRelative: "../tool",
-		})
+func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
+	_, err := CompileExtension(sdk.Extension{
+		ID:   "bad",
+		Name: "Bad Game",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"200"},
+				NexusDomains: []string{"badgame"},
+				VortexGameID: "badgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "../outside"})
+			r.RegisterInstaller(installplan.InstallerSpec{
+				ID:                "bad:installer",
+				VortexInstallerID: "bad-installer",
+				ModType:           "missing-type",
+				GeneratedFiles: []installplan.GeneratedFileSpec{{
+					FromGameRelative: "/abs/source.json",
+					Destination:      "ok.json",
+				}},
+			})
+			r.RegisterLaunchTool(sdk.LaunchToolSpec{
+				ID:                 "tool",
+				Name:               "Tool",
+				ExecutableRelative: "../tool",
+			})
+		},
 	})
 	if err == nil {
 		t.Fatal("expected validation error")

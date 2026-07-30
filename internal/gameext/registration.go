@@ -5,67 +5,37 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
-
-type RegistrationFunc func(*Registrar)
-
-type GameRegistration struct {
-	SteamAppIDs  []string
-	NexusDomains []string
-	VortexGameID string
-	Deployment   installplan.DeploymentSpec
-}
-
-type RuntimeDependencySpec struct {
-	MetadataKinds       []string
-	RequirementIDPrefix string
-	RequirementKind     string
-	RequirementMessage  string
-}
-
-type MergeSpec struct {
-	ID   string
-	Name string
-}
-
-type LoadOrderSpec struct {
-	ID   string
-	Name string
-}
-
-type EventHandlerSpec struct {
-	Event string
-	Name  string
-}
 
 type Registrar struct {
 	extension Extension
 }
 
-func NewExtension(id, name string, register RegistrationFunc) (Extension, error) {
+func CompileExtension(spec sdk.Extension) (Extension, error) {
 	registrar := &Registrar{
 		extension: Extension{
-			ID:   strings.TrimSpace(id),
-			Name: strings.TrimSpace(name),
+			ID:   strings.TrimSpace(spec.ID),
+			Name: strings.TrimSpace(spec.Name),
 		},
 	}
-	if register != nil {
-		register(registrar)
+	if spec.Register != nil {
+		spec.Register(registrar)
 	}
 	return registrar.extension, validateExtension(registrar.extension)
 }
 
-func MustExtension(id, name string, register RegistrationFunc) Extension {
-	extension, err := NewExtension(id, name, register)
+func MustCompileExtension(spec sdk.Extension) Extension {
+	extension, err := CompileExtension(spec)
 	if err != nil {
 		panic(err)
 	}
 	return extension
 }
 
-func (r *Registrar) RegisterGame(spec GameRegistration) {
+func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.SteamAppIDs = appendClean(r.extension.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.NexusDomains = appendClean(r.extension.NexusDomains, spec.NexusDomains...)
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
@@ -90,42 +60,42 @@ func (r *Registrar) RegisterRuntimeRequirement(spec gamehandler.RuntimeRequireme
 	r.extension.RuntimeRequirements.RuntimeRequirements = append(r.extension.RuntimeRequirements.RuntimeRequirements, spec)
 }
 
-func (r *Registrar) RegisterRuntimeMetadataDependencies(spec RuntimeDependencySpec) {
+func (r *Registrar) RegisterRuntimeMetadataDependencies(spec sdk.RuntimeDependencySpec) {
 	r.extension.RuntimeRequirements.DependencyMetadataKinds = appendClean(nil, spec.MetadataKinds...)
 	r.extension.RuntimeRequirements.DependencyRequirementIDPrefix = strings.TrimSpace(spec.RequirementIDPrefix)
 	r.extension.RuntimeRequirements.DependencyRequirementKind = strings.TrimSpace(spec.RequirementKind)
 	r.extension.RuntimeRequirements.DependencyRequirementMessage = strings.TrimSpace(spec.RequirementMessage)
 }
 
-func (r *Registrar) RegisterLaunchTool(spec LaunchToolSpec) {
+func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
 }
 
-func (r *Registrar) RegisterSource(ref SourceRef) {
+func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
 	if strings.TrimSpace(ref.Name) == "" && strings.TrimSpace(ref.URL) == "" {
 		return
 	}
-	r.extension.Sources = append(r.extension.Sources, SourceRef{
+	r.extension.Sources = append(r.extension.Sources, sdk.SourceRef{
 		Name: strings.TrimSpace(ref.Name),
 		URL:  strings.TrimSpace(ref.URL),
 	})
 }
 
-func (r *Registrar) RegisterMerge(spec MergeSpec) {
+func (r *Registrar) RegisterMerge(spec sdk.MergeSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
 	}
 	r.extension.Merges = append(r.extension.Merges, spec)
 }
 
-func (r *Registrar) RegisterLoadOrder(spec LoadOrderSpec) {
+func (r *Registrar) RegisterLoadOrder(spec sdk.LoadOrderSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
 	}
 	r.extension.LoadOrders = append(r.extension.LoadOrders, spec)
 }
 
-func (r *Registrar) RegisterEventHandler(spec EventHandlerSpec) {
+func (r *Registrar) RegisterEventHandler(spec sdk.EventHandlerSpec) {
 	if strings.TrimSpace(spec.Event) == "" {
 		return
 	}
@@ -149,8 +119,8 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
-	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec MergeSpec) string { return spec.ID })...)
-	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec LoadOrderSpec) string { return spec.ID })...)
+	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
+	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
 	for _, handler := range extension.EventHandlers {
 		if strings.TrimSpace(handler.Event) == "" {
 			errs = append(errs, errors.New("event handler event is required"))
@@ -221,7 +191,7 @@ func validateRuntimeSpec(spec gamehandler.GameSpec) []error {
 	return errs
 }
 
-func validateLaunchTools(tools []LaunchToolSpec) []error {
+func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 	var errs []error
 	for _, tool := range tools {
 		id := strings.TrimSpace(tool.ID)

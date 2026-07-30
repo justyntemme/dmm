@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	. "github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-var stardewPlanner = NewRegistry([]GameSpec{stardewvalley.Extension().InstallPlan})
+var stardewPlanner = NewRegistry([]GameSpec{gameext.MustCompileExtension(stardewvalley.Extension()).InstallPlan})
 
 func Build(gameID, extractedRoot string) (Plan, error) {
 	return stardewPlanner.Build(gameID, extractedRoot)

@@ -7,6 +7,6 @@ import (
 
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
-		stardewvalley.Extension(),
+		gameext.MustCompileExtension(stardewvalley.Extension()),
 	}
 }

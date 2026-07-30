@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -20,27 +21,18 @@ type Extension struct {
 
 	InstallPlan         installplan.GameSpec
 	RuntimeRequirements gamehandler.GameSpec
-	LaunchTools         []LaunchToolSpec
-	Sources             []SourceRef
-	Merges              []MergeSpec
-	LoadOrders          []LoadOrderSpec
-	EventHandlers       []EventHandlerSpec
+	LaunchTools         []sdk.LaunchToolSpec
+	Sources             []sdk.SourceRef
+	Merges              []sdk.MergeSpec
+	LoadOrders          []sdk.LoadOrderSpec
+	EventHandlers       []sdk.EventHandlerSpec
 }
 
-type SourceRef struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-}
-
-type LaunchToolSpec struct {
-	ID                 string
-	Name               string
-	ExecutableRelative string
-	RequiredFiles      []string
-	DefaultPrimary     bool
-	ModTypes           []string
-	ProviderModTypes   []string
-}
+type SourceRef = sdk.SourceRef
+type LaunchToolSpec = sdk.LaunchToolSpec
+type MergeSpec = sdk.MergeSpec
+type LoadOrderSpec = sdk.LoadOrderSpec
+type EventHandlerSpec = sdk.EventHandlerSpec
 
 type ExtensionSummary struct {
 	ID           string                `json:"id"`

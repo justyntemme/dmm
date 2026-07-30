@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -23,12 +23,16 @@ const (
 	MetadataKindSMAPIManifest = "smapi-manifest"
 )
 
-func Extension() gameext.Extension {
-	return gameext.MustExtension(VortexGameID, Name, Register)
+func Extension() sdk.Extension {
+	return sdk.Extension{
+		ID:       VortexGameID,
+		Name:     Name,
+		Register: Register,
+	}
 }
 
-func Register(r *gameext.Registrar) {
-	r.RegisterGame(gameext.GameRegistration{
+func Register(r sdk.Registrar) {
+	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  []string{SteamAppID},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
@@ -45,13 +49,13 @@ func Register(r *gameext.Registrar) {
 	for _, requirement := range runtimeRequirements() {
 		r.RegisterRuntimeRequirement(requirement)
 	}
-	r.RegisterRuntimeMetadataDependencies(gameext.RuntimeDependencySpec{
+	r.RegisterRuntimeMetadataDependencies(sdk.RuntimeDependencySpec{
 		MetadataKinds:       []string{MetadataKindSMAPIManifest},
 		RequirementIDPrefix: "stardew-mod-dependency:",
 		RequirementKind:     "mod-dependency",
 		RequirementMessage:  "Required mod dependency is not enabled in this profile.",
 	})
-	r.RegisterLaunchTool(gameext.LaunchToolSpec{
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "smapi",
 		Name:               "SMAPI",
 		ExecutableRelative: SMAPIExecutable,
@@ -193,8 +197,8 @@ func runtimeRequirements() []gamehandler.RuntimeRequirementSpec {
 	}
 }
 
-func sources() []gameext.SourceRef {
-	return []gameext.SourceRef{
+func sources() []sdk.SourceRef {
+	return []sdk.SourceRef{
 		{
 			Name: "Vortex Stardew game registration",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/game/StardewValleyGame.ts",
