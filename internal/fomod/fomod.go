@@ -108,6 +108,7 @@ type PlanOptions struct {
 	ModType           string
 	PlannerID         string
 	TargetRoot        string
+	TargetRootID      string
 	StopFolders       []string
 	GameVersion       string
 	HostVersion       string
@@ -428,7 +429,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		return installplan.Plan{}, installplan.Unsupported("FOMOD module dependencies are not satisfied")
 	}
 	for _, entry := range installer.RequiredFiles {
-		if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
+		if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
 			return installplan.Plan{}, err
 		}
 	}
@@ -454,7 +455,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 					if !includePlugin && !entry.AlwaysInstall && !(entry.InstallIfUsable && isSelectablePluginType(types[plugin.ID])) {
 						continue
 					}
-					if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
+					if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
@@ -469,7 +470,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 			continue
 		}
 		for _, entry := range pattern.Files {
-			if err := appendEntryInstructions(&plan, root, targetRoot, stopFolders, entry); err != nil {
+			if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
 				return installplan.Plan{}, err
 			}
 		}
@@ -532,7 +533,7 @@ func selectablePluginCount(plugins []Plugin, types map[string]string) int {
 	return count
 }
 
-func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, stopFolders []string, entry FileEntry) error {
+func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, targetRootID string, stopFolders []string, entry FileEntry) error {
 	sourceRel, err := cleanRel(entry.Source)
 	if err != nil {
 		return err
@@ -568,6 +569,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 				Kind:            installplan.InstructionKindCopy,
 				SourcePath:      path,
 				StagingRelative: targetRel,
+				TargetRoot:      targetRootID,
 				TargetRelative:  targetRelative(targetRoot, targetRel),
 				Priority:        entry.Priority,
 			})
@@ -578,6 +580,7 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 		Kind:            installplan.InstructionKindCopy,
 		SourcePath:      sourcePath,
 		StagingRelative: destRel,
+		TargetRoot:      targetRootID,
 		TargetRelative:  targetRelative(targetRoot, destRel),
 		Priority:        entry.Priority,
 	})

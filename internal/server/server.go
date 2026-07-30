@@ -507,6 +507,10 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	markUndeployableInstalledMods(mods)
+	if _, err := s.cleanupDuplicateInstallCandidates(r.Context(), appID, "game-diagnostics"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -915,6 +919,20 @@ func (s *Server) publishInstallCandidatesChanged(appID, action string, count int
 		"action": "install_candidates_" + strings.TrimSpace(action),
 		"count":  count,
 	})
+}
+
+func (s *Server) cleanupDuplicateInstallCandidates(ctx context.Context, appID, source string) (int64, error) {
+	deleted, err := s.db.DeleteDuplicateInstallCandidatesForSteamApp(ctx, appID)
+	if err != nil {
+		s.logger.Warn("duplicate install candidate cleanup failed", "app_id", appID, "source", source, "error", err)
+		return 0, err
+	}
+	if deleted == 0 {
+		return 0, nil
+	}
+	s.logger.Info("duplicate install candidates removed", "app_id", appID, "source", source, "deleted", deleted)
+	s.publishInstallCandidatesChanged(appID, "deduplicated", int(deleted))
+	return deleted, nil
 }
 
 func (s *Server) autoEnableInstalledMods() bool {
@@ -2093,6 +2111,10 @@ func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
+	if _, err := s.cleanupDuplicateInstallCandidates(r.Context(), appID, "install-candidates-list"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -2334,6 +2356,7 @@ func (s *Server) fomodPlanOptions(ctx context.Context, appID string) (fomod.Plan
 		ModType:           choiceSpec.ModType,
 		PlannerID:         choiceSpec.ID,
 		TargetRoot:        choiceSpec.TargetRoot,
+		TargetRootID:      choiceSpec.TargetRootID,
 		StopFolders:       choiceSpec.StopFolders,
 		GameVersion:       game.Version,
 		HostVersion:       fomodHostVersion,
@@ -2589,6 +2612,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		ModType:           choiceSpec.ModType,
 		PlannerID:         choiceSpec.ID,
 		TargetRoot:        choiceSpec.TargetRoot,
+		TargetRootID:      choiceSpec.TargetRootID,
 		StopFolders:       choiceSpec.StopFolders,
 		GameVersion:       game.Version,
 		HostVersion:       fomodHostVersion,
@@ -2654,6 +2678,14 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 
 func (s *Server) fomodFileDependencyResolver(ctx context.Context, game storage.Game, choiceSpec gameext.InstallerChoiceSpec) fomod.FileStateResolver {
 	profilePluginStates := s.fomodProfilePluginDependencyStates(ctx, game)
+	targetBase := game.GamePath
+	if strings.TrimSpace(choiceSpec.TargetRootID) != "" {
+		if resolved, err := s.resolveManifestTargetRoot(ctx, game, choiceSpec.TargetRootID); err == nil && resolved != "" {
+			targetBase = resolved
+		} else if err != nil {
+			s.logger.Warn("FOMOD target root dependency state unavailable", "app_id", game.SteamAppID, "target_root_id", choiceSpec.TargetRootID, "error", err)
+		}
+	}
 	return func(relative string) string {
 		targetRel, err := fomodDependencyTargetRelative(choiceSpec.TargetRoot, relative)
 		if err != nil {
@@ -2666,7 +2698,7 @@ func (s *Server) fomodFileDependencyResolver(ctx context.Context, game storage.G
 		if state, ok := s.fomodDeployedPluginDependencyState(game, targetRel); ok {
 			return state
 		}
-		return fomodFileDependencyState(game.GamePath, "", targetRel)
+		return fomodFileDependencyState(targetBase, "", targetRel)
 	}
 }
 
@@ -2683,7 +2715,7 @@ func (s *Server) fomodProfilePluginDependencyStates(ctx context.Context, game st
 	}
 	states := map[string]string{}
 	for _, mod := range mods {
-		mappings, err := s.deployMappingsForInstalledMod(mod)
+		mappings, err := s.deployMappingsForInstalledMod(ctx, game, mod)
 		if err != nil {
 			continue
 		}
@@ -4192,6 +4224,9 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 }
 
 func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, staged storage.InstalledMod, cleanup func()) {
+	if _, err := s.cleanupDuplicateInstallCandidates(ctx, staged.SteamAppID, "installed-mod-complete"); err != nil {
+		s.logger.Warn("installed mod completion skipped duplicate candidate cleanup", "job_id", jobID, "app_id", staged.SteamAppID, "installed_mod_id", staged.ID, "error", err)
+	}
 	finish := func() {
 		if cleanup != nil {
 			cleanup()
@@ -4705,6 +4740,7 @@ func modNameFromStaging(archivePath string, resolved catalog.ResolvedDownload, p
 
 type stagedManifestFile struct {
 	Path           string `json:"path"`
+	TargetRoot     string `json:"target_root,omitempty"`
 	TargetRelative string `json:"target_relative,omitempty"`
 	TargetPolicy   string `json:"target_policy,omitempty"`
 	DeployStrategy string `json:"deploy_strategy,omitempty"`
@@ -4747,6 +4783,7 @@ func stagedManifestJSON(stagingPath string) (string, error) {
 
 func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (string, error) {
 	targets := make(map[string]string, len(plan.Instructions))
+	targetRoots := make(map[string]string, len(plan.Instructions))
 	targetPolicies := make(map[string]string, len(plan.Instructions))
 	deployStrategies := make(map[string]string, len(plan.Instructions))
 	for _, instruction := range plan.Instructions {
@@ -4755,6 +4792,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 		}
 		stagingRel := filepath.ToSlash(instruction.StagingRelative)
 		targets[stagingRel] = filepath.ToSlash(instruction.TargetRelative)
+		targetRoots[stagingRel] = strings.TrimSpace(instruction.TargetRoot)
 		targetPolicies[stagingRel] = strings.TrimSpace(instruction.TargetPolicy)
 		deployStrategies[stagingRel] = strings.TrimSpace(instruction.DeployStrategy)
 	}
@@ -4781,6 +4819,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 		rel = filepath.ToSlash(rel)
 		files = append(files, stagedManifestFile{
 			Path:           rel,
+			TargetRoot:     targetRoots[rel],
 			TargetRelative: targets[rel],
 			TargetPolicy:   targetPolicies[rel],
 			DeployStrategy: deployStrategies[rel],
@@ -4960,7 +4999,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 			continue
 		}
 		deployableMods++
-		next, err := s.deployMappingsForInstalledMod(mod)
+		next, err := s.deployMappingsForInstalledMod(ctx, game, mod)
 		if err != nil {
 			if errors.Is(err, errUndeployableInstalledMod) {
 				s.logger.Info("skipping staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
@@ -5495,7 +5534,7 @@ func installedModType(mod storage.InstalledMod) string {
 	return strings.TrimSpace(manifest.ModType)
 }
 
-func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]deploy.FileMapping, error) {
+func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage.Game, mod storage.InstalledMod) ([]deploy.FileMapping, error) {
 	stagingPath := s.effectiveStagingPath(mod)
 	manifestFiles, err := stagedManifestFiles(mod.ManifestJSON)
 	if err != nil {
@@ -5511,8 +5550,13 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 			if targetRelative == "" {
 				return nil, fmt.Errorf("%w: installed mod %q has no target mapping; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
 			}
+			targetRoot, err := s.resolveManifestTargetRoot(ctx, game, file.TargetRoot)
+			if err != nil {
+				return nil, err
+			}
 			mappings = append(mappings, deploy.FileMapping{
 				SourcePath:     filepath.Join(stagingPath, filepath.FromSlash(file.Path)),
+				TargetRoot:     targetRoot,
 				TargetRelative: filepath.ToSlash(targetRelative),
 				TargetPolicy:   strings.TrimSpace(file.TargetPolicy),
 				Strategy:       deploy.Strategy(strings.TrimSpace(file.DeployStrategy)),
@@ -5525,6 +5569,38 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 		return mappings, nil
 	}
 	return nil, fmt.Errorf("%w: installed mod %q does not have a deployable manifest; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+}
+
+func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Game, rootID string) (string, error) {
+	rootID = strings.TrimSpace(rootID)
+	if rootID == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(rootID) {
+		return "", fmt.Errorf("staged manifest target_root %q must be an extension target-root id, not an absolute path", rootID)
+	}
+	result, ok, err := s.games.ResolveTargetRoot(ctx, game.SteamAppID, rootID, gameext.TargetRootInput{
+		AppID:       game.SteamAppID,
+		GamePath:    game.GamePath,
+		LibraryPath: game.LibraryPath,
+	})
+	if err != nil {
+		s.logger.Warn("extension target root resolution failed", "app_id", game.SteamAppID, "target_root_id", rootID, "error", err)
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("extension target root %q is not registered for app %s", rootID, game.SteamAppID)
+	}
+	root := strings.TrimSpace(result.Path)
+	if root == "" {
+		return "", fmt.Errorf("extension target root %q resolved to an empty path", rootID)
+	}
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("extension target root %q resolved to non-absolute path %q", rootID, root)
+	}
+	root = filepath.Clean(root)
+	s.logger.Debug("extension target root resolved", "app_id", game.SteamAppID, "target_root_id", rootID, "path", root, "source", result.Source)
+	return root, nil
 }
 
 func hasDeployableActions(plan deploy.Plan) bool {

@@ -290,18 +290,24 @@ const deckyPanelFrameStyle: CSSProperties = {
   maxWidth: "100%",
   minHeight: 0,
   minWidth: 0,
-  overflowX: "hidden",
+  overflow: "hidden",
   width: "100%"
 };
 
 const deckyTabBarStyle: CSSProperties = {
   alignSelf: "stretch",
+  background: "#0b1120",
   boxSizing: "border-box",
   display: "grid",
+  flex: "0 0 auto",
   gap: "4px",
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   minWidth: 0,
-  width: "100%"
+  paddingBottom: "2px",
+  position: "sticky",
+  top: 0,
+  width: "100%",
+  zIndex: 2
 };
 
 const deckyTabBodyStyle: CSSProperties = {
@@ -309,9 +315,11 @@ const deckyTabBodyStyle: CSSProperties = {
   display: "block",
   flex: "1 1 auto",
   minHeight: 0,
+  overflowX: "hidden",
   overflowY: "auto",
   paddingBottom: "16px",
   paddingRight: "4px",
+  scrollPaddingTop: "8px",
   width: "100%"
 };
 
@@ -2281,17 +2289,19 @@ function Content() {
 
   function nextDirectionalIndex(currentIndex: number, length: number, direction: -1 | 1) {
     if (length <= 0) return -1;
-    if (currentIndex < 0) return direction > 0 ? 0 : length - 1;
+    if (currentIndex < 0) return direction > 0 ? 0 : -1;
     return Math.max(0, Math.min(length - 1, currentIndex + direction));
   }
 
   function handleDeckyGameListDirection(event: GamepadEvent) {
     const button = event.detail.button;
     if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
+    const currentIndex = visibleManagedGames.findIndex((game) => game.app_id === focusedGameID);
+    const nextIndex = nextDirectionalIndex(currentIndex, visibleManagedGames.length, direction);
+    if (nextIndex < 0 || nextIndex === currentIndex) return;
     event.preventDefault();
     event.stopPropagation();
-    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
-    const nextIndex = nextDirectionalIndex(visibleManagedGames.findIndex((game) => game.app_id === focusedGameID), visibleManagedGames.length, direction);
     const nextGame = visibleManagedGames[nextIndex];
     if (nextGame) {
       setFocusedGameID(nextGame.app_id);
@@ -2301,10 +2311,12 @@ function Content() {
   function handleDeckyModListDirection(event: GamepadEvent) {
     const button = event.detail.button;
     if (button !== GamepadButton.DIR_DOWN && button !== GamepadButton.DIR_UP) return;
+    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
+    const currentIndex = visibleDeckyMods.findIndex((mod) => mod.id === focusedModID);
+    const nextIndex = nextDirectionalIndex(currentIndex, visibleDeckyMods.length, direction);
+    if (nextIndex < 0 || nextIndex === currentIndex) return;
     event.preventDefault();
     event.stopPropagation();
-    const direction = button === GamepadButton.DIR_DOWN ? 1 : -1;
-    const nextIndex = nextDirectionalIndex(visibleDeckyMods.findIndex((mod) => mod.id === focusedModID), visibleDeckyMods.length, direction);
     const nextMod = visibleDeckyMods[nextIndex];
     if (nextMod) {
       setFocusedModID(nextMod.id);

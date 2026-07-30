@@ -58,6 +58,13 @@ func (r *Registrar) RegisterSteamWorkshop(spec sdk.SteamWorkshopSpec) {
 	r.extension.SteamWorkshop.Actions = append(r.extension.SteamWorkshop.Actions, spec.Actions...)
 }
 
+func (r *Registrar) RegisterTargetRoot(spec sdk.TargetRootSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.TargetRoots = append(r.extension.TargetRoots, spec)
+}
+
 func (r *Registrar) RegisterInstaller(spec installplan.InstallerSpec) {
 	r.extension.InstallPlan.Installers = append(r.extension.InstallPlan.Installers, spec)
 }
@@ -161,12 +168,14 @@ func validateExtension(extension Extension) error {
 		errs = append(errs, errors.New("extension must register at least one Nexus domain"))
 	}
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
-	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes)...)
+	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
+	errs = append(errs, validateTargetRoots(extension.TargetRoots)...)
+	errs = append(errs, validateInstallPlanTargetRoots(extension.InstallPlan, extension.TargetRoots)...)
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
@@ -209,6 +218,56 @@ func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {
 		if spec.Provider == nil {
 			errs = append(errs, errors.New("game version provider "+id+" function is required"))
 		}
+	}
+	return errs
+}
+
+func validateTargetRoots(specs []sdk.TargetRootSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("target root id is required"))
+			continue
+		}
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("target root "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("target root "+id+" name is required"))
+		}
+		if spec.Resolver == nil {
+			errs = append(errs, errors.New("target root "+id+" resolver is required"))
+		}
+	}
+	return errs
+}
+
+func validateInstallPlanTargetRoots(spec installplan.GameSpec, targetRoots []sdk.TargetRootSpec) []error {
+	declared := map[string]struct{}{}
+	for _, root := range targetRoots {
+		if id := strings.TrimSpace(root.ID); id != "" {
+			declared[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	var errs []error
+	validateRef := func(kind, owner, rootID string) {
+		rootID = strings.TrimSpace(rootID)
+		if rootID == "" {
+			return
+		}
+		if _, ok := declared[strings.ToLower(rootID)]; !ok {
+			errs = append(errs, errors.New(kind+" "+owner+" references undeclared target root "+rootID))
+		}
+	}
+	for _, modType := range spec.ModTypes {
+		validateRef("mod type", strings.TrimSpace(modType.ID), modType.TargetRootID)
+	}
+	for _, installer := range spec.Installers {
+		validateRef("installer", strings.TrimSpace(installer.ID), installer.TargetRootID)
 	}
 	return errs
 }
@@ -270,12 +329,18 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 	return errs
 }
 
-func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []installplan.ModTypeSpec) []error {
+func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []installplan.ModTypeSpec, targetRoots []sdk.TargetRootSpec) []error {
 	var errs []error
 	declaredModTypes := map[string]struct{}{}
 	for _, modType := range modTypes {
 		if id := strings.TrimSpace(modType.ID); id != "" {
 			declaredModTypes[id] = struct{}{}
+		}
+	}
+	declaredTargetRoots := map[string]struct{}{}
+	for _, targetRoot := range targetRoots {
+		if id := strings.TrimSpace(targetRoot.ID); id != "" {
+			declaredTargetRoots[strings.ToLower(id)] = struct{}{}
 		}
 	}
 	for _, spec := range specs {
@@ -295,6 +360,11 @@ func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []instal
 		}
 		if err := validateRelativeOrRoot(spec.TargetRoot); err != nil {
 			errs = append(errs, errors.New("installer choice "+id+" target root: "+err.Error()))
+		}
+		if rootID := strings.TrimSpace(spec.TargetRootID); rootID != "" {
+			if _, ok := declaredTargetRoots[strings.ToLower(rootID)]; !ok {
+				errs = append(errs, errors.New("installer choice "+id+" references undeclared target root "+rootID))
+			}
 		}
 		for _, folder := range spec.StopFolders {
 			if err := validatePathSegment(folder); err != nil {

@@ -1019,7 +1019,35 @@ DELETE FROM install_candidates
 WHERE game_id IN (
 	SELECT id FROM games WHERE steam_app_id = ?
 )
-`, appID)
+	`, appID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (db *DB) DeleteDuplicateInstallCandidatesForSteamApp(ctx context.Context, appID string) (int64, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return 0, errors.New("steam app id is required")
+	}
+	result, err := db.conn.ExecContext(ctx, `
+DELETE FROM install_candidates
+WHERE game_id IN (
+	SELECT id FROM games WHERE steam_app_id = ?
+)
+AND EXISTS (
+	SELECT 1
+	FROM installed_mods im
+	JOIN mod_versions mv ON mv.id = im.mod_version_id
+	JOIN mods m ON m.id = mv.mod_id
+	WHERE m.game_id = install_candidates.game_id
+		AND m.catalog = install_candidates.catalog
+		AND m.source_game_domain = install_candidates.source_game_domain
+		AND m.source_mod_id = install_candidates.source_mod_id
+		AND mv.source_file_id = install_candidates.source_file_id
+)
+	`, appID)
 	if err != nil {
 		return 0, err
 	}

@@ -36,6 +36,7 @@ type Instruction struct {
 	GenerateFromGameRelative string `json:"generate_from_game_relative,omitempty"`
 	GeneratedDefaultContent  string `json:"generated_default_content,omitempty"`
 	StagingRelative          string `json:"staging_relative"`
+	TargetRoot               string `json:"target_root,omitempty"`
 	TargetRelative           string `json:"target_relative"`
 	TargetPolicy             string `json:"target_policy,omitempty"`
 	DeployStrategy           string `json:"deploy_strategy,omitempty"`
@@ -94,8 +95,9 @@ type DeploymentSpec struct {
 }
 
 type ModTypeSpec struct {
-	ID         string
-	TargetRoot string
+	ID           string
+	TargetRoot   string
+	TargetRootID string
 }
 
 type InstallerSpec struct {
@@ -105,6 +107,7 @@ type InstallerSpec struct {
 	ModType            string
 	NameSource         string
 	TargetRoot         string
+	TargetRootID       string
 	StripCommonRoot    bool
 	Match              MatchSpec
 	Payload            PayloadSpec
@@ -124,6 +127,7 @@ type BuildInput struct {
 	ExtractedRoot string
 	Installer     InstallerSpec
 	TargetRoot    string
+	TargetRootID  string
 }
 
 type CustomBuildFunc func(BuildInput) (Plan, error)
@@ -301,6 +305,7 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 		return Plan{}, Unsupported(installer.UnsupportedReason)
 	}
 	installer.TargetRoot = targetRootForInstaller(spec, installer)
+	installer.TargetRootID = targetRootIDForInstaller(spec, installer)
 	plan := Plan{
 		GameID:       firstNonEmpty(spec.SteamAppIDs, spec.VortexGameID),
 		ModType:      installer.ModType,
@@ -327,6 +332,7 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 			ExtractedRoot: extractedRoot,
 			Installer:     installer,
 			TargetRoot:    installer.TargetRoot,
+			TargetRootID:  installer.TargetRootID,
 		})
 	default:
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " uses an unsupported instruction mode")
@@ -341,6 +347,16 @@ func targetRootForInstaller(spec GameSpec, installer InstallerSpec) string {
 		}
 	}
 	return strings.TrimSpace(installer.TargetRoot)
+}
+
+func targetRootIDForInstaller(spec GameSpec, installer InstallerSpec) string {
+	modType := strings.TrimSpace(installer.ModType)
+	for _, modTypeSpec := range spec.ModTypes {
+		if strings.EqualFold(strings.TrimSpace(modTypeSpec.ID), modType) {
+			return strings.TrimSpace(modTypeSpec.TargetRootID)
+		}
+	}
+	return strings.TrimSpace(installer.TargetRootID)
 }
 
 func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {
@@ -377,6 +393,7 @@ func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot s
 				Kind:            InstructionKindCopy,
 				SourcePath:      path,
 				StagingRelative: stagingRel,
+				TargetRoot:      installer.TargetRootID,
 				TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel)),
 				TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
 				DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
@@ -425,6 +442,7 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 			Kind:            InstructionKindCopy,
 			SourcePath:      path,
 			StagingRelative: rel,
+			TargetRoot:      installer.TargetRootID,
 			TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)),
 			TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
 			DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
@@ -473,6 +491,7 @@ func buildArchiveRootPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 			Kind:            InstructionKindCopy,
 			SourcePath:      path,
 			StagingRelative: rel,
+			TargetRoot:      installer.TargetRootID,
 			TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)),
 			TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
 			DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
@@ -582,6 +601,7 @@ func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 			Kind:            InstructionKindCopy,
 			SourcePath:      path,
 			StagingRelative: rel,
+			TargetRoot:      installer.TargetRootID,
 			TargetRelative:  targetRel,
 			TargetPolicy:    targetPolicyFor(installer, targetRel),
 			DeployStrategy:  targetDeploymentStrategyFor(installer, targetRel),
@@ -601,6 +621,7 @@ func buildEmbeddedZipPlan(plan Plan, installer InstallerSpec, extractedRoot stri
 			GenerateFromGameRelative: filepath.ToSlash(generated.FromGameRelative),
 			GeneratedDefaultContent:  generated.DefaultContent,
 			StagingRelative:          destination,
+			TargetRoot:               installer.TargetRootID,
 			TargetRelative:           filepath.ToSlash(filepath.Join(installer.TargetRoot, destination)),
 			TargetPolicy:             targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, destination))),
 			DeployStrategy:           targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, destination))),

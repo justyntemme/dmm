@@ -29,6 +29,7 @@ type Extension struct {
 	GameVersionProviders []sdk.GameVersionProviderSpec
 	PluginActivations    []sdk.PluginActivationSpec
 	ConflictIgnores      []sdk.ConflictIgnoreSpec
+	TargetRoots          []sdk.TargetRootSpec
 	SteamWorkshop        sdk.SteamWorkshopSpec
 	Sources              []sdk.SourceRef
 	Merges               []sdk.MergeSpec
@@ -41,6 +42,9 @@ type LaunchToolSpec = sdk.LaunchToolSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
+type TargetRootSpec = sdk.TargetRootSpec
+type TargetRootInput = sdk.TargetRootInput
+type TargetRootResult = sdk.TargetRootResult
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
 type SteamWorkshopSpec = sdk.SteamWorkshopSpec
 type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
@@ -74,6 +78,7 @@ type ExtensionCapabilities struct {
 	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
+	TargetRoots         []FeatureSummary `json:"target_roots,omitempty"`
 	SteamWorkshop       *WorkshopSummary `json:"steam_workshop,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
@@ -303,6 +308,25 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 	return sdk.GameVersionResult{}, false, nil
 }
 
+func (r Registry) ResolveTargetRoot(ctx context.Context, appID, rootID string, input sdk.TargetRootInput) (sdk.TargetRootResult, bool, error) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return sdk.TargetRootResult{}, false, nil
+	}
+	rootID = canonical(rootID)
+	for _, spec := range extension.TargetRoots {
+		if canonical(spec.ID) != rootID {
+			continue
+		}
+		if spec.Resolver == nil {
+			return sdk.TargetRootResult{}, true, errors.New("target root " + spec.ID + " has no resolver")
+		}
+		result, err := spec.Resolver(ctx, input)
+		return result, true, err
+	}
+	return sdk.TargetRootResult{}, false, nil
+}
+
 func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok || len(extension.PluginActivations) == 0 {
@@ -486,6 +510,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, ignore := range extension.ConflictIgnores {
 		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
 	}
+	for _, root := range extension.TargetRoots {
+		summary.Capabilities.TargetRoots = append(summary.Capabilities.TargetRoots, FeatureSummary{ID: root.ID, Name: root.Name})
+	}
 	if extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0 {
 		workshop := &WorkshopSummary{AllowCoexistence: extension.SteamWorkshop.AllowCoexistence}
 		for _, action := range extension.SteamWorkshop.Actions {
@@ -511,6 +538,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
+	sortFeatureSummaries(summary.Capabilities.TargetRoots)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)

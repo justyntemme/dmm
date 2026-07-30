@@ -21,6 +21,7 @@ type RegistrationFunc func(Registrar)
 type Registrar interface {
 	RegisterGame(GameRegistration)
 	RegisterSteamWorkshop(SteamWorkshopSpec)
+	RegisterTargetRoot(TargetRootSpec)
 	RegisterInstaller(installplan.InstallerSpec)
 	RegisterInstallerChoice(InstallerChoiceSpec)
 	RegisterModType(installplan.ModTypeSpec)
@@ -62,6 +63,25 @@ type SteamWorkshopActionSpec struct {
 	Kind string
 }
 
+type TargetRootSpec struct {
+	ID       string
+	Name     string
+	Resolver TargetRootResolverFunc
+}
+
+type TargetRootResolverFunc func(context.Context, TargetRootInput) (TargetRootResult, error)
+
+type TargetRootInput struct {
+	AppID       string
+	GamePath    string
+	LibraryPath string
+}
+
+type TargetRootResult struct {
+	Path   string
+	Source string
+}
+
 func StandardSteamWorkshopActions() []SteamWorkshopActionSpec {
 	return []SteamWorkshopActionSpec{
 		{ID: "steam-workshop-enable", Name: "Enable Workshop item", Kind: SteamWorkshopActionEnable},
@@ -84,12 +104,13 @@ type SourceRef struct {
 }
 
 type InstallerChoiceSpec struct {
-	ID          string
-	Name        string
-	Kind        string
-	ModType     string
-	TargetRoot  string
-	StopFolders []string
+	ID           string
+	Name         string
+	Kind         string
+	ModType      string
+	TargetRoot   string
+	TargetRootID string
+	StopFolders  []string
 }
 
 type LaunchToolSpec struct {

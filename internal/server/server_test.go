@@ -2199,6 +2199,65 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	}
 }
 
+func TestGameInstallCandidatesEndpointRemovesInstalledDuplicates(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "5098",
+		FileID:     "145906",
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   "413150",
+		Resolved:     resolved,
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID:  "413150",
+		Resolved:    resolved,
+		Name:        "Generic Mod Config Menu",
+		ArchivePath: "/downloads/gmcm.zip",
+		Status:      "blocked",
+		Reason:      "no Vortex installer metadata matched this archive",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/install-candidates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("candidates after endpoint cleanup = %+v", candidates)
+	}
+}
+
 func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

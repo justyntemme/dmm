@@ -704,6 +704,89 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 	}
 }
 
+func TestDeleteDuplicateInstallCandidatesForSteamAppKeepsOnlyCurrentFailures(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	installedSource := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "5098",
+		FileID:     "145906",
+	}
+	if _, err := db.RecordInstallCandidate(context.Background(), RecordInstallCandidateParams{
+		SteamAppID:  "413150",
+		Resolved:    installedSource,
+		Name:        "Generic Mod Config Menu",
+		ArchivePath: "/downloads/gmcm.zip",
+		Status:      "blocked",
+		Reason:      "no Vortex installer metadata matched this archive",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordInstallCandidate(context.Background(), RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145907",
+		},
+		Name:        "Generic Mod Config Menu older file",
+		ArchivePath: "/downloads/gmcm-old.zip",
+		Status:      "blocked",
+		Reason:      "still current",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID:   "413150",
+		Resolved:     installedSource,
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	deleted, err := db.DeleteDuplicateInstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted = %d", deleted)
+	}
+	candidates, err := db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].SourceFileID != "145907" {
+		t.Fatalf("remaining candidates = %+v", candidates)
+	}
+	deleted, err = db.DeleteDuplicateInstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 0 {
+		t.Fatalf("second cleanup deleted = %d", deleted)
+	}
+}
+
 func TestRecordDeploymentPersistsChecksum(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {
