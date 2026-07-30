@@ -40,6 +40,12 @@ type Action struct {
 	Strategy       Strategy `json:"strategy"`
 	Operation      string   `json:"operation"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
+	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	ModID          string   `json:"mod_id,omitempty"`
+	Priority       int      `json:"priority,omitempty"`
+	WinnerModID    int64    `json:"winner_installed_mod_id,omitempty"`
+	WinnerSourceID string   `json:"winner_mod_id,omitempty"`
+	WinnerPriority int      `json:"winner_priority,omitempty"`
 	Conflict       bool     `json:"conflict"`
 	ConflictReason string   `json:"conflict_reason,omitempty"`
 }
@@ -149,6 +155,9 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			Strategy:       mappingStrategy(mapping, strategy),
 			Operation:      "add",
 			ChecksumSHA256: mapping.ChecksumSHA256,
+			InstalledModID: mapping.InstalledModID,
+			ModID:          mapping.ModID,
+			Priority:       mapping.Priority,
 		}
 		targetKey := filepath.Clean(action.TargetPath)
 		desiredTargets[targetKey] = struct{}{}
@@ -315,10 +324,17 @@ func prioritizeMappings(mappings []FileMapping, ignoreConflictPatterns []string)
 			reason = "ignored by extension conflict rules"
 		}
 		skipped = append(skipped, Action{
+			TargetRoot:     strings.TrimSpace(loser.mapping.TargetRoot),
 			TargetRelative: filepath.ToSlash(targetRel),
 			Operation:      "skip",
-			ConflictReason: reason,
 			ChecksumSHA256: loser.mapping.ChecksumSHA256,
+			InstalledModID: loser.mapping.InstalledModID,
+			ModID:          loser.mapping.ModID,
+			Priority:       loser.mapping.Priority,
+			WinnerModID:    winner.mapping.InstalledModID,
+			WinnerSourceID: winner.mapping.ModID,
+			WinnerPriority: winner.mapping.Priority,
+			ConflictReason: reason,
 		})
 	}
 	winners := make([]mappingCandidate, 0, len(byTarget))

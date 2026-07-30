@@ -502,8 +502,8 @@ func TestBuildPlanSkipsDuplicateTargetByPriority(t *testing.T) {
 	}
 
 	plan, err := BuildPlan(staging, target, StrategySymlink, []FileMapping{
-		{SourceRelative: "low/file.txt", TargetRelative: "Mods/file.txt", Priority: 10},
-		{SourceRelative: "high/file.txt", TargetRelative: "Mods/file.txt", Priority: 1},
+		{SourceRelative: "low/file.txt", TargetRelative: "Mods/file.txt", InstalledModID: 100, ModID: "low-mod", Priority: 10},
+		{SourceRelative: "high/file.txt", TargetRelative: "Mods/file.txt", InstalledModID: 200, ModID: "high-mod", Priority: 1},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -526,8 +526,14 @@ func TestBuildPlanSkipsDuplicateTargetByPriority(t *testing.T) {
 	if add.SourcePath != filepath.Join(staging, "high", "file.txt") {
 		t.Fatalf("winner = %+v", add)
 	}
+	if add.InstalledModID != 200 || add.ModID != "high-mod" || add.Priority != 1 {
+		t.Fatalf("winner metadata = %+v", add)
+	}
 	if skip.Operation != "skip" || skip.TargetRelative != "Mods/file.txt" {
 		t.Fatalf("skip = %+v", skip)
+	}
+	if skip.InstalledModID != 100 || skip.ModID != "low-mod" || skip.Priority != 10 || skip.WinnerModID != 200 || skip.WinnerSourceID != "high-mod" || skip.WinnerPriority != 1 {
+		t.Fatalf("skip metadata = %+v", skip)
 	}
 }
 

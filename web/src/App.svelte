@@ -204,6 +204,12 @@
     target_relative: string;
     strategy: string;
     operation: string;
+    installed_mod_id?: number;
+    mod_id?: string;
+    priority?: number;
+    winner_installed_mod_id?: number;
+    winner_mod_id?: string;
+    winner_priority?: number;
     conflict: boolean;
     conflict_reason?: string;
   };
@@ -1722,6 +1728,15 @@
     return "Review the mod page before updating.";
   }
 
+  function deployActionDetail(action: DeployAction) {
+    if (action.conflict) return action.conflict_reason || "Conflict";
+    const base = `${action.operation || "add"} · ${action.strategy || "managed"}`;
+    if (action.operation !== "skip" || !action.winner_installed_mod_id) return base;
+    const loser = installedMods.find((mod) => mod.id === action.installed_mod_id)?.name || action.mod_id || "Lower priority mod";
+    const winner = installedMods.find((mod) => mod.id === action.winner_installed_mod_id)?.name || action.winner_mod_id || "Higher priority mod";
+    return `${base} · ${loser} loses to ${winner}`;
+  }
+
   function primaryModMetadata(mod: InstalledMod) {
     return mod.metadata?.find((metadata) => metadata.unique_id || metadata.name) ?? null;
   }
@@ -2311,7 +2326,7 @@
                 {#each deployPlan.actions.slice(0, 24) as action}
                   <article class:failed-request={action.conflict}>
                     <strong>{action.target_relative}</strong>
-                    <small>{action.conflict ? action.conflict_reason : `${action.operation || "add"} · ${action.strategy || "managed"}`}</small>
+                    <small>{deployActionDetail(action)}</small>
                   </article>
                 {/each}
               </div>
