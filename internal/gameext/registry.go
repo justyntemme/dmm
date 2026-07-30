@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -370,15 +371,28 @@ func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, inp
 	input.AppID = strings.TrimSpace(appID)
 	input.Event = event
 	var out sdk.EventHandlerResult
+	currentMappings := append([]deploy.FileMapping(nil), input.Mappings...)
 	for _, handler := range extension.EventHandlers {
 		if canonical(handler.Event) != event || handler.Handler == nil {
 			continue
 		}
-		next, err := handler.Handler(ctx, input)
+		nextInput := input
+		nextInput.Mappings = append([]deploy.FileMapping(nil), currentMappings...)
+		next, err := handler.Handler(ctx, nextInput)
 		if err != nil {
 			return out, err
 		}
-		out.Mappings = append(out.Mappings, next.Mappings...)
+		if next.ReplaceMappings {
+			out.ReplaceMappings = true
+			currentMappings = append([]deploy.FileMapping(nil), next.Mappings...)
+			out.Mappings = append([]deploy.FileMapping(nil), currentMappings...)
+		} else if out.ReplaceMappings {
+			currentMappings = append(currentMappings, next.Mappings...)
+			out.Mappings = append([]deploy.FileMapping(nil), currentMappings...)
+		} else {
+			currentMappings = append(currentMappings, next.Mappings...)
+			out.Mappings = append(out.Mappings, next.Mappings...)
+		}
 		out.Messages = append(out.Messages, next.Messages...)
 	}
 	return out, nil

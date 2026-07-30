@@ -1,11 +1,14 @@
 package finalfantasy7rebirth_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -91,6 +94,36 @@ func TestExtensionRegistersGameAndCapabilitySources(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) == 0 || len(summary.Capabilities.Merges) == 0 {
 		t.Fatalf("summary capabilities = %+v", summary.Capabilities)
 	}
+	if len(summary.Capabilities.EventHandlers) == 0 {
+		t.Fatalf("summary event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+}
+
+func TestExtensionAppliesPakLoadOrderPrefixesDuringWillDeploy(t *testing.T) {
+	extension := gameext.MustCompileExtension(finalfantasy7rebirth.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	result, err := registry.RunEventHandlers(context.Background(), finalfantasy7rebirth.SteamAppID, "will-deploy", sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{
+			InstalledModID: 7,
+			ModID:          "1",
+			TargetRelative: "End/Content/Paks/~mods/Example_P.pak",
+			Priority:       0,
+		}},
+		Mods: []sdk.DeploymentMod{{
+			ID:       7,
+			Name:     "Example",
+			ModType:  "ff7rebirth-pak",
+			Enabled:  true,
+			Priority: 0,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ReplaceMappings || len(result.Mappings) != 1 {
+		t.Fatalf("hook result = %+v", result)
+	}
+	assertTarget(t, result.Mappings[0].TargetRelative, "End/Content/Paks/~mods/AAA-mod-7/Example_P.pak")
 }
 
 func build(root string) (installplan.Plan, error) {
@@ -130,6 +163,13 @@ func assertNoTarget(t *testing.T, instructions []installplan.Instruction, target
 		if instruction.TargetRelative == target {
 			t.Fatalf("unexpected target %q in %+v", target, instructions)
 		}
+	}
+}
+
+func assertTarget(t *testing.T, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("target = %q, want %q", got, want)
 	}
 }
 

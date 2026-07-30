@@ -4730,8 +4730,8 @@ func TestDeployPlanUsesExtensionDefaultDeploymentStrategy(t *testing.T) {
 	if err := os.WriteFile(sourcePath, []byte("pak"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `[{"path":"End/Content/Paks/~mods/Example_P.pak","target_relative":"End/Content/Paks/~mods/Example_P.pak","size":3,"sha256":"abc"}]`
-	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+	manifest := `{"game_id":"finalfantasy7rebirth","mod_type":"ff7rebirth-pak","files":[{"path":"End/Content/Paks/~mods/Example_P.pak","target_relative":"End/Content/Paks/~mods/Example_P.pak","size":3,"sha256":"abc"}]}`
+	staged, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: finalfantasy7rebirth.SteamAppID,
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -4744,7 +4744,8 @@ func TestDeployPlanUsesExtensionDefaultDeploymentStrategy(t *testing.T) {
 		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "ff7.zip"),
 		StagingPath:  stagingPath,
 		ManifestJSON: manifest,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -4757,6 +4758,10 @@ func TestDeployPlanUsesExtensionDefaultDeploymentStrategy(t *testing.T) {
 	}
 	if len(plan.Actions) != 1 || plan.Actions[0].Strategy != deploy.StrategyCopy {
 		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	wantTarget := "End/Content/Paks/~mods/AAA-mod-" + strconv.FormatInt(staged.ID, 10) + "/Example_P.pak"
+	if plan.Actions[0].TargetRelative != wantTarget {
+		t.Fatalf("target relative = %q, want %q", plan.Actions[0].TargetRelative, wantTarget)
 	}
 }
 

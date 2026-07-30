@@ -25,6 +25,7 @@ type FileMapping struct {
 	TargetRelative string   `json:"target_relative"`
 	TargetPolicy   string   `json:"target_policy,omitempty"`
 	Strategy       Strategy `json:"strategy,omitempty"`
+	InstalledModID int64    `json:"installed_mod_id,omitempty"`
 	ModID          string   `json:"mod_id,omitempty"`
 	Priority       int      `json:"priority"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`

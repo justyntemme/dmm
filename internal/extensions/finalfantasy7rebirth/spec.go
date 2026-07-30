@@ -2,6 +2,7 @@ package finalfantasy7rebirth
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/unreal"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -48,6 +49,14 @@ func Register(r sdk.Registrar) {
 	}
 	r.RegisterMerge(sdk.MergeSpec{ID: "ff7rebirth-unreal-pak-load-order", Name: "Final Fantasy VII Rebirth pak load order"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "ff7rebirth-unreal-pak-load-order", Name: "Final Fantasy VII Rebirth pak load order"})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event: "will-deploy",
+		Name:  "Apply Final Fantasy VII Rebirth pak load order prefixes",
+		Handler: unreal.SortablePakLoadOrderHandler(unreal.SortablePakLoadOrderOptions{
+			TargetRoot: pakRoot,
+			ModType:    "ff7rebirth-pak",
+		}),
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

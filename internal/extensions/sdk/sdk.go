@@ -190,6 +190,7 @@ type DeploymentMod struct {
 }
 
 type EventHandlerResult struct {
-	Mappings []deploy.FileMapping
-	Messages []string
+	ReplaceMappings bool
+	Mappings        []deploy.FileMapping
+	Messages        []string
 }

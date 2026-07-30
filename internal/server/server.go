@@ -4983,11 +4983,15 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	mappings = append(mappings, activationMappings...)
-	hookMappings, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy")
+	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy")
 	if err != nil {
 		return deploy.Plan{}, err
 	}
-	mappings = append(mappings, hookMappings...)
+	if hookResult.ReplaceMappings {
+		mappings = hookResult.Mappings
+	} else {
+		mappings = append(mappings, hookResult.Mappings...)
+	}
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, managedFiles)
@@ -5017,20 +5021,20 @@ func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
 	}
 }
 
-func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) ([]deploy.FileMapping, error) {
+func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) (gameext.EventHandlerResult, error) {
 	if !s.games.HasEventHandlerForSteamApp(game.SteamAppID, event) {
-		return nil, nil
+		return gameext.EventHandlerResult{}, nil
 	}
 	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
 	if err != nil {
-		return nil, err
+		return gameext.EventHandlerResult{}, err
 	}
 	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", game.SteamAppID, strconv.FormatInt(profileID, 10), strings.TrimSpace(event))
 	if err := os.RemoveAll(workDir); err != nil {
-		return nil, err
+		return gameext.EventHandlerResult{}, err
 	}
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
-		return nil, err
+		return gameext.EventHandlerResult{}, err
 	}
 	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
 		GamePath:     game.GamePath,
@@ -5044,7 +5048,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 		Mods:         deploymentModsForHooks(mods),
 	})
 	if err != nil {
-		return nil, err
+		return gameext.EventHandlerResult{}, err
 	}
 	for _, message := range result.Messages {
 		if message = strings.TrimSpace(message); message != "" {
@@ -5052,9 +5056,9 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 		}
 	}
 	if len(result.Mappings) > 0 {
-		s.logger.Info("extension deployment event returned mappings", "app_id", game.SteamAppID, "event", event, "mappings", len(result.Mappings), "work_dir", workDir)
+		s.logger.Info("extension deployment event returned mappings", "app_id", game.SteamAppID, "event", event, "mappings", len(result.Mappings), "replace", result.ReplaceMappings, "work_dir", workDir)
 	}
-	return result.Mappings, nil
+	return result, nil
 }
 
 func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, source string, plan deploy.Plan, applied []deploy.AppliedFile) error {
@@ -5516,6 +5520,7 @@ func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]depl
 				TargetRelative: filepath.ToSlash(targetRelative),
 				TargetPolicy:   strings.TrimSpace(file.TargetPolicy),
 				Strategy:       deploy.Strategy(strings.TrimSpace(file.DeployStrategy)),
+				InstalledModID: mod.ID,
 				ModID:          mod.SourceModID,
 				Priority:       mod.Priority,
 				ChecksumSHA256: file.SHA256,
