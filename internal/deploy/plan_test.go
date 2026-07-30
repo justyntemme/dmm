@@ -135,6 +135,60 @@ func TestBuildPlanUsesMappingStrategyOverride(t *testing.T) {
 	}
 }
 
+func TestBuildPlanUsesExplicitConflictWinner(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	for _, rel := range []string{"first/config.json", "second/config.json"} {
+		path := filepath.Join(staging, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	targetPath := filepath.Join(target, "Mods", "Shared", "config.json")
+	plan, err := BuildPlanWithOptions(staging, target, StrategySymlink, []FileMapping{
+		{
+			SourceRelative: "first/config.json",
+			TargetRelative: "Mods/Shared/config.json",
+			InstalledModID: 1,
+			ModID:          "first",
+			Priority:       0,
+		},
+		{
+			SourceRelative: "second/config.json",
+			TargetRelative: "Mods/Shared/config.json",
+			InstalledModID: 2,
+			ModID:          "second",
+			Priority:       10,
+		},
+	}, nil, BuildOptions{
+		ConflictWinners: map[string]int64{targetPath: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 2 {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	var winner, loser Action
+	for _, action := range plan.Actions {
+		if action.Operation == "skip" {
+			loser = action
+		} else {
+			winner = action
+		}
+	}
+	if winner.InstalledModID != 2 || winner.TargetPath != targetPath {
+		t.Fatalf("winner action = %+v", winner)
+	}
+	if loser.InstalledModID != 1 || loser.WinnerModID != 2 || !strings.Contains(loser.ConflictReason, "file winner") {
+		t.Fatalf("loser action = %+v", loser)
+	}
+}
+
 func TestBuildPlanSupportsManagedExternalTargetRoot(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")

@@ -66,11 +66,15 @@ type Plan struct {
 
 type BuildOptions struct {
 	IgnoreConflictPatterns []string
+	ConflictWinners        map[string]int64
 }
 
 type mappingCandidate struct {
-	mapping FileMapping
-	index   int
+	mapping         FileMapping
+	index           int
+	targetPath      string
+	targetRootLabel string
+	targetRel       string
 }
 
 func BuildPlan(stagingRoot, targetRoot string, strategy Strategy, mappings []FileMapping) (Plan, error) {
@@ -107,7 +111,7 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		managedByTarget[filepath.Clean(file.TargetPath)] = file
 	}
 	desiredTargets := make(map[string]struct{}, len(mappings))
-	winners, skipped, err := prioritizeMappings(mappings, options.IgnoreConflictPatterns)
+	winners, skipped, err := prioritizeMappings(targetRoot, strategy, mappings, options)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -302,7 +306,7 @@ func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {
 	return fallback
 }
 
-func prioritizeMappings(mappings []FileMapping, ignoreConflictPatterns []string) ([]FileMapping, []Action, error) {
+func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mappings []FileMapping, options BuildOptions) ([]FileMapping, []Action, error) {
 	byTarget := map[string]mappingCandidate{}
 	var skipped []Action
 	for i, mapping := range mappings {
@@ -310,22 +314,38 @@ func prioritizeMappings(mappings []FileMapping, ignoreConflictPatterns []string)
 		if err != nil {
 			return nil, nil, err
 		}
-		key := strings.TrimSpace(mapping.TargetRoot) + "\x00" + filepath.ToSlash(targetRel)
-		next := mappingCandidate{mapping: mapping, index: i}
+		mappingTargetRoot, targetRootLabel, err := targetRootForMapping(defaultTargetRoot, mapping.TargetRoot)
+		if err != nil {
+			return nil, nil, err
+		}
+		targetRelSlash := filepath.ToSlash(targetRel)
+		targetPath := filepath.Clean(filepath.Join(mappingTargetRoot, targetRel))
+		key := targetPath
+		next := mappingCandidate{
+			mapping:         mapping,
+			index:           i,
+			targetPath:      targetPath,
+			targetRootLabel: targetRootLabel,
+			targetRel:       targetRelSlash,
+		}
 		current, ok := byTarget[key]
 		if !ok {
 			byTarget[key] = next
 			continue
 		}
-		winner, loser := chooseMappingWinner(current, next)
+		winner, loser := chooseMappingWinner(current, next, options.ConflictWinners[targetPath])
 		byTarget[key] = winner
 		reason := "overridden by mod priority"
-		if ignoredConflictTarget(filepath.ToSlash(targetRel), ignoreConflictPatterns) {
+		if options.ConflictWinners[targetPath] > 0 {
+			reason = "resolved by file winner"
+		} else if ignoredConflictTarget(targetRelSlash, options.IgnoreConflictPatterns) {
 			reason = "ignored by extension conflict rules"
 		}
 		skipped = append(skipped, Action{
-			TargetRoot:     strings.TrimSpace(loser.mapping.TargetRoot),
-			TargetRelative: filepath.ToSlash(targetRel),
+			TargetPath:     loser.targetPath,
+			TargetRoot:     loser.targetRootLabel,
+			TargetRelative: loser.targetRel,
+			Strategy:       mappingStrategy(loser.mapping, defaultStrategy),
 			Operation:      "skip",
 			ChecksumSHA256: loser.mapping.ChecksumSHA256,
 			InstalledModID: loser.mapping.InstalledModID,
@@ -377,7 +397,15 @@ func ignoredConflictTarget(targetRelative string, patterns []string) bool {
 	return false
 }
 
-func chooseMappingWinner(a, b mappingCandidate) (winner, loser mappingCandidate) {
+func chooseMappingWinner(a, b mappingCandidate, overrideInstalledModID int64) (winner, loser mappingCandidate) {
+	if overrideInstalledModID > 0 {
+		if b.mapping.InstalledModID == overrideInstalledModID && a.mapping.InstalledModID != overrideInstalledModID {
+			return b, a
+		}
+		if a.mapping.InstalledModID == overrideInstalledModID && b.mapping.InstalledModID != overrideInstalledModID {
+			return a, b
+		}
+	}
 	if b.mapping.Priority < a.mapping.Priority {
 		return b, a
 	}

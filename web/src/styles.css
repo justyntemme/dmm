@@ -1099,6 +1099,50 @@ h2 {
   min-height: 38px;
 }
 
+.conflict-choice-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 10px;
+  background: #171c22;
+}
+
+.conflict-choice-card .hint {
+  margin: 0;
+}
+
+.conflict-choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.conflict-choice-list article {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 9px;
+  background: #111820;
+}
+
+.conflict-choice-list strong,
+.conflict-choice-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.conflict-choice-list small {
+  margin-top: 3px;
+  color: #a1a1aa;
+}
+
+.conflict-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .deployment-strategy-warnings {
   display: grid;
   gap: 6px;

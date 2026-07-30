@@ -3970,6 +3970,108 @@ func TestUpdateProfileModOrderEndpointNormalizesPriorities(t *testing.T) {
 	}
 }
 
+func TestFileConflictWinnerEndpointOverridesDuplicateTarget(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	firstStaging := filepath.Join(srv.cfg.DataDir, "staging", "first")
+	secondStaging := filepath.Join(srv.cfg.DataDir, "staging", "second")
+	for _, item := range []struct {
+		root string
+		body string
+	}{
+		{root: firstStaging, body: `{"name":"first"}`},
+		{root: secondStaging, body: `{"name":"second"}`},
+	} {
+		path := filepath.Join(item.root, "Shared", "config.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(item.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := `{"game_id":"413150","mod_type":"stardew-smapi-mod","files":[{"path":"Shared/config.json","target_relative":"Mods/Shared/config.json","size":16,"sha256":"test"}]}`
+	first, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "1",
+			FileID:     "1",
+		},
+		Name:         "First Shared Config",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "first.zip"),
+		StagingPath:  firstStaging,
+		ManifestJSON: manifest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "2",
+			FileID:     "2",
+		},
+		Name:         "Second Shared Config",
+		Version:      "2",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "second.zip"),
+		StagingPath:  secondStaging,
+		ManifestJSON: manifest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	priority := 10
+	if _, err := srv.db.SetProfileModState(context.Background(), second.ProfileID, second.ID, nil, &priority); err != nil {
+		t.Fatal(err)
+	}
+
+	targetPath := filepath.Join(gamePath, "Mods", "Shared", "config.json")
+	body := fmt.Sprintf(`{"target_path":%q,"winner_installed_mod_id":%d}`, targetPath, second.ID)
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(first.ProfileID, 10)+"/conflicts/winner", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawSecondWinner, sawFirstLoser bool
+	for _, action := range plan.Actions {
+		if action.TargetPath != targetPath {
+			continue
+		}
+		if action.Operation != "skip" && action.InstalledModID == second.ID {
+			sawSecondWinner = true
+		}
+		if action.Operation == "skip" && action.InstalledModID == first.ID && action.WinnerModID == second.ID {
+			sawFirstLoser = true
+		}
+	}
+	if !sawSecondWinner || !sawFirstLoser {
+		t.Fatalf("plan actions = %+v", plan.Actions)
+	}
+}
+
 func TestProfileModToggleDeploysAndRemovesManagedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

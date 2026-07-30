@@ -664,6 +664,86 @@ SELECT COUNT(*) FROM profile_mods WHERE profile_id = ? AND installed_mod_id = ?
 	}
 }
 
+func TestSetFileConflictWinnerValidatesProfileGame(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{
+		{
+			AppID:       "413150",
+			Name:        "Stardew Valley",
+			InstallDir:  "Stardew Valley",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Stardew Valley",
+			State:       "clean_candidate",
+		},
+		{
+			AppID:       "489830",
+			Name:        "Skyrim Special Edition",
+			InstallDir:  "Skyrim Special Edition",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Skyrim Special Edition",
+			State:       "clean_candidate",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "165575",
+		},
+		Name:          "NPC Map Locations",
+		Version:       "165575",
+		ArchivePath:   "/downloads/mod.zip",
+		ArchiveSHA256: "archive-sum",
+		StagingPath:   "/staging/mod",
+		ManifestJSON:  "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join("/steam", "steamapps", "common", "Stardew Valley", "Mods", "Shared", "manifest.json")
+	winner, err := db.SetFileConflictWinner(context.Background(), mod.ProfileID, targetPath, mod.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if winner.TargetPath != targetPath || winner.WinnerInstalledModID != mod.ID {
+		t.Fatalf("winner = %+v", winner)
+	}
+	winners, err := db.ConflictWinnersForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if winners[targetPath] != mod.ID {
+		t.Fatalf("winners = %+v", winners)
+	}
+	if err := db.ClearFileConflictWinner(context.Background(), mod.ProfileID, targetPath); err != nil {
+		t.Fatal(err)
+	}
+	winners, err = db.ConflictWinnersForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(winners) != 0 {
+		t.Fatalf("winners after clear = %+v", winners)
+	}
+
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "489830")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SetFileConflictWinner(context.Background(), profiles[0].ID, targetPath, mod.ID); err == nil {
+		t.Fatal("expected cross-game conflict winner to fail")
+	}
+}
+
 func TestRecordInstalledModKeepsOneInstalledRowAfterRepeatedDownloads(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

@@ -241,6 +241,20 @@
     conflicts: DeployAction[];
   };
 
+  type ConflictChoiceTarget = {
+    target_path: string;
+    target_relative: string;
+    current_winner_id: number;
+    current_winner_name: string;
+    reason: string;
+    candidates: Array<{
+      id: number;
+      name: string;
+      priority?: number;
+      current: boolean;
+    }>;
+  };
+
   type DeploymentStatus = {
     deployed: boolean;
     file_count: number;
@@ -473,6 +487,7 @@
   }));
   $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "actions" ? "Action Center" : selectedGame?.name ?? "Select a Game";
   $: deployableActions = getDeployableActions(deployPlan);
+  $: conflictChoiceTargets = getConflictChoiceTargets(deployPlan);
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
   $: disabledMods = installedMods.filter((mod) => !mod.enabled);
   $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
@@ -1528,6 +1543,43 @@
     };
   }
 
+  async function setFileConflictWinner(target: ConflictChoiceTarget, winnerInstalledModID: number) {
+    if (!selectedProfile) return;
+    error = "";
+    const response = await fetch(`/api/profiles/${selectedProfile.id}/conflicts/winner`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_path: target.target_path,
+        winner_installed_mod_id: winnerInstalledModID
+      })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      await refreshSelectedGame({ refreshPreview: true });
+      return;
+    }
+    const result = await response.json();
+    if (result.apply?.plan) deployPlan = result.apply.plan;
+    await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function clearFileConflictWinner(target: ConflictChoiceTarget) {
+    if (!selectedProfile) return;
+    error = "";
+    const response = await fetch(`/api/profiles/${selectedProfile.id}/conflicts/winner?target_path=${encodeURIComponent(target.target_path)}`, {
+      method: "DELETE"
+    });
+    if (!response.ok) {
+      error = await response.text();
+      await refreshSelectedGame({ refreshPreview: true });
+      return;
+    }
+    const result = await response.json();
+    if (result.apply?.plan) deployPlan = result.apply.plan;
+    await refreshSelectedGame({ refreshPreview: true });
+  }
+
   async function purgeDeployment() {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     error = "";
@@ -1877,6 +1929,50 @@
     const loser = installedMods.find((mod) => mod.id === action.installed_mod_id)?.name || action.mod_id || "Lower priority mod";
     const winner = installedMods.find((mod) => mod.id === action.winner_installed_mod_id)?.name || action.winner_mod_id || "Higher priority mod";
     return `${base} · ${loser} loses to ${winner}`;
+  }
+
+  function getConflictChoiceTargets(plan: DeployPlan | null): ConflictChoiceTarget[] {
+    if (!plan) return [];
+    const groups = new Map<string, ConflictChoiceTarget>();
+    for (const action of plan.actions) {
+      if (action.operation !== "skip" || !action.target_path || !action.winner_installed_mod_id) continue;
+      let group = groups.get(action.target_path);
+      if (!group) {
+        const winner = installedMods.find((mod) => mod.id === action.winner_installed_mod_id);
+        group = {
+          target_path: action.target_path,
+          target_relative: action.target_relative,
+          current_winner_id: action.winner_installed_mod_id,
+          current_winner_name: winner?.name || action.winner_mod_id || "Selected mod",
+          reason: action.conflict_reason || "Resolved by profile order",
+          candidates: []
+        };
+        groups.set(action.target_path, group);
+      }
+      addConflictCandidate(group, action.installed_mod_id, action.priority, false);
+      addConflictCandidate(group, action.winner_installed_mod_id, action.winner_priority, true);
+    }
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      candidates: group.candidates.sort((a, b) => Number(b.current) - Number(a.current) || (a.priority ?? 0) - (b.priority ?? 0) || a.name.localeCompare(b.name))
+    }));
+  }
+
+  function addConflictCandidate(group: ConflictChoiceTarget, installedModID: number | undefined, priority: number | undefined, current: boolean) {
+    if (!installedModID) return;
+    const existing = group.candidates.find((candidate) => candidate.id === installedModID);
+    if (existing) {
+      existing.current = existing.current || current;
+      if (existing.priority === undefined) existing.priority = priority;
+      return;
+    }
+    const mod = installedMods.find((item) => item.id === installedModID);
+    group.candidates.push({
+      id: installedModID,
+      name: mod?.name || `Mod ${installedModID}`,
+      priority,
+      current
+    });
   }
 
   function primaryModMetadata(mod: InstalledMod) {
@@ -2470,6 +2566,33 @@
                 </div>
               {/if}
             </section>
+            {#if conflictChoiceTargets.length > 0}
+              <section class="conflict-choice-card">
+                <div class="panel-heading compact-heading">
+                  <h3>File Winners</h3>
+                  <span>{conflictChoiceTargets.length}</span>
+                </div>
+                <p class="hint">When enabled mods write the same file, DMM can use profile order or a file-specific winner.</p>
+                <div class="conflict-choice-list">
+                  {#each conflictChoiceTargets as target}
+                    <article>
+                      <div>
+                        <strong>{target.target_relative}</strong>
+                        <small>Current: {target.current_winner_name} · {target.reason}</small>
+                      </div>
+                      <div class="conflict-choice-actions">
+                        {#each target.candidates as candidate}
+                          <button type="button" class="secondary-action compact" disabled={candidate.current} on:click={() => setFileConflictWinner(target, candidate.id)}>
+                            {candidate.current ? "Using" : "Use"} {candidate.name}
+                          </button>
+                        {/each}
+                        <button type="button" class="secondary-action compact" on:click={() => clearFileConflictWinner(target)}>Use Profile Order</button>
+                      </div>
+                    </article>
+                  {/each}
+                </div>
+              </section>
+            {/if}
             {#if pluginLoadOrder?.supported}
               <section class="plugin-load-order-card">
                 <div class="panel-heading compact-heading">

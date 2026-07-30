@@ -297,6 +297,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
+	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
@@ -1161,6 +1163,11 @@ type updateProfileModOrderRequest struct {
 	ModIDs []int64 `json:"mod_ids"`
 }
 
+type updateFileConflictWinnerRequest struct {
+	TargetPath           string `json:"target_path"`
+	WinnerInstalledModID int64  `json:"winner_installed_mod_id"`
+}
+
 type updateDeploySettingsRequest struct {
 	Strategy string `json:"strategy"`
 }
@@ -1173,6 +1180,11 @@ type profileModUpdateResponse struct {
 type profileModOrderUpdateResponse struct {
 	Mods  []storage.InstalledMod `json:"mods"`
 	Apply profileApplyResponse   `json:"apply"`
+}
+
+type fileConflictWinnerResponse struct {
+	Winner *storage.FileConflictWinner `json:"winner,omitempty"`
+	Apply  profileApplyResponse        `json:"apply"`
 }
 
 type profileApplyResponse struct {
@@ -4031,6 +4043,116 @@ func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, profileModOrderUpdateResponse{Mods: mods, Apply: apply})
 }
 
+func (s *Server) handleSetFileConflictWinner(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	var req updateFileConflictWinnerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	targetPath := cleanConflictTargetPath(req.TargetPath)
+	if targetPath == "" {
+		http.Error(w, "absolute target_path is required", http.StatusBadRequest)
+		return
+	}
+	if req.WinnerInstalledModID <= 0 {
+		http.Error(w, "winner_installed_mod_id is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	plan, err := s.buildGameDeployPlan(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	candidates := conflictWinnerCandidates(plan, targetPath)
+	if len(candidates) < 2 {
+		http.Error(w, "target_path is not a duplicate managed file target in this profile", http.StatusBadRequest)
+		return
+	}
+	if _, ok := candidates[req.WinnerInstalledModID]; !ok {
+		http.Error(w, "winner_installed_mod_id is not one of the duplicate target candidates", http.StatusBadRequest)
+		return
+	}
+	winner, err := s.db.SetFileConflictWinner(r.Context(), profileID, targetPath, req.WinnerInstalledModID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("file conflict winner set", "app_id", appID, "profile_id", profileID, "target_path", targetPath, "winner_installed_mod_id", req.WinnerInstalledModID)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":                  "file_conflict_winner_set",
+		"profile_id":              profileID,
+		"target_path":             targetPath,
+		"winner_installed_mod_id": req.WinnerInstalledModID,
+	})
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "file-conflict-winner")
+	writeJSON(w, http.StatusOK, fileConflictWinnerResponse{Winner: &winner, Apply: apply})
+}
+
+func (s *Server) handleClearFileConflictWinner(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	targetPath := cleanConflictTargetPath(r.URL.Query().Get("target_path"))
+	if targetPath == "" {
+		http.Error(w, "absolute target_path query value is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.db.ClearFileConflictWinner(r.Context(), profileID, targetPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("file conflict winner cleared", "app_id", appID, "profile_id", profileID, "target_path", targetPath)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":      "file_conflict_winner_cleared",
+		"profile_id":  profileID,
+		"target_path": targetPath,
+	})
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "file-conflict-winner-clear")
+	writeJSON(w, http.StatusOK, fileConflictWinnerResponse{Apply: apply})
+}
+
+func cleanConflictTargetPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || !filepath.IsAbs(value) {
+		return ""
+	}
+	return filepath.Clean(value)
+}
+
+func conflictWinnerCandidates(plan deploy.Plan, targetPath string) map[int64]struct{} {
+	targetPath = filepath.Clean(targetPath)
+	out := map[int64]struct{}{}
+	for _, action := range plan.Actions {
+		if strings.TrimSpace(action.TargetPath) == "" || filepath.Clean(action.TargetPath) != targetPath {
+			continue
+		}
+		if action.InstalledModID > 0 {
+			out[action.InstalledModID] = struct{}{}
+		}
+		if action.WinnerModID > 0 {
+			out[action.WinnerModID] = struct{}{}
+		}
+	}
+	return out
+}
+
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.jobs.List())
 }
@@ -5826,6 +5948,14 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	} else {
 		mappings = append(mappings, hookResult.Mappings...)
 	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	conflictWinners, err := s.db.ConflictWinnersForProfile(ctx, profileID)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, managedFiles)
@@ -5837,6 +5967,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	}
 	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, defaultStrategy, mappings, managedFiles, deploy.BuildOptions{
 		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
+		ConflictWinners:        conflictWinners,
 	})
 }
 

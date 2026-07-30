@@ -81,6 +81,13 @@ type DeploymentSummary struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type FileConflictWinner struct {
+	ProfileID            int64  `json:"profile_id"`
+	TargetPath           string `json:"target_path"`
+	WinnerInstalledModID int64  `json:"winner_installed_mod_id"`
+	UpdatedAt            string `json:"updated_at"`
+}
+
 type InstallCandidate struct {
 	ID               int64  `json:"id"`
 	GameID           int64  `json:"game_id"`
@@ -823,6 +830,116 @@ JOIN games g ON g.id = p.game_id
 WHERE p.id = ?
 `, profileID).Scan(&appID)
 	return appID, err
+}
+
+func (db *DB) ConflictWinnersForProfile(ctx context.Context, profileID int64) (map[string]int64, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT target_path, winner_installed_mod_id
+FROM file_conflicts
+WHERE profile_id = ? AND winner_installed_mod_id IS NOT NULL
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var targetPath string
+		var winnerInstalledModID int64
+		if err := rows.Scan(&targetPath, &winnerInstalledModID); err != nil {
+			return nil, err
+		}
+		if targetPath = strings.TrimSpace(targetPath); targetPath != "" && winnerInstalledModID > 0 {
+			out[filepath.Clean(targetPath)] = winnerInstalledModID
+		}
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SetFileConflictWinner(ctx context.Context, profileID int64, targetPath string, winnerInstalledModID int64) (FileConflictWinner, error) {
+	if profileID <= 0 {
+		return FileConflictWinner{}, errors.New("profile id is required")
+	}
+	if winnerInstalledModID <= 0 {
+		return FileConflictWinner{}, errors.New("winner installed mod id is required")
+	}
+	targetPath = cleanAbsoluteTargetPath(targetPath)
+	if targetPath == "" {
+		return FileConflictWinner{}, errors.New("absolute target path is required")
+	}
+
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return FileConflictWinner{}, err
+	}
+	defer tx.Rollback()
+
+	var belongs int
+	if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM profiles p
+JOIN installed_mods im ON im.id = ?
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id AND m.game_id = p.game_id
+WHERE p.id = ?
+`, winnerInstalledModID, profileID).Scan(&belongs); err != nil {
+		return FileConflictWinner{}, err
+	}
+	if belongs == 0 {
+		return FileConflictWinner{}, errors.New("winner mod does not belong to this profile's game")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO file_conflicts (profile_id, target_path, winner_installed_mod_id, conflict_json, updated_at)
+VALUES (?, ?, ?, '{}', CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, target_path) DO UPDATE SET
+	winner_installed_mod_id = excluded.winner_installed_mod_id,
+	conflict_json = '{}',
+	updated_at = CURRENT_TIMESTAMP
+`, profileID, targetPath, winnerInstalledModID); err != nil {
+		return FileConflictWinner{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return FileConflictWinner{}, err
+	}
+	return db.fileConflictWinner(ctx, profileID, targetPath)
+}
+
+func (db *DB) ClearFileConflictWinner(ctx context.Context, profileID int64, targetPath string) error {
+	if profileID <= 0 {
+		return errors.New("profile id is required")
+	}
+	targetPath = cleanAbsoluteTargetPath(targetPath)
+	if targetPath == "" {
+		return errors.New("absolute target path is required")
+	}
+	_, err := db.conn.ExecContext(ctx, `
+DELETE FROM file_conflicts
+WHERE profile_id = ? AND target_path = ?
+`, profileID, targetPath)
+	return err
+}
+
+func (db *DB) fileConflictWinner(ctx context.Context, profileID int64, targetPath string) (FileConflictWinner, error) {
+	var winner FileConflictWinner
+	err := db.conn.QueryRowContext(ctx, `
+SELECT profile_id, target_path, COALESCE(winner_installed_mod_id, 0), updated_at
+FROM file_conflicts
+WHERE profile_id = ? AND target_path = ?
+`, profileID, targetPath).Scan(&winner.ProfileID, &winner.TargetPath, &winner.WinnerInstalledModID, &winner.UpdatedAt)
+	return winner, err
+}
+
+func cleanAbsoluteTargetPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || !filepath.IsAbs(value) {
+		return ""
+	}
+	return filepath.Clean(value)
 }
 
 type RecordInstalledModParams struct {
