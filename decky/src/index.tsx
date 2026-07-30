@@ -1193,10 +1193,10 @@ function Content() {
     }
   }
 
-  async function openNexus() {
+  async function openNexus(gameDomain: string | null = null) {
     try {
       setError("");
-      const result = await call<[string | null], { ok: boolean; error?: string; url?: string }>("open_nexus", null);
+      const result = await call<[string | null], { ok: boolean; error?: string; url?: string }>("open_nexus", gameDomain);
       if (!result.ok) setError(result.error ?? "Unable to open Nexus.");
       if (result.url) Navigation.NavigateToExternalWeb(result.url);
     } catch (err) {
@@ -1317,6 +1317,7 @@ function Content() {
   }, [tab, managedGames, selectedDeckyGameID]);
 
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
+  const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
   const normalizedGameSearch = gameSearch.trim().toLowerCase();
@@ -1486,6 +1487,15 @@ function Content() {
             <ButtonItem layout="below" onClick={() => setSelectedDeckyGameID("")}>
               Change Game
             </ButtonItem>
+          </PanelSectionRow>
+          <PanelSectionRow>
+            {selectedNexusDomain ? (
+              <ButtonItem layout="below" onClick={() => openNexus(selectedNexusDomain)}>
+                Open Nexus Mods
+              </ButtonItem>
+            ) : (
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
+            )}
           </PanelSectionRow>
           {deckyMods.length > 0 && (
             <PanelSectionRow>
