@@ -491,18 +491,34 @@ function deckyTabBody(content: ReactNode, onCancelButton?: (event: GamepadEvent)
   );
 }
 
-function installToastBody(job: Job): string {
-  if (job.status === "waiting") return job.message || "Open Action Center on Decky or the phone/tablet UI to install this mod.";
-  if (job.status === "running" || job.status === "queued") return job.message || "DMM is downloading or installing this mod.";
-  if (job.status === "completed") return job.message || "The mod is ready in its profile.";
+function jobToastBody(job: Job): string {
+  if (job.status === "waiting") return job.message || "Open Action Center on Decky or the phone/tablet UI to continue.";
+  if (job.status === "running" || job.status === "queued") return job.message || "DMM is working on this action.";
+  if (job.status === "completed") return job.message || "The action completed.";
   if (job.status === "failed") return job.message || "Open DMM to review the error.";
   return job.message || job.title;
 }
 
-function showInstallToast(job: Job) {
+function jobToastTitle(job: Job): string {
+  if (job.status === "failed") {
+    if (job.type === "deploy") return "DMM deployment failed";
+    if (job.type === "rollback") return "DMM rollback failed";
+    if (job.type === "purge") return "DMM purge failed";
+    if (job.type === "repair") return "DMM repair failed";
+    return "DMM action failed";
+  }
+  if (job.type === "deploy") return "DMM deployment";
+  if (job.type === "rollback") return "DMM rollback";
+  if (job.type === "purge") return "DMM purge";
+  if (job.type === "repair") return "DMM repair";
+  if (job.type === "recover-downloads") return "DMM recovery";
+  return "Decky Mod Manager";
+}
+
+function showJobToast(job: Job) {
   toaster.toast({
-    title: job.status === "failed" ? "DMM install failed" : "Decky Mod Manager",
-    body: installToastBody(job),
+    title: jobToastTitle(job),
+    body: jobToastBody(job),
     subtext: job.title,
     duration: job.status === "failed" ? 9000 : 6000,
     critical: job.status === "failed",
@@ -522,7 +538,7 @@ function showLaunchToast(title: string, body: string, failed = false) {
   });
 }
 
-const notifiedInstallJobStates = new Map<string, string>();
+const notifiedJobStates = new Map<string, string>();
 const shownInstallerChoiceModals = new Set<string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
@@ -671,8 +687,8 @@ async function logSteamClientCapabilities() {
   await logFrontendEvent("steam client capabilities", detail);
 }
 
-function isInstallNotificationJob(job: Job) {
-  return job.type === "captured-install" || job.type === "installer-choice";
+function isNotifiableJob(job: Job) {
+  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type);
 }
 
 function isJob(value: unknown): value is Job {
@@ -738,31 +754,31 @@ function storedFomodSelections(candidate: InstallCandidate): Record<string, stri
   }
 }
 
-async function maybeShowInstallToast(job: Job, { seed = false, source = "event" } = {}) {
-  if (!isInstallNotificationJob(job)) return;
+async function maybeShowJobToast(job: Job, { seed = false, source = "event" } = {}) {
+  if (!isNotifiableJob(job)) return;
   const stateKey = `${job.status}:${job.message || ""}`;
-  const previous = notifiedInstallJobStates.get(job.id);
-  notifiedInstallJobStates.set(job.id, stateKey);
+  const previous = notifiedJobStates.get(job.id);
+  notifiedJobStates.set(job.id, stateKey);
   const updatedAt = Date.parse(job.updated_at || "");
   const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
   if (previous !== stateKey && (!seed || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
-    await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
-    showInstallToast(job);
+    await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
+    showJobToast(job);
   }
 }
 
-async function seedInstallNotifications({ seed = false } = {}) {
+async function seedJobNotifications({ seed = false } = {}) {
   try {
     const result = await call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs");
     if (!result.ok) {
-      await logFrontendEvent("install job seed returned not ok", { error: result.error || "" });
+      await logFrontendEvent("job seed returned not ok", { error: result.error || "" });
       return;
     }
     for (const job of result.jobs) {
-      await maybeShowInstallToast(job, { seed, source: "seed" });
+      await maybeShowJobToast(job, { seed, source: "seed" });
     }
   } catch (_err) {
-    await logFrontendEvent("install job seed failed", { error: _err instanceof Error ? _err.message : String(_err) });
+    await logFrontendEvent("job seed failed", { error: _err instanceof Error ? _err.message : String(_err) });
   }
 }
 
@@ -897,7 +913,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
         await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: props.candidate.id, error: result.error || "" });
         return;
       }
-      if (result.result?.job) showInstallToast(result.result.job);
+      if (result.result?.job) showJobToast(result.result.job);
       await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: props.candidate.id });
       props.onApplied();
       props.closeModal();
@@ -1016,7 +1032,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
         closeModal={closeModal}
         onApplied={() => {
           shownInstallerChoiceModals.delete(key);
-          void seedInstallNotifications({ seed: true });
+          void seedJobNotifications({ seed: true });
           void syncLaunchActions();
           onApplied?.();
         }}
@@ -1101,13 +1117,13 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     setMessage("");
     try {
       const url = nexusFileURL(props.gameDomain, mod.mod_id, file.file_id);
-      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_pending_import", url);
+      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url);
       if (!result.ok) {
         setError(result.error || "Unable to add this Nexus file.");
         return;
       }
       const job = result.result?.job;
-      if (job) showInstallToast(job);
+      if (job) showJobToast(job);
       setMessage(job?.message || `${file.name || file.file_name || mod.name} was sent to DMM.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1214,12 +1230,12 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
   if (event.type === "jobs.snapshot" && Array.isArray(event.payload)) {
     for (const item of event.payload) {
       if (!isJob(item)) continue;
-      await maybeShowInstallToast(item, { seed: true, source: "event-snapshot" });
+      await maybeShowJobToast(item, { seed: true, source: "event-snapshot" });
       await maybeShowInstallerChoiceModal(item);
     }
   }
   if (event.type === "job.updated" && isJob(event.payload)) {
-    await maybeShowInstallToast(event.payload, { source: "event" });
+    await maybeShowJobToast(event.payload, { source: "event" });
     if (event.payload.type === "installer-choice" && event.payload.status !== "waiting" && event.payload.payload?.candidate_id) {
       shownInstallerChoiceModals.delete(event.payload.payload.candidate_id);
     }
@@ -1295,7 +1311,7 @@ function startBackgroundMonitors() {
   backgroundMonitorsStarted = true;
   logFrontendEvent("background monitors started");
   logSteamClientCapabilities();
-  seedInstallNotifications({ seed: true });
+  seedJobNotifications({ seed: true });
   syncLaunchActions();
   connectEventMonitor();
 }
@@ -1533,7 +1549,7 @@ function Content() {
       } else {
         setModsResult(applyMessage);
       }
-      if (result.apply?.job) showInstallToast(result.apply.job);
+      if (result.apply?.job) showJobToast(result.apply.job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1623,7 +1639,7 @@ function Content() {
       const applyMessage = result.result?.apply?.message || "Mod removed. Restart the game if it is already running.";
       if (result.result?.apply?.status === "blocked" || result.result?.apply?.status === "failed") setError(applyMessage);
       else setModsResult(applyMessage);
-      if (result.result?.job) showInstallToast(result.result.job);
+      if (result.result?.job) showJobToast(result.result.job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1646,7 +1662,7 @@ function Content() {
       const job = result.result?.job;
       if (job) {
         setModsResult(job.message || "Reinstall complete.");
-        showInstallToast(job);
+        showJobToast(job);
       } else {
         setModsResult("Reinstall complete.");
       }
@@ -1664,7 +1680,7 @@ function Content() {
       setStatus(await call<[], BackendStatus>(method));
       await refresh();
       if (method === "start_server") {
-        await seedInstallNotifications({ seed: true });
+        await seedJobNotifications({ seed: true });
         await syncLaunchActions();
         connectEventMonitor();
       } else {
@@ -1792,7 +1808,7 @@ function Content() {
     try {
       setError("");
       setImportResult("");
-      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_pending_import", importUrl);
+      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", importUrl);
       if (!result.ok) {
         setError(result.error ?? "Unable to capture Nexus link.");
         return;
@@ -1802,9 +1818,9 @@ function Content() {
       setImportResult(job?.message || job?.title || "Nexus link captured.");
       if (job) {
         const stateKey = `${job.status}:${job.message || ""}`;
-        notifiedInstallJobStates.set(job.id, stateKey);
-        await logFrontendEvent("install job toast shown", { job_id: job.id, status: job.status, source: "decky-add-import" });
-        showInstallToast(job as Job);
+        notifiedJobStates.set(job.id, stateKey);
+        await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, source: "decky-add-import" });
+        showJobToast(job as Job);
       }
       await refresh();
     } catch (err) {

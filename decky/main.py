@@ -217,7 +217,7 @@ class Plugin:
                         break
         return f"nxm://{domain}/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
 
-    async def add_pending_import(self, url):
+    async def add_captured_install(self, url):
         url = str(url or "").strip()
         self._log(f"add captured install requested url={self._redact_url(url)}")
         if not url:
