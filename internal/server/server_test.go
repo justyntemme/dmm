@@ -1922,6 +1922,151 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	}
 }
 
+func TestApplyFOMODInstallCandidateMatchesInactivePluginDependency(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	libraryPath := filepath.Join(root, "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	pluginStaging := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "fallout4", "mods", "2", "files", "3")
+	if err := os.MkdirAll(pluginStaging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginStaging, "Existing.esp"), []byte("plugin"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pluginManifest, err := stagedManifestJSONWithPlan(pluginStaging, installplan.Plan{
+		GameID:    fallout4.SteamAppID,
+		ModType:   "fallout4-data-root",
+		PlannerID: "vortex:fallout4:data-root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Existing.esp",
+			TargetRelative:  "Data/Existing.esp",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: fallout4.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "2",
+			FileID:     "3",
+		},
+		Name:           "Existing Plugin",
+		Version:        "3",
+		ArchivePath:    filepath.Join(srv.cfg.DataDir, "downloads", "existing.zip"),
+		StagingPath:    pluginStaging,
+		ManifestJSON:   pluginManifest,
+		DefaultEnabled: &disabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Conditional Mod</moduleName>
+  <conditionalFileInstalls>
+    <patterns>
+      <pattern>
+        <dependencies operator="And">
+          <fileDependency file="Existing.esp" state="Inactive" />
+        </dependencies>
+        <files>
+          <file source="conditional.txt" destination="Conditional/conditional.txt" />
+        </files>
+      </pattern>
+    </patterns>
+  </conditionalFileInstalls>
+</config>`,
+		"conditional.txt": "conditional",
+		"fomod/info.xml":  "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerJSON, err := json.Marshal(installer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: fallout4.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "999",
+			FileID:     "1000",
+		},
+		Name:          "Conditional Mod",
+		ArchivePath:   archivePath,
+		ArchiveSHA256: "sum",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: string(installerJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/377160/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conditional storage.InstalledMod
+	for _, mod := range mods {
+		if mod.Name == "Conditional Mod" {
+			conditional = mod
+			break
+		}
+	}
+	if conditional.ID == 0 {
+		t.Fatalf("conditional mod was not installed: %+v", mods)
+	}
+	if _, err := os.Stat(filepath.Join(conditional.StagingPath, "Conditional", "conditional.txt")); err != nil {
+		t.Fatalf("conditional dependency file was not staged: %v", err)
+	}
+	manifest, err := parseStagedManifest(conditional.ManifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Data/Conditional/conditional.txt" {
+		t.Fatalf("manifest files = %+v", manifest.Files)
+	}
+}
+
 func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()

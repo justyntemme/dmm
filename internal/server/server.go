@@ -1933,13 +1933,11 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		}
 	}
 	plan, err := fomod.BuildPlan(candidate.SteamAppID, extractPath, installer, selections, fomod.PlanOptions{
-		ModType:     choiceSpec.ModType,
-		PlannerID:   choiceSpec.ID,
-		TargetRoot:  choiceSpec.TargetRoot,
-		StopFolders: choiceSpec.StopFolders,
-		FileStateResolver: func(relative string) string {
-			return fomodFileDependencyState(game.GamePath, choiceSpec.TargetRoot, relative)
-		},
+		ModType:           choiceSpec.ModType,
+		PlannerID:         choiceSpec.ID,
+		TargetRoot:        choiceSpec.TargetRoot,
+		StopFolders:       choiceSpec.StopFolders,
+		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -1997,6 +1995,135 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
+}
+
+func (s *Server) fomodFileDependencyResolver(ctx context.Context, game storage.Game, choiceSpec gameext.InstallerChoiceSpec) fomod.FileStateResolver {
+	profilePluginStates := s.fomodProfilePluginDependencyStates(ctx, game)
+	return func(relative string) string {
+		targetRel, err := fomodDependencyTargetRelative(choiceSpec.TargetRoot, relative)
+		if err != nil {
+			return "missing"
+		}
+		key := dependencyTargetKey(targetRel)
+		if state, ok := profilePluginStates[key]; ok {
+			return state
+		}
+		if state, ok := s.fomodDeployedPluginDependencyState(game, targetRel); ok {
+			return state
+		}
+		return fomodFileDependencyState(game.GamePath, "", targetRel)
+	}
+}
+
+func (s *Server) fomodProfilePluginDependencyStates(ctx context.Context, game storage.Game) map[string]string {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil
+	}
+	extensions := pluginExtensionSet(spec)
+	mods, err := s.db.InstalledModsForSteamApp(ctx, game.SteamAppID)
+	if err != nil {
+		s.logger.Warn("FOMOD profile plugin dependency state unavailable", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	states := map[string]string{}
+	for _, mod := range mods {
+		mappings, err := s.deployMappingsForInstalledMod(mod)
+		if err != nil {
+			continue
+		}
+		state := "inactive"
+		if mod.Enabled {
+			state = "active"
+		}
+		for _, mapping := range mappings {
+			if _, ok := pluginNameFromTarget(spec, mapping.TargetRelative, extensions); !ok {
+				continue
+			}
+			setDependencyTargetState(states, mapping.TargetRelative, state)
+		}
+	}
+	return states
+}
+
+func (s *Server) fomodDeployedPluginDependencyState(game storage.Game, targetRel string) (string, bool) {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return "", false
+	}
+	pluginName, ok := pluginNameFromTarget(spec, targetRel, pluginExtensionSet(spec))
+	if !ok {
+		return "", false
+	}
+	path := filepath.Join(game.GamePath, filepath.FromSlash(targetRel))
+	if info, err := os.Lstat(path); err != nil || info.IsDir() {
+		return "", false
+	}
+	if _, native := nativePluginSet(spec)[strings.ToLower(pluginName)]; native {
+		return "active", true
+	}
+	active, err := s.activePluginNamesFromDisk(game, spec)
+	if err != nil {
+		s.logger.Warn("FOMOD plugin dependency activation list unavailable", "app_id", game.SteamAppID, "plugin", pluginName, "error", err)
+		return "inactive", true
+	}
+	if _, ok := active[strings.ToLower(pluginName)]; ok {
+		return "active", true
+	}
+	return "inactive", true
+}
+
+func (s *Server) activePluginNamesFromDisk(game storage.Game, spec gameext.PluginActivationSpec) (map[string]struct{}, error) {
+	targetRoot, err := protonLocalAppDataTargetRoot(game, spec)
+	if err != nil {
+		return nil, err
+	}
+	body, err := os.ReadFile(filepath.Join(targetRoot, filepath.FromSlash(activationFileName(spec.PluginsFile, "plugins.txt"))))
+	if err != nil {
+		return nil, err
+	}
+	return parseActivePluginNames(string(body), spec.Format), nil
+}
+
+func parseActivePluginNames(body, format string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, "\ufeff"))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.TrimSpace(format) != "original" {
+			if !strings.HasPrefix(line, "*") {
+				continue
+			}
+			line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		}
+		if line != "" {
+			out[strings.ToLower(line)] = struct{}{}
+		}
+	}
+	return out
+}
+
+func dependencyTargetKey(targetRel string) string {
+	return strings.ToLower(filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(targetRel)))))
+}
+
+func setDependencyTargetState(states map[string]string, targetRel, state string) {
+	if states == nil {
+		return
+	}
+	key := dependencyTargetKey(targetRel)
+	if key == "." || key == "" {
+		return
+	}
+	state = strings.ToLower(strings.TrimSpace(state))
+	if state == "" {
+		state = "missing"
+	}
+	if state == "active" || states[key] == "" {
+		states[key] = state
+	}
 }
 
 func fomodFileDependencyState(gamePath, targetRoot, relative string) string {
