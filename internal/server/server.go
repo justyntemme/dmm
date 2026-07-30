@@ -274,6 +274,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/apply", s.handleApplyInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/retry", s.handleRetryInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
+	mux.HandleFunc("GET /api/games/{appID}/deploy/settings", s.handleDeploySettings)
+	mux.HandleFunc("PUT /api/games/{appID}/deploy/settings", s.handleUpdateDeploySettings)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/history", s.handleDeployHistory)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
@@ -325,6 +327,15 @@ type deploymentStatusResponse struct {
 	PurgeAvailable         bool     `json:"purge_available"`
 	RecoverySummary        string   `json:"recovery_summary,omitempty"`
 	RestoreSummary         string   `json:"restore_summary,omitempty"`
+}
+
+type deploymentSettingsResponse struct {
+	AppID             string   `json:"app_id"`
+	Strategy          string   `json:"strategy"`
+	EffectiveStrategy string   `json:"effective_strategy"`
+	Source            string   `json:"source"`
+	ExtensionDefault  string   `json:"extension_default"`
+	AllowedStrategies []string `json:"allowed_strategies"`
 }
 
 type deployPreviewSummary struct {
@@ -450,6 +461,62 @@ type applyGameLaunchResponse struct {
 	Applied bool                     `json:"applied"`
 	Queued  bool                     `json:"queued"`
 	Status  gameLaunchStatusResponse `json:"status"`
+}
+
+func (s *Server) handleDeploySettings(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.deploymentSettings(appID))
+}
+
+func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	var req updateDeploySettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	strategy := normalizedDeployStrategyRequest(req.Strategy)
+	if strategy != "" && !isConcreteDeployStrategy(strategy) {
+		http.Error(w, "strategy must be extension, symlink, hardlink, or copy", http.StatusBadRequest)
+		return
+	}
+	s.cfgMu.Lock()
+	if s.cfg.Deploy.GameStrategies == nil {
+		s.cfg.Deploy.GameStrategies = map[string]string{}
+	}
+	if strategy == "" {
+		delete(s.cfg.Deploy.GameStrategies, appID)
+	} else {
+		s.cfg.Deploy.GameStrategies[appID] = strategy
+	}
+	cfg := s.cfg
+	s.cfgMu.Unlock()
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("deployment settings updated", "app_id", appID, "strategy", strategyOrExtension(strategy))
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":   "settings",
+		"strategy": strategyOrExtension(strategy),
+	})
+	writeJSON(w, http.StatusOK, s.deploymentSettings(appID))
 }
 
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
@@ -1034,6 +1101,10 @@ type setDefaultProfileResponse struct {
 type updateProfileModRequest struct {
 	Enabled  *bool `json:"enabled"`
 	Priority *int  `json:"priority"`
+}
+
+type updateDeploySettingsRequest struct {
+	Strategy string `json:"strategy"`
 }
 
 type profileModUpdateResponse struct {
@@ -5340,6 +5411,9 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 }
 
 func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
+	if strategy, ok := s.deploymentStrategyOverride(appID); ok {
+		return deploy.Strategy(strategy)
+	}
 	strategy, ok := s.games.DeploymentStrategyForSteamApp(appID)
 	if !ok {
 		return deploy.StrategySymlink
@@ -5352,6 +5426,71 @@ func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
 	default:
 		return deploy.StrategySymlink
 	}
+}
+
+func (s *Server) deploymentSettings(appID string) deploymentSettingsResponse {
+	override, hasOverride := s.deploymentStrategyOverride(appID)
+	extensionDefault, ok := s.games.DeploymentStrategyForSteamApp(appID)
+	if !ok || !isConcreteDeployStrategy(extensionDefault) {
+		extensionDefault = string(deploy.StrategySymlink)
+	}
+	effective := extensionDefault
+	source := "extension"
+	strategy := ""
+	if hasOverride {
+		effective = override
+		source = "override"
+		strategy = override
+	}
+	return deploymentSettingsResponse{
+		AppID:             appID,
+		Strategy:          strategyOrExtension(strategy),
+		EffectiveStrategy: effective,
+		Source:            source,
+		ExtensionDefault:  extensionDefault,
+		AllowedStrategies: []string{"extension", string(deploy.StrategySymlink), string(deploy.StrategyHardlink), string(deploy.StrategyCopy)},
+	}
+}
+
+func (s *Server) deploymentStrategyOverride(appID string) (string, bool) {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	if s.cfg.Deploy.GameStrategies == nil {
+		return "", false
+	}
+	strategy := strings.TrimSpace(s.cfg.Deploy.GameStrategies[strings.TrimSpace(appID)])
+	if !isConcreteDeployStrategy(strategy) {
+		return "", false
+	}
+	return strategy, true
+}
+
+func normalizedDeployStrategyRequest(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	switch value {
+	case "", "extension", "default", "extension-default":
+		return ""
+	case string(deploy.StrategySymlink), string(deploy.StrategyHardlink), string(deploy.StrategyCopy):
+		return value
+	default:
+		return value
+	}
+}
+
+func isConcreteDeployStrategy(value string) bool {
+	switch strings.TrimSpace(value) {
+	case string(deploy.StrategySymlink), string(deploy.StrategyHardlink), string(deploy.StrategyCopy):
+		return true
+	default:
+		return false
+	}
+}
+
+func strategyOrExtension(strategy string) string {
+	if strings.TrimSpace(strategy) == "" {
+		return "extension"
+	}
+	return strings.TrimSpace(strategy)
 }
 
 func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) (gameext.EventHandlerResult, error) {

@@ -18,6 +18,7 @@ type Config struct {
 	Nexus   NexusConfig   `json:"nexus"`
 	Install InstallConfig `json:"install"`
 	UI      UIConfig      `json:"ui"`
+	Deploy  DeployConfig  `json:"deploy"`
 }
 
 type NexusConfig struct {
@@ -34,6 +35,10 @@ type UIConfig struct {
 	FavoriteGameIDs []string         `json:"favorite_game_ids"`
 	RecentGames     map[string]int64 `json:"recent_games"`
 	GameSort        string           `json:"game_sort"`
+}
+
+type DeployConfig struct {
+	GameStrategies map[string]string `json:"game_strategies"`
 }
 
 func Load() (Config, error) {
@@ -99,6 +104,9 @@ func Defaults() Config {
 		UI: UIConfig{
 			RecentGames: map[string]int64{},
 			GameSort:    "recent",
+		},
+		Deploy: DeployConfig{
+			GameStrategies: map[string]string{},
 		},
 	}
 }

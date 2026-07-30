@@ -1059,6 +1059,32 @@ h2 {
   background: #241819;
 }
 
+.deployment-settings-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 10px;
+  background: #171c22;
+}
+
+.deployment-settings-card strong,
+.deployment-settings-card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.deployment-settings-card small {
+  margin-top: 3px;
+  color: #a1a1aa;
+}
+
+.deployment-settings-card select {
+  min-height: 38px;
+}
+
 .recovery-card {
   display: grid;
   gap: 10px;

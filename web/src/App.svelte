@@ -240,6 +240,15 @@
     updated_at: string;
   };
 
+  type DeploymentSettings = {
+    app_id: string;
+    strategy: string;
+    effective_strategy: string;
+    source: string;
+    extension_default: string;
+    allowed_strategies: string[];
+  };
+
   type RuntimeRequirement = {
     id: string;
     name: string;
@@ -341,6 +350,7 @@
   let downloadLinks: DownloadLink[] = [];
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
+  let deploymentSettings: DeploymentSettings | null = null;
   let deploymentHistory: DeploymentHistoryItem[] = [];
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
@@ -655,6 +665,7 @@
     downloadLinks = [];
     deployPlan = null;
     deploymentStatus = null;
+    deploymentSettings = null;
     deploymentHistory = [];
     gameDiagnostics = null;
     gameLaunchStatus = null;
@@ -734,11 +745,12 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
+      getJSON<DeploymentSettings>(`/api/games/${game.app_id}/deploy/settings`),
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
@@ -748,6 +760,7 @@
     installedMods = nextMods;
     installCandidates = nextCandidates;
     deploymentStatus = nextDeploymentStatus;
+    deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
@@ -760,6 +773,22 @@
     if (!selectedGame) return;
     await loadGameState(selectedGame);
     if (options.refreshPreview) await previewDeploy();
+  }
+
+  async function updateDeploymentStrategy(strategy: string) {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strategy })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    deploymentSettings = await response.json();
+    await refreshSelectedGame({ refreshPreview: true });
   }
 
   async function createProfile() {
@@ -2222,6 +2251,21 @@
               <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
               <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
             </div>
+            <section class="deployment-settings-card">
+              <div>
+                <strong>Deployment Strategy</strong>
+                <small>
+                  Effective: {deploymentSettings?.effective_strategy ?? deployPlan?.strategy ?? "symlink"} ·
+                  Default: {deploymentSettings?.extension_default ?? "symlink"}
+                </small>
+              </div>
+              <select aria-label="Deployment strategy" value={deploymentSettings?.strategy ?? "extension"} on:change={(event) => updateDeploymentStrategy(event.currentTarget.value)}>
+                <option value="extension">Extension Default</option>
+                <option value="symlink">Symlink</option>
+                <option value="hardlink">Hardlink</option>
+                <option value="copy">Copy</option>
+              </select>
+            </section>
             <section class="recovery-card">
               <div class="panel-heading compact-heading">
                 <h3>Recovery</h3>

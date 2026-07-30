@@ -719,6 +719,77 @@ func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	waitForJobStatus(t, srv, job.ID, jobs.StatusCanceled)
 }
 
+func TestDeploySettingsOverrideAndReset(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	getSettings := func() deploymentSettingsResponse {
+		req := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/settings", nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("get status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		var body deploymentSettingsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	initial := getSettings()
+	if initial.Strategy != "extension" || initial.Source != "extension" || initial.EffectiveStrategy == "" {
+		t.Fatalf("initial settings = %+v", initial)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"strategy":"copy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := srv.defaultDeploymentStrategy("413150"); got != deploy.StrategyCopy {
+		t.Fatalf("defaultDeploymentStrategy = %s", got)
+	}
+	override := getSettings()
+	if override.Strategy != "copy" || override.EffectiveStrategy != "copy" || override.Source != "override" {
+		t.Fatalf("override settings = %+v", override)
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"strategy":"extension"}`))
+	resetReq.Header.Set("Content-Type", "application/json")
+	resetReq.RemoteAddr = "127.0.0.1:1"
+	resetRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(resetRec, resetReq)
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, body = %s", resetRec.Code, resetRec.Body.String())
+	}
+	reset := getSettings()
+	if reset.Strategy != "extension" || reset.Source != "extension" {
+		t.Fatalf("reset settings = %+v", reset)
+	}
+
+	invalidReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"strategy":"mirror"}`))
+	invalidReq.Header.Set("Content-Type", "application/json")
+	invalidReq.RemoteAddr = "127.0.0.1:1"
+	invalidRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, body = %s", invalidRec.Code, invalidRec.Body.String())
+	}
+}
+
 func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	srv := newTestServer(t)
 
