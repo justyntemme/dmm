@@ -98,6 +98,20 @@ type InstallCandidate struct {
 	ChoicesJSON      string `json:"choices_json,omitempty"`
 }
 
+type InstallerChoicePreset struct {
+	ID               int64  `json:"id"`
+	GameID           int64  `json:"game_id"`
+	SteamAppID       string `json:"steam_app_id"`
+	Catalog          string `json:"catalog"`
+	SourceGameDomain string `json:"source_game_domain"`
+	SourceModID      string `json:"source_mod_id"`
+	SourceFileID     string `json:"source_file_id"`
+	InstallerKind    string `json:"installer_kind"`
+	ChoicesJSON      string `json:"choices_json"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
+}
+
 type CapturedInstall struct {
 	JobID         string                   `json:"job_id"`
 	Resolved      catalog.ResolvedDownload `json:"resolved"`
@@ -1062,6 +1076,66 @@ WHERE g.steam_app_id = ?
 		choicesJSON = "{}"
 	}
 	return choicesJSON, true, nil
+}
+
+func (db *DB) InstallerChoicePresetsForSteamApp(ctx context.Context, appID string) ([]InstallerChoicePreset, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return nil, errors.New("steam app id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT icp.id, g.id, g.steam_app_id, icp.catalog, icp.source_game_domain, icp.source_mod_id, icp.source_file_id, icp.installer_kind, icp.choices_json, icp.created_at, icp.updated_at
+FROM installer_choice_presets icp
+JOIN games g ON g.id = icp.game_id
+WHERE g.steam_app_id = ?
+ORDER BY icp.updated_at DESC, icp.id DESC
+`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []InstallerChoicePreset{}
+	for rows.Next() {
+		var preset InstallerChoicePreset
+		if err := rows.Scan(
+			&preset.ID,
+			&preset.GameID,
+			&preset.SteamAppID,
+			&preset.Catalog,
+			&preset.SourceGameDomain,
+			&preset.SourceModID,
+			&preset.SourceFileID,
+			&preset.InstallerKind,
+			&preset.ChoicesJSON,
+			&preset.CreatedAt,
+			&preset.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, preset)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) DeleteInstallerChoicePreset(ctx context.Context, appID string, presetID int64) (bool, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" || presetID <= 0 {
+		return false, errors.New("steam app id and preset id are required")
+	}
+	result, err := db.conn.ExecContext(ctx, `
+DELETE FROM installer_choice_presets
+WHERE id = ?
+	AND game_id = (SELECT id FROM games WHERE steam_app_id = ?)
+`, presetID, appID)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
 }
 
 func (db *DB) InstallCandidatesForSteamApp(ctx context.Context, appID string) ([]InstallCandidate, error) {

@@ -2794,6 +2794,75 @@ func TestInstallerChoiceStateReusesExactFilePreset(t *testing.T) {
 	}
 }
 
+func TestInstallerChoicePresetAPIListsAndDeletes(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	emptyReq := httptest.NewRequest(http.MethodGet, "/api/games/377160/installer-choice-presets", nil)
+	emptyReq.RemoteAddr = "127.0.0.1:1"
+	emptyRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(emptyRec, emptyReq)
+	if emptyRec.Code != http.StatusOK || strings.TrimSpace(emptyRec.Body.String()) != "[]" {
+		t.Fatalf("empty list status = %d, body = %s", emptyRec.Code, emptyRec.Body.String())
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "fallout4",
+		ModID:      "999",
+		FileID:     "1000",
+	}
+	if err := srv.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    "377160",
+		Resolved:      resolved,
+		InstallerKind: "fomod",
+		ChoicesJSON:   `{"step":["plugin"]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/games/377160/installer-choice-presets", nil)
+	listReq.RemoteAddr = "127.0.0.1:1"
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var presets []storage.InstallerChoicePreset
+	if err := json.Unmarshal(listRec.Body.Bytes(), &presets); err != nil {
+		t.Fatal(err)
+	}
+	if len(presets) != 1 || presets[0].SourceModID != "999" || presets[0].InstallerKind != "fomod" {
+		t.Fatalf("presets = %+v", presets)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/games/377160/installer-choice-presets/"+strconv.FormatInt(presets[0].ID, 10), nil)
+	deleteReq.RemoteAddr = "127.0.0.1:1"
+	deleteRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
+	}
+	_, ok, err := srv.db.InstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    "377160",
+		Resolved:      resolved,
+		InstallerKind: "fomod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("preset still exists after delete")
+	}
+}
+
 func TestApplyFOMODInstallCandidateMatchesInactivePluginDependency(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

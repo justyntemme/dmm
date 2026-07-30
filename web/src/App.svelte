@@ -176,6 +176,18 @@
     choices_json?: string;
   };
 
+  type InstallerChoicePreset = {
+    id: number;
+    steam_app_id: string;
+    catalog: string;
+    source_game_domain: string;
+    source_mod_id: string;
+    source_file_id: string;
+    installer_kind: string;
+    choices_json: string;
+    updated_at: string;
+  };
+
   type FomodInstaller = {
     name: string;
     steps?: FomodStep[];
@@ -358,6 +370,7 @@
   let profiles: Profile[] = [];
   let installedMods: InstalledMod[] = [];
   let installCandidates: InstallCandidate[] = [];
+  let installerChoicePresets: InstallerChoicePreset[] = [];
   let profileName = "";
   let captureURL = "";
   let lastCaptureURL = "";
@@ -695,6 +708,7 @@
     gameDiagnostics = null;
     gameLaunchStatus = null;
     installCandidates = [];
+    installerChoicePresets = [];
     await loadGameState(game);
     await previewDeploy();
   }
@@ -770,10 +784,11 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
+      getJSON<InstallerChoicePreset[]>(`/api/games/${game.app_id}/installer-choice-presets`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
       getJSON<DeploymentSettings>(`/api/games/${game.app_id}/deploy/settings`),
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
@@ -784,6 +799,7 @@
     profiles = nextProfiles;
     installedMods = nextMods;
     installCandidates = nextCandidates;
+    installerChoicePresets = nextPresets;
     deploymentStatus = nextDeploymentStatus;
     deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
@@ -1135,6 +1151,18 @@
     installCandidates = [];
     candidateSelections = {};
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+  }
+
+  async function deleteInstallerChoicePreset(preset: InstallerChoicePreset) {
+    if (!selectedGame) return;
+    error = "";
+    const response = await fetch(`/api/games/${selectedGame.app_id}/installer-choice-presets/${preset.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    installerChoicePresets = installerChoicePresets.filter((item) => item.id !== preset.id);
+    await refreshSelectedGame();
   }
 
   function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
@@ -2505,6 +2533,30 @@
                           {isInstallCandidateBusy(candidate) ? "Retrying..." : "Retry Install"}
                         </button>
                       {/if}
+                    </div>
+                  </article>
+                {/each}
+              </div>
+            </section>
+          {/if}
+          {#if installerChoicePresets.length > 0}
+            <section class="blocked-candidates" aria-label="Saved installer choices">
+              <div class="panel-heading compact-heading">
+                <h3>Saved Installer Choices</h3>
+                <span>{installerChoicePresets.length}</span>
+              </div>
+              <p class="hint">DMM reuses these choices only for the same exact mod file. Forget a preset if you want the installer to ask again.</p>
+              <div class="request-list">
+                {#each installerChoicePresets as preset}
+                  <article>
+                    <div>
+                      <strong>{preset.installer_kind.toUpperCase()} choices</strong>
+                      <p>{preset.source_game_domain}/mods/{preset.source_mod_id}/files/{preset.source_file_id}</p>
+                      <small>Updated {new Date(preset.updated_at).toLocaleString()}</small>
+                    </div>
+                    <div class="request-actions">
+                      <span>Saved</span>
+                      <button type="button" class="secondary-action compact" on:click={() => deleteInstallerChoicePreset(preset)}>Forget</button>
                     </div>
                   </article>
                 {/each}

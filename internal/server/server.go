@@ -272,6 +272,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/games/{appID}/install-candidates/{candidateID}/choices", s.handleSaveInstallCandidateChoices)
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/apply", s.handleApplyInstallCandidate)
 	mux.HandleFunc("POST /api/games/{appID}/install-candidates/{candidateID}/retry", s.handleRetryInstallCandidate)
+	mux.HandleFunc("GET /api/games/{appID}/installer-choice-presets", s.handleGameInstallerChoicePresets)
+	mux.HandleFunc("DELETE /api/games/{appID}/installer-choice-presets/{presetID}", s.handleDeleteInstallerChoicePreset)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/settings", s.handleDeploySettings)
 	mux.HandleFunc("PUT /api/games/{appID}/deploy/settings", s.handleUpdateDeploySettings)
@@ -2468,6 +2470,48 @@ func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, candidates)
+}
+
+func (s *Server) handleGameInstallerChoicePresets(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	presets, err := s.db.InstallerChoicePresetsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, presets)
+}
+
+func (s *Server) handleDeleteInstallerChoicePreset(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	presetID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("presetID")), 10, 64)
+	if appID == "" || err != nil || presetID <= 0 {
+		http.Error(w, "appID and presetID are required", http.StatusBadRequest)
+		return
+	}
+	deleted, err := s.db.DeleteInstallerChoicePreset(r.Context(), appID, presetID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !deleted {
+		http.Error(w, "installer choice preset not found", http.StatusNotFound)
+		return
+	}
+	s.logger.Info("installer choice preset deleted", "app_id", appID, "preset_id", presetID)
+	s.publishGameEvent(events.TypeInstallChanged, appID, map[string]any{
+		"action":    "installer_choice_preset_deleted",
+		"preset_id": presetID,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "preset_id": presetID})
 }
 
 func (s *Server) handleClearGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
