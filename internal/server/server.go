@@ -263,10 +263,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 type deploymentStatusResponse struct {
-	Deployed    bool     `json:"deployed"`
-	FileCount   int      `json:"file_count"`
-	Strategy    string   `json:"strategy,omitempty"`
-	SampleFiles []string `json:"sample_files,omitempty"`
+	Deployed               bool     `json:"deployed"`
+	FileCount              int      `json:"file_count"`
+	Strategy               string   `json:"strategy,omitempty"`
+	SampleFiles            []string `json:"sample_files,omitempty"`
+	ApplyRollbackOnFailure bool     `json:"apply_rollback_on_failure"`
+	RepairAvailable        bool     `json:"repair_available"`
+	PurgeAvailable         bool     `json:"purge_available"`
+	RecoverySummary        string   `json:"recovery_summary,omitempty"`
 }
 
 type deployPreviewSummary struct {
@@ -385,8 +389,16 @@ func (s *Server) deploymentStatus(ctx context.Context, appID string) (deployment
 		return deploymentStatusResponse{}, err
 	}
 	status := deploymentStatusResponse{
-		Deployed:  len(files) > 0,
-		FileCount: len(files),
+		Deployed:               len(files) > 0,
+		FileCount:              len(files),
+		ApplyRollbackOnFailure: true,
+	}
+	if status.Deployed {
+		status.RepairAvailable = true
+		status.PurgeAvailable = true
+		status.RecoverySummary = "DMM can repair missing managed files or purge this DMM-owned deployment. Failed applies roll back automatically before the job is reported as failed."
+	} else {
+		status.RecoverySummary = "No active DMM-owned deployment is recorded. Failed applies still roll back automatically before the job is reported as failed."
 	}
 	for _, file := range files {
 		if status.Strategy == "" && file.Strategy != "" {

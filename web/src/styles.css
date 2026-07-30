@@ -907,6 +907,35 @@ h2 {
   background: #241819;
 }
 
+.recovery-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #365244;
+  border-radius: 8px;
+  padding: 10px;
+  background: #141e19;
+}
+
+.recovery-card p {
+  margin: 0;
+  color: #d4d4d8;
+  line-height: 1.35;
+}
+
+.sample-file-list {
+  display: grid;
+  gap: 5px;
+}
+
+.sample-file-list small {
+  border: 1px solid #303741;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+  background: #12171d;
+}
+
 .deploy-flow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

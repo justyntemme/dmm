@@ -2891,16 +2891,23 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Deployed    bool     `json:"deployed"`
-		FileCount   int      `json:"file_count"`
-		Strategy    string   `json:"strategy"`
-		SampleFiles []string `json:"sample_files"`
+		Deployed               bool     `json:"deployed"`
+		FileCount              int      `json:"file_count"`
+		Strategy               string   `json:"strategy"`
+		SampleFiles            []string `json:"sample_files"`
+		ApplyRollbackOnFailure bool     `json:"apply_rollback_on_failure"`
+		RepairAvailable        bool     `json:"repair_available"`
+		PurgeAvailable         bool     `json:"purge_available"`
+		RecoverySummary        string   `json:"recovery_summary"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
 	if !body.Deployed || body.FileCount != 1 || body.Strategy != string(deploy.StrategySymlink) {
 		t.Fatalf("deployment status = %+v", body)
+	}
+	if !body.ApplyRollbackOnFailure || !body.RepairAvailable || !body.PurgeAvailable || body.RecoverySummary == "" {
+		t.Fatalf("recovery status = %+v", body)
 	}
 	if len(body.SampleFiles) != 1 || !strings.Contains(body.SampleFiles[0], "LookupAnything") {
 		t.Fatalf("sample files = %+v", body.SampleFiles)
@@ -2917,14 +2924,20 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 		t.Fatalf("purged status = %d, body = %s", purgedRec.Code, purgedRec.Body.String())
 	}
 	var purgedBody struct {
-		Deployed  bool `json:"deployed"`
-		FileCount int  `json:"file_count"`
+		Deployed               bool `json:"deployed"`
+		FileCount              int  `json:"file_count"`
+		ApplyRollbackOnFailure bool `json:"apply_rollback_on_failure"`
+		RepairAvailable        bool `json:"repair_available"`
+		PurgeAvailable         bool `json:"purge_available"`
 	}
 	if err := json.Unmarshal(purgedRec.Body.Bytes(), &purgedBody); err != nil {
 		t.Fatal(err)
 	}
 	if purgedBody.Deployed || purgedBody.FileCount != 0 {
 		t.Fatalf("purged deployment status = %+v", purgedBody)
+	}
+	if !purgedBody.ApplyRollbackOnFailure || purgedBody.RepairAvailable || purgedBody.PurgeAvailable {
+		t.Fatalf("purged recovery status = %+v", purgedBody)
 	}
 }
 

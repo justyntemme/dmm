@@ -164,6 +164,10 @@
     file_count: number;
     strategy?: string;
     sample_files?: string[];
+    apply_rollback_on_failure: boolean;
+    repair_available: boolean;
+    purge_available: boolean;
+    recovery_summary?: string;
   };
 
   type RuntimeRequirement = {
@@ -1730,15 +1734,29 @@
               <div><strong>{enabledMods.length}</strong><span>Enabled</span></div>
               <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
               <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
-	            </div>
-	            <div class="deploy-actions utility-actions">
-	              <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
-	              <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
-	              <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.deployed}>Repair Managed Files</button>
-	              <button type="button" class="secondary-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.deployed}>Purge Managed Files</button>
-              <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameActionItems.length === 0}>Reset Managed Mods</button>
-              <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
             </div>
+            <section class="recovery-card">
+              <div class="panel-heading compact-heading">
+                <h3>Recovery</h3>
+                <span>{deploymentStatus?.apply_rollback_on_failure ? "Auto-rollback" : "Manual review"}</span>
+              </div>
+              <p>{deploymentStatus?.recovery_summary ?? "Failed applies are restored before DMM reports the job as failed."}</p>
+              {#if deploymentStatus?.sample_files?.length}
+                <div class="sample-file-list">
+                  {#each deploymentStatus.sample_files as file}
+                    <small>{file}</small>
+                  {/each}
+                </div>
+              {/if}
+              <div class="deploy-actions utility-actions">
+                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
+                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
+                <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
+                <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
+                <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Purge Managed Files</button>
+                <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameActionItems.length === 0}>Reset Managed Mods</button>
+              </div>
+            </section>
             {#if deployPlan}
               <div class="panel-heading">
                 <h3>File Operations</h3>
