@@ -1315,7 +1315,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
               {selectedChoices} choice{selectedChoices === 1 ? "" : "s"} preselected from DMM's saved/default installer state.
             </div>
           )}
-          {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this request.</div>}
+          {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this action.</div>}
           {installer && visibleFomodSteps(installer).map((step) => (
             <section key={step.id} style={{ display: "grid", gap: "8px" }}>
               <div style={{ fontWeight: 800 }}>{step.name}</div>

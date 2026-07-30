@@ -1916,7 +1916,7 @@
     if (request.status === "failed") {
       return "The mod was not added. Retry from the cached download when available, or clear it if this action is no longer needed.";
     }
-    return "This request is retained in job history for diagnostics.";
+    return "This action is retained in job history for diagnostics.";
   }
 
   function requestStatusLabel(request: Job) {
