@@ -747,6 +747,51 @@ func TestBuildPlanBlocksUnsatisfiedModuleDependencies(t *testing.T) {
 	}
 }
 
+func TestParseAppliesFOMODListOrdering(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps order="Descending">
+    <installStep name="Alpha">
+      <optionalFileGroups order="Explicit">
+        <group name="Zeta" type="SelectAny">
+          <plugins order="Ascending">
+            <plugin name="Beta"><files><file source="beta.txt" /></files></plugin>
+            <plugin name="Alpha"><files><file source="alpha.txt" /></files></plugin>
+          </plugins>
+        </group>
+        <group name="Alpha" type="SelectAny">
+          <plugins><plugin name="Only"><files><file source="only.txt" /></files></plugin></plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+    <installStep name="Omega">
+      <optionalFileGroups>
+        <group name="Only" type="SelectAny">
+          <plugins><plugin name="Only"><files><file source="only.txt" /></files></plugin></plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	for _, name := range []string{"alpha.txt", "beta.txt", "only.txt"} {
+		writeFile(t, filepath.Join(root, name), name)
+	}
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{installer.Steps[0].Name, installer.Steps[1].Name}; got[0] != "Omega" || got[1] != "Alpha" {
+		t.Fatalf("step order = %+v", got)
+	}
+	alphaStep := installer.Steps[1]
+	if got := []string{alphaStep.Groups[0].Name, alphaStep.Groups[1].Name}; got[0] != "Zeta" || got[1] != "Alpha" {
+		t.Fatalf("explicit group order = %+v", got)
+	}
+	if got := []string{alphaStep.Groups[0].Plugins[0].Name, alphaStep.Groups[0].Plugins[1].Name}; got[0] != "Alpha" || got[1] != "Beta" {
+		t.Fatalf("plugin order = %+v", got)
+	}
+}
+
 func TestParseUTF16ModuleConfig(t *testing.T) {
 	root := t.TempDir()
 	xml := `<config><moduleName>UTF16 Installer</moduleName></config>`

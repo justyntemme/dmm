@@ -124,6 +124,7 @@ type configXML struct {
 }
 
 type installStepsXML struct {
+	Order string           `xml:"order,attr"`
 	Steps []installStepXML `xml:"installStep"`
 }
 
@@ -134,6 +135,7 @@ type installStepXML struct {
 }
 
 type optionalFileGroupsXML struct {
+	Order  string     `xml:"order,attr"`
 	Groups []groupXML `xml:"group"`
 }
 
@@ -144,6 +146,7 @@ type groupXML struct {
 }
 
 type pluginsXML struct {
+	Order   string      `xml:"order,attr"`
 	Plugins []pluginXML `xml:"plugin"`
 }
 
@@ -272,7 +275,9 @@ func Parse(root string) (Installer, error) {
 	if installer.Name == "" {
 		installer.Name = "FOMOD installer"
 	}
-	for stepIndex, stepXML := range cfg.InstallSteps.Steps {
+	for stepIndex, stepXML := range orderedByName(cfg.InstallSteps.Steps, cfg.InstallSteps.Order, func(step installStepXML) string {
+		return step.Name
+	}) {
 		step := Step{
 			ID:      fmt.Sprintf("step-%d", stepIndex+1),
 			Name:    strings.TrimSpace(stepXML.Name),
@@ -286,7 +291,9 @@ func Parse(root string) (Installer, error) {
 			visible := stepXML.Visible.group()
 			step.Visibility = &visible
 		}
-		for groupIndex, groupXML := range stepXML.OptionalFileGroups.Groups {
+		for groupIndex, groupXML := range orderedByName(stepXML.OptionalFileGroups.Groups, stepXML.OptionalFileGroups.Order, func(group groupXML) string {
+			return group.Name
+		}) {
 			group := Group{
 				ID:      fmt.Sprintf("%s-group-%d", step.ID, groupIndex+1),
 				Name:    strings.TrimSpace(groupXML.Name),
@@ -296,7 +303,9 @@ func Parse(root string) (Installer, error) {
 			if group.Name == "" {
 				group.Name = fmt.Sprintf("Group %d", groupIndex+1)
 			}
-			for pluginIndex, pluginXML := range groupXML.Plugins.Plugins {
+			for pluginIndex, pluginXML := range orderedByName(groupXML.Plugins.Plugins, groupXML.Plugins.Order, func(plugin pluginXML) string {
+				return plugin.Name
+			}) {
 				name := strings.TrimSpace(pluginXML.Name)
 				if name == "" {
 					name = fmt.Sprintf("Option %d", pluginIndex+1)
@@ -589,6 +598,23 @@ func normalizedStopFolders(values []string) []string {
 		}
 		seen[key] = struct{}{}
 		out = append(out, value)
+	}
+	return out
+}
+
+func orderedByName[T any](values []T, order string, name func(T) string) []T {
+	out := append([]T(nil), values...)
+	switch strings.ToLower(strings.TrimSpace(order)) {
+	case "explicit":
+		return out
+	case "descending":
+		sort.SliceStable(out, func(i, j int) bool {
+			return strings.ToLower(strings.TrimSpace(name(out[i]))) > strings.ToLower(strings.TrimSpace(name(out[j])))
+		})
+	default:
+		sort.SliceStable(out, func(i, j int) bool {
+			return strings.ToLower(strings.TrimSpace(name(out[i]))) < strings.ToLower(strings.TrimSpace(name(out[j])))
+		})
 	}
 	return out
 }

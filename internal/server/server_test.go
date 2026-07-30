@@ -1416,7 +1416,7 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
   <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
   <installSteps>
     <installStep name="Variant">
-	      <optionalFileGroups>
+	      <optionalFileGroups order="Explicit">
 	        <group name="Variant" type="SelectExactlyOne">
 	          <plugins>
 	            <plugin name="High">
