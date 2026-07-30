@@ -252,6 +252,54 @@ class Plugin:
             return {"ok": True, "games": result}
         return {"ok": False, "error": "Unexpected games response.", "games": []}
 
+    async def nexus_mods(self, app_id, query="", sort="downloads", count=20, offset=0):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "mods": [], "total_count": 0}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "mods": [], "total_count": 0}
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            count = 20
+        try:
+            offset = int(offset)
+        except (TypeError, ValueError):
+            offset = 0
+        params = urllib.parse.urlencode({
+            "q": str(query or "").strip(),
+            "sort": str(sort or "downloads").strip(),
+            "count": max(1, min(count, 50)),
+            "offset": max(0, offset),
+            "vortex_only": "true",
+        })
+        path = f"/api/games/{urllib.parse.quote(app_id)}/nexus/mods?{params}"
+        result, error = self._backend_json_result("GET", path)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to search Nexus mods.", "mods": [], "total_count": 0}
+        mods = result.get("mods") if isinstance(result, dict) else None
+        if not isinstance(mods, list):
+            return {"ok": False, "error": "Unexpected Nexus search response.", "mods": [], "total_count": 0}
+        self._log(f"nexus mods searched app_id={app_id} query_present={bool(str(query or '').strip())} sort={sort} count={len(mods)}")
+        return {"ok": True, "mods": mods, "total_count": int(result.get("total_count") or len(mods))}
+
+    async def nexus_mod_files(self, app_id, mod_id):
+        app_id = str(app_id or "").strip()
+        mod_id = str(mod_id or "").strip()
+        if not app_id or not mod_id:
+            return {"ok": False, "error": "app_id and mod_id are required.", "files": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "files": []}
+        path = f"/api/games/{urllib.parse.quote(app_id)}/nexus/mods/{urllib.parse.quote(mod_id)}/files"
+        result, error = self._backend_json_result("GET", path)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load Nexus files.", "files": []}
+        files = result.get("files") if isinstance(result, dict) else None
+        if not isinstance(files, list):
+            return {"ok": False, "error": "Unexpected Nexus files response.", "files": []}
+        self._log(f"nexus mod files loaded app_id={app_id} mod_id={mod_id} count={len(files)}")
+        return {"ok": True, "files": files}
+
     async def game_profiles(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

@@ -74,6 +74,7 @@ type pendingImport struct {
 type nexusClient interface {
 	Files(ctx context.Context, gameDomain, modID string) (nexus.FilesResponse, error)
 	DownloadLinks(ctx context.Context, gameDomain, modID, fileID, nxmKey, expires string) ([]nexus.DownloadLink, error)
+	SearchMods(ctx context.Context, req nexus.ModSearchRequest) (nexus.ModSearchResponse, error)
 }
 
 type nexusClientFactory func(apiKey string) nexusClient
@@ -219,6 +220,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
+	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
+	mux.HandleFunc("GET /api/games/{appID}/nexus/mods/{modID}/files", s.handleGameNexusModFiles)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
@@ -977,6 +980,81 @@ func (s *Server) handleValidateNexus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	gameDomain, ok := s.nexusDomainForSteamAppID(appID)
+	if !ok {
+		http.Error(w, "no Nexus domain is registered for this game", http.StatusNotFound)
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortValue := strings.TrimSpace(r.URL.Query().Get("sort"))
+	count := parseBoundedQueryInt(r.URL.Query().Get("count"), 20, 1, 50)
+	offset := parseBoundedQueryInt(r.URL.Query().Get("offset"), 0, 0, 5000)
+	vortexOnly := parseQueryBoolDefault(r.URL.Query().Get("vortex_only"), true)
+
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
+	s.logger.Info(
+		"nexus mod search requested",
+		"app_id", appID,
+		"game_domain", gameDomain,
+		"query_present", query != "",
+		"sort", sortValue,
+		"count", count,
+		"offset", offset,
+		"vortex_only", vortexOnly,
+	)
+	result, err := s.nexus(apiKey).SearchMods(r.Context(), nexus.ModSearchRequest{
+		GameDomain: gameDomain,
+		Query:      query,
+		Sort:       sortValue,
+		Count:      count,
+		Offset:     offset,
+		VortexOnly: vortexOnly,
+	})
+	if err != nil {
+		s.logger.Warn("nexus mod search failed", "app_id", appID, "game_domain", gameDomain, "error", err)
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleGameNexusModFiles(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	modID := strings.TrimSpace(r.PathValue("modID"))
+	if appID == "" || modID == "" {
+		http.Error(w, "appID and modID are required", http.StatusBadRequest)
+		return
+	}
+	gameDomain, ok := s.nexusDomainForSteamAppID(appID)
+	if !ok {
+		http.Error(w, "no Nexus domain is registered for this game", http.StatusNotFound)
+		return
+	}
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
+	if apiKey == "" {
+		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
+		return
+	}
+	s.logger.Info("nexus mod files requested", "app_id", appID, "game_domain", gameDomain, "mod_id", modID)
+	files, err := s.nexus(apiKey).Files(r.Context(), gameDomain, modID)
+	if err != nil {
+		s.logger.Warn("nexus mod files failed", "app_id", appID, "game_domain", gameDomain, "mod_id", modID, "error", err)
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
 func (s *Server) handleUpdateSecuritySettings(w http.ResponseWriter, r *http.Request) {
 	var req updateSecuritySettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1162,6 +1240,32 @@ func normalizedGameSort(value string) string {
 	default:
 		return "recent"
 	}
+}
+
+func parseBoundedQueryInt(raw string, fallback, minValue, maxValue int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func parseQueryBoolDefault(raw string, fallback bool) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {

@@ -127,6 +127,31 @@ type ManagedMod = {
   source_file_id: string;
 };
 
+type NexusSearchSort = "downloads" | "updated" | "endorsements" | "name" | "relevance";
+
+type NexusModResult = {
+  mod_id: number;
+  name: string;
+  summary: string;
+  version: string;
+  thumbnail_url: string;
+  downloads: number;
+  endorsements: number;
+  updated_at: string;
+  supports_vortex: boolean;
+  url: string;
+};
+
+type NexusModFile = {
+  file_id: number;
+  name: string;
+  version: string;
+  category_id: number;
+  file_name: string;
+  size: number;
+  uploaded_timestamp: number;
+};
+
 type ProfileApplyResult = {
   status: string;
   message?: string;
@@ -534,6 +559,45 @@ function gameSortLabel(sort: GameSort) {
   return "Recent";
 }
 
+function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
+  if (current === "downloads") return "updated";
+  if (current === "updated") return "endorsements";
+  if (current === "endorsements") return "name";
+  if (current === "name") return "relevance";
+  return "downloads";
+}
+
+function nexusSortLabel(sort: NexusSearchSort) {
+  if (sort === "updated") return "Updated";
+  if (sort === "endorsements") return "Endorsed";
+  if (sort === "name") return "Name";
+  if (sort === "relevance") return "Relevant";
+  return "Downloads";
+}
+
+function compactNumber(value: number | undefined) {
+  const normalized = Number(value ?? 0);
+  if (!Number.isFinite(normalized)) return "0";
+  return normalized.toLocaleString(undefined, { maximumFractionDigits: 0, notation: normalized >= 10_000 ? "compact" : "standard" });
+}
+
+function formatBytes(value: number | undefined) {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "Unknown size";
+  const units = ["B", "KB", "MB", "GB"];
+  let amount = bytes;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit++;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function nexusFileURL(gameDomain: string, modID: number, fileID: number) {
+  return `https://www.nexusmods.com/${encodeURIComponent(gameDomain)}/mods/${modID}?file_id=${fileID}`;
+}
+
 function unregisterSteamCallback(registration: unknown) {
   if (typeof registration === "function") {
     registration();
@@ -911,6 +975,183 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
     await logFrontendEvent("installer choice modal open failed", { app_id: appID, candidate_id: candidate.id, source, error: err instanceof Error ? err.message : String(err) });
     showLaunchToast("DMM installer choices needed", "Open Decky Mod Manager or the phone UI to finish this installer.", false);
   }
+}
+
+function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; closeModal: () => void }) {
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<NexusSearchSort>("downloads");
+  const [mods, setMods] = useState<NexusModResult[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectedModID, setSelectedModID] = useState<number | null>(null);
+  const [filesByMod, setFilesByMod] = useState<Record<number, NexusModFile[]>>({});
+  const [busy, setBusy] = useState(false);
+  const [busyFileKey, setBusyFileKey] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function searchMods(nextSort = sort) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await call<[string, string, string, number, number], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
+        "nexus_mods",
+        props.appID,
+        query,
+        nextSort,
+        20,
+        0
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to search Nexus Mods.");
+        setMods([]);
+        setTotalCount(0);
+        return;
+      }
+      setMods(result.mods ?? []);
+      setTotalCount(result.total_count ?? result.mods?.length ?? 0);
+      if ((result.mods ?? []).length === 0) setMessage("No Vortex-compatible mods matched this search.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadFiles(mod: NexusModResult) {
+    setSelectedModID(mod.mod_id);
+    setError("");
+    setMessage("");
+    if (filesByMod[mod.mod_id]) return;
+    setBusyFileKey(`files:${mod.mod_id}`);
+    try {
+      const result = await call<[string, string], { ok: boolean; error?: string; files: NexusModFile[] }>("nexus_mod_files", props.appID, String(mod.mod_id));
+      if (!result.ok) {
+        setError(result.error || "Unable to load Nexus files. Check the Nexus API key in DMM settings.");
+        return;
+      }
+      setFilesByMod((current) => ({ ...current, [mod.mod_id]: result.files ?? [] }));
+      if ((result.files ?? []).length === 0) setMessage("This mod did not return installable files from Nexus.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyFileKey("");
+    }
+  }
+
+  async function installFile(mod: NexusModResult, file: NexusModFile) {
+    const key = `${mod.mod_id}:${file.file_id}`;
+    setBusyFileKey(key);
+    setError("");
+    setMessage("");
+    try {
+      const url = nexusFileURL(props.gameDomain, mod.mod_id, file.file_id);
+      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_pending_import", url);
+      if (!result.ok) {
+        setError(result.error || "Unable to add this Nexus file.");
+        return;
+      }
+      const job = result.result?.job;
+      if (job) showInstallToast(job);
+      setMessage(job?.message || `${file.name || file.file_name || mod.name} was sent to DMM.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyFileKey("");
+    }
+  }
+
+  function cycleSort() {
+    const next = nextNexusSort(sort);
+    setSort(next);
+    void searchMods(next);
+  }
+
+  useEffect(() => {
+    void searchMods("downloads");
+  }, []);
+
+  return (
+    <ConfirmModal
+      strTitle={`Browse ${props.gameName}`}
+      strDescription={
+        <div style={{ display: "grid", gap: "12px", maxHeight: "70vh", overflowX: "hidden", overflowY: "auto", paddingRight: "6px", width: "100%" }}>
+          <div style={{ alignItems: "end", display: "grid", gap: "8px", gridTemplateColumns: "minmax(0, 1fr) 120px 104px", width: "100%" }}>
+            <TextField label="Search Nexus" value={query} bShowClearAction onChange={(event) => setQuery(event.currentTarget.value)} />
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleSort} onClick={cycleSort} style={deckyCompactActionStyle("neutral")}>
+              {nexusSortLabel(sort)}
+            </Focusable>
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => searchMods()} onClick={() => searchMods()} style={deckyCompactActionStyle("neutral", busy)}>
+              {busy ? "Searching" : "Search"}
+            </Focusable>
+          </div>
+          <div style={{ color: "#a1a1aa", fontSize: "12px" }}>
+            Showing {mods.length} of {compactNumber(totalCount)} Vortex-compatible Nexus result{totalCount === 1 ? "" : "s"} for {props.gameDomain}.
+          </div>
+          {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
+          {message && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{message}</div>}
+          {mods.map((mod) => {
+            const files = filesByMod[mod.mod_id] ?? [];
+            const filesOpen = selectedModID === mod.mod_id;
+            return (
+              <div key={mod.mod_id} className="dmm-sidebar-row" style={{ ...deckyCompositeRowStyle(filesOpen), background: "#111827" }}>
+                <div style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "112px minmax(0, 1fr)", width: "100%" }}>
+                  <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "63px", overflow: "hidden", width: "112px" }}>
+                    {mod.thumbnail_url ? (
+                      <img src={mod.thumbnail_url} style={{ height: "100%", objectFit: "cover", width: "100%" }} />
+                    ) : (
+                      <div style={{ alignItems: "center", color: "#71717a", display: "flex", fontSize: "11px", height: "100%", justifyContent: "center", textAlign: "center" }}>No image</div>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gap: "5px", minWidth: 0 }}>
+                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{mod.name}</div>
+                    <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, maxHeight: "3.75em", overflow: "hidden", overflowWrap: "anywhere" }}>{mod.summary}</div>
+                    <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "8px" }}>
+                      <span>v{mod.version || "unknown"}</span>
+                      <span>{compactNumber(mod.downloads)} downloads</span>
+                      <span>{compactNumber(mod.endorsements)} endorsements</span>
+                    </div>
+                  </div>
+                </div>
+                <Focusable className="dmm-action-grid" flow-children="row" style={deckyActionGridStyle(2)}>
+                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => Navigation.NavigateToExternalWeb(mod.url)} onClick={() => Navigation.NavigateToExternalWeb(mod.url)} style={deckyCompactActionStyle("neutral")}>
+                    Open Page
+                  </Focusable>
+                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => loadFiles(mod)} onClick={() => loadFiles(mod)} style={deckyCompactActionStyle("neutral", filesOpen || busyFileKey === `files:${mod.mod_id}`)}>
+                    {busyFileKey === `files:${mod.mod_id}` ? "Loading" : filesOpen ? "Refresh Files" : "Files"}
+                  </Focusable>
+                </Focusable>
+                {filesOpen && (
+                  <div style={{ display: "grid", gap: "8px", width: "100%" }}>
+                    {files.length === 0 && busyFileKey !== `files:${mod.mod_id}` && <div style={{ color: "#a1a1aa" }}>No files loaded yet.</div>}
+                    {files.map((file) => {
+                      const fileKey = `${mod.mod_id}:${file.file_id}`;
+                      return (
+                        <div key={file.file_id} style={{ border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "6px", padding: "8px", width: "100%" }}>
+                          <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
+                          <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
+                            {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
+                          </div>
+                          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => installFile(mod, file)} onClick={() => installFile(mod, file)} style={deckyCompactActionStyle("neutral", busyFileKey === fileKey)}>
+                            {busyFileKey === fileKey ? "Adding" : "Install"}
+                          </Focusable>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      }
+      strOKButtonText="Close"
+      strCancelButtonText="Close"
+      onOK={props.closeModal}
+      onCancel={props.closeModal}
+      closeModal={props.closeModal}
+    />
+  );
 }
 
 async function handleDeckyDomainEvent(event: DomainEvent) {
@@ -1433,6 +1674,22 @@ function Content() {
     }
   }
 
+  function openDeckyNexusBrowser() {
+    if (!selectedDeckyGameID || !selectedDeckyGame || !selectedNexusDomain) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <NexusBrowserModal
+        appID={selectedDeckyGameID}
+        gameName={selectedDeckyGame.name}
+        gameDomain={selectedNexusDomain}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Browse Nexus Mods", bNeverPopOut: true, popupWidth: 760, popupHeight: 800 }
+    );
+  }
+
   async function registerNXM() {
     try {
       setError("");
@@ -1771,9 +2028,14 @@ function Content() {
           </PanelSectionRow>
           <PanelSectionRow>
             {selectedNexusDomain ? (
-              <ButtonItem layout="below" onClick={() => openNexus(selectedNexusDomain)}>
-                Open Nexus Mods
-              </ButtonItem>
+              <div style={{ display: "grid", gap: "8px", width: "100%" }}>
+                <ButtonItem layout="below" onClick={openDeckyNexusBrowser}>
+                  Browse Nexus Mods
+                </ButtonItem>
+                <ButtonItem layout="below" onClick={() => openNexus(selectedNexusDomain)}>
+                  Open Nexus Page
+                </ButtonItem>
+              </div>
             ) : (
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
             )}

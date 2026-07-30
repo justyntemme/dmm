@@ -251,6 +251,85 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	}
 }
 
+func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
+	srv := newTestServer(t)
+	var captured nexus.ModSearchRequest
+	srv.nexus = func(apiKey string) nexusClient {
+		if apiKey != "" {
+			t.Fatalf("apiKey = %q", apiKey)
+		}
+		return fakeNexusClient{
+			searchReq: &captured,
+			search: nexus.ModSearchResponse{
+				TotalCount: 1,
+				Mods: []nexus.ModSearchResult{{
+					ModID:          2400,
+					Name:           "SMAPI",
+					SupportsVortex: true,
+					URL:            "https://www.nexusmods.com/stardewvalley/mods/2400",
+				}},
+			},
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/nexus/mods?q=smapi&sort=updated&count=500&offset=-10&vortex_only=false", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if captured.GameDomain != "stardewvalley" || captured.Query != "smapi" || captured.Sort != "updated" {
+		t.Fatalf("request = %+v", captured)
+	}
+	if captured.Count != 50 || captured.Offset != 0 || captured.VortexOnly {
+		t.Fatalf("bounded request = %+v", captured)
+	}
+	var body nexus.ModSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Mods) != 1 || body.Mods[0].ModID != 2400 {
+		t.Fatalf("body = %+v", body)
+	}
+}
+
+func TestGameNexusModFilesUsesConfiguredAPIKey(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Nexus.APIKey = "secret"
+	srv.cfgMu.Unlock()
+	var gotKey string
+	srv.nexus = func(apiKey string) nexusClient {
+		gotKey = apiKey
+		return fakeNexusClient{
+			files: nexus.FilesResponse{Files: []nexus.ModFile{{
+				FileID:   135998,
+				Name:     "SMAPI",
+				FileName: "smapi.zip",
+			}}},
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/nexus/mods/2400/files", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if gotKey != "secret" {
+		t.Fatalf("apiKey = %q", gotKey)
+	}
+	var body nexus.FilesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Files) != 1 || body.Files[0].FileID != 135998 {
+		t.Fatalf("files = %+v", body.Files)
+	}
+}
+
 func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -4586,9 +4665,11 @@ func waitForJobStatus(t *testing.T, srv *Server, jobID string, status jobs.Statu
 }
 
 type fakeNexusClient struct {
-	files nexus.FilesResponse
-	links []nexus.DownloadLink
-	err   error
+	files     nexus.FilesResponse
+	links     []nexus.DownloadLink
+	search    nexus.ModSearchResponse
+	searchReq *nexus.ModSearchRequest
+	err       error
 }
 
 func (c fakeNexusClient) Files(context.Context, string, string) (nexus.FilesResponse, error) {
@@ -4603,6 +4684,16 @@ func (c fakeNexusClient) DownloadLinks(context.Context, string, string, string, 
 		return nil, c.err
 	}
 	return c.links, nil
+}
+
+func (c fakeNexusClient) SearchMods(_ context.Context, req nexus.ModSearchRequest) (nexus.ModSearchResponse, error) {
+	if c.searchReq != nil {
+		*c.searchReq = req
+	}
+	if c.err != nil {
+		return nexus.ModSearchResponse{}, c.err
+	}
+	return c.search, nil
 }
 
 type fakeCatalogResolver struct {
