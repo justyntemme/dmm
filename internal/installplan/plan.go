@@ -154,6 +154,7 @@ type InstructionMode string
 const (
 	InstructionManifestFolders InstructionMode = "manifest-folders"
 	InstructionRootFolder      InstructionMode = "root-folder"
+	InstructionArchiveRoot     InstructionMode = "archive-root"
 	InstructionEmbeddedZip     InstructionMode = "embedded-zip"
 	InstructionUnsupported     InstructionMode = "unsupported"
 )
@@ -294,6 +295,8 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 		return buildManifestFolderPlan(plan, installer, extractedRoot)
 	case InstructionRootFolder:
 		return buildRootFolderPlan(plan, installer, extractedRoot)
+	case InstructionArchiveRoot:
+		return buildArchiveRootPlan(plan, installer, extractedRoot)
 	case InstructionEmbeddedZip:
 		return buildEmbeddedZipPlan(plan, installer, extractedRoot)
 	default:
@@ -404,6 +407,50 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 	}
 	sort.Slice(plan.Instructions, func(i, j int) bool {
 		return plan.Instructions[i].StagingRelative < plan.Instructions[j].StagingRelative
+	})
+	return plan, nil
+}
+
+func buildArchiveRootPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {
+	plan.DetectedFrom = append(plan.DetectedFrom, Detection{
+		Kind:   "vortex-archive-root",
+		Path:   ".",
+		Reason: "Vortex installer " + installer.VortexInstallerID + " matched the archive root for the game's mod path",
+	})
+	err := filepath.WalkDir(extractedRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(extractedRoot, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, path, extractedRoot, rel, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)))...)
+		plan.Instructions = append(plan.Instructions, Instruction{
+			Kind:            InstructionKindCopy,
+			SourcePath:      path,
+			StagingRelative: rel,
+			TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)),
+			TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
+			DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
+		})
+		return nil
+	})
+	if err != nil {
+		return Plan{}, err
+	}
+	if len(plan.Instructions) == 0 {
+		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " matched but the archive has no deployable files")
+	}
+	sort.Slice(plan.Instructions, func(i, j int) bool {
+		return plan.Instructions[i].StagingRelative < plan.Instructions[j].StagingRelative
+	})
+	sort.Slice(plan.Metadata, func(i, j int) bool {
+		return plan.Metadata[i].TargetRelative < plan.Metadata[j].TargetRelative
 	})
 	return plan, nil
 }

@@ -431,6 +431,48 @@ func TestStardewPlannerAcceptsManifestWithoutIdentityLikeVortex(t *testing.T) {
 	}
 }
 
+func TestArchiveRootInstallerTargetsConfiguredModPath(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Meshes", "weapon.nif"), "mesh")
+	writeFile(t, filepath.Join(root, "Example.esp"), "plugin")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"377160"},
+		VortexGameID: "fallout4",
+		ModTypes: []ModTypeSpec{
+			{ID: "fallout4-data-root", TargetRoot: "Data"},
+		},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:fallout4:data-root",
+			VortexInstallerID: "game-query-mod-path",
+			ModType:           "fallout4-data-root",
+			InstructionMode:   InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("fallout4", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:fallout4:data-root" || plan.ModType != "fallout4-data-root" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	want := map[string]bool{
+		"Data/Example.esp":       false,
+		"Data/Meshes/weapon.nif": false,
+	}
+	for _, instruction := range plan.Instructions {
+		if _, ok := want[instruction.TargetRelative]; ok {
+			want[instruction.TargetRelative] = true
+		}
+	}
+	for target, found := range want {
+		if !found {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

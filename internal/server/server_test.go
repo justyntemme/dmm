@@ -194,23 +194,50 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body) != 1 || body[0].ID != "stardewvalley" {
+	byID := map[string]struct {
+		ID           string   `json:"id"`
+		SteamAppIDs  []string `json:"steam_app_ids"`
+		NexusDomains []string `json:"nexus_domains"`
+		Capabilities struct {
+			Installers          []featureResponse `json:"installers"`
+			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
+			LaunchTools         []featureResponse `json:"launch_tools"`
+		} `json:"capabilities"`
+	}{}
+	for _, extension := range body {
+		byID[extension.ID] = extension
+	}
+	stardew, ok := byID["stardewvalley"]
+	if !ok {
 		t.Fatalf("extensions = %+v", body)
 	}
-	if len(body[0].SteamAppIDs) != 1 || body[0].SteamAppIDs[0] != "413150" {
-		t.Fatalf("steam ids = %+v", body[0].SteamAppIDs)
+	if len(stardew.SteamAppIDs) != 1 || stardew.SteamAppIDs[0] != "413150" {
+		t.Fatalf("steam ids = %+v", stardew.SteamAppIDs)
 	}
-	if len(body[0].NexusDomains) != 1 || body[0].NexusDomains[0] != "stardewvalley" {
-		t.Fatalf("nexus domains = %+v", body[0].NexusDomains)
+	if len(stardew.NexusDomains) != 1 || stardew.NexusDomains[0] != "stardewvalley" {
+		t.Fatalf("nexus domains = %+v", stardew.NexusDomains)
 	}
-	if !featureIDsContain(body[0].Capabilities.Installers, "vortex:stardewvalley:stardew-valley-installer") {
-		t.Fatalf("installers = %+v", body[0].Capabilities.Installers)
+	if !featureIDsContain(stardew.Capabilities.Installers, "vortex:stardewvalley:stardew-valley-installer") {
+		t.Fatalf("installers = %+v", stardew.Capabilities.Installers)
 	}
-	if !featureIDsContain(body[0].Capabilities.RuntimeRequirements, "stardew-smapi-installed") {
-		t.Fatalf("runtime requirements = %+v", body[0].Capabilities.RuntimeRequirements)
+	if !featureIDsContain(stardew.Capabilities.RuntimeRequirements, "stardew-smapi-installed") {
+		t.Fatalf("runtime requirements = %+v", stardew.Capabilities.RuntimeRequirements)
 	}
-	if !featureIDsContain(body[0].Capabilities.LaunchTools, "smapi") {
-		t.Fatalf("launch tools = %+v", body[0].Capabilities.LaunchTools)
+	if !featureIDsContain(stardew.Capabilities.LaunchTools, "smapi") {
+		t.Fatalf("launch tools = %+v", stardew.Capabilities.LaunchTools)
+	}
+	fallout, ok := byID["fallout4"]
+	if !ok {
+		t.Fatalf("extensions = %+v", body)
+	}
+	if len(fallout.SteamAppIDs) != 1 || fallout.SteamAppIDs[0] != "377160" {
+		t.Fatalf("fallout steam ids = %+v", fallout.SteamAppIDs)
+	}
+	if !featureIDsContain(fallout.Capabilities.Installers, "vortex:fallout4:data-root") {
+		t.Fatalf("fallout installers = %+v", fallout.Capabilities.Installers)
+	}
+	if !featureIDsContain(fallout.Capabilities.LaunchTools, "f4se") {
+		t.Fatalf("fallout launch tools = %+v", fallout.Capabilities.LaunchTools)
 	}
 }
 
