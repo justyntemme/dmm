@@ -1078,10 +1078,10 @@
     const replaces = actions.filter((action) => action.operation === "replace").length;
     const removes = actions.filter((action) => action.operation === "remove").length;
     confirmation = {
-      title: "Apply profile changes",
+      title: "Apply profile",
       message: `DMM will update ${selectedGame.name}'s game folder to match the selected profile.`,
       detail: `${adds} add, ${replaces} replace, ${removes} remove. Advanced file details remain available before or after applying.`,
-      confirmLabel: "Apply Changes",
+      confirmLabel: "Apply Profile",
       run: applyPendingProfileChanges
     };
   }
@@ -1631,7 +1631,7 @@
       {#if activeGameModule === "plugins"}
         <article class="workspace-panel">
           <div class="panel-heading">
-            <h2>Profile Mods</h2>
+            <h2>{selectedProfile?.name ?? "Default"} Profile</h2>
             <span>{enabledMods.length} enabled · {disabledMods.length} disabled</span>
           </div>
           {#if selectedGameActivity.length > 0}
@@ -1659,7 +1659,7 @@
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
               {:else if hasPendingProfileChanges}
-                <p class="deploy-message">This profile has pending changes. Enable or disable a mod to apply automatically, or use Advanced Deployment Tools.</p>
+                <p class="deploy-message">This profile is ready to apply. Enable or disable any mod to apply it automatically, or open Advanced Deployment Tools.</p>
               {:else if deploymentStatus?.deployed}
                 <p class="deploy-message success">This profile is applied to the game.</p>
               {:else if enabledMods.length === 0}
@@ -1703,7 +1703,7 @@
           {:else}
             <section class="mod-section">
               <div class="card-heading">
-                <h3>Profile Mods</h3>
+                <h3>Mods</h3>
                 <span>{selectedProfile?.name ?? "Default"}</span>
               </div>
               <div class="mod-list">
@@ -1794,7 +1794,7 @@
                 </div>
               {/if}
               <div class="deploy-actions utility-actions">
-                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Pending Changes</button>
+                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Now</button>
                 <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
                 <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
