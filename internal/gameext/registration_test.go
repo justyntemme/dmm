@@ -36,6 +36,7 @@ func TestNewExtensionRegistersVortexStyleDomains(t *testing.T) {
 			RequiredFiles:      []string{"loader", "loader.dll"},
 			DefaultPrimary:     true,
 			ModTypes:           []string{"mod"},
+			ProviderModTypes:   []string{"loader-mod"},
 		})
 		r.RegisterMerge(MergeSpec{ID: "merge", Name: "Merge"})
 		r.RegisterLoadOrder(LoadOrderSpec{ID: "load-order", Name: "Load Order"})
@@ -63,6 +64,9 @@ func TestNewExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if _, _, ok := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}}); !ok {
 		t.Fatal("primary launch tool did not match enabled mod type")
+	}
+	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
+		t.Fatalf("launch tool provider lookup = %+v %v", tool, ok)
 	}
 }
 

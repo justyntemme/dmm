@@ -38,6 +38,7 @@ type LaunchToolSpec struct {
 	RequiredFiles      []string
 	DefaultPrimary     bool
 	ModTypes           []string
+	ProviderModTypes   []string
 }
 
 type Registry struct {
@@ -165,6 +166,25 @@ func (r Registry) RequiredPrimaryLaunchToolForSteamApp(appID string, mods []game
 		}
 	}
 	return Extension{}, LaunchToolSpec{}, false
+}
+
+func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return LaunchToolSpec{}, false
+	}
+	modType = canonical(modType)
+	if modType == "" {
+		return LaunchToolSpec{}, false
+	}
+	for _, tool := range extension.LaunchTools {
+		for _, providerModType := range tool.ProviderModTypes {
+			if canonical(providerModType) == modType {
+				return tool, true
+			}
+		}
+	}
+	return LaunchToolSpec{}, false
 }
 
 func MissingLaunchToolFiles(gamePath string, tool LaunchToolSpec) []string {

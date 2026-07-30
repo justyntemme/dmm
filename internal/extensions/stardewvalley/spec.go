@@ -62,6 +62,9 @@ func Register(r *gameext.Registrar) {
 		},
 		DefaultPrimary: true,
 		ModTypes:       []string{"stardew-smapi-mod"},
+		ProviderModTypes: []string{
+			"SMAPI",
+		},
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

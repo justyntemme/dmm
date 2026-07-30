@@ -3180,6 +3180,124 @@ func TestApplyGameLaunchRequestsDeckySteamAPIAction(t *testing.T) {
 	}
 }
 
+func TestLaunchToolProviderModTypesEnableByDefault(t *testing.T) {
+	srv := newTestServer(t)
+
+	enabled, reason := srv.defaultEnableInstalledMod("413150", "SMAPI")
+	if !enabled || reason != "launch-tool-provider:smapi" {
+		t.Fatalf("defaultEnableInstalledMod(SMAPI) = %v %q", enabled, reason)
+	}
+
+	enabled, reason = srv.defaultEnableInstalledMod("413150", "stardew-smapi-mod")
+	if enabled || reason != "" {
+		t.Fatalf("defaultEnableInstalledMod(stardew-smapi-mod) = %v %q", enabled, reason)
+	}
+}
+
+func TestDeployPlanIncludesDisabledLaunchToolProviderWhenRequired(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	smapiStaging := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "2400", "files", "160380")
+	for _, rel := range []string{
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(smapiStaging, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	smapiManifest, err := stagedManifestJSONWithPlan(smapiStaging, installplan.Plan{
+		GameID:    "413150",
+		ModType:   "SMAPI",
+		PlannerID: "vortex:stardewvalley:smapi-installer",
+		Instructions: []installplan.Instruction{
+			{StagingRelative: "StardewModdingAPI", TargetRelative: "StardewModdingAPI"},
+			{StagingRelative: "StardewModdingAPI.dll", TargetRelative: "StardewModdingAPI.dll"},
+			{StagingRelative: "smapi-internal/SMAPI.Toolkit.CoreInterfaces.dll", TargetRelative: "smapi-internal/SMAPI.Toolkit.CoreInterfaces.dll"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "2400",
+			FileID:     "160380",
+		},
+		Name:           "SMAPI",
+		Version:        "160380",
+		ArchivePath:    filepath.Join(srv.cfg.DataDir, "downloads", "smapi.zip"),
+		StagingPath:    smapiStaging,
+		ManifestJSON:   smapiManifest,
+		DefaultEnabled: &disabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	lookupStaging := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
+	if err := os.MkdirAll(filepath.Join(lookupStaging, "LookupAnything"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lookupStaging, "LookupAnything", "manifest.json"), []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  lookupStaging,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]bool{}
+	for _, action := range plan.Actions {
+		targets[action.TargetRelative] = true
+	}
+	for _, target := range []string{
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		"smapi-internal/SMAPI.Toolkit.CoreInterfaces.dll",
+		"Mods/LookupAnything/manifest.json",
+	} {
+		if !targets[target] {
+			t.Fatalf("deploy plan missing %s: %+v", target, plan.Actions)
+		}
+	}
+}
+
 func TestDeployReturnsPendingDeckyLaunchAction(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

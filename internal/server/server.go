@@ -825,6 +825,16 @@ func (s *Server) autoEnableInstalledMods() bool {
 	return s.cfg.Install.AutoEnableInstalledMods
 }
 
+func (s *Server) defaultEnableInstalledMod(appID, modType string) (bool, string) {
+	if tool, ok := s.games.ModTypeProvidesLaunchTool(appID, modType); ok {
+		return true, "launch-tool-provider:" + tool.ID
+	}
+	if s.autoEnableInstalledMods() {
+		return true, "auto-enable-setting"
+	}
+	return false, ""
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
 	s.cfgMu.RLock()
@@ -1769,8 +1779,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	autoEnable := s.autoEnableInstalledMods()
-	defaultEnabled := autoEnable
+	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(candidate.SteamAppID, plan.ModType)
 	resolved := catalog.ResolvedDownload{
 		Catalog:    candidate.Catalog,
 		SourceURL:  candidate.ArchivePath,
@@ -1792,7 +1801,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	if autoEnable && !staged.Enabled {
+	if defaultEnabled && !staged.Enabled {
 		enabled := true
 		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
 		if err != nil {
@@ -1808,6 +1817,9 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		"planner_id", plan.PlannerID,
 		"instructions", len(plan.Instructions),
 		"installed_mod_id", staged.ID,
+		"enabled", staged.Enabled,
+		"default_enabled", defaultEnabled,
+		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
 }
@@ -3499,8 +3511,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		return storage.InstalledMod{}, err
 	}
 	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
-	autoEnable := s.autoEnableInstalledMods()
-	defaultEnabled := autoEnable
+	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(appID, installPlan.ModType)
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID:     appID,
 		Resolved:       pending.Resolved,
@@ -3515,7 +3526,7 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	if autoEnable && !staged.Enabled {
+	if defaultEnabled && !staged.Enabled {
 		enabled := true
 		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
 		if err != nil {
@@ -3536,6 +3547,8 @@ func (s *Server) stagePendingImport(ctx context.Context, jobID string, pending p
 		"instructions", len(installPlan.Instructions),
 		"installed_mod_id", staged.ID,
 		"enabled", staged.Enabled,
+		"default_enabled", defaultEnabled,
+		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
 }
@@ -3913,13 +3926,24 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	}
 
 	var mappings []deploy.FileMapping
-	enabledMods := 0
+	runtimeMods := runtimeModsForRequirements(mods)
+	_, requiredTool, toolRequired := s.games.RequiredPrimaryLaunchToolForSteamApp(appID, runtimeMods)
+	toolProviderModTypes := map[string]struct{}{}
+	if toolRequired {
+		toolProviderModTypes = launchToolProviderModTypes(requiredTool)
+	}
+	deployableMods := 0
 	undeployableMods := 0
 	for _, mod := range mods {
-		if !mod.Enabled {
+		modType := installedModType(mod)
+		deployAsRuntimeToolProvider := false
+		if _, ok := toolProviderModTypes[canonicalModType(modType)]; ok {
+			deployAsRuntimeToolProvider = true
+		}
+		if !mod.Enabled && !deployAsRuntimeToolProvider {
 			continue
 		}
-		enabledMods++
+		deployableMods++
 		next, err := s.deployMappingsForInstalledMod(mod)
 		if err != nil {
 			if errors.Is(err, errUndeployableInstalledMod) {
@@ -3929,18 +3953,44 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 			}
 			return deploy.Plan{}, err
 		}
+		if deployAsRuntimeToolProvider && !mod.Enabled {
+			s.logger.Info("including disabled launch-tool provider in deployment", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_type", modType, "tool_id", requiredTool.ID)
+		}
 		mappings = append(mappings, next...)
 	}
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
 		}
-		if enabledMods > 0 && undeployableMods == enabledMods {
+		if deployableMods > 0 && undeployableMods == deployableMods {
 			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
 		return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, nil)
 	}
 	return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+}
+
+func launchToolProviderModTypes(tool games.LaunchToolSpec) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, modType := range tool.ProviderModTypes {
+		modType = canonicalModType(modType)
+		if modType != "" {
+			out[modType] = struct{}{}
+		}
+	}
+	return out
+}
+
+func canonicalModType(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func installedModType(mod storage.InstalledMod) string {
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(manifest.ModType)
 }
 
 func (s *Server) deployMappingsForInstalledMod(mod storage.InstalledMod) ([]deploy.FileMapping, error) {

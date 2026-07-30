@@ -240,6 +240,11 @@ func validateLaunchTools(tools []LaunchToolSpec) []error {
 				errs = append(errs, errors.New("launch tool "+id+" required file: "+err.Error()))
 			}
 		}
+		for _, modType := range tool.ProviderModTypes {
+			if strings.TrimSpace(modType) == "" {
+				errs = append(errs, errors.New("launch tool "+id+" provider mod type is required"))
+			}
+		}
 	}
 	return errs
 }
