@@ -279,6 +279,7 @@
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
+  let selectedGameRefreshNeedsJobs = false;
   let candidateSelections: Record<number, Record<string, string[]>> = {};
   let refreshJobsInFlight = false;
   let refreshJobsQueued = false;
@@ -355,6 +356,7 @@
     }
     try {
       jobs = await getJSON<Job[]>("/api/jobs");
+      reconcileBusyState();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -369,6 +371,7 @@
     try {
       jobs = await getJSON<Job[]>("/api/jobs");
       if (selectedGame) await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+      reconcileBusyState();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -469,14 +472,17 @@
       return;
     }
     if (event.type === "jobs.snapshot") {
-      if (Array.isArray(event.payload)) jobs = event.payload as Job[];
+      if (Array.isArray(event.payload)) {
+        jobs = event.payload as Job[];
+        reconcileBusyState();
+      }
       return;
     }
     if (event.type === "job.updated") {
       if (isJob(event.payload)) {
         upsertJob(event.payload);
         if (selectedGame && jobMatchesGame(event.payload, selectedGame)) {
-          scheduleSelectedGameRefresh(event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice");
+          scheduleSelectedGameRefresh(event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice", event.payload.status === "completed");
         }
       }
       return;
@@ -484,7 +490,7 @@
     if (event.type === "launch.changed") {
       if (selectedGame && eventMatchesSelectedGame(event)) {
         if (isGameLaunchStatus(event.payload)) gameLaunchStatus = event.payload;
-        scheduleSelectedGameRefresh(false);
+        scheduleSelectedGameRefresh(false, true);
       }
       return;
     }
@@ -493,7 +499,7 @@
       return;
     }
     if (["profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
-      scheduleSelectedGameRefresh(true);
+      scheduleSelectedGameRefresh(true, true);
     }
   }
 
@@ -513,15 +519,22 @@
     return Boolean(value && typeof value === "object");
   }
 
-  function scheduleSelectedGameRefresh(refreshPreview = false) {
+  function scheduleSelectedGameRefresh(refreshPreview = false, refreshJobs = false) {
     if (!selectedGame || !initialRefreshComplete) return;
     selectedGameRefreshNeedsPreview = selectedGameRefreshNeedsPreview || refreshPreview;
+    selectedGameRefreshNeedsJobs = selectedGameRefreshNeedsJobs || refreshJobs;
     if (selectedGameRefreshTimer !== null) return;
     selectedGameRefreshTimer = window.setTimeout(async () => {
       const shouldRefreshPreview = selectedGameRefreshNeedsPreview;
+      const shouldRefreshJobs = selectedGameRefreshNeedsJobs;
       selectedGameRefreshTimer = null;
       selectedGameRefreshNeedsPreview = false;
+      selectedGameRefreshNeedsJobs = false;
+      if (shouldRefreshJobs) {
+        jobs = await getJSON<Job[]>("/api/jobs");
+      }
       await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+      reconcileBusyState();
     }, 250);
   }
 
@@ -628,6 +641,7 @@
     deploymentStatus = nextDeploymentStatus;
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
+    reconcileBusyState();
   }
 
   async function refreshSelectedGame(options: { refreshPreview?: boolean } = {}) {
@@ -910,6 +924,10 @@
       }
       const result = await response.json();
       upsertJob(result.job);
+      if (result.mod) {
+        installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
+      }
+      installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
       candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
       await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
@@ -931,6 +949,10 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
+      if (result.mod) {
+        installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
+        installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
+      }
       await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -1159,10 +1181,18 @@
       return;
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
+    reconcileBusyState();
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
     if (["pending-import", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
-      scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null);
+      scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null, job.status === "completed");
     }
+  }
+
+  function reconcileBusyState() {
+    const activeJobIDs = new Set(jobs.filter((job) => !["completed", "failed", "canceled"].includes(job.status)).map((job) => job.id));
+    busyJobs = Object.fromEntries(Object.entries(busyJobs).filter(([jobID]) => activeJobIDs.has(jobID)));
+    const activeCandidateIDs = new Set(installCandidates.map((candidate) => candidate.id));
+    busyInstallCandidates = Object.fromEntries(Object.entries(busyInstallCandidates).filter(([candidateID]) => activeCandidateIDs.has(Number(candidateID))));
   }
 
   function setJobBusy(jobID: string, busy: boolean) {
