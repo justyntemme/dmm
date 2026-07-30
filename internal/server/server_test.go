@@ -1957,6 +1957,136 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 }
 
+func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "fallout4",
+		ModID:      "999",
+		FileID:     "1000",
+	}
+	if err := srv.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    "377160",
+		Resolved:      resolved,
+		InstallerKind: "fomod",
+		ChoicesJSON:   `{"step-1-group-1":["step-1-group-1-plugin-2"],"step-1-group-2":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+	      <optionalFileGroups order="Explicit">
+	        <group name="Variant" type="SelectExactlyOne">
+	          <plugins>
+	            <plugin name="High">
+	              <conditionFlags><flag name="variant">high</flag></conditionFlags>
+	              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+	              <files><folder source="Options/High" destination="textures" /></files>
+	            </plugin>
+	            <plugin name="Low">
+	              <conditionFlags><flag name="variant">low</flag></conditionFlags>
+	              <typeDescriptor><type name="Optional" /></typeDescriptor>
+	              <files><folder source="Options/Low" destination="textures" /></files>
+	            </plugin>
+	          </plugins>
+	        </group>
+	        <group name="Patch" type="SelectAny">
+	          <plugins>
+	            <plugin name="High Patch">
+	              <typeDescriptor>
+	                <dependencyType>
+	                  <defaultType name="NotUsable" />
+	                  <patterns>
+	                    <pattern>
+	                      <dependencies><flagDependency flag="variant" value="high" /></dependencies>
+	                      <type name="Required" />
+	                    </pattern>
+	                  </patterns>
+	                </dependencyType>
+	              </typeDescriptor>
+	              <files><file source="Options/HighPatch.txt" destination="textures/high-patch.txt" /></files>
+	            </plugin>
+	          </plugins>
+	        </group>
+	      </optionalFileGroups>
+	    </installStep>
+	  </installSteps>
+	</config>`,
+		"Core/base.txt":            "base",
+		"Options/High/variant.txt": "high",
+		"Options/Low/variant.txt":  "low",
+		"Options/HighPatch.txt":    "patch",
+		"fomod/info.xml":           "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Install request: fallout4/mods/999")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved:    resolved,
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "Installed Choice Mod disabled") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	if _, ok := srv.capturedInstalls[job.ID]; ok {
+		t.Fatalf("captured install %s was not forgotten after preset install", job.ID)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("unexpected installer choice candidates = %+v", candidates)
+	}
+	if _, ok := srv.findInstallerChoiceJob(1); ok {
+		t.Fatal("installer choice job was created despite exact-file preset")
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Enabled || mods[0].Name != "Choice Mod" {
+		t.Fatalf("mods = %+v", mods)
+	}
+	lowVariant, err := os.ReadFile(filepath.Join(mods[0].StagingPath, "textures", "variant.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lowVariant) != "low" {
+		t.Fatalf("variant = %q, want low preset", string(lowVariant))
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "textures", "high-patch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("high patch was staged despite low preset: %v", err)
+	}
+}
+
 func TestInstallCandidateSelectionsUseBackendDefaultsForEmptyStoredChoices(t *testing.T) {
 	for _, raw := range []string{"", "{}"} {
 		selections, err := installCandidateSelections(storage.InstallCandidate{ChoicesJSON: raw}, nil)
