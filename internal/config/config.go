@@ -15,10 +15,11 @@ type Config struct {
 	DataDir    string `json:"data_dir"`
 	ConfigPath string `json:"-"`
 
-	Nexus   NexusConfig   `json:"nexus"`
-	Install InstallConfig `json:"install"`
-	UI      UIConfig      `json:"ui"`
-	Deploy  DeployConfig  `json:"deploy"`
+	Nexus    NexusConfig    `json:"nexus"`
+	Install  InstallConfig  `json:"install"`
+	Download DownloadConfig `json:"download"`
+	UI       UIConfig       `json:"ui"`
+	Deploy   DeployConfig   `json:"deploy"`
 }
 
 type NexusConfig struct {
@@ -29,6 +30,10 @@ type InstallConfig struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
 	AutoShowFOMODInstallers      bool `json:"auto_show_fomod_installers"`
+}
+
+type DownloadConfig struct {
+	MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
 }
 
 type UIConfig struct {
@@ -68,10 +73,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.ConfigPath = path
+	cfg = Normalize(cfg)
 	return cfg, nil
 }
 
 func Save(cfg Config) error {
+	cfg = Normalize(cfg)
 	if cfg.ConfigPath == "" {
 		path, err := DefaultConfigPath()
 		if err != nil {
@@ -90,6 +97,39 @@ func Save(cfg Config) error {
 	return os.WriteFile(cfg.ConfigPath, b, 0o600)
 }
 
+const (
+	DefaultMaxConcurrentCapturedDownloads = 2
+	MinConcurrentCapturedDownloads        = 1
+	MaxConcurrentCapturedDownloads        = 4
+)
+
+func Normalize(cfg Config) Config {
+	if cfg.Download.MaxConcurrentCapturedDownloads == 0 {
+		cfg.Download.MaxConcurrentCapturedDownloads = DefaultMaxConcurrentCapturedDownloads
+	}
+	cfg.Download.MaxConcurrentCapturedDownloads = NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads)
+	if cfg.UI.RecentGames == nil {
+		cfg.UI.RecentGames = map[string]int64{}
+	}
+	if cfg.UI.GameSort == "" {
+		cfg.UI.GameSort = "recent"
+	}
+	if cfg.Deploy.GameStrategies == nil {
+		cfg.Deploy.GameStrategies = map[string]string{}
+	}
+	return cfg
+}
+
+func NormalizeMaxConcurrentCapturedDownloads(value int) int {
+	if value < MinConcurrentCapturedDownloads {
+		return MinConcurrentCapturedDownloads
+	}
+	if value > MaxConcurrentCapturedDownloads {
+		return MaxConcurrentCapturedDownloads
+	}
+	return value
+}
+
 func Defaults() Config {
 	dataDir, _ := DefaultDataDir()
 	return Config{
@@ -100,6 +140,9 @@ func Defaults() Config {
 			AutoInstallCapturedDownloads: true,
 			AutoEnableInstalledMods:      false,
 			AutoShowFOMODInstallers:      true,
+		},
+		Download: DownloadConfig{
+			MaxConcurrentCapturedDownloads: DefaultMaxConcurrentCapturedDownloads,
 		},
 		UI: UIConfig{
 			RecentGames: map[string]int64{},

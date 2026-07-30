@@ -60,6 +60,10 @@ type BackendStatus = {
     lan_only: boolean;
     game_count: number;
     nexus: { api_key_configured: boolean };
+    download?: {
+      max_concurrent_captured_downloads: number;
+      active_captured_downloads: number;
+    };
     install: {
       auto_install_captured_downloads: boolean;
       auto_enable_installed_mods: boolean;
@@ -2340,6 +2344,23 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function setMaxConcurrentCapturedDownloads(maxDownloads: number) {
+    try {
+      setError("");
+      const result = await call<[number], { ok: boolean; error?: string; status?: unknown }>("set_max_concurrent_captured_downloads", maxDownloads);
+      if (!result.ok) setError(result.error ?? "Unable to update download settings.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function cycleMaxConcurrentCapturedDownloads() {
+    const current = status?.backend?.download?.max_concurrent_captured_downloads ?? 2;
+    const next = current >= 4 ? 1 : current + 1;
+    void setMaxConcurrentCapturedDownloads(next);
+  }
+
   async function openNexus(gameDomain: string | null = null) {
     try {
       setError("");
@@ -3046,6 +3067,7 @@ function DeckyModManagerRoute() {
           <div>Captured installs: {status?.backend?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</div>
           <div>New mod state: {status?.backend?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</div>
           <div>FOMOD installers: {status?.backend?.install.auto_show_fomod_installers ? "Auto display" : "Action Center"}</div>
+          <div>Downloads: {status?.backend?.download?.active_captured_downloads ?? 0}/{status?.backend?.download?.max_concurrent_captured_downloads ?? 2} active</div>
           <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
         </div>
       </PanelSectionRow>
@@ -3075,6 +3097,11 @@ function DeckyModManagerRoute() {
           disabled={!status?.running}
           onChange={setAutoShowFOMODInstallers}
         />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={cycleMaxConcurrentCapturedDownloads} disabled={!status?.running}>
+          Concurrent Downloads: {status?.backend?.download?.max_concurrent_captured_downloads ?? 2}
+        </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={() => setLanOnly(true)}>

@@ -10,6 +10,10 @@
   type Status = {
     game_count: number;
     install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
+    download?: {
+      max_concurrent_captured_downloads: number;
+      active_captured_downloads: number;
+    };
     nexus: { api_key_configured: boolean };
     ui?: UISettings;
   };
@@ -800,6 +804,22 @@
     }
     deploymentSettings = await response.json();
     await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function updateDownloadConcurrency(maxDownloads: number) {
+    error = "";
+    const response = await fetch("/api/settings/downloads", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_concurrent_captured_downloads: maxDownloads })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const nextStatus = await response.json() as Status;
+    status = nextStatus;
+    applyUIPreferences(nextStatus);
   }
 
   async function createProfile() {
@@ -2002,6 +2022,7 @@
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
             <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
+            <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -2034,7 +2055,17 @@
           <dl class="settings-list">
             <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
+            <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
           </dl>
+          <label class="settings-control">
+            <span>Concurrent downloads</span>
+            <select value={status?.download?.max_concurrent_captured_downloads ?? 2} on:change={(event) => updateDownloadConcurrency(Number(event.currentTarget.value))}>
+              <option value="1">1 download</option>
+              <option value="2">2 downloads</option>
+              <option value="3">3 downloads</option>
+              <option value="4">4 downloads</option>
+            </select>
+          </label>
           <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
         </article>
       {:else}

@@ -60,7 +60,7 @@ type Server struct {
 
 	activeMu      sync.Mutex
 	activeCancels map[string]context.CancelFunc
-	downloadSlots chan struct{}
+	downloadGate  *downloadSlotGate
 }
 
 type capturedInstall struct {
@@ -83,8 +83,6 @@ type nexusClientFactory func(apiKey string) nexusClient
 var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan target mappings")
 
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
-
-const maxConcurrentCapturedDownloads = 2
 
 const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
@@ -155,7 +153,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
-		downloadSlots:    make(chan struct{}, maxConcurrentCapturedDownloads),
+		downloadGate:     newDownloadSlotGate(config.NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads)),
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
@@ -247,6 +245,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
 	mux.HandleFunc("PUT /api/settings/install", s.handleUpdateInstallSettings)
+	mux.HandleFunc("PUT /api/settings/downloads", s.handleUpdateDownloadSettings)
 	mux.HandleFunc("GET /api/settings/ui", s.handleUISettings)
 	mux.HandleFunc("PATCH /api/settings/ui", s.handlePatchUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
@@ -1048,6 +1047,7 @@ func (s *Server) defaultEnableInstalledMod(appID, modType string) (bool, string)
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	gameCount, _ := s.db.GameCount(r.Context())
+	activeDownloads, maxDownloads := s.downloadGate.status()
 	s.cfgMu.RLock()
 	cfg := s.cfg
 	ui := normalizedUIConfig(cfg.UI)
@@ -1061,6 +1061,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"auto_install_captured_downloads": cfg.Install.AutoInstallCapturedDownloads,
 			"auto_enable_installed_mods":      cfg.Install.AutoEnableInstalledMods,
 			"auto_show_fomod_installers":      cfg.Install.AutoShowFOMODInstallers,
+		},
+		"download": map[string]any{
+			"max_concurrent_captured_downloads": maxDownloads,
+			"active_captured_downloads":         activeDownloads,
 		},
 		"nexus": map[string]any{
 			"api_key_configured": cfg.Nexus.APIKey != "",
@@ -1081,6 +1085,10 @@ type updateInstallSettingsRequest struct {
 	AutoInstallCapturedDownloads bool `json:"auto_install_captured_downloads"`
 	AutoEnableInstalledMods      bool `json:"auto_enable_installed_mods"`
 	AutoShowFOMODInstallers      bool `json:"auto_show_fomod_installers"`
+}
+
+type updateDownloadSettingsRequest struct {
+	MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
 }
 
 type patchUISettingsRequest struct {
@@ -1297,6 +1305,26 @@ func (s *Server) handleUpdateInstallSettings(w http.ResponseWriter, r *http.Requ
 		"auto_enable_installed_mods", req.AutoEnableInstalledMods,
 		"auto_show_fomod_installers", req.AutoShowFOMODInstallers,
 	)
+	s.handleStatus(w, r)
+}
+
+func (s *Server) handleUpdateDownloadSettings(w http.ResponseWriter, r *http.Request) {
+	var req updateDownloadSettingsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	maxDownloads := config.NormalizeMaxConcurrentCapturedDownloads(req.MaxConcurrentCapturedDownloads)
+	s.cfgMu.Lock()
+	s.cfg.Download.MaxConcurrentCapturedDownloads = maxDownloads
+	cfg := s.cfg
+	s.cfgMu.Unlock()
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.downloadGate.setMax(maxDownloads)
+	s.logger.Info("download settings updated", "max_concurrent_captured_downloads", maxDownloads)
 	s.handleStatus(w, r)
 }
 
@@ -4580,19 +4608,11 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 }
 
 func (s *Server) acquireCapturedDownloadSlot(ctx context.Context) bool {
-	select {
-	case s.downloadSlots <- struct{}{}:
-		return true
-	case <-ctx.Done():
-		return false
-	}
+	return s.downloadGate.acquire(ctx)
 }
 
 func (s *Server) releaseCapturedDownloadSlot() {
-	select {
-	case <-s.downloadSlots:
-	default:
-	}
+	s.downloadGate.release()
 }
 
 func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pending capturedInstall, result download.Result, installSource string) {

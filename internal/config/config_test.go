@@ -33,6 +33,9 @@ func TestLoadCreatesDefaultConfig(t *testing.T) {
 	if cfg.Install.AutoEnableInstalledMods {
 		t.Fatal("AutoEnableInstalledMods = true, want false")
 	}
+	if cfg.Download.MaxConcurrentCapturedDownloads != DefaultMaxConcurrentCapturedDownloads {
+		t.Fatalf("MaxConcurrentCapturedDownloads = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloads, DefaultMaxConcurrentCapturedDownloads)
+	}
 
 	if _, err := os.Stat(cfg.ConfigPath); err != nil {
 		t.Fatalf("default config was not written: %v", err)
@@ -86,7 +89,30 @@ func TestLoadSparseConfigPreservesDefaults(t *testing.T) {
 	if cfg.Install.AutoEnableInstalledMods {
 		t.Fatal("AutoEnableInstalledMods = true, want false")
 	}
+	if cfg.Download.MaxConcurrentCapturedDownloads != DefaultMaxConcurrentCapturedDownloads {
+		t.Fatalf("MaxConcurrentCapturedDownloads = %d, want %d", cfg.Download.MaxConcurrentCapturedDownloads, DefaultMaxConcurrentCapturedDownloads)
+	}
 	if cfg.ConfigPath != path {
 		t.Fatalf("ConfigPath = %q, want %q", cfg.ConfigPath, path)
+	}
+}
+
+func TestNormalizeMaxConcurrentCapturedDownloads(t *testing.T) {
+	tests := []struct {
+		name string
+		in   int
+		want int
+	}{
+		{name: "zero", in: 0, want: MinConcurrentCapturedDownloads},
+		{name: "below", in: -1, want: MinConcurrentCapturedDownloads},
+		{name: "inside", in: 3, want: 3},
+		{name: "above", in: 99, want: MaxConcurrentCapturedDownloads},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeMaxConcurrentCapturedDownloads(tt.in); got != tt.want {
+				t.Fatalf("NormalizeMaxConcurrentCapturedDownloads(%d) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
 	}
 }

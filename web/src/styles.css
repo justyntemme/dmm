@@ -1470,6 +1470,28 @@ h2 {
   border-top: 0;
 }
 
+.settings-control {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-control span {
+  color: #a1a1aa;
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-control select {
+  min-height: 42px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #f4f4f5;
+  background: #171c22;
+}
+
 dt {
   color: #a1a1aa;
 }

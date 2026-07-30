@@ -118,6 +118,45 @@ func TestUpdateInstallSettingsPersistsInstallBehaviorDefaults(t *testing.T) {
 	}
 }
 
+func TestUpdateDownloadSettingsPersistsAndUpdatesGate(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/downloads", bytes.NewBufferString(`{"max_concurrent_captured_downloads":4}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Download struct {
+			MaxConcurrentCapturedDownloads int `json:"max_concurrent_captured_downloads"`
+			ActiveCapturedDownloads        int `json:"active_captured_downloads"`
+		} `json:"download"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Download.MaxConcurrentCapturedDownloads != 4 {
+		t.Fatalf("max_concurrent_captured_downloads = %d", body.Download.MaxConcurrentCapturedDownloads)
+	}
+	active, maxDownloads := srv.downloadGate.status()
+	if active != 0 || maxDownloads != 4 {
+		t.Fatalf("gate status = active %d max %d", active, maxDownloads)
+	}
+
+	saved, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Download.MaxConcurrentCapturedDownloads != 4 {
+		t.Fatalf("saved max_concurrent_captured_downloads = %d", saved.Download.MaxConcurrentCapturedDownloads)
+	}
+}
+
 func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -677,12 +716,15 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 
 func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	srv := newTestServer(t)
-	for i := 0; i < cap(srv.downloadSlots); i++ {
-		srv.downloadSlots <- struct{}{}
+	_, maxDownloads := srv.downloadGate.status()
+	for i := 0; i < maxDownloads; i++ {
+		if !srv.acquireCapturedDownloadSlot(context.Background()) {
+			t.Fatal("failed to occupy download slot")
+		}
 	}
 	defer func() {
-		for len(srv.downloadSlots) > 0 {
-			<-srv.downloadSlots
+		for i := 0; i < maxDownloads; i++ {
+			srv.releaseCapturedDownloadSlot()
 		}
 	}()
 
