@@ -643,6 +643,34 @@ async function logFrontendEvent(message: string, detail: Record<string, string |
   }
 }
 
+function loggedObjectKeys(value: unknown, limit = 80) {
+  if (!value || typeof value !== "object") return "";
+  try {
+    return Object.keys(value as Record<string, unknown>).sort().slice(0, limit).join(",");
+  } catch (_err) {
+    return "";
+  }
+}
+
+function compactLogValue(value: string) {
+  return value.length > 900 ? `${value.slice(0, 900)}...` : value;
+}
+
+async function logSteamClientCapabilities() {
+  const root = typeof SteamClient !== "undefined" ? (SteamClient as unknown as Record<string, unknown>) : null;
+  if (!root) {
+    await logFrontendEvent("steam client capabilities unavailable");
+    return;
+  }
+  const detail: Record<string, string | number | boolean> = {
+    top_level: compactLogValue(loggedObjectKeys(root))
+  };
+  for (const section of ["Apps", "GameSessions", "Workshop", "UGC", "RemoteStorage", "Cloud"]) {
+    detail[section] = compactLogValue(loggedObjectKeys(root[section]));
+  }
+  await logFrontendEvent("steam client capabilities", detail);
+}
+
 function isInstallNotificationJob(job: Job) {
   return job.type === "captured-install" || job.type === "installer-choice";
 }
@@ -1266,6 +1294,7 @@ function startBackgroundMonitors() {
   if (backgroundMonitorsStarted) return;
   backgroundMonitorsStarted = true;
   logFrontendEvent("background monitors started");
+  logSteamClientCapabilities();
   seedInstallNotifications({ seed: true });
   syncLaunchActions();
   connectEventMonitor();
