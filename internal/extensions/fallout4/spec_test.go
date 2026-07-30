@@ -157,6 +157,17 @@ func TestExtensionRegistersGameVersionProvider(t *testing.T) {
 	}
 }
 
+func TestExtensionDoesNotClaimUnimplementedBethesdaMergeOrLoadOrder(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	if !containsFeature(summary.Capabilities.PluginActivations, "fallout4-gamebryo-plugins") {
+		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
+	}
+	if len(summary.Capabilities.Merges) != 0 || len(summary.Capabilities.LoadOrders) != 0 {
+		t.Fatalf("placeholder merge/load-order capabilities leaked = %+v", summary.Capabilities)
+	}
+}
+
 func TestExtensionWillDeployGeneratesArchiveInvalidationMapping(t *testing.T) {
 	root := t.TempDir()
 	gamePath := filepath.Join(root, "steamapps", "common", "Fallout 4")

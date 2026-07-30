@@ -123,8 +123,6 @@ func Register(r sdk.Registrar) {
 			DataRoot:    "Data",
 		}),
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "bethesda-merge-mods", Name: "Bethesda plugin/mod merge support"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bethesda-plugin-load-order", Name: "Bethesda plugin load order"})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
