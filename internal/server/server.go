@@ -2003,6 +2003,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
 			installerJSON, _ := json.Marshal(choice.Installer)
+			choicesJSON := s.installerChoicesJSON(context.Background(), appID, job.ID, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -2011,6 +2012,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 				Status:        "needs_choices",
 				Reason:        choice.Error(),
 				InstallerJSON: string(installerJSON),
+				ChoicesJSON:   choicesJSON,
 			})
 			if recordErr == nil {
 				s.ensureInstallerChoiceJob(appID, candidate)
@@ -2209,6 +2211,39 @@ func installCandidateSelections(candidate storage.InstallCandidate, requestSelec
 	return stored, nil
 }
 
+func (s *Server) installerChoicesJSON(ctx context.Context, appID, jobID string, installer fomod.Installer) string {
+	choicesJSON, err := s.defaultInstallerChoicesJSON(ctx, appID, installer)
+	if err != nil {
+		s.logger.Warn("installer default choices unavailable", "job_id", jobID, "app_id", appID, "error", err)
+		return "{}"
+	}
+	return choicesJSON
+}
+
+func (s *Server) defaultInstallerChoicesJSON(ctx context.Context, appID string, installer fomod.Installer) (string, error) {
+	choiceSpec, ok := s.games.InstallerChoiceForSteamApp(appID, "fomod")
+	if !ok {
+		return "", errors.New("game extension does not support FOMOD installer choices")
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return "", err
+	}
+	selections := fomod.DefaultSelectionsWithOptions(installer, fomod.PlanOptions{
+		ModType:           choiceSpec.ModType,
+		PlannerID:         choiceSpec.ID,
+		TargetRoot:        choiceSpec.TargetRoot,
+		StopFolders:       choiceSpec.StopFolders,
+		GameVersion:       game.Version,
+		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
+	})
+	body, err := json.Marshal(selections)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
 func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	candidateID, err := strconv.ParseInt(r.PathValue("candidateID"), 10, 64)
@@ -2281,6 +2316,10 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	var choice installerChoiceRequiredError
 	if errors.As(err, &choice) {
 		installerJSON, _ := json.Marshal(choice.Installer)
+		choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
+		if choicesJSON == "" || choicesJSON == "{}" {
+			choicesJSON = s.installerChoicesJSON(ctx, candidate.SteamAppID, jobID, choice.Installer)
+		}
 		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 			SteamAppID:    candidate.SteamAppID,
 			Resolved:      pending.Resolved,
@@ -2290,7 +2329,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			Status:        "needs_choices",
 			Reason:        choice.Error(),
 			InstallerJSON: string(installerJSON),
-			ChoicesJSON:   candidate.ChoicesJSON,
+			ChoicesJSON:   choicesJSON,
 		})
 		if recordErr != nil {
 			return storage.InstalledMod{}, recordErr
@@ -3997,6 +4036,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 		if errors.As(err, &choice) {
 			installerJSON, _ := json.Marshal(choice.Installer)
 			appID := s.appIDForPending(pending)
+			choicesJSON := s.installerChoicesJSON(context.Background(), appID, jobID, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:    appID,
 				Resolved:      pending.Resolved,
@@ -4006,6 +4046,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 				Status:        "needs_choices",
 				Reason:        choice.Error(),
 				InstallerJSON: string(installerJSON),
+				ChoicesJSON:   choicesJSON,
 			})
 			if recordErr != nil {
 				s.logger.Warn("record installer choice candidate failed", "job_id", jobID, "error", recordErr)
@@ -4194,6 +4235,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
 					installerJSON, _ := json.Marshal(choice.Installer)
+					choicesJSON := s.installerChoicesJSON(ctx, appID, jobID, choice.Installer)
 					candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 						SteamAppID:    appID,
 						Resolved:      pending.Resolved,
@@ -4203,6 +4245,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 						Status:        "needs_choices",
 						Reason:        choice.Error(),
 						InstallerJSON: string(installerJSON),
+						ChoicesJSON:   choicesJSON,
 					})
 					if recordErr != nil {
 						s.logger.Warn("record installer choice recovery candidate failed", "job_id", jobID, "app_id", appID, "mod_id", modID, "file_id", fileID, "error", recordErr)

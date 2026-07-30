@@ -1416,26 +1416,47 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
   <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
   <installSteps>
     <installStep name="Variant">
-      <optionalFileGroups>
-        <group name="Variant" type="SelectExactlyOne">
-          <plugins>
-            <plugin name="High">
-              <typeDescriptor><type name="Recommended" /></typeDescriptor>
-              <files><folder source="Options/High" destination="textures" /></files>
-            </plugin>
-            <plugin name="Low">
-              <typeDescriptor><type name="Optional" /></typeDescriptor>
-              <files><folder source="Options/Low" destination="textures" /></files>
-            </plugin>
-          </plugins>
-        </group>
-      </optionalFileGroups>
-    </installStep>
-  </installSteps>
-</config>`,
+	      <optionalFileGroups>
+	        <group name="Variant" type="SelectExactlyOne">
+	          <plugins>
+	            <plugin name="High">
+	              <conditionFlags><flag name="variant">high</flag></conditionFlags>
+	              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+	              <files><folder source="Options/High" destination="textures" /></files>
+	            </plugin>
+	            <plugin name="Low">
+	              <conditionFlags><flag name="variant">low</flag></conditionFlags>
+	              <typeDescriptor><type name="Optional" /></typeDescriptor>
+	              <files><folder source="Options/Low" destination="textures" /></files>
+	            </plugin>
+	          </plugins>
+	        </group>
+	        <group name="Patch" type="SelectAny">
+	          <plugins>
+	            <plugin name="High Patch">
+	              <typeDescriptor>
+	                <dependencyType>
+	                  <defaultType name="NotUsable" />
+	                  <patterns>
+	                    <pattern>
+	                      <dependencies><flagDependency flag="variant" value="high" /></dependencies>
+	                      <type name="Required" />
+	                    </pattern>
+	                  </patterns>
+	                </dependencyType>
+	              </typeDescriptor>
+	              <files><file source="Options/HighPatch.txt" destination="textures/high-patch.txt" /></files>
+	            </plugin>
+	          </plugins>
+	        </group>
+	      </optionalFileGroups>
+	    </installStep>
+	  </installSteps>
+	</config>`,
 		"Core/base.txt":            "base",
 		"Options/High/variant.txt": "high",
 		"Options/Low/variant.txt":  "low",
+		"Options/HighPatch.txt":    "patch",
 		"fomod/info.xml":           "<fomod />",
 	}); err != nil {
 		t.Fatal(err)
@@ -1475,6 +1496,16 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 	if len(candidates) != 1 || candidates[0].Status != "needs_choices" || !strings.Contains(candidates[0].InstallerJSON, "Choice Mod") {
 		t.Fatalf("candidates = %+v", candidates)
+	}
+	var choices map[string][]string
+	if err := json.Unmarshal([]byte(candidates[0].ChoicesJSON), &choices); err != nil {
+		t.Fatal(err)
+	}
+	if got := choices["step-1-group-1"]; len(got) != 1 || got[0] != "step-1-group-1-plugin-1" {
+		t.Fatalf("variant choices = %+v", choices)
+	}
+	if got := choices["step-1-group-2"]; len(got) != 1 || got[0] != "step-1-group-2-plugin-1" {
+		t.Fatalf("dynamic dependency choices = %+v", choices)
 	}
 	choiceJob, ok := srv.findInstallerChoiceJob(candidates[0].ID)
 	if !ok {
