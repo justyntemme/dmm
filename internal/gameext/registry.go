@@ -26,6 +26,7 @@ type Extension struct {
 	RuntimeRequirements  gamehandler.GameSpec
 	InstallerChoices     []sdk.InstallerChoiceSpec
 	LaunchTools          []sdk.LaunchToolSpec
+	InstallPlatforms     []sdk.InstallPlatformSpec
 	GameVersionProviders []sdk.GameVersionProviderSpec
 	PluginActivations    []sdk.PluginActivationSpec
 	ConflictIgnores      []sdk.ConflictIgnoreSpec
@@ -39,6 +40,7 @@ type Extension struct {
 
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
+type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
@@ -75,6 +77,7 @@ type ExtensionCapabilities struct {
 	InstallerChoices    []FeatureSummary `json:"installer_choices,omitempty"`
 	RuntimeRequirements []FeatureSummary `json:"runtime_requirements,omitempty"`
 	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
+	InstallPlatforms    []FeatureSummary `json:"install_platforms,omitempty"`
 	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
@@ -199,6 +202,14 @@ func (r Registry) BuildInstallPlan(gameID, extractedRoot string) (installplan.Pl
 	return r.installPlans.Build(gameID, extractedRoot)
 }
 
+func (r Registry) BuildInstallPlanWithGamePath(gameID, extractedRoot, gamePath string) (installplan.Plan, error) {
+	options := installplan.BuildOptions{}
+	if platform, ok := r.InstallPlatformForSteamApp(gameID, gamePath); ok {
+		options.PlatformID = platform.ID
+	}
+	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
+}
+
 func (r Registry) InstallerChoiceForSteamApp(appID, kind string) (InstallerChoiceSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -211,6 +222,23 @@ func (r Registry) InstallerChoiceForSteamApp(appID, kind string) (InstallerChoic
 		}
 	}
 	return InstallerChoiceSpec{}, false
+}
+
+func (r Registry) InstallPlatformForSteamApp(appID, gamePath string) (InstallPlatformSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return InstallPlatformSpec{}, false
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return InstallPlatformSpec{}, false
+	}
+	for _, platform := range extension.InstallPlatforms {
+		if installPlatformMatches(gamePath, platform) {
+			return platform, true
+		}
+	}
+	return InstallPlatformSpec{}, false
 }
 
 func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, string) {
@@ -279,6 +307,36 @@ func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSp
 		}
 	}
 	return LaunchToolSpec{}, false
+}
+
+func (r Registry) ResolveLaunchToolForSteamApp(appID, gamePath string, tool LaunchToolSpec) LaunchToolSpec {
+	platform, ok := r.InstallPlatformForSteamApp(appID, gamePath)
+	if !ok {
+		return tool
+	}
+	return ResolveLaunchToolForPlatform(tool, platform.ID)
+}
+
+func ResolveLaunchToolForPlatform(tool LaunchToolSpec, platformID string) LaunchToolSpec {
+	platformID = canonical(platformID)
+	if platformID == "" {
+		return tool
+	}
+	for _, variant := range tool.Variants {
+		if canonical(variant.PlatformID) != platformID {
+			continue
+		}
+		resolved := tool
+		if strings.TrimSpace(variant.ExecutableRelative) != "" {
+			resolved.ExecutableRelative = variant.ExecutableRelative
+		}
+		if len(variant.RequiredFiles) > 0 {
+			resolved.RequiredFiles = append([]string(nil), variant.RequiredFiles...)
+		}
+		resolved.Variants = nil
+		return resolved
+	}
+	return tool
 }
 
 func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk.GameVersionInput) (sdk.GameVersionResult, bool, error) {
@@ -422,6 +480,20 @@ func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, inp
 	return out, nil
 }
 
+func installPlatformMatches(gamePath string, platform InstallPlatformSpec) bool {
+	for _, marker := range platform.Markers {
+		marker = strings.TrimSpace(marker)
+		if marker == "" {
+			continue
+		}
+		path := filepath.Join(gamePath, filepath.FromSlash(marker))
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 func MissingLaunchToolFiles(gamePath string, tool LaunchToolSpec) []string {
 	gamePath = strings.TrimSpace(gamePath)
 	if gamePath == "" {
@@ -501,6 +573,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, tool := range extension.LaunchTools {
 		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{ID: tool.ID, Name: tool.Name})
 	}
+	for _, platform := range extension.InstallPlatforms {
+		summary.Capabilities.InstallPlatforms = append(summary.Capabilities.InstallPlatforms, FeatureSummary{ID: platform.ID, Name: platform.Name})
+	}
 	for _, provider := range extension.GameVersionProviders {
 		summary.Capabilities.GameVersions = append(summary.Capabilities.GameVersions, FeatureSummary{ID: provider.ID, Name: provider.Name})
 	}
@@ -535,6 +610,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
+	sortFeatureSummaries(summary.Capabilities.InstallPlatforms)
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)

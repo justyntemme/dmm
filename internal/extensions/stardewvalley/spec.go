@@ -17,10 +17,14 @@ const (
 	VortexGameID = "stardewvalley"
 	Name         = "Stardew Valley"
 
-	ModsRelativePath = "Mods"
-	SMAPIExecutable  = "StardewModdingAPI"
+	ModsRelativePath       = "Mods"
+	SMAPIExecutable        = "StardewModdingAPI"
+	SMAPIWindowsExecutable = "StardewModdingAPI.exe"
 
 	MetadataKindSMAPIManifest = "smapi-manifest"
+
+	platformLinux   = "linux"
+	platformWindows = "windows"
 )
 
 func Extension() sdk.Extension {
@@ -49,6 +53,9 @@ func Register(r sdk.Registrar) {
 	for _, modType := range modTypes() {
 		r.RegisterModType(modType)
 	}
+	for _, platform := range installPlatforms() {
+		r.RegisterInstallPlatform(platform)
+	}
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
@@ -70,6 +77,26 @@ func Register(r sdk.Registrar) {
 			"StardewModdingAPI.dll",
 			filepath.ToSlash(filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll")),
 		},
+		Variants: []sdk.LaunchToolVariantSpec{
+			{
+				PlatformID:         platformLinux,
+				ExecutableRelative: SMAPIExecutable,
+				RequiredFiles: []string{
+					SMAPIExecutable,
+					"StardewModdingAPI.dll",
+					filepath.ToSlash(filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll")),
+				},
+			},
+			{
+				PlatformID:         platformWindows,
+				ExecutableRelative: SMAPIWindowsExecutable,
+				RequiredFiles: []string{
+					SMAPIWindowsExecutable,
+					"StardewModdingAPI.dll",
+					filepath.ToSlash(filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll")),
+				},
+			},
+		},
 		DefaultPrimary: true,
 		ModTypes:       []string{"stardew-smapi-mod"},
 		ProviderModTypes: []string{
@@ -78,6 +105,21 @@ func Register(r sdk.Registrar) {
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
+	}
+}
+
+func installPlatforms() []sdk.InstallPlatformSpec {
+	return []sdk.InstallPlatformSpec{
+		{
+			ID:      platformWindows,
+			Name:    "Windows/Proton",
+			Markers: []string{"Stardew Valley.exe"},
+		},
+		{
+			ID:      platformLinux,
+			Name:    "Native Linux",
+			Markers: []string{"StardewValley"},
+		},
 	}
 }
 
@@ -91,60 +133,8 @@ func modTypes() []installplan.ModTypeSpec {
 
 func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
-		{
-			ID:                "vortex:stardewvalley:smapi-installer",
-			VortexInstallerID: "smapi-installer",
-			Priority:          30,
-			ModType:           "SMAPI",
-			NameSource:        installplan.NameSourceArchive,
-			Match: installplan.MatchSpec{
-				FileBasenames: []string{"smapi.installer.dll"},
-			},
-			Payload: installplan.PayloadSpec{
-				FileBasenames: []string{"linux-install.dat", "install.dat"},
-				PathSegments:  []string{"internal", "linux"},
-			},
-			GeneratedFiles: []installplan.GeneratedFileSpec{
-				{
-					FromGameRelative: "Stardew Valley.deps.json",
-					Destination:      "StardewModdingAPI.deps.json",
-				},
-			},
-			TargetPolicies: []installplan.TargetPolicySpec{
-				{
-					TargetRelative: "steam_appid.txt",
-					Policy:         installplan.TargetPolicyKeepExisting,
-				},
-				{
-					TargetRelative: "StardewModdingAPI",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-				{
-					TargetRelative: "StardewModdingAPI.dll",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-				{
-					TargetRelative: "StardewModdingAPI.deps.json",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-				{
-					TargetRelative: "StardewModdingAPI.runtimeconfig.json",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-				{
-					TargetRelative: "StardewModdingAPI.xml",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-				{
-					TargetRelative: "unix-launcher.sh",
-					DeployStrategy: installplan.DeployStrategyCopy,
-				},
-			},
-			MetadataExtractors: []installplan.MetadataExtractorSpec{
-				smapiManifestExtractor(),
-			},
-			InstructionMode: installplan.InstructionEmbeddedZip,
-		},
+		smapiInstaller(platformLinux, []string{"linux-install.dat", "install.dat"}, []string{"internal", "linux"}, []string{SMAPIExecutable, "unix-launcher.sh"}),
+		smapiInstaller(platformWindows, []string{"windows-install.dat", "install.dat"}, []string{"internal", "windows"}, []string{SMAPIWindowsExecutable, "StardewModdingAPI.exe.config"}),
 		{
 			ID:                "vortex:stardewvalley:sdvrootfolder",
 			VortexInstallerID: "sdvrootfolder",
@@ -171,6 +161,52 @@ func installers() []installplan.InstallerSpec {
 			},
 			InstructionMode: installplan.InstructionManifestFolders,
 		},
+	}
+}
+
+func smapiInstaller(platformID string, payloadFiles, payloadSegments, platformCopyTargets []string) installplan.InstallerSpec {
+	policies := []installplan.TargetPolicySpec{
+		{
+			TargetRelative: "steam_appid.txt",
+			Policy:         installplan.TargetPolicyKeepExisting,
+		},
+	}
+	for _, target := range append([]string{
+		"StardewModdingAPI.dll",
+		"StardewModdingAPI.deps.json",
+		"StardewModdingAPI.runtimeconfig.json",
+		"StardewModdingAPI.xml",
+	}, platformCopyTargets...) {
+		policies = append(policies, installplan.TargetPolicySpec{
+			TargetRelative: target,
+			DeployStrategy: installplan.DeployStrategyCopy,
+		})
+	}
+	return installplan.InstallerSpec{
+		ID:                "vortex:stardewvalley:smapi-installer:" + platformID,
+		VortexInstallerID: "smapi-installer",
+		PlatformID:        platformID,
+		Priority:          30,
+		ModType:           "SMAPI",
+		NameSource:        installplan.NameSourceArchive,
+		Match: installplan.MatchSpec{
+			FileBasenames: []string{"smapi.installer.dll"},
+		},
+		Payload: installplan.PayloadSpec{
+			FileBasenames: payloadFiles,
+			PathSegments:  payloadSegments,
+		},
+		GeneratedFiles: []installplan.GeneratedFileSpec{
+			{
+				FromGameRelative: "Stardew Valley.deps.json",
+				Destination:      "StardewModdingAPI.deps.json",
+			},
+		},
+		TargetPolicies: policies,
+		MetadataExtractors: []installplan.MetadataExtractorSpec{
+			smapiManifestExtractor(),
+		},
+		InstructionMode: installplan.InstructionEmbeddedZip,
 	}
 }
 
@@ -309,5 +345,11 @@ func smapiLaunchMarkers(ctx context.Context, gamePath string) []string {
 	if ctx.Err() != nil {
 		return nil
 	}
-	return steam.LaunchOptionsContainTarget(ctx, SteamAppID, filepath.ToSlash(filepath.Join(gamePath, SMAPIExecutable)))
+	for _, executable := range []string{SMAPIExecutable, SMAPIWindowsExecutable} {
+		markers := steam.LaunchOptionsContainTarget(ctx, SteamAppID, filepath.ToSlash(filepath.Join(gamePath, executable)))
+		if len(markers) > 0 {
+			return markers
+		}
+	}
+	return nil
 }

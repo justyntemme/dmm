@@ -796,6 +796,7 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		resp.Details = append(resp.Details, "No extension launch tool is required for the enabled profile mods.")
 		return resp, nil
 	}
+	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
 
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
 	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative)
@@ -4865,6 +4866,11 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
+	game, gameErr := s.db.GameBySteamApp(context.Background(), appID)
+	if gameErr != nil {
+		s.logger.Warn("install plan could not load game path", "job_id", jobID, "app_id", appID, "error", gameErr)
+		return storage.InstalledMod{}, gameErr
+	}
 	s.logger.Info(
 		"captured install archive extracted",
 		"job_id", jobID,
@@ -4899,7 +4905,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		}
 		return storage.InstalledMod{}, installplan.Unsupported(inspection.InstallerKind + " installer UI is not implemented yet")
 	}
-	installPlan, err := s.games.BuildInstallPlan(appID, extractPath)
+	installPlan, err := s.games.BuildInstallPlanWithGamePath(appID, extractPath, game.GamePath)
 	if err != nil {
 		s.logger.Info("captured install has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
 		return storage.InstalledMod{}, err
@@ -4916,10 +4922,6 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		"detections", len(installPlan.DetectedFrom),
 		"instructions", len(installPlan.Instructions),
 	)
-	game, gameErr := s.db.GameBySteamApp(context.Background(), appID)
-	if gameErr != nil {
-		s.logger.Warn("install plan could not load game path for generated files", "job_id", jobID, "app_id", appID, "error", gameErr)
-	}
 	if err := applyInstallPlan(installPlan, stagingPath, game.GamePath); err != nil {
 		if cleanupErr := os.RemoveAll(stagingPath); cleanupErr != nil {
 			s.logger.Warn("failed install-plan staging cleanup failed", "job_id", jobID, "staging_path", stagingPath, "error", cleanupErr)

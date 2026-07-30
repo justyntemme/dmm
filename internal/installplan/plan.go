@@ -81,6 +81,10 @@ type Registry struct {
 	specs map[string]GameSpec
 }
 
+type BuildOptions struct {
+	PlatformID string
+}
+
 type GameSpec struct {
 	SteamAppIDs  []string
 	VortexGameID string
@@ -103,6 +107,7 @@ type ModTypeSpec struct {
 type InstallerSpec struct {
 	ID                 string
 	VortexInstallerID  string
+	PlatformID         string
 	Priority           int
 	ModType            string
 	NameSource         string
@@ -218,11 +223,15 @@ func NewRegistry(specs []GameSpec) Registry {
 }
 
 func (r Registry) Build(gameID, extractedRoot string) (Plan, error) {
+	return r.BuildWithOptions(gameID, extractedRoot, BuildOptions{})
+}
+
+func (r Registry) BuildWithOptions(gameID, extractedRoot string, options BuildOptions) (Plan, error) {
 	spec, ok := r.specs[canonicalGameID(gameID)]
 	if !ok {
 		return Plan{}, Unsupported("no Vortex metadata spec exists for game " + gameID)
 	}
-	return buildFromSpec(spec, extractedRoot)
+	return buildFromSpec(spec, extractedRoot, options)
 }
 
 func (r Registry) SupportsGame(gameID string) bool {
@@ -272,14 +281,18 @@ func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, 
 	return true, ""
 }
 
-func buildFromSpec(spec GameSpec, extractedRoot string) (Plan, error) {
+func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (Plan, error) {
 	installers := append([]InstallerSpec(nil), spec.Installers...)
 	sort.SliceStable(installers, func(i, j int) bool {
 		return installers[i].Priority < installers[j].Priority
 	})
 
 	var matchedUnsupported string
+	platformID := canonicalGameID(options.PlatformID)
 	for _, installer := range installers {
+		if platformID != "" && strings.TrimSpace(installer.PlatformID) != "" && canonicalGameID(installer.PlatformID) != platformID {
+			continue
+		}
 		if !matchesInstaller(extractedRoot, installer) {
 			continue
 		}

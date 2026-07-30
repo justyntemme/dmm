@@ -2,6 +2,8 @@ package gameext
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -37,6 +39,11 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ModType:    "mod",
 				TargetRoot: "Mods",
 			})
+			r.RegisterInstallPlatform(sdk.InstallPlatformSpec{
+				ID:      "windows",
+				Name:    "Windows/Proton",
+				Markers: []string{"Game.exe"},
+			})
 			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 				ID:       "sample-loader",
 				Name:     "Sample Loader",
@@ -49,9 +56,14 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				Name:               "Sample Loader",
 				ExecutableRelative: "loader",
 				RequiredFiles:      []string{"loader", "loader.dll"},
-				DefaultPrimary:     true,
-				ModTypes:           []string{"mod"},
-				ProviderModTypes:   []string{"loader-mod"},
+				Variants: []sdk.LaunchToolVariantSpec{{
+					PlatformID:         "windows",
+					ExecutableRelative: "loader.exe",
+					RequiredFiles:      []string{"loader.exe", "loader.dll"},
+				}},
+				DefaultPrimary:   true,
+				ModTypes:         []string{"mod"},
+				ProviderModTypes: []string{"loader-mod"},
 			})
 			r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 				ID:   "sample-version",
@@ -127,6 +139,18 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if _, _, ok := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}}); !ok {
 		t.Fatal("primary launch tool did not match enabled mod type")
 	}
+	gamePath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if platform, ok := registry.InstallPlatformForSteamApp("100", gamePath); !ok || platform.ID != "windows" {
+		t.Fatalf("platform = %+v ok=%v", platform, ok)
+	}
+	_, baseTool, _ := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}})
+	resolvedTool := registry.ResolveLaunchToolForSteamApp("100", gamePath, baseTool)
+	if resolvedTool.ExecutableRelative != "loader.exe" || len(resolvedTool.RequiredFiles) != 2 || resolvedTool.RequiredFiles[0] != "loader.exe" {
+		t.Fatalf("resolved launch tool = %+v", resolvedTool)
+	}
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
 		t.Fatalf("launch tool provider lookup = %+v %v", tool, ok)
 	}
@@ -152,6 +176,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
+	}
+	if len(summary.Capabilities.InstallPlatforms) != 1 || summary.Capabilities.InstallPlatforms[0].ID != "windows" {
+		t.Fatalf("install platform capabilities = %+v", summary.Capabilities.InstallPlatforms)
 	}
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].ID != "sample-version" {
 		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
@@ -253,10 +280,18 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				TargetRoot:  "../Data",
 				StopFolders: []string{"bad/path"},
 			})
+			r.RegisterInstallPlatform(sdk.InstallPlatformSpec{
+				ID:      "bad/platform",
+				Markers: []string{"../Game.exe"},
+			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "tool",
 				Name:               "Tool",
 				ExecutableRelative: "../tool",
+				Variants: []sdk.LaunchToolVariantSpec{{
+					PlatformID:         "bad/platform",
+					ExecutableRelative: "../tool.exe",
+				}},
 			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
 				ID:               "plugins",
@@ -294,7 +329,12 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"installer choice bad:fomod references undeclared mod type missing-choice-type",
 		"installer choice bad:fomod target root: path traversal is not allowed",
 		"installer choice bad:fomod stop folder: must be a single relative path segment",
+		"install platform bad/platform id must be a simple identifier",
+		"install platform bad/platform name is required",
+		"install platform bad/platform marker: path traversal is not allowed",
 		"launch tool tool executable path: path traversal is not allowed",
+		"launch tool tool variant platform id must be a simple identifier",
+		"launch tool tool variant executable path: path traversal is not allowed",
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",
 		"plugin activation plugins plugin extension must be a file extension",

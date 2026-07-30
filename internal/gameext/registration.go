@@ -65,6 +65,13 @@ func (r *Registrar) RegisterTargetRoot(spec sdk.TargetRootSpec) {
 	r.extension.TargetRoots = append(r.extension.TargetRoots, spec)
 }
 
+func (r *Registrar) RegisterInstallPlatform(spec sdk.InstallPlatformSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.InstallPlatforms = append(r.extension.InstallPlatforms, spec)
+}
+
 func (r *Registrar) RegisterInstaller(spec installplan.InstallerSpec) {
 	r.extension.InstallPlan.Installers = append(r.extension.InstallPlan.Installers, spec)
 }
@@ -170,6 +177,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
 	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
+	errs = append(errs, validateInstallPlatforms(extension.InstallPlatforms)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
@@ -300,6 +308,9 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		if strings.TrimSpace(installer.VortexInstallerID) == "" {
 			errs = append(errs, errors.New("installer "+id+" Vortex installer id is required"))
 		}
+		if platformID := strings.TrimSpace(installer.PlatformID); platformID != "" && strings.ContainsAny(platformID, "/\\") {
+			errs = append(errs, errors.New("installer "+id+" platform id must be a simple identifier"))
+		}
 		if installer.InstructionMode == installplan.InstructionCustom && installer.CustomBuild == nil {
 			errs = append(errs, errors.New("installer "+id+" custom builder is required"))
 		}
@@ -323,6 +334,38 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		for _, policy := range installer.TargetPolicies {
 			if err := validateRelativePath(policy.TargetRelative); err != nil {
 				errs = append(errs, errors.New("installer "+id+" target policy path: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateInstallPlatforms(platforms []sdk.InstallPlatformSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, platform := range platforms {
+		id := strings.TrimSpace(platform.ID)
+		if id == "" {
+			errs = append(errs, errors.New("install platform id is required"))
+			continue
+		}
+		key := strings.ToLower(id)
+		if _, exists := seen[key]; exists {
+			errs = append(errs, errors.New("install platform "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.ContainsAny(id, "/\\") {
+			errs = append(errs, errors.New("install platform "+id+" id must be a simple identifier"))
+		}
+		if strings.TrimSpace(platform.Name) == "" {
+			errs = append(errs, errors.New("install platform "+id+" name is required"))
+		}
+		if len(platform.Markers) == 0 {
+			errs = append(errs, errors.New("install platform "+id+" must declare at least one marker"))
+		}
+		for _, marker := range platform.Markers {
+			if err := validateRelativePath(marker); err != nil {
+				errs = append(errs, errors.New("install platform "+id+" marker: "+err.Error()))
 			}
 		}
 	}
@@ -474,6 +517,23 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		for _, path := range tool.RequiredFiles {
 			if err := validateRelativePath(path); err != nil {
 				errs = append(errs, errors.New("launch tool "+id+" required file: "+err.Error()))
+			}
+		}
+		for _, variant := range tool.Variants {
+			platformID := strings.TrimSpace(variant.PlatformID)
+			if platformID == "" {
+				errs = append(errs, errors.New("launch tool "+id+" variant platform id is required"))
+			}
+			if strings.ContainsAny(platformID, "/\\") {
+				errs = append(errs, errors.New("launch tool "+id+" variant platform id must be a simple identifier"))
+			}
+			if err := validateRelativePath(variant.ExecutableRelative); err != nil {
+				errs = append(errs, errors.New("launch tool "+id+" variant executable path: "+err.Error()))
+			}
+			for _, path := range variant.RequiredFiles {
+				if err := validateRelativePath(path); err != nil {
+					errs = append(errs, errors.New("launch tool "+id+" variant required file: "+err.Error()))
+				}
 			}
 		}
 		for _, modType := range tool.ProviderModTypes {

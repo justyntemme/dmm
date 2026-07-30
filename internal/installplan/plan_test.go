@@ -266,7 +266,7 @@ func TestStardewPlannerBuildsSMAPIInstallerPayloadFromVortexMetadata(t *testing.
 	if plan.ModType != "SMAPI" {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
-	if plan.PlannerID != "vortex:stardewvalley:smapi-installer" {
+	if plan.PlannerID != "vortex:stardewvalley:smapi-installer:linux" {
 		t.Fatalf("planner id = %q", plan.PlannerID)
 	}
 	if len(plan.DetectedFrom) != 1 || plan.DetectedFrom[0].Kind != "vortex-embedded-payload" {
@@ -305,6 +305,61 @@ func TestStardewPlannerBuildsSMAPIInstallerPayloadFromVortexMetadata(t *testing.
 	}
 	if !foundManifestMetadata {
 		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+	for target, found := range wantTargets {
+		if !found {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
+func TestStardewPlannerBuildsWindowsSMAPIInstallerPayloadFromVortexMetadata(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "internal", "SMAPI.Installer.dll"), "dll")
+	writeZip(t, filepath.Join(root, "internal", "linux", "install.dat"), map[string]string{
+		"StardewModdingAPI": "linux",
+	})
+	writeZip(t, filepath.Join(root, "internal", "windows", "install.dat"), map[string]string{
+		"StardewModdingAPI.exe":              "exe",
+		"StardewModdingAPI.exe.config":       "config",
+		"smapi-internal/config.json":         "{}",
+		"Mods/ConsoleCommands/manifest.json": `{"Name":"Console Commands","UniqueID":"SMAPI.ConsoleCommands"}`,
+		"steam_appid.txt":                    "413150",
+	})
+
+	plan, err := stardewPlanner.BuildWithOptions("413150", root, BuildOptions{PlatformID: "windows"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:stardewvalley:smapi-installer:windows" || plan.ModType != "SMAPI" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	wantTargets := map[string]bool{
+		"StardewModdingAPI.exe":              false,
+		"StardewModdingAPI.exe.config":       false,
+		"smapi-internal/config.json":         false,
+		"Mods/ConsoleCommands/manifest.json": false,
+		"StardewModdingAPI.deps.json":        false,
+		"steam_appid.txt":                    false,
+	}
+	copyTargets := map[string]bool{
+		"StardewModdingAPI.exe":        true,
+		"StardewModdingAPI.exe.config": true,
+		"StardewModdingAPI.deps.json":  true,
+	}
+	for _, instruction := range plan.Instructions {
+		if _, ok := wantTargets[instruction.TargetRelative]; ok {
+			wantTargets[instruction.TargetRelative] = true
+		}
+		if copyTargets[instruction.TargetRelative] && instruction.DeployStrategy != DeployStrategyCopy {
+			t.Fatalf("copy strategy missing for %+v", instruction)
+		}
+		if instruction.TargetRelative == "StardewModdingAPI" {
+			t.Fatalf("linux executable leaked into windows plan: %+v", instruction)
+		}
+		if instruction.TargetRelative == "StardewModdingAPI.deps.json" && instruction.Kind != InstructionKindGenerateFromGameFile {
+			t.Fatalf("generated deps instruction = %+v", instruction)
+		}
 	}
 	for target, found := range wantTargets {
 		if !found {
