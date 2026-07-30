@@ -71,6 +71,13 @@ func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
 }
 
+func (r *Registrar) RegisterPluginActivation(spec sdk.PluginActivationSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.PluginActivations = append(r.extension.PluginActivations, spec)
+}
+
 func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
 	if strings.TrimSpace(ref.Name) == "" && strings.TrimSpace(ref.URL) == "" {
 		return
@@ -119,6 +126,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
+	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
 	for _, handler := range extension.EventHandlers {
@@ -191,6 +199,47 @@ func validateRuntimeSpec(spec gamehandler.GameSpec) []error {
 	return errs
 }
 
+func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("plugin activation id is required"))
+			continue
+		}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("plugin activation "+id+" name is required"))
+		}
+		if err := validateRelativePath(spec.GameDataRoot); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" game data root: "+err.Error()))
+		}
+		if err := validateRelativePath(spec.AppDataPath); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" app data path: "+err.Error()))
+		}
+		if err := validateRelativePath(defaultString(spec.PluginsFile, "plugins.txt")); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" plugins file: "+err.Error()))
+		}
+		if err := validateRelativePath(defaultString(spec.LoadOrderFile, "loadorder.txt")); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" load order file: "+err.Error()))
+		}
+		switch strings.TrimSpace(spec.Format) {
+		case "original", "fallout4":
+		default:
+			errs = append(errs, errors.New("plugin activation "+id+" format must be original or fallout4"))
+		}
+		if len(spec.PluginExtensions) == 0 {
+			errs = append(errs, errors.New("plugin activation "+id+" must declare plugin extensions"))
+		}
+		for _, extension := range spec.PluginExtensions {
+			extension = strings.TrimSpace(extension)
+			if !strings.HasPrefix(extension, ".") || strings.Contains(extension, "/") || strings.Contains(extension, `\`) {
+				errs = append(errs, errors.New("plugin activation "+id+" plugin extension must be a file extension"))
+			}
+		}
+	}
+	return errs
+}
+
 func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 	var errs []error
 	for _, tool := range tools {
@@ -217,6 +266,13 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		}
 	}
 	return errs
+}
+
+func defaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func validateNamedSpecs[T any](kind string, specs []T, id func(T) string) []error {

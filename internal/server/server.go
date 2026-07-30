@@ -4009,6 +4009,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	if err != nil {
 		return deploy.Plan{}, err
 	}
+	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
 
 	var mappings []deploy.FileMapping
 	runtimeMods := runtimeModsForRequirements(mods)
@@ -4043,16 +4044,345 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		}
 		mappings = append(mappings, next...)
 	}
+	activationMappings, err := s.pluginActivationMappings(ctx, game, mods, mappings, managedFiles, stagingRoot)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	mappings = append(mappings, activationMappings...)
 	if len(mappings) == 0 {
 		if len(managedFiles) > 0 {
-			return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, managedFiles)
+			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, managedFiles)
 		}
 		if deployableMods > 0 && undeployableMods == deployableMods {
 			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
 		}
-		return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, nil, nil)
+		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, nil, nil)
 	}
-	return deploy.BuildPlanWithManagedFiles(filepath.Join(s.cfg.DataDir, "staging"), game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+	return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, deploy.StrategySymlink, mappings, managedFiles)
+}
+
+type pluginActivationEntry struct {
+	Name     string
+	Priority int
+}
+
+func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot string) ([]deploy.FileMapping, error) {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil, nil
+	}
+	targetRoot, err := protonLocalAppDataTargetRoot(game, spec)
+	if err != nil {
+		return nil, err
+	}
+	entries := pluginActivationEntries(spec, mappings)
+	managed := hasManagedPluginActivationFiles(targetRoot, spec, managedFiles)
+	if len(entries) == 0 && !managed {
+		return nil, nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return nil, err
+	}
+	generatedRoot := filepath.Join(stagingRoot, "_generated", "plugin-activation", game.SteamAppID, strconv.FormatInt(profileID, 10))
+	if err := os.RemoveAll(generatedRoot); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(generatedRoot, 0o700); err != nil {
+		return nil, err
+	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	files := pluginActivationFiles(spec, native, entries)
+	out := make([]deploy.FileMapping, 0, len(files))
+	for _, file := range files {
+		sourcePath := filepath.Join(generatedRoot, filepath.FromSlash(file.relative))
+		if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(sourcePath, []byte(file.body), 0o600); err != nil {
+			return nil, err
+		}
+		sum, err := fileSHA256(sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, deploy.FileMapping{
+			SourcePath:     sourcePath,
+			TargetRoot:     targetRoot,
+			TargetRelative: file.relative,
+			Strategy:       deploy.StrategyCopy,
+			ChecksumSHA256: sum,
+		})
+	}
+	s.logger.Info(
+		"plugin activation files generated",
+		"app_id", game.SteamAppID,
+		"activation_id", spec.ID,
+		"profile_id", profileID,
+		"dynamic_plugins", len(entries),
+		"native_plugins", len(native),
+		"target_root", targetRoot,
+	)
+	return out, nil
+}
+
+func (s *Server) activeProfileID(ctx context.Context, appID string, mods []storage.InstalledMod) (int64, error) {
+	for _, mod := range mods {
+		if mod.ProfileID > 0 {
+			return mod.ProfileID, nil
+		}
+	}
+	profiles, err := s.db.ProfilesForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	for _, profile := range profiles {
+		if profile.IsDefault {
+			return profile.ID, nil
+		}
+	}
+	if len(profiles) > 0 {
+		return profiles[0].ID, nil
+	}
+	return 0, errors.New("no active profile is available")
+}
+
+func protonLocalAppDataTargetRoot(game storage.Game, spec gameext.PluginActivationSpec) (string, error) {
+	libraryPath := strings.TrimSpace(game.LibraryPath)
+	if libraryPath == "" {
+		libraryPath = inferSteamLibraryPath(game.GamePath)
+	}
+	if libraryPath == "" {
+		return "", errors.New("Steam library path is required for Proton plugin activation")
+	}
+	appDataPath := filepath.Clean(filepath.FromSlash(strings.TrimSpace(spec.AppDataPath)))
+	if appDataPath == "." || appDataPath == ".." || filepath.IsAbs(appDataPath) || strings.HasPrefix(filepath.ToSlash(appDataPath), "../") {
+		return "", errors.New("plugin activation app data path is unsafe")
+	}
+	return filepath.Join(
+		libraryPath,
+		"steamapps",
+		"compatdata",
+		game.SteamAppID,
+		"pfx",
+		"drive_c",
+		"users",
+		"steamuser",
+		"AppData",
+		"Local",
+		appDataPath,
+	), nil
+}
+
+func inferSteamLibraryPath(gamePath string) string {
+	gamePath = filepath.Clean(strings.TrimSpace(gamePath))
+	marker := string(filepath.Separator) + filepath.Join("steamapps", "common") + string(filepath.Separator)
+	idx := strings.Index(gamePath, marker)
+	if idx <= 0 {
+		return ""
+	}
+	return gamePath[:idx]
+}
+
+func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping) []pluginActivationEntry {
+	extensions := pluginExtensionSet(spec)
+	native := nativePluginSet(spec)
+	byName := map[string]pluginActivationEntry{}
+	for _, mapping := range mappings {
+		name, ok := pluginNameFromTarget(spec, mapping.TargetRelative, extensions)
+		if !ok {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, isNative := native[key]; isNative {
+			continue
+		}
+		current, exists := byName[key]
+		next := pluginActivationEntry{Name: name, Priority: mapping.Priority}
+		if !exists || next.Priority < current.Priority || (next.Priority == current.Priority && strings.ToLower(next.Name) < strings.ToLower(current.Name)) {
+			byName[key] = next
+		}
+	}
+	out := make([]pluginActivationEntry, 0, len(byName))
+	for _, entry := range byName {
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Priority != out[j].Priority {
+			return out[i].Priority < out[j].Priority
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
+}
+
+func pluginNameFromTarget(spec gameext.PluginActivationSpec, targetRelative string, extensions map[string]struct{}) (string, bool) {
+	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(targetRelative))))
+	if rel == "." || rel == "" {
+		return "", false
+	}
+	dataRoot := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(spec.GameDataRoot))))
+	if dataRoot != "." && dataRoot != "" {
+		prefix := strings.TrimSuffix(dataRoot, "/") + "/"
+		if !strings.HasPrefix(rel, prefix) {
+			return "", false
+		}
+		rel = strings.TrimPrefix(rel, prefix)
+	}
+	if strings.Contains(rel, "/") {
+		return "", false
+	}
+	ext := strings.ToLower(filepath.Ext(rel))
+	if _, ok := extensions[ext]; !ok {
+		return "", false
+	}
+	return rel, true
+}
+
+func pluginExtensionSet(spec gameext.PluginActivationSpec) map[string]struct{} {
+	out := make(map[string]struct{}, len(spec.PluginExtensions))
+	for _, extension := range spec.PluginExtensions {
+		extension = strings.ToLower(strings.TrimSpace(extension))
+		if extension != "" {
+			out[extension] = struct{}{}
+		}
+	}
+	return out
+}
+
+func nativePluginSet(spec gameext.PluginActivationSpec) map[string]struct{} {
+	out := make(map[string]struct{}, len(spec.NativePlugins))
+	for _, plugin := range spec.NativePlugins {
+		plugin = strings.ToLower(strings.TrimSpace(plugin))
+		if plugin != "" {
+			out[plugin] = struct{}{}
+		}
+	}
+	return out
+}
+
+func installedNativePluginNames(gamePath string, spec gameext.PluginActivationSpec) []string {
+	dataPath := filepath.Join(gamePath, filepath.FromSlash(spec.GameDataRoot))
+	entries, err := os.ReadDir(dataPath)
+	if err != nil {
+		return nil
+	}
+	byLower := map[string]string{}
+	var patternMatches []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		byLower[lower] = name
+		if nativePluginPatternMatches(lower, spec.NativePluginPatterns) {
+			patternMatches = append(patternMatches, name)
+		}
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, native := range spec.NativePlugins {
+		name, ok := byLower[strings.ToLower(strings.TrimSpace(native))]
+		if !ok {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Slice(patternMatches, func(i, j int) bool {
+		return strings.ToLower(patternMatches[i]) < strings.ToLower(patternMatches[j])
+	})
+	for _, name := range patternMatches {
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+func nativePluginPatternMatches(name string, patterns []string) bool {
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		matched, err := regexp.MatchString(pattern, name)
+		if err == nil && matched {
+			return true
+		}
+	}
+	return false
+}
+
+type generatedPluginFile struct {
+	relative string
+	body     string
+}
+
+func pluginActivationFiles(spec gameext.PluginActivationSpec, native []string, dynamic []pluginActivationEntry) []generatedPluginFile {
+	sorted := append([]string(nil), native...)
+	for _, entry := range dynamic {
+		sorted = append(sorted, entry.Name)
+	}
+	plugins := pluginListLines(spec, native, dynamic)
+	return []generatedPluginFile{
+		{relative: activationFileName(spec.LoadOrderFile, "loadorder.txt"), body: pluginFileBody(sorted)},
+		{relative: activationFileName(spec.PluginsFile, "plugins.txt"), body: pluginFileBody(plugins)},
+	}
+}
+
+func pluginListLines(spec gameext.PluginActivationSpec, native []string, dynamic []pluginActivationEntry) []string {
+	switch strings.TrimSpace(spec.Format) {
+	case "original":
+		out := append([]string(nil), native...)
+		for _, entry := range dynamic {
+			out = append(out, entry.Name)
+		}
+		return out
+	default:
+		out := make([]string, 0, len(dynamic))
+		for _, entry := range dynamic {
+			out = append(out, "*"+entry.Name)
+		}
+		return out
+	}
+}
+
+func pluginFileBody(lines []string) string {
+	body := "# Automatically generated by Decky Mod Manager\r\n"
+	if len(lines) > 0 {
+		body += strings.Join(lines, "\r\n") + "\r\n"
+	}
+	return body
+}
+
+func activationFileName(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
+}
+
+func hasManagedPluginActivationFiles(targetRoot string, spec gameext.PluginActivationSpec, files []deploy.AppliedFile) bool {
+	targets := map[string]struct{}{
+		filepath.Clean(filepath.Join(targetRoot, filepath.FromSlash(activationFileName(spec.PluginsFile, "plugins.txt")))):     {},
+		filepath.Clean(filepath.Join(targetRoot, filepath.FromSlash(activationFileName(spec.LoadOrderFile, "loadorder.txt")))): {},
+	}
+	for _, file := range files {
+		if _, ok := targets[filepath.Clean(file.TargetPath)]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func launchToolProviderModTypes(tool games.LaunchToolSpec) map[string]struct{} {

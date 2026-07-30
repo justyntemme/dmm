@@ -1,6 +1,7 @@
 package fallout4
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -40,6 +41,14 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{"fallout4-script-extender"},
 		ProviderModTypes:   []string{"fallout4-script-extender"},
 	})
+	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+		ID:                   "fallout4-gamebryo-plugins",
+		Name:                 "Fallout 4 plugins.txt activation",
+		AppDataPath:          "Fallout4",
+		Format:               gamebryo.FormatFallout4,
+		NativePlugins:        nativePlugins(),
+		SupportsLightPlugins: true,
+	}))
 	r.RegisterMerge(sdk.MergeSpec{ID: "bethesda-merge-mods", Name: "Bethesda plugin/mod merge support"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bethesda-plugin-load-order", Name: "Bethesda plugin load order"})
 	for _, ref := range sources() {
@@ -79,11 +88,61 @@ func installers() []installplan.InstallerSpec {
 	}
 }
 
+func nativePlugins() []string {
+	return []string{
+		"fallout4.esm",
+		"dlcrobot.esm",
+		"dlcworkshop01.esm",
+		"dlccoast.esm",
+		"dlcworkshop02.esm",
+		"dlcworkshop03.esm",
+		"dlcnukaworld.esm",
+		"dlcultrahighresolution.esm",
+		"ccbgsfo4001-pipboy(black).esl",
+		"ccbgsfo4002-pipboy(blue).esl",
+		"ccbgsfo4003-pipboy(camo01).esl",
+		"ccbgsfo4004-pipboy(camo02).esl",
+		"ccbgsfo4006-pipboy(chrome).esl",
+		"ccbgsfo4012-pipboy(red).esl",
+		"ccbgsfo4014-pipboy(white).esl",
+		"ccbgsfo4016-prey.esl",
+		"ccbgsfo4017-mauler.esl",
+		"ccbgsfo4018-gaussrifleprototype.esl",
+		"ccbgsfo4019-chinesestealtharmor.esl",
+		"ccbgsfo4020-powerarmorskin(black).esl",
+		"ccbgsfo4022-powerarmorskin(camo01).esl",
+		"ccbgsfo4023-powerarmorskin(camo02).esl",
+		"ccbgsfo4025-powerarmorskin(chrome).esl",
+		"ccbgsfo4038-horsearmor.esl",
+		"ccbgsfo4039-tunnelsnakes.esl",
+		"ccbgsfo4041-doommarinearmor.esl",
+		"ccbgsfo4042-bfg.esl",
+		"ccbgsfo4043-doomchainsaw.esl",
+		"ccbgsfo4044-hellfirepowerarmor.esl",
+		"ccbgsfo4046-tescan.esl",
+		"ccbgsfo4096-as_enclave.esl",
+		"ccbgsfo4110-ws_enclave.esl",
+		"ccbgsfo4115-x02.esl",
+		"ccbgsfo4116-heavyflamer.esl",
+		"cceejfo4001-decorationpack.esl",
+		"ccfrsfo4001-handmadeshotgun.esl",
+		"ccfsvfo4001-modularmilitarybackpack.esl",
+		"ccfsvfo4002-midcenturymodern.esl",
+		"ccfsvfo4007-halloween.esl",
+		"ccotmfo4001-remnants.esl",
+		"ccsbjfo4003-grenade.esl",
+	}
+}
+
 func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex Fallout 4 game registration",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-fallout4/src/index.js",
+		},
+		{
+			Name: "Vortex Gamebryo plugin activation support",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-plugin-management/src/util/gameSupport.ts",
 		},
 	}
 }

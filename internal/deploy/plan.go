@@ -19,6 +19,7 @@ const (
 type FileMapping struct {
 	SourceRelative string   `json:"source_relative"`
 	SourcePath     string   `json:"source_path,omitempty"`
+	TargetRoot     string   `json:"target_root,omitempty"`
 	TargetRelative string   `json:"target_relative"`
 	TargetPolicy   string   `json:"target_policy,omitempty"`
 	Strategy       Strategy `json:"strategy,omitempty"`
@@ -30,6 +31,7 @@ type FileMapping struct {
 type Action struct {
 	SourcePath     string   `json:"source_path"`
 	TargetPath     string   `json:"target_path"`
+	TargetRoot     string   `json:"target_root,omitempty"`
 	TargetRelative string   `json:"target_relative"`
 	Strategy       Strategy `json:"strategy"`
 	Operation      string   `json:"operation"`
@@ -43,11 +45,12 @@ const (
 )
 
 type Plan struct {
-	StagingRoot string   `json:"staging_root"`
-	TargetRoot  string   `json:"target_root"`
-	Strategy    Strategy `json:"strategy"`
-	Actions     []Action `json:"actions"`
-	Conflicts   []Action `json:"conflicts"`
+	StagingRoot string            `json:"staging_root"`
+	TargetRoot  string            `json:"target_root"`
+	TargetRoots map[string]string `json:"target_roots,omitempty"`
+	Strategy    Strategy          `json:"strategy"`
+	Actions     []Action          `json:"actions"`
+	Conflicts   []Action          `json:"conflicts"`
 }
 
 type mappingCandidate struct {
@@ -70,17 +73,16 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 	plan := Plan{
 		StagingRoot: stagingRoot,
 		TargetRoot:  targetRoot,
-		Strategy:    strategy,
-		Actions:     []Action{},
-		Conflicts:   []Action{},
+		TargetRoots: map[string]string{
+			"game": filepath.Clean(targetRoot),
+		},
+		Strategy:  strategy,
+		Actions:   []Action{},
+		Conflicts: []Action{},
 	}
 	managedByTarget := make(map[string]AppliedFile, len(managedFiles))
 	for _, file := range managedFiles {
 		if strings.TrimSpace(file.TargetPath) == "" {
-			continue
-		}
-		rel, err := filepath.Rel(targetRoot, file.TargetPath)
-		if err != nil || strings.HasPrefix(filepath.ToSlash(rel), "../") || filepath.IsAbs(rel) {
 			continue
 		}
 		managedByTarget[filepath.Clean(file.TargetPath)] = file
@@ -112,9 +114,15 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 		if err != nil {
 			return Plan{}, err
 		}
+		mappingTargetRoot, targetRootLabel, err := targetRootForMapping(targetRoot, mapping.TargetRoot)
+		if err != nil {
+			return Plan{}, err
+		}
+		plan.TargetRoots[targetRootLabel] = mappingTargetRoot
 		action := Action{
 			SourcePath:     sourcePath,
-			TargetPath:     filepath.Join(targetRoot, targetRel),
+			TargetPath:     filepath.Join(mappingTargetRoot, targetRel),
+			TargetRoot:     targetRootLabel,
 			TargetRelative: filepath.ToSlash(targetRel),
 			Strategy:       mappingStrategy(mapping, strategy),
 			Operation:      "add",
@@ -155,12 +163,15 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 			continue
 		}
 		rel, err := filepath.Rel(targetRoot, targetKey)
-		if err != nil {
-			continue
+		targetRootLabel := "game"
+		if err != nil || filepath.IsAbs(rel) || strings.HasPrefix(filepath.ToSlash(rel), "../") {
+			targetRootLabel = "external"
+			rel = targetKey
 		}
 		plan.Actions = append(plan.Actions, Action{
 			SourcePath:     file.SourcePath,
 			TargetPath:     targetKey,
+			TargetRoot:     targetRootLabel,
 			TargetRelative: filepath.ToSlash(rel),
 			Strategy:       file.Strategy,
 			Operation:      "remove",
@@ -169,12 +180,29 @@ func BuildPlanWithManagedFiles(stagingRoot, targetRoot string, strategy Strategy
 	}
 
 	sort.Slice(plan.Actions, func(i, j int) bool {
+		if plan.Actions[i].TargetRoot != plan.Actions[j].TargetRoot {
+			return plan.Actions[i].TargetRoot < plan.Actions[j].TargetRoot
+		}
 		return plan.Actions[i].TargetRelative < plan.Actions[j].TargetRelative
 	})
 	sort.Slice(plan.Conflicts, func(i, j int) bool {
+		if plan.Conflicts[i].TargetRoot != plan.Conflicts[j].TargetRoot {
+			return plan.Conflicts[i].TargetRoot < plan.Conflicts[j].TargetRoot
+		}
 		return plan.Conflicts[i].TargetRelative < plan.Conflicts[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func targetRootForMapping(defaultRoot, mappedRoot string) (string, string, error) {
+	mappedRoot = strings.TrimSpace(mappedRoot)
+	if mappedRoot == "" {
+		return filepath.Clean(defaultRoot), "game", nil
+	}
+	if !filepath.IsAbs(mappedRoot) {
+		return "", "", errors.New("mapped target root must be absolute")
+	}
+	return filepath.Clean(mappedRoot), filepath.ToSlash(filepath.Clean(mappedRoot)), nil
 }
 
 func deploymentTargetMatches(action Action, targetInfo os.FileInfo, managed bool, managedFile AppliedFile) bool {
@@ -232,7 +260,7 @@ func prioritizeMappings(mappings []FileMapping) ([]FileMapping, []Action, error)
 		if err != nil {
 			return nil, nil, err
 		}
-		key := filepath.ToSlash(targetRel)
+		key := strings.TrimSpace(mapping.TargetRoot) + "\x00" + filepath.ToSlash(targetRel)
 		next := mappingCandidate{mapping: mapping, index: i}
 		current, ok := byTarget[key]
 		if !ok {

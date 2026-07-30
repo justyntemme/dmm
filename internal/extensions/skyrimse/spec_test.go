@@ -1,26 +1,26 @@
-package fallout4_test
+package skyrimse_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-func TestExtensionPlansLooseDataArchiveIntoFalloutData(t *testing.T) {
+func TestExtensionPlansLooseDataArchiveIntoSkyrimData(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "Example.esp"), "plugin")
 	writeFile(t, filepath.Join(root, "Meshes", "armor.nif"), "mesh")
 
-	extension := gameext.MustCompileExtension(fallout4.Extension())
-	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("377160", root)
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("489830", root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ModType != "fallout4-data-root" {
+	if plan.ModType != "skyrimse-data-root" {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
 	assertTarget(t, plan.Instructions, "Data/Example.esp")
@@ -32,12 +32,12 @@ func TestExtensionPlansTopLevelDataArchiveWithoutDuplicatingDataPath(t *testing.
 	writeFile(t, filepath.Join(root, "Data", "Example.esp"), "plugin")
 	writeFile(t, filepath.Join(root, "Data", "Textures", "example.dds"), "texture")
 
-	extension := gameext.MustCompileExtension(fallout4.Extension())
-	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("fallout4", root)
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("skyrimse", root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ModType != "fallout4-data-folder" {
+	if plan.ModType != "skyrimse-data-folder" {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
 	assertTarget(t, plan.Instructions, "Data/Example.esp")
@@ -45,13 +45,13 @@ func TestExtensionPlansTopLevelDataArchiveWithoutDuplicatingDataPath(t *testing.
 }
 
 func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
-	extension := gameext.MustCompileExtension(fallout4.Extension())
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
-	activation, ok := registry.PluginActivationForSteamApp(fallout4.SteamAppID)
+	activation, ok := registry.PluginActivationForSteamApp(skyrimse.SteamAppID)
 	if !ok {
 		t.Fatal("missing plugin activation")
 	}
-	if activation.AppDataPath != "Fallout4" || activation.Format != "fallout4" {
+	if activation.AppDataPath != "Skyrim Special Edition" || activation.Format != "fallout4" {
 		t.Fatalf("activation = %+v", activation)
 	}
 	if !contains(activation.PluginExtensions, ".esl") {

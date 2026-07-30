@@ -97,6 +97,41 @@ func TestBuildPlanUsesMappingStrategyOverride(t *testing.T) {
 	}
 }
 
+func TestBuildPlanSupportsManagedExternalTargetRoot(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	game := filepath.Join(root, "game")
+	external := filepath.Join(root, "compat", "AppData", "Local", "Fallout4")
+	source := filepath.Join(staging, "_generated", "plugins.txt")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("*Example.esp\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan(staging, game, StrategySymlink, []FileMapping{{
+		SourcePath:     source,
+		TargetRoot:     external,
+		TargetRelative: "plugins.txt",
+		Strategy:       StrategyCopy,
+		ChecksumSHA256: "sum",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	action := plan.Actions[0]
+	if action.TargetPath != filepath.Join(external, "plugins.txt") || action.TargetRoot == "game" || action.Strategy != StrategyCopy {
+		t.Fatalf("external action = %+v", action)
+	}
+	if plan.TargetRoots[action.TargetRoot] != external {
+		t.Fatalf("target roots = %+v", plan.TargetRoots)
+	}
+}
+
 func TestBuildPlanJSONUsesEmptyArrays(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")

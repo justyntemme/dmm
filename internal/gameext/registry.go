@@ -22,6 +22,7 @@ type Extension struct {
 	InstallPlan         installplan.GameSpec
 	RuntimeRequirements gamehandler.GameSpec
 	LaunchTools         []sdk.LaunchToolSpec
+	PluginActivations   []sdk.PluginActivationSpec
 	Sources             []sdk.SourceRef
 	Merges              []sdk.MergeSpec
 	LoadOrders          []sdk.LoadOrderSpec
@@ -30,6 +31,7 @@ type Extension struct {
 
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
+type PluginActivationSpec = sdk.PluginActivationSpec
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
@@ -49,6 +51,7 @@ type ExtensionCapabilities struct {
 	Installers          []FeatureSummary `json:"installers,omitempty"`
 	RuntimeRequirements []FeatureSummary `json:"runtime_requirements,omitempty"`
 	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
+	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
 	EventHandlers       []FeatureSummary `json:"event_handlers,omitempty"`
@@ -222,6 +225,14 @@ func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSp
 	return LaunchToolSpec{}, false
 }
 
+func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok || len(extension.PluginActivations) == 0 {
+		return PluginActivationSpec{}, false
+	}
+	return extension.PluginActivations[0], true
+}
+
 func MissingLaunchToolFiles(gamePath string, tool LaunchToolSpec) []string {
 	gamePath = strings.TrimSpace(gamePath)
 	if gamePath == "" {
@@ -296,6 +307,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, tool := range extension.LaunchTools {
 		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{ID: tool.ID, Name: tool.Name})
 	}
+	for _, activation := range extension.PluginActivations {
+		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
+	}
 	for _, merge := range extension.Merges {
 		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{ID: merge.ID, Name: merge.Name})
 	}
@@ -309,6 +323,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.Installers)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
+	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)

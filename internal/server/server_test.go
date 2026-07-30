@@ -24,6 +24,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -3444,6 +3445,103 @@ func TestDeployPlanIncludesDisabledLaunchToolProviderWhenRequired(t *testing.T) 
 		if !targets[target] {
 			t.Fatalf("deploy plan missing %s: %+v", target, plan.Actions)
 		}
+	}
+}
+
+func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	libraryPath := filepath.Join(root, "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Fallout4.esm"), []byte("native"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "fallout4", "mods", "1", "files", "2")
+	pluginPath := filepath.Join(stagingPath, "Example.esp")
+	if err := os.MkdirAll(filepath.Dir(pluginPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pluginPath, []byte("plugin"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    fallout4.SteamAppID,
+		ModType:   "fallout4-data-root",
+		PlannerID: "vortex:fallout4:data-root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Example.esp",
+			TargetRelative:  "Data/Example.esp",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: fallout4.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:         "Example",
+		Version:      "2",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "example.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifestJSON,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]deploy.Action{}
+	for _, action := range plan.Actions {
+		targets[action.TargetRelative] = action
+	}
+	if _, ok := targets["Data/Example.esp"]; !ok {
+		t.Fatalf("plan missing plugin deploy action: %+v", plan.Actions)
+	}
+	pluginsAction, ok := targets["plugins.txt"]
+	if !ok {
+		t.Fatalf("plan missing plugins.txt action: %+v", plan.Actions)
+	}
+	wantRoot := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Fallout4")
+	if pluginsAction.TargetRoot != filepath.ToSlash(wantRoot) || pluginsAction.Strategy != deploy.StrategyCopy {
+		t.Fatalf("plugins action = %+v", pluginsAction)
+	}
+	body, err := os.ReadFile(pluginsAction.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "*Example.esp") || strings.Contains(string(body), "Fallout4.esm") {
+		t.Fatalf("plugins.txt body = %q", string(body))
+	}
+	loadOrderAction, ok := targets["loadorder.txt"]
+	if !ok {
+		t.Fatalf("plan missing loadorder.txt action: %+v", plan.Actions)
+	}
+	body, err = os.ReadFile(loadOrderAction.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "Example.esp") {
+		t.Fatalf("loadorder.txt body = %q", string(body))
 	}
 }
 

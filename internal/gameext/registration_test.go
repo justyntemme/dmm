@@ -42,6 +42,16 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ModTypes:           []string{"mod"},
 				ProviderModTypes:   []string{"loader-mod"},
 			})
+			r.RegisterPluginActivation(sdk.PluginActivationSpec{
+				ID:               "sample-plugins",
+				Name:             "Sample plugins.txt",
+				GameDataRoot:     "Data",
+				AppDataPath:      "Sample Game",
+				PluginsFile:      "plugins.txt",
+				LoadOrderFile:    "loadorder.txt",
+				Format:           "fallout4",
+				PluginExtensions: []string{".esm", ".esp", ".esl"},
+			})
 			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
 			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{Event: "will-deploy", Name: "Prepare"})
@@ -87,6 +97,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
 	}
+	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
+		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
+	}
 }
 
 func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
@@ -114,6 +127,14 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				Name:               "Tool",
 				ExecutableRelative: "../tool",
 			})
+			r.RegisterPluginActivation(sdk.PluginActivationSpec{
+				ID:               "plugins",
+				Name:             "Plugins",
+				GameDataRoot:     "../Data",
+				AppDataPath:      "Bad",
+				Format:           "weird",
+				PluginExtensions: []string{"esp"},
+			})
 		},
 	})
 	if err == nil {
@@ -124,6 +145,9 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"references undeclared mod type missing-type",
 		"generated source path: absolute path is not allowed",
 		"launch tool tool executable path: path traversal is not allowed",
+		"plugin activation plugins game data root: path traversal is not allowed",
+		"plugin activation plugins format must be original or fallout4",
+		"plugin activation plugins plugin extension must be a file extension",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)

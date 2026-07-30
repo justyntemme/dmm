@@ -20,6 +20,7 @@ type Registrar interface {
 	RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec)
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
 	RegisterLaunchTool(LaunchToolSpec)
+	RegisterPluginActivation(PluginActivationSpec)
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
 	RegisterLoadOrder(LoadOrderSpec)
@@ -53,6 +54,22 @@ type LaunchToolSpec struct {
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
+}
+
+type PluginActivationSpec struct {
+	ID                     string
+	Name                   string
+	GameDataRoot           string
+	AppDataPath            string
+	PluginsFile            string
+	LoadOrderFile          string
+	Format                 string
+	PluginExtensions       []string
+	NativePlugins          []string
+	NativePluginPatterns   []string
+	SupportsLightPlugins   bool
+	SupportsMediumMasters  bool
+	SupportsBlueprintFiles bool
 }
 
 type MergeSpec struct {
