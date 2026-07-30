@@ -36,6 +36,24 @@
     message?: string;
   };
 
+  type WorkshopItem = {
+    steam_app_id?: string;
+    published_file_id: string;
+    title?: string;
+    subscribed: boolean;
+    downloaded: boolean;
+    disabled_locally: boolean;
+    disabled_known: boolean;
+    position: number;
+  };
+
+  type WorkshopState = {
+    app_id: string;
+    supported: boolean;
+    info?: SteamWorkshop;
+    items: WorkshopItem[];
+  };
+
   type Profile = {
     id: number;
     game_id: number;
@@ -276,6 +294,8 @@
   let deploymentStatus: DeploymentStatus | null = null;
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
+  let workshopState: WorkshopState | null = null;
+  let workshopItems: WorkshopItem[] = [];
   let loading = true;
   let error = "";
   let drawer: Drawer = null;
@@ -289,6 +309,7 @@
   let gameRecent: Record<string, number> = {};
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
+  let busyWorkshopActions: Record<string, boolean> = {};
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
@@ -305,7 +326,7 @@
   $: reviewCount = games.length - cleanCount;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   $: installRequests = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
-  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
+  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
   $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
@@ -316,7 +337,7 @@
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "captured-install") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "steam-workshop-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: filteredGames = sortDrawerGames(games.filter((game) => {
@@ -516,6 +537,10 @@
       void refresh();
       return;
     }
+    if (event.type === "workshop.changed" && eventMatchesSelectedGame(event)) {
+      scheduleSelectedGameRefresh(false, true);
+      return;
+    }
     if (["profile_mods.changed", "deployment.changed", "install.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
       scheduleSelectedGameRefresh(true, true);
     }
@@ -645,13 +670,14 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics, nextLaunchStatus] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextDeploymentStatus, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
-      getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`)
+      getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
+      getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
     ]);
     profiles = nextProfiles;
     installedMods = nextMods;
@@ -659,6 +685,8 @@
     deploymentStatus = nextDeploymentStatus;
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
+    workshopState = nextWorkshopState;
+    workshopItems = nextWorkshopState.items ?? [];
     reconcileBusyState();
   }
 
@@ -1197,6 +1225,73 @@
     deployPlan = null;
   }
 
+  function workshopItemName(item: WorkshopItem) {
+    return (item.title || item.published_file_id || "Workshop item").trim();
+  }
+
+  function workshopItemStatus(item: WorkshopItem) {
+    if (!item.disabled_known) return "Steam managed";
+    return item.disabled_locally ? "Disabled" : "Enabled";
+  }
+
+  function workshopItemDetail(item: WorkshopItem) {
+    const installState = item.downloaded ? "Downloaded" : item.subscribed ? "Subscribed" : "Not subscribed";
+    return `${installState} · ${item.published_file_id}`;
+  }
+
+  function workshopActionBusyKey(item: WorkshopItem, kind: string) {
+    return `${item.published_file_id}:${kind}`;
+  }
+
+  function setWorkshopActionBusy(item: WorkshopItem, kind: string, busy: boolean) {
+    const key = workshopActionBusyKey(item, kind);
+    if (busy) {
+      busyWorkshopActions = { ...busyWorkshopActions, [key]: true };
+      return;
+    }
+    const next = { ...busyWorkshopActions };
+    delete next[key];
+    busyWorkshopActions = next;
+  }
+
+  function isWorkshopActionBusy(item: WorkshopItem, kind: string) {
+    return Boolean(busyWorkshopActions[workshopActionBusyKey(item, kind)]);
+  }
+
+  async function queueWorkshopAction(item: WorkshopItem, kind: "enable" | "disable" | "unsubscribe") {
+    if (!selectedGame || !workshopState?.supported) return;
+    error = "";
+    setWorkshopActionBusy(item, kind, true);
+    try {
+      const response = await fetch(
+        `/api/games/${encodeURIComponent(selectedGame.app_id)}/workshop/items/${encodeURIComponent(item.published_file_id)}/actions/${kind}`,
+        { method: "POST" }
+      );
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
+      await refreshJobsAndSelectedGame();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      setWorkshopActionBusy(item, kind, false);
+    }
+  }
+
+  function askUnsubscribeWorkshopItem(item: WorkshopItem) {
+    confirmation = {
+      title: "Unsubscribe Workshop Item",
+      message: `Unsubscribe ${workshopItemName(item)} from Steam Workshop for this game.`,
+      detail: `${selectedGame?.name ?? "Selected game"} · ${item.published_file_id}`,
+      confirmLabel: "Unsubscribe",
+      danger: true,
+      run: () => queueWorkshopAction(item, "unsubscribe")
+    };
+  }
+
   function upsertJob(job: Job) {
     const existing = jobs.find((item) => item.id === job.id);
     const changed = !existing || existing.status !== job.status || existing.message !== job.message || existing.updated_at !== job.updated_at;
@@ -1207,7 +1302,7 @@
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     reconcileBusyState();
     if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type)) {
+    if (["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type)) {
       scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null, job.status === "completed");
     }
   }
@@ -1356,6 +1451,12 @@
   }
 
   function requestNextStep(request: Job) {
+    if (request.type === "steam-workshop-action") {
+      if (request.status === "waiting" || request.status === "queued") return "Waiting for Decky to apply this Steam Workshop change through Steam.";
+      if (request.status === "running") return "Decky is applying this Steam Workshop change through Steam.";
+      if (request.status === "failed") return "Decky could not apply this Steam Workshop change. Make sure the Deck is online with Steam running, then retry or cancel.";
+      return "This Workshop action is retained in job history for diagnostics.";
+    }
     if (request.type === "installer-choice") {
       return "Choose installer options to finish adding this mod to the selected profile.";
     }
@@ -1372,6 +1473,7 @@
   }
 
   function requestStatusLabel(request: Job) {
+    if (request.type === "steam-workshop-action" && (request.status === "waiting" || request.status === "queued")) return "Waiting for Decky";
     if (request.type === "installer-choice" && request.status === "waiting") return "Needs choices";
     if (request.status === "waiting") return "Ready to install";
     if (request.status === "running") return "Processing";
@@ -2016,6 +2118,35 @@
                 </div>
                 <span>{selectedWorkshop.coexistence_allowed ? "External" : "Review"}</span>
               </article>
+              {#if workshopState?.supported && workshopItems.length === 0}
+                <article>
+                  <div>
+                    <strong>No synced Workshop items</strong>
+                    <p>Open DMM in the Decky sidebar once while Steam is running to sync subscribed Workshop items from Steam.</p>
+                  </div>
+                  <span>Sync</span>
+                </article>
+              {/if}
+              {#each workshopItems as item}
+                {@const disabled = item.disabled_known && item.disabled_locally}
+                {@const toggleKind = disabled ? "enable" : "disable"}
+                <article>
+                  <div>
+                    <strong>{workshopItemName(item)}</strong>
+                    <p>{workshopItemDetail(item)}</p>
+                    <small>{workshopItemStatus(item)}</small>
+                  </div>
+                  <div class="request-actions">
+                    <span>{workshopItemStatus(item)}</span>
+                    <button type="button" disabled={!workshopState?.supported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
+                      {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : disabled ? "Enable" : "Disable"}
+                    </button>
+                    <button type="button" class="secondary-action compact danger-action" disabled={!workshopState?.supported || isWorkshopActionBusy(item, "unsubscribe")} on:click={() => askUnsubscribeWorkshopItem(item)}>
+                      {isWorkshopActionBusy(item, "unsubscribe") ? "Queueing..." : "Unsubscribe"}
+                    </button>
+                  </div>
+                </article>
+              {/each}
             </section>
           {/if}
           {#if visibleValidationWarnings.length}
