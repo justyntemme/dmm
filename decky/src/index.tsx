@@ -1469,6 +1469,10 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
         job_id: job?.id || "",
         status: job?.status || ""
       });
+      if (job?.status === "failed") {
+        setError(job.message || "DMM could not start this Nexus download.");
+        return;
+      }
       setMessage(job?.message || `${file.name || file.file_name || mod.name} was sent to DMM.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
