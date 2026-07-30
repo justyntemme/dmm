@@ -113,6 +113,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 	gameRegistry := games.DefaultRegistry
+	if err := db.SyncExtensionSnapshots(context.Background(), extensionSnapshotsFromSummaries(gameRegistry.ExtensionSummaries())); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	storedJobs = normalizeRestoredJobs(storedJobs, storedPending, gameRegistry)
 	for _, job := range storedJobs {
 		if err := db.UpsertJob(context.Background(), job); err != nil {
@@ -212,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/settings/ui", s.handlePatchUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
 	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
+	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
@@ -1163,6 +1168,65 @@ func (s *Server) handleDependencies(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.games.ExtensionSummaries())
+}
+
+type extensionSnapshotResponse struct {
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	SteamAppIDs  json.RawMessage `json:"steam_app_ids"`
+	NexusDomains json.RawMessage `json:"nexus_domains"`
+	VortexGameID string          `json:"vortex_game_id"`
+	Sources      json.RawMessage `json:"sources"`
+	Capabilities json.RawMessage `json:"capabilities"`
+}
+
+func (s *Server) handleExtensionSnapshots(w http.ResponseWriter, r *http.Request) {
+	snapshots, err := s.db.ExtensionSnapshots(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	responses := make([]extensionSnapshotResponse, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		responses = append(responses, extensionSnapshotResponse{
+			ID:           snapshot.ID,
+			Name:         snapshot.Name,
+			SteamAppIDs:  json.RawMessage(snapshot.SteamAppIDsJSON),
+			NexusDomains: json.RawMessage(snapshot.NexusDomainsJSON),
+			VortexGameID: snapshot.VortexGameID,
+			Sources:      json.RawMessage(snapshot.SourcesJSON),
+			Capabilities: json.RawMessage(snapshot.CapabilitiesJSON),
+		})
+	}
+	writeJSON(w, http.StatusOK, responses)
+}
+
+func extensionSnapshotsFromSummaries(summaries []gameext.ExtensionSummary) []storage.ExtensionSnapshot {
+	out := make([]storage.ExtensionSnapshot, 0, len(summaries))
+	for _, summary := range summaries {
+		steamAppIDsJSON := mustMarshalJSONString(summary.SteamAppIDs)
+		nexusDomainsJSON := mustMarshalJSONString(summary.NexusDomains)
+		sourcesJSON := mustMarshalJSONString(summary.Sources)
+		capabilitiesJSON := mustMarshalJSONString(summary.Capabilities)
+		out = append(out, storage.ExtensionSnapshot{
+			ID:               strings.TrimSpace(summary.ID),
+			Name:             strings.TrimSpace(summary.Name),
+			SteamAppIDsJSON:  steamAppIDsJSON,
+			NexusDomainsJSON: nexusDomainsJSON,
+			VortexGameID:     strings.TrimSpace(summary.VortexGameID),
+			SourcesJSON:      sourcesJSON,
+			CapabilitiesJSON: capabilitiesJSON,
+		})
+	}
+	return out
+}
+
+func mustMarshalJSONString(value any) string {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return "null"
+	}
+	return string(body)
 }
 
 func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {

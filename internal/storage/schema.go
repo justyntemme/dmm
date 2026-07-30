@@ -183,6 +183,18 @@ CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created
 CREATE INDEX IF NOT EXISTS idx_domain_events_app_id ON domain_events(app_id);
 CREATE INDEX IF NOT EXISTS idx_domain_events_job_id ON domain_events(job_id);
 
+CREATE TABLE IF NOT EXISTS extension_snapshots (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	steam_app_ids_json TEXT NOT NULL DEFAULT '[]',
+	nexus_domains_json TEXT NOT NULL DEFAULT '[]',
+	vortex_game_id TEXT NOT NULL DEFAULT '',
+	sources_json TEXT NOT NULL DEFAULT '[]',
+	capabilities_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS pending_imports (
 	job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
 	resolved_json TEXT NOT NULL,

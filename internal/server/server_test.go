@@ -249,6 +249,45 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	}
 }
 
+func TestExtensionSnapshotsEndpointReportsStartupAuditSnapshot(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/extensions/snapshots", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body []struct {
+		ID           string          `json:"id"`
+		SteamAppIDs  []string        `json:"steam_app_ids"`
+		Capabilities json.RawMessage `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]struct {
+		ID           string          `json:"id"`
+		SteamAppIDs  []string        `json:"steam_app_ids"`
+		Capabilities json.RawMessage `json:"capabilities"`
+	}{}
+	for _, snapshot := range body {
+		byID[snapshot.ID] = snapshot
+	}
+	stardew, ok := byID["stardewvalley"]
+	if !ok {
+		t.Fatalf("snapshots = %+v", body)
+	}
+	if len(stardew.SteamAppIDs) != 1 || stardew.SteamAppIDs[0] != "413150" {
+		t.Fatalf("steam ids = %+v", stardew.SteamAppIDs)
+	}
+	if !json.Valid(stardew.Capabilities) || !strings.Contains(string(stardew.Capabilities), "launch_tools") {
+		t.Fatalf("capabilities = %s", stardew.Capabilities)
+	}
+}
+
 func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 	cases := []struct {
 		name   string

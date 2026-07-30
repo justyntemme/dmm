@@ -141,6 +141,46 @@ CREATE TABLE pending_imports (
 	}
 }
 
+func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	first := []ExtensionSnapshot{{
+		ID:               "stardewvalley",
+		Name:             "Stardew Valley",
+		SteamAppIDsJSON:  `["413150"]`,
+		NexusDomainsJSON: `["stardewvalley"]`,
+		VortexGameID:     "stardewvalley",
+		SourcesJSON:      `[]`,
+		CapabilitiesJSON: `{"installers":[{"id":"example"}]}`,
+	}}
+	if err := db.SyncExtensionSnapshots(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	second := []ExtensionSnapshot{{
+		ID:               "fallout4",
+		Name:             "Fallout 4",
+		SteamAppIDsJSON:  `["377160"]`,
+		NexusDomainsJSON: `["fallout4"]`,
+		VortexGameID:     "fallout4",
+		SourcesJSON:      `[]`,
+		CapabilitiesJSON: `{}`,
+	}}
+	if err := db.SyncExtensionSnapshots(context.Background(), second); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := db.ExtensionSnapshots(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshots) != 1 || snapshots[0].ID != "fallout4" || snapshots[0].SteamAppIDsJSON != `["377160"]` {
+		t.Fatalf("snapshots = %+v", snapshots)
+	}
+}
+
 func TestJobsPersistPayload(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

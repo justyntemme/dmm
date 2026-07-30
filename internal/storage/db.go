@@ -84,6 +84,16 @@ type PendingImport struct {
 	ArchiveBytes  int64                    `json:"archive_bytes"`
 }
 
+type ExtensionSnapshot struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	SteamAppIDsJSON  string `json:"steam_app_ids_json"`
+	NexusDomainsJSON string `json:"nexus_domains_json"`
+	VortexGameID     string `json:"vortex_game_id"`
+	SourcesJSON      string `json:"sources_json"`
+	CapabilitiesJSON string `json:"capabilities_json"`
+}
+
 func Open(path string) (*DB, error) {
 	if err := ensureParent(path); err != nil {
 		return nil, err
@@ -175,6 +185,85 @@ func (db *DB) hasColumn(ctx context.Context, table, column string) (bool, error)
 		}
 	}
 	return false, rows.Err()
+}
+
+func (db *DB) SyncExtensionSnapshots(ctx context.Context, snapshots []ExtensionSnapshot) error {
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM extension_snapshots`); err != nil {
+		return err
+	}
+	for _, snapshot := range snapshots {
+		snapshot.ID = strings.TrimSpace(snapshot.ID)
+		snapshot.Name = strings.TrimSpace(snapshot.Name)
+		snapshot.VortexGameID = strings.TrimSpace(snapshot.VortexGameID)
+		if snapshot.ID == "" {
+			return errors.New("extension snapshot id is required")
+		}
+		if snapshot.Name == "" {
+			return errors.New("extension snapshot name is required")
+		}
+		if !json.Valid([]byte(snapshot.SteamAppIDsJSON)) {
+			return errors.New("extension snapshot steam app ids must be valid JSON")
+		}
+		if !json.Valid([]byte(snapshot.NexusDomainsJSON)) {
+			return errors.New("extension snapshot nexus domains must be valid JSON")
+		}
+		if !json.Valid([]byte(snapshot.SourcesJSON)) {
+			return errors.New("extension snapshot sources must be valid JSON")
+		}
+		if !json.Valid([]byte(snapshot.CapabilitiesJSON)) {
+			return errors.New("extension snapshot capabilities must be valid JSON")
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO extension_snapshots (
+	id,
+	name,
+	steam_app_ids_json,
+	nexus_domains_json,
+	vortex_game_id,
+	sources_json,
+	capabilities_json,
+	updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`, snapshot.ID, snapshot.Name, snapshot.SteamAppIDsJSON, snapshot.NexusDomainsJSON, snapshot.VortexGameID, snapshot.SourcesJSON, snapshot.CapabilitiesJSON); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (db *DB) ExtensionSnapshots(ctx context.Context) ([]ExtensionSnapshot, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT id, name, steam_app_ids_json, nexus_domains_json, vortex_game_id, sources_json, capabilities_json
+FROM extension_snapshots
+ORDER BY id
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExtensionSnapshot
+	for rows.Next() {
+		var snapshot ExtensionSnapshot
+		if err := rows.Scan(
+			&snapshot.ID,
+			&snapshot.Name,
+			&snapshot.SteamAppIDsJSON,
+			&snapshot.NexusDomainsJSON,
+			&snapshot.VortexGameID,
+			&snapshot.SourcesJSON,
+			&snapshot.CapabilitiesJSON,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, snapshot)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) SyncGames(ctx context.Context, games []steam.Game) error {
