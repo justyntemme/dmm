@@ -1519,6 +1519,28 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 }
 
+func TestInstallCandidateSelectionsUseBackendDefaultsForEmptyStoredChoices(t *testing.T) {
+	for _, raw := range []string{"", "{}"} {
+		selections, err := installCandidateSelections(storage.InstallCandidate{ChoicesJSON: raw}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selections != nil {
+			t.Fatalf("choices %q returned %+v, want nil defaults", raw, selections)
+		}
+	}
+	selections, err := installCandidateSelections(storage.InstallCandidate{ChoicesJSON: `{"group":[]}`}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selections == nil {
+		t.Fatal("explicit empty group selection returned nil")
+	}
+	if got, ok := selections["group"]; !ok || len(got) != 0 {
+		t.Fatalf("explicit group selections = %+v", selections)
+	}
+}
+
 func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

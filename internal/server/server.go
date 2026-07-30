@@ -2198,15 +2198,15 @@ func installCandidateSelections(candidate storage.InstallCandidate, requestSelec
 		return requestSelections, nil
 	}
 	raw := strings.TrimSpace(candidate.ChoicesJSON)
-	if raw == "" {
-		return map[string][]string{}, nil
+	if raw == "" || raw == "{}" {
+		return nil, nil
 	}
 	var stored map[string][]string
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return nil, errors.New("stored installer choices could not be parsed")
 	}
-	if stored == nil {
-		stored = map[string][]string{}
+	if len(stored) == 0 {
+		return nil, nil
 	}
 	return stored, nil
 }
