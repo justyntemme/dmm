@@ -1038,6 +1038,12 @@ h2 {
   background: #14231b;
 }
 
+.profile-summary .summary-action:hover,
+.profile-summary .summary-action:focus-visible {
+  border-color: #76dfa6;
+  background: #183323;
+}
+
 .profile-summary .summary-action em {
   position: absolute;
   right: 8px;

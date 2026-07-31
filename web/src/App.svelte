@@ -2539,9 +2539,9 @@
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
                 <button type="button" class="summary-action" on:click={() => (activeGameModule = "actions")} aria-label="Open Action Center for this game">
-                  <strong>{selectedGameActionItems.length > 0 ? selectedGameActionItems.length : "Open"}</strong>
-                  <span>{selectedGameActionItems.length > 0 ? "Actions" : "Action Center"}</span>
-                  <em>{selectedGameActionItems.length > 0 ? "Review" : "Open"}</em>
+                  <strong>{selectedGameActionItems.length}</strong>
+                  <span>{selectedGameActionItems.length === 1 ? "Action" : "Actions"}</span>
+                  <em>View</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
@@ -2906,8 +2906,8 @@
             <div class="empty-action-panel">
               <p class="hint">No install actions need attention for this game.</p>
               <div class="empty-action-buttons">
-                <button type="button" on:click={() => (activeGameModule = "plugins")}>Manage Mods</button>
-                <button type="button" class="secondary-action compact" on:click={() => (activeGameModule = "plugins")}>Add From Nexus</button>
+                <button type="button" on:click={() => (activeGameModule = "plugins")}>Add From Nexus</button>
+                <button type="button" class="secondary-action compact" on:click={() => (activeGameModule = "plugins")}>Manage Mods</button>
               </div>
             </div>
           {/if}
