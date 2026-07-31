@@ -15,7 +15,7 @@ MVP vertical slice in active testing:
 - Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
 - Captured URL parsing goes through a catalog resolver boundary so upstreams can plug in without changing the HTTP captured-install handlers.
 - URL-import providers currently include Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, mod.io, CurseForge, direct archive URLs, and local archive uploads. mod.io and CurseForge require user-provided API keys; ModDB stays deferred until a supported automated API/client path is verified.
-- Every installed mod carries a source/catalog identity so the phone/tablet UI and Decky UI can show source tags such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `GitHub`, `Direct`, and `Local`.
+- Every installed mod carries a source/catalog identity so the phone/tablet UI and Decky UI can show source tags such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, and `Native`.
 - Captured install actions and active download/extraction work can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped action and activity filtering after backend restarts.
 - Captured Nexus links download immediately so short-lived URLs are consumed while valid; when auto-install is disabled, Action Center gates the local install from the cached archive.
