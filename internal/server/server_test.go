@@ -2090,6 +2090,15 @@ func TestResolveCapturedInstallWithoutNexusKey(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte("configure Nexus API key")) {
 		t.Fatalf("expected missing api key guidance, body = %s", rec.Body.String())
 	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Payload["catalog"] != "nexus" || body.Job.Payload["game_domain"] != "witcher3" || body.Job.Payload["mod_id"] != "123" || body.Job.Payload["file_id"] != "456" {
+		t.Fatalf("job payload = %+v", body.Job.Payload)
+	}
 }
 
 func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
@@ -2117,6 +2126,15 @@ func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("no downloadable archive was returned")) {
 		t.Fatalf("expected no-download guidance, body = %s", rec.Body.String())
+	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Payload["catalog"] != "example" || body.Job.Payload["game_domain"] != "game" || body.Job.Payload["mod_id"] != "1" || body.Job.Payload["file_id"] != "2" {
+		t.Fatalf("job payload = %+v", body.Job.Payload)
 	}
 }
 

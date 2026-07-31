@@ -5562,7 +5562,7 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	job := s.jobs.Create("captured-install-resolve", "Resolve mod URL")
+	job := s.jobs.CreateWithPayload("captured-install-resolve", "Resolve mod URL", capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
