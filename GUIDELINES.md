@@ -2,6 +2,18 @@
 
 These guidelines translate `notes.md` into build decisions. Treat `notes.md` as the raw Q&A record and this file as the working development contract.
 
+## Steam Deck SSH Access
+
+- Use the passwordless project test key directly; do not rely on the local SSH agent or 1Password when connecting as Codex.
+- Steam Deck target: `deck@192.168.8.102`
+- SSH key: `/Users/justyntemme/.ssh/decky_mod_manager_test`
+- Public key: `/Users/justyntemme/.ssh/decky_mod_manager_test.pub`
+- The normal `/Users/justyntemme/.ssh/id_rsa` key is passphrase-protected and may require 1Password. Do not use it for unattended DMM testing.
+- Verify access with: `ssh -i ~/.ssh/decky_mod_manager_test -o IdentityAgent=none -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=5 deck@192.168.8.102 'printf ok'`
+- Copy packages with: `scp -i ~/.ssh/decky_mod_manager_test -o IdentityAgent=none -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=5 dist/decky-mod-manager.tar.gz deck@192.168.8.102:/home/deck/.testing/decky-mod-manager.tar.gz`
+- If access fails, first verify the Deck is online, then verify `/home/deck/.ssh/authorized_keys` still contains the public key from `/Users/justyntemme/.ssh/decky_mod_manager_test.pub`.
+- If the public key must be reinstalled, use `ssh-copy-id -i ~/.ssh/decky_mod_manager_test.pub deck@192.168.8.102` from this machine, authenticating through the user's normal password or 1Password-backed key only for that repair step.
+
 ## Guideline 1: Verify Upstream Behavior First
 
 - Before implementing or changing Vortex-compatible behavior, verify how Vortex or the relevant official game extension models the same behavior from source, documentation, or observed runtime state.
@@ -21,6 +33,14 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - FOMOD support: verify Vortex's installer-choice data model and persistence before implementing interactive installer UI.
 - Existing Vortex/manual-mod detection: verify Vortex deployment manifest shape and cleanup semantics before any adoption or cleanup feature.
 - Deployment method selection: verify Vortex deployment/hardlink/symlink behavior, then document Steam Deck filesystem differences before changing DMM's default deployment strategy.
+
+## Architecture Decision Log
+
+- Keep `decisions.md` as a concise architecture decision log for choices the user has not already made directly.
+- Add a `decisions.md` entry when choosing between competing architecture patterns, storage models, extension boundaries, event delivery mechanisms, deployment semantics, privilege boundaries, or UI/system integration mechanisms.
+- Do not record routine implementation details, small bug fixes, obvious refactors, or decisions already made explicitly with the user.
+- Each entry should state the decision, options considered, rationale, tradeoffs, verification/source references when relevant, and follow-up work.
+- If source verification or user review changes a decision, update or replace the entry instead of accumulating stale decision history.
 
 ## Pre-MVP Compatibility Policy
 
@@ -52,7 +72,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - MVP focuses on Nexus Mods "Mod Manager Download" / Vortex-compatible flows.
 - MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
 - Staging, install planning, deployment manifests, and file operations are implementation details for the default experience; they remain inspectable through advanced/power-user surfaces.
-- User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain the fallback.
+- User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain a supported manual capture path.
 - Future direction is to replace Vortex more broadly, but first milestones stay narrow and Steam Deck-focused.
 - Existing manually installed mods and existing Vortex/NMM libraries are future import features, not MVP.
 - Games with existing Vortex/manual mod state must be detected and treated as externally managed/dirty for MVP.
@@ -113,8 +133,8 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - The phone/tablet web app should not expose these Deck behavior switches. They belong in the Steam Deck plugin because they change Deck-side capture/install behavior.
 - Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
 - FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI and, for Deck-only flows, in a Decky modal rather than a crowded sidebar view.
-- If "Auto-enable installed mods" is enabled and a first-time FOMOD/installer-choice request is reached while the Decky plugin UI is active, DMM may automatically open the Decky choice modal.
-- If Decky cannot safely open the modal because the plugin UI is not active or Steam overlay state is unavailable, DMM should show a Decky notification and leave a visible installer-choice request for the user to open from Decky or the phone/tablet UI.
+- If "Auto-enable installed mods" is enabled and a first-time FOMOD/installer-choice request is reached from a Deck-side flow, DMM should attempt to open a Decky-native choice modal automatically, even if the Decky sidebar tab is not already open.
+- If Decky/Steam overlay APIs cannot safely open that modal from the background, DMM should show a Decky notification explaining that installer choices are required and tell the user to open Decky Mod Manager and click the installer entry to continue. The same installer-choice request must also remain visible in the phone/tablet UI.
 - The "Auto-enable installed mods" setting should include helper text that FOMOD/installer-choice menus may appear as Decky modals before deployment can continue.
 - Destructive actions must require confirmation.
 - Downloads, installs, deployment, purge, and repair should appear in a visible activity/job queue.
@@ -154,7 +174,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Decky frontend reads the action, shows the user what will change, invokes the Steam client capability, then reports the observed result back to the backend.
   - Backend stores the result and re-runs diagnostics from Steam/game state instead of blindly trusting the UI response.
 - Prefer a verified Steam client API for Steam launch options over editing Steam config files directly.
-- Direct `localconfig.vdf` mutation is not a product/runtime path before release. If we ever need a developer rescue tool, it must live outside normal app flow and must not be wired as an automatic fallback.
+- Direct `localconfig.vdf` mutation is not a product/runtime path before release. If we ever need a developer rescue tool, it must live outside normal app flow and must not be wired as an automatic runtime path.
 - If a community Decky plugin already exposes a stable integration point for a Steam capability, verify its source and decide whether to integrate rather than duplicating behavior.
 
 ## Network And Security Guidelines
@@ -260,7 +280,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Primary deployment strategy should be selected per game and filesystem:
   - Hardlink when staging and game target are on the same filesystem and the game supports it.
   - Symlink when hardlink is not viable and the game supports symlinks.
-  - Copy only as an explicit fallback.
+  - Copy only as an explicit extension-declared strategy.
 - Maintain a deployment manifest per game in SQLite.
 - Deployment manifests must be profile-aware so each game/profile combination can be purged, repaired, and rolled back safely.
 - Manifests are the authority for what DMM may remove or repair. Anything not present in the manifest is unmanaged and must be left alone unless the user enters an explicit adoption/cleanup flow.
@@ -306,7 +326,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Persist logs and diagnostics.
 - Do not treat a downloaded/extracted archive as a deployable mod solely because extraction succeeded.
 - Do not add one-off rules for specific Nexus mod IDs, filenames, or individual apps. If an archive layout cannot be handled by the current provider/game installer planner, keep the archive cached and surface a blocked/unsupported install result.
-- Do not invent deployment target paths for staged records that lack install-plan target mappings. Legacy staged records should be recovered/restaged through the current planner or removed by the user.
+- Do not invent deployment target paths for installed records that lack install-plan target mappings. Undeployable installed records should be recovered/restaged through the current planner or removed by the user.
 - Follow Vortex's separation of download, install, mod type, and deployment: Nexus download metadata identifies source; game/provider installer planning identifies what gets staged; deployment manifests identify what DMM owns in the game folder.
 - Model installer planning as metadata evaluation first: installer matchers classify archive shape, installer specs emit install instructions, spec-declared metadata extractors validate/ingest manifest attributes, mod types define deploy roots, and runtime requirements are derived from the resulting staged metadata.
 - Installer planning must consider the detected game runtime platform when upstream metadata has platform-specific payloads. For Stardew MVP, native Linux installs use the Linux `install.dat` payload; post-MVP Windows/Proton support must select the Windows payload through extension metadata instead of generic app logic.
@@ -314,7 +334,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Game-specific behavior belongs in Vortex-modeled specs or reviewed game-handler capabilities, not scattered through generic server, storage, deployment, or UI code.
 - When installer metadata says a payload file should not overwrite a pre-existing game file, express that as a target policy on the install mapping and persist it in the staged manifest.
 - Recognized but unsupported installer modes, such as future non-FOMOD custom installers, should produce blocked install candidates with precise installer IDs and reasons.
-- Downloads and installs must be cancelable through context cancellation, and cancellation must clean up persisted pending request state.
+- Downloads and installs must be cancelable through context cancellation, and cancellation must clean up persisted captured-install/action-center state.
 - Failed installs should leave enough diagnostics for debugging.
 - Support common Nexus archive formats needed by Vortex-compatible downloads, starting with `.zip` and adding `.7z`/`.rar` as needed.
 - FOMOD detection and a clear unsupported-installer failure are part of the current MVP slice.

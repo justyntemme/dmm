@@ -43,19 +43,19 @@ DECK_HOST=192.168.8.102 DECK_USER=deck ./testing/install_decky_plugin.sh
 If macOS/1Password SSH agent auth fails with `agent refused operation`, pass explicit SSH options without editing the script:
 
 ```bash
-DECK_SSH_OPTS="-o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/id_rsa" ./testing/install_decky_plugin.sh
+DECK_SSH_OPTS="-o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/decky_mod_manager_test" ./testing/install_decky_plugin.sh
 ```
 
-If the explicit key is passphrase-protected, unlock it in a local terminal first:
+The dedicated test key is intentionally passwordless for unattended package transfers. Install or repair that public key on the Deck with:
 
 ```bash
-ssh-add ~/.ssh/id_rsa
+ssh-copy-id -i ~/.ssh/decky_mod_manager_test.pub deck@192.168.8.102
 ```
 
 If the Deck still rejects the key, restore SSH access on the Deck first, then rerun the same command. A quick auth check is:
 
 ```bash
-ssh -o BatchMode=yes deck@192.168.8.102 'echo ssh-ok'
+ssh -i ~/.ssh/decky_mod_manager_test -o IdentityAgent=none -o BatchMode=yes -o IdentitiesOnly=yes deck@192.168.8.102 'echo ssh-ok'
 ```
 
 If SSH is unavailable, create a manual transfer bundle instead:
@@ -116,6 +116,44 @@ To install the ZIP instead of the tarball:
 
 ```bash
 PACKAGE=~/.testing/decky-mod-manager.zip ~/.testing/install_decky_plugin_from_package.sh
+```
+
+## Temporary Passwordless Test Installs
+
+For unattended live testing, do not grant passwordless sudo to a writable script
+inside `~/.testing`. A script in that directory could be overwritten and then run
+as root.
+
+The transfer bundle includes a safer temporary setup:
+
+```bash
+cd ~/.testing
+./install_decky_testing_sudoers.sh
+```
+
+That command installs a root-owned wrapper and package installer under:
+
+```text
+/opt/decky-mod-manager-testing/bin/
+```
+
+It also installs a narrow sudoers drop-in that allows the `deck` user to run only
+that wrapper and a few fixed Decky/log/reboot commands without a password. The
+wrapper refuses packages outside `~/.testing`, verifies the root-owned installer
+copy, checks the package mode, and then runs the normal installer. The package
+itself remains owned by `deck` so development builds can still be replaced by
+SCP without needing a sudo prompt first.
+
+After setup, unattended installs use:
+
+```bash
+sudo /opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install
+```
+
+To remove the temporary rule and wrapper:
+
+```bash
+sudo ~/.testing/install_decky_testing_sudoers.sh --remove
 ```
 
 ## Local Backend Smoke Check
@@ -216,10 +254,10 @@ The MVP is not considered verified until the installed Decky plugin passes this 
 1. Install the latest package with `~/.testing/install_decky_plugin_from_package.sh`.
 2. Open Decky Mod Manager in Gaming Mode and start the server.
 3. Confirm the Decky panel shows the phone/tablet URL and NXM handler registered.
-4. If existing staged rows show `needs_recovery`, use Recover Downloads for supported archives or Remove for rows that should not be managed.
-5. Open Nexus from the Deck, click a fresh Stardew Valley Mod Manager Download link, and confirm an install request appears in the phone/tablet UI.
-6. Approve the request from the phone/tablet UI.
-7. Confirm the Stardew Plugins tab shows exactly one deployable staged row for the approved mod/file.
+4. If existing developer-test rows show `needs_recovery`, use Recover Downloads for supported archives or Remove for rows that should not be managed.
+5. Open Nexus from the Deck, click a fresh Stardew Valley Mod Manager Download link, and confirm a captured install appears in the phone/tablet Action Center when user action is required.
+6. Install from the cached request in the phone/tablet UI when auto-install is disabled or the request needs choices.
+7. Confirm the Stardew Plugins tab shows exactly one profile mod row for the installed mod/file.
 8. Preview deployment and confirm zero conflicts.
 9. Deploy and confirm the job completes.
 10. Launch Stardew/SMAPI enough to confirm the deployed mod is visible or loaded.
@@ -250,7 +288,7 @@ For narrower debugging, run the checks individually.
 ~/.testing/live_status.sh
 ```
 
-The script prints health/status, games, a single game diagnostics summary, jobs, staged mods, install candidates, deployment status, deployment preview, and recent DMM logs. Override `APP_ID`, `HOST`, `PORT`, or `LOG_LINES` when testing another game or server instance.
+The script prints health/status, games, a single game diagnostics summary, jobs, profile mods, install candidates, deployment status, deployment preview, and recent DMM logs. Override `APP_ID`, `HOST`, `PORT`, or `LOG_LINES` when testing another game or server instance.
 
 To verify the installed Decky plugin exactly matches the staged package in `~/.testing`, run:
 
@@ -266,7 +304,7 @@ To verify the running backend can serve the phone/tablet Svelte UI and every has
 ~/.testing/live_web_asset_check.sh
 ```
 
-After approving, staging, and deploying a fresh test mod, run the stricter live acceptance check:
+After installing and deploying a fresh test mod, run the stricter live acceptance check:
 
 ```sh
 ~/.testing/mvp_live_check.sh
@@ -310,4 +348,4 @@ After installing the latest package and starting the server from Decky, use this
 ~/.testing/live_auto_install_check.sh
 ```
 
-The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual install approval and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.
+The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual local-install approval and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.

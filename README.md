@@ -10,31 +10,31 @@ MVP vertical slice in active testing:
 
 - Decky plugin starts/stops a bundled Go backend and shows the phone/tablet URL.
 - User-level `nxm://` registration captures Nexus Mod Manager Download links from the Deck browser.
-- Svelte + Vite phone/tablet UI shows games, install requests, profile mods, profiles, advanced deploy preview, jobs, and settings.
-- SQLite persistence covers games, profiles, jobs, pending imports, installed profile mods, downloads, checksums, and deployment manifests.
+- Svelte + Vite phone/tablet UI shows games, Action Center items, profile mods, profiles, advanced deployment tools, jobs, and settings.
+- SQLite persistence covers games, profiles, jobs, captured installs, installed profile mods, downloads, checksums, and deployment manifests.
 - Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
-- Import URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP import handlers; Nexus remains the only MVP download provider.
-- Pending install requests and active pending-import downloads/extractions can be canceled from the phone/tablet UI.
+- Captured URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP captured-install handlers; Nexus remains the only MVP download provider.
+- Captured install actions and active download/extraction work can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped request and activity filtering after backend restarts.
-- Captured Nexus links download immediately so short-lived URLs are consumed while valid; approval applies to installing the cached archive.
+- Captured Nexus links download immediately so short-lived URLs are consumed while valid; any user approval gates local install from the cached archive.
 - Decky Settings exposes "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, while auto-enable defaults off so newly installed mods remain disabled until the user enables them.
-- The Decky plugin shows Gaming Mode notifications for Nexus install request and download job transitions while it is loaded.
+- The Decky plugin shows Gaming Mode notifications for Nexus captured-link and download job transitions while it is loaded.
 - Stardew Valley (`413150`) is the first supported deploy target.
 - Install planning uses Vortex-modeled metadata specs: the current Stardew slice handles manifest-based mods, root-folder `Content/` archives, and SMAPI installer archives with Linux embedded-payload extraction.
-- Installer selection, mod type deployment roots, metadata extraction, and deployment eligibility are separate spec-owned concerns. Staged manifests preserve Vortex-style planner evidence plus manifest attributes such as logical file names, unique IDs, versions, content-pack targets, and dependencies.
-- Repeated downloads/restaging of the same Nexus file are de-duplicated in the profile mod list.
+- Installer selection, mod type deployment roots, metadata extraction, and deployment eligibility are separate spec-owned concerns. Installed mod manifests preserve Vortex-style planner evidence plus manifest attributes such as logical file names, unique IDs, versions, content-pack targets, and dependencies.
+- Repeated downloads/reinstalls of the same Nexus file are de-duplicated in the profile mod list.
 - Profile mods can be removed from the Mods pane without deleting the cached download.
-- Older raw-staged records without install-plan target mappings are shown as `needs_recovery` and skipped by deployment; use Recover Downloads to restage supported archives with the current planner, or Remove the staged row.
+- Older developer-test records without install-plan target mappings are shown as `needs_recovery` and skipped by deployment; use Recover Downloads to reinstall supported archives with the current planner, or remove the affected row.
 - ZIP extraction is handled in-process with path-traversal checks.
 - Extensionless Nexus CDN archive paths are detected by file signature.
-- Failed downloads that reached DMM-managed storage can be recovered from the game Plugins pane.
-- Staged mod display names come from install-plan metadata when the selected installer declares manifest-derived naming, otherwise DMM falls back to the Nexus archive name.
-- Game diagnostics and the mobile Review tab surface handler-derived runtime requirements from enabled mod metadata. For example, staged mods with a Stardew SMAPI mod type are reported separately from whether SMAPI itself is present to load them.
-- The Review tab can also report missing required Stardew framework/dependency mods derived from staged manifest metadata.
+- Failed downloads that reached DMM-managed storage can be recovered from the game Mods pane.
+- Installed mod display names come from install-plan metadata when the selected installer declares manifest-derived naming, otherwise DMM falls back to the Nexus archive name.
+- Game diagnostics and the mobile Review tab surface extension-derived runtime requirements from enabled mod metadata. For example, Stardew SMAPI mods are reported separately from whether SMAPI itself is present to load them.
+- The Review tab can also report missing required Stardew framework/dependency mods derived from installed manifest metadata.
 - 7z/RAR extraction is supported through external helper tools.
-- FOMOD archives pause as installer-choice requests; the phone/tablet UI and Decky modal flow can apply selected files through the normal profile install path.
+- FOMOD archives pause as installer-choice actions; the phone/tablet UI and Decky modal flow can apply selected files through the normal profile install path.
 - Deployment uses a Vortex-style staging/manifest model with symlink deployment, conflict detection, profile-aware keep/add/replace/remove planning, verification, repair, purge, and apply-time rollback for DMM-owned files.
-- Profile-scoped mod priority can be changed from the Plugins pane; lower priority numbers win duplicate target conflicts.
+- Profile-scoped mod priority can be changed from the Mods pane; lower priority numbers win duplicate target conflicts.
 - Profile switching can deploy an empty profile to remove the previously deployed profile's DMM-owned links.
 - Decky Debug can show recent plugin, backend, NXM handler, and Steam JS log tails.
 
