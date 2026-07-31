@@ -162,6 +162,9 @@ func inspectZip(filePath string) (Inspection, error) {
 		if isFOMODPath(entry.Path) {
 			inspection.InstallerKind = "fomod"
 			inspection.RequiresInstaller = true
+		} else if inspection.InstallerKind == "" && isNestedFOMODArchive(entry.Path, entry.IsDir) {
+			inspection.InstallerKind = "nested_fomod"
+			inspection.RequiresInstaller = true
 		}
 	}
 	for name := range top {
@@ -219,6 +222,9 @@ func parse7zListing(inspection Inspection, listing string) Inspection {
 		}
 		if isFOMODPath(entry.Path) {
 			inspection.InstallerKind = "fomod"
+			inspection.RequiresInstaller = true
+		} else if inspection.InstallerKind == "" && isNestedFOMODArchive(entry.Path, entry.IsDir) {
+			inspection.InstallerKind = "nested_fomod"
 			inspection.RequiresInstaller = true
 		}
 		current = map[string]string{}
@@ -410,7 +416,7 @@ func (r contextReader) Read(p []byte) (int, error) {
 func detectExtractedInstaller(destDir string) string {
 	found := ""
 	_ = filepath.WalkDir(destDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || found != "" {
+		if err != nil || d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel(destDir, path)
@@ -419,10 +425,42 @@ func detectExtractedInstaller(destDir string) string {
 		}
 		if isFOMODPath(rel) {
 			found = "fomod"
+			return nil
+		}
+		if found == "" && isNestedFOMODArchive(rel, false) {
+			found = "nested_fomod"
 		}
 		return nil
 	})
 	return found
+}
+
+func FindNestedFOMODArchive(destDir string) (string, error) {
+	var found string
+	err := filepath.WalkDir(destDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(destDir, path)
+		if err != nil {
+			return err
+		}
+		if !isNestedFOMODArchive(rel, false) {
+			return nil
+		}
+		found = path
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if found == "" {
+		return "", errors.New("nested .fomod archive was not found")
+	}
+	return found, nil
 }
 
 func isFOMODPath(name string) bool {
@@ -437,6 +475,13 @@ func isFOMODPath(name string) bool {
 		}
 	}
 	return false
+}
+
+func isNestedFOMODArchive(name string, isDir bool) bool {
+	if isDir {
+		return false
+	}
+	return strings.EqualFold(filepath.Ext(filepath.ToSlash(name)), ".fomod")
 }
 
 func validateArchivePath(name string) string {

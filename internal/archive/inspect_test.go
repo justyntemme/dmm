@@ -79,6 +79,41 @@ func TestInspectZipDetectsFOMOD(t *testing.T) {
 	}
 }
 
+func TestInspectZipDetectsNestedFOMOD(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested.zip")
+	if err := CreateTestZip(path, map[string]string{
+		"Packages/Example.fomod": "nested package",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.RequiresInstaller || got.InstallerKind != "nested_fomod" {
+		t.Fatalf("inspection = %+v", got)
+	}
+}
+
+func TestInspectZipPrefersDirectFOMODOverNestedPackage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mixed.zip")
+	if err := CreateTestZip(path, map[string]string{
+		"Packages/Example.fomod": "nested package",
+		"fomod/ModuleConfig.xml": "<config />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.InstallerKind != "fomod" {
+		t.Fatalf("installer kind = %q", got.InstallerKind)
+	}
+}
+
 func TestExtractZipWritesSafeEntries(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "mod.zip")
@@ -122,6 +157,32 @@ func TestExtractZipCarriesFOMODDetection(t *testing.T) {
 	}
 }
 
+func TestExtractZipCarriesNestedFOMODDetection(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "nested.zip")
+	if err := CreateTestZip(archivePath, map[string]string{
+		"Packages/Example.fomod": "nested package",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := filepath.Join(dir, "staging")
+	got, err := Extract(archivePath, dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.RequiresInstaller || got.InstallerKind != "nested_fomod" {
+		t.Fatalf("inspection = %+v", got)
+	}
+	nested, err := FindNestedFOMODArchive(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.ToSlash(nested) != filepath.ToSlash(filepath.Join(dest, "Packages", "Example.fomod")) {
+		t.Fatalf("nested path = %q", nested)
+	}
+}
+
 func TestExtractZipRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "bad.zip")
@@ -159,6 +220,23 @@ Size = 9
 		t.Fatalf("top level dirs = %+v", got.TopLevelDirs)
 	}
 	if !got.RequiresInstaller || got.InstallerKind != "fomod" {
+		t.Fatalf("installer detection = %+v", got)
+	}
+}
+
+func TestParse7zListingDetectsNestedFOMOD(t *testing.T) {
+	got := parse7zListing(Inspection{ArchivePath: "/tmp/mod.7z", Format: "7z"}, `
+Path = /tmp/mod.7z
+Type = 7z
+
+Path = Packages
+Folder = +
+
+Path = Packages/Example.fomod
+Folder = -
+Size = 99
+`)
+	if !got.RequiresInstaller || got.InstallerKind != "nested_fomod" {
 		t.Fatalf("installer detection = %+v", got)
 	}
 }

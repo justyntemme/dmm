@@ -2248,6 +2248,95 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 }
 
+func TestNestedFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	innerPath := filepath.Join(dir, "Choice.fomod")
+	if err := archive.CreateTestZip(innerPath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Nested Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups order="Explicit">
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><file source="Options/high.txt" destination="textures/high.txt" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"Core/base.txt":    "base",
+		"Options/high.txt": "high",
+		"fomod/info.xml":   "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	innerBytes, err := os.ReadFile(innerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(dir, "outer.zip")
+	if err := createZipWithBytes(archivePath, map[string][]byte{
+		"Packages/Choice.fomod": innerBytes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: fallout4/mods/999")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded nested FOMOD; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "999",
+			FileID:     "1001",
+		},
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "installer choices required") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "needs_choices" || !strings.Contains(candidates[0].InstallerJSON, "Nested Choice Mod") {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	choiceJob, ok := srv.findInstallerChoiceJob(candidates[0].ID)
+	if !ok || choiceJob.Status != jobs.StatusWaiting {
+		t.Fatalf("installer choice job = %+v, found = %v", choiceJob, ok)
+	}
+}
+
 func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
@@ -4462,6 +4551,32 @@ func createDuplicateEntryZip(path string) error {
 			return err
 		}
 		if _, err := entry.Write([]byte(body)); err != nil {
+			_ = writer.Close()
+			_ = file.Close()
+			return err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func createZipWithBytes(path string, files map[string][]byte) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	writer := stdzip.NewWriter(file)
+	for name, body := range files {
+		entry, err := writer.Create(name)
+		if err != nil {
+			_ = writer.Close()
+			_ = file.Close()
+			return err
+		}
+		if _, err := entry.Write(body); err != nil {
 			_ = writer.Close()
 			_ = file.Close()
 			return err

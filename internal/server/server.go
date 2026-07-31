@@ -3118,6 +3118,10 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
+	extractPath, inspection, err = s.prepareFOMODWorkspace(ctx, jobID, extractPath, inspection)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
 	if inspection.InstallerKind != "fomod" {
 		return storage.InstalledMod{}, errors.New("only FOMOD installer candidates are supported")
 	}
@@ -3154,6 +3158,53 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		ChoicesJSON:   candidate.ChoicesJSON,
 		Selections:    selections,
 	})
+}
+
+func (s *Server) prepareFOMODWorkspace(ctx context.Context, jobID, extractPath string, inspection archive.Inspection) (string, archive.Inspection, error) {
+	const maxNestedFOMODDepth = 3
+	foundNested := false
+	for depth := 0; inspection.InstallerKind == "nested_fomod"; depth++ {
+		foundNested = true
+		if depth >= maxNestedFOMODDepth {
+			return "", archive.Inspection{}, installplan.Unsupported("nested .fomod archive depth exceeds DMM's safety limit")
+		}
+		nestedArchive, err := archive.FindNestedFOMODArchive(extractPath)
+		if err != nil {
+			return "", archive.Inspection{}, err
+		}
+		nestedExtractPath := filepath.Join(extractPath, fmt.Sprintf(".dmm-nested-fomod-%d", depth+1))
+		if err := os.RemoveAll(nestedExtractPath); err != nil {
+			return "", archive.Inspection{}, err
+		}
+		s.logger.Info(
+			"nested fomod extraction started",
+			"job_id", jobID,
+			"nested_archive", nestedArchive,
+			"nested_extract_path", nestedExtractPath,
+			"depth", depth+1,
+		)
+		nestedInspection, err := archive.ExtractContext(ctx, nestedArchive, nestedExtractPath)
+		if err != nil {
+			return "", archive.Inspection{}, err
+		}
+		s.logger.Info(
+			"nested fomod archive extracted",
+			"job_id", jobID,
+			"nested_archive", nestedArchive,
+			"nested_extract_path", nestedExtractPath,
+			"format", nestedInspection.Format,
+			"entries", len(nestedInspection.Entries),
+			"requires_installer", nestedInspection.RequiresInstaller,
+			"installer_kind", nestedInspection.InstallerKind,
+			"warnings", strings.Join(nestedInspection.Warnings, " | "),
+		)
+		extractPath = nestedExtractPath
+		inspection = nestedInspection
+	}
+	if foundNested && inspection.InstallerKind != "fomod" {
+		return "", archive.Inspection{}, installplan.Unsupported("nested .fomod archive did not contain a supported XML FOMOD installer")
+	}
+	return extractPath, inspection, nil
 }
 
 type fomodStageRequest struct {
@@ -5426,6 +5477,10 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		"extract_path", extractPath,
 	)
 	inspection, err := archive.ExtractContext(ctx, archivePath, extractPath)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	extractPath, inspection, err = s.prepareFOMODWorkspace(ctx, jobID, extractPath, inspection)
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
