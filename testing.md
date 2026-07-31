@@ -9,7 +9,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Open Decky Mod Manager in Gaming Mode and confirm the backend starts automatically.
 - Phone/tablet URL: `http://192.168.8.102:17942` when the Deck is on the same LAN/hotspot.
 - Confirm Nexus API key is configured in the phone/tablet Settings page.
-- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
+- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, Direct Archive URL, Local Archive, planned credential-gated sources, and Steam Workshop status are listed correctly.
+- Confirm Local Archive reports `Archive upload` instead of appearing as an inactive ready source.
 - If you have mod.io or CurseForge API keys, paste them in Settings > Sources and confirm those sources switch from `Needs Key` to `Ready`.
 
 ## Plane / iPad Notes
@@ -112,8 +113,9 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 ## Source Tags
 
-- Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, or `Local`.
+- Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, or `Native`.
 - Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
+- In advanced load-order views, confirm native game plugins are tagged `Native` and DMM-managed plugin rows use the installed mod's source tag.
 - In the phone/iPad Mods view, filter by source and sort by source.
 - In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
 - In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
