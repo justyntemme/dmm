@@ -488,6 +488,8 @@
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
   let gameSort: GameSort = "recent";
+  let actionSourceFilter = "all";
+  let jobSourceFilter = "all";
   let modSourceFilter = "all";
   let modListSort: ModListSort = "profile";
   let favoriteGameIDs = new Set<string>();
@@ -540,6 +542,11 @@
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
+  $: actionSourceOptions = sourceOptionsForActions(actionItems, actionCenterCandidates);
+  $: visibleActionItems = filterJobsBySource(actionItems, actionSourceFilter);
+  $: visibleActionCenterCandidates = filterCandidatesBySource(actionCenterCandidates, actionSourceFilter);
+  $: jobSourceOptions = sourceOptionsForJobs(jobs);
+  $: visibleJobs = filterJobsBySource(jobs, jobSourceFilter);
   $: selectedGameCapturedInstallActions = selectedGame ? capturedInstallActions.filter((job) => actionMatchesGame(job, selectedGame)) : capturedInstallActions;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => actionMatchesGame(job, selectedGame)) : actionItems;
   $: selectedGameActionCount = selectedGameActionItems.length + installCandidates.length;
@@ -2388,14 +2395,47 @@
   function sourceOptionsForMods(mods: InstalledMod[], items: WorkshopItem[], workshop: SteamWorkshop | null) {
     const byKey = new Map<string, string>();
     for (const mod of mods) {
-      const source = sourceForMod(mod);
-      const key = sourceKey(source);
-      if (!byKey.has(key)) byKey.set(key, sourceLabel(source));
+      addSourceOption(byKey, sourceForMod(mod));
     }
     if ((workshop?.detected || items.length > 0) && !byKey.has("steam-workshop")) {
       byKey.set("steam-workshop", sourceLabel("steam_workshop"));
     }
     return [...byKey.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }
+
+  function sourceOptionsForActions(actions: Job[], candidates: InstallCandidate[]) {
+    const byKey = new Map<string, string>();
+    for (const action of actions) {
+      addSourceOption(byKey, actionSource(action));
+    }
+    for (const candidate of candidates) {
+      addSourceOption(byKey, sourceForCandidate(candidate));
+    }
+    return [...byKey.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }
+
+  function sourceOptionsForJobs(items: Job[]) {
+    const byKey = new Map<string, string>();
+    for (const item of items) {
+      addSourceOption(byKey, actionSource(item));
+    }
+    return [...byKey.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }
+
+  function addSourceOption(byKey: Map<string, string>, source: string | undefined) {
+    if (!hasSourceTag(source)) return;
+    const key = sourceKey(source);
+    if (!byKey.has(key)) byKey.set(key, sourceLabel(source));
+  }
+
+  function filterJobsBySource(items: Job[], sourceFilter: string) {
+    if (sourceFilter === "all") return items;
+    return items.filter((item) => sourceKey(actionSource(item)) === sourceFilter);
+  }
+
+  function filterCandidatesBySource(items: InstallCandidate[], sourceFilter: string) {
+    if (sourceFilter === "all") return items;
+    return items.filter((item) => sourceKey(sourceForCandidate(item)) === sourceFilter);
   }
 
   function sortModsForList(mods: InstalledMod[]) {
@@ -2737,6 +2777,19 @@
           <h2>Action Center</h2>
           <span>{globalActionCount} open</span>
         </div>
+        {#if actionSourceOptions.length > 1}
+          <div class="mod-list-controls compact-controls">
+            <label>
+              <span>Source</span>
+              <select bind:value={actionSourceFilter}>
+                <option value="all">All Sources</option>
+                {#each actionSourceOptions as [key, label]}
+                  <option value={key}>{label}</option>
+                {/each}
+              </select>
+            </label>
+          </div>
+        {/if}
         {#if capturedInstallActions.length > 0}
           <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
         {/if}
@@ -2749,9 +2802,12 @@
             <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
           </div>
         {/if}
-        {#if actionItems.length > 0}
+        {#if globalActionCount > 0 && visibleActionItems.length === 0 && visibleActionCenterCandidates.length === 0}
+          <p class="hint">No open actions match the selected source.</p>
+        {/if}
+        {#if visibleActionItems.length > 0}
           <div class="action-list">
-            {#each actionItems as action}
+            {#each visibleActionItems as action}
               <article class:failed-action={action.status === "failed"}>
                 <div>
                   <div class="mod-title-line">
@@ -2786,15 +2842,15 @@
             {/each}
           </div>
         {/if}
-        {#if actionCenterCandidates.length > 0}
+        {#if visibleActionCenterCandidates.length > 0}
           <section class="blocked-candidates" aria-label="Installer items">
             <div class="panel-heading compact-heading">
               <h3>Installer Items</h3>
-              <span>{actionCenterCandidates.length}</span>
+              <span>{visibleActionCenterCandidates.length}</span>
             </div>
             <p class="hint">These downloaded archives need installer choices or review before they can be added to a profile.</p>
             <div class="action-list">
-              {#each actionCenterCandidates as candidate}
+              {#each visibleActionCenterCandidates as candidate}
                 {@const candidateGame = gameForInstallCandidate(candidate)}
                 <article class:failed-action={candidate.status === "blocked"}>
                   <div>
@@ -2834,12 +2890,30 @@
         </article>
       {:else if activeSettingsPage === "jobs"}
         <article class="workspace-panel">
-          <h2>Jobs</h2>
+          <div class="panel-heading">
+            <h2>Jobs</h2>
+            <span>{jobs.length}</span>
+          </div>
+          {#if jobSourceOptions.length > 1}
+            <div class="mod-list-controls compact-controls">
+              <label>
+                <span>Source</span>
+                <select bind:value={jobSourceFilter}>
+                  <option value="all">All Sources</option>
+                  {#each jobSourceOptions as [key, label]}
+                    <option value={key}>{label}</option>
+                  {/each}
+                </select>
+              </label>
+            </div>
+          {/if}
           {#if jobs.length === 0}
             <p class="hint">No jobs yet.</p>
+          {:else if visibleJobs.length === 0}
+            <p class="hint">No jobs match the selected source.</p>
           {:else}
             <div class="jobs">
-              {#each jobs as job}
+              {#each visibleJobs as job}
                 <article class="job">
 	                  <div>
 	                    <div class="mod-title-line">
