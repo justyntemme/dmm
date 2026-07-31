@@ -2769,9 +2769,9 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
 }
 
-func installCandidateSelections(candidate storage.InstallCandidate, requestSelections map[string][]string) (map[string][]string, error) {
-	if len(requestSelections) > 0 {
-		return requestSelections, nil
+func installCandidateSelections(candidate storage.InstallCandidate, submittedSelections map[string][]string) (map[string][]string, error) {
+	if len(submittedSelections) > 0 {
+		return submittedSelections, nil
 	}
 	raw := strings.TrimSpace(candidate.ChoicesJSON)
 	if raw == "" || raw == "{}" {
@@ -4799,7 +4799,7 @@ func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.
 		"captured install download queued",
 		"job_id", jobID,
 		"action_source", actionSource,
-		"request_source", pending.Source,
+		"capture_source", pending.Source,
 		"catalog", pending.Resolved.Catalog,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,
@@ -4845,7 +4845,7 @@ func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.J
 		"captured install install confirmed",
 		"job_id", jobID,
 		"action_source", actionSource,
-		"request_source", pending.Source,
+		"capture_source", pending.Source,
 		"catalog", pending.Resolved.Catalog,
 		"game_domain", pending.Resolved.GameDomain,
 		"mod_id", pending.Resolved.ModID,

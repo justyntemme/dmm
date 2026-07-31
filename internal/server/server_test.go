@@ -1612,7 +1612,7 @@ func TestClearCapturedInstalls(t *testing.T) {
 		t.Fatalf("clear status = %d, body = %s", clearRec.Code, clearRec.Body.String())
 	}
 	if !bytes.Contains(clearRec.Body.Bytes(), []byte(`"cleared":1`)) {
-		t.Fatalf("expected one cleared request, body = %s", clearRec.Body.String())
+		t.Fatalf("expected one cleared captured action, body = %s", clearRec.Body.String())
 	}
 	if jobs := srv.jobs.List(); len(jobs) != 0 {
 		t.Fatalf("jobs after clear = %+v", jobs)
@@ -1660,7 +1660,7 @@ func TestClearCapturedInstallsPreservesCompletedHistory(t *testing.T) {
 		t.Fatalf("clear status = %d, body = %s", clearRec.Code, clearRec.Body.String())
 	}
 	if !bytes.Contains(clearRec.Body.Bytes(), []byte(`"cleared":2`)) {
-		t.Fatalf("expected two cleared requests, body = %s", clearRec.Body.String())
+		t.Fatalf("expected two cleared captured actions, body = %s", clearRec.Body.String())
 	}
 	list := srv.jobs.List()
 	if len(list) != 1 {
