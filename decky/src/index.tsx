@@ -743,6 +743,11 @@ function eventMatchesAppID(event: DomainEvent, appID: string) {
   return !event.app_id || event.app_id === appID;
 }
 
+function jobMatchesAppID(job: Job, appID: string) {
+  const payloadAppID = String(job.payload?.app_id ?? "").trim();
+  return !payloadAppID || payloadAppID === appID;
+}
+
 function deckyModStateLabel(mod: ManagedMod) {
   if (mod.status === "needs_recovery") return "Needs repair";
   if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
@@ -1994,6 +1999,10 @@ function DeckyModManagerRoute() {
   const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
   const [focusedConflictTarget, setFocusedConflictTarget] = useState<string>("");
   const [busyConflictTarget, setBusyConflictTarget] = useState<string>("");
+  const routeRefreshTimer = useRef<number | null>(null);
+  const routeRefreshNeedsStatus = useRef(false);
+  const routeRefreshNeedsGames = useRef(false);
+  const routeRefreshNeedsGameState = useRef(false);
 
   async function refresh() {
     try {
@@ -2006,6 +2015,44 @@ function DeckyModManagerRoute() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function scheduleDeckyRouteRefresh(options: { status?: boolean; games?: boolean; gameState?: boolean }) {
+    routeRefreshNeedsStatus.current = routeRefreshNeedsStatus.current || Boolean(options.status);
+    routeRefreshNeedsGames.current = routeRefreshNeedsGames.current || Boolean(options.games);
+    routeRefreshNeedsGameState.current = routeRefreshNeedsGameState.current || Boolean(options.gameState);
+    if (routeRefreshTimer.current !== null) return;
+    routeRefreshTimer.current = window.setTimeout(() => {
+      routeRefreshTimer.current = null;
+      const needsStatus = routeRefreshNeedsStatus.current;
+      const needsGames = routeRefreshNeedsGames.current;
+      const needsGameState = routeRefreshNeedsGameState.current;
+      routeRefreshNeedsStatus.current = false;
+      routeRefreshNeedsGames.current = false;
+      routeRefreshNeedsGameState.current = false;
+      void (async () => {
+        try {
+          let games = managedGames;
+          if (needsStatus) {
+            await refresh();
+          }
+          if (needsGames) {
+            games = await loadDeckyGames();
+          }
+          if (needsGameState && selectedDeckyGameID) {
+            if (needsGames && games.length > 0 && !games.some((game) => game.app_id === selectedDeckyGameID)) {
+              clearSelectedDeckyGame();
+              return;
+            }
+            await loadDeckyGameState(selectedDeckyGameID);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+          await logFrontendEvent("decky route event refresh failed", { error: message });
+        }
+      })();
+    }, 120);
   }
 
   function applyDeckyUIPreferences(nextStatus: BackendStatus) {
@@ -2764,6 +2811,10 @@ function DeckyModManagerRoute() {
     logFrontendEvent("content mounted");
     refresh();
     return () => {
+      if (routeRefreshTimer.current !== null) {
+        window.clearTimeout(routeRefreshTimer.current);
+        routeRefreshTimer.current = null;
+      }
       logFrontendEvent("content unmounted");
     };
   }, []);
@@ -2786,14 +2837,29 @@ function DeckyModManagerRoute() {
         if (isUISettings(event.payload)) applyDeckyUIPreferencesFromUI(event.payload);
         return;
       }
-      if (!event || tab !== "games" || !selectedDeckyGameID || !status?.running) return;
-      if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed", "mod_updates.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
-        void loadDeckyGameState(selectedDeckyGameID);
+      if (!event) return;
+      if (event.type === "game.changed") {
+        scheduleDeckyRouteRefresh({ status: true, games: true, gameState: tab === "games" && Boolean(selectedDeckyGameID) });
+        return;
+      }
+      if (event.type === "jobs.snapshot" && tab === "games" && selectedDeckyGameID && Array.isArray(event.payload)) {
+        if ((event.payload as Job[]).some((job) => isJob(job) && jobMatchesAppID(job, selectedDeckyGameID))) {
+          scheduleDeckyRouteRefresh({ gameState: true });
+        }
+        return;
+      }
+      if (tab !== "games" || !selectedDeckyGameID) return;
+      if (event.type === "job.updated" && isJob(event.payload) && jobMatchesAppID(event.payload, selectedDeckyGameID)) {
+        scheduleDeckyRouteRefresh({ gameState: true });
+        return;
+      }
+      if (["profile_mods.changed", "deployment.changed", "install.changed", "launch.changed", "mod_updates.changed", "workshop.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
+        scheduleDeckyRouteRefresh({ gameState: true });
       }
     };
     window.addEventListener(DMM_EVENT_NAME, listener);
     return () => window.removeEventListener(DMM_EVENT_NAME, listener);
-  }, [tab, selectedDeckyGameID, status?.running]);
+  }, [tab, selectedDeckyGameID, managedGames]);
 
   useEffect(() => {
     const syncRunningGame = () => {
