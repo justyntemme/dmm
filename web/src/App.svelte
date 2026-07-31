@@ -32,6 +32,7 @@
     search: boolean;
     browse: boolean;
     download: boolean;
+    archive_upload: boolean;
     installed_management: boolean;
     source_tag: string;
     notes?: string[];
@@ -2259,6 +2260,7 @@
     if (catalog.url_import) capabilities.push("URL import");
     if (catalog.browse || catalog.search) capabilities.push("Browse/search");
     if (catalog.download) capabilities.push("Downloads");
+    if (catalog.archive_upload) capabilities.push("Archive upload");
     if (catalog.installed_management) capabilities.push("Installed management");
     if (capabilities.length === 0) return "Not active in the current MVP build.";
     return capabilities.join(" · ");
@@ -2269,6 +2271,7 @@
     if (normalized === "url_import") return "URL import";
     if (normalized === "browse_search") return "Browse/search";
     if (normalized === "download") return "Downloads";
+    if (normalized === "archive_upload") return "Archive upload";
     if (normalized === "installed_management") return "Installed management";
     return capability.replace(/[_-]+/g, " ");
   }

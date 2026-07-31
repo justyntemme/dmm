@@ -447,6 +447,7 @@ type catalogStatusResponse struct {
 	Search              bool     `json:"search"`
 	Browse              bool     `json:"browse"`
 	Download            bool     `json:"download"`
+	ArchiveUpload       bool     `json:"archive_upload"`
 	InstalledManagement bool     `json:"installed_management"`
 	SourceTag           string   `json:"source_tag"`
 	Notes               []string `json:"notes,omitempty"`
@@ -1401,13 +1402,14 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Notes:     []string{"No verified supported automated ModDB API is wired yet; direct archive URLs remain the safe import path."},
 		},
 		{
-			ID:         "local",
-			Name:       "Local Archive",
-			Kind:       "local",
-			Status:     "ready",
-			Configured: true,
-			SourceTag:  "local",
-			Notes:      []string{"Phone and tablet uploads import local archives through the same installer, profile, and deployment pipeline as captured URLs."},
+			ID:            "local",
+			Name:          "Local Archive",
+			Kind:          "local",
+			Status:        "ready",
+			Configured:    true,
+			ArchiveUpload: true,
+			SourceTag:     "local",
+			Notes:         []string{"Phone and tablet uploads import local archives through the same installer, profile, and deployment pipeline as captured URLs."},
 		},
 		{
 			ID:                  "steam_workshop",
@@ -1443,6 +1445,9 @@ func catalogStatusCapabilities(status catalogStatusResponse) []string {
 	}
 	if status.Download {
 		capabilities = append(capabilities, "download")
+	}
+	if status.ArchiveUpload {
+		capabilities = append(capabilities, "archive_upload")
 	}
 	if status.InstalledManagement {
 		capabilities = append(capabilities, "installed_management")
