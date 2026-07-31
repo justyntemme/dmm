@@ -2273,6 +2273,10 @@
     return source || "unknown";
   }
 
+  function hasSourceTag(catalog: string | undefined) {
+    return sourceKey(catalog) !== "unknown";
+  }
+
   function sourceOptionsForMods(mods: InstalledMod[], items: WorkshopItem[], workshop: SteamWorkshop | null) {
     const byKey = new Map<string, string>();
     for (const mod of mods) {
@@ -2724,7 +2728,12 @@
               {#each jobs as job}
                 <article class="job">
 	                  <div>
-	                    <strong>{job.title}</strong>
+	                    <div class="mod-title-line">
+	                      <strong>{job.title}</strong>
+	                      {#if hasSourceTag(actionSource(job))}
+	                        <span class={`source-pill ${sourceClass(actionSource(job))}`}>{sourceLabel(actionSource(job))}</span>
+	                      {/if}
+	                    </div>
 	                    {#if job.message}<p>{job.message}</p>{/if}
 	                  </div>
 	                  <div class="job-actions">
@@ -2855,7 +2864,12 @@
             <section class="activity-strip" aria-label="Game activity">
               {#each selectedGameActivity.slice(0, 3) as job}
                 <article class:failed-action={job.status === "failed"}>
-                  <strong>{job.title}</strong>
+                  <div class="mod-title-line">
+                    <strong>{job.title}</strong>
+                    {#if hasSourceTag(actionSource(job))}
+                      <span class={`source-pill ${sourceClass(actionSource(job))}`}>{sourceLabel(actionSource(job))}</span>
+                    {/if}
+                  </div>
                   <span>{job.status}</span>
                   {#if job.message}<small>{job.message}</small>{/if}
                 </article>
