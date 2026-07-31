@@ -474,8 +474,19 @@ func TestBuildPlanEvaluatesDependencyTypeDefaults(t *testing.T) {
 	}
 	evaluated := EvaluatedInstaller(installer, defaults, PlanOptions{})
 	evaluatedPatchGroup := evaluated.Steps[0].Groups[1]
-	if evaluatedPatchGroup.Plugins[0].Type != "Required" || evaluatedPatchGroup.Plugins[1].Type != "NotUsable" {
+	if evaluatedPatchGroup.Plugins[0].Type != "NotUsable" || evaluatedPatchGroup.Plugins[1].Type != "NotUsable" {
+		t.Fatalf("source dependencyType defaults were mutated: %+v", evaluatedPatchGroup.Plugins)
+	}
+	if evaluatedPatchGroup.Plugins[0].EffectiveType != "Required" || evaluatedPatchGroup.Plugins[1].EffectiveType != "NotUsable" {
 		t.Fatalf("evaluated dependencyType = %+v", evaluatedPatchGroup.Plugins)
+	}
+	variantGroup := installer.Steps[0].Groups[0]
+	evaluatedB := EvaluatedInstaller(evaluated, map[string][]string{
+		variantGroup.ID: {variantGroup.Plugins[1].ID},
+	}, PlanOptions{})
+	evaluatedBPatchGroup := evaluatedB.Steps[0].Groups[1]
+	if evaluatedBPatchGroup.Plugins[0].EffectiveType != "NotUsable" || evaluatedBPatchGroup.Plugins[1].EffectiveType != "Required" {
+		t.Fatalf("reevaluated dependencyType after changed selection = %+v", evaluatedBPatchGroup.Plugins)
 	}
 	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
 		ModType:    "fallout4-data-root",

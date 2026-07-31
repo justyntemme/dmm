@@ -41,13 +41,14 @@ type Group struct {
 }
 
 type Plugin struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	Type        string      `json:"type,omitempty"`
-	TypeRules   []TypeRule  `json:"type_rules,omitempty"`
-	Flags       []Flag      `json:"flags,omitempty"`
-	Files       []FileEntry `json:"files,omitempty"`
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Description   string      `json:"description,omitempty"`
+	Type          string      `json:"type,omitempty"`
+	EffectiveType string      `json:"effective_type,omitempty"`
+	TypeRules     []TypeRule  `json:"type_rules,omitempty"`
+	Flags         []Flag      `json:"flags,omitempty"`
+	Files         []FileEntry `json:"files,omitempty"`
 }
 
 type FileEntry struct {
@@ -388,7 +389,7 @@ func EvaluatedInstaller(installer Installer, selections map[string][]string, opt
 			evaluatedGroup := group
 			evaluatedGroup.Plugins = make([]Plugin, len(group.Plugins))
 			for i, plugin := range group.Plugins {
-				plugin.Type = types[plugin.ID]
+				plugin.EffectiveType = types[plugin.ID]
 				evaluatedGroup.Plugins[i] = plugin
 			}
 			evaluatedStep.Groups = append(evaluatedStep.Groups, evaluatedGroup)

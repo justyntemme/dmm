@@ -285,6 +285,7 @@ type FomodPlugin = {
   name: string;
   description?: string;
   type?: string;
+  effective_type?: string;
 };
 
 type LaunchAction = {
@@ -1109,12 +1110,16 @@ function installerRequiresSelections(installer: FomodInstaller) {
 }
 
 function fomodPluginSelectable(plugin: FomodPlugin) {
-  return (plugin.type ?? "").trim().toLowerCase() !== "notusable";
+  return fomodPluginType(plugin).toLowerCase() !== "notusable";
 }
 
 function fomodPluginLocked(group: FomodGroup, plugin: FomodPlugin) {
-  const type = (plugin.type ?? "").trim().toLowerCase();
+  const type = fomodPluginType(plugin).toLowerCase();
   return fomodGroupType(group) === "selectall" || type === "required" || type === "notusable";
+}
+
+function fomodPluginType(plugin: FomodPlugin) {
+  return (plugin.effective_type ?? plugin.type ?? "").trim();
 }
 
 function fomodGroupValid(group: FomodGroup, selections: Record<string, string[]>) {
@@ -1662,7 +1667,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
                           />
                           <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
                             <strong>{plugin.name}</strong>
-                            {plugin.type && <small style={{ color: "#a1a1aa" }}>{plugin.type}</small>}
+                            {fomodPluginType(plugin) && <small style={{ color: "#a1a1aa" }}>{fomodPluginType(plugin)}</small>}
                             {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
                           </span>
                         </label>

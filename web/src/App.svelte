@@ -234,6 +234,7 @@
     name: string;
     description?: string;
     type?: string;
+    effective_type?: string;
   };
 
   type DeployAction = {
@@ -1582,12 +1583,16 @@
   }
 
   function fomodPluginSelectable(plugin: FomodPlugin) {
-    return (plugin.type ?? "").trim().toLowerCase() !== "notusable";
+    return fomodPluginType(plugin).toLowerCase() !== "notusable";
   }
 
   function fomodPluginLocked(group: FomodGroup, plugin: FomodPlugin) {
-    const type = (plugin.type ?? "").trim().toLowerCase();
+    const type = fomodPluginType(plugin).toLowerCase();
     return fomodGroupType(group) === "selectall" || type === "required" || type === "notusable";
+  }
+
+  function fomodPluginType(plugin: FomodPlugin) {
+    return (plugin.effective_type ?? plugin.type ?? "").trim();
   }
 
   function clearCandidateGroupSelection(candidate: InstallCandidate, group: FomodGroup) {
@@ -3558,7 +3563,7 @@
                                       />
                                       <span>
                                         <strong>{plugin.name}</strong>
-                                        {#if plugin.type}<small>{plugin.type}</small>{/if}
+                                        {#if fomodPluginType(plugin)}<small>{fomodPluginType(plugin)}</small>{/if}
                                         {#if plugin.description}<em>{plugin.description}</em>{/if}
                                       </span>
                                     </label>
