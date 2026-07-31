@@ -38,7 +38,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Open phone/iPad Action Center:
   - The action should appear without manual refresh.
   - If auto-install is enabled, the action may complete automatically.
-  - If choices or install approval are needed, controls should disable immediately after tapping.
+  - If installer choices or manual install are needed, controls should disable immediately after tapping.
 - After install, open Stardew Valley in DMM:
   - The new mod should appear disabled by default unless auto-enable is on.
   - Enable it and confirm profile changes apply automatically.

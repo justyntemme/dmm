@@ -5784,7 +5784,7 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 		AppID              string   `json:"app_id"`
 		ProfileCount       int      `json:"profile_count"`
 		DefaultProfile     string   `json:"default_profile"`
-		StagedMods         int      `json:"staged_mods"`
+		InstalledMods      int      `json:"installed_mods"`
 		EnabledMods        int      `json:"enabled_mods"`
 		ActiveInstallJobs  int      `json:"active_install_jobs"`
 		BlockedCandidates  int      `json:"blocked_candidates"`
@@ -5811,7 +5811,7 @@ func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	if body.AppID != "413150" || body.ProfileCount != 1 || body.DefaultProfile != "Default" {
 		t.Fatalf("profile diagnostics = %+v", body)
 	}
-	if body.StagedMods != 1 || body.EnabledMods != 1 || body.ActiveInstallJobs != 1 || body.BlockedCandidates != 0 {
+	if body.InstalledMods != 1 || body.EnabledMods != 1 || body.ActiveInstallJobs != 1 || body.BlockedCandidates != 0 {
 		t.Fatalf("mod/job diagnostics = %+v", body)
 	}
 	if !body.Deployment.Deployed || body.Deployment.FileCount != 1 || body.Deployment.Strategy != string(deploy.StrategySymlink) {

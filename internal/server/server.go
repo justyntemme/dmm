@@ -468,7 +468,7 @@ type gameDiagnosticsResponse struct {
 	Profiles            []storage.Profile                `json:"profiles"`
 	ProfileCount        int                              `json:"profile_count"`
 	DefaultProfile      string                           `json:"default_profile,omitempty"`
-	StagedMods          int                              `json:"staged_mods"`
+	InstalledMods       int                              `json:"installed_mods"`
 	EnabledMods         int                              `json:"enabled_mods"`
 	NeedsRecovery       int                              `json:"needs_recovery"`
 	BlockedCandidates   int                              `json:"blocked_candidates"`
@@ -775,7 +775,7 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		SteamWorkshop:     s.steamWorkshopInfoForGame(game),
 		Profiles:          profiles,
 		ProfileCount:      len(profiles),
-		StagedMods:        len(mods),
+		InstalledMods:     len(mods),
 		BlockedCandidates: len(candidates),
 		Deployment:        deployment,
 		Preview:           deployPreviewSummary{},
@@ -1040,7 +1040,7 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 	if resp.ProfileCount == 0 {
 		warnings = append(warnings, "no profiles are available")
 	}
-	if resp.StagedMods == 0 {
+	if resp.InstalledMods == 0 {
 		warnings = append(warnings, "no installed profile mods are available")
 	}
 	if resp.NeedsRecovery > 0 {
