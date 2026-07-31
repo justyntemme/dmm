@@ -2504,13 +2504,13 @@
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
               {:else if hasPendingProfileChanges}
-                <p class="deploy-message">This profile has changes ready. Enabling or disabling a mod applies the profile automatically; Advanced Deployment Tools can apply it now.</p>
+                <p class="deploy-message">Enabled-mod changes are ready. Toggling a mod applies them automatically; Advanced Deployment Tools can apply them now.</p>
               {:else if deploymentStatus?.deployed}
-                <p class="deploy-message success">This profile is applied to the game.</p>
+                <p class="deploy-message success">Enabled mods are applied to the game.</p>
               {:else if enabledMods.length === 0}
                 <p class="deploy-message">No enabled mods are applied for this profile.</p>
               {:else}
-                <p class="deploy-message">Enable or disable a mod to apply this profile.</p>
+                <p class="deploy-message">Enable or disable a mod to apply enabled mods.</p>
               {/if}
             </div>
 
@@ -2820,7 +2820,7 @@
                 </div>
               {/if}
               <div class="deploy-actions utility-actions">
-                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Now</button>
+                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Enabled Mods</button>
                 <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
                 <button type="button" class="secondary-action" on:click={askRestoreDeployment} disabled={!deploymentStatus?.restore_available}>Restore Last Applied State</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
