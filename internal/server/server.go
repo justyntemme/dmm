@@ -2223,7 +2223,7 @@ func (s *Server) handleSetSteamWorkshopOrder(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if existing, ok := s.findActiveSteamWorkshopAction(appID, "", gameext.SteamWorkshopActionOrder); ok {
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": existing, "duplicate": true})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
 		return
 	}
 	payload, err := steamWorkshopOrderPayload(appID, itemIDs, action)
@@ -2234,7 +2234,7 @@ func (s *Server) handleSetSteamWorkshopOrder(w http.ResponseWriter, r *http.Requ
 	job := s.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, action.Name, payload)
 	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to apply Steam Workshop load order")
 	s.logger.Info("steam workshop load order queued", "job_id", job.ID, "app_id", appID, "items", len(itemIDs), "action_id", action.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "item_ids": itemIDs})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "item_ids": itemIDs})
 }
 
 func (s *Server) handleQueueSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
@@ -2255,24 +2255,24 @@ func (s *Server) handleQueueSteamWorkshopAction(w http.ResponseWriter, r *http.R
 		return
 	}
 	if existing, ok := s.findActiveSteamWorkshopAction(appID, itemID, kind); ok {
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": existing, "duplicate": true})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
 		return
 	}
 	job := s.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, action.Name, steamWorkshopActionPayload(appID, itemID, action))
 	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to apply Steam Workshop action")
 	s.logger.Info("steam workshop action queued", "job_id", job.ID, "app_id", appID, "item_id", itemID, "kind", kind, "action_id", action.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 }
 
 func (s *Server) handleSteamWorkshopActions(w http.ResponseWriter, r *http.Request) {
-	out := []jobs.Job{}
+	out := []jobResponse{}
 	for _, job := range s.jobs.List() {
 		if job.Type != jobTypeSteamWorkshopAction {
 			continue
 		}
 		switch job.Status {
 		case jobs.StatusQueued, jobs.StatusWaiting:
-			out = append(out, job)
+			out = append(out, jobAPIResponse(job))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"actions": out})
@@ -2295,11 +2295,11 @@ func (s *Server) handleStartSteamWorkshopAction(w http.ResponseWriter, r *http.R
 	}
 	started, proceed := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusQueued, jobs.StatusWaiting}, jobs.StatusRunning, "Applying Steam Workshop action through Decky")
 	if !proceed {
-		writeJSON(w, http.StatusOK, map[string]any{"job": started, "proceed": false})
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(started), "proceed": false})
 		return
 	}
 	s.logger.Info("steam workshop action started", "job_id", jobID, "app_id", started.Payload["app_id"], "item_id", started.Payload["item_id"], "kind", started.Payload["kind"])
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": started, "proceed": true})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(started), "proceed": true})
 }
 
 func (s *Server) handleRetrySteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
@@ -2337,7 +2337,7 @@ func (s *Server) handleRetrySteamWorkshopAction(w http.ResponseWriter, r *http.R
 			"item_id": job.Payload["item_id"],
 		})
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": retried})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(retried)})
 }
 
 func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
@@ -2379,7 +2379,7 @@ func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *htt
 				"item_id": job.Payload["item_id"],
 			})
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	message := strings.TrimSpace(req.Error)
@@ -2388,7 +2388,7 @@ func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *htt
 	}
 	job, _ = s.jobs.Fail(jobID, message)
 	s.logger.Warn("steam workshop action failed", "job_id", jobID, "app_id", appID, "item_id", job.Payload["item_id"], "kind", job.Payload["kind"], "error", message, "source", req.Source)
-	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 }
 
 func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWorkshopStateResponse, error) {
@@ -3428,7 +3428,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	s.completeInstalledModJob(r.Context(), job.ID, staged, nil)
@@ -3436,7 +3436,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		job = finalJob
 	}
 	s.logger.Info("installed mod reinstall completed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "restaged_mod_id", staged.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": staged})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": staged})
 }
 
 func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
@@ -3638,7 +3638,7 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		s.logger.Warn("installer candidate apply failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
@@ -3653,7 +3653,7 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 		job = finalJob
 	}
 	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": mod})
 }
 
 func installCandidateSelections(candidate storage.InstallCandidate, submittedSelections map[string][]string) (map[string][]string, error) {
@@ -3807,7 +3807,7 @@ func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Requ
 	if retryErr != nil {
 		s.logger.Warn("install candidate retry failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", retryErr)
 		job, _ = s.jobs.Fail(job.ID, retryErr.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
@@ -3822,7 +3822,7 @@ func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Requ
 		job = finalJob
 	}
 	s.logger.Info("install candidate retry completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "mod": mod})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": mod})
 }
 
 func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate) (storage.InstalledMod, error) {
@@ -4400,7 +4400,7 @@ func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		s.logger.Warn("download recovery failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "installed": installed, "skipped": skipped})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "installed": installed, "skipped": skipped})
 		return
 	}
 	message := "Recovered " + strconv.Itoa(installed) + " downloaded mods"
@@ -4416,7 +4416,7 @@ func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) 
 			"skipped":   skipped,
 		})
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "installed": installed, "skipped": skipped})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "installed": installed, "skipped": skipped})
 }
 
 func (s *Server) handleDeployPreview(w http.ResponseWriter, r *http.Request) {
@@ -4449,7 +4449,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying enabled mods", "manual")
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": result.Applied})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan, "applied": result.Applied})
 		return
 	}
 	job, _ = s.jobs.Complete(job.ID, "Applied enabled mods to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
@@ -4648,13 +4648,13 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 	if err := deploy.Purge(files); err != nil {
 		s.logger.Warn("purge failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
 		s.logger.Warn("purge manifest update failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	s.logger.Info("purge completed", "job_id", job.ID, "app_id", appID, "files", len(files))
@@ -4666,7 +4666,7 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 	if err := s.runDeploymentEventHandlers(r.Context(), appID, "did-purge", "purge", deploy.Plan{}, files); err != nil {
 		s.logger.Warn("post-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", "did-purge", "error", err)
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 }
 
 func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
@@ -4691,14 +4691,14 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("repair failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if len(result.Issues) > 0 {
 		message := "Repaired " + strconv.Itoa(len(result.Repaired)) + " files; " + strconv.Itoa(len(result.Issues)) + " issues need review"
 		s.logger.Warn("repair completed with issues", "job_id", job.ID, "app_id", appID, "repaired", len(result.Repaired), "issues", len(result.Issues))
 		job, _ = s.jobs.Fail(job.ID, message)
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
 		return
 	}
 	s.logger.Info("repair completed", "job_id", job.ID, "app_id", appID, "repaired", len(result.Repaired))
@@ -4707,7 +4707,7 @@ func (s *Server) handleRepairDeploy(w http.ResponseWriter, r *http.Request) {
 		"action":   "repaired",
 		"repaired": len(result.Repaired),
 	})
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
 }
 
 func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
@@ -4732,14 +4732,14 @@ func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("restore failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if len(result.Issues) > 0 {
 		message := "Restored " + strconv.Itoa(len(result.Repaired)) + " files; " + strconv.Itoa(len(result.Issues)) + " issues need review"
 		s.logger.Warn("restore completed with issues", "job_id", job.ID, "app_id", appID, "restored", len(result.Repaired), "issues", len(result.Issues))
 		job, _ = s.jobs.Fail(job.ID, message)
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
 		return
 	}
 	message := "Last applied state already matches " + strconv.Itoa(len(files)) + " managed files"
@@ -4752,7 +4752,7 @@ func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
 		"action":   "restored",
 		"restored": len(result.Repaired),
 	})
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "result": result})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
 }
 
 func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
@@ -5331,11 +5331,11 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled {
-		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction && job.Type != "captured-install" {
-		writeJSON(w, http.StatusOK, map[string]any{"job": job})
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 
@@ -5937,7 +5937,7 @@ func (s *Server) handleInstallCapturedInstall(w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 }
 
 func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Request) {
@@ -6000,7 +6000,7 @@ func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Reque
 		}
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": retried})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(retried)})
 }
 
 var (
