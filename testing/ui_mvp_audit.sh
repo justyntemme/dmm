@@ -41,7 +41,7 @@ require_text "$WEB_APP" "Add From Nexus" \
   "Nexus import must live inside the selected game workspace"
 require_text "$WEB_APP" "Browse Nexus" \
   "phone/tablet UI must expose game-scoped Nexus browsing"
-require_text "$WEB_APP" "Advanced Deployment Tools" \
+require_text "$WEB_APP" "Advanced Profile Tools" \
   "file-level deployment controls must remain an advanced disclosure"
 require_text "$WEB_APP" "These Deck behavior switches are managed from the Decky sidebar settings." \
   "mobile install settings must point users to Decky-owned behavior switches"
