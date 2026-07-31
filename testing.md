@@ -108,6 +108,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
 - In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
 - Confirm direct/provider imports are tied to the selected game and show a non-Nexus source tag.
+- In a selected game on phone/iPad, upload a safe `.zip`, `.7z`, or `.rar` through `Local Archive`.
+- Confirm local archive uploads install through the same Action Center/installer-choice path and show a `Local` source tag.
 - With a mod.io key configured, select a safe game and paste a `https://mod.io/g/{game}/m/{mod}` URL. Confirm it enters the captured-install flow and is tagged `mod.io`.
 - With a CurseForge key configured, select a safe game and paste a `https://www.curseforge.com/{game}/{section}/{mod}` URL. Confirm it enters the captured-install flow and is tagged `CurseForge`.
 - Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.

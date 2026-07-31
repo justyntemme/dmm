@@ -985,6 +985,30 @@ h2 {
   align-content: start;
 }
 
+.local-archive-form {
+  border-top: 1px solid #303741;
+  padding-top: 10px;
+}
+
+.local-archive-picker {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #f4f4f5;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.local-archive-picker input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #d4d4d8;
+  background: #111827;
+}
+
 .nexus-browser {
   display: grid;
   gap: 10px;
@@ -1115,6 +1139,10 @@ h2 {
 
 .warning-copy {
   color: #fbbf24;
+}
+
+.success-copy {
+  color: #76dfa6;
 }
 
 .deployment-summary,

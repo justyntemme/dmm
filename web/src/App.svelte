@@ -449,6 +449,10 @@
   let selectedNexusModID: number | null = null;
   let nexusFilesByMod: Record<number, NexusFile[]> = {};
   let busyNexusFileKey = "";
+  let localArchiveFile: File | null = null;
+  let localArchiveInput: HTMLInputElement | null = null;
+  let localArchiveBusy = false;
+  let localArchiveMessage = "";
   let downloadLinks: DownloadLink[] = [];
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
@@ -1291,6 +1295,41 @@
     nextURL.searchParams.set("file_id", String(file.file_id));
     captureURL = nextURL.toString();
     await resolveCapturedInstall();
+  }
+
+  function handleLocalArchiveChange(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    localArchiveFile = input.files?.[0] ?? null;
+    localArchiveMessage = "";
+  }
+
+  async function uploadLocalArchive() {
+    if (!selectedGame || !localArchiveFile) return;
+    error = "";
+    localArchiveMessage = "";
+    localArchiveBusy = true;
+    try {
+      const form = new FormData();
+      form.append("archive", localArchiveFile);
+      const response = await fetch(`/api/games/${selectedGame.app_id}/local-archives`, {
+        method: "POST",
+        body: form
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
+      localArchiveMessage = result.install_started ? "Upload received; installing archive." : "Upload received; install it from Action Center.";
+      localArchiveFile = null;
+      if (localArchiveInput) localArchiveInput.value = "";
+      await refreshJobsAndSelectedGame();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      localArchiveBusy = false;
+    }
   }
 
   function selectedNexusDomain() {
@@ -2811,14 +2850,27 @@
 
             <div class="management-card import-card">
               <div class="card-heading">
-                <h3>Add From Nexus</h3>
+                <h3>Add Mod</h3>
                 <span>{selectedGameActionItems.length} open</span>
               </div>
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus URL, nxm:// link, or direct archive URL"></textarea>
-                <button type="submit">Add Mod</button>
+                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus, nxm://, Thunderstore, GitHub, mod.io, CurseForge, or direct archive URL"></textarea>
+                <button type="submit">Add URL</button>
               </form>
-              <p class="hint">Use a Nexus page, Mod Manager Download nxm:// link, or direct archive URL. Mods that need choices or review will appear in Action Center.</p>
+              <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
+                <label class="local-archive-picker">
+                  <span>Local Archive</span>
+                  <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar" on:change={handleLocalArchiveChange} />
+                </label>
+                {#if localArchiveFile}
+                  <p class="hint">{localArchiveFile.name} · {formatBytes(localArchiveFile.size)}</p>
+                {/if}
+                <button type="submit" class="secondary-action" disabled={!localArchiveFile || localArchiveBusy}>{localArchiveBusy ? "Uploading..." : "Upload Archive"}</button>
+              </form>
+              {#if localArchiveMessage}
+                <p class="hint success-copy">{localArchiveMessage}</p>
+              {/if}
+              <p class="hint">Mods that need choices or review will appear in Action Center. Installed mods remain disabled until you enable them in the selected profile.</p>
               {#if selectedNexusDomain()}
                 <details class="nexus-browser">
                   <summary>

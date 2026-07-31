@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,6 +97,7 @@ var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:k
 const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
 	fomodHostVersion           = "5.1"
+	maxLocalArchiveUploadBytes = int64(10 << 30)
 )
 
 type installerChoiceRequiredError struct {
@@ -339,6 +341,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/launch/configure", s.handleConfigureGameLaunch)
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
+	mux.HandleFunc("POST /api/games/{appID}/local-archives", s.handleUploadLocalArchive)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
@@ -1365,12 +1368,13 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Notes:     []string{"No verified supported automated ModDB API is wired yet; direct archive URLs remain the safe import path."},
 		},
 		{
-			ID:        "local",
-			Name:      "Local Archive",
-			Kind:      "local",
-			Status:    "planned",
-			SourceTag: "local",
-			Notes:     []string{"Archive inspection exists, but local archive import is not a product flow yet."},
+			ID:         "local",
+			Name:       "Local Archive",
+			Kind:       "local",
+			Status:     "ready",
+			Configured: true,
+			SourceTag:  "local",
+			Notes:      []string{"Phone and tablet uploads import local archives through the same installer, profile, and deployment pipeline as captured URLs."},
 		},
 		{
 			ID:                  "steam_workshop",
@@ -4889,6 +4893,258 @@ type capturedInstallURLRequest struct {
 
 type inspectArchiveRequest struct {
 	Path string `json:"path"`
+}
+
+func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxLocalArchiveUploadBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	upload, header, err := r.FormFile("archive")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	defer upload.Close()
+
+	resolved, result, err := s.saveLocalArchiveUpload(r.Context(), appID, upload, header)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	source := strings.TrimSpace(r.FormValue("source"))
+	if source == "" {
+		source = "local-upload"
+	}
+	s.logger.Info(
+		"local archive upload captured",
+		"source", source,
+		"catalog", resolved.Catalog,
+		"app_id", appID,
+		"game_domain", resolved.GameDomain,
+		"mod_id", resolved.ModID,
+		"file_id", resolved.FileID,
+		"archive_path", result.Path,
+		"archive_sha256", result.SHA256,
+		"archive_bytes", result.BytesWritten,
+	)
+	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		s.logger.Info("local archive duplicate reused", "job_id", job.ID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"job":               job,
+			"resolved":          pending.Resolved,
+			"source":            pending.Source,
+			"archive_file_name": pending.ArchiveFileName,
+			"archive_sha256":    pending.ArchiveSHA256,
+			"archive_bytes":     pending.ArchiveBytes,
+			"duplicate":         true,
+		})
+		return
+	}
+
+	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayload(s.games, resolved))
+	job, _ = s.jobs.Wait(job.ID, "Uploaded "+resolved.FileName+"; install it to add it disabled")
+	pending := capturedInstall{
+		Resolved:        resolved,
+		Source:          source,
+		ArchiveFileName: resolved.FileName,
+		ArchivePath:     result.Path,
+		ArchiveSHA256:   result.SHA256,
+		ArchiveBytes:    result.BytesWritten,
+	}
+	s.rememberCapturedInstall(job.ID, pending)
+
+	payload := map[string]any{
+		"job":               job,
+		"resolved":          resolved,
+		"source":            source,
+		"archive_file_name": resolved.FileName,
+		"archive_sha256":    result.SHA256,
+		"archive_bytes":     result.BytesWritten,
+	}
+	s.cfgMu.RLock()
+	autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
+	s.cfgMu.RUnlock()
+	payload["auto_install"] = autoInstall
+	if autoInstall {
+		started, err := s.startCapturedInstallInstall(job.ID, "local archive upload")
+		if err != nil {
+			s.logger.Warn("local archive auto-install failed", "job_id", job.ID, "app_id", appID, "error", err)
+			job, _ = s.jobs.Fail(job.ID, err.Error())
+			payload["job"] = job
+		} else {
+			payload["job"] = started
+			payload["install_started"] = true
+		}
+	}
+	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) saveLocalArchiveUpload(ctx context.Context, appID string, upload multipart.File, header *multipart.FileHeader) (catalog.ResolvedDownload, download.Result, error) {
+	fileName := cleanLocalArchiveFileName("")
+	if header != nil {
+		fileName = cleanLocalArchiveFileName(header.Filename)
+	}
+	if fileName == "" {
+		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive filename is required")
+	}
+	tmpDir := filepath.Join(s.cfg.DataDir, "tmp", "uploads")
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	tmp, err := os.CreateTemp(tmpDir, "local-archive-*.upload")
+	if err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(tmp, hash), upload)
+	closeErr := tmp.Close()
+	if err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	if closeErr != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, closeErr
+	}
+	if written <= 0 {
+		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive upload was empty")
+	}
+	sum := hex.EncodeToString(hash.Sum(nil))
+	modID := localArchiveModID(fileName, sum)
+	fileID := localArchiveFileID(sum)
+	gameDomain := "steam-" + appID
+	destDir := filepath.Join(s.cfg.DataDir, "downloads", "local", gameDomain, "mods", modID, "files", fileID)
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	destPath := filepath.Join(destDir, fileName)
+	if existingSum, err := fileSHA256(destPath); err == nil {
+		if existingSum == sum {
+			return localArchiveResolved(appID, gameDomain, modID, fileID, fileName), download.Result{
+				Path:         destPath,
+				BytesWritten: written,
+				SHA256:       sum,
+			}, nil
+		}
+		return catalog.ResolvedDownload{}, download.Result{}, errors.New("local archive checksum prefix collision")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return catalog.ResolvedDownload{}, download.Result{}, err
+	}
+	return localArchiveResolved(appID, gameDomain, modID, fileID, fileName), download.Result{
+		Path:         destPath,
+		BytesWritten: written,
+		SHA256:       sum,
+	}, nil
+}
+
+func localArchiveResolved(appID, gameDomain, modID, fileID, fileName string) catalog.ResolvedDownload {
+	return catalog.ResolvedDownload{
+		Catalog:    "local",
+		SourceURL:  "local://" + gameDomain + "/mods/" + modID + "/files/" + fileID,
+		SteamAppID: appID,
+		GameDomain: gameDomain,
+		ModID:      modID,
+		FileID:     fileID,
+		FileName:   fileName,
+	}
+}
+
+func cleanLocalArchiveFileName(name string) string {
+	name = strings.ReplaceAll(strings.TrimSpace(name), "\\", "/")
+	name = filepath.Base(name)
+	name = strings.Trim(name, ". ")
+	if name == "" || name == "/" || name == "." {
+		return ""
+	}
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '-'
+		default:
+			return r
+		}
+	}, name)
+	name = strings.TrimSpace(strings.Trim(name, "."))
+	if len(name) > 240 {
+		ext := filepath.Ext(name)
+		stem := strings.TrimSuffix(name, ext)
+		maxStem := 240 - len(ext)
+		if maxStem < 1 {
+			return name[:240]
+		}
+		name = stem[:maxStem] + ext
+	}
+	return name
+}
+
+func localArchiveModID(fileName, checksum string) string {
+	stem := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	stem = strings.ToLower(strings.TrimSpace(stem))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range stem {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	id := strings.Trim(b.String(), "-")
+	if id == "" {
+		id = "archive"
+	}
+	if len(id) > 80 {
+		id = strings.Trim(id[:80], "-")
+	}
+	if id == "" {
+		id = "archive"
+	}
+	return id
+}
+
+func localArchiveFileID(checksum string) string {
+	checksum = strings.ToLower(strings.TrimSpace(checksum))
+	if len(checksum) >= 16 {
+		return checksum[:16]
+	}
+	if checksum == "" {
+		return "unknown"
+	}
+	return checksum
 }
 
 func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Request) {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -230,6 +231,9 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	}
 	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
 		t.Fatalf("direct catalog = %+v", got)
+	}
+	if got := byID["local"]; got.Status != "ready" || got.Kind != "local" || !got.Configured || got.URLImport || got.Download {
+		t.Fatalf("local catalog = %+v", got)
 	}
 	if got := byID["modio"]; got.Status != "needs_credentials" || got.Configured || got.URLImport || !got.CredentialsRequired {
 		t.Fatalf("mod.io catalog = %+v", got)
@@ -2860,6 +2864,90 @@ func TestInstallCandidateSelectionsUseBackendDefaultsForEmptyStoredChoices(t *te
 	}
 	if got, ok := selections["group"]; !ok || len(got) != 0 {
 		t.Fatalf("explicit group selections = %+v", selections)
+	}
+}
+
+func TestUploadLocalArchiveAutoInstallsArchive(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "StardewModdingAPI"), []byte("smapi"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	srv.cfgMu.Lock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = true
+	srv.cfgMu.Unlock()
+
+	archivePath := filepath.Join(t.TempDir(), "Lookup Anything.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"LookupAnything/manifest.json":      `{"Name":"Lookup Anything"}`,
+		"LookupAnything/LookupAnything.dll": "dll",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reqBody := bytes.Buffer{}
+	writer := multipart.NewWriter(&reqBody)
+	part, err := writer.CreateFormFile("archive", "Lookup Anything.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(archiveBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/local-archives", &reqBody)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		InstallStarted  bool                     `json:"install_started"`
+		ArchiveFileName string                   `json:"archive_file_name"`
+		Resolved        catalog.ResolvedDownload `json:"resolved"`
+		Job             jobs.Job                 `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.InstallStarted || body.Job.Status != jobs.StatusRunning {
+		t.Fatalf("local upload response = %+v", body)
+	}
+	if body.ArchiveFileName != "Lookup Anything.zip" || body.Resolved.Catalog != "local" || body.Resolved.SteamAppID != "413150" {
+		t.Fatalf("local upload resolved = %+v", body.Resolved)
+	}
+
+	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "Installed Lookup Anything disabled") {
+		t.Fatalf("job message = %q", completed.Message)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || mods[0].Catalog != "local" || mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
 	}
 }
 
