@@ -672,53 +672,109 @@ h2 {
   padding: 8px 12px;
 }
 
-.installer-choices {
+.installer-choices,
+.installer-wizard {
   display: grid;
   gap: 10px;
   margin-top: 12px;
 }
 
+.installer-wizard {
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.installer-wizard-header,
+.installer-wizard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.installer-wizard-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.installer-wizard-header span {
+  white-space: nowrap;
+}
+
 .installer-choices section,
+.installer-step,
 .installer-choices fieldset {
   display: grid;
   gap: 8px;
 }
 
 .installer-choices h4,
+.installer-step h4,
 .installer-choices legend {
   color: #f4f4f5;
   font-size: 0.86rem;
   font-weight: 900;
 }
 
-.installer-choices fieldset {
+.installer-step h4 {
+  margin: 0;
+}
+
+.installer-choices fieldset,
+.installer-step fieldset {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   margin: 0;
   padding: 10px;
 }
 
-.installer-choices label {
+.installer-step fieldset.invalid-group {
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.installer-choices label,
+.installer-step label {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: start;
 }
 
-.installer-choices input {
+.installer-choices input,
+.installer-step input {
   margin-top: 3px;
 }
 
-.installer-choices label span {
+.installer-choices label span,
+.installer-step label span {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #f4f4f5;
   display: grid;
   gap: 2px;
+  padding: 0;
 }
 
-.installer-choices em {
+.installer-step label.option-disabled {
+  opacity: 0.58;
+}
+
+.installer-choices em,
+.installer-step em {
   color: #d4d4d8;
   font-size: 0.82rem;
   font-style: normal;
   overflow-wrap: anywhere;
+}
+
+.installer-validation {
+  color: #fbbf24;
+  font-size: 0.82rem;
+  margin: 0;
 }
 
 .requirement-list > article > span {

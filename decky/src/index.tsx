@@ -1108,6 +1108,45 @@ function installerRequiresSelections(installer: FomodInstaller) {
   return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => (group.plugins ?? []).length > 0));
 }
 
+function fomodPluginSelectable(plugin: FomodPlugin) {
+  return (plugin.type ?? "").trim().toLowerCase() !== "notusable";
+}
+
+function fomodPluginLocked(group: FomodGroup, plugin: FomodPlugin) {
+  const type = (plugin.type ?? "").trim().toLowerCase();
+  return fomodGroupType(group) === "selectall" || type === "required" || type === "notusable";
+}
+
+function fomodGroupValid(group: FomodGroup, selections: Record<string, string[]>) {
+  const selected = (selections[group.id] ?? []).filter((id) => {
+    const plugin = (group.plugins ?? []).find((item) => item.id === id);
+    return plugin ? fomodPluginSelectable(plugin) : false;
+  });
+  const selectableCount = (group.plugins ?? []).filter(fomodPluginSelectable).length;
+  switch (fomodGroupType(group)) {
+    case "selectall":
+      return selected.length === selectableCount;
+    case "selectexactlyone":
+      return selected.length === 1;
+    case "selectatleastone":
+      return selected.length >= 1;
+    case "selectatmostone":
+      return selected.length <= 1;
+    default:
+      return true;
+  }
+}
+
+function fomodStepValid(step: FomodStep | undefined, selections: Record<string, string[]>) {
+  if (!step) return true;
+  return (step.groups ?? []).every((group) => fomodGroupValid(group, selections));
+}
+
+function fomodInstallerValid(installer: FomodInstaller | null, selections: Record<string, string[]>) {
+  if (!installer) return false;
+  return visibleFomodSteps(installer).every((step) => fomodStepValid(step, selections));
+}
+
 function storedFomodSelections(candidate: InstallCandidate): Record<string, string[]> | null {
   if (!candidate.choices_json) return null;
   try {
@@ -1455,22 +1494,41 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
   const [candidate, setCandidate] = useState<InstallCandidate>(props.candidate);
   const installer = installerForCandidate(candidate);
   const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
+  const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const selectedChoices = selectionCount(selections);
+  const steps = installer ? visibleFomodSteps(installer) : [];
+  const currentStepIndex = steps.length === 0 ? 0 : Math.max(0, Math.min(stepIndex, steps.length - 1));
+  const currentStep = steps[currentStepIndex];
+  const currentStepReady = fomodStepValid(currentStep, selections);
+  const installerReady = fomodInstallerValid(installer, selections);
+  const lastStep = currentStepIndex >= steps.length - 1;
 
   useEffect(() => {
     setCandidate(props.candidate);
     setSelections(storedFomodSelections(props.candidate) ?? {});
+    setStepIndex(0);
   }, [props.candidate.id]);
+
+  useEffect(() => {
+    const max = Math.max(0, steps.length - 1);
+    if (stepIndex > max) setStepIndex(max);
+  }, [steps.length, stepIndex]);
 
   function pluginSelected(group: FomodGroup, plugin: FomodPlugin) {
     return (selections[group.id] ?? []).includes(plugin.id);
   }
 
+  function clearGroupSelection(group: FomodGroup) {
+    const next = { ...selections, [group.id]: [] };
+    setSelections(next);
+    void saveChoices(next);
+  }
+
   function setPluginSelection(group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
     const type = fomodGroupType(group);
-    if (type === "selectall") return;
+    if (fomodPluginLocked(group, plugin)) return;
     setSelections((current) => {
       const next = { ...current };
       if (type === "selectexactlyone" || type === "selectatmostone") {
@@ -1511,6 +1569,10 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
       setMessage("Installer choices are missing from backend state. Retry this installer item so DMM can rebuild the choices.");
       return;
     }
+    if (!installerReady) {
+      setMessage("One or more installer steps still need a valid selection.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -1538,6 +1600,15 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
     }
   }
 
+  function continueOrApply() {
+    if (!installer || busy || !currentStepReady) return;
+    if (!lastStep) {
+      setStepIndex(currentStepIndex + 1);
+      return;
+    }
+    void applyChoices();
+  }
+
   return (
     <ConfirmModal
       strTitle={candidate.name}
@@ -1550,39 +1621,79 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
             </div>
           )}
           {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this action.</div>}
-          {installer && visibleFomodSteps(installer).map((step) => (
-            <section key={step.id} style={{ display: "grid", gap: "8px" }}>
-              <div style={{ fontWeight: 800 }}>{step.name}</div>
-              {step.groups?.map((group) => (
-                <fieldset key={group.id} style={{ border: "1px solid #303741", borderRadius: "6px", display: "grid", gap: "8px", margin: 0, padding: "10px" }}>
-                  <legend style={{ color: "#7dd3fc", fontWeight: 800, padding: "0 4px" }}>{group.name}</legend>
-                  {group.plugins?.map((plugin) => (
-                    <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
-                      <input
-                        type={fomodGroupInputType(group)}
-                        name={`candidate-${candidate.id}-${group.id}`}
-                        checked={pluginSelected(group, plugin)}
-                        disabled={busy || fomodGroupType(group) === "selectall"}
-                        onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
-                      />
-                      <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
-                        <strong>{plugin.name}</strong>
-                        {plugin.type && <small style={{ color: "#a1a1aa" }}>{plugin.type}</small>}
-                        {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
-                      </span>
-                    </label>
+          {installer && (
+            <div style={{ border: "1px solid rgba(125, 211, 252, 0.28)", borderRadius: "6px", display: "grid", gap: "10px", padding: "10px" }}>
+              <div style={{ alignItems: "center", display: "flex", gap: "8px", justifyContent: "space-between" }}>
+                <div style={{ display: "grid", gap: "2px", minWidth: 0 }}>
+                  <strong>{installer.name || "Installer Choices"}</strong>
+                  <small style={{ color: "#a1a1aa" }}>{steps.length > 0 ? `Step ${currentStepIndex + 1} of ${steps.length}` : "No visible choices"}</small>
+                </div>
+                <span style={{ color: currentStepReady ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{currentStepReady ? "Ready" : "Needs selection"}</span>
+              </div>
+              {currentStep ? (
+                <section style={{ display: "grid", gap: "8px" }}>
+                  <div style={{ fontWeight: 800 }}>{currentStep.name}</div>
+                  {currentStep.groups?.map((group) => (
+                    <fieldset key={group.id} style={{ border: `1px solid ${fomodGroupValid(group, selections) ? "#303741" : "#fbbf24"}`, borderRadius: "6px", display: "grid", gap: "8px", margin: 0, padding: "10px" }}>
+                      <legend style={{ color: "#7dd3fc", fontWeight: 800, padding: "0 4px" }}>{group.name}</legend>
+                      {fomodGroupType(group) === "selectatmostone" && (
+                        <label style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
+                          <input
+                            type="radio"
+                            name={`candidate-${candidate.id}-${group.id}`}
+                            checked={(selections[group.id] ?? []).length === 0}
+                            disabled={busy}
+                            onChange={() => clearGroupSelection(group)}
+                          />
+                          <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                            <strong>None</strong>
+                            <small style={{ color: "#a1a1aa" }}>Do not install an option from this group.</small>
+                          </span>
+                        </label>
+                      )}
+                      {group.plugins?.map((plugin) => (
+                        <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)", opacity: fomodPluginSelectable(plugin) ? 1 : 0.58 }}>
+                          <input
+                            type={fomodGroupInputType(group)}
+                            name={`candidate-${candidate.id}-${group.id}`}
+                            checked={pluginSelected(group, plugin)}
+                            disabled={busy || fomodPluginLocked(group, plugin)}
+                            onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
+                          />
+                          <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                            <strong>{plugin.name}</strong>
+                            {plugin.type && <small style={{ color: "#a1a1aa" }}>{plugin.type}</small>}
+                            {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
+                          </span>
+                        </label>
+                      ))}
+                      {!fomodGroupValid(group, selections) && <div style={{ color: "#fbbf24", fontSize: "11px" }}>This group needs a valid selection before continuing.</div>}
+                    </fieldset>
                   ))}
-                </fieldset>
-              ))}
-            </section>
-          ))}
+                </section>
+              ) : (
+                <div style={{ color: "#a1a1aa" }}>This installer has no visible choices. Apply it to add the mod to the profile.</div>
+              )}
+              <div style={{ alignItems: "center", display: "flex", gap: "8px", justifyContent: "space-between" }}>
+                <button
+                  type="button"
+                  disabled={busy || currentStepIndex === 0}
+                  onClick={() => setStepIndex(Math.max(0, currentStepIndex - 1))}
+                  style={{ minHeight: "34px", padding: "6px 10px" }}
+                >
+                  Back
+                </button>
+                <span style={{ color: "#a1a1aa", fontSize: "11px" }}>{lastStep ? "Ready to apply" : "Continue through the installer"}</span>
+              </div>
+            </div>
+          )}
           {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
         </div>
       }
-      strOKButtonText={busy ? "Applying..." : "Apply Choices"}
+      strOKButtonText={busy ? "Applying..." : lastStep ? "Apply Choices" : "Next"}
       strCancelButtonText="Later"
-      bOKDisabled={busy || !installer}
-      onOK={() => void applyChoices()}
+      bOKDisabled={busy || !installer || !currentStepReady || (lastStep && !installerReady)}
+      onOK={continueOrApply}
       onCancel={props.closeModal}
       closeModal={props.closeModal}
     />

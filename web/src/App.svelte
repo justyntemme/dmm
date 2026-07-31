@@ -501,6 +501,7 @@
   let actionStateRefreshNeedsSelectedGame = false;
   let actionStateRefreshNeedsPreview = false;
   let candidateSelections: Record<number, Record<string, string[]>> = {};
+  let candidateStepIndices: Record<number, number> = {};
   let refreshJobsInFlight = false;
   let refreshJobsQueued = false;
   let eventSocket: WebSocket | null = null;
@@ -1580,11 +1581,27 @@
     return (candidateCurrentSelections(candidate)[group.id] ?? []).includes(plugin.id);
   }
 
+  function fomodPluginSelectable(plugin: FomodPlugin) {
+    return (plugin.type ?? "").trim().toLowerCase() !== "notusable";
+  }
+
+  function fomodPluginLocked(group: FomodGroup, plugin: FomodPlugin) {
+    const type = (plugin.type ?? "").trim().toLowerCase();
+    return fomodGroupType(group) === "selectall" || type === "required" || type === "notusable";
+  }
+
+  function clearCandidateGroupSelection(candidate: InstallCandidate, group: FomodGroup) {
+    const current = candidateCurrentSelections(candidate);
+    const next = { ...current, [group.id]: [] };
+    candidateSelections = { ...candidateSelections, [candidate.id]: next };
+    void saveCandidateSelections(candidate, next);
+  }
+
   function setCandidatePluginSelection(candidate: InstallCandidate, group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
     const current = candidateCurrentSelections(candidate);
     const next = { ...current };
-    const type = group.type.toLowerCase();
-    if (type === "selectall") return;
+    const type = fomodGroupType(group);
+    if (fomodPluginLocked(group, plugin)) return;
     if (type === "selectexactlyone" || type === "selectatmostone") {
       next[group.id] = checked ? [plugin.id] : [];
     } else {
@@ -1595,6 +1612,47 @@
     }
     candidateSelections = { ...candidateSelections, [candidate.id]: next };
     void saveCandidateSelections(candidate, next);
+  }
+
+  function candidateStepIndex(candidate: InstallCandidate, steps: FomodStep[]) {
+    if (steps.length === 0) return 0;
+    const requested = candidateStepIndices[candidate.id] ?? 0;
+    return Math.max(0, Math.min(requested, steps.length - 1));
+  }
+
+  function setCandidateStepIndex(candidate: InstallCandidate, steps: FomodStep[], index: number) {
+    const nextIndex = steps.length === 0 ? 0 : Math.max(0, Math.min(index, steps.length - 1));
+    candidateStepIndices = { ...candidateStepIndices, [candidate.id]: nextIndex };
+  }
+
+  function candidateGroupValid(candidate: InstallCandidate, group: FomodGroup) {
+    const selected = (candidateCurrentSelections(candidate)[group.id] ?? []).filter((id) => {
+      const plugin = (group.plugins ?? []).find((item) => item.id === id);
+      return plugin ? fomodPluginSelectable(plugin) : false;
+    });
+    const selectableCount = (group.plugins ?? []).filter(fomodPluginSelectable).length;
+    switch (fomodGroupType(group)) {
+      case "selectall":
+        return selected.length === selectableCount;
+      case "selectexactlyone":
+        return selected.length === 1;
+      case "selectatleastone":
+        return selected.length >= 1;
+      case "selectatmostone":
+        return selected.length <= 1;
+      default:
+        return true;
+    }
+  }
+
+  function candidateStepValid(candidate: InstallCandidate, step: FomodStep | undefined) {
+    if (!step) return true;
+    return (step.groups ?? []).every((group) => candidateGroupValid(candidate, group));
+  }
+
+  function candidateInstallerValid(candidate: InstallCandidate, installer: FomodInstaller | null) {
+    if (!installer) return false;
+    return visibleFomodSteps(installer).every((step) => candidateStepValid(candidate, step));
   }
 
   async function saveCandidateSelections(candidate: InstallCandidate, selections: Record<string, string[]>) {
@@ -1647,6 +1705,7 @@
       }
       installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
       candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
+      candidateStepIndices = Object.fromEntries(Object.entries(candidateStepIndices).filter(([id]) => Number(id) !== candidate.id));
       await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -3456,20 +3515,45 @@
                         <p class="preset-selection-note">{selectedChoiceCount} choice{selectedChoiceCount === 1 ? "" : "s"} preselected from DMM's saved/default installer state.</p>
                       {/if}
                       {#if installer}
-                        <div class="installer-choices">
-                          {#each visibleFomodSteps(installer) as step}
-                            <section>
+                        {@const steps = visibleFomodSteps(installer)}
+                        {@const stepIndex = candidateStepIndex(candidate, steps)}
+                        {@const step = steps[stepIndex]}
+                        <div class="installer-wizard">
+                          <div class="installer-wizard-header">
+                            <div>
+                              <strong>{installer.name || "Installer Choices"}</strong>
+                              <small>{steps.length > 0 ? `Step ${stepIndex + 1} of ${steps.length}` : "No choices"}</small>
+                            </div>
+                            <span>{candidateStepValid(candidate, step) ? "Ready" : "Needs selection"}</span>
+                          </div>
+                          {#if step}
+                            <section class="installer-step">
                               <h4>{step.name}</h4>
                               {#each step.groups ?? [] as group}
-                                <fieldset>
+                                <fieldset class:invalid-group={!candidateGroupValid(candidate, group)}>
                                   <legend>{group.name}</legend>
+                                  {#if fomodGroupType(group) === "selectatmostone"}
+                                    <label class="installer-none-option">
+                                      <input
+                                        type="radio"
+                                        name={`candidate-${candidate.id}-${group.id}`}
+                                        checked={(candidateCurrentSelections(candidate)[group.id] ?? []).length === 0}
+                                        disabled={isInstallCandidateBusy(candidate)}
+                                        on:change={() => clearCandidateGroupSelection(candidate, group)}
+                                      />
+                                      <span>
+                                        <strong>None</strong>
+                                        <small>Do not install an option from this group.</small>
+                                      </span>
+                                    </label>
+                                  {/if}
                                   {#each group.plugins ?? [] as plugin}
-                                    <label>
+                                    <label class:option-disabled={!fomodPluginSelectable(plugin)}>
                                       <input
                                         type={fomodGroupInputType(group)}
                                         name={`candidate-${candidate.id}-${group.id}`}
                                         checked={isCandidatePluginSelected(candidate, group, plugin)}
-                                        disabled={fomodGroupType(group) === "selectall" || isInstallCandidateBusy(candidate)}
+                                        disabled={fomodPluginLocked(group, plugin) || isInstallCandidateBusy(candidate)}
                                         on:change={(event) => setCandidatePluginSelection(candidate, group, plugin, event.currentTarget.checked)}
                                       />
                                       <span>
@@ -3479,17 +3563,26 @@
                                       </span>
                                     </label>
                                   {/each}
+                                  {#if !candidateGroupValid(candidate, group)}
+                                    <p class="installer-validation">This group needs a valid selection before continuing.</p>
+                                  {/if}
                                 </fieldset>
                               {/each}
                             </section>
-                          {/each}
+                            <div class="installer-wizard-actions">
+                              <button type="button" class="secondary-action compact" disabled={stepIndex === 0 || isInstallCandidateBusy(candidate)} on:click={() => setCandidateStepIndex(candidate, steps, stepIndex - 1)}>Back</button>
+                              <button type="button" class="secondary-action compact" disabled={stepIndex >= steps.length - 1 || !candidateStepValid(candidate, step) || isInstallCandidateBusy(candidate)} on:click={() => setCandidateStepIndex(candidate, steps, stepIndex + 1)}>Next</button>
+                            </div>
+                          {:else}
+                            <p class="hint">This installer has no visible choices. Apply it to add the mod to this profile.</p>
+                          {/if}
                         </div>
                       {/if}
                     </div>
                     <div class="action-controls">
                       <span>{candidateStatusLabel(candidate)}</span>
                       {#if installer}
-                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
+                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate) || !candidateInstallerValid(candidate, installer)}>
                           {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
                         </button>
                       {:else if candidate.status === "blocked"}
