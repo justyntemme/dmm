@@ -776,8 +776,9 @@
     if (event.type === "job.updated") {
       if (isJob(event.payload)) {
         upsertJob(event.payload);
-        if (selectedGame && jobMatchesGame(event.payload, selectedGame)) {
-          scheduleActionStateRefresh(true, event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice");
+        const matchesSelectedGame = Boolean(selectedGame && jobMatchesGame(event.payload, selectedGame));
+        if (isActionJob(event.payload) || matchesSelectedGame) {
+          scheduleActionStateRefresh(matchesSelectedGame, matchesSelectedGame && (event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice"));
         }
       }
       return;
@@ -804,6 +805,10 @@
     if (["profile_mods.changed", "deployment.changed", "mod_updates.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
       scheduleSelectedGameRefresh(true, true);
     }
+  }
+
+  function isActionJob(job: Job) {
+    return ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type);
   }
 
   function eventMatchesSelectedGame(event: DomainEvent) {
