@@ -709,6 +709,7 @@ function showLaunchToast(title: string, body: string, failed = false) {
 
 const notifiedJobStates = new Map<string, string>();
 const shownInstallerChoiceModals = new Set<string>();
+const dismissedInstallerChoiceModals = new Set<string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
 const completedWorkshopActions = new Set<string>();
@@ -1473,6 +1474,10 @@ async function maybeShowInstallerChoiceModal(job: Job) {
   if (!appID || !Number.isFinite(candidateID)) return;
   const key = String(candidateID);
   if (shownInstallerChoiceModals.has(key)) return;
+  if (dismissedInstallerChoiceModals.has(key)) {
+    await logFrontendEvent("installer choice modal skipped after user dismissed auto display", { app_id: appID, candidate_id: candidateID });
+    return;
+  }
   try {
     const result = await call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID);
     if (!result.ok) {
@@ -1496,6 +1501,7 @@ async function maybeShowInstallerChoiceModal(job: Job) {
 async function openInstallerChoiceModalForCandidate(appID: string, candidate: InstallCandidate, source: string, onApplied?: () => void) {
   const key = String(candidate.id);
   if (shownInstallerChoiceModals.has(key)) return;
+  if (source !== "event") dismissedInstallerChoiceModals.delete(key);
   if (!installerForCandidate(candidate)) {
     await logFrontendEvent("installer choice modal skipped for candidate without installer", { app_id: appID, candidate_id: candidate.id, source });
     showLaunchToast("DMM installer choices unavailable", "Open the phone UI to review this installer item.", false);
@@ -1504,8 +1510,10 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
   shownInstallerChoiceModals.add(key);
   try {
     let modal: { Close: () => void } | null = null;
+    let applied = false;
     const closeModal = () => {
       shownInstallerChoiceModals.delete(key);
+      if (!applied && source === "event") dismissedInstallerChoiceModals.add(key);
       modal?.Close();
     };
     modal = showModal(
@@ -1514,7 +1522,9 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
         candidate={candidate}
         closeModal={closeModal}
         onApplied={() => {
+          applied = true;
           shownInstallerChoiceModals.delete(key);
+          dismissedInstallerChoiceModals.delete(key);
           void seedJobNotifications({ seed: true });
           void syncLaunchActions();
           onApplied?.();
@@ -1866,7 +1876,9 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
   if (event.type === "job.updated" && isJob(event.payload)) {
     await maybeShowJobToast(event.payload, { source: "event" });
     if (event.payload.type === "installer-choice" && event.payload.status !== "waiting" && event.payload.payload?.candidate_id) {
-      shownInstallerChoiceModals.delete(event.payload.payload.candidate_id);
+      const candidateKey = String(event.payload.payload.candidate_id);
+      shownInstallerChoiceModals.delete(candidateKey);
+      dismissedInstallerChoiceModals.delete(candidateKey);
     }
     await maybeShowInstallerChoiceModal(event.payload);
   }
