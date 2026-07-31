@@ -27,6 +27,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/thunderstore"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/deps"
@@ -152,6 +153,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		},
 		catalogs: []catalog.RemoteModCatalog{
 			nexus.Resolver{},
+			thunderstore.Resolver{},
 			direct.Resolver{},
 		},
 		games: gameRegistry,
@@ -4926,6 +4928,9 @@ func (s *Server) resolveCatalogURL(ctx context.Context, req catalog.ResolveReque
 		resolved, err := remoteCatalog.ResolveURL(ctx, req)
 		if err == nil {
 			return resolved, nil
+		}
+		if !errors.Is(err, catalog.ErrUnsupportedURL) {
+			return catalog.ResolvedDownload{}, err
 		}
 		lastErr = err
 	}

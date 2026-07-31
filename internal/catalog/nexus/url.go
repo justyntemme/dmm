@@ -3,6 +3,7 @@ package nexus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -63,7 +64,7 @@ func ParseURL(raw string) (catalog.ResolvedDownload, error) {
 	case "http", "https":
 		host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
 		if host != "nexusmods.com" {
-			return catalog.ResolvedDownload{}, errors.New("not a Nexus Mods URL")
+			return catalog.ResolvedDownload{}, fmt.Errorf("%w: not a Nexus Mods URL", catalog.ErrUnsupportedURL)
 		}
 		matches := nexusModPath.FindStringSubmatch(u.Path)
 		if len(matches) < 3 {
@@ -77,7 +78,7 @@ func ParseURL(raw string) (catalog.ResolvedDownload, error) {
 		}
 		return out, nil
 	default:
-		return catalog.ResolvedDownload{}, errors.New("unsupported URL scheme")
+		return catalog.ResolvedDownload{}, fmt.Errorf("%w: unsupported Nexus URL scheme", catalog.ErrUnsupportedURL)
 	}
 }
 

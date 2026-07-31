@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -36,7 +37,7 @@ func (Resolver) ResolveURL(_ context.Context, req catalog.ResolveRequest) (catal
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return catalog.ResolvedDownload{}, errors.New("direct archive URL must use http or https")
+		return catalog.ResolvedDownload{}, fmt.Errorf("%w: direct archive URL must use http or https", catalog.ErrUnsupportedURL)
 	}
 	if strings.TrimSpace(u.Host) == "" {
 		return catalog.ResolvedDownload{}, errors.New("direct archive URL must include a host")

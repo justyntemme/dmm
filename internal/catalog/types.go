@@ -1,6 +1,11 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrUnsupportedURL = errors.New("unsupported catalog URL")
 
 type ResolveRequest struct {
 	URL        string
