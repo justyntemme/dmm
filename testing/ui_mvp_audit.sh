@@ -58,11 +58,19 @@ reject_text "$WEB_APP" ">Dependencies</button>" \
 
 require_text "$DECKY_APP" "Server Access" \
   "Decky plugin must retain server access controls/status"
+require_text "$DECKY_APP" "games: \"Games\"" \
+  "Decky route tab must be labeled Games for the game-selection workflow"
 require_text "$DECKY_APP" "Dependencies" \
   "Decky plugin must retain dependency status"
 require_text "$DECKY_APP" "Auto-install captured downloads" \
   "Decky plugin must expose automatic captured-install behavior"
 require_text "$DECKY_APP" "Auto-enable installed mods" \
   "Decky plugin must expose automatic enable/deploy behavior"
+reject_text "$DECKY_APP" "Open Nexus Mods" \
+  "Decky Manage tab must not expose the removed global external Nexus opener"
+reject_text "$DECKY_APP" "Open Nexus Page" \
+  "Decky selected-game view must use the in-app Nexus browser instead of a separate external page opener"
+reject_text "$DECKY_APP" "\"open_nexus\"" \
+  "Decky plugin must not retain the removed external Nexus bridge call"
 
 echo "MVP UI product audit passed"
