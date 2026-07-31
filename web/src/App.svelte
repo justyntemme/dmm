@@ -2897,8 +2897,8 @@
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
                 <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label="Open Action Center for this game">
                   <strong>{selectedGameActionCount}</strong>
-                  <span>{selectedGameActionCount === 1 ? "Action" : "Actions"}</span>
-                  <em>Open</em>
+                  <span>Action Center</span>
+                  <em>{selectedGameActionCount === 0 ? "Review" : "Open"}</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
@@ -3368,10 +3368,10 @@
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <div class="empty-action-panel">
-              <p class="hint">No install actions need attention for this game.</p>
+              <p class="hint">No install actions need attention for this game. Add a mod or return to the profile mod list.</p>
               <div class="empty-action-buttons">
                 <button type="button" on:click={() => openGameModule("plugins")}>Add Mod</button>
-                <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Manage Mods</button>
+                <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Profile Mods</button>
               </div>
             </div>
           {/if}
