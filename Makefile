@@ -1,5 +1,9 @@
 GO ?= go
 NPM ?= npm
+BUILD_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf unknown)
+BUILD_COMMIT_SHORT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_CHANNEL ?= dev-latest
 
 .PHONY: test build web decky package mvp-audit deck-transfer mvp-release clean
 
@@ -21,6 +25,7 @@ decky:
 	cp -R decky/dist dist/decky-mod-manager/dist
 	cp -R web/dist dist/decky-mod-manager/web/dist
 	chmod +x dist/decky-mod-manager/bin/dmm-server
+	printf '%s\n' '{' '  "commit": "$(BUILD_COMMIT)",' '  "short_commit": "$(BUILD_COMMIT_SHORT)",' '  "built_at": "$(BUILD_TIME)",' '  "channel": "$(BUILD_CHANNEL)"' '}' > dist/decky-mod-manager/build-info.json
 
 package:
 	GOOS=linux GOARCH=amd64 $(GO) build -o bin/dmm-server-linux-amd64 ./cmd/dmm-server
@@ -35,6 +40,7 @@ package:
 	cp -R decky/dist/. dist/decky-mod-manager/dist/
 	cp -R web/dist dist/decky-mod-manager/web/
 	chmod +x dist/decky-mod-manager/bin/dmm-server dist/decky-mod-manager/bin/dmm-nxm-handler
+	printf '%s\n' '{' '  "commit": "$(BUILD_COMMIT)",' '  "short_commit": "$(BUILD_COMMIT_SHORT)",' '  "built_at": "$(BUILD_TIME)",' '  "channel": "$(BUILD_CHANNEL)"' '}' > dist/decky-mod-manager/build-info.json
 	COPYFILE_DISABLE=1 tar --no-xattrs -C dist -czf dist/decky-mod-manager.tar.gz decky-mod-manager 2>/dev/null || COPYFILE_DISABLE=1 tar -C dist -czf dist/decky-mod-manager.tar.gz decky-mod-manager
 	cd dist && COPYFILE_DISABLE=1 zip -qr decky-mod-manager.zip decky-mod-manager
 

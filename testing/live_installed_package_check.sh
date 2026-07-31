@@ -38,6 +38,7 @@ required = [
     "bin/dmm-nxm-handler",
     "dist/index.js",
     "web/dist/index.html",
+    "build-info.json",
 ]
 
 

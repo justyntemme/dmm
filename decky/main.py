@@ -33,6 +33,7 @@ class Plugin:
         "bin/dmm-nxm-handler",
         "dist/index.js",
         "web/dist/index.html",
+        "build-info.json",
     ]
 
     async def _main(self):
@@ -127,6 +128,7 @@ class Plugin:
                 "plugin": str(self.plugin_log),
                 "backend": str(self.backend_log),
             },
+            "build": self._build_info(),
             "error": error,
             "warning": "No app authentication is enabled. Keep LAN-only mode enabled unless using a trusted VPN/tunnel.",
         }
@@ -1156,6 +1158,32 @@ class Plugin:
             raise RuntimeError("package contains an empty path entry")
         if not (member.isfile() or member.isdir()):
             raise RuntimeError(f"package contains unsupported entry type: {member.name}")
+
+    def _build_info(self):
+        plugin_dir = Path(__file__).resolve().parent
+        info_path = plugin_dir / "build-info.json"
+        package_path = plugin_dir / "package.json"
+        info = {"path": str(info_path)}
+        try:
+            data = json.loads(info_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for key in ["commit", "short_commit", "built_at", "channel"]:
+                    value = data.get(key)
+                    if isinstance(value, str) and value.strip():
+                        info[key] = value.strip()
+        except FileNotFoundError:
+            info["error"] = "build-info.json is missing"
+        except Exception as exc:
+            info["error"] = self._redact_url(str(exc))
+
+        try:
+            package = json.loads(package_path.read_text(encoding="utf-8"))
+            if isinstance(package, dict) and isinstance(package.get("version"), str):
+                info["version"] = package["version"].strip()
+        except Exception as exc:
+            if "error" not in info:
+                info["error"] = self._redact_url(str(exc))
+        return info
 
     def _lan_ip(self):
         try:

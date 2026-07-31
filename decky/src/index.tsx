@@ -76,6 +76,7 @@ type BackendStatus = {
   port: number;
   url?: string;
   pid?: number;
+  build?: BuildInfo;
   backend?: {
     lan_only: boolean;
     game_count: number;
@@ -97,6 +98,16 @@ type BackendStatus = {
     plugin: string;
     backend: string;
   };
+  error?: string;
+};
+
+type BuildInfo = {
+  path?: string;
+  commit?: string;
+  short_commit?: string;
+  built_at?: string;
+  channel?: string;
+  version?: string;
   error?: string;
 };
 
@@ -4289,6 +4300,16 @@ function DeckyModManagerRoute() {
           <div style={{ color: error ? "#fbbf24" : "#72e0a2", overflowWrap: "anywhere" }}>{updateResult}</div>
         </PanelSectionRow>
       )}
+      <PanelSectionRow>
+        <div style={{ display: "grid", gap: "4px", paddingRight: "4px", width: "100%" }}>
+          <div style={{ fontWeight: 800 }}>Build</div>
+          <div>Channel: {status?.build?.channel || "Unknown"}</div>
+          <div>Commit: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "Unknown"}</div>
+          <div>Built: {status?.build?.built_at || "Unknown"}</div>
+          {status?.build?.version && <div>Plugin: {status.build.version}</div>}
+          {status?.build?.error && <div style={{ color: "#fbbf24", overflowWrap: "anywhere" }}>{status.build.error}</div>}
+        </div>
+      </PanelSectionRow>
       <PanelSectionRow>
         <div style={{ paddingRight: "4px", width: "100%" }}>
           <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>

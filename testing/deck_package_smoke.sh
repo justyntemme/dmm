@@ -106,12 +106,18 @@ if [[ ! -f "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" ]]; then
   echo "package is missing bundled Decky UI" >&2
   exit 1
 fi
+if [[ ! -f "${PACKAGE_DIR}/decky-mod-manager/build-info.json" ]]; then
+  echo "package is missing build-info.json" >&2
+  exit 1
+fi
 
 section "Checking packaged UI content"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Server Access" "Decky server access UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Dependencies" "Decky dependency UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-install captured downloads" "Decky auto-install setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-enable installed mods" "Decky auto-enable setting"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Commit:" "Decky build metadata UI"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/build-info.json" "short_commit" "build metadata"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
