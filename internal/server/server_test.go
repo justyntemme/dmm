@@ -3937,7 +3937,9 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"blocked"`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) {
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"blocked"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"source_tag":"nexus"`)) {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
 
@@ -3948,7 +3950,9 @@ func TestGameInstallCandidatesEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("global status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"steam_app_id":"413150"`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) {
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"steam_app_id":"413150"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"source_mod_id":"2400"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"source_tag":"nexus"`)) {
 		t.Fatalf("global body = %s", rec.Body.String())
 	}
 
@@ -4354,10 +4358,13 @@ func TestSaveInstallCandidateChoicesReturnsEvaluatedInstaller(t *testing.T) {
 		t.Fatalf("save status = %d, body = %s", saveRec.Code, saveRec.Body.String())
 	}
 	var body struct {
-		Candidate storage.InstallCandidate `json:"candidate"`
+		Candidate installCandidateResponse `json:"candidate"`
 	}
 	if err := json.Unmarshal(saveRec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
+	}
+	if body.Candidate.SourceTag != "nexus" {
+		t.Fatalf("candidate source_tag = %q", body.Candidate.SourceTag)
 	}
 	var updatedInstaller fomod.Installer
 	if err := json.Unmarshal([]byte(body.Candidate.InstallerJSON), &updatedInstaller); err != nil {

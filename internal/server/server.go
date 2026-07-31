@@ -2718,42 +2718,50 @@ type gameModDependencySummary struct {
 func gameModResponses(mods []storage.InstalledMod, updates map[int64]storage.ModUpdate) []gameModResponse {
 	out := make([]gameModResponse, 0, len(mods))
 	for _, mod := range mods {
-		resp := gameModResponse{
-			ID:               mod.ID,
-			GameID:           mod.GameID,
-			ProfileID:        mod.ProfileID,
-			SteamAppID:       mod.SteamAppID,
-			Name:             mod.Name,
-			Catalog:          mod.Catalog,
-			SourceTag:        normalizeCatalogID(mod.Catalog),
-			SourceURL:        mod.SourceURL,
-			SourceGameDomain: mod.SourceGameDomain,
-			SourceModID:      mod.SourceModID,
-			SourceFileID:     mod.SourceFileID,
-			Version:          mod.Version,
-			Enabled:          mod.Enabled,
-			Priority:         mod.Priority,
-			Status:           mod.Status,
+		var update *storage.ModUpdate
+		if value, ok := updates[mod.ID]; ok {
+			update = &value
 		}
-		if manifest, err := parseStagedManifest(mod.ManifestJSON); err == nil {
-			resp.ModType = strings.TrimSpace(manifest.ModType)
-			resp.PlannerID = strings.TrimSpace(manifest.PlannerID)
-			resp.Metadata = gameModMetadataSummaries(manifest.Metadata)
-		}
-		if update, ok := updates[mod.ID]; ok {
-			resp.Update = &gameModUpdateSummary{
-				Status:           update.Status,
-				LatestFileID:     update.LatestFileID,
-				LatestFileName:   update.LatestFileName,
-				LatestVersion:    update.LatestVersion,
-				LatestUploadedAt: update.LatestUploadedAt,
-				Message:          update.Message,
-				CheckedAt:        update.CheckedAt,
-			}
-		}
-		out = append(out, resp)
+		out = append(out, gameModResponseFor(mod, update))
 	}
 	return out
+}
+
+func gameModResponseFor(mod storage.InstalledMod, update *storage.ModUpdate) gameModResponse {
+	resp := gameModResponse{
+		ID:               mod.ID,
+		GameID:           mod.GameID,
+		ProfileID:        mod.ProfileID,
+		SteamAppID:       mod.SteamAppID,
+		Name:             mod.Name,
+		Catalog:          mod.Catalog,
+		SourceTag:        normalizeCatalogID(mod.Catalog),
+		SourceURL:        mod.SourceURL,
+		SourceGameDomain: mod.SourceGameDomain,
+		SourceModID:      mod.SourceModID,
+		SourceFileID:     mod.SourceFileID,
+		Version:          mod.Version,
+		Enabled:          mod.Enabled,
+		Priority:         mod.Priority,
+		Status:           mod.Status,
+	}
+	if manifest, err := parseStagedManifest(mod.ManifestJSON); err == nil {
+		resp.ModType = strings.TrimSpace(manifest.ModType)
+		resp.PlannerID = strings.TrimSpace(manifest.PlannerID)
+		resp.Metadata = gameModMetadataSummaries(manifest.Metadata)
+	}
+	if update != nil {
+		resp.Update = &gameModUpdateSummary{
+			Status:           update.Status,
+			LatestFileID:     update.LatestFileID,
+			LatestFileName:   update.LatestFileName,
+			LatestVersion:    update.LatestVersion,
+			LatestUploadedAt: update.LatestUploadedAt,
+			Message:          update.Message,
+			CheckedAt:        update.CheckedAt,
+		}
+	}
+	return resp
 }
 
 func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetadataSummary {
@@ -3456,7 +3464,57 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		job = finalJob
 	}
 	s.logger.Info("installed mod reinstall completed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "restaged_mod_id", staged.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": staged})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": gameModResponseFor(staged, nil)})
+}
+
+type installCandidateResponse struct {
+	ID                    int64  `json:"id"`
+	GameID                int64  `json:"game_id"`
+	SteamAppID            string `json:"steam_app_id"`
+	Name                  string `json:"name"`
+	Catalog               string `json:"catalog"`
+	SourceTag             string `json:"source_tag"`
+	SourceGameDomain      string `json:"source_game_domain"`
+	SourceModID           string `json:"source_mod_id"`
+	SourceFileID          string `json:"source_file_id"`
+	ArchivePath           string `json:"archive_path"`
+	ChecksumSHA256        string `json:"checksum_sha256"`
+	Status                string `json:"status"`
+	Reason                string `json:"reason"`
+	InstallerJSON         string `json:"installer_json,omitempty"`
+	ChoicesJSON           string `json:"choices_json,omitempty"`
+	ReplaceInstalledModID int64  `json:"replace_installed_mod_id,omitempty"`
+	ReplaceStagingPath    string `json:"replace_staging_path,omitempty"`
+}
+
+func installCandidateResponses(candidates []storage.InstallCandidate) []installCandidateResponse {
+	out := make([]installCandidateResponse, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, installCandidateResponseFor(candidate))
+	}
+	return out
+}
+
+func installCandidateResponseFor(candidate storage.InstallCandidate) installCandidateResponse {
+	return installCandidateResponse{
+		ID:                    candidate.ID,
+		GameID:                candidate.GameID,
+		SteamAppID:            candidate.SteamAppID,
+		Name:                  candidate.Name,
+		Catalog:               candidate.Catalog,
+		SourceTag:             normalizeCatalogID(candidate.Catalog),
+		SourceGameDomain:      candidate.SourceGameDomain,
+		SourceModID:           candidate.SourceModID,
+		SourceFileID:          candidate.SourceFileID,
+		ArchivePath:           candidate.ArchivePath,
+		ChecksumSHA256:        candidate.ChecksumSHA256,
+		Status:                candidate.Status,
+		Reason:                candidate.Reason,
+		InstallerJSON:         candidate.InstallerJSON,
+		ChoicesJSON:           candidate.ChoicesJSON,
+		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+		ReplaceStagingPath:    candidate.ReplaceStagingPath,
+	}
 }
 
 func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Request) {
@@ -3474,7 +3532,7 @@ func (s *Server) handleGameInstallCandidates(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, candidates)
+	writeJSON(w, http.StatusOK, installCandidateResponses(candidates))
 }
 
 func (s *Server) handleInstallCandidates(w http.ResponseWriter, r *http.Request) {
@@ -3483,7 +3541,7 @@ func (s *Server) handleInstallCandidates(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, candidates)
+	writeJSON(w, http.StatusOK, installCandidateResponses(candidates))
 }
 
 func (s *Server) handleGameInstallerChoicePresets(w http.ResponseWriter, r *http.Request) {
@@ -3593,7 +3651,7 @@ func (s *Server) handleSaveInstallCandidateChoices(w http.ResponseWriter, r *htt
 	}
 	s.logger.Info("installer candidate choices saved", "app_id", appID, "candidate_id", candidateID, "groups", len(req.Selections))
 	s.publishInstallCandidatesChanged(appID, "choices_saved", 1)
-	writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate})
+	writeJSON(w, http.StatusOK, map[string]any{"candidate": installCandidateResponseFor(candidate)})
 }
 
 func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Request) {
@@ -3673,7 +3731,7 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 		job = finalJob
 	}
 	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": mod})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": gameModResponseFor(mod, nil)})
 }
 
 func installCandidateSelections(candidate storage.InstallCandidate, submittedSelections map[string][]string) (map[string][]string, error) {
@@ -3842,7 +3900,7 @@ func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Requ
 		job = finalJob
 	}
 	s.logger.Info("install candidate retry completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": mod})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": gameModResponseFor(mod, nil)})
 }
 
 func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate) (storage.InstalledMod, error) {

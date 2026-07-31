@@ -283,6 +283,7 @@ type InstallCandidate = {
   steam_app_id: string;
   name: string;
   catalog: string;
+  source_tag?: string;
   status: string;
   reason: string;
   installer_json?: string;
@@ -656,6 +657,10 @@ function sourceLabel(catalog?: string) {
 
 function sourceForManagedMod(mod: ManagedMod) {
   return mod.source_tag || mod.catalog;
+}
+
+function sourceForInstallCandidate(candidate: InstallCandidate) {
+  return candidate.source_tag || candidate.catalog;
 }
 
 function deckySourcePillStyle(catalog?: string): CSSProperties {
@@ -3765,7 +3770,7 @@ function DeckyModManagerRoute() {
                     >
                       <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{candidate.name}</div>
-                        <span style={deckySourcePillStyle(candidate.catalog)}>{sourceLabel(candidate.catalog)}</span>
+                        <span style={deckySourcePillStyle(sourceForInstallCandidate(candidate))}>{sourceLabel(sourceForInstallCandidate(candidate))}</span>
                       </div>
                       <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
                         {candidate.status === "blocked" ? "Blocked installer" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}

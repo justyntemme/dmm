@@ -196,6 +196,7 @@
     steam_app_id: string;
     name: string;
     catalog: string;
+    source_tag?: string;
     source_url?: string;
     source_game_domain: string;
     source_mod_id: string;
@@ -2376,6 +2377,10 @@
     return mod.source_tag ?? mod.catalog;
   }
 
+  function sourceForCandidate(candidate: { catalog?: string; source_tag?: string }) {
+    return candidate.source_tag ?? candidate.catalog;
+  }
+
   function hasSourceTag(catalog: string | undefined) {
     return sourceKey(catalog) !== "unknown";
   }
@@ -2795,7 +2800,7 @@
                   <div>
                     <div class="mod-title-line">
                       <strong>{candidate.name}</strong>
-                      <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                      <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
                     </div>
                     <p>{candidate.reason}</p>
                     <small>{candidateGame?.name ?? `App ${candidate.steam_app_id}`} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
@@ -3383,8 +3388,8 @@
                         {#each target.candidates as candidate}
                           <button type="button" class="secondary-action compact" disabled={candidate.current} on:click={() => setFileConflictWinner(target, candidate.id)}>
                             <span>{candidate.current ? "Using" : "Use"} {candidate.name}</span>
-                            {#if candidate.catalog}
-                              <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                            {#if sourceForCandidate(candidate)}
+                              <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
                             {/if}
                           </button>
                         {/each}
@@ -3552,7 +3557,7 @@
                     <div>
                       <div class="mod-title-line">
                         <strong>{candidate.name}</strong>
-                        <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                        <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
                       </div>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
