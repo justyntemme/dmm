@@ -17,6 +17,7 @@ echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "timeout_seconds=${TIMEOUT_SECONDS}"
 echo "restore_setting=${RESTORE_SETTING}"
+export BASE_URL APP_ID TIMEOUT_SECONDS RESTORE_SETTING
 
 python3 - <<'PY'
 import json
