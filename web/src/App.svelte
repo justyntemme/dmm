@@ -418,6 +418,7 @@
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "downloads";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
+  let nexusSearchVortexOnly = true;
   let nexusSearchResults: NexusModResult[] = [];
   let nexusSearchTotal = 0;
   let nexusSearchBusy = false;
@@ -1215,13 +1216,13 @@
         time_window: nextWindow,
         count: "20",
         offset: "0",
-        vortex_only: "true"
+        vortex_only: nexusSearchVortexOnly ? "true" : "false"
       });
       const result = await getJSON<{ mods: NexusModResult[]; total_count: number }>(`/api/games/${selectedGame.app_id}/nexus/mods?${params.toString()}`);
       nexusSearchResults = result.mods ?? [];
       nexusSearchTotal = result.total_count ?? nexusSearchResults.length;
       if (nexusSearchResults.length === 0) {
-        nexusSearchError = "No Vortex-compatible Nexus mods matched this search.";
+        nexusSearchError = nexusSearchVortexOnly ? "No Vortex-compatible Nexus mods matched this search." : "No Nexus mods matched this search.";
       }
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
@@ -1242,6 +1243,11 @@
     const next = nextNexusTimeWindow(nexusSearchTimeWindow);
     nexusSearchTimeWindow = next;
     void searchNexusMods(nexusSearchSort, next);
+  }
+
+  function toggleNexusCompatibilityFilter() {
+    nexusSearchVortexOnly = !nexusSearchVortexOnly;
+    void searchNexusMods();
   }
 
   async function loadNexusModFiles(mod: NexusModResult) {
@@ -2528,10 +2534,11 @@
                     <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
                     <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
                     <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
+                    <button type="button" class="secondary-action compact" on:click={toggleNexusCompatibilityFilter}>{nexusSearchVortexOnly ? "Vortex Only" : "All Mods"}</button>
                     <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
                   </form>
                   {#if nexusSearchResults.length > 0}
-                    <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} Vortex-compatible results.</p>
+                    <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {nexusSearchVortexOnly ? "Vortex-compatible" : "Nexus"} results.</p>
                     <div class="nexus-results">
                       {#each nexusSearchResults as mod}
                         {@const files = nexusFilesByMod[mod.mod_id] ?? []}

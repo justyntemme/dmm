@@ -902,7 +902,7 @@ h2 {
 
 .nexus-search-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(4, auto);
   gap: 8px;
   margin-top: 10px;
 }

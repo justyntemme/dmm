@@ -585,13 +585,18 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
   };
 }
 
-function deckyActionGridStyle(columns: 1 | 2): CSSProperties {
+function deckyActionGridStyle(columns: 1 | 2 | 3): CSSProperties {
+  const gridTemplateColumns = columns === 3
+    ? "repeat(3, minmax(0, 1fr))"
+    : columns === 2
+      ? "minmax(0, 1fr) minmax(0, 1fr)"
+      : "minmax(0, 1fr)";
   return {
     alignItems: "stretch",
     boxSizing: "border-box",
     display: "grid",
     gap: "6px",
-    gridTemplateColumns: columns === 2 ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+    gridTemplateColumns,
     maxWidth: "100%",
     minWidth: 0,
     overflowX: "hidden",
@@ -1525,6 +1530,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<NexusSearchSort>("downloads");
   const [timeWindow, setTimeWindow] = useState<NexusTimeWindow>("all");
+  const [vortexOnly, setVortexOnly] = useState(true);
   const [mods, setMods] = useState<NexusModResult[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -1536,19 +1542,20 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   const [error, setError] = useState("");
   const pageSize = 20;
 
-  async function searchMods(nextSort = sort, nextWindow = timeWindow, nextOffset = 0, append = false) {
+  async function searchMods(nextSort = sort, nextWindow = timeWindow, nextOffset = 0, append = false, nextVortexOnly = vortexOnly) {
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const result = await call<[string, string, string, string, number, number], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
+      const result = await call<[string, string, string, string, number, number, boolean], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
         "nexus_mods",
         props.appID,
         query,
         nextSort,
         nextWindow,
         pageSize,
-        nextOffset
+        nextOffset,
+        nextVortexOnly
       );
       if (!result.ok) {
         setError(result.error || "Unable to search Nexus Mods.");
@@ -1562,7 +1569,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
       setMods((current) => append ? [...current, ...nextMods] : nextMods);
       setTotalCount(result.total_count ?? result.mods?.length ?? 0);
       setOffset(nextOffset + nextMods.length);
-      if (nextMods.length === 0 && !append) setMessage("No Vortex-compatible mods matched this search.");
+      if (nextMods.length === 0 && !append) setMessage(nextVortexOnly ? "No Vortex-compatible mods matched this search." : "No Nexus mods matched this search.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1659,6 +1666,13 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     void searchMods(sort, next, 0, false);
   }
 
+  function toggleVortexOnly() {
+    const next = !vortexOnly;
+    setVortexOnly(next);
+    setOffset(0);
+    void searchMods(sort, timeWindow, 0, false, next);
+  }
+
   function submitSearch() {
     setOffset(0);
     void searchMods(sort, timeWindow, 0, false);
@@ -1697,7 +1711,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
             <div style={{ color: "#f8fafc", fontSize: "16px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{props.gameName}</div>
             <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2 }}>
-              Showing {mods.length} of {compactNumber(totalCount)} Vortex-compatible result{totalCount === 1 ? "" : "s"} from {props.gameDomain}.
+              Showing {mods.length} of {compactNumber(totalCount)} {vortexOnly ? "Vortex-compatible" : "Nexus"} result{totalCount === 1 ? "" : "s"} from {props.gameDomain}.
             </div>
           </div>
           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={props.closeModal} onClick={props.closeModal} style={deckyCompactActionStyle("neutral")}>
@@ -1730,12 +1744,15 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
-            <Focusable flow-children="right" style={{ ...deckyActionGridStyle(2), gap: "8px" }}>
+            <Focusable flow-children="right" style={{ ...deckyActionGridStyle(3), gap: "8px" }}>
               <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleSort} onClick={cycleSort} style={deckyCompactActionStyle("neutral")}>
                 Sort: {nexusSortLabel(sort)}
               </Focusable>
               <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleTimeWindow} onClick={cycleTimeWindow} style={deckyCompactActionStyle("neutral")}>
                 Updated: {nexusTimeWindowLabel(timeWindow)}
+              </Focusable>
+              <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={toggleVortexOnly} onClick={toggleVortexOnly} style={deckyCompactActionStyle("neutral")}>
+                {vortexOnly ? "Vortex Only" : "All Mods"}
               </Focusable>
             </Focusable>
             <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" preferredFocus onActivate={submitSearch} onClick={submitSearch} style={deckyCompactActionStyle("neutral", busy)}>
@@ -1749,7 +1766,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             </div>
           )}
           {mods.length === 0 && !busy && !error && (
-            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Vortex-compatible mods matched this search.</div>
+            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{vortexOnly ? "No Vortex-compatible mods matched this search." : "No Nexus mods matched this search."}</div>
           )}
           {mods.map((mod) => {
             const files = filesByMod[mod.mod_id] ?? [];
