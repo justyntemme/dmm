@@ -1814,16 +1814,18 @@ func (s *Server) handleSyncGameSteamWorkshop(w http.ResponseWriter, r *http.Requ
 		}
 		cleaned = append(cleaned, item)
 	}
-	items, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, cleaned)
+	items, changed, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, cleaned)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	s.logger.Info("steam workshop state synced", "app_id", appID, "items", len(items))
-	s.publishGameEvent(events.TypeWorkshopChanged, appID, map[string]any{
-		"action": "synced",
-		"count":  len(items),
-	})
+	s.logger.Info("steam workshop state synced", "app_id", appID, "items", len(items), "changed", changed)
+	if changed {
+		s.publishGameEvent(events.TypeWorkshopChanged, appID, map[string]any{
+			"action": "synced",
+			"count":  len(items),
+		})
+	}
 	state, err := s.steamWorkshopState(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -1955,7 +1957,7 @@ func (s *Server) handleCompleteSteamWorkshopAction(w http.ResponseWriter, r *htt
 	}
 	appID := strings.TrimSpace(job.Payload["app_id"])
 	if len(req.Items) > 0 && appID != "" {
-		if _, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, req.Items); err != nil {
+		if _, _, err := s.db.ReplaceSteamWorkshopItems(r.Context(), appID, req.Items); err != nil {
 			s.logger.Warn("steam workshop action state sync failed", "job_id", jobID, "app_id", appID, "error", err)
 		}
 	}

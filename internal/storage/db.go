@@ -350,38 +350,33 @@ ORDER BY id
 	return out, rows.Err()
 }
 
-func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items []SteamWorkshopItem) ([]SteamWorkshopItem, error) {
+func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items []SteamWorkshopItem) ([]SteamWorkshopItem, bool, error) {
 	appID = strings.TrimSpace(appID)
 	if appID == "" {
-		return nil, errors.New("steam app id is required")
+		return nil, false, errors.New("steam app id is required")
 	}
 	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer tx.Rollback()
 
 	var gameID int64
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, appID).Scan(&gameID); err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	existing, err := steamWorkshopItemsForGameIDTx(ctx, tx, appID, gameID)
+	if err != nil {
+		return nil, false, err
+	}
+	normalized := normalizeSteamWorkshopItems(appID, items)
+	if sameSteamWorkshopItems(existing, normalized) {
+		return existing, false, nil
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM steam_workshop_items WHERE game_id = ?`, gameID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	for i, item := range items {
-		publishedFileID := strings.TrimSpace(item.PublishedFileID)
-		if publishedFileID == "" {
-			continue
-		}
-		title := strings.TrimSpace(item.Title)
-		rawJSON := strings.TrimSpace(item.RawJSON)
-		if rawJSON == "" || !json.Valid([]byte(rawJSON)) {
-			rawJSON = "{}"
-		}
-		position := item.Position
-		if position < 0 {
-			position = i
-		}
+	for _, item := range normalized {
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO steam_workshop_items (
 	game_id,
@@ -396,14 +391,15 @@ INSERT INTO steam_workshop_items (
 	updated_at
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-`, gameID, publishedFileID, title, boolInt(item.Subscribed), boolInt(item.Downloaded), boolInt(item.DisabledLocally), boolInt(item.DisabledKnown), position, rawJSON); err != nil {
-			return nil, err
+`, gameID, item.PublishedFileID, item.Title, boolInt(item.Subscribed), boolInt(item.Downloaded), boolInt(item.DisabledLocally), boolInt(item.DisabledKnown), item.Position, item.RawJSON); err != nil {
+			return nil, false, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return db.SteamWorkshopItemsForSteamApp(ctx, appID)
+	out, err := db.SteamWorkshopItemsForSteamApp(ctx, appID)
+	return out, true, err
 }
 
 func (db *DB) SteamWorkshopItemsForSteamApp(ctx context.Context, appID string) ([]SteamWorkshopItem, error) {
@@ -429,6 +425,74 @@ ORDER BY swi.position ASC, swi.published_file_id ASC
 		if err := rows.Scan(&item.ID, &item.GameID, &item.SteamAppID, &item.PublishedFileID, &item.Title, &subscribed, &downloaded, &disabledLocally, &disabledKnown, &item.Position, &item.RawJSON); err != nil {
 			return nil, err
 		}
+		item.Subscribed = subscribed != 0
+		item.Downloaded = downloaded != 0
+		item.DisabledLocally = disabledLocally != 0
+		item.DisabledKnown = disabledKnown != 0
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func normalizeSteamWorkshopItems(appID string, items []SteamWorkshopItem) []SteamWorkshopItem {
+	normalized := make([]SteamWorkshopItem, 0, len(items))
+	for i, item := range items {
+		item.SteamAppID = appID
+		item.PublishedFileID = strings.TrimSpace(item.PublishedFileID)
+		if item.PublishedFileID == "" {
+			continue
+		}
+		item.Title = strings.TrimSpace(item.Title)
+		item.RawJSON = strings.TrimSpace(item.RawJSON)
+		if item.RawJSON == "" || !json.Valid([]byte(item.RawJSON)) {
+			item.RawJSON = "{}"
+		}
+		if item.Position < 0 {
+			item.Position = i
+		}
+		normalized = append(normalized, item)
+	}
+	return normalized
+}
+
+func sameSteamWorkshopItems(a, b []SteamWorkshopItem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].PublishedFileID != b[i].PublishedFileID ||
+			a[i].Title != b[i].Title ||
+			a[i].Subscribed != b[i].Subscribed ||
+			a[i].Downloaded != b[i].Downloaded ||
+			a[i].DisabledLocally != b[i].DisabledLocally ||
+			a[i].DisabledKnown != b[i].DisabledKnown ||
+			a[i].Position != b[i].Position ||
+			a[i].RawJSON != b[i].RawJSON {
+			return false
+		}
+	}
+	return true
+}
+
+func steamWorkshopItemsForGameIDTx(ctx context.Context, tx *sql.Tx, appID string, gameID int64) ([]SteamWorkshopItem, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT id, game_id, published_file_id, title, subscribed, downloaded, disabled_locally, disabled_known, position, raw_json
+FROM steam_workshop_items
+WHERE game_id = ?
+ORDER BY position ASC, published_file_id ASC
+`, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SteamWorkshopItem
+	for rows.Next() {
+		var item SteamWorkshopItem
+		var subscribed, downloaded, disabledLocally, disabledKnown int
+		if err := rows.Scan(&item.ID, &item.GameID, &item.PublishedFileID, &item.Title, &subscribed, &downloaded, &disabledLocally, &disabledKnown, &item.Position, &item.RawJSON); err != nil {
+			return nil, err
+		}
+		item.SteamAppID = appID
 		item.Subscribed = subscribed != 0
 		item.Downloaded = downloaded != 0
 		item.DisabledLocally = disabledLocally != 0
