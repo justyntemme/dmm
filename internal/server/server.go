@@ -2407,6 +2407,7 @@ func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWor
 	if len(items) == 0 {
 		items = steamWorkshopDetectedItems(info, appID)
 	}
+	annotateSteamWorkshopItems(items)
 	spec, ok := s.games.SteamWorkshopForSteamApp(appID)
 	resp := steamWorkshopStateResponse{
 		AppID:     appID,
@@ -2418,6 +2419,13 @@ func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWor
 		resp.Actions = steamWorkshopActionReplies(spec.Actions)
 	}
 	return resp, nil
+}
+
+func annotateSteamWorkshopItems(items []storage.SteamWorkshopItem) {
+	for i := range items {
+		items[i].Catalog = "steam_workshop"
+		items[i].SourceTag = "steam_workshop"
+	}
 }
 
 func steamWorkshopDetectedItems(info *steam.WorkshopInfo, appID string) []storage.SteamWorkshopItem {
@@ -2663,6 +2671,7 @@ type gameModResponse struct {
 	SteamAppID       string                   `json:"steam_app_id"`
 	Name             string                   `json:"name"`
 	Catalog          string                   `json:"catalog"`
+	SourceTag        string                   `json:"source_tag"`
 	SourceURL        string                   `json:"source_url,omitempty"`
 	SourceGameDomain string                   `json:"source_game_domain"`
 	SourceModID      string                   `json:"source_mod_id"`
@@ -2716,6 +2725,7 @@ func gameModResponses(mods []storage.InstalledMod, updates map[int64]storage.Mod
 			SteamAppID:       mod.SteamAppID,
 			Name:             mod.Name,
 			Catalog:          mod.Catalog,
+			SourceTag:        normalizeCatalogID(mod.Catalog),
 			SourceURL:        mod.SourceURL,
 			SourceGameDomain: mod.SourceGameDomain,
 			SourceModID:      mod.SourceModID,

@@ -157,6 +157,8 @@ type SteamWorkshopItem struct {
 	ID              int64  `json:"id"`
 	GameID          int64  `json:"game_id"`
 	SteamAppID      string `json:"steam_app_id"`
+	Catalog         string `json:"catalog,omitempty"`
+	SourceTag       string `json:"source_tag,omitempty"`
 	PublishedFileID string `json:"published_file_id"`
 	Title           string `json:"title,omitempty"`
 	Subscribed      bool   `json:"subscribed"`

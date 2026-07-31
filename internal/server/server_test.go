@@ -536,6 +536,9 @@ func TestGameSteamWorkshopUsesDetectedItemsBeforeDeckySync(t *testing.T) {
 	if body.Items[0].DisabledKnown || !body.Items[0].Downloaded || body.Items[0].Title != "Workshop item 10" {
 		t.Fatalf("placeholder item = %+v", body.Items[0])
 	}
+	if body.Items[0].Catalog != "steam_workshop" || body.Items[0].SourceTag != "steam_workshop" {
+		t.Fatalf("workshop source tags = %+v", body.Items[0])
+	}
 }
 
 func TestSteamWorkshopActionQueueContract(t *testing.T) {
@@ -3678,7 +3681,7 @@ func TestInstallDuplicateCapturedInstallsShowsOneInstalledMod(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("mods status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	var mods []storage.InstalledMod
+	var mods []gameModResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &mods); err != nil {
 		t.Fatal(err)
 	}
@@ -3687,6 +3690,9 @@ func TestInstallDuplicateCapturedInstallsShowsOneInstalledMod(t *testing.T) {
 	}
 	if mods[0].Name != "Lookup Anything" || mods[0].SourceModID != "541" || mods[0].SourceFileID != "160470" {
 		t.Fatalf("mod = %+v", mods[0])
+	}
+	if mods[0].Catalog != "nexus" || mods[0].SourceTag != "nexus" {
+		t.Fatalf("mod source tags = %+v", mods[0])
 	}
 }
 

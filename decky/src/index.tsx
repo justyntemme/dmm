@@ -178,6 +178,7 @@ type ManagedMod = {
   priority: number;
   status: string;
   catalog: string;
+  source_tag?: string;
   source_url?: string;
   source_game_domain: string;
   source_mod_id: string;
@@ -347,6 +348,8 @@ type LaunchStatus = {
 
 type WorkshopItem = {
   steam_app_id?: string;
+  catalog?: string;
+  source_tag?: string;
   published_file_id: string;
   title?: string;
   subscribed: boolean;
@@ -649,6 +652,10 @@ function sourceLabel(catalog?: string) {
   return source ? source.replace(/[_-]+/g, " ") : "Unknown";
 }
 
+function sourceForManagedMod(mod: ManagedMod) {
+  return mod.source_tag || mod.catalog;
+}
+
 function deckySourcePillStyle(catalog?: string): CSSProperties {
   const source = (catalog ?? "").trim().toLowerCase().replace(/_/g, "-");
   const colors: Record<string, { border: string; color: string; background: string }> = {
@@ -924,7 +931,7 @@ function addDeckyConflictCandidate(group: ConflictChoiceTarget, mods: ManagedMod
   group.candidates.push({
     id: installedModID,
     name: mod?.name || `Mod ${installedModID}`,
-    catalog: mod?.catalog,
+    catalog: mod ? sourceForManagedMod(mod) : undefined,
     priority,
     current
   });
@@ -3411,12 +3418,12 @@ function DeckyModManagerRoute() {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     const filtered = deckyMods.filter((mod) =>
       !normalizedModSearch ||
-        [mod.name, mod.status, mod.catalog, sourceLabel(mod.catalog), mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
+        [mod.name, mod.status, sourceForManagedMod(mod), sourceLabel(sourceForManagedMod(mod)), mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       );
     return [...filtered].sort((a, b) => {
       if (effectiveModSort === "source") {
-        const sourceDelta = sourceLabel(a.catalog).localeCompare(sourceLabel(b.catalog));
+        const sourceDelta = sourceLabel(sourceForManagedMod(a)).localeCompare(sourceLabel(sourceForManagedMod(b)));
         if (sourceDelta !== 0) return sourceDelta;
       }
       if (effectiveModSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
@@ -3860,7 +3867,7 @@ function DeckyModManagerRoute() {
                     >
                       <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{mod.name}</div>
-                        <span style={deckySourcePillStyle(mod.catalog)}>{sourceLabel(mod.catalog)}</span>
+                        <span style={deckySourcePillStyle(sourceForManagedMod(mod))}>{sourceLabel(sourceForManagedMod(mod))}</span>
                       </div>
                       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <span
@@ -4058,7 +4065,7 @@ function DeckyModManagerRoute() {
                     >
                       <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{workshopItemName(item)}</div>
-                        <span style={deckySourcePillStyle("steam_workshop")}>Steam Workshop</span>
+                        <span style={deckySourcePillStyle(item.source_tag || item.catalog || "steam_workshop")}>{sourceLabel(item.source_tag || item.catalog || "steam_workshop")}</span>
                       </div>
                       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <span

@@ -62,6 +62,8 @@
 
   type WorkshopItem = {
     steam_app_id?: string;
+    catalog?: string;
+    source_tag?: string;
     published_file_id: string;
     title?: string;
     subscribed: boolean;
@@ -144,6 +146,7 @@
     name: string;
     profile_id: number;
     catalog: string;
+    source_tag?: string;
     source_game_domain: string;
     source_mod_id: string;
     source_file_id: string;
@@ -560,7 +563,7 @@
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
   $: disabledMods = installedMods.filter((mod) => !mod.enabled);
   $: modSourceOptions = sourceOptionsForMods(installedMods, workshopItems, selectedWorkshop);
-  $: visibleInstalledMods = sortModsForList(installedMods.filter((mod) => modSourceFilter === "all" || sourceKey(mod.catalog) === modSourceFilter));
+  $: visibleInstalledMods = sortModsForList(installedMods.filter((mod) => modSourceFilter === "all" || sourceKey(sourceForMod(mod)) === modSourceFilter));
   $: showWorkshopModRows = Boolean(selectedWorkshop && (modSourceFilter === "all" || modSourceFilter === "steam-workshop") && (workshopItems.length > 0 || selectedWorkshop.management_supported));
   $: hasVisibleModRows = visibleInstalledMods.length > 0 || showWorkshopModRows;
   $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
@@ -2365,6 +2368,10 @@
     return source || "unknown";
   }
 
+  function sourceForMod(mod: InstalledMod) {
+    return mod.source_tag ?? mod.catalog;
+  }
+
   function hasSourceTag(catalog: string | undefined) {
     return sourceKey(catalog) !== "unknown";
   }
@@ -2372,8 +2379,9 @@
   function sourceOptionsForMods(mods: InstalledMod[], items: WorkshopItem[], workshop: SteamWorkshop | null) {
     const byKey = new Map<string, string>();
     for (const mod of mods) {
-      const key = sourceKey(mod.catalog);
-      if (!byKey.has(key)) byKey.set(key, sourceLabel(mod.catalog));
+      const source = sourceForMod(mod);
+      const key = sourceKey(source);
+      if (!byKey.has(key)) byKey.set(key, sourceLabel(source));
     }
     if ((workshop?.detected || items.length > 0) && !byKey.has("steam-workshop")) {
       byKey.set("steam-workshop", sourceLabel("steam_workshop"));
@@ -2384,7 +2392,7 @@
   function sortModsForList(mods: InstalledMod[]) {
     return [...mods].sort((a, b) => {
       if (modListSort === "source") {
-        const sourceDelta = sourceLabel(a.catalog).localeCompare(sourceLabel(b.catalog));
+        const sourceDelta = sourceLabel(sourceForMod(a)).localeCompare(sourceLabel(sourceForMod(b)));
         if (sourceDelta !== 0) return sourceDelta;
       }
       if (modListSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
@@ -3163,7 +3171,7 @@
                     <div>
                       <div class="mod-title-line">
                         <strong>{mod.name}</strong>
-                        <span class={`source-pill ${sourceClass(mod.catalog)}`}>{sourceLabel(mod.catalog)}</span>
+                        <span class={`source-pill ${sourceClass(sourceForMod(mod))}`}>{sourceLabel(sourceForMod(mod))}</span>
                       </div>
                       {#if metadata || mod.mod_type}
                         <div class="mod-meta">
@@ -3229,7 +3237,7 @@
                         <div>
                           <div class="mod-title-line">
                             <strong>No synced Workshop items</strong>
-                            <span class="source-pill source-workshop">Steam Workshop</span>
+                            <span class={`source-pill ${sourceClass("steam_workshop")}`}>{sourceLabel("steam_workshop")}</span>
                           </div>
                           <p>Open DMM in the Decky sidebar while Steam is running to sync subscribed Workshop items.</p>
                         </div>
@@ -3248,7 +3256,7 @@
                           <div>
                             <div class="mod-title-line">
                               <strong>{workshopItemName(item)}</strong>
-                              <span class="source-pill source-workshop">Steam Workshop</span>
+                              <span class={`source-pill ${sourceClass(item.source_tag ?? item.catalog ?? "steam_workshop")}`}>{sourceLabel(item.source_tag ?? item.catalog ?? "steam_workshop")}</span>
                             </div>
                             <p>{workshopItemDetail(item)}</p>
                             <small>{workshopItemStatus(item)}</small>
