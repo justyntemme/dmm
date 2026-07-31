@@ -29,7 +29,7 @@ func TestResolveURLUsesLatestPackageVersion(t *testing.T) {
 	if resolved.GameDomain != "lethal-company" {
 		t.Fatalf("game domain = %q", resolved.GameDomain)
 	}
-	if resolved.ModID != "BepInEx-BepInExPack" {
+	if resolved.ModID != "BepInEx/BepInExPack" {
 		t.Fatalf("mod id = %q", resolved.ModID)
 	}
 	if resolved.FileID != "5.4.2100" {
@@ -52,11 +52,43 @@ func TestResolveURLUsesExplicitVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.ModID != "AlexCodesGames-AdditionalContentFramework" || resolved.FileID != "1.0.2" {
+	if resolved.ModID != "AlexCodesGames/AdditionalContentFramework" || resolved.FileID != "1.0.2" {
 		t.Fatalf("resolved = %#v", resolved)
 	}
 	if got := resolved.DownloadLinks[0].URI; got != "https://thunderstore.io/package/download/AlexCodesGames/AdditionalContentFramework/1.0.2/" {
 		t.Fatalf("download URL = %q", got)
+	}
+}
+
+func TestResolveLatestUsesStructuredSourceMetadata(t *testing.T) {
+	api := newThunderstoreTestAPI(t)
+	resolved, err := (Resolver{BaseURL: api.URL, HTTPClient: api.Client()}).ResolveLatest(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "1966720",
+		GameDomain: "lethal-company",
+		ModID:      "BepInEx/BepInExPack",
+		FileID:     "5.4.2000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != "5.4.2100" || resolved.ModID != "BepInEx/BepInExPack" {
+		t.Fatalf("resolved latest = %#v", resolved)
+	}
+}
+
+func TestResolveFileUsesStructuredSourceMetadata(t *testing.T) {
+	api := newThunderstoreTestAPI(t)
+	resolved, err := (Resolver{BaseURL: api.URL, HTTPClient: api.Client()}).ResolveFile(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "1966720",
+		GameDomain: "lethal-company",
+		ModID:      "AlexCodesGames/AdditionalContentFramework",
+		FileID:     "1.0.2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != "1.0.2" || resolved.FileName != "AlexCodesGames-AdditionalContentFramework-1.0.2.zip" {
+		t.Fatalf("resolved file = %#v", resolved)
 	}
 }
 

@@ -25,8 +25,11 @@ func TestResolveURLBuildsDirectReleaseAssetDownload(t *testing.T) {
 	if resolved.SteamAppID != "413150" {
 		t.Fatalf("steam app id = %q", resolved.SteamAppID)
 	}
-	if resolved.GameDomain != "owner-mod" || resolved.ModID != "owner-mod" {
+	if resolved.GameDomain != "github" || resolved.ModID != "owner/mod" {
 		t.Fatalf("source identity = %q/%q", resolved.GameDomain, resolved.ModID)
+	}
+	if resolved.FileID != releaseFileID("v1.2.3", "mod.zip") {
+		t.Fatalf("file id = %q", resolved.FileID)
 	}
 	if resolved.FileName != "mod.zip" {
 		t.Fatalf("file name = %q", resolved.FileName)
@@ -37,12 +40,14 @@ func TestResolveURLBuildsDirectReleaseAssetDownload(t *testing.T) {
 }
 
 func TestResolveURLUsesLatestReleaseSingleArchiveAsset(t *testing.T) {
-	api := newGitHubTestAPI(t, releaseResponse{
-		TagName: "v2.0.0",
-		Assets: []releaseAsset{{
-			Name:               "mod.zip",
-			BrowserDownloadURL: "https://github.com/owner/mod/releases/download/v2.0.0/mod.zip",
-		}},
+	api := newGitHubTestAPI(t, map[string]releaseResponse{
+		"/repos/owner/mod/releases/latest": {
+			TagName: "v2.0.0",
+			Assets: []releaseAsset{{
+				Name:               "mod.zip",
+				BrowserDownloadURL: "https://github.com/owner/mod/releases/download/v2.0.0/mod.zip",
+			}},
+		},
 	})
 	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
 		URL:        "https://github.com/owner/mod/releases/latest",
@@ -51,7 +56,7 @@ func TestResolveURLUsesLatestReleaseSingleArchiveAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.FileName != "mod.zip" || resolved.FileID != "v2.0.0-a7d267838dff" {
+	if resolved.FileName != "mod.zip" || resolved.FileID != releaseFileID("v2.0.0", "mod.zip") {
 		t.Fatalf("resolved file = name %q id %q", resolved.FileName, resolved.FileID)
 	}
 	if resolved.DownloadLinks[0].URI != "https://github.com/owner/mod/releases/download/v2.0.0/mod.zip" {
@@ -59,12 +64,66 @@ func TestResolveURLUsesLatestReleaseSingleArchiveAsset(t *testing.T) {
 	}
 }
 
+func TestResolveLatestUsesLatestReleaseMatchingCurrentAsset(t *testing.T) {
+	api := newGitHubTestAPI(t, map[string]releaseResponse{
+		"/repos/owner/mod/releases/latest": {
+			TagName: "v2.0.0",
+			Assets: []releaseAsset{
+				{Name: "mod-linux.zip", BrowserDownloadURL: "https://github.com/owner/mod/releases/download/v2.0.0/mod-linux.zip"},
+				{Name: "mod-windows.zip", BrowserDownloadURL: "https://github.com/owner/mod/releases/download/v2.0.0/mod-windows.zip"},
+			},
+		},
+	})
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveLatest(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "413150",
+		ModID:      "owner/mod",
+		FileID:     releaseFileID("v1.0.0", "mod-linux.zip"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != releaseFileID("v2.0.0", "mod-linux.zip") || resolved.FileName != "mod-linux.zip" {
+		t.Fatalf("resolved latest = %#v", resolved)
+	}
+	if resolved.DownloadLinks[0].URI != "https://github.com/owner/mod/releases/download/v2.0.0/mod-linux.zip" {
+		t.Fatalf("download URL = %q", resolved.DownloadLinks[0].URI)
+	}
+}
+
+func TestResolveFileUsesEncodedReleaseAsset(t *testing.T) {
+	api := newGitHubTestAPI(t, map[string]releaseResponse{
+		"/repos/owner/mod/releases/tags/v2.0.0": {
+			TagName: "v2.0.0",
+			Assets: []releaseAsset{{
+				Name:               "mod.zip",
+				BrowserDownloadURL: "https://github.com/owner/mod/releases/download/v2.0.0/mod.zip",
+			}},
+		},
+	})
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveFile(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "413150",
+		ModID:      "owner/mod",
+		FileID:     releaseFileID("v2.0.0", "mod.zip"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != releaseFileID("v2.0.0", "mod.zip") || resolved.FileName != "mod.zip" {
+		t.Fatalf("resolved file = %#v", resolved)
+	}
+	if resolved.DownloadLinks[0].URI != "https://github.com/owner/mod/releases/download/v2.0.0/mod.zip" {
+		t.Fatalf("download URL = %q", resolved.DownloadLinks[0].URI)
+	}
+}
+
 func TestResolveURLRejectsReleaseWithMultipleArchiveAssets(t *testing.T) {
-	api := newGitHubTestAPI(t, releaseResponse{
-		TagName: "v2.0.0",
-		Assets: []releaseAsset{
-			{Name: "linux.zip", BrowserDownloadURL: "https://example.com/linux.zip"},
-			{Name: "windows.zip", BrowserDownloadURL: "https://example.com/windows.zip"},
+	api := newGitHubTestAPI(t, map[string]releaseResponse{
+		"/repos/owner/mod/releases/latest": {
+			TagName: "v2.0.0",
+			Assets: []releaseAsset{
+				{Name: "linux.zip", BrowserDownloadURL: "https://example.com/linux.zip"},
+				{Name: "windows.zip", BrowserDownloadURL: "https://example.com/windows.zip"},
+			},
 		},
 	})
 	_, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
@@ -95,10 +154,11 @@ func TestResolveURLRejectsNonGitHubURLAsUnsupported(t *testing.T) {
 	}
 }
 
-func newGitHubTestAPI(t *testing.T, release releaseResponse) *httptest.Server {
+func newGitHubTestAPI(t *testing.T, releases map[string]releaseResponse) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/owner/mod/releases/latest" {
+		release, ok := releases[r.URL.Path]
+		if !ok {
 			http.NotFound(w, r)
 			return
 		}

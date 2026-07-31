@@ -62,6 +62,7 @@ type ResolvedDownload struct {
 	ModID         string         `json:"mod_id,omitempty"`
 	FileID        string         `json:"file_id,omitempty"`
 	FileName      string         `json:"file_name,omitempty"`
+	Version       string         `json:"version,omitempty"`
 	DownloadLinks []DownloadLink `json:"download_links,omitempty"`
 	NXMKey        string         `json:"nxm_key,omitempty"`
 	Expires       string         `json:"expires,omitempty"`

@@ -45,7 +45,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 			URL:      ref.DownloadURL,
 			Filename: ref.FileName,
 			Primary:  true,
-		}), nil
+		}, ""), nil
 	}
 	version, err := r.resolveVersion(ctx, ref)
 	if err != nil {
@@ -57,7 +57,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	}
 	ref.ProjectID = firstNonEmpty(version.ProjectID, ref.ProjectID, ref.Project)
 	ref.VersionID = firstNonEmpty(version.ID, ref.VersionID, version.VersionNumber)
-	return resolvedDownload(req.URL, steamAppID, ref, file), nil
+	return resolvedDownload(req.URL, steamAppID, ref, file, version.VersionNumber), nil
 }
 
 func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
@@ -297,7 +297,7 @@ func primaryFile(files []modrinthFile) (modrinthFile, error) {
 	return modrinthFile{}, errors.New("Modrinth version did not include a downloadable file")
 }
 
-func resolvedDownload(rawURL, steamAppID string, ref modrinthRef, file modrinthFile) catalog.ResolvedDownload {
+func resolvedDownload(rawURL, steamAppID string, ref modrinthRef, file modrinthFile, versionNumber string) catalog.ResolvedDownload {
 	projectID := safeID(firstNonEmpty(ref.ProjectID, ref.Project))
 	versionID := safeID(ref.VersionID)
 	fileName := filepath.Base(strings.TrimSpace(file.Filename))
@@ -318,6 +318,7 @@ func resolvedDownload(rawURL, steamAppID string, ref modrinthRef, file modrinthF
 		ModID:      projectID,
 		FileID:     versionID,
 		FileName:   fileName,
+		Version:    strings.TrimSpace(versionNumber),
 		DownloadLinks: []catalog.DownloadLink{{
 			Name:      "Modrinth",
 			ShortName: "modrinth",

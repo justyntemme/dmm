@@ -48,6 +48,38 @@ func TestResolveURLUsesRequestedFileQuery(t *testing.T) {
 	}
 }
 
+func TestResolveLatestUsesStructuredSourceMetadata(t *testing.T) {
+	api := newGameBananaTestAPI(t)
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveLatest(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "413150",
+		GameDomain: "gamebanana-mod",
+		ModID:      "626069",
+		FileID:     "1535874",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != "1605644" || resolved.FileName != "customcontrolsapi-v002-08x.zip" {
+		t.Fatalf("resolved latest = %#v", resolved)
+	}
+}
+
+func TestResolveFileUsesStructuredSourceMetadata(t *testing.T) {
+	api := newGameBananaTestAPI(t)
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveFile(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID: "413150",
+		GameDomain: "gamebanana-mod",
+		ModID:      "626069",
+		FileID:     "1535874",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != "1535874" || resolved.FileName != "customcontrolsapi-v001-07x.zip" {
+		t.Fatalf("resolved file = %#v", resolved)
+	}
+}
+
 func TestResolveURLUsesDownloadPagePath(t *testing.T) {
 	api := newGameBananaTestAPI(t)
 	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{

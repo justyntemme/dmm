@@ -43,18 +43,18 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 }
 
 func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
-	ref, err := parseURL(req.SourceURL)
+	ref, err := itemRefFromUpdateRequest(req)
 	if err != nil {
-		return catalog.ResolvedDownload{}, errors.New("GameBanana update checks require the original submission URL")
+		return catalog.ResolvedDownload{}, err
 	}
 	ref.FileID = ""
 	return r.resolveDownload(ctx, itemURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
 func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
-	ref, err := parseURL(req.SourceURL)
+	ref, err := itemRefFromUpdateRequest(req)
 	if err != nil {
-		return catalog.ResolvedDownload{}, errors.New("GameBanana update installs require the original submission URL")
+		return catalog.ResolvedDownload{}, err
 	}
 	ref.FileID = strings.TrimSpace(req.FileID)
 	if ref.FileID == "" {
@@ -98,6 +98,7 @@ func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID str
 		ModID:      ref.ItemID,
 		FileID:     fileID,
 		FileName:   fileName,
+		Version:    strings.TrimSpace(file.Version),
 		DownloadLinks: []catalog.DownloadLink{{
 			Name:      "GameBanana",
 			ShortName: "gamebanana",
@@ -248,6 +249,27 @@ func itemTypeForSection(section string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func itemRefFromUpdateRequest(req catalog.UpdateResolveRequest) (itemRef, error) {
+	itemType := strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "gamebanana-")
+	if itemType == "" || itemType == req.GameDomain {
+		return itemRef{}, errors.New("GameBanana update checks require item type source metadata")
+	}
+	ref := itemRef{
+		ItemType: titleCaseASCII(itemType),
+		ItemID:   strings.TrimSpace(req.ModID),
+		FileID:   strings.TrimSpace(req.FileID),
+	}
+	return validateRef(ref)
+}
+
+func titleCaseASCII(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
 }
 
 func supportedItemTypes() map[string]bool {

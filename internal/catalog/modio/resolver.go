@@ -116,6 +116,7 @@ func (r Resolver) resolveDownload(ctx context.Context, sourceURL, selectedSteamA
 		ModID:      ref.ModID,
 		FileID:     fileID,
 		FileName:   fileName,
+		Version:    strings.TrimSpace(file.Version),
 		DownloadLinks: []catalog.DownloadLink{{
 			Name:      "mod.io",
 			ShortName: "modio",

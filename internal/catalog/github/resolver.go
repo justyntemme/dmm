@@ -2,8 +2,7 @@ package github
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +45,19 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	if !steamAppIDPattern.MatchString(steamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("GitHub release URLs must be added from a selected Steam game")
 	}
+	if ref.Latest && strings.TrimSpace(ref.AssetName) != "" {
+		release, err := r.resolveRelease(ctx, ref)
+		if err != nil {
+			return catalog.ResolvedDownload{}, err
+		}
+		asset, err := matchingArchiveAsset(release.Assets, ref.AssetName)
+		if err != nil {
+			return catalog.ResolvedDownload{}, err
+		}
+		ref.Tag = strings.TrimSpace(release.TagName)
+		ref.AssetName = strings.TrimSpace(asset.Name)
+		ref.DownloadURL = strings.TrimSpace(asset.BrowserDownloadURL)
+	}
 	if strings.TrimSpace(ref.AssetName) == "" {
 		release, err := r.resolveRelease(ctx, ref)
 		if err != nil {
@@ -69,6 +81,48 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 		return catalog.ResolvedDownload{}, errors.New("GitHub release URL must identify an asset")
 	}
 	return resolvedDownload(req.URL, steamAppID, ref), nil
+}
+
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := releaseRefFromUpdateRequest(req)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	ref.Tag = ""
+	ref.Latest = true
+	release, err := r.resolveRelease(ctx, ref)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	asset, err := matchingArchiveAsset(release.Assets, ref.AssetName)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	ref.Tag = strings.TrimSpace(release.TagName)
+	ref.AssetName = strings.TrimSpace(asset.Name)
+	ref.DownloadURL = strings.TrimSpace(asset.BrowserDownloadURL)
+	return resolvedDownload("https://github.com/"+ref.Owner+"/"+ref.Repo+"/releases/latest", strings.TrimSpace(req.SteamAppID), ref), nil
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := releaseRefFromUpdateRequest(req)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	if strings.TrimSpace(req.FileID) == "" {
+		return catalog.ResolvedDownload{}, errors.New("GitHub update installs require a release tag and asset")
+	}
+	release, err := r.resolveRelease(ctx, ref)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	asset, err := matchingArchiveAsset(release.Assets, ref.AssetName)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	ref.AssetName = strings.TrimSpace(asset.Name)
+	ref.DownloadURL = strings.TrimSpace(asset.BrowserDownloadURL)
+	return resolvedDownload("https://github.com/"+ref.Owner+"/"+ref.Repo+"/releases/tag/"+url.PathEscape(ref.Tag), strings.TrimSpace(req.SteamAppID), ref), nil
 }
 
 type releaseRef struct {
@@ -162,6 +216,31 @@ func validateRef(ref releaseRef) (releaseRef, error) {
 	return ref, nil
 }
 
+func releaseRefFromUpdateRequest(req catalog.UpdateResolveRequest) (releaseRef, error) {
+	modID := strings.TrimSpace(req.ModID)
+	parts := strings.Split(modID, "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return releaseRef{}, errors.New("GitHub update checks require owner/repo source metadata")
+	}
+	tag, assetName, ok := parseReleaseFileID(req.FileID)
+	if !ok {
+		assetName = strings.TrimSpace(req.FileName)
+	}
+	ref, err := validateRef(releaseRef{
+		Owner:     strings.TrimSpace(parts[0]),
+		Repo:      strings.TrimSpace(parts[1]),
+		Tag:       tag,
+		AssetName: assetName,
+	})
+	if err != nil {
+		return releaseRef{}, err
+	}
+	if strings.TrimSpace(ref.AssetName) == "" {
+		return releaseRef{}, errors.New("GitHub update checks require a release asset name")
+	}
+	return ref, nil
+}
+
 func (r Resolver) resolveRelease(ctx context.Context, ref releaseRef) (releaseResponse, error) {
 	var endpoint string
 	if ref.Latest || strings.TrimSpace(ref.Tag) == "" {
@@ -226,6 +305,18 @@ func singleArchiveAsset(assets []releaseAsset) (releaseAsset, error) {
 	return matches[0], nil
 }
 
+func matchingArchiveAsset(assets []releaseAsset, preferredName string) (releaseAsset, error) {
+	preferredName = strings.TrimSpace(preferredName)
+	if preferredName != "" {
+		for _, asset := range assets {
+			if strings.TrimSpace(asset.Name) == preferredName && strings.TrimSpace(asset.BrowserDownloadURL) != "" && isArchiveName(asset.Name) {
+				return asset, nil
+			}
+		}
+	}
+	return singleArchiveAsset(assets)
+}
+
 func isArchiveName(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	return strings.HasSuffix(name, ".zip") ||
@@ -236,15 +327,16 @@ func isArchiveName(name string) bool {
 }
 
 func resolvedDownload(rawURL, steamAppID string, ref releaseRef) catalog.ResolvedDownload {
-	fileID := safeFileID(ref.Tag, ref.AssetName)
+	fileID := releaseFileID(ref.Tag, ref.AssetName)
 	return catalog.ResolvedDownload{
 		Catalog:    "github",
 		SourceURL:  strings.TrimSpace(rawURL),
 		SteamAppID: strings.TrimSpace(steamAppID),
-		GameDomain: ref.Owner + "-" + ref.Repo,
-		ModID:      ref.Owner + "-" + ref.Repo,
+		GameDomain: "github",
+		ModID:      ref.Owner + "/" + ref.Repo,
 		FileID:     fileID,
 		FileName:   filepath.Base(ref.AssetName),
+		Version:    strings.TrimSpace(ref.Tag),
 		DownloadLinks: []catalog.DownloadLink{{
 			Name:      "GitHub release asset",
 			ShortName: "github",
@@ -253,38 +345,32 @@ func resolvedDownload(rawURL, steamAppID string, ref releaseRef) catalog.Resolve
 	}
 }
 
-func safeFileID(tag, assetName string) string {
+func releaseFileID(tag, assetName string) string {
 	tag = strings.TrimSpace(tag)
 	if tag == "" {
 		tag = "release"
 	}
-	tag = safeIDPart(tag)
-	sum := sha256.Sum256([]byte(assetName))
-	return tag + "-" + hex.EncodeToString(sum[:])[:12]
+	assetName = filepath.Base(strings.TrimSpace(assetName))
+	if assetName == "." {
+		assetName = "asset"
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte(tag)) + "." + base64.RawURLEncoding.EncodeToString([]byte(assetName))
 }
 
-func safeIDPart(value string) string {
-	value = strings.TrimSpace(value)
-	var out strings.Builder
-	for _, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z':
-			out.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			out.WriteRune(r)
-		case r >= '0' && r <= '9':
-			out.WriteRune(r)
-		case r == '.', r == '_', r == '-':
-			out.WriteRune(r)
-		default:
-			out.WriteByte('-')
-		}
+func parseReleaseFileID(fileID string) (string, string, bool) {
+	parts := strings.Split(strings.TrimSpace(fileID), ".")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
 	}
-	cleaned := strings.Trim(out.String(), ".- _")
-	if cleaned == "" {
-		return "release"
+	tag, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", "", false
 	}
-	return cleaned
+	assetName, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", "", false
+	}
+	return string(tag), filepath.Base(string(assetName)), true
 }
 
 func unescapePathPart(value string) string {

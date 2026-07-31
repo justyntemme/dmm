@@ -4,6 +4,7 @@ import (
 	stdzip "archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	githubcatalog "github.com/justyntemme/decky-mod-manager/internal/catalog/github"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/modrinth"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
@@ -1133,6 +1135,87 @@ func TestModrinthUpdateProviderCachesAndQueuesLatestVersion(t *testing.T) {
 	if pending.Resolved.Catalog != "modrinth" || pending.Resolved.FileID != "new-version" || pending.ArchiveFileName != "sodium-new.jar" {
 		t.Fatalf("pending = %+v", pending)
 	}
+}
+
+func TestGitHubUpdateProviderCachesLatestReleaseAsset(t *testing.T) {
+	srv := newTestServer(t)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/owner/mod/releases/latest":
+			_, _ = io.WriteString(w, `{
+				"tag_name":"v2.0.0",
+				"assets":[
+					{"name":"mod-linux.zip","browser_download_url":"https://github.com/owner/mod/releases/download/v2.0.0/mod-linux.zip"},
+					{"name":"mod-windows.zip","browser_download_url":"https://github.com/owner/mod/releases/download/v2.0.0/mod-windows.zip"}
+				]
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{githubcatalog.Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}}
+	srv.catalogMu.Unlock()
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			GameDomain: "github",
+			ModID:      "owner/mod",
+			FileID:     githubReleaseFileID("v1.0.0", "mod-linux.zip"),
+			FileName:   "mod-linux.zip",
+		},
+		Name:         "GitHub Mod",
+		Version:      "v1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "mod-linux.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "mod-linux"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Checked != 1 || len(body.Results) != 1 {
+		t.Fatalf("body = %+v", body)
+	}
+	result := body.Results[0]
+	if result.InstalledModID != mod.ID || result.Status != "available" || result.LatestFileID != githubReleaseFileID("v2.0.0", "mod-linux.zip") || result.LatestFileName != "mod-linux.zip" || result.LatestVersion != "v2.0.0" {
+		t.Fatalf("update result = %+v", result)
+	}
+	updates, err := srv.db.ModUpdatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updates[mod.ID].LatestVersion != "v2.0.0" {
+		t.Fatalf("persisted update = %+v", updates[mod.ID])
+	}
+}
+
+func githubReleaseFileID(tag, assetName string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(tag)) + "." + base64.RawURLEncoding.EncodeToString([]byte(assetName))
 }
 
 func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {

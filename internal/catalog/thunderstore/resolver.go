@@ -45,18 +45,18 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 }
 
 func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
-	ref, err := parseURL(req.SourceURL)
+	ref, err := packageRefFromUpdateRequest(req)
 	if err != nil {
-		return catalog.ResolvedDownload{}, errors.New("Thunderstore update checks require the original package URL")
+		return catalog.ResolvedDownload{}, err
 	}
 	ref.Version = ""
 	return r.resolveDownload(ctx, packageURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
 func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
-	ref, err := parseURL(req.SourceURL)
+	ref, err := packageRefFromUpdateRequest(req)
 	if err != nil {
-		return catalog.ResolvedDownload{}, errors.New("Thunderstore update installs require the original package URL")
+		return catalog.ResolvedDownload{}, err
 	}
 	ref.Version = strings.TrimSpace(req.FileID)
 	if ref.Version == "" {
@@ -88,7 +88,7 @@ func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID str
 	if sourceDomain == "" {
 		sourceDomain = "thunderstore"
 	}
-	modID := ref.Namespace + "-" + ref.Name
+	modID := ref.Namespace + "/" + ref.Name
 	fileID := versionNumber
 	return catalog.ResolvedDownload{
 		Catalog:    "thunderstore",
@@ -98,12 +98,29 @@ func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID str
 		ModID:      modID,
 		FileID:     fileID,
 		FileName:   ref.Namespace + "-" + ref.Name + "-" + versionNumber + ".zip",
+		Version:    versionNumber,
 		DownloadLinks: []catalog.DownloadLink{{
 			Name:      "Thunderstore",
 			ShortName: "thunderstore",
 			URI:       downloadURL,
 		}},
 	}, nil
+}
+
+func packageRefFromUpdateRequest(req catalog.UpdateResolveRequest) (packageRef, error) {
+	parts := strings.Split(strings.TrimSpace(req.ModID), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return packageRef{}, errors.New("Thunderstore update checks require namespace/package source metadata")
+	}
+	ref := packageRef{
+		Community: strings.TrimSpace(req.GameDomain),
+		Namespace: strings.TrimSpace(parts[0]),
+		Name:      strings.TrimSpace(parts[1]),
+	}
+	if ref.Community == "thunderstore" {
+		ref.Community = ""
+	}
+	return validateRef(ref)
 }
 
 func packageURL(ref packageRef) string {

@@ -3208,7 +3208,10 @@ func updateCheckResultForResolvedDownload(mod storage.InstalledMod, latest catal
 	}
 	result.LatestFileID = strings.TrimSpace(latest.FileID)
 	result.LatestFileName = strings.TrimSpace(latest.FileName)
-	result.LatestVersion = strings.TrimSpace(latest.FileID)
+	result.LatestVersion = strings.TrimSpace(latest.Version)
+	if result.LatestVersion == "" {
+		result.LatestVersion = strings.TrimSpace(latest.FileID)
+	}
 	if result.LatestFileID == "" {
 		result.Message = label + " did not return a comparable latest file for this installed mod."
 		return result
