@@ -102,6 +102,9 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 - Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, or future provider name.
 - Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
+- In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
+- Confirm direct/provider imports are tied to the selected game and show a non-Nexus source tag.
+- Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.
 
 ## Notes To Send Back
 

@@ -71,8 +71,8 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - MVP install path is a Decky Loader plugin that bundles and controls a Go backend.
 - The phone/tablet browser UI is the primary MVP management surface.
 - MVP supports Steam games on Steam Deck only.
-- MVP focuses on Nexus Mods "Mod Manager Download" / Vortex-compatible flows.
-- MVP provider architecture must support all popular non-Steam mod upstreams as first-class future sources, verified from their official APIs/clients before implementation. Nexus remains the first implemented source; Steam Workshop is treated separately as Steam-owned platform content rather than as a normal remote catalog.
+- MVP focuses first on Nexus Mods "Mod Manager Download" / Vortex-compatible flows, then expands to popular non-Steam mod upstreams as first-class catalog sources.
+- MVP provider architecture must support multiple popular non-Steam mod upstreams, verified from their official APIs/clients before implementation. Nexus remains the first implemented source; direct archive URLs are supported as a generic selected-game import path; Steam Workshop is treated separately as Steam-owned platform content rather than as a normal remote catalog.
 - Persist source/catalog identity for every captured, cached, installed, enabled, disabled, updated, or removed mod. UI surfaces should be able to tag, filter, and sort mods by source.
 - Steam Workshop content should coexist with DMM-managed mods where the game extension declares it safe. Steam Workshop unsubscribe, enable/disable, and load-order movement should use documented or directly verified Steam/Decky APIs; do not add filesystem or client-state hacks for Workshop management.
 - MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
@@ -211,7 +211,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 ## Nexus Catalog Guidelines
 
 - Name the upstream abstraction `RemoteModCatalog` unless we decide to shorten it during implementation.
-- Nexus is the only remote catalog required for MVP.
+- Nexus is the first remote catalog and remains the critical MVP source, but MVP must include the provider architecture and initial support for multiple popular non-Steam mod stores/upstreams.
 - Pasted Nexus HTTPS URLs and pasted `nxm://` URLs are MVP.
 - Direct local archive import is useful for testing and future flexibility, but Nexus URL import has priority.
 - Use Nexus API-key authentication if an API key is available.
