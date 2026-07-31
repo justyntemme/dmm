@@ -459,6 +459,7 @@
   let busyMods: Record<number, "toggle" | "remove" | "reinstall" | "update"> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
+  let modUpdateBrowserURL = "";
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
@@ -1122,6 +1123,7 @@
     if (!selectedGame || mod.update?.status !== "available") return;
     error = "";
     modUpdateMessage = "";
+    modUpdateBrowserURL = "";
     setBusyMod(mod.id, "update");
     try {
       const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
@@ -1130,16 +1132,18 @@
         await refreshJobsAndSelectedGame();
         return;
       }
-      const result: { job?: Job; browser_required?: boolean } = await response.json();
+      const result: { job?: Job; browser_required?: boolean; file_url?: string; resolved?: { source_url?: string } } = await response.json();
       if (result.job) {
         upsertJob(result.job);
         modUpdateMessage = result.job.message || result.job.title;
-        if (result.job.status === "failed") {
+        if (result.job.status === "failed" && !result.browser_required) {
           error = result.job.message || "Unable to install this update.";
         }
       }
-      if (result.browser_required && !error) {
-        error = "Nexus requires the Deck browser Mod Manager Download button for this update.";
+      if (result.browser_required) {
+        modUpdateBrowserURL = result.file_url ?? result.resolved?.source_url ?? "";
+        modUpdateMessage = "Nexus requires the browser Mod Manager Download button for this update.";
+        if (!modUpdateBrowserURL) error = modUpdateMessage;
       }
       await refreshJobsAndSelectedGame();
     } catch (err) {
@@ -1153,6 +1157,7 @@
     if (!selectedGame || modUpdateBusy) return;
     error = "";
     modUpdateMessage = "";
+    modUpdateBrowserURL = "";
     modUpdateBusy = true;
     const response = await fetch(`/api/games/${selectedGame.app_id}/mods/check-updates`, { method: "POST" });
     if (!response.ok) {
@@ -2694,6 +2699,9 @@
                 </div>
               </div>
               {#if modUpdateMessage}<p class="hint">{modUpdateMessage}</p>{/if}
+              {#if modUpdateBrowserURL}
+                <button type="button" class="secondary-action compact" on:click={() => window.open(modUpdateBrowserURL, "_blank", "noopener")}>Open Nexus File Page</button>
+              {/if}
               <div class="mod-list">
                 {#each installedMods as mod}
                   {@const metadata = primaryModMetadata(mod)}

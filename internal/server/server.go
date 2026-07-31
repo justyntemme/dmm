@@ -2453,6 +2453,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 			"job":      job,
 			"resolved": pending.Resolved,
 			"source":   pending.Source,
+			"file_url": resolved.SourceURL,
 		}
 		if len(pending.DownloadLinks) > 0 {
 			payload["download_links"] = pending.DownloadLinks
@@ -2474,6 +2475,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		"resolved": resolved,
 		"source":   "mod-update",
 		"update":   update,
+		"file_url": resolved.SourceURL,
 	}
 	client := s.nexus(apiKey)
 	links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, "", "")

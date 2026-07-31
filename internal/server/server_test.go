@@ -873,7 +873,8 @@ func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Job jobs.Job `json:"job"`
+		Job     jobs.Job `json:"job"`
+		FileURL string   `json:"file_url"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -891,6 +892,9 @@ func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {
 	}
 	if body.Job.Payload["installed_mod_id"] != strconv.FormatInt(mod.ID, 10) || body.Job.Payload["update_to_file_id"] != "101" {
 		t.Fatalf("job payload = %+v", body.Job.Payload)
+	}
+	if body.FileURL != "https://www.nexusmods.com/stardewvalley/mods/239?file_id=101" {
+		t.Fatalf("file url = %q", body.FileURL)
 	}
 	pending, ok := srv.capturedInstall(body.Job.ID)
 	if !ok {
@@ -970,6 +974,7 @@ func TestUpdateGameModReportsBrowserRequiredWhenNexusRejectsDirectLinks(t *testi
 	var body struct {
 		Job             jobs.Job `json:"job"`
 		BrowserRequired bool     `json:"browser_required"`
+		FileURL         string   `json:"file_url"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -979,6 +984,9 @@ func TestUpdateGameModReportsBrowserRequiredWhenNexusRejectsDirectLinks(t *testi
 	}
 	if !strings.Contains(body.Job.Message, "browser-generated") {
 		t.Fatalf("job message = %q", body.Job.Message)
+	}
+	if body.FileURL != "https://www.nexusmods.com/stardewvalley/mods/239?file_id=101" {
+		t.Fatalf("file url = %q", body.FileURL)
 	}
 }
 

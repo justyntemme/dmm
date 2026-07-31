@@ -2632,7 +2632,7 @@ function DeckyModManagerRoute() {
       setError("");
       setModsResult("");
       setBusyModID(mod.id);
-      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean }; job?: Job }>("update_game_mod", selectedDeckyGameID, mod.id);
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean; file_url?: string; resolved?: { source_url?: string } }; job?: Job }>("update_game_mod", selectedDeckyGameID, mod.id);
       if (!result.ok) {
         await logFrontendEvent("decky mod update failed", { app_id: selectedDeckyGameID, mod_id: mod.id, error: result.error || "" });
         setError(result.error ?? "Unable to install update.");
@@ -2643,12 +2643,18 @@ function DeckyModManagerRoute() {
       if (job) {
         setModsResult(job.message || "Update queued.");
         showJobToast(job);
-        if (job.status === "failed") setError(job.message || "Unable to install update.");
+        if (job.status === "failed" && !result.result?.browser_required) setError(job.message || "Unable to install update.");
       } else {
         setModsResult("Update queued.");
       }
-      if (result.result?.browser_required && !job?.message) {
-        setError("Nexus requires the Deck browser Mod Manager Download button for this update.");
+      if (result.result?.browser_required) {
+        const fileURL = result.result.file_url || result.result.resolved?.source_url || "";
+        setModsResult("Nexus requires the browser Mod Manager Download button for this update.");
+        if (fileURL) {
+          Navigation.NavigateToExternalWeb(fileURL);
+        } else {
+          setError("Nexus requires the Deck browser Mod Manager Download button for this update.");
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
