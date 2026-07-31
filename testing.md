@@ -9,6 +9,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Open Decky Mod Manager in Gaming Mode and confirm the backend starts automatically.
 - Phone/tablet URL: `http://192.168.8.102:17942` when the Deck is on the same LAN/hotspot.
 - Confirm Nexus API key is configured in the phone/tablet Settings page.
+- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
 
 ## Decky Plugin
 
@@ -102,6 +103,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 - Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, or future provider name.
 - Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
+- In the phone/iPad Mods view, filter by source and sort by source.
+- In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
 - In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
 - Confirm direct/provider imports are tied to the selected game and show a non-Nexus source tag.
 - Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.

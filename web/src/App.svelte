@@ -422,6 +422,7 @@
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
   type SettingsPage = "overview" | "jobs" | "install" | "sources" | "nexus";
   type GameSort = "recent" | "az" | "za";
+  type ModListSort = "profile" | "source" | "az" | "enabled";
 
   let status: Status | null = null;
   let catalogs: CatalogStatus[] = [];
@@ -468,6 +469,8 @@
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
   let gameSort: GameSort = "recent";
+  let modSourceFilter = "all";
+  let modListSort: ModListSort = "profile";
   let favoriteGameIDs = new Set<string>();
   let gameRecent: Record<string, number> = {};
   let busyJobs: Record<string, boolean> = {};
@@ -536,6 +539,8 @@
   $: conflictChoiceTargets = getConflictChoiceTargets(deployPlan);
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
   $: disabledMods = installedMods.filter((mod) => !mod.enabled);
+  $: modSourceOptions = sourceOptionsForMods(installedMods);
+  $: visibleInstalledMods = sortModsForList(installedMods.filter((mod) => modSourceFilter === "all" || sourceKey(mod.catalog) === modSourceFilter));
   $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
   $: deployReplaces = deployableActions.filter((action) => action.operation === "replace").length;
   $: deployRemoves = deployableActions.filter((action) => action.operation === "remove").length;
@@ -2154,6 +2159,45 @@
     return mod.enabled ? "Enabled in this profile" : "Installed, disabled in this profile";
   }
 
+  function sourceKey(catalog: string | undefined) {
+    const source = (catalog ?? "").trim().toLowerCase().replace(/_/g, "-");
+    if (source === "github-releases") return "github";
+    if (source === "steam-workshop" || source === "workshop") return "steam-workshop";
+    if (source === "mod.io") return "modio";
+    return source || "unknown";
+  }
+
+  function sourceOptionsForMods(mods: InstalledMod[]) {
+    const byKey = new Map<string, string>();
+    for (const mod of mods) {
+      const key = sourceKey(mod.catalog);
+      if (!byKey.has(key)) byKey.set(key, sourceLabel(mod.catalog));
+    }
+    return [...byKey.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }
+
+  function sortModsForList(mods: InstalledMod[]) {
+    return [...mods].sort((a, b) => {
+      if (modListSort === "source") {
+        const sourceDelta = sourceLabel(a.catalog).localeCompare(sourceLabel(b.catalog));
+        if (sourceDelta !== 0) return sourceDelta;
+      }
+      if (modListSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
+      if (modListSort === "enabled") {
+        const enabledDelta = Number(b.enabled) - Number(a.enabled);
+        if (enabledDelta !== 0) return enabledDelta;
+      }
+      return a.priority - b.priority || a.name.localeCompare(b.name);
+    });
+  }
+
+  function modListSortLabel(sort: ModListSort) {
+    if (sort === "source") return "Source";
+    if (sort === "az") return "A-Z";
+    if (sort === "enabled") return "Enabled";
+    return "Profile";
+  }
+
   function sourceLabel(catalog: string | undefined) {
     const source = (catalog ?? "").trim().toLowerCase();
     if (source === "nexus") return "Nexus";
@@ -2815,8 +2859,31 @@
               {#if modUpdateBrowserURL}
                 <button type="button" class="secondary-action compact" on:click={() => window.open(modUpdateBrowserURL, "_blank", "noopener")}>Open Nexus File Page</button>
               {/if}
-              <div class="mod-list">
-                {#each installedMods as mod}
+              <div class="mod-list-controls">
+                <label>
+                  <span>Source</span>
+                  <select bind:value={modSourceFilter}>
+                    <option value="all">All Sources</option>
+                    {#each modSourceOptions as [key, label]}
+                      <option value={key}>{label}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label>
+                  <span>Sort</span>
+                  <select bind:value={modListSort}>
+                    <option value="profile">{modListSortLabel("profile")}</option>
+                    <option value="source">{modListSortLabel("source")}</option>
+                    <option value="az">{modListSortLabel("az")}</option>
+                    <option value="enabled">{modListSortLabel("enabled")}</option>
+                  </select>
+                </label>
+              </div>
+              {#if visibleInstalledMods.length === 0}
+                <p class="hint">No mods match the selected source.</p>
+              {:else}
+                <div class="mod-list">
+                {#each visibleInstalledMods as mod}
                   {@const metadata = primaryModMetadata(mod)}
                   {@const dependencyLabels = modDependencyLabels(mod)}
                   {@const orderIndex = installedMods.findIndex((item) => item.id === mod.id)}
@@ -2875,7 +2942,8 @@
                     </details>
                   </article>
                 {/each}
-              </div>
+                </div>
+              {/if}
             </section>
           {/if}
 

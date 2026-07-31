@@ -362,7 +362,7 @@ type WorkshopActionJob = Job & {
 
 type Tab = "main" | "games" | "settings" | "debug";
 type GameSort = "recent" | "az" | "za";
-type DeckyModSort = "profile" | "az" | "za" | "enabled";
+type DeckyModSort = "profile" | "source" | "az" | "za" | "enabled";
 
 const DMM_DECKY_ROUTE = "/decky-mod-manager";
 const deckyTabOrder: Tab[] = ["main", "games", "settings", "debug"];
@@ -604,6 +604,8 @@ function sourceLabel(catalog?: string) {
   if (source === "nexus") return "Nexus";
   if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
   if (source === "thunderstore") return "Thunderstore";
+  if (source === "modio" || source === "mod.io") return "mod.io";
+  if (source === "curseforge") return "CurseForge";
   if (source === "moddb") return "ModDB";
   if (source === "github" || source === "github_releases") return "GitHub";
   if (source === "direct") return "Direct";
@@ -618,6 +620,9 @@ function deckySourcePillStyle(catalog?: string): CSSProperties {
     "steam-workshop": { border: "#2563eb", color: "#dbeafe", background: "#172554" },
     workshop: { border: "#2563eb", color: "#dbeafe", background: "#172554" },
     thunderstore: { border: "#0891b2", color: "#cffafe", background: "#164e63" },
+    modio: { border: "#16a34a", color: "#dcfce7", background: "#052e16" },
+    "mod.io": { border: "#16a34a", color: "#dcfce7", background: "#052e16" },
+    curseforge: { border: "#f97316", color: "#ffedd5", background: "#431407" },
     moddb: { border: "#ca8a04", color: "#fef3c7", background: "#422006" },
     github: { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     "github-releases": { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
@@ -902,13 +907,15 @@ function gameSortLabel(sort: GameSort) {
 }
 
 function nextDeckyModSort(current: DeckyModSort): DeckyModSort {
-  if (current === "profile") return "az";
+  if (current === "profile") return "source";
+  if (current === "source") return "az";
   if (current === "az") return "za";
   if (current === "za") return "enabled";
   return "profile";
 }
 
 function deckyModSortLabel(sort: DeckyModSort) {
+  if (sort === "source") return "Source";
   if (sort === "az") return "A-Z";
   if (sort === "za") return "Z-A";
   if (sort === "enabled") return "Enabled First";
@@ -3098,10 +3105,14 @@ function DeckyModManagerRoute() {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     const filtered = deckyMods.filter((mod) =>
       !normalizedModSearch ||
-        [mod.name, mod.status, mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
+        [mod.name, mod.status, mod.catalog, sourceLabel(mod.catalog), mod.source_game_domain, mod.source_mod_id, mod.source_file_id]
           .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
       );
     return [...filtered].sort((a, b) => {
+      if (effectiveModSort === "source") {
+        const sourceDelta = sourceLabel(a.catalog).localeCompare(sourceLabel(b.catalog));
+        if (sourceDelta !== 0) return sourceDelta;
+      }
       if (effectiveModSort === "az") return a.name.localeCompare(b.name) || a.priority - b.priority;
       if (effectiveModSort === "za") return b.name.localeCompare(a.name) || a.priority - b.priority;
       if (effectiveModSort === "enabled") {
