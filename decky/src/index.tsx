@@ -727,6 +727,7 @@ const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
 const completedWorkshopActions = new Set<string>();
 const workshopActionAttempts = new Map<string, number>();
+const workshopStateSyncLastAt = new Map<string, number>();
 const DMM_EVENT_NAME = "dmm-domain-event";
 const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
 let eventMonitorSocket: WebSocket | null = null;
@@ -760,6 +761,14 @@ function eventMatchesAppID(event: DomainEvent, appID: string) {
 function jobMatchesAppID(job: Job, appID: string) {
   const payloadAppID = String(job.payload?.app_id ?? "").trim();
   return !payloadAppID || payloadAppID === appID;
+}
+
+function eventShouldSyncLaunchActions(event: DomainEvent) {
+  return ["profile_mods.changed", "deployment.changed", "install.changed", "launch.changed"].includes(event.type);
+}
+
+function eventShouldSyncWorkshopActions(event: DomainEvent) {
+  return event.type === "job.updated" && isJob(event.payload) && event.payload.type === "steam-workshop-action";
 }
 
 function deckyModStateLabel(mod: ManagedMod) {
@@ -1203,7 +1212,17 @@ function mergeWorkshopItems(appID: string, subscribed: SteamWorkshopClientItem[]
   return Array.from(byID.values()).sort((a, b) => a.position - b.position || a.published_file_id.localeCompare(b.published_file_id));
 }
 
-async function syncWorkshopStateForApp(appID: string) {
+function shouldSyncWorkshopStateForApp(appID: string, force = false) {
+  if (force) return true;
+  const now = Date.now();
+  const previous = workshopStateSyncLastAt.get(appID) ?? 0;
+  if (previous > 0 && now - previous < 15_000) return false;
+  workshopStateSyncLastAt.set(appID, now);
+  return true;
+}
+
+async function syncWorkshopStateForApp(appID: string, options: { force?: boolean } = {}) {
+  if (!shouldSyncWorkshopStateForApp(appID, Boolean(options.force))) return false;
   const appid = Number.parseInt(appID, 10);
   const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
   if (!Number.isFinite(appid) || !steamApps) return false;
@@ -1302,7 +1321,7 @@ async function syncWorkshopActions() {
         await executeWorkshopAction(action);
         await new Promise((resolve) => window.setTimeout(resolve, 900));
         if (action.payload?.app_id) {
-          await syncWorkshopStateForApp(action.payload.app_id);
+          await syncWorkshopStateForApp(action.payload.app_id, { force: true });
         }
         const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_workshop_action", action.id, {
           applied: true,
@@ -1895,10 +1914,10 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
     }
     await maybeShowInstallerChoiceModal(event.payload);
   }
-  if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "mod_updates.changed"].includes(event.type)) {
+  if (eventShouldSyncLaunchActions(event)) {
     await syncLaunchActions();
   }
-  if (event.type === "job.updated") {
+  if (eventShouldSyncWorkshopActions(event)) {
     await syncWorkshopActions();
   }
   window.dispatchEvent(new CustomEvent(DMM_EVENT_NAME, { detail: event }));
@@ -2220,7 +2239,7 @@ function DeckyModManagerRoute() {
     } else {
       setDeckyDeployPlan(null);
     }
-    void syncWorkshopStateForApp(appID).then((synced) => {
+    if (workshopResult.ok && workshopResult.state?.supported) void syncWorkshopStateForApp(appID).then((synced) => {
       if (synced) {
         void call<[string], { ok: boolean; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID).then((next) => {
           if (!next.ok) return;
