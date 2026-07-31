@@ -12,6 +12,14 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
 - If you have mod.io or CurseForge API keys, paste them in Settings > Sources and confirm those sources switch from `Needs Key` to `Ready`.
 
+## Plane / iPad Notes
+
+- Before leaving Wi-Fi, open the phone/iPad UI once and confirm it loads on the same hotspot/LAN as the Deck.
+- Provider tests that require fresh downloads need internet access. If the plane connection is unreliable, focus on cached mods, profiles, Decky navigation, source tags, rollback, and already-installed Workshop state.
+- Test both portrait and landscape on iPad. The main content should not require horizontal scrolling, clipped action buttons, or hidden status text.
+- When a view has no pending actions, its button/tab should still be clearly clickable and should open a useful empty state.
+- Take short notes with game, provider/source, UI surface, expected result, and actual result.
+
 ## Decky Plugin
 
 - Open DMM and verify the Quick Access panel shows the compact status launcher.
@@ -100,10 +108,11 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Move Workshop entries up/down only on a safe test game and confirm DMM queues a `Steam Workshop` order action instead of treating Workshop content like a downloaded archive.
 - Test enable/disable/unsubscribe only if the game is safe to modify during travel.
 - Confirm DMM still allows Nexus/DMM-managed mods for the same game when the extension declares coexistence safe.
+- Do not look for a Steam Workshop search/browse UI; MVP scope is managing already-installed/subscribed Workshop items alongside DMM-managed mods.
 
 ## Source Tags
 
-- Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, or future provider name.
+- Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, or `Local`.
 - Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
 - In the phone/iPad Mods view, filter by source and sort by source.
 - In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
