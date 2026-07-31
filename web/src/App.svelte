@@ -1500,13 +1500,13 @@
     }
   }
 
-  async function installCapturedMod(request: Job) {
-    if (request.status !== "waiting") return;
+  async function installCapturedMod(action: Job) {
+    if (action.status !== "waiting") return;
     error = "";
-    setJobBusy(request.id, true);
-    markJobProcessing(request, "Installing downloaded archive...");
+    setJobBusy(action.id, true);
+    markJobProcessing(action, "Installing downloaded archive...");
     try {
-      const response = await fetch(`/api/captured-installs/${request.id}/install`, { method: "POST" });
+      const response = await fetch(`/api/captured-installs/${action.id}/install`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1519,17 +1519,17 @@
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      setJobBusy(request.id, false);
+      setJobBusy(action.id, false);
     }
   }
 
-  async function retryCapturedInstallAction(request: Job) {
-    if (request.status !== "failed") return;
+  async function retryCapturedInstallAction(action: Job) {
+    if (action.status !== "failed") return;
     error = "";
-    setJobBusy(request.id, true);
-    markJobProcessing(request, "Retrying captured install...");
+    setJobBusy(action.id, true);
+    markJobProcessing(action, "Retrying captured install...");
     try {
-      const response = await fetch(`/api/captured-installs/${request.id}/retry`, { method: "POST" });
+      const response = await fetch(`/api/captured-installs/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1542,17 +1542,17 @@
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      setJobBusy(request.id, false);
+      setJobBusy(action.id, false);
     }
   }
 
-  async function retryWorkshopAction(request: Job) {
-    if (request.type !== "steam-workshop-action" || request.status !== "failed") return;
+  async function retryWorkshopAction(action: Job) {
+    if (action.type !== "steam-workshop-action" || action.status !== "failed") return;
     error = "";
-    setJobBusy(request.id, true);
-    markJobProcessing(request, "Waiting for Decky to retry this Workshop action...");
+    setJobBusy(action.id, true);
+    markJobProcessing(action, "Waiting for Decky to retry this Workshop action...");
     try {
-      const response = await fetch(`/api/workshop/actions/${request.id}/retry`, { method: "POST" });
+      const response = await fetch(`/api/workshop/actions/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame();
@@ -1564,7 +1564,7 @@
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
-      setJobBusy(request.id, false);
+      setJobBusy(action.id, false);
     }
   }
 
@@ -2107,36 +2107,36 @@
     return Array.from(new Set(labels));
   }
 
-  function actionNextStep(request: Job) {
-    if (request.type === "steam-workshop-action") {
-      if (request.status === "waiting" || request.status === "queued") return "Waiting for Decky to apply this Steam Workshop change through Steam.";
-      if (request.status === "running") return "Decky is applying this Steam Workshop change through Steam.";
-      if (request.status === "failed") return "Decky could not apply this Steam Workshop change. Make sure the Deck is online with Steam running, then retry or cancel.";
+  function actionNextStep(action: Job) {
+    if (action.type === "steam-workshop-action") {
+      if (action.status === "waiting" || action.status === "queued") return "Waiting for Decky to apply this Steam Workshop change through Steam.";
+      if (action.status === "running") return "Decky is applying this Steam Workshop change through Steam.";
+      if (action.status === "failed") return "Decky could not apply this Steam Workshop change. Make sure the Deck is online with Steam running, then retry or cancel.";
       return "This Workshop action is retained in job history for diagnostics.";
     }
-    if (request.type === "installer-choice") {
+    if (action.type === "installer-choice") {
       return "Choose installer options to finish adding this mod to the selected profile.";
     }
-    if (request.status === "waiting") {
+    if (action.status === "waiting") {
       return "Add this downloaded mod to the selected profile, or cancel it and keep the archive cache untouched.";
     }
-    if (request.status === "running" || request.status === "queued") {
+    if (action.status === "running" || action.status === "queued") {
       return "DMM is downloading or installing this mod. It will appear in the profile when ready.";
     }
-    if (request.status === "failed") {
+    if (action.status === "failed") {
       return "The mod was not added. Retry from the cached download when available, or clear it if this action is no longer needed.";
     }
     return "This action is retained in job history for diagnostics.";
   }
 
-  function actionStatusLabel(request: Job) {
-    if (request.type === "steam-workshop-action" && (request.status === "waiting" || request.status === "queued")) return "Waiting for Decky";
-    if (request.type === "installer-choice" && request.status === "waiting") return "Needs choices";
-    if (request.status === "waiting") return "Ready to install";
-    if (request.status === "running") return "Processing";
-    if (request.status === "queued") return "Queued";
-    if (request.status === "failed") return "Failed";
-    return request.status;
+  function actionStatusLabel(action: Job) {
+    if (action.type === "steam-workshop-action" && (action.status === "waiting" || action.status === "queued")) return "Waiting for Decky";
+    if (action.type === "installer-choice" && action.status === "waiting") return "Needs choices";
+    if (action.status === "waiting") return "Ready to install";
+    if (action.status === "running") return "Processing";
+    if (action.status === "queued") return "Queued";
+    if (action.status === "failed") return "Failed";
+    return action.status;
   }
 
   function installerPresetScopeLabel(preset: InstallerChoicePreset) {
@@ -2306,32 +2306,32 @@
         {/if}
         {#if actionItems.length > 0}
           <div class="action-list">
-            {#each actionItems as request}
-              <article class:failed-action={request.status === "failed"}>
+            {#each actionItems as action}
+              <article class:failed-action={action.status === "failed"}>
                 <div>
-                  <strong>{request.title}</strong>
-	                    {#if request.message}<p>{request.message}</p>{/if}
-	                    <p class="action-next-step">{actionNextStep(request)}</p>
-	                    <small>{new Date(request.updated_at).toLocaleString()}</small>
+                  <strong>{action.title}</strong>
+	                    {#if action.message}<p>{action.message}</p>{/if}
+	                    <p class="action-next-step">{actionNextStep(action)}</p>
+	                    <small>{new Date(action.updated_at).toLocaleString()}</small>
 	                  </div>
 	                  <div class="action-controls">
-	                    <span>{actionStatusLabel(request)}</span>
-	                    {#if request.type === "installer-choice"}
-	                      <button type="button" on:click={() => openActionItem(request)}>{gameForJob(request) ? "Open Choices" : "Choose Game"}</button>
+	                    <span>{actionStatusLabel(action)}</span>
+	                    {#if action.type === "installer-choice"}
+	                      <button type="button" on:click={() => openActionItem(action)}>{gameForJob(action) ? "Open Choices" : "Choose Game"}</button>
 	                    {/if}
-	                    {#if request.status === "waiting"}
-	                      {#if request.type === "captured-install"}
-	                        <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
+	                    {#if action.status === "waiting"}
+	                      {#if action.type === "captured-install"}
+	                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Install"}</button>
 	                      {/if}
 	                    {/if}
-	                    {#if request.type === "captured-install" && request.status === "failed"}
-	                      <button type="button" on:click={() => retryCapturedInstallAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+	                    {#if action.type === "captured-install" && action.status === "failed"}
+	                      <button type="button" on:click={() => retryCapturedInstallAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
 	                    {/if}
-	                    {#if request.type === "steam-workshop-action" && request.status === "failed"}
-	                      <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+	                    {#if action.type === "steam-workshop-action" && action.status === "failed"}
+	                      <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
 	                    {/if}
-	                    {#if canCancelJob(request)}
-	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>
+	                    {#if canCancelJob(action)}
+	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>Cancel</button>
 	                    {/if}
 	                  </div>
 	                </article>
@@ -2865,30 +2865,30 @@
           {/if}
           {#if selectedGameActionItems.length > 0}
             <div class="action-list">
-              {#each selectedGameActionItems as request}
-                <article class:failed-action={request.status === "failed"}>
+              {#each selectedGameActionItems as action}
+                <article class:failed-action={action.status === "failed"}>
                   <div>
-                    <strong>{request.title}</strong>
-                    {#if request.message}<p>{request.message}</p>{/if}
-                    <p class="action-next-step">{actionNextStep(request)}</p>
-                    <small>{new Date(request.updated_at).toLocaleString()}</small>
+                    <strong>{action.title}</strong>
+                    {#if action.message}<p>{action.message}</p>{/if}
+                    <p class="action-next-step">{actionNextStep(action)}</p>
+                    <small>{new Date(action.updated_at).toLocaleString()}</small>
                   </div>
                     <div class="action-controls">
-                      <span>{actionStatusLabel(request)}</span>
-                      {#if request.type === "installer-choice"}
-                        <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
+                      <span>{actionStatusLabel(action)}</span>
+                      {#if action.type === "installer-choice"}
+                        <button type="button" on:click={() => openActionItem(action)}>Open Choices</button>
                       {/if}
-                      {#if request.type === "captured-install" && request.status === "waiting"}
-                        <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
+                      {#if action.type === "captured-install" && action.status === "waiting"}
+                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Install"}</button>
                       {/if}
-                      {#if request.type === "captured-install" && request.status === "failed"}
-                        <button type="button" on:click={() => retryCapturedInstallAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+                      {#if action.type === "captured-install" && action.status === "failed"}
+                        <button type="button" on:click={() => retryCapturedInstallAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
                       {/if}
-                      {#if request.type === "steam-workshop-action" && request.status === "failed"}
-                        <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+                      {#if action.type === "steam-workshop-action" && action.status === "failed"}
+                        <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
                       {/if}
-                      {#if canCancelJob(request)}
-                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(request)} disabled={isJobBusy(request)}>Cancel</button>
+                      {#if canCancelJob(action)}
+                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>Cancel</button>
                       {/if}
                   </div>
                 </article>
