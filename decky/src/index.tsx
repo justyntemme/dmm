@@ -4328,6 +4328,23 @@ function DeckyModManagerRoute() {
           <div>Channel: {status?.build?.channel || "Unknown"}</div>
           <div>Commit: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "Unknown"}</div>
           <div>Built: {status?.build?.built_at || "Unknown"}</div>
+          <div
+            style={{
+              alignItems: "center",
+              background: "#052e2b",
+              border: "1px solid #14b8a6",
+              borderRadius: "6px",
+              color: "#ccfbf1",
+              display: "flex",
+              gap: "8px",
+              justifyContent: "space-between",
+              marginTop: "4px",
+              padding: "6px 8px"
+            }}
+          >
+            <span style={{ fontWeight: 900 }}>Build Fingerprint</span>
+            <span style={{ fontFamily: "monospace", fontWeight: 800 }}>{status?.build?.short_commit || "unknown"}</span>
+          </div>
           {status?.build?.version && <div>Plugin: {status.build.version}</div>}
           {status?.build?.error && <div style={{ color: "#fbbf24", overflowWrap: "anywhere" }}>{status.build.error}</div>}
         </div>
