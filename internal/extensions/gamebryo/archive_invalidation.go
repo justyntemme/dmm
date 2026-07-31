@@ -3,9 +3,11 @@ package gamebryo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
@@ -13,6 +15,8 @@ import (
 )
 
 const protonSteamUser = "steamuser"
+
+const archiveInvalidationGeneratedDir = "_generated/gamebryo-archive-invalidation"
 
 type ArchiveInvalidationOptions struct {
 	ID           string
@@ -63,7 +67,7 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 		patched := ensureINISectionKeys(string(current), "Archive", opts.RequiredKeys)
 		if string(current) == patched {
 			if managedOK {
-				sourcePath, err := writeGeneratedINI(input.WorkDir, "archive-invalidation", iniName, []byte(patched))
+				sourcePath, err := writeGeneratedINI(input, "patched", iniName, []byte(patched))
 				if err != nil {
 					return sdk.EventHandlerResult{}, err
 				}
@@ -81,7 +85,7 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 			}
 			return sdk.EventHandlerResult{Messages: []string{"Gamebryo archive invalidation settings are already present."}}, nil
 		}
-		sourcePath, err := writeGeneratedINI(input.WorkDir, "archive-invalidation", iniName, []byte(patched))
+		sourcePath, err := writeGeneratedINI(input, "patched", iniName, []byte(patched))
 		if err != nil {
 			return sdk.EventHandlerResult{}, err
 		}
@@ -95,7 +99,7 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 		if managedOK {
 			mapping.RestorePath = managed.RestorePath
 		} else if len(current) > 0 {
-			restorePath, err := writeGeneratedINI(input.WorkDir, filepath.Join("archive-invalidation", "restore"), iniName, current)
+			restorePath, err := writeGeneratedINI(input, "restore", iniName, current)
 			if err != nil {
 				return sdk.EventHandlerResult{}, err
 			}
@@ -106,6 +110,18 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 			Messages: []string{"Gamebryo archive invalidation settings generated from Vortex-compatible extension metadata."},
 		}, nil
 	}
+}
+
+func archiveInvalidationGeneratedRoot(input sdk.EventHandlerInput) (string, error) {
+	stagingRoot := strings.TrimSpace(input.StagingRoot)
+	appID := strings.TrimSpace(input.AppID)
+	if stagingRoot == "" || appID == "" || input.ProfileID <= 0 {
+		return "", errors.New("staging root, Steam app id, and profile id are required for Gamebryo archive invalidation")
+	}
+	if strings.ContainsAny(appID, `/\`) || appID == "." || appID == ".." {
+		return "", errors.New("Steam app id is not safe for Gamebryo archive invalidation")
+	}
+	return filepath.Join(stagingRoot, archiveInvalidationGeneratedDir, appID, strconv.FormatInt(input.ProfileID, 10)), nil
 }
 
 func managedRestoreForTarget(files []deploy.AppliedFile, targetPath string) (deploy.AppliedFile, bool) {
@@ -121,8 +137,16 @@ func managedRestoreForTarget(files []deploy.AppliedFile, targetPath string) (dep
 	return deploy.AppliedFile{}, false
 }
 
-func writeGeneratedINI(workDir, group, name string, contents []byte) (string, error) {
-	path := filepath.Join(workDir, group, name)
+func writeGeneratedINI(input sdk.EventHandlerInput, group, name string, contents []byte) (string, error) {
+	root, err := archiveInvalidationGeneratedRoot(input)
+	if err != nil {
+		return "", err
+	}
+	name = filepath.Clean(filepath.FromSlash(strings.TrimSpace(name)))
+	if name == "." || name == ".." || filepath.IsAbs(name) || strings.HasPrefix(filepath.ToSlash(name), "../") {
+		return "", fmt.Errorf("unsafe generated INI path %q", name)
+	}
+	path := filepath.Join(root, group, name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}

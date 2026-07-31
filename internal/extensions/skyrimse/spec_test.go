@@ -171,6 +171,8 @@ func TestExtensionWillDeployGeneratesArchiveInvalidationMapping(t *testing.T) {
 	result, err := registry.RunEventHandlers(context.Background(), skyrimse.SteamAppID, "will-deploy", sdk.EventHandlerInput{
 		GamePath:    gamePath,
 		LibraryPath: root,
+		ProfileID:   9,
+		StagingRoot: filepath.Join(root, "staging"),
 		WorkDir:     filepath.Join(root, "work"),
 		Mappings: []deploy.FileMapping{{
 			TargetRelative: "Data/Example.esp",

@@ -53,6 +53,8 @@ func TestArchiveInvalidationHandlerReturnsPatchMappingWithRestore(t *testing.T) 
 		AppID:       "377160",
 		GamePath:    gamePath,
 		LibraryPath: root,
+		ProfileID:   9,
+		StagingRoot: filepath.Join(root, "staging"),
 		WorkDir:     filepath.Join(root, "work"),
 		Mappings: []deploy.FileMapping{{
 			TargetRelative: "Data/Meshes/example.nif",
@@ -82,13 +84,17 @@ func TestArchiveInvalidationHandlerReturnsPatchMappingWithRestore(t *testing.T) 
 	if string(restore) != "[Archive]\nSResourceArchiveList=Fallout4 - Misc.ba2\n" {
 		t.Fatalf("restore body = %q", restore)
 	}
+	if strings.Contains(filepath.ToSlash(mapping.RestorePath), "/work/") || strings.Contains(filepath.ToSlash(mapping.SourcePath), "/work/") {
+		t.Fatalf("generated paths should not use ephemeral work dir: %+v", mapping)
+	}
 }
 
 func TestArchiveInvalidationHandlerKeepsManagedPatchMapping(t *testing.T) {
 	root := t.TempDir()
 	documentsRoot := filepath.Join(root, "steamapps", "compatdata", "377160", "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
 	iniPath := filepath.Join(documentsRoot, "Fallout4.ini")
-	restorePath := filepath.Join(root, "staging", "restore", "Fallout4.ini")
+	stagingRoot := filepath.Join(root, "staging")
+	restorePath := filepath.Join(stagingRoot, archiveInvalidationGeneratedDir, "377160", "9", "restore", "Fallout4.ini")
 	if err := os.MkdirAll(filepath.Dir(iniPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +116,8 @@ func TestArchiveInvalidationHandlerKeepsManagedPatchMapping(t *testing.T) {
 	result, err := handler(context.Background(), sdk.EventHandlerInput{
 		AppID:       "377160",
 		LibraryPath: root,
+		ProfileID:   9,
+		StagingRoot: stagingRoot,
 		WorkDir:     filepath.Join(root, "staging", "work"),
 		Mappings: []deploy.FileMapping{{
 			TargetRelative: "Data/Meshes/example.nif",
