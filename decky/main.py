@@ -353,6 +353,35 @@ class Plugin:
         self._log(f"deployment preview loaded app_id={app_id} actions={len(actions)} conflicts={len(conflicts)}")
         return {"ok": True, "plan": result}
 
+    async def game_deploy_status(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "status": None}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "status": None}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/status")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load deployment status.", "status": None}
+        self._log(f"deployment status loaded app_id={app_id} deployed={bool(result.get('deployed'))} files={result.get('file_count')}")
+        return {"ok": True, "status": result}
+
+    async def restore_game_deployment(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/deploy/restore", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to restore the last DMM-applied state."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"deployment restore requested app_id={app_id} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {
+            "ok": True,
+            "job": job,
+            "result": result.get("result") if isinstance(result, dict) else None,
+        }
+
     async def set_file_conflict_winner(self, app_id, profile_id, target_path, winner_installed_mod_id):
         app_id = str(app_id or "").strip()
         profile_id = str(profile_id or "").strip()

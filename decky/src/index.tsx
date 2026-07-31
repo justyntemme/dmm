@@ -197,6 +197,19 @@ type ProfileApplyResult = {
   job?: Job;
 };
 
+type DeploymentStatus = {
+  deployed: boolean;
+  file_count: number;
+  strategy?: string;
+  sample_files?: string[];
+  apply_rollback_on_failure: boolean;
+  repair_available: boolean;
+  restore_available: boolean;
+  purge_available: boolean;
+  recovery_summary?: string;
+  restore_summary?: string;
+};
+
 type DeployAction = {
   target_path?: string;
   target_relative?: string;
@@ -1993,6 +2006,7 @@ function DeckyModManagerRoute() {
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
+  const [deckyDeploymentStatus, setDeckyDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [deckyDeployPlan, setDeckyDeployPlan] = useState<DeployPlan | null>(null);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
@@ -2155,15 +2169,17 @@ function DeckyModManagerRoute() {
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
       setDeckyLoadOrder(null);
+      setDeckyDeploymentStatus(null);
       setDeckyDeployPlan(null);
       return null;
     }
-    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult, deployPreviewResult] = await Promise.all([
+    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
       call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
       call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID),
+      call<[string], { ok: boolean; error?: string; status?: DeploymentStatus }>("game_deploy_status", appID),
       call<[string], { ok: boolean; error?: string; plan?: DeployPlan | null }>("game_deploy_preview", appID)
     ]);
     if (!profilesResult.ok) {
@@ -2194,6 +2210,11 @@ function DeckyModManagerRoute() {
     } else {
       setDeckyLoadOrder(null);
     }
+    if (deployStatusResult.ok && deployStatusResult.status) {
+      setDeckyDeploymentStatus(deployStatusResult.status);
+    } else {
+      setDeckyDeploymentStatus(null);
+    }
     if (deployPreviewResult.ok && deployPreviewResult.plan) {
       setDeckyDeployPlan(deployPreviewResult.plan);
     } else {
@@ -2213,6 +2234,7 @@ function DeckyModManagerRoute() {
       candidates: candidatesResult.ok ? candidatesResult.candidates : [],
       workshopItems: workshopResult.ok ? workshopResult.items : [],
       loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null,
+      deploymentStatus: deployStatusResult.ok ? deployStatusResult.status : null,
       deployPlan: deployPreviewResult.ok ? deployPreviewResult.plan : null
     };
   }
@@ -2469,6 +2491,47 @@ function DeckyModManagerRoute() {
       window,
       { strTitle: "Clear Installer Items", bNeverPopOut: true }
     );
+  }
+
+  function askRestoreDeckyDeployment() {
+    if (!selectedDeckyGameID || !selectedDeckyGame || !deckyDeploymentStatus?.restore_available) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle={`Restore ${selectedDeckyGame.name}`}
+        strDescription={deckyDeploymentStatus.restore_summary || "DMM will restore only files recorded in the active DMM deployment manifest."}
+        strOKButtonText="Restore"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void restoreDeckyDeployment();
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Restore DMM Files", bNeverPopOut: true }
+    );
+  }
+
+  async function restoreDeckyDeployment() {
+    if (!selectedDeckyGameID || !deckyDeploymentStatus?.restore_available) return;
+    try {
+      setError("");
+      setModsResult("");
+      const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: unknown }>("restore_game_deployment", selectedDeckyGameID);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to restore the last DMM-applied state.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      if (result.job) showJobToast(result.job);
+      setModsResult(result.job?.message || "Restore completed.");
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function clearDeckyInstallCandidates() {
@@ -3143,6 +3206,50 @@ function DeckyModManagerRoute() {
           <PanelSectionRow>
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
           </PanelSectionRow>
+          {deckyDeploymentStatus?.restore_available && (
+            <PanelSectionRow>
+              <Focusable
+                className="dmm-sidebar-surface dmm-sidebar-row"
+                focusClassName="dmm-sidebar-row-focused"
+                onActivate={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  askRestoreDeckyDeployment();
+                }}
+                onClick={askRestoreDeckyDeployment}
+                style={{
+                  ...deckyCompositeRowStyle(false),
+                  padding: "10px"
+                }}
+              >
+                <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                  <span
+                    style={{
+                      background: "#312e81",
+                      border: "1px solid #818cf8",
+                      borderRadius: "999px",
+                      color: "#e0e7ff",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      padding: "5px 8px"
+                    }}
+                  >
+                    Recovery
+                  </span>
+                  <span style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                    {deckyDeploymentStatus.file_count} managed file{deckyDeploymentStatus.file_count === 1 ? "" : "s"} · {deckyDeploymentStatus.strategy || "managed"}
+                  </span>
+                </div>
+                <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                  {deckyDeploymentStatus.restore_summary || "Restore the last DMM-applied state if deployed files drift."}
+                </div>
+                <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                  A Restore Last DMM State
+                </div>
+              </Focusable>
+            </PanelSectionRow>
+          )}
           <PanelSectionRow>
             <ButtonItem layout="below" onClick={clearSelectedDeckyGame}>
               Change Game
