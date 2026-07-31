@@ -166,20 +166,11 @@ if runtime_requirements:
             else:
                 warnings.append(message)
 else:
-    smapi_candidates = [
-        game_path / "StardewModdingAPI",
-        game_path / "StardewModdingAPI.exe",
-        game_path / "StardewModdingAPI.dll",
-        game_path / "smapi-internal" / "SMAPI.Toolkit.CoreInterfaces.dll",
-    ]
-    if any(path.is_file() for path in smapi_candidates):
-        runtime_requirements.append({"name": "SMAPI", "status": "ok", "message": "SMAPI marker found by live file checker fallback."})
+    message = "runtime status is unavailable from diagnostics"
+    if require_runtime:
+        failures.append(message)
     else:
-        message = "SMAPI runtime status is unavailable from diagnostics and no common SMAPI marker was found in the game folder"
-        if require_runtime:
-            failures.append(message)
-        else:
-            warnings.append(message)
+        warnings.append(message)
 
 print("summary:")
 print(f"  game_path={game_path}")
