@@ -380,16 +380,28 @@ func EvaluatedInstaller(installer Installer, selections map[string][]string, opt
 	out.Steps = make([]Step, 0, len(installer.Steps))
 	for _, step := range installer.Steps {
 		visible := stepIsVisible(step, selectedFlags, options)
-		step.Visible = visible
-		out.Steps = append(out.Steps, step)
-		if !visible {
-			continue
-		}
+		evaluatedStep := step
+		evaluatedStep.Visible = visible
+		evaluatedStep.Groups = make([]Group, 0, len(step.Groups))
 		for _, group := range step.Groups {
+			types := effectivePluginTypes(group.Plugins, selectedFlags, options)
+			evaluatedGroup := group
+			evaluatedGroup.Plugins = make([]Plugin, len(group.Plugins))
+			for i, plugin := range group.Plugins {
+				plugin.Type = types[plugin.ID]
+				evaluatedGroup.Plugins[i] = plugin
+			}
+			evaluatedStep.Groups = append(evaluatedStep.Groups, evaluatedGroup)
+			if !visible {
+				continue
+			}
 			for _, plugin := range selectedPluginsByID(group.Plugins, selections[group.ID]) {
-				mergeFlags(selectedFlags, plugin.Flags)
+				if isSelectablePluginType(types[plugin.ID]) {
+					mergeFlags(selectedFlags, plugin.Flags)
+				}
 			}
 		}
+		out.Steps = append(out.Steps, evaluatedStep)
 	}
 	return out
 }

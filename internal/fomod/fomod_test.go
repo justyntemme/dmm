@@ -472,6 +472,11 @@ func TestBuildPlanEvaluatesDependencyTypeDefaults(t *testing.T) {
 	if len(defaults[patchGroup.ID]) != 1 || defaults[patchGroup.ID][0] != patchGroup.Plugins[0].ID {
 		t.Fatalf("defaults = %+v", defaults)
 	}
+	evaluated := EvaluatedInstaller(installer, defaults, PlanOptions{})
+	evaluatedPatchGroup := evaluated.Steps[0].Groups[1]
+	if evaluatedPatchGroup.Plugins[0].Type != "Required" || evaluatedPatchGroup.Plugins[1].Type != "NotUsable" {
+		t.Fatalf("evaluated dependencyType = %+v", evaluatedPatchGroup.Plugins)
+	}
 	plan, err := BuildPlan("fallout4", root, installer, nil, PlanOptions{
 		ModType:    "fallout4-data-root",
 		PlannerID:  "vortex:fallout4:fomod",
