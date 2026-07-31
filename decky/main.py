@@ -951,7 +951,10 @@ class Plugin:
     async def diagnostics(self):
         self._log("diagnostics requested")
         nxm_log = self.log_dir / "nxm-handler.log"
+        update_install_log = self.log_dir / "update-install.log"
         steam_js = Path.home() / ".local" / "share" / "Steam" / "logs" / "webhelper_js.txt"
+        tail_lines = 160
+        tail_bytes = 96000
         return {
             "status": await self.status(),
             "nxm": self._nxm_status(),
@@ -959,19 +962,23 @@ class Plugin:
             "logs": {
                 "plugin": {
                     "path": str(self.plugin_log),
-                    "tail": self._tail_file(self.plugin_log),
+                    "tail": self._tail_file(self.plugin_log, max_lines=tail_lines, max_bytes=tail_bytes),
                 },
                 "backend": {
                     "path": str(self.backend_log),
-                    "tail": self._tail_file(self.backend_log),
+                    "tail": self._tail_file(self.backend_log, max_lines=tail_lines, max_bytes=tail_bytes),
                 },
                 "nxm": {
                     "path": str(nxm_log),
-                    "tail": self._tail_file(nxm_log),
+                    "tail": self._tail_file(nxm_log, max_lines=tail_lines, max_bytes=tail_bytes),
+                },
+                "update_install": {
+                    "path": str(update_install_log),
+                    "tail": self._tail_file(update_install_log, max_lines=tail_lines, max_bytes=tail_bytes),
                 },
                 "steam_js": {
                     "path": str(steam_js),
-                    "tail": self._tail_file(steam_js),
+                    "tail": self._tail_file(steam_js, max_lines=tail_lines, max_bytes=tail_bytes),
                 },
             },
         }

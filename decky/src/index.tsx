@@ -1144,6 +1144,19 @@ function isUISettings(value: unknown): value is UISettings {
   return Boolean(value && typeof value === "object");
 }
 
+function diagnosticsTerminalText(diagnostics: Diagnostics | null): string {
+  if (!diagnostics) return "Press Refresh Logs to load diagnostics.";
+  const entries = Object.entries(diagnostics.logs);
+  if (entries.length === 0) return "No log files were reported.";
+  return entries
+    .map(([name, log]) => {
+      const title = `==> ${name} (${log.path || "unknown path"})`;
+      const body = log.tail?.trimEnd() || "No log entries.";
+      return `${title}\n${body}`;
+    })
+    .join("\n\n");
+}
+
 function storedJobToastState(jobID: string) {
   try {
     return window.localStorage.getItem(`${DMM_TOAST_STORAGE_PREFIX}${jobID}`);
@@ -2407,6 +2420,7 @@ function DeckyModManagerRoute() {
   const [importResult, setImportResult] = useState<string>("");
   const [launchResult, setLaunchResult] = useState<string>("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [logMonitorEnabled, setLogMonitorEnabled] = useState<boolean>(false);
   const [updateResult, setUpdateResult] = useState<string>("");
   const [updateBusy, setUpdateBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
@@ -2442,6 +2456,14 @@ function DeckyModManagerRoute() {
   const routeRefreshNeedsStatus = useRef(false);
   const routeRefreshNeedsGames = useRef(false);
   const routeRefreshNeedsGameState = useRef(false);
+  const diagnosticLogText = useMemo(() => diagnosticsTerminalText(diagnostics), [diagnostics]);
+
+  useEffect(() => {
+    if (tab !== "debug" || !logMonitorEnabled) return;
+    void loadDiagnostics();
+    const timer = window.setInterval(() => void loadDiagnostics(), 2500);
+    return () => window.clearInterval(timer);
+  }, [tab, logMonitorEnabled]);
 
   async function refresh() {
     try {
@@ -4330,7 +4352,12 @@ function DeckyModManagerRoute() {
       </PanelSectionRow>
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={loadDiagnostics}>
-          Load Diagnostics
+          Refresh Logs
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={() => setLogMonitorEnabled((enabled) => !enabled)}>
+          {logMonitorEnabled ? "Stop Log Monitor" : "Monitor Logs"}
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
@@ -4356,17 +4383,35 @@ function DeckyModManagerRoute() {
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Backend log: {status.logs.backend}</div>
             </>
           )}
-          {diagnostics && (
-            <div style={{ display: "grid", gap: "10px", marginTop: "10px", width: "100%" }}>
-              {Object.entries(diagnostics.logs).map(([name, log]) => (
-                <div key={name} style={{ borderTop: "1px solid #303741", paddingTop: "8px" }}>
-                  <div style={{ fontWeight: 800 }}>{name}</div>
-                  <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{log.path}</div>
-                  <pre style={{ color: "#d4d4d8", fontSize: "10px", maxWidth: "100%", overflowX: "auto", whiteSpace: "pre-wrap" }}>{log.tail || "No log entries."}</pre>
-                </div>
-              ))}
-            </div>
-          )}
+        </div>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <div style={{ display: "grid", gap: "8px", width: "100%" }}>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: "8px" }}>
+            <strong>Log Monitor</strong>
+            <span style={{ color: logMonitorEnabled ? "#72e0a2" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
+              {logMonitorEnabled ? "Live" : "Paused"}
+            </span>
+          </div>
+          <pre
+            style={{
+              background: "#020617",
+              border: "1px solid #334155",
+              borderRadius: "6px",
+              color: "#d4d4d8",
+              fontFamily: "monospace",
+              fontSize: "10px",
+              lineHeight: 1.35,
+              margin: 0,
+              maxHeight: "420px",
+              overflow: "auto",
+              padding: "10px",
+              whiteSpace: "pre-wrap",
+              width: "100%"
+            }}
+          >
+            {diagnosticLogText}
+          </pre>
         </div>
       </PanelSectionRow>
     </>
