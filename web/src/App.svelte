@@ -722,6 +722,7 @@
       if (Array.isArray(event.payload)) {
         jobs = event.payload as Job[];
         reconcileBusyState();
+        scheduleActionStateRefresh(Boolean(selectedGame), deployPlan !== null);
       }
       return;
     }
