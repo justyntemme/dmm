@@ -126,6 +126,17 @@ type Diagnostics = {
   logs: Record<string, { path: string; tail: string }>;
 };
 
+type UpdateResult = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  package?: string;
+  url?: string;
+  bytes?: number;
+  installer_pid?: number;
+  log?: string;
+};
+
 type Job = {
   id: string;
   type: string;
@@ -2385,6 +2396,8 @@ function DeckyModManagerRoute() {
   const [importResult, setImportResult] = useState<string>("");
   const [launchResult, setLaunchResult] = useState<string>("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [updateResult, setUpdateResult] = useState<string>("");
+  const [updateBusy, setUpdateBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
   const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>("");
@@ -3317,6 +3330,64 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function installLatestUpdate() {
+    try {
+      setError("");
+      setUpdateResult("");
+      setUpdateBusy(true);
+      const result = await call<[], UpdateResult>("install_latest_update");
+      const message = result.message || result.error || (result.ok ? "Update installer started." : "Update failed.");
+      setUpdateResult(message);
+      if (!result.ok) {
+        setError(result.error || message);
+        await logFrontendEvent("debug update failed", { error: result.error || message, log: result.log || "" });
+        return;
+      }
+      toaster.toast({
+        title: "DMM update started",
+        body: "The latest package was downloaded. The Deck will reboot if installation succeeds.",
+        duration: 8000,
+        critical: false,
+        playSound: true,
+        showToast: true
+      });
+      await logFrontendEvent("debug update started", {
+        bytes: result.bytes ?? 0,
+        installer_pid: result.installer_pid ?? 0,
+        log: result.log || ""
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setUpdateResult(message);
+      await logFrontendEvent("debug update threw", { error: message });
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  function askInstallLatestUpdate() {
+    if (updateBusy) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle="Install Latest DMM"
+        strDescription="DMM will download the latest GitHub release package, replace the Decky plugin through the privileged installer, and reboot the Deck if installation succeeds."
+        strOKButtonText="Install Update"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void installLatestUpdate();
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Install Latest DMM", bNeverPopOut: true }
+    );
+  }
+
   async function addCapturedInstall() {
     try {
       setError("");
@@ -4208,6 +4279,16 @@ function DeckyModManagerRoute() {
           Refresh
         </ButtonItem>
       </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={askInstallLatestUpdate} disabled={updateBusy}>
+          {updateBusy ? "Installing Update..." : "Install Latest Update"}
+        </ButtonItem>
+      </PanelSectionRow>
+      {updateResult && (
+        <PanelSectionRow>
+          <div style={{ color: error ? "#fbbf24" : "#72e0a2", overflowWrap: "anywhere" }}>{updateResult}</div>
+        </PanelSectionRow>
+      )}
       <PanelSectionRow>
         <div style={{ paddingRight: "4px", width: "100%" }}>
           <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>

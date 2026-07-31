@@ -103,6 +103,30 @@ dist/decky-mod-manager.tar.gz
 
 Use the ZIP for the normal Decky Developer install flow. The tarball is only for the SSH-based test installer in `testing/`, which lets us update the test Deck quickly without navigating the Decky UI for every build.
 
+## Development Updates
+
+The Decky Debug tab includes an `Install Latest Update` button for developer builds. It downloads:
+
+```text
+https://github.com/justyntemme/dmm/releases/download/dev-latest/decky-mod-manager.tar.gz
+```
+
+Then it validates the package layout, stages it at:
+
+```text
+/home/deck/.testing/decky-mod-manager.tar.gz
+```
+
+and starts the existing root-owned test installer wrapper:
+
+```text
+/opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install
+```
+
+That wrapper is intentionally narrow: it only installs the staged DMM package and reboots the Deck after a successful install. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
+
+GitHub Actions builds package artifacts on pushes, pull requests, and manual workflow runs. Every push to `main` also force-updates the `dev-latest` development release with the tarball, ZIP, and checksums. No manual release tag is needed for the current development loop.
+
 ## Logs
 
 Decky Loader plugin logs:

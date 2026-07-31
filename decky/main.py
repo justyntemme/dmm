@@ -8,10 +8,11 @@ import signal
 import shutil
 import socket
 import subprocess
+import tarfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class Plugin:
@@ -22,6 +23,17 @@ class Plugin:
     desktop_id = "decky-mod-manager-nxm.desktop"
     nxm_schemes = ["x-scheme-handler/nxm", "x-scheme-handler/nxm-protocol"]
     sensitive_query_pattern = re.compile(r"(?i)(key|expires|md5)=([^&\"'\s]+)")
+    update_package_name = "decky-mod-manager.tar.gz"
+    update_max_package_bytes = 512 * 1024 * 1024
+    update_required_files = [
+        "plugin.json",
+        "package.json",
+        "main.py",
+        "bin/dmm-server",
+        "bin/dmm-nxm-handler",
+        "dist/index.js",
+        "web/dist/index.html",
+    ]
 
     async def _main(self):
         self._log("plugin loaded")
@@ -961,6 +973,189 @@ class Plugin:
                 },
             },
         }
+
+    async def install_latest_update(self):
+        repo = os.environ.get("DMM_UPDATE_REPO", "justyntemme/dmm").strip() or "justyntemme/dmm"
+        release = os.environ.get("DMM_UPDATE_RELEASE", "dev-latest").strip() or "dev-latest"
+        package_url = os.environ.get("DMM_UPDATE_PACKAGE_URL", "").strip()
+        if not package_url:
+            package_url = f"https://github.com/{repo}/releases/download/{release}/{self.update_package_name}"
+        testing_dir = Path(os.environ.get("DMM_UPDATE_STAGING_DIR", "/home/deck/.testing")).expanduser()
+        package_path = testing_dir / self.update_package_name
+        tmp_path = testing_dir / f".{self.update_package_name}.download"
+        wrapper = Path(os.environ.get("DMM_UPDATE_WRAPPER", "/opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install"))
+        update_log = self.log_dir / "update-install.log"
+
+        self._log(f"latest update requested repo={repo} release={release} package_url={self._redact_url(package_url)} wrapper={wrapper}")
+        if not wrapper.exists():
+            error = f"Privileged installer wrapper is not installed: {wrapper}"
+            self._log(f"latest update blocked: {error}")
+            return {
+                "ok": False,
+                "error": error,
+                "message": "Run the testing sudoers bootstrap once from Konsole or SSH before using Gaming Mode updates.",
+                "package": str(package_path),
+                "url": self._redact_url(package_url),
+                "log": str(update_log),
+            }
+        if not os.access(wrapper, os.X_OK):
+            error = f"Privileged installer wrapper is not executable: {wrapper}"
+            self._log(f"latest update blocked: {error}")
+            return {
+                "ok": False,
+                "error": error,
+                "package": str(package_path),
+                "url": self._redact_url(package_url),
+                "log": str(update_log),
+            }
+
+        try:
+            downloaded = await asyncio.to_thread(self._download_update_package, package_url, tmp_path, package_path)
+        except Exception as exc:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            error = self._redact_url(str(exc))
+            self._log(f"latest update download failed: {error}")
+            return {
+                "ok": False,
+                "error": error,
+                "message": "DMM could not download or validate the latest release package.",
+                "package": str(package_path),
+                "url": self._redact_url(package_url),
+                "log": str(update_log),
+            }
+
+        try:
+            update_log.parent.mkdir(parents=True, exist_ok=True)
+            log_handle = open(update_log, "ab", buffering=0)
+            try:
+                process = subprocess.Popen(
+                    ["sudo", "-n", str(wrapper)],
+                    cwd=str(Path.home()),
+                    env=self._clean_env(),
+                    stdout=log_handle,
+                    stderr=log_handle,
+                    start_new_session=True,
+                )
+            finally:
+                log_handle.close()
+            await asyncio.sleep(1)
+            return_code = process.poll()
+            if return_code is not None and return_code != 0:
+                tail = self._tail_file(update_log, max_lines=20)
+                error = f"Installer exited with code {return_code}."
+                self._log(f"latest update installer failed rc={return_code} tail={tail[-500:]}")
+                return {
+                    "ok": False,
+                    "error": error,
+                    "message": tail or error,
+                    "package": str(package_path),
+                    "url": self._redact_url(package_url),
+                    "bytes": downloaded,
+                    "log": str(update_log),
+                }
+            self._log(f"latest update installer started pid={process.pid} package={package_path} bytes={downloaded}")
+            return {
+                "ok": True,
+                "message": "Latest package downloaded. The installer started and will reboot the Deck if installation succeeds.",
+                "package": str(package_path),
+                "url": self._redact_url(package_url),
+                "bytes": downloaded,
+                "installer_pid": process.pid,
+                "log": str(update_log),
+            }
+        except Exception as exc:
+            error = self._redact_url(str(exc))
+            self._log(f"latest update installer launch failed: {error}")
+            return {
+                "ok": False,
+                "error": error,
+                "message": "DMM downloaded the package but could not start the privileged installer.",
+                "package": str(package_path),
+                "url": self._redact_url(package_url),
+                "bytes": downloaded,
+                "log": str(update_log),
+            }
+
+    def _download_update_package(self, package_url, tmp_path, package_path):
+        tmp_path.parent.mkdir(parents=True, exist_ok=True)
+        downloaded = self._download_file(package_url, tmp_path, self.update_max_package_bytes)
+        self._validate_update_package(tmp_path)
+        tmp_path.replace(package_path)
+        package_path.chmod(0o644)
+        return downloaded
+
+    def _download_file(self, url, target, max_bytes):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/octet-stream",
+                "User-Agent": "Decky-Mod-Manager-Updater",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=120) as response:
+            status = getattr(response, "status", 200)
+            if status < 200 or status > 299:
+                raise RuntimeError(f"download failed with HTTP {status}")
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                try:
+                    expected = int(content_length)
+                except ValueError:
+                    expected = 0
+                if expected > max_bytes:
+                    raise RuntimeError(f"package is too large: {expected} bytes")
+            total = 0
+            with target.open("wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise RuntimeError(f"package exceeded maximum size: {max_bytes} bytes")
+                    handle.write(chunk)
+        if total == 0:
+            raise RuntimeError("downloaded package was empty")
+        return total
+
+    def _validate_update_package(self, package_path):
+        members = {}
+        try:
+            with tarfile.open(package_path, "r:gz") as archive:
+                for member in archive.getmembers():
+                    clean_name = member.name.strip("/")
+                    self._validate_update_member(member, clean_name)
+                    members[clean_name] = member
+        except tarfile.TarError as exc:
+            raise RuntimeError(f"package is not a valid tar.gz archive: {exc}") from exc
+
+        root = "decky-mod-manager"
+        if not any(name == root or name.startswith(f"{root}/") for name in members):
+            raise RuntimeError("package does not contain decky-mod-manager/")
+        for relative in self.update_required_files:
+            member = members.get(f"{root}/{relative}")
+            if member is None:
+                raise RuntimeError(f"package is missing required file: {relative}")
+            if not member.isfile():
+                raise RuntimeError(f"package entry is not a regular file: {relative}")
+        for relative in ["bin/dmm-server", "bin/dmm-nxm-handler"]:
+            member = members[f"{root}/{relative}"]
+            if member.mode & 0o111 == 0:
+                raise RuntimeError(f"package binary is not executable: {relative}")
+
+    def _validate_update_member(self, member, clean_name):
+        if member.issym() or member.islnk():
+            raise RuntimeError(f"package contains unsupported link entry: {member.name}")
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+            raise RuntimeError(f"package contains unsafe path: {member.name}")
+        if not clean_name:
+            raise RuntimeError("package contains an empty path entry")
+        if not (member.isfile() or member.isdir()):
+            raise RuntimeError(f"package contains unsupported entry type: {member.name}")
 
     def _lan_ip(self):
         try:
