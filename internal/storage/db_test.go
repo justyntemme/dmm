@@ -546,7 +546,7 @@ func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mod.Name != "NPC Map Locations" || !mod.Enabled || mod.Status != "staged" {
+	if mod.Name != "NPC Map Locations" || !mod.Enabled || mod.Status != InstalledModStatusInstalled {
 		t.Fatalf("installed mod = %+v", mod)
 	}
 

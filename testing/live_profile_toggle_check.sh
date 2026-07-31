@@ -104,7 +104,7 @@ if not game_path:
 if not deployment.get("deployed"):
     raise RuntimeError("no active deployment exists; deploy the selected profile before running this check")
 
-enabled_mods = [mod for mod in mods if mod.get("enabled") and mod.get("status") == "staged"]
+enabled_mods = [mod for mod in mods if mod.get("enabled") and mod.get("status") == "installed"]
 if not enabled_mods:
     raise RuntimeError("no enabled profile mods are available to toggle")
 

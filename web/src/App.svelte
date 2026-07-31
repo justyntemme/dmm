@@ -2322,7 +2322,7 @@
 
   function modStatusText(mod: InstalledMod) {
     if (mod.status === "needs_recovery") return "Needs repair";
-    if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
+    if (mod.status === "installed") return mod.enabled ? "Enabled" : "Installed";
     return mod.status;
   }
 

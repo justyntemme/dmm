@@ -22,6 +22,10 @@ type DB struct {
 	conn *sql.DB
 }
 
+const (
+	InstalledModStatusInstalled = "installed"
+)
+
 type Profile struct {
 	ID                 int64  `json:"id"`
 	GameID             int64  `json:"game_id"`
@@ -1656,7 +1660,7 @@ ORDER BY pm.priority ASC, m.name ASC
 	defer rows.Close()
 	var mods []InstalledMod
 	for rows.Next() {
-		mod, err := scanInstalledMod(rows, "staged")
+		mod, err := scanInstalledMod(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -1766,7 +1770,7 @@ LEFT JOIN downloads d ON d.id = ld.id
 LEFT JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = ap.id
 WHERE g.steam_app_id = ? AND im.id = ?
 `, appID, appID, installedModID)
-	mod, err := scanInstalledMod(row, "staged")
+	mod, err := scanInstalledMod(row)
 	if err != nil {
 		return InstalledMod{}, err
 	}
@@ -1813,7 +1817,7 @@ LEFT JOIN downloads d ON d.id = ld.id
 LEFT JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = ap.id
 WHERE g.steam_app_id = ? AND im.id = ?
 `, appID, appID, installedModID)
-	return scanInstalledMod(row, "staged")
+	return scanInstalledMod(row)
 }
 
 func (db *DB) installedModByID(ctx context.Context, id int64) (InstalledMod, error) {
@@ -1847,7 +1851,7 @@ LEFT JOIN downloads d ON d.id = ld.id
 LEFT JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = ap.id
 WHERE im.id = ?
 `, id, id)
-	return scanInstalledMod(row, "staged")
+	return scanInstalledMod(row)
 }
 
 func (db *DB) SetProfileModEnabled(ctx context.Context, profileID, installedModID int64, enabled bool) (InstalledMod, error) {
@@ -1882,7 +1886,7 @@ ORDER BY COALESCE(pm.priority, 0) ASC, m.name ASC
 	defer rows.Close()
 	var mods []InstalledMod
 	for rows.Next() {
-		mod, err := scanInstalledMod(rows, "staged")
+		mod, err := scanInstalledMod(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -2019,7 +2023,7 @@ LEFT JOIN downloads d ON d.id = ld.id
 LEFT JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = p.id
 WHERE im.id = ?
 `, profileID, installedModID)
-	return scanInstalledMod(row, "staged")
+	return scanInstalledMod(row)
 }
 
 func (db *DB) RecordDeployment(ctx context.Context, appID string, strategy deploy.Strategy, files []deploy.AppliedFile) (int64, error) {
@@ -2175,7 +2179,7 @@ type installedModScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanInstalledMod(scanner installedModScanner, status string) (InstalledMod, error) {
+func scanInstalledMod(scanner installedModScanner) (InstalledMod, error) {
 	var mod InstalledMod
 	var enabled int
 	if err := scanner.Scan(
@@ -2199,7 +2203,7 @@ func scanInstalledMod(scanner installedModScanner, status string) (InstalledMod,
 		return InstalledMod{}, err
 	}
 	mod.Enabled = enabled != 0
-	mod.Status = status
+	mod.Status = InstalledModStatusInstalled
 	return mod, nil
 }
 

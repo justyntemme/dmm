@@ -4354,27 +4354,27 @@ func (s *Server) handleRecoverDownloads(w http.ResponseWriter, r *http.Request) 
 	job := s.jobs.CreateWithPayload("recover-downloads", "Recover downloaded mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Scanning downloaded archives for "+appID)
 	s.logger.Info("download recovery started", "job_id", job.ID, "app_id", appID)
-	staged, skipped, err := s.recoverDownloadedMods(r.Context(), job.ID, appID)
+	installed, skipped, err := s.recoverDownloadedMods(r.Context(), job.ID, appID)
 	if err != nil {
 		s.logger.Warn("download recovery failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "staged": staged, "skipped": skipped})
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "installed": installed, "skipped": skipped})
 		return
 	}
-	message := "Recovered " + strconv.Itoa(staged) + " downloaded mods"
+	message := "Recovered " + strconv.Itoa(installed) + " downloaded mods"
 	if skipped > 0 {
 		message += "; skipped " + strconv.Itoa(skipped)
 	}
 	job, _ = s.jobs.Complete(job.ID, message)
-	s.logger.Info("download recovery completed", "job_id", job.ID, "app_id", appID, "staged", staged, "skipped", skipped)
-	if staged > 0 {
+	s.logger.Info("download recovery completed", "job_id", job.ID, "app_id", appID, "installed", installed, "skipped", skipped)
+	if installed > 0 {
 		s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
-			"action":  "recovered",
-			"staged":  staged,
-			"skipped": skipped,
+			"action":    "recovered",
+			"installed": installed,
+			"skipped":   skipped,
 		})
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "staged": staged, "skipped": skipped})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "installed": installed, "skipped": skipped})
 }
 
 func (s *Server) handleDeployPreview(w http.ResponseWriter, r *http.Request) {

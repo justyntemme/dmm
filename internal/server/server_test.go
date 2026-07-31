@@ -3711,7 +3711,7 @@ func TestRecoverDownloadsStagesExtensionlessArchive(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"staged":1`)) {
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"installed":1`)) {
 		t.Fatalf("expected one recovered mod, body = %s", rec.Body.String())
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
@@ -5412,8 +5412,8 @@ func TestStardewRecoveredDownloadDeployAndPurgeEndpoints(t *testing.T) {
 	if recoverRec.Code != http.StatusAccepted {
 		t.Fatalf("recover status = %d, body = %s", recoverRec.Code, recoverRec.Body.String())
 	}
-	if !bytes.Contains(recoverRec.Body.Bytes(), []byte(`"staged":1`)) {
-		t.Fatalf("expected one staged archive, body = %s", recoverRec.Body.String())
+	if !bytes.Contains(recoverRec.Body.Bytes(), []byte(`"installed":1`)) {
+		t.Fatalf("expected one recovered archive, body = %s", recoverRec.Body.String())
 	}
 
 	modsReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods", nil)

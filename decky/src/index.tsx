@@ -832,7 +832,7 @@ function eventShouldSyncWorkshopActions(event: DomainEvent) {
 
 function deckyModStateLabel(mod: ManagedMod) {
   if (mod.status === "needs_recovery") return "Needs repair";
-  if (mod.status === "staged") return mod.enabled ? "Enabled" : "Installed";
+  if (mod.status === "installed") return mod.enabled ? "Enabled" : "Installed";
   return mod.status || (mod.enabled ? "Enabled" : "Installed");
 }
 
