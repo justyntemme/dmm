@@ -3553,7 +3553,7 @@ function DeckyModManagerRoute() {
           )}
           {deckyMods.length === 0 && deckyWorkshopItems.length === 0 && (
             <PanelSectionRow>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add Nexus downloads from the Decky paste field or phone/tablet UI.</div>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No profile mods yet. Add a mod link from Decky or the phone/tablet UI.</div>
             </PanelSectionRow>
           )}
           {deckyMods.length > 0 && visibleDeckyMods.length === 0 && (
