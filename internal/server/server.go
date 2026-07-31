@@ -441,6 +441,7 @@ type catalogStatusResponse struct {
 	Status              string   `json:"status"`
 	Configured          bool     `json:"configured"`
 	CredentialsRequired bool     `json:"credentials_required"`
+	Capabilities        []string `json:"capabilities"`
 	URLImport           bool     `json:"url_import"`
 	Search              bool     `json:"search"`
 	Browse              bool     `json:"browse"`
@@ -1296,7 +1297,7 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 	} else if curseForgeConfigured {
 		curseForgeStatus = "ready"
 	}
-	return []catalogStatusResponse{
+	statuses := []catalogStatusResponse{
 		{
 			ID:                  "nexus",
 			Name:                "Nexus Mods",
@@ -1418,6 +1419,10 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Notes:               []string{"DMM does not browse Workshop for MVP. Installed Workshop items are Steam-managed and use the Decky/Steam capability boundary."},
 		},
 	}
+	for i := range statuses {
+		statuses[i].Capabilities = catalogStatusCapabilities(statuses[i])
+	}
+	return statuses
 }
 
 func readyIfRegistered(registered map[string]bool, id string) string {
@@ -1425,6 +1430,23 @@ func readyIfRegistered(registered map[string]bool, id string) string {
 		return "ready"
 	}
 	return "planned"
+}
+
+func catalogStatusCapabilities(status catalogStatusResponse) []string {
+	capabilities := make([]string, 0, 4)
+	if status.URLImport {
+		capabilities = append(capabilities, "url_import")
+	}
+	if status.Search || status.Browse {
+		capabilities = append(capabilities, "browse_search")
+	}
+	if status.Download {
+		capabilities = append(capabilities, "download")
+	}
+	if status.InstalledManagement {
+		capabilities = append(capabilities, "installed_management")
+	}
+	return capabilities
 }
 
 type updateNexusSettingsRequest struct {

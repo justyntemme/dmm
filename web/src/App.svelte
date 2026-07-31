@@ -27,6 +27,7 @@
     status: string;
     configured: boolean;
     credentials_required: boolean;
+    capabilities: string[];
     url_import: boolean;
     search: boolean;
     browse: boolean;
@@ -2250,6 +2251,9 @@
   }
 
   function catalogDetail(catalog: CatalogStatus) {
+    if (catalog.capabilities?.length) {
+      return catalog.capabilities.map(catalogCapabilityLabel).join(" · ");
+    }
     const capabilities: string[] = [];
     if (catalog.url_import) capabilities.push("URL import");
     if (catalog.browse || catalog.search) capabilities.push("Browse/search");
@@ -2257,6 +2261,15 @@
     if (catalog.installed_management) capabilities.push("Installed management");
     if (capabilities.length === 0) return "Not active in the current MVP build.";
     return capabilities.join(" · ");
+  }
+
+  function catalogCapabilityLabel(capability: string) {
+    const normalized = capability.trim().toLowerCase().replace(/-/g, "_");
+    if (normalized === "url_import") return "URL import";
+    if (normalized === "browse_search") return "Browse/search";
+    if (normalized === "download") return "Downloads";
+    if (normalized === "installed_management") return "Installed management";
+    return capability.replace(/[_-]+/g, " ");
   }
 
   function actionMatchesGame(job: Job, game: Game) {

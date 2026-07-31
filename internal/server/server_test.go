@@ -241,8 +241,14 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
 		t.Fatalf("direct catalog = %+v", got)
 	}
+	if got := byID["direct"].Capabilities; !sameStringSet(got, []string{"url_import", "download"}) {
+		t.Fatalf("direct capabilities = %+v", got)
+	}
 	if got := byID["local"]; got.Status != "ready" || got.Kind != "local" || !got.Configured || got.URLImport || got.Download {
 		t.Fatalf("local catalog = %+v", got)
+	}
+	if got := byID["local"].Capabilities; got == nil || len(got) != 0 {
+		t.Fatalf("local capabilities = %+v, want empty explicit slice", got)
 	}
 	if got := byID["modio"]; got.Status != "needs_credentials" || got.Configured || got.URLImport || !got.CredentialsRequired {
 		t.Fatalf("mod.io catalog = %+v", got)
@@ -253,6 +259,20 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	if got := byID["steam_workshop"]; got.Status != "ready" || got.Kind != "platform" || !got.InstalledManagement || got.URLImport {
 		t.Fatalf("steam workshop catalog = %+v", got)
 	}
+	if got := byID["steam_workshop"].Capabilities; !sameStringSet(got, []string{"installed_management"}) {
+		t.Fatalf("steam workshop capabilities = %+v", got)
+	}
+}
+
+func sameStringSet(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	got = append([]string(nil), got...)
+	want = append([]string(nil), want...)
+	slices.Sort(got)
+	slices.Sort(want)
+	return slices.Equal(got, want)
 }
 
 func TestUpdateCatalogSettingsPersistsKeysWithoutEchoingSecrets(t *testing.T) {
