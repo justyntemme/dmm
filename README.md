@@ -15,8 +15,8 @@ MVP vertical slice in active testing:
 - Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
 - Captured URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP captured-install handlers; Nexus remains the only MVP download provider.
 - Captured install actions and active download/extraction work can be canceled from the phone/tablet UI.
-- Jobs persist structured source/game metadata for reliable game-scoped request and activity filtering after backend restarts.
-- Captured Nexus links download immediately so short-lived URLs are consumed while valid; any user approval gates local install from the cached archive.
+- Jobs persist structured source/game metadata for reliable game-scoped action and activity filtering after backend restarts.
+- Captured Nexus links download immediately so short-lived URLs are consumed while valid; when auto-install is disabled, Action Center gates the local install from the cached archive.
 - Decky Settings exposes "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, while auto-enable defaults off so newly installed mods remain disabled until the user enables them.
 - The Decky plugin shows Gaming Mode notifications for Nexus captured-link and download job transitions while it is loaded.
 - Stardew Valley (`413150`) is the first supported deploy target.

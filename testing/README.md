@@ -256,7 +256,7 @@ The MVP is not considered verified until the installed Decky plugin passes this 
 3. Confirm the Decky panel shows the phone/tablet URL and NXM handler registered.
 4. If existing developer-test rows show `needs_recovery`, use Recover Downloads for supported archives or Remove for rows that should not be managed.
 5. Open Nexus from the Deck, click a fresh Stardew Valley Mod Manager Download link, and confirm a captured install appears in the phone/tablet Action Center when user action is required.
-6. Install from the cached request in the phone/tablet UI when auto-install is disabled or the request needs choices.
+6. Install from the cached captured action in the phone/tablet UI when auto-install is disabled or installer choices are needed.
 7. Confirm the Stardew Plugins tab shows exactly one profile mod row for the installed mod/file.
 8. Preview deployment and confirm zero conflicts.
 9. Deploy and confirm the job completes.
@@ -274,13 +274,13 @@ This runs the installed-package verifier, backend health check, web UI asset che
 
 The web UI asset check verifies both reachability and key profile-first UI strings from the served JavaScript bundle.
 
-After capturing at least one fresh Nexus request with the current package, the MVP live check can also require structured job metadata:
+After capturing at least one fresh Nexus link with the current package, the MVP live check can also require structured job metadata:
 
 ```sh
 REQUIRE_JOB_PAYLOAD=1 ~/.testing/mvp_live_check.sh
 ```
 
-The automatic install verifier always checks that the fresh captured request includes app/catalog/domain/mod/file identifiers in the job payload.
+The automatic install verifier always checks that the fresh captured install includes app/catalog/domain/mod/file identifiers in the job payload.
 
 For narrower debugging, run the checks individually.
 
@@ -348,4 +348,4 @@ After installing the latest package and starting the server from Decky, use this
 ~/.testing/live_auto_install_check.sh
 ```
 
-The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` request. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the new request moves past manual local-install approval and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.
+The script records the current install settings, enables automatic install for captured downloads, and waits for a new Stardew `nxm://` captured install. While it is waiting, click a fresh Nexus Mod Manager Download link from the Deck browser. The check passes only if the captured install moves past the manual local-install gate and completes through download/install. By default it restores the previous auto-install setting at the end; set `RESTORE_SETTING=0` to leave the setting enabled after the test.
