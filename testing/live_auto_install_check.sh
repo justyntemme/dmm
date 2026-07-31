@@ -152,7 +152,7 @@ try:
             exit_code = 0
             break
         if status_name in ("failed", "canceled"):
-            print(f"\nFAIL: request reached terminal status {status_name}: {job.get('message', '')}", file=sys.stderr)
+            print(f"\nFAIL: captured install reached terminal status {status_name}: {job.get('message', '')}", file=sys.stderr)
             exit_code = 1
             break
         time.sleep(2)
