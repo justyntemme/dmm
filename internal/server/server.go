@@ -25,8 +25,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/curseforge"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/github"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/modio"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/thunderstore"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
@@ -48,15 +50,16 @@ import (
 var embeddedStatic embed.FS
 
 type Server struct {
-	cfgMu    sync.RWMutex
-	cfg      config.Config
-	logger   *slog.Logger
-	jobs     *jobs.Manager
-	events   *events.Bus
-	db       *storage.DB
-	nexus    nexusClientFactory
-	catalogs []catalog.RemoteModCatalog
-	games    games.Registry
+	cfgMu     sync.RWMutex
+	cfg       config.Config
+	logger    *slog.Logger
+	jobs      *jobs.Manager
+	events    *events.Bus
+	db        *storage.DB
+	nexus     nexusClientFactory
+	catalogMu sync.RWMutex
+	catalogs  []catalog.RemoteModCatalog
+	games     games.Registry
 
 	pendingMu        sync.Mutex
 	capturedInstalls map[string]capturedInstall
@@ -152,13 +155,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		nexus: func(apiKey string) nexusClient {
 			return nexus.NewClient(apiKey)
 		},
-		catalogs: []catalog.RemoteModCatalog{
-			nexus.Resolver{},
-			thunderstore.Resolver{},
-			github.Resolver{},
-			direct.Resolver{},
-		},
-		games: gameRegistry,
+		catalogs: catalogResolversForConfig(cfg),
+		games:    gameRegistry,
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
@@ -196,6 +194,35 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	})
 	logger.Info("state restored", "jobs", len(storedJobs), "captured_installs", len(storedPending))
 	return srv, nil
+}
+
+func catalogResolversForConfig(cfg config.Config) []catalog.RemoteModCatalog {
+	return []catalog.RemoteModCatalog{
+		nexus.Resolver{},
+		thunderstore.Resolver{},
+		github.Resolver{},
+		modio.Resolver{
+			APIKey:     cfg.Catalogs.ModIO.APIKey,
+			APIBaseURL: cfg.Catalogs.ModIO.APIBaseURL,
+		},
+		curseforge.Resolver{
+			APIKey:     cfg.Catalogs.CurseForge.APIKey,
+			APIBaseURL: cfg.Catalogs.CurseForge.APIBaseURL,
+		},
+		direct.Resolver{},
+	}
+}
+
+func (s *Server) replaceCatalogResolvers(cfg config.Config) {
+	s.catalogMu.Lock()
+	defer s.catalogMu.Unlock()
+	s.catalogs = catalogResolversForConfig(cfg)
+}
+
+func (s *Server) catalogResolvers() []catalog.RemoteModCatalog {
+	s.catalogMu.RLock()
+	defer s.catalogMu.RUnlock()
+	return append([]catalog.RemoteModCatalog(nil), s.catalogs...)
 }
 
 func capturedInstallsForJobs(storedPending []storage.CapturedInstall, storedJobs []jobs.Job) []storage.CapturedInstall {
@@ -264,6 +291,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
 	mux.HandleFunc("PUT /api/settings/install", s.handleUpdateInstallSettings)
 	mux.HandleFunc("PUT /api/settings/downloads", s.handleUpdateDownloadSettings)
+	mux.HandleFunc("PUT /api/settings/catalogs", s.handleUpdateCatalogSettings)
 	mux.HandleFunc("GET /api/settings/ui", s.handleUISettings)
 	mux.HandleFunc("PATCH /api/settings/ui", s.handlePatchUISettings)
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
@@ -1232,14 +1260,29 @@ func (s *Server) handleCatalogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
-	registered := make(map[string]bool, len(s.catalogs))
-	for _, remoteCatalog := range s.catalogs {
+	resolvers := s.catalogResolvers()
+	registered := make(map[string]bool, len(resolvers))
+	for _, remoteCatalog := range resolvers {
 		registered[strings.ToLower(strings.TrimSpace(remoteCatalog.Name()))] = true
 	}
 	nexusConfigured := strings.TrimSpace(cfg.Nexus.APIKey) != ""
 	nexusStatus := "needs_credentials"
 	if registered["nexus"] && nexusConfigured {
 		nexusStatus = "ready"
+	}
+	modIOConfigured := strings.TrimSpace(cfg.Catalogs.ModIO.APIKey) != ""
+	modIOStatus := "needs_credentials"
+	if !registered["modio"] {
+		modIOStatus = "planned"
+	} else if modIOConfigured {
+		modIOStatus = "ready"
+	}
+	curseForgeConfigured := strings.TrimSpace(cfg.Catalogs.CurseForge.APIKey) != ""
+	curseForgeStatus := "needs_credentials"
+	if !registered["curseforge"] {
+		curseForgeStatus = "planned"
+	} else if curseForgeConfigured {
+		curseForgeStatus = "ready"
 	}
 	return []catalogStatusResponse{
 		{
@@ -1293,19 +1336,25 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			ID:                  "modio",
 			Name:                "mod.io",
 			Kind:                "remote",
-			Status:              "planned",
+			Status:              modIOStatus,
+			Configured:          modIOConfigured,
 			CredentialsRequired: true,
+			URLImport:           registered["modio"] && modIOConfigured,
+			Download:            registered["modio"] && modIOConfigured,
 			SourceTag:           "modio",
-			Notes:               []string{"Official REST API requires provider credentials and game mapping before import can be enabled."},
+			Notes:               []string{"Official REST API imports resolve mod.io pages through game/mod slugs and download the latest or selected file."},
 		},
 		{
 			ID:                  "curseforge",
 			Name:                "CurseForge",
 			Kind:                "remote",
-			Status:              "planned",
+			Status:              curseForgeStatus,
+			Configured:          curseForgeConfigured,
 			CredentialsRequired: true,
+			URLImport:           registered["curseforge"] && curseForgeConfigured,
+			Download:            registered["curseforge"] && curseForgeConfigured,
 			SourceTag:           "curseforge",
-			Notes:               []string{"Official API access requires an API key; implement after credentials and game mapping are configured."},
+			Notes:               []string{"Official API imports resolve CurseForge mod pages through game slug plus mod slug, then use the file download-url endpoint."},
 		},
 		{
 			ID:        "moddb",
@@ -1360,6 +1409,16 @@ type updateInstallSettingsRequest struct {
 type updateDownloadSettingsRequest struct {
 	MaxConcurrentCapturedDownloads        *int `json:"max_concurrent_captured_downloads"`
 	MaxConcurrentCapturedDownloadsPerGame *int `json:"max_concurrent_captured_downloads_per_game"`
+}
+
+type updateCatalogSettingsRequest struct {
+	ModIO      *catalogCredentialsUpdate `json:"modio"`
+	CurseForge *catalogCredentialsUpdate `json:"curseforge"`
+}
+
+type catalogCredentialsUpdate struct {
+	APIKey     *string `json:"api_key"`
+	APIBaseURL *string `json:"api_base_url"`
 }
 
 type patchUISettingsRequest struct {
@@ -1453,6 +1512,44 @@ func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.handleStatus(w, r)
+}
+
+func (s *Server) handleUpdateCatalogSettings(w http.ResponseWriter, r *http.Request) {
+	var req updateCatalogSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.cfgMu.Lock()
+	if req.ModIO != nil {
+		if req.ModIO.APIKey != nil {
+			s.cfg.Catalogs.ModIO.APIKey = strings.TrimSpace(*req.ModIO.APIKey)
+		}
+		if req.ModIO.APIBaseURL != nil {
+			s.cfg.Catalogs.ModIO.APIBaseURL = strings.TrimSpace(*req.ModIO.APIBaseURL)
+		}
+	}
+	if req.CurseForge != nil {
+		if req.CurseForge.APIKey != nil {
+			s.cfg.Catalogs.CurseForge.APIKey = strings.TrimSpace(*req.CurseForge.APIKey)
+		}
+		if req.CurseForge.APIBaseURL != nil {
+			s.cfg.Catalogs.CurseForge.APIBaseURL = strings.TrimSpace(*req.CurseForge.APIBaseURL)
+		}
+	}
+	cfg := s.cfg
+	s.cfgMu.Unlock()
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.replaceCatalogResolvers(cfg)
+	s.logger.Info(
+		"catalog settings updated",
+		"modio_configured", strings.TrimSpace(cfg.Catalogs.ModIO.APIKey) != "",
+		"curseforge_configured", strings.TrimSpace(cfg.Catalogs.CurseForge.APIKey) != "",
+	)
+	writeJSON(w, http.StatusOK, map[string]any{"catalogs": s.catalogStatuses(cfg)})
 }
 
 func (s *Server) handleValidateNexus(w http.ResponseWriter, r *http.Request) {
@@ -5062,7 +5159,7 @@ func capturedInstallIsActive(status jobs.Status) bool {
 
 func (s *Server) resolveCatalogURL(ctx context.Context, req catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
 	var lastErr error
-	for _, remoteCatalog := range s.catalogs {
+	for _, remoteCatalog := range s.catalogResolvers() {
 		resolved, err := remoteCatalog.ResolveURL(ctx, req)
 		if err == nil {
 			return resolved, nil

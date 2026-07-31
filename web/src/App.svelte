@@ -480,6 +480,10 @@
   let modUpdateBusy = false;
   let modUpdateMessage = "";
   let modUpdateBrowserURL = "";
+  let modIOAPIKey = "";
+  let curseForgeAPIKey = "";
+  let catalogSettingsBusy = "";
+  let catalogSettingsMessage = "";
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
@@ -510,6 +514,7 @@
   $: reviewCount = games.length - cleanCount;
   $: readyCatalogCount = catalogs.filter((catalog) => catalog.status === "ready").length;
   $: sourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform").length;
+  $: readySourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform" && catalog.status === "ready").length;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
@@ -1019,6 +1024,35 @@
     const nextStatus = await response.json() as Status;
     status = nextStatus;
     applyUIPreferences(nextStatus);
+  }
+
+  async function updateCatalogCredential(provider: "modio" | "curseforge", apiKey: string) {
+    catalogSettingsBusy = provider;
+    catalogSettingsMessage = "";
+    error = "";
+    const body = provider === "modio"
+      ? { modio: { api_key: apiKey } }
+      : { curseforge: { api_key: apiKey } };
+    try {
+      const response = await fetch("/api/settings/catalogs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json() as { catalogs: CatalogStatus[] };
+      catalogs = result.catalogs ?? [];
+      if (provider === "modio") modIOAPIKey = "";
+      if (provider === "curseforge") curseForgeAPIKey = "";
+      catalogSettingsMessage = `${provider === "modio" ? "mod.io" : "CurseForge"} key saved.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      catalogSettingsBusy = "";
+    }
   }
 
   async function createProfile() {
@@ -2587,7 +2621,7 @@
             <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
-            <div><dt>Sources</dt><dd>{readyCatalogCount}/{sourceCatalogCount} ready</dd></div>
+            <div><dt>Sources</dt><dd>{readySourceCatalogCount}/{sourceCatalogCount} ready</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -2649,6 +2683,23 @@
             <h2>Sources</h2>
             <span>{readyCatalogCount} ready</span>
           </div>
+          <div class="catalog-key-grid">
+            <form class="provider-key-form" on:submit|preventDefault={() => updateCatalogCredential("modio", modIOAPIKey)}>
+              <label>
+                <span>mod.io API key</span>
+                <input type="password" bind:value={modIOAPIKey} autocomplete="off" placeholder="Paste key to enable mod.io imports" />
+              </label>
+              <button type="submit" disabled={catalogSettingsBusy === "modio" || modIOAPIKey.trim() === ""}>{catalogSettingsBusy === "modio" ? "Saving..." : "Save"}</button>
+            </form>
+            <form class="provider-key-form" on:submit|preventDefault={() => updateCatalogCredential("curseforge", curseForgeAPIKey)}>
+              <label>
+                <span>CurseForge API key</span>
+                <input type="password" bind:value={curseForgeAPIKey} autocomplete="off" placeholder="Paste key to enable CurseForge imports" />
+              </label>
+              <button type="submit" disabled={catalogSettingsBusy === "curseforge" || curseForgeAPIKey.trim() === ""}>{catalogSettingsBusy === "curseforge" ? "Saving..." : "Save"}</button>
+            </form>
+          </div>
+          {#if catalogSettingsMessage}<p class="hint">{catalogSettingsMessage}</p>{/if}
           <div class="catalog-list">
             {#each catalogs as catalog}
               <article>

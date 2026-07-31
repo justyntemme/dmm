@@ -231,11 +231,55 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
 		t.Fatalf("direct catalog = %+v", got)
 	}
-	if got := byID["modio"]; got.Status != "planned" || !got.CredentialsRequired {
+	if got := byID["modio"]; got.Status != "needs_credentials" || got.Configured || got.URLImport || !got.CredentialsRequired {
 		t.Fatalf("mod.io catalog = %+v", got)
+	}
+	if got := byID["curseforge"]; got.Status != "needs_credentials" || got.Configured || got.URLImport || !got.CredentialsRequired {
+		t.Fatalf("curseforge catalog = %+v", got)
 	}
 	if got := byID["steam_workshop"]; got.Status != "ready" || got.Kind != "platform" || !got.InstalledManagement || got.URLImport {
 		t.Fatalf("steam workshop catalog = %+v", got)
+	}
+}
+
+func TestUpdateCatalogSettingsPersistsKeysWithoutEchoingSecrets(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/catalogs", bytes.NewBufferString(`{"modio":{"api_key":"modio-key"},"curseforge":{"api_key":"curse-key"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if bytes.Contains(rec.Body.Bytes(), []byte("modio-key")) || bytes.Contains(rec.Body.Bytes(), []byte("curse-key")) {
+		t.Fatalf("response leaked provider key: %s", rec.Body.String())
+	}
+	var body struct {
+		Catalogs []catalogStatusResponse `json:"catalogs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]catalogStatusResponse, len(body.Catalogs))
+	for _, item := range body.Catalogs {
+		byID[item.ID] = item
+	}
+	if got := byID["modio"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Download {
+		t.Fatalf("mod.io catalog = %+v", got)
+	}
+	if got := byID["curseforge"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Download {
+		t.Fatalf("curseforge catalog = %+v", got)
+	}
+
+	saved, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Catalogs.ModIO.APIKey != "modio-key" || saved.Catalogs.CurseForge.APIKey != "curse-key" {
+		t.Fatalf("saved catalogs = %+v", saved.Catalogs)
 	}
 }
 

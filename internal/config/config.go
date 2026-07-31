@@ -16,6 +16,7 @@ type Config struct {
 	ConfigPath string `json:"-"`
 
 	Nexus    NexusConfig    `json:"nexus"`
+	Catalogs CatalogsConfig `json:"catalogs"`
 	Install  InstallConfig  `json:"install"`
 	Download DownloadConfig `json:"download"`
 	UI       UIConfig       `json:"ui"`
@@ -24,6 +25,21 @@ type Config struct {
 
 type NexusConfig struct {
 	APIKey string `json:"api_key"`
+}
+
+type CatalogsConfig struct {
+	ModIO      ModIOConfig      `json:"modio"`
+	CurseForge CurseForgeConfig `json:"curseforge"`
+}
+
+type ModIOConfig struct {
+	APIKey     string `json:"api_key"`
+	APIBaseURL string `json:"api_base_url,omitempty"`
+}
+
+type CurseForgeConfig struct {
+	APIKey     string `json:"api_key"`
+	APIBaseURL string `json:"api_base_url,omitempty"`
 }
 
 type InstallConfig struct {

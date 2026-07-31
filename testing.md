@@ -10,6 +10,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Phone/tablet URL: `http://192.168.8.102:17942` when the Deck is on the same LAN/hotspot.
 - Confirm Nexus API key is configured in the phone/tablet Settings page.
 - Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
+- If you have mod.io or CurseForge API keys, paste them in Settings > Sources and confirm those sources switch from `Needs Key` to `Ready`.
 
 ## Decky Plugin
 
@@ -107,6 +108,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
 - In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
 - Confirm direct/provider imports are tied to the selected game and show a non-Nexus source tag.
+- With a mod.io key configured, select a safe game and paste a `https://mod.io/g/{game}/m/{mod}` URL. Confirm it enters the captured-install flow and is tagged `mod.io`.
+- With a CurseForge key configured, select a safe game and paste a `https://www.curseforge.com/{game}/{section}/{mod}` URL. Confirm it enters the captured-install flow and is tagged `CurseForge`.
 - Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.
 
 ## Notes To Send Back
