@@ -1,6 +1,6 @@
 # Decky Mod Manager
 
-Decky Mod Manager is a Steam Deck-first mod manager for Nexus/Vortex-compatible mods.
+Decky Mod Manager is a Steam Deck-first mod manager for Nexus/Vortex-compatible mods and other verified mod-provider imports.
 
 The MVP is a Decky plugin that starts a bundled Go backend and shows a URL for a phone or tablet browser. The backend owns mod-management logic; the Svelte + Vite web UI displays state, collects choices, calls REST APIs, and receives live updates over WebSocket.
 
@@ -13,7 +13,9 @@ MVP vertical slice in active testing:
 - Svelte + Vite phone/tablet UI shows games, Action Center items, profile mods, profiles, advanced deployment tools, jobs, and settings.
 - SQLite persistence covers games, profiles, jobs, captured installs, installed profile mods, downloads, checksums, and deployment manifests.
 - Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
-- Captured URL parsing goes through a catalog resolver boundary so future upstreams can plug in without changing the HTTP captured-install handlers; Nexus remains the only MVP download provider.
+- Captured URL parsing goes through a catalog resolver boundary so upstreams can plug in without changing the HTTP captured-install handlers.
+- URL-import providers currently include Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, mod.io, CurseForge, direct archive URLs, and local archive uploads. mod.io and CurseForge require user-provided API keys; ModDB stays deferred until a supported automated API/client path is verified.
+- Every installed mod carries a source/catalog identity so the phone/tablet UI and Decky UI can show source tags such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `GitHub`, `Direct`, and `Local`.
 - Captured install actions and active download/extraction work can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped action and activity filtering after backend restarts.
 - Captured Nexus links download immediately so short-lived URLs are consumed while valid; when auto-install is disabled, Action Center gates the local install from the cached archive.
@@ -34,6 +36,7 @@ MVP vertical slice in active testing:
 - 7z/RAR extraction is supported through external helper tools.
 - FOMOD archives pause as installer-choice actions; the phone/tablet UI and Decky modal flow can apply selected files through the normal profile install path.
 - Deployment uses a Vortex-style staging/manifest model with symlink deployment, conflict detection, profile-aware keep/add/replace/remove planning, verification, repair, purge, and apply-time rollback for DMM-owned files.
+- Steam Workshop is treated as Steam-owned platform content, not as a normal remote catalog. DMM can show installed/subscribed Workshop entries and queues supported enable, disable, unsubscribe, and load-order actions through the Decky/Steam API boundary where a game extension declares coexistence safe.
 - Profile-scoped mod priority can be changed from the Mods pane; lower priority numbers win duplicate target conflicts.
 - Profile switching can deploy an empty profile to remove the previously deployed profile's DMM-owned links.
 - Decky Debug can show recent plugin, backend, NXM handler, and Steam JS log tails.
