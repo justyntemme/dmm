@@ -458,6 +458,11 @@
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
   let selectedGameRefreshNeedsJobs = false;
+  let actionStateRefreshTimer: number | null = null;
+  let actionStateRefreshInFlight = false;
+  let actionStateRefreshQueued = false;
+  let actionStateRefreshNeedsSelectedGame = false;
+  let actionStateRefreshNeedsPreview = false;
   let candidateSelections: Record<number, Record<string, string[]>> = {};
   let refreshJobsInFlight = false;
   let refreshJobsQueued = false;
@@ -588,6 +593,43 @@
     }
   }
 
+  function scheduleActionStateRefresh(refreshSelectedGame = false, refreshPreview = false) {
+    actionStateRefreshNeedsSelectedGame = actionStateRefreshNeedsSelectedGame || refreshSelectedGame;
+    actionStateRefreshNeedsPreview = actionStateRefreshNeedsPreview || refreshPreview;
+    if (actionStateRefreshTimer !== null) return;
+    actionStateRefreshTimer = window.setTimeout(() => {
+      actionStateRefreshTimer = null;
+      void flushActionStateRefresh();
+    }, 150);
+  }
+
+  async function flushActionStateRefresh() {
+    if (actionStateRefreshInFlight) {
+      actionStateRefreshQueued = true;
+      return;
+    }
+    actionStateRefreshInFlight = true;
+    const shouldRefreshSelectedGame = actionStateRefreshNeedsSelectedGame;
+    const shouldRefreshPreview = actionStateRefreshNeedsPreview;
+    actionStateRefreshNeedsSelectedGame = false;
+    actionStateRefreshNeedsPreview = false;
+    try {
+      await refreshActionState();
+      if (shouldRefreshSelectedGame && selectedGame) {
+        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      logClientEvent("action state event refresh failed", { error });
+    } finally {
+      actionStateRefreshInFlight = false;
+      if (actionStateRefreshQueued) {
+        actionStateRefreshQueued = false;
+        void flushActionStateRefresh();
+      }
+    }
+  }
+
   function eventSocketURL() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const after = lastEventID > 0 ? `?after=${lastEventID}` : "";
@@ -653,7 +695,7 @@
     logClientEvent("events reconnect scheduled", { delay_ms: delay, after_id: lastEventID });
     eventReconnectTimer = window.setTimeout(() => {
       eventReconnectTimer = null;
-      void refreshJobsAndSelectedGame();
+      scheduleActionStateRefresh(true, deployPlan !== null);
       connectEvents();
     }, delay);
   }
@@ -687,14 +729,13 @@
       if (isJob(event.payload)) {
         upsertJob(event.payload);
         if (selectedGame && jobMatchesGame(event.payload, selectedGame)) {
-          scheduleSelectedGameRefresh(event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice", event.payload.status === "completed");
+          scheduleActionStateRefresh(true, event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice");
         }
       }
       return;
     }
     if (event.type === "install.changed") {
-      void refreshActionState();
-      if (eventMatchesSelectedGame(event)) scheduleSelectedGameRefresh(true, true);
+      scheduleActionStateRefresh(eventMatchesSelectedGame(event), eventMatchesSelectedGame(event));
       return;
     }
     if (event.type === "launch.changed") {
@@ -884,8 +925,9 @@
     reconcileBusyState();
   }
 
-  async function refreshSelectedGame(options: { refreshPreview?: boolean } = {}) {
+  async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean } = {}) {
     if (!selectedGame) return;
+    if (options.refreshJobs) await refreshActionState();
     await loadGameState(selectedGame);
     if (options.refreshPreview) await previewDeploy();
   }
@@ -1847,18 +1889,12 @@
   }
 
   function upsertJob(job: Job) {
-    const existing = jobs.find((item) => item.id === job.id);
-    const changed = !existing || existing.status !== job.status || existing.message !== job.message || existing.updated_at !== job.updated_at;
     if (job.type === "captured-install" && job.status === "canceled" && job.message === "Cleared") {
       jobs = jobs.filter((item) => item.id !== job.id);
       return;
     }
     jobs = [job, ...jobs.filter((item) => item.id !== job.id)];
     reconcileBusyState();
-    if (!changed || !selectedGame || !jobMatchesGame(job, selectedGame)) return;
-    if (["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type)) {
-      scheduleSelectedGameRefresh(job.status === "completed" || deployPlan !== null, job.status === "completed");
-    }
   }
 
   function markJobProcessing(job: Job, message: string) {
@@ -2180,10 +2216,10 @@
     refresh();
     connectEvents();
     const refreshOnFocus = () => {
-      void refreshJobsAndSelectedGame();
+      scheduleActionStateRefresh(true, deployPlan !== null);
     };
     const refreshOnVisibility = () => {
-      if (!document.hidden) void refreshJobsAndSelectedGame();
+      if (!document.hidden) scheduleActionStateRefresh(true, deployPlan !== null);
     };
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshOnVisibility);
@@ -2192,6 +2228,7 @@
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnVisibility);
       if (selectedGameRefreshTimer !== null) window.clearTimeout(selectedGameRefreshTimer);
+      if (actionStateRefreshTimer !== null) window.clearTimeout(actionStateRefreshTimer);
     };
   });
 </script>
