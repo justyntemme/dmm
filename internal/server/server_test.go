@@ -215,7 +215,7 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	for _, item := range catalogs {
 		byID[item.ID] = item
 	}
-	for _, id := range []string{"nexus", "thunderstore", "github", "direct", "modio", "curseforge", "moddb", "local", "steam_workshop"} {
+	for _, id := range []string{"nexus", "thunderstore", "github", "modrinth", "direct", "modio", "curseforge", "moddb", "local", "steam_workshop"} {
 		if byID[id].ID == "" {
 			t.Fatalf("missing catalog %q in %+v", id, catalogs)
 		}
@@ -228,6 +228,9 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	}
 	if got := byID["github"]; got.Status != "ready" || !got.URLImport || !got.Download {
 		t.Fatalf("github catalog = %+v", got)
+	}
+	if got := byID["modrinth"]; got.Status != "ready" || !got.URLImport || !got.Download {
+		t.Fatalf("modrinth catalog = %+v", got)
 	}
 	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
 		t.Fatalf("direct catalog = %+v", got)

@@ -30,6 +30,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/github"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/modio"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/modrinth"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/thunderstore"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
@@ -203,6 +204,7 @@ func catalogResolversForConfig(cfg config.Config) []catalog.RemoteModCatalog {
 		nexus.Resolver{},
 		thunderstore.Resolver{},
 		github.Resolver{},
+		modrinth.Resolver{},
 		modio.Resolver{
 			APIKey:     cfg.Catalogs.ModIO.APIKey,
 			APIBaseURL: cfg.Catalogs.ModIO.APIBaseURL,
@@ -1328,6 +1330,17 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Download:   registered["github"],
 			SourceTag:  "github",
 			Notes:      []string{"Release asset URLs resolve directly; release pages resolve only when there is one archive asset."},
+		},
+		{
+			ID:         "modrinth",
+			Name:       "Modrinth",
+			Kind:       "remote",
+			Status:     readyIfRegistered(registered, "modrinth"),
+			Configured: registered["modrinth"],
+			URLImport:  registered["modrinth"],
+			Download:   registered["modrinth"],
+			SourceTag:  "modrinth",
+			Notes:      []string{"Project, version, and CDN file URLs resolve through Modrinth's verified public REST API. Browse/search UI is not implemented yet."},
 		},
 		{
 			ID:         "direct",

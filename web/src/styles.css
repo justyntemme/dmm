@@ -850,6 +850,12 @@ h2 {
   background: #164e63;
 }
 
+.source-modrinth {
+  border-color: #10b981;
+  color: #d1fae5;
+  background: #064e3b;
+}
+
 .source-moddb {
   border-color: #ca8a04;
   color: #fef3c7;

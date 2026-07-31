@@ -2307,6 +2307,7 @@
     if (source === "nexus") return "Nexus";
     if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
     if (source === "thunderstore") return "Thunderstore";
+    if (source === "modrinth") return "Modrinth";
     if (source === "modio" || source === "mod.io") return "mod.io";
     if (source === "curseforge") return "CurseForge";
     if (source === "moddb") return "ModDB";
@@ -2321,6 +2322,7 @@
     if (source === "nexus") return "source-nexus";
     if (source === "steam-workshop" || source === "workshop") return "source-workshop";
     if (source === "thunderstore") return "source-thunderstore";
+    if (source === "modrinth") return "source-modrinth";
     if (source === "modio" || source === "mod.io") return "source-modio";
     if (source === "curseforge") return "source-curseforge";
     if (source === "moddb") return "source-moddb";
@@ -2885,7 +2887,7 @@
                 <span>{selectedGameActionItems.length} open</span>
               </div>
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus, nxm://, Thunderstore, GitHub, mod.io, CurseForge, or direct archive URL"></textarea>
+                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus, nxm://, Thunderstore, GitHub, Modrinth, mod.io, CurseForge, or direct archive URL"></textarea>
                 <button type="submit">Add URL</button>
               </form>
               <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
