@@ -2,9 +2,15 @@ package catalog
 
 import "context"
 
+type ResolveRequest struct {
+	URL        string
+	SteamAppID string
+	Source     string
+}
+
 type RemoteModCatalog interface {
 	Name() string
-	ResolveURL(ctx context.Context, rawURL string) (ResolvedDownload, error)
+	ResolveURL(ctx context.Context, req ResolveRequest) (ResolvedDownload, error)
 }
 
 type ModFile struct {
@@ -28,11 +34,14 @@ type DownloadLink struct {
 }
 
 type ResolvedDownload struct {
-	Catalog    string `json:"catalog"`
-	SourceURL  string `json:"source_url"`
-	GameDomain string `json:"game_domain,omitempty"`
-	ModID      string `json:"mod_id,omitempty"`
-	FileID     string `json:"file_id,omitempty"`
-	NXMKey     string `json:"nxm_key,omitempty"`
-	Expires    string `json:"expires,omitempty"`
+	Catalog       string         `json:"catalog"`
+	SourceURL     string         `json:"source_url"`
+	SteamAppID    string         `json:"steam_app_id,omitempty"`
+	GameDomain    string         `json:"game_domain,omitempty"`
+	ModID         string         `json:"mod_id,omitempty"`
+	FileID        string         `json:"file_id,omitempty"`
+	FileName      string         `json:"file_name,omitempty"`
+	DownloadLinks []DownloadLink `json:"download_links,omitempty"`
+	NXMKey        string         `json:"nxm_key,omitempty"`
+	Expires       string         `json:"expires,omitempty"`
 }

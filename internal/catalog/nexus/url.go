@@ -21,8 +21,8 @@ func (Resolver) Name() string {
 	return "nexus"
 }
 
-func (Resolver) ResolveURL(_ context.Context, rawURL string) (catalog.ResolvedDownload, error) {
-	return ParseURL(rawURL)
+func (Resolver) ResolveURL(_ context.Context, req catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
+	return ParseURL(req.URL)
 }
 
 func ParseURL(raw string) (catalog.ResolvedDownload, error) {

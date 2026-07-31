@@ -1056,6 +1056,18 @@ type RecordInstalledModParams struct {
 	ReplaceInstalledModID int64
 }
 
+func defaultResolvedModName(resolved catalog.ResolvedDownload) string {
+	catalogName := strings.TrimSpace(resolved.Catalog)
+	if catalogName == "" {
+		catalogName = "catalog"
+	}
+	modID := strings.TrimSpace(resolved.ModID)
+	if modID == "" {
+		return catalogName + " mod"
+	}
+	return catalogName + " mod " + modID
+}
+
 func (db *DB) RecordInstalledMod(ctx context.Context, params RecordInstalledModParams) (InstalledMod, error) {
 	params.SteamAppID = strings.TrimSpace(params.SteamAppID)
 	params.Name = strings.TrimSpace(params.Name)
@@ -1072,7 +1084,7 @@ func (db *DB) RecordInstalledMod(ctx context.Context, params RecordInstalledModP
 		return InstalledMod{}, errors.New("resolved catalog and mod id are required")
 	}
 	if params.Name == "" {
-		params.Name = "Nexus mod " + params.Resolved.ModID
+		params.Name = defaultResolvedModName(params.Resolved)
 	}
 	if params.Version == "" {
 		params.Version = params.Resolved.FileID
@@ -1285,7 +1297,7 @@ func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCa
 		return InstallCandidate{}, errors.New("resolved catalog and mod id are required")
 	}
 	if params.Name == "" {
-		params.Name = "Nexus mod " + params.Resolved.ModID
+		params.Name = defaultResolvedModName(params.Resolved)
 	}
 	if params.Status == "" {
 		params.Status = "blocked"

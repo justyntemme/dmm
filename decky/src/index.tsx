@@ -1722,7 +1722,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
         mod_id: mod.mod_id,
         file_id: file.file_id
       });
-      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url);
+      const result = await call<[string, string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url, props.appID);
       if (!result.ok) {
         setError(result.error || "Unable to add this Nexus file.");
         await logFrontendEvent("nexus browser install failed", {
@@ -2975,14 +2975,14 @@ function DeckyModManagerRoute() {
     try {
       setError("");
       setImportResult("");
-      const result = await call<[string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", importUrl);
+      const result = await call<[string, string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", importUrl, selectedDeckyGameID ?? "");
       if (!result.ok) {
-        setError(result.error ?? "Unable to capture Nexus link.");
+        setError(result.error ?? "Unable to capture mod link.");
         return;
       }
       setImportUrl("");
       const job = result.result?.job;
-      setImportResult(job?.message || job?.title || "Nexus link captured.");
+      setImportResult(job?.message || job?.title || "Mod link captured.");
       if (job) {
         const stateKey = `${job.status}:${job.message || ""}`;
         notifiedJobStates.set(job.id, stateKey);
@@ -3174,16 +3174,16 @@ function DeckyModManagerRoute() {
           {status?.error && <div style={{ color: "#f87171", marginTop: "4px", overflowWrap: "anywhere" }}>{status.error}</div>}
         </div>
         <div style={{ background: "#111827", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "5px", padding: "7px", width: "100%" }}>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1, textTransform: "uppercase" }}>Nexus Link</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1, textTransform: "uppercase" }}>Mod Link</div>
           <input
-            aria-label="Nexus URL"
-            placeholder="Paste Nexus URL or nxm:// link"
+            aria-label="Mod URL"
+            placeholder="Paste Nexus URL, nxm:// link, or archive URL"
             style={{ ...deckyCompactInputStyle, minHeight: "34px", padding: "6px 9px" }}
             value={importUrl}
             onChange={(event) => setImportUrl(event.currentTarget.value)}
           />
           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={addCapturedInstall} onClick={addCapturedInstall} style={{ ...deckyCompactActionStyle("neutral"), minHeight: "34px", padding: "7px 6px" }}>
-            Add Nexus Link
+            Add Mod Link
           </Focusable>
           <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>Downloads immediately; install choices appear in Action Center.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}

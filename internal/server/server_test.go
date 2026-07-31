@@ -1648,8 +1648,30 @@ func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"catalog":"example"`)) {
 		t.Fatalf("expected example catalog, body = %s", rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("downloads for this catalog are not supported yet")) {
-		t.Fatalf("expected unsupported download guidance, body = %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte("no downloadable archive was returned")) {
+		t.Fatalf("expected no-download guidance, body = %s", rec.Body.String())
+	}
+}
+
+func TestResolveCapturedInstallSupportsDirectArchiveForSelectedGame(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"https://example.com/mods/test-mod.zip","steam_app_id":"413150"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"catalog":"direct"`)) {
+		t.Fatalf("expected direct catalog, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"steam_app_id":"413150"`)) {
+		t.Fatalf("expected selected app id, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"download_links"`)) {
+		t.Fatalf("expected direct download links, body = %s", rec.Body.String())
 	}
 }
 
@@ -1670,11 +1692,14 @@ func TestCapturedInstallRejectsCatalogWithoutDownloadProvider(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
+	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("downloads for catalog example are not supported yet")) {
-		t.Fatalf("expected unsupported catalog guidance, body = %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"failed"`)) {
+		t.Fatalf("expected failed job status, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("catalog example did not return a downloadable archive")) {
+		t.Fatalf("expected missing download guidance, body = %s", rec.Body.String())
 	}
 }
 
@@ -7107,7 +7132,7 @@ func (r fakeCatalogResolver) Name() string {
 	return "fake"
 }
 
-func (r fakeCatalogResolver) ResolveURL(context.Context, string) (catalog.ResolvedDownload, error) {
+func (r fakeCatalogResolver) ResolveURL(context.Context, catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
 	if r.err != nil {
 		return catalog.ResolvedDownload{}, r.err
 	}

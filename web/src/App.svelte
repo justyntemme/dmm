@@ -1211,7 +1211,7 @@
     const response = await fetch("/api/captured-installs/resolve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: captureURL })
+      body: JSON.stringify({ url: captureURL, steam_app_id: selectedGame.app_id })
     });
     if (!response.ok) {
       error = await response.text();
@@ -1219,7 +1219,7 @@
     }
     const result = await response.json();
     upsertJob(result.job);
-    resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
+    resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
     nexusFiles = result.files ?? [];
     downloadLinks = result.download_links ?? [];
     captureURL = "";
@@ -1368,7 +1368,7 @@
       const response = await fetch("/api/captured-installs/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: nexusFileURL(mod.mod_id, file.file_id) })
+        body: JSON.stringify({ url: nexusFileURL(mod.mod_id, file.file_id), steam_app_id: selectedGame.app_id })
       });
       if (!response.ok) {
         nexusSearchError = await response.text();
@@ -2410,7 +2410,7 @@
           <div class="action-home">
             <div class="empty-state inline-empty">
               <h2>No Actions Needed</h2>
-              <p class="hint">Open a game to paste a Nexus URL, or capture an nxm:// link from the Deck browser flow.</p>
+              <p class="hint">Open a game to paste a mod URL, or capture an nxm:// link from the Deck browser flow.</p>
             </div>
             <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
           </div>
@@ -2631,10 +2631,10 @@
                 <span>{selectedGameActionItems.length} open</span>
               </div>
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
+                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus URL, nxm:// link, or direct archive URL"></textarea>
                 <button type="submit">Add Mod</button>
               </form>
-              <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Mods that need choices or review will appear in Action Center.</p>
+              <p class="hint">Use a Nexus page, Mod Manager Download nxm:// link, or direct archive URL. Mods that need choices or review will appear in Action Center.</p>
               {#if selectedNexusDomain()}
                 <details class="nexus-browser">
                   <summary>
@@ -2712,7 +2712,7 @@
           </section>
 
           {#if installedMods.length === 0}
-            <p class="hint">No profile mods yet. Capture or paste a Nexus mod link to add a supported mod to this profile.</p>
+            <p class="hint">No profile mods yet. Capture or paste a mod link to add a supported mod to this profile.</p>
           {:else}
             <section class="mod-section">
               <div class="card-heading">

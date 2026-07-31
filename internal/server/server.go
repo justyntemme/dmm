@@ -25,6 +25,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
@@ -151,6 +152,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		},
 		catalogs: []catalog.RemoteModCatalog{
 			nexus.Resolver{},
+			direct.Resolver{},
 		},
 		games: gameRegistry,
 
@@ -236,8 +238,10 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Captur
 				job.Message = "Interrupted; downloaded archive is ready to install"
 			} else if len(pending.DownloadLinks) > 0 {
 				job.Message = "Interrupted; ready to retry download"
-			} else {
+			} else if pending.Resolved.Catalog == "nexus" {
 				job.Message = "Interrupted; configure Nexus API key and capture the link again"
+			} else {
+				job.Message = "Interrupted; capture the mod link again"
 			}
 			job.UpdatedAt = time.Now().UTC()
 		}
@@ -1057,6 +1061,9 @@ func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.Res
 		"mod_id":      strings.TrimSpace(resolved.ModID),
 		"file_id":     strings.TrimSpace(resolved.FileID),
 	}
+	if appID := strings.TrimSpace(resolved.SteamAppID); appID != "" {
+		payload["app_id"] = appID
+	}
 	if appID, ok := gameRegistry.SteamAppIDForNexusDomain(resolved.GameDomain); ok {
 		payload["app_id"] = appID
 	}
@@ -1066,6 +1073,38 @@ func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.Res
 		}
 	}
 	return payload
+}
+
+func capturedInstallTitle(resolved catalog.ResolvedDownload) string {
+	catalogName := strings.TrimSpace(resolved.Catalog)
+	if catalogName == "" {
+		catalogName = "mod"
+	}
+	identity := strings.TrimSpace(resolved.GameDomain)
+	if identity == "" {
+		identity = strings.TrimSpace(resolved.SteamAppID)
+	}
+	if identity == "" {
+		identity = "unknown-game"
+	}
+	modID := strings.TrimSpace(resolved.ModID)
+	if modID == "" {
+		return "Captured " + catalogName + " mod: " + identity
+	}
+	return "Captured " + catalogName + " mod: " + identity + "/mods/" + modID
+}
+
+func catalogDisplayName(resolved catalog.ResolvedDownload) string {
+	if value := strings.TrimSpace(resolved.GameDomain); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(resolved.SteamAppID); value != "" {
+		return "Steam app " + value
+	}
+	if value := strings.TrimSpace(resolved.Catalog); value != "" {
+		return value
+	}
+	return "catalog"
 }
 
 func (s *Server) publishJobEvent(job jobs.Job) {
@@ -4606,8 +4645,9 @@ func (s *Server) handleClearCapturedInstalls(w http.ResponseWriter, r *http.Requ
 }
 
 type capturedInstallURLRequest struct {
-	URL    string `json:"url"`
-	Source string `json:"source"`
+	URL        string `json:"url"`
+	SteamAppID string `json:"steam_app_id"`
+	Source     string `json:"source"`
 }
 
 type inspectArchiveRequest struct {
@@ -4625,14 +4665,18 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		http.Error(w, "url is required", http.StatusBadRequest)
 		return
 	}
-	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
+	resolved, err := s.resolveCatalogURL(r.Context(), catalog.ResolveRequest{
+		URL:        req.URL,
+		SteamAppID: req.SteamAppID,
+		Source:     req.Source,
+	})
 	if err != nil {
 		s.logger.Warn("captured install resolve failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	job := s.jobs.Create("captured-install-resolve", "Resolve Nexus URL")
+	job := s.jobs.Create("captured-install-resolve", "Resolve mod URL")
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
@@ -4642,7 +4686,12 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 	s.cfgMu.RUnlock()
 	if resolved.Catalog != "nexus" {
 		message := "Resolved " + resolved.Catalog + " URL"
-		job, _ = s.jobs.Complete(job.ID, message+"; downloads for this catalog are not supported yet")
+		if len(resolved.DownloadLinks) > 0 {
+			payload["download_links"] = resolved.DownloadLinks
+			job, _ = s.jobs.Complete(job.ID, message+"; ready to download")
+		} else {
+			job, _ = s.jobs.Complete(job.ID, message+"; no downloadable archive was returned")
+		}
 		payload["job"] = job
 		writeJSON(w, http.StatusAccepted, payload)
 		return
@@ -4692,7 +4741,11 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "url is required", http.StatusBadRequest)
 		return
 	}
-	resolved, err := s.resolveCatalogURL(r.Context(), req.URL)
+	resolved, err := s.resolveCatalogURL(r.Context(), catalog.ResolveRequest{
+		URL:        req.URL,
+		SteamAppID: req.SteamAppID,
+		Source:     req.Source,
+	})
 	if err != nil {
 		s.logger.Warn("captured install parse failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
@@ -4703,14 +4756,11 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		"captured install requested",
 		"source", source,
 		"catalog", resolved.Catalog,
+		"app_id", resolved.SteamAppID,
 		"game_domain", resolved.GameDomain,
 		"mod_id", resolved.ModID,
 		"file_id", resolved.FileID,
 	)
-	if resolved.Catalog != "nexus" {
-		http.Error(w, "downloads for catalog "+resolved.Catalog+" are not supported yet", http.StatusBadRequest)
-		return
-	}
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
@@ -4728,11 +4778,46 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("captured-install", "Captured mod: "+resolved.GameDomain+"/mods/"+resolved.ModID, capturedInstallJobPayload(s.games, resolved))
+	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
 		"job":      job,
 		"resolved": resolved,
 		"source":   source,
+	}
+	if resolved.Catalog != "nexus" {
+		if len(resolved.DownloadLinks) == 0 {
+			job, _ = s.jobs.Fail(job.ID, "catalog "+resolved.Catalog+" did not return a downloadable archive")
+			payload["job"] = job
+			writeJSON(w, http.StatusAccepted, payload)
+			return
+		}
+		if resolved.FileName != "" {
+			payload["archive_file_name"] = resolved.FileName
+		}
+		payload["download_links"] = resolved.DownloadLinks
+		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
+		payload["job"] = job
+		s.rememberCapturedInstall(job.ID, capturedInstall{
+			Resolved:        resolved,
+			DownloadLinks:   resolved.DownloadLinks,
+			Source:          source,
+			ArchiveFileName: resolved.FileName,
+		})
+		s.cfgMu.RLock()
+		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
+		s.cfgMu.RUnlock()
+		started, err := s.startCapturedInstallDownload(job.ID, "captured "+resolved.Catalog+" link")
+		if err != nil {
+			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "catalog", resolved.Catalog, "error", err)
+			job, _ = s.jobs.Fail(job.ID, err.Error())
+			payload["job"] = job
+		} else {
+			payload["job"] = started
+			payload["download_started"] = true
+			payload["auto_install"] = autoInstall
+		}
+		writeJSON(w, http.StatusAccepted, payload)
+		return
 	}
 	s.cfgMu.RLock()
 	apiKey := s.cfg.Nexus.APIKey
@@ -4751,7 +4836,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if archiveFileName != "" {
 			payload["archive_file_name"] = archiveFileName
 		}
-		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+resolved.GameDomain)
+		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
 		payload["job"] = job
 		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:        resolved,
@@ -4835,10 +4920,10 @@ func capturedInstallIsActive(status jobs.Status) bool {
 	}
 }
 
-func (s *Server) resolveCatalogURL(ctx context.Context, rawURL string) (catalog.ResolvedDownload, error) {
+func (s *Server) resolveCatalogURL(ctx context.Context, req catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
 	var lastErr error
 	for _, remoteCatalog := range s.catalogs {
-		resolved, err := remoteCatalog.ResolveURL(ctx, rawURL)
+		resolved, err := remoteCatalog.ResolveURL(ctx, req)
 		if err == nil {
 			return resolved, nil
 		}
@@ -4861,7 +4946,7 @@ func (s *Server) handleInstallCapturedInstall(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		switch {
 		case errors.Is(err, errCapturedInstallNotFound):
-			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
+			http.Error(w, "captured mod action was not found; capture the mod link again", http.StatusNotFound)
 		case errors.Is(err, errCapturedInstallJobNotFound):
 			http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		case errors.Is(err, errCapturedInstallNotWaiting):
@@ -4897,7 +4982,7 @@ func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Reque
 	}
 	pending, ok := s.capturedInstall(jobID)
 	if !ok {
-		http.Error(w, "captured mod job no longer has retry metadata; capture the Nexus link again", http.StatusNotFound)
+		http.Error(w, "captured mod job no longer has retry metadata; capture the mod link again", http.StatusNotFound)
 		return
 	}
 	var message string
@@ -4920,13 +5005,13 @@ func (s *Server) handleRetryCapturedInstall(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		switch {
 		case errors.Is(err, errCapturedInstallNotFound):
-			http.Error(w, "captured mod action was not found; capture the Nexus link again", http.StatusNotFound)
+			http.Error(w, "captured mod action was not found; capture the mod link again", http.StatusNotFound)
 		case errors.Is(err, errCapturedInstallJobNotFound):
 			http.Error(w, "captured mod job was not found", http.StatusNotFound)
 		case errors.Is(err, errCapturedInstallNotWaiting):
 			http.Error(w, "captured mod action is not retryable right now", http.StatusConflict)
 		case errors.Is(err, errCapturedInstallNoLinks):
-			http.Error(w, "captured mod action has no download links; configure Nexus API key and capture the link again", http.StatusBadRequest)
+			http.Error(w, "captured mod action has no download links; capture the mod link again", http.StatusBadRequest)
 		case errors.Is(err, errCapturedInstallEmptyLink):
 			http.Error(w, "captured mod action download link is empty", http.StatusBadRequest)
 		case errors.Is(err, errCapturedInstallNoArchive):
@@ -5631,9 +5716,9 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	if err := ctx.Err(); err != nil {
 		return storage.InstalledMod{}, err
 	}
-	appID, ok := s.steamAppIDForNexusDomain(pending.Resolved.GameDomain)
-	if !ok {
-		return storage.InstalledMod{}, errors.New("no Steam game mapping exists for Nexus domain " + pending.Resolved.GameDomain)
+	appID := s.appIDForPending(pending)
+	if appID == "" {
+		return storage.InstalledMod{}, errors.New("no Steam game mapping exists for " + catalogDisplayName(pending.Resolved))
 	}
 	archivePath := result.Path
 	extractPath := filepath.Join(s.cfg.DataDir, "tmp", "install", jobID)
@@ -5918,6 +6003,9 @@ func (s *Server) steamAppIDForNexusDomain(domain string) (string, bool) {
 }
 
 func (s *Server) appIDForPending(pending capturedInstall) string {
+	if appID := strings.TrimSpace(pending.Resolved.SteamAppID); appID != "" {
+		return appID
+	}
 	appID, _ := s.steamAppIDForNexusDomain(pending.Resolved.GameDomain)
 	return appID
 }
@@ -5946,7 +6034,15 @@ func modNameFromArchive(archivePath string, resolved catalog.ResolvedDownload) s
 	if name != "" && name != "." && !looksLikeGUID(name) {
 		return name
 	}
-	return "Nexus mod " + resolved.ModID
+	catalogName := strings.TrimSpace(resolved.Catalog)
+	if catalogName == "" {
+		catalogName = "catalog"
+	}
+	modID := strings.TrimSpace(resolved.ModID)
+	if modID == "" {
+		return catalogName + " mod"
+	}
+	return catalogName + " mod " + modID
 }
 
 func modNameFromStaging(archivePath string, resolved catalog.ResolvedDownload, plan installplan.Plan) string {
