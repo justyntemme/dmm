@@ -130,6 +130,11 @@ type ManagedGame = {
   name: string;
   state: string;
   nexus_domains?: string[];
+  steam_workshop?: {
+    detected?: boolean;
+    item_count?: number;
+    management_supported?: boolean;
+  };
 };
 
 type RunningGame = {
@@ -1381,6 +1386,29 @@ async function syncWorkshopStateForApp(appID: string, options: { force?: boolean
   return true;
 }
 
+async function seedWorkshopStateFromGames() {
+  try {
+    const result = await call<[], { ok: boolean; error?: string; games: ManagedGame[] }>("games");
+    if (!result.ok) {
+      await logFrontendEvent("workshop startup sync games unavailable", { error: result.error || "" });
+      return;
+    }
+    const targets = (result.games ?? [])
+      .filter((game) => game.steam_workshop?.detected && game.steam_workshop.management_supported && (game.steam_workshop.item_count ?? 0) > 0)
+      .slice(0, 8);
+    if (targets.length === 0) {
+      await logFrontendEvent("workshop startup sync skipped", { reason: "no managed workshop games" });
+      return;
+    }
+    for (const game of targets) {
+      await syncWorkshopStateForApp(game.app_id, { force: true });
+    }
+    await logFrontendEvent("workshop startup sync completed", { games: targets.length });
+  } catch (err) {
+    await logFrontendEvent("workshop startup sync failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 async function executeWorkshopAction(job: WorkshopActionJob) {
   const appID = String(job.payload?.app_id ?? "").trim();
   const itemID = String(job.payload?.item_id ?? "").trim();
@@ -2213,6 +2241,7 @@ function startBackgroundMonitors() {
   seedJobNotifications({ seed: true });
   syncLaunchActions();
   syncWorkshopActions();
+  seedWorkshopStateFromGames();
   connectEventMonitor();
 }
 
