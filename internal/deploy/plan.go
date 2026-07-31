@@ -53,6 +53,7 @@ type Action struct {
 const (
 	TargetPolicyKeepExisting  = "keep-existing"
 	TargetPolicyPatchExisting = "patch-existing"
+	TargetPolicyAdoptExisting = "adopt-existing"
 )
 
 type Plan struct {
@@ -189,6 +190,18 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 				plan.Actions = append(plan.Actions, action)
 				continue
 			}
+			if mapping.TargetPolicy == TargetPolicyAdoptExisting {
+				if targetInfoMatchesSource(action, st) {
+					action.Operation = "keep"
+					plan.Actions = append(plan.Actions, action)
+					continue
+				}
+				action.Conflict = true
+				action.ConflictReason = "target already exists and differs from generated source; not adopting"
+				plan.Conflicts = append(plan.Conflicts, action)
+				plan.Actions = append(plan.Actions, action)
+				continue
+			}
 			if mapping.TargetPolicy == TargetPolicyKeepExisting {
 				action.Operation = "skip"
 				action.ConflictReason = "target already exists; keeping existing file"
@@ -297,6 +310,22 @@ func deploymentTargetMatches(action Action, targetInfo os.FileInfo, managed bool
 	default:
 		return false
 	}
+}
+
+func targetInfoMatchesSource(action Action, targetInfo os.FileInfo) bool {
+	if targetInfo.Mode()&os.ModeSymlink != 0 || !targetInfo.Mode().IsRegular() {
+		return false
+	}
+	expected := strings.TrimSpace(action.ChecksumSHA256)
+	if expected == "" {
+		sum, err := fileSHA256(action.SourcePath)
+		if err != nil {
+			return false
+		}
+		expected = sum
+	}
+	targetSum, err := fileSHA256(action.TargetPath)
+	return err == nil && targetSum == expected
 }
 
 func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {

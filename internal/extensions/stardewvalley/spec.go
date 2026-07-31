@@ -103,6 +103,11 @@ func Register(r sdk.Registrar) {
 			"SMAPI",
 		},
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Preserve generated SMAPI config files",
+		Handler: willDeployPreserveConfigs,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -248,6 +253,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Stardew installers",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/installers",
+		},
+		{
+			Name: "Vortex Stardew config mod feature",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/configMod",
 		},
 		{
 			Name: "Stardew Wiki SMAPI Steam Deck guide",
