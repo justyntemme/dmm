@@ -346,15 +346,15 @@ type WorkshopActionJob = Job & {
   };
 };
 
-type Tab = "main" | "mods" | "settings" | "debug";
+type Tab = "main" | "games" | "settings" | "debug";
 type GameSort = "recent" | "az" | "za";
 type DeckyModSort = "profile" | "az" | "za" | "enabled";
 
 const DMM_DECKY_ROUTE = "/decky-mod-manager";
-const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
+const deckyTabOrder: Tab[] = ["main", "games", "settings", "debug"];
 const deckyTabLabels: Record<Tab, string> = {
   main: "Manage",
-  mods: "Games",
+  games: "Games",
   settings: "Settings",
   debug: "Debug"
 };
@@ -2072,7 +2072,7 @@ function DeckyModManagerRoute() {
   }
 
   function handleDeckyTabCancel(event: GamepadEvent) {
-    if (tab !== "mods" || !selectedDeckyGameID) return;
+    if (tab !== "games" || !selectedDeckyGameID) return;
     event.preventDefault();
     event.stopPropagation();
     clearSelectedDeckyGame();
@@ -2769,13 +2769,13 @@ function DeckyModManagerRoute() {
   }, []);
 
   useEffect(() => {
-    if (tab === "mods" && status?.running) {
+    if (tab === "games" && status?.running) {
       void refreshDeckyMods();
     }
   }, [tab, status?.running]);
 
   useEffect(() => {
-    if (tab !== "mods" || !selectedDeckyGameID) return;
+    if (tab !== "games" || !selectedDeckyGameID) return;
     focusDeckyRef(selectedDeckyGameRef, "selected-game", { app_id: selectedDeckyGameID, source: "selected-game-render" });
   }, [tab, selectedDeckyGameID]);
 
@@ -2786,7 +2786,7 @@ function DeckyModManagerRoute() {
         if (isUISettings(event.payload)) applyDeckyUIPreferencesFromUI(event.payload);
         return;
       }
-      if (!event || tab !== "mods" || !selectedDeckyGameID || !status?.running) return;
+      if (!event || tab !== "games" || !selectedDeckyGameID || !status?.running) return;
       if (["job.updated", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed", "mod_updates.changed"].includes(event.type) && eventMatchesAppID(event, selectedDeckyGameID)) {
         void loadDeckyGameState(selectedDeckyGameID);
       }
@@ -2799,7 +2799,7 @@ function DeckyModManagerRoute() {
     const syncRunningGame = () => {
       const running = currentRunningGame();
       setRunningGame(running);
-      if (!running || tab !== "mods" || !managedGames.some((game) => game.app_id === running.app_id) || selectedDeckyGameID === running.app_id) return;
+      if (!running || tab !== "games" || !managedGames.some((game) => game.app_id === running.app_id) || selectedDeckyGameID === running.app_id) return;
       setSelectedDeckyGameID(running.app_id);
       markDeckyGameRecent(running.app_id);
       void loadDeckyGameState(running.app_id);
@@ -3586,7 +3586,7 @@ function DeckyModManagerRoute() {
 
   const tabItems: { id: Tab; title: string; content: ReactNode }[] = [
     { id: "main", title: deckyTabLabels.main, content: mainContent },
-    { id: "mods", title: deckyTabLabels.mods, content: modsContent },
+    { id: "games", title: deckyTabLabels.games, content: modsContent },
     { id: "settings", title: deckyTabLabels.settings, content: settingsContent },
     { id: "debug", title: deckyTabLabels.debug, content: debugContent }
   ];
@@ -3648,8 +3648,8 @@ function DeckyModManagerRoute() {
         {deckyTabBody(
           activeTabItem.id,
           activeTabItem.content,
-          activeTabItem.id === "mods" ? selectedDeckyGameID || "game-list" : activeTabItem.id,
-          activeTabItem.id === "mods" && selectedDeckyGameID ? handleDeckyTabCancel : undefined
+          activeTabItem.id === "games" ? selectedDeckyGameID || "game-list" : activeTabItem.id,
+          activeTabItem.id === "games" && selectedDeckyGameID ? handleDeckyTabCancel : undefined
         )}
       </div>
     </Focusable>
