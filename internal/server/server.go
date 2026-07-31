@@ -258,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/catalogs", s.handleCatalogs)
 	mux.HandleFunc("POST /api/nexus/validate", s.handleValidateNexus)
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
@@ -395,6 +396,22 @@ type deploymentStrategyCapability struct {
 	Supported   bool   `json:"supported"`
 	Recommended bool   `json:"recommended"`
 	Reason      string `json:"reason"`
+}
+
+type catalogStatusResponse struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Kind                string   `json:"kind"`
+	Status              string   `json:"status"`
+	Configured          bool     `json:"configured"`
+	CredentialsRequired bool     `json:"credentials_required"`
+	URLImport           bool     `json:"url_import"`
+	Search              bool     `json:"search"`
+	Browse              bool     `json:"browse"`
+	Download            bool     `json:"download"`
+	InstalledManagement bool     `json:"installed_management"`
+	SourceTag           string   `json:"source_tag"`
+	Notes               []string `json:"notes,omitempty"`
 }
 
 type deployPreviewSummary struct {
@@ -1205,6 +1222,125 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		},
 		"ui": ui,
 	})
+}
+
+func (s *Server) handleCatalogs(w http.ResponseWriter, r *http.Request) {
+	s.cfgMu.RLock()
+	cfg := s.cfg
+	s.cfgMu.RUnlock()
+	writeJSON(w, http.StatusOK, s.catalogStatuses(cfg))
+}
+
+func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
+	registered := make(map[string]bool, len(s.catalogs))
+	for _, remoteCatalog := range s.catalogs {
+		registered[strings.ToLower(strings.TrimSpace(remoteCatalog.Name()))] = true
+	}
+	nexusConfigured := strings.TrimSpace(cfg.Nexus.APIKey) != ""
+	nexusStatus := "needs_credentials"
+	if registered["nexus"] && nexusConfigured {
+		nexusStatus = "ready"
+	}
+	return []catalogStatusResponse{
+		{
+			ID:                  "nexus",
+			Name:                "Nexus Mods",
+			Kind:                "remote",
+			Status:              nexusStatus,
+			Configured:          nexusConfigured,
+			CredentialsRequired: true,
+			URLImport:           registered["nexus"],
+			Search:              registered["nexus"] && nexusConfigured,
+			Browse:              registered["nexus"] && nexusConfigured,
+			Download:            registered["nexus"] && nexusConfigured,
+			SourceTag:           "nexus",
+			Notes:               []string{"nxm:// capture and Nexus file-page imports are the primary MVP path."},
+		},
+		{
+			ID:         "thunderstore",
+			Name:       "Thunderstore",
+			Kind:       "remote",
+			Status:     readyIfRegistered(registered, "thunderstore"),
+			Configured: registered["thunderstore"],
+			URLImport:  registered["thunderstore"],
+			Download:   registered["thunderstore"],
+			SourceTag:  "thunderstore",
+			Notes:      []string{"Package URLs resolve through Thunderstore's verified public API. Search/browse UI is not implemented yet."},
+		},
+		{
+			ID:         "github",
+			Name:       "GitHub Releases",
+			Kind:       "remote",
+			Status:     readyIfRegistered(registered, "github"),
+			Configured: registered["github"],
+			URLImport:  registered["github"],
+			Download:   registered["github"],
+			SourceTag:  "github",
+			Notes:      []string{"Release asset URLs resolve directly; release pages resolve only when there is one archive asset."},
+		},
+		{
+			ID:         "direct",
+			Name:       "Direct Archive URL",
+			Kind:       "direct",
+			Status:     readyIfRegistered(registered, "direct"),
+			Configured: registered["direct"],
+			URLImport:  registered["direct"],
+			Download:   registered["direct"],
+			SourceTag:  "direct",
+			Notes:      []string{"Direct archives must be added from a selected game because the URL does not identify a modding target."},
+		},
+		{
+			ID:                  "modio",
+			Name:                "mod.io",
+			Kind:                "remote",
+			Status:              "planned",
+			CredentialsRequired: true,
+			SourceTag:           "modio",
+			Notes:               []string{"Official REST API requires provider credentials and game mapping before import can be enabled."},
+		},
+		{
+			ID:                  "curseforge",
+			Name:                "CurseForge",
+			Kind:                "remote",
+			Status:              "planned",
+			CredentialsRequired: true,
+			SourceTag:           "curseforge",
+			Notes:               []string{"Official API access requires an API key; implement after credentials and game mapping are configured."},
+		},
+		{
+			ID:        "moddb",
+			Name:      "ModDB",
+			Kind:      "remote",
+			Status:    "deferred",
+			SourceTag: "moddb",
+			Notes:     []string{"No verified supported automated ModDB API is wired yet; direct archive URLs remain the safe import path."},
+		},
+		{
+			ID:        "local",
+			Name:      "Local Archive",
+			Kind:      "local",
+			Status:    "planned",
+			SourceTag: "local",
+			Notes:     []string{"Archive inspection exists, but local archive import is not a product flow yet."},
+		},
+		{
+			ID:                  "steam_workshop",
+			Name:                "Steam Workshop",
+			Kind:                "platform",
+			Status:              "ready",
+			Configured:          true,
+			InstalledManagement: true,
+			SourceTag:           "steam_workshop",
+			Notes:               []string{"DMM does not browse Workshop for MVP. Installed Workshop items are Steam-managed and use the Decky/Steam capability boundary."},
+		},
+	}
+}
+
+func readyIfRegistered(registered map[string]bool, id string) string {
+	if registered[id] {
+		return "ready"
+	}
+	return "planned"
 }
 
 type updateNexusSettingsRequest struct {

@@ -20,6 +20,22 @@
     ui?: UISettings;
   };
 
+  type CatalogStatus = {
+    id: string;
+    name: string;
+    kind: string;
+    status: string;
+    configured: boolean;
+    credentials_required: boolean;
+    url_import: boolean;
+    search: boolean;
+    browse: boolean;
+    download: boolean;
+    installed_management: boolean;
+    source_tag: string;
+    notes?: string[];
+  };
+
   type Game = {
     app_id: string;
     name: string;
@@ -404,10 +420,11 @@
   type Drawer = "games" | "settings" | null;
   type Surface = "actions" | "game" | "settings";
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
-  type SettingsPage = "overview" | "jobs" | "install" | "nexus";
+  type SettingsPage = "overview" | "jobs" | "install" | "sources" | "nexus";
   type GameSort = "recent" | "az" | "za";
 
   let status: Status | null = null;
+  let catalogs: CatalogStatus[] = [];
   let games: Game[] = [];
   let jobs: Job[] = [];
   let selectedGame: Game | null = null;
@@ -488,6 +505,8 @@
 
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
+  $: readyCatalogCount = catalogs.filter((catalog) => catalog.status === "ready").length;
+  $: sourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform").length;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
@@ -545,13 +564,15 @@
   async function refresh() {
     error = "";
     try {
-      const [nextStatus, nextGames] = await Promise.all([
+      const [nextStatus, nextGames, nextCatalogs] = await Promise.all([
         getJSON<Status>("/api/status"),
-        getJSON<Game[]>("/api/games")
+        getJSON<Game[]>("/api/games"),
+        getJSON<CatalogStatus[]>("/api/catalogs")
       ]);
       status = nextStatus;
       applyUIPreferences(nextStatus);
       games = nextGames;
+      catalogs = nextCatalogs;
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
       if (selectedGame) await loadGameState(selectedGame);
@@ -2023,8 +2044,36 @@
   function settingsTitle(page: SettingsPage) {
     if (page === "jobs") return "Jobs";
     if (page === "install") return "Install";
+    if (page === "sources") return "Sources";
     if (page === "nexus") return "Nexus";
     return "Settings";
+  }
+
+  function catalogStatusLabel(status: string) {
+    if (status === "ready") return "Ready";
+    if (status === "needs_credentials") return "Needs Key";
+    if (status === "planned") return "Planned";
+    if (status === "deferred") return "Deferred";
+    return status.replace(/[_-]+/g, " ");
+  }
+
+  function catalogStatusClass(status: string) {
+    const normalized = status.trim().toLowerCase().replace(/_/g, "-");
+    if (normalized === "ready") return "catalog-status-ready";
+    if (normalized === "needs-credentials") return "catalog-status-needs";
+    if (normalized === "planned") return "catalog-status-planned";
+    if (normalized === "deferred") return "catalog-status-deferred";
+    return "catalog-status-unknown";
+  }
+
+  function catalogDetail(catalog: CatalogStatus) {
+    const capabilities: string[] = [];
+    if (catalog.url_import) capabilities.push("URL import");
+    if (catalog.browse || catalog.search) capabilities.push("Browse/search");
+    if (catalog.download) capabilities.push("Downloads");
+    if (catalog.installed_management) capabilities.push("Installed management");
+    if (capabilities.length === 0) return "Not active in the current MVP build.";
+    return capabilities.join(" · ");
   }
 
   function actionMatchesGame(job: Job, game: Game) {
@@ -2110,6 +2159,8 @@
     if (source === "nexus") return "Nexus";
     if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
     if (source === "thunderstore") return "Thunderstore";
+    if (source === "modio" || source === "mod.io") return "mod.io";
+    if (source === "curseforge") return "CurseForge";
     if (source === "moddb") return "ModDB";
     if (source === "github" || source === "github_releases") return "GitHub";
     if (source === "direct") return "Direct";
@@ -2122,6 +2173,8 @@
     if (source === "nexus") return "source-nexus";
     if (source === "steam-workshop" || source === "workshop") return "source-workshop";
     if (source === "thunderstore") return "source-thunderstore";
+    if (source === "modio" || source === "mod.io") return "source-modio";
+    if (source === "curseforge") return "source-curseforge";
     if (source === "moddb") return "source-moddb";
     if (source === "github" || source === "github-releases") return "source-github";
     if (source === "direct") return "source-direct";
@@ -2378,6 +2431,7 @@
           <button type="button" on:click={openActionCenter}>Action Center</button>
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
           <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
+          <button type="button" class:active={activeSettingsPage === "sources"} on:click={() => openSettings("sources")}>Sources</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
         </nav>
       {/if}
@@ -2489,6 +2543,7 @@
             <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
+            <div><dt>Sources</dt><dd>{readyCatalogCount}/{sourceCatalogCount} ready</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -2543,6 +2598,40 @@
             </select>
           </label>
           <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
+        </article>
+      {:else if activeSettingsPage === "sources"}
+        <article class="workspace-panel">
+          <div class="panel-heading">
+            <h2>Sources</h2>
+            <span>{readyCatalogCount} ready</span>
+          </div>
+          <div class="catalog-list">
+            {#each catalogs as catalog}
+              <article>
+                <div class="catalog-title">
+                  <div>
+                    <strong>{catalog.name}</strong>
+                    <p>{catalogDetail(catalog)}</p>
+                  </div>
+                  <span class={`catalog-status ${catalogStatusClass(catalog.status)}`}>{catalogStatusLabel(catalog.status)}</span>
+                </div>
+                <div class="catalog-meta">
+                  <span class={`source-pill ${sourceClass(catalog.source_tag)}`}>{sourceLabel(catalog.source_tag)}</span>
+                  <span>{catalog.kind}</span>
+                  {#if catalog.credentials_required}
+                    <span>{catalog.configured ? "Credentials configured" : "Credentials needed"}</span>
+                  {/if}
+                </div>
+                {#if catalog.notes?.length}
+                  <ul class="provider-notes">
+                    {#each catalog.notes as note}
+                      <li>{note}</li>
+                    {/each}
+                  </ul>
+                {/if}
+              </article>
+            {/each}
+          </div>
         </article>
       {:else}
         <article class="workspace-panel">

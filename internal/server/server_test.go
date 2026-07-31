@@ -194,6 +194,51 @@ func TestUpdateDownloadSettingsPersistsAndUpdatesGate(t *testing.T) {
 	}
 }
 
+func TestCatalogsReportsProviderCapabilities(t *testing.T) {
+	srv := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/catalogs", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var catalogs []catalogStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &catalogs); err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]catalogStatusResponse, len(catalogs))
+	for _, item := range catalogs {
+		byID[item.ID] = item
+	}
+	for _, id := range []string{"nexus", "thunderstore", "github", "direct", "modio", "curseforge", "moddb", "local", "steam_workshop"} {
+		if byID[id].ID == "" {
+			t.Fatalf("missing catalog %q in %+v", id, catalogs)
+		}
+	}
+	if got := byID["nexus"]; got.Status != "needs_credentials" || got.Configured || !got.CredentialsRequired || !got.URLImport {
+		t.Fatalf("nexus catalog = %+v", got)
+	}
+	if got := byID["thunderstore"]; got.Status != "ready" || !got.URLImport || !got.Download {
+		t.Fatalf("thunderstore catalog = %+v", got)
+	}
+	if got := byID["github"]; got.Status != "ready" || !got.URLImport || !got.Download {
+		t.Fatalf("github catalog = %+v", got)
+	}
+	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
+		t.Fatalf("direct catalog = %+v", got)
+	}
+	if got := byID["modio"]; got.Status != "planned" || !got.CredentialsRequired {
+		t.Fatalf("mod.io catalog = %+v", got)
+	}
+	if got := byID["steam_workshop"]; got.Status != "ready" || got.Kind != "platform" || !got.InstalledManagement || got.URLImport {
+		t.Fatalf("steam workshop catalog = %+v", got)
+	}
+}
+
 func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	srv := newTestServer(t)
 
