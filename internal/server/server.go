@@ -421,6 +421,7 @@ type pluginLoadOrderResponse struct {
 type pluginLoadOrderEntry struct {
 	Name           string `json:"name"`
 	Source         string `json:"source"`
+	Catalog        string `json:"catalog,omitempty"`
 	InstalledModID int64  `json:"installed_mod_id,omitempty"`
 	ModID          string `json:"mod_id,omitempty"`
 	Priority       int    `json:"priority"`
@@ -7574,6 +7575,7 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
 			Name:     name,
 			Source:   "native",
+			Catalog:  "native",
 			Priority: -1,
 			Active:   true,
 		})
@@ -7586,10 +7588,12 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 	if err != nil {
 		return pluginLoadOrderResponse{}, err
 	}
+	catalogsByModID := installedModCatalogsByID(mods)
 	for _, entry := range pluginActivationEntries(spec, active.Mappings, native) {
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
 			Name:           entry.Name,
 			Source:         "dmm",
+			Catalog:        catalogsByModID[entry.InstalledModID],
 			InstalledModID: entry.InstalledModID,
 			ModID:          entry.ModID,
 			Priority:       entry.Priority,
@@ -7597,6 +7601,17 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 		})
 	}
 	return resp, nil
+}
+
+func installedModCatalogsByID(mods []storage.InstalledMod) map[int64]string {
+	out := make(map[int64]string, len(mods))
+	for _, mod := range mods {
+		if mod.ID <= 0 {
+			continue
+		}
+		out[mod.ID] = strings.TrimSpace(mod.Catalog)
+	}
+	return out
 }
 
 func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot string) ([]deploy.FileMapping, error) {

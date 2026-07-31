@@ -374,6 +374,7 @@ type PluginLoadOrder = {
 type PluginLoadOrderEntry = {
   name: string;
   source: string;
+  catalog?: string;
   installed_mod_id?: number;
   mod_id?: string;
   priority: number;
@@ -641,6 +642,7 @@ function sourceLabel(catalog?: string) {
   if (source === "github" || source === "github_releases") return "GitHub";
   if (source === "direct") return "Direct";
   if (source === "local") return "Local";
+  if (source === "native") return "Native";
   return source ? source.replace(/[_-]+/g, " ") : "Unknown";
 }
 
@@ -660,7 +662,8 @@ function deckySourcePillStyle(catalog?: string): CSSProperties {
     github: { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     "github-releases": { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     direct: { border: "#475569", color: "#cbd5e1", background: "#1e293b" },
-    local: { border: "#475569", color: "#cbd5e1", background: "#1e293b" }
+    local: { border: "#475569", color: "#cbd5e1", background: "#1e293b" },
+    native: { border: "#475569", color: "#cbd5e1", background: "#1e293b" }
   };
   const palette = colors[source] ?? { border: "#475569", color: "#cbd5e1", background: "#1e293b" };
   return {
@@ -3912,7 +3915,10 @@ function DeckyModManagerRoute() {
                       <div key={`${plugin.source}:${plugin.name}:${index}`} style={{ alignItems: "start", background: "#0b1220", border: "1px solid #263243", borderRadius: "6px", display: "grid", gap: "8px", gridTemplateColumns: "24px minmax(0, 1fr)", padding: "7px" }}>
                         <div style={{ color: "#7dd3fc", fontSize: "11px", fontWeight: 900, textAlign: "center" }}>{index + 1}</div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{plugin.name}</div>
+                          <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                            <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{plugin.name}</div>
+                            <span style={deckySourcePillStyle(plugin.catalog || plugin.source)}>{sourceLabel(plugin.catalog || plugin.source)}</span>
+                          </div>
                           <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>
                             {plugin.source === "native" ? "Native" : `DMM mod ${plugin.mod_id || plugin.installed_mod_id || ""}`} · Priority {plugin.priority}
                           </div>

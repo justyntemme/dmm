@@ -951,6 +951,7 @@ h2 {
 
 .source-direct,
 .source-local,
+.source-native,
 .source-unknown {
   border-color: #475569;
   color: #cbd5e1;

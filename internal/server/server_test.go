@@ -6815,13 +6815,13 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	for _, plugin := range loadOrder.Plugins {
 		pluginsByName[plugin.Name] = plugin
 	}
-	if pluginsByName["Fallout4.esm"].Source != "native" || !pluginsByName["Fallout4.esm"].Active {
+	if pluginsByName["Fallout4.esm"].Source != "native" || pluginsByName["Fallout4.esm"].Catalog != "native" || !pluginsByName["Fallout4.esm"].Active {
 		t.Fatalf("native Fallout4.esm entry = %+v", pluginsByName["Fallout4.esm"])
 	}
-	if pluginsByName["ccExample.esl"].Source != "native" || !pluginsByName["ccExample.esl"].Active {
+	if pluginsByName["ccExample.esl"].Source != "native" || pluginsByName["ccExample.esl"].Catalog != "native" || !pluginsByName["ccExample.esl"].Active {
 		t.Fatalf("native cc entry = %+v", pluginsByName["ccExample.esl"])
 	}
-	if pluginsByName["Example.esp"].Source != "dmm" || pluginsByName["Example.esp"].InstalledModID == 0 || pluginsByName["Example.esp"].Priority != 0 {
+	if pluginsByName["Example.esp"].Source != "dmm" || pluginsByName["Example.esp"].Catalog != "nexus" || pluginsByName["Example.esp"].InstalledModID == 0 || pluginsByName["Example.esp"].Priority != 0 {
 		t.Fatalf("managed plugin entry = %+v", pluginsByName["Example.esp"])
 	}
 }

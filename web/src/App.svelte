@@ -339,6 +339,7 @@
   type PluginLoadOrderEntry = {
     name: string;
     source: string;
+    catalog?: string;
     installed_mod_id?: number;
     mod_id?: string;
     priority: number;
@@ -2409,6 +2410,7 @@
     if (source === "github" || source === "github_releases") return "GitHub";
     if (source === "direct") return "Direct";
     if (source === "local") return "Local";
+    if (source === "native") return "Native";
     return source ? source.replace(/[_-]+/g, " ") : "Unknown";
   }
 
@@ -2425,6 +2427,7 @@
     if (source === "github" || source === "github-releases") return "source-github";
     if (source === "direct") return "source-direct";
     if (source === "local") return "source-local";
+    if (source === "native") return "source-native";
     return "source-unknown";
   }
 
@@ -3395,7 +3398,10 @@
                       <article>
                         <span>{index + 1}</span>
                         <div>
-                          <strong>{plugin.name}</strong>
+                          <div class="mod-title-line">
+                            <strong>{plugin.name}</strong>
+                            <span class={`source-pill ${sourceClass(plugin.catalog ?? plugin.source)}`}>{sourceLabel(plugin.catalog ?? plugin.source)}</span>
+                          </div>
                           <small>{plugin.source === "native" ? "Game/native plugin" : `DMM mod ${plugin.mod_id ?? plugin.installed_mod_id ?? ""}`} · Priority {plugin.priority}</small>
                         </div>
                       </article>
