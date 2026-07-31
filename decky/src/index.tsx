@@ -187,6 +187,8 @@ type ManagedMod = {
 };
 
 type ModUpdate = {
+  catalog?: string;
+  source_tag?: string;
   status: string;
   latest_file_id?: string;
   latest_file_name?: string;
@@ -3023,6 +3025,8 @@ function DeckyModManagerRoute() {
       const updates = new Map<number, ModUpdate>();
       for (const item of result.results ?? []) {
         updates.set(item.installed_mod_id, {
+          catalog: item.catalog,
+          source_tag: item.source_tag,
           status: item.status,
           latest_file_id: item.latest_file_id,
           latest_file_name: item.latest_file_name,

@@ -962,6 +962,9 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	if body.Results[0].Status != "available" || body.Results[0].LatestFileID != "101" || body.Results[0].LatestVersion != "1.1.0" {
 		t.Fatalf("result = %+v", body.Results[0])
 	}
+	if body.Results[0].Catalog != "nexus" || body.Results[0].SourceTag != "nexus" {
+		t.Fatalf("result source tags = %+v", body.Results[0])
+	}
 
 	modsReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods", nil)
 	modsReq.RemoteAddr = "127.0.0.1:1"
@@ -1025,6 +1028,9 @@ func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
 	}
 	if body.Results[0].Status != "unsupported" || !strings.Contains(body.Results[0].Message, "Direct Archive URL") {
 		t.Fatalf("result = %+v", body.Results[0])
+	}
+	if body.Results[0].Catalog != "direct" || body.Results[0].SourceTag != "direct" {
+		t.Fatalf("result source tags = %+v", body.Results[0])
 	}
 
 	modsReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods", nil)

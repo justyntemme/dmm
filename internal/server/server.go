@@ -2802,6 +2802,8 @@ type modUpdateCheckResponse struct {
 type gameModUpdateCheckResponse struct {
 	InstalledModID   int64  `json:"installed_mod_id"`
 	Name             string `json:"name"`
+	Catalog          string `json:"catalog"`
+	SourceTag        string `json:"source_tag"`
 	Status           string `json:"status"`
 	CurrentFileID    string `json:"current_file_id,omitempty"`
 	CurrentVersion   string `json:"current_version,omitempty"`
@@ -2990,6 +2992,8 @@ func unsupportedUpdateCheckResult(mod storage.InstalledMod, checkedAt, message s
 	return gameModUpdateCheckResponse{
 		InstalledModID: mod.ID,
 		Name:           mod.Name,
+		Catalog:        mod.Catalog,
+		SourceTag:      normalizeCatalogID(mod.Catalog),
 		Status:         "unsupported",
 		CurrentFileID:  mod.SourceFileID,
 		CurrentVersion: mod.Version,
@@ -3002,6 +3006,8 @@ func updateCheckErrorResult(mod storage.InstalledMod, checkedAt, message string)
 	return gameModUpdateCheckResponse{
 		InstalledModID: mod.ID,
 		Name:           mod.Name,
+		Catalog:        mod.Catalog,
+		SourceTag:      normalizeCatalogID(mod.Catalog),
 		Status:         "error",
 		CurrentFileID:  mod.SourceFileID,
 		CurrentVersion: mod.Version,
@@ -3137,7 +3143,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		s.logger.Info("mod update duplicate captured install reused", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
-			"job":      job,
+			"job":      jobAPIResponse(job),
 			"resolved": pending.Resolved,
 			"source":   pending.Source,
 			"file_url": resolved.SourceURL,
@@ -3158,7 +3164,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	payload["update_to_file_id"] = update.LatestFileID
 	job := s.jobs.CreateWithPayload("captured-install", "Update: "+mod.Name, payload)
 	response := map[string]any{
-		"job":      job,
+		"job":      jobAPIResponse(job),
 		"resolved": resolved,
 		"source":   "mod-update",
 		"update":   update,
@@ -3166,7 +3172,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		response["job"] = job
+		response["job"] = jobAPIResponse(job)
 		if download.BrowserRequired {
 			response["browser_required"] = true
 		}
@@ -3181,7 +3187,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	links := download.DownloadLinks
 	response["download_links"] = links
 	job, _ = s.jobs.Wait(job.ID, "Update found; downloading "+mod.Name)
-	response["job"] = job
+	response["job"] = jobAPIResponse(job)
 	s.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved:              resolved,
 		DownloadLinks:         links,
@@ -3194,9 +3200,9 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("mod update download queue failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
-		response["job"] = job
+		response["job"] = jobAPIResponse(job)
 	} else {
-		response["job"] = started
+		response["job"] = jobAPIResponse(started)
 		response["download_started"] = true
 	}
 	s.logger.Info("mod update queued", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "from_file_id", mod.SourceFileID, "to_file_id", update.LatestFileID)
@@ -3207,6 +3213,8 @@ func updateCheckResultForInstalledMod(mod storage.InstalledMod, files []nexus.Mo
 	result := gameModUpdateCheckResponse{
 		InstalledModID: mod.ID,
 		Name:           mod.Name,
+		Catalog:        mod.Catalog,
+		SourceTag:      normalizeCatalogID(mod.Catalog),
 		Status:         "unknown",
 		CurrentFileID:  mod.SourceFileID,
 		CurrentVersion: mod.Version,
@@ -3248,6 +3256,8 @@ func updateCheckResultForResolvedDownload(mod storage.InstalledMod, latest catal
 	result := gameModUpdateCheckResponse{
 		InstalledModID: mod.ID,
 		Name:           mod.Name,
+		Catalog:        mod.Catalog,
+		SourceTag:      normalizeCatalogID(mod.Catalog),
 		Status:         "unknown",
 		CurrentFileID:  mod.SourceFileID,
 		CurrentVersion: mod.Version,
@@ -4464,7 +4474,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	job, _ = s.jobs.Complete(job.ID, "Applied enabled mods to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
 	response := map[string]any{
-		"job":     job,
+		"job":     jobAPIResponse(job),
 		"plan":    plan,
 		"applied": result.Applied,
 	}
@@ -5442,7 +5452,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		s.logger.Info("local archive duplicate reused", "job_id", job.ID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		writeJSON(w, http.StatusAccepted, map[string]any{
-			"job":               job,
+			"job":               jobAPIResponse(job),
 			"resolved":          pending.Resolved,
 			"source":            pending.Source,
 			"archive_file_name": pending.ArchiveFileName,
@@ -5466,7 +5476,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 	s.rememberCapturedInstall(job.ID, pending)
 
 	payload := map[string]any{
-		"job":               job,
+		"job":               jobAPIResponse(job),
 		"resolved":          resolved,
 		"source":            source,
 		"archive_file_name": resolved.FileName,
@@ -5482,9 +5492,9 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			s.logger.Warn("local archive auto-install failed", "job_id", job.ID, "app_id", appID, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 		} else {
-			payload["job"] = started
+			payload["job"] = jobAPIResponse(started)
 			payload["install_started"] = true
 		}
 	}
@@ -5664,7 +5674,7 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 
 	job := s.jobs.CreateWithPayload("captured-install-resolve", "Resolve mod URL", capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
-		"job":      job,
+		"job":      jobAPIResponse(job),
 		"resolved": resolved,
 	}
 	s.cfgMu.RLock()
@@ -5678,7 +5688,7 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		} else {
 			job, _ = s.jobs.Complete(job.ID, message+"; no downloadable archive was returned")
 		}
-		payload["job"] = job
+		payload["job"] = jobAPIResponse(job)
 		writeJSON(w, http.StatusAccepted, payload)
 		return
 	}
@@ -5692,7 +5702,7 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 			}
 			payload["download_links"] = links
 			job, _ = s.jobs.Complete(job.ID, "Resolved Nexus download links for "+resolved.GameDomain)
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 			writeJSON(w, http.StatusAccepted, payload)
 			return
 		}
@@ -5712,7 +5722,7 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		message += "; choose a file before download"
 	}
 	job, _ = s.jobs.Complete(job.ID, message)
-	payload["job"] = job
+	payload["job"] = jobAPIResponse(job)
 	writeJSON(w, http.StatusAccepted, payload)
 }
 
@@ -5750,7 +5760,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
-			"job":      job,
+			"job":      jobAPIResponse(job),
 			"resolved": pending.Resolved,
 			"source":   pending.Source,
 		}
@@ -5766,14 +5776,14 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 
 	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
-		"job":      job,
+		"job":      jobAPIResponse(job),
 		"resolved": resolved,
 		"source":   source,
 	}
 	if resolved.Catalog != "nexus" {
 		if len(resolved.DownloadLinks) == 0 {
 			job, _ = s.jobs.Fail(job.ID, "catalog "+resolved.Catalog+" did not return a downloadable archive")
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 			writeJSON(w, http.StatusAccepted, payload)
 			return
 		}
@@ -5782,7 +5792,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		}
 		payload["download_links"] = resolved.DownloadLinks
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
-		payload["job"] = job
+		payload["job"] = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:        resolved,
 			DownloadLinks:   resolved.DownloadLinks,
@@ -5796,9 +5806,9 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "catalog", resolved.Catalog, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 		} else {
-			payload["job"] = started
+			payload["job"] = jobAPIResponse(started)
 			payload["download_started"] = true
 			payload["auto_install"] = autoInstall
 		}
@@ -5813,7 +5823,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 			writeJSON(w, http.StatusAccepted, payload)
 			return
 		}
@@ -5823,7 +5833,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			payload["archive_file_name"] = archiveFileName
 		}
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
-		payload["job"] = job
+		payload["job"] = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:        resolved,
 			DownloadLinks:   links,
@@ -5837,9 +5847,9 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = job
+			payload["job"] = jobAPIResponse(job)
 		} else {
-			payload["job"] = started
+			payload["job"] = jobAPIResponse(started)
 			payload["download_started"] = true
 			payload["auto_install"] = autoInstall
 		}
@@ -5847,7 +5857,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
-	payload["job"] = job
+	payload["job"] = jobAPIResponse(job)
 	s.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved: resolved,
 		Source:   source,

@@ -161,6 +161,8 @@
   };
 
   type ModUpdate = {
+    catalog?: string;
+    source_tag?: string;
     status: string;
     latest_file_id?: string;
     latest_file_name?: string;
@@ -1252,6 +1254,8 @@
     }
     const result: { checked: number; results: Array<{ installed_mod_id: number } & ModUpdate> } = await response.json();
     const updates = new Map(result.results.map((item) => [item.installed_mod_id, {
+      catalog: item.catalog,
+      source_tag: item.source_tag,
       status: item.status,
       latest_file_id: item.latest_file_id,
       latest_file_name: item.latest_file_name,
