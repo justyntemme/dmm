@@ -453,6 +453,20 @@ type catalogStatusResponse struct {
 	Notes               []string `json:"notes,omitempty"`
 }
 
+type jobResponse struct {
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`
+	Title     string          `json:"title"`
+	Status    jobs.Status     `json:"status"`
+	Message   string          `json:"message"`
+	Payload   jobs.JobPayload `json:"payload,omitempty"`
+	AppID     string          `json:"app_id,omitempty"`
+	Catalog   string          `json:"catalog,omitempty"`
+	SourceTag string          `json:"source_tag,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
 type deployPreviewSummary struct {
 	Available bool   `json:"available"`
 	Add       int    `json:"add"`
@@ -1176,7 +1190,7 @@ func (s *Server) publishJobEvent(job jobs.Job) {
 		Type:    events.TypeJobUpdated,
 		AppID:   strings.TrimSpace(job.Payload["app_id"]),
 		JobID:   job.ID,
-		Payload: events.MustPayload(job),
+		Payload: events.MustPayload(jobAPIResponse(job)),
 	})
 }
 
@@ -5100,7 +5114,55 @@ func conflictWinnerCandidates(plan deploy.Plan, targetPath string) map[int64]str
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.jobs.List())
+	writeJSON(w, http.StatusOK, jobAPIResponses(s.jobs.List()))
+}
+
+func jobAPIResponses(list []jobs.Job) []jobResponse {
+	out := make([]jobResponse, 0, len(list))
+	for _, job := range list {
+		out = append(out, jobAPIResponse(job))
+	}
+	return out
+}
+
+func jobAPIResponse(job jobs.Job) jobResponse {
+	payload := cloneJobPayload(job.Payload)
+	appID := strings.TrimSpace(payload["app_id"])
+	catalogID := jobCatalogID(job, payload)
+	return jobResponse{
+		ID:        job.ID,
+		Type:      job.Type,
+		Title:     job.Title,
+		Status:    job.Status,
+		Message:   job.Message,
+		Payload:   payload,
+		AppID:     appID,
+		Catalog:   catalogID,
+		SourceTag: catalogID,
+		CreatedAt: job.CreatedAt,
+		UpdatedAt: job.UpdatedAt,
+	}
+}
+
+func cloneJobPayload(payload jobs.JobPayload) jobs.JobPayload {
+	if len(payload) == 0 {
+		return nil
+	}
+	out := make(jobs.JobPayload, len(payload))
+	for key, value := range payload {
+		out[key] = value
+	}
+	return out
+}
+
+func jobCatalogID(job jobs.Job, payload jobs.JobPayload) string {
+	if job.Type == jobTypeSteamWorkshopAction {
+		return "steam_workshop"
+	}
+	if catalogID := normalizeCatalogID(payload["catalog"]); catalogID != "" {
+		return catalogID
+	}
+	return ""
 }
 
 func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -5140,7 +5202,7 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	snapshot := events.Event{
 		Type:      events.TypeJobsSnapshot,
-		Payload:   events.MustPayload(s.jobs.List()),
+		Payload:   events.MustPayload(jobAPIResponses(s.jobs.List())),
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := writeWebSocketEvent(ctx, conn, snapshot); err != nil {

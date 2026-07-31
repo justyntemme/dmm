@@ -93,6 +93,9 @@
     status: string;
     message: string;
     payload?: Record<string, string>;
+    app_id?: string;
+    catalog?: string;
+    source_tag?: string;
     created_at: string;
     updated_at: string;
   };
@@ -2556,6 +2559,8 @@
   }
 
   function actionSource(action: Job) {
+    if (action.source_tag) return action.source_tag;
+    if (action.catalog) return action.catalog;
     if (action.type === "steam-workshop-action") return "steam_workshop";
     return action.payload?.catalog;
   }

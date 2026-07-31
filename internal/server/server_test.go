@@ -1895,6 +1895,41 @@ func TestShouldLogRequestSkipsPollingButKeepsMutationsAndErrors(t *testing.T) {
 	}
 }
 
+func TestJobsExposeSourceTags(t *testing.T) {
+	srv := newTestServer(t)
+	captured := srv.jobs.CreateWithPayload("captured-install", "Captured Nexus mod", jobs.JobPayload{
+		"app_id":  "413150",
+		"catalog": "nexus",
+	})
+	workshop := srv.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, "Steam Workshop action", jobs.JobPayload{
+		"app_id": "233860",
+		"kind":   "order",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/jobs status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+
+	var body []jobResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode jobs response: %v", err)
+	}
+	byID := make(map[string]jobResponse, len(body))
+	for _, job := range body {
+		byID[job.ID] = job
+	}
+	if got := byID[captured.ID]; got.Catalog != "nexus" || got.SourceTag != "nexus" || got.AppID != "413150" {
+		t.Fatalf("captured job source fields = %+v", got)
+	}
+	if got := byID[workshop.ID]; got.Catalog != "steam_workshop" || got.SourceTag != "steam_workshop" || got.AppID != "233860" {
+		t.Fatalf("workshop job source fields = %+v", got)
+	}
+}
+
 func TestEventsWebSocketPublishesJobUpdates(t *testing.T) {
 	srv := newTestServer(t)
 	httpServer := httptest.NewServer(srv.Handler())

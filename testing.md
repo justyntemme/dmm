@@ -46,6 +46,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Confirm a Decky toast appears when DMM captures/downloads the archive.
 - Open phone/iPad Action Center:
   - The action should appear without manual refresh.
+  - The action should show a source tag such as `Nexus`, `Steam Workshop`, `Direct`, or `Local`.
   - If auto-install is enabled, the action may complete automatically.
   - If installer choices or manual install are needed, controls should disable immediately after tapping.
 - After install, open Stardew Valley in DMM:
@@ -115,6 +116,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 - Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, or `Native`.
 - Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
+- Confirm Action Center and Jobs rows also show source tags when the job belongs to a provider or Steam Workshop action.
 - In advanced load-order views, confirm native game plugins are tagged `Native` and DMM-managed plugin rows use the installed mod's source tag.
 - In the phone/iPad Mods view, filter by source and sort by source.
 - In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.

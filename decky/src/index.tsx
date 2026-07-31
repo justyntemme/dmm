@@ -133,6 +133,9 @@ type Job = {
   status: string;
   message?: string;
   payload?: Record<string, string>;
+  app_id?: string;
+  catalog?: string;
+  source_tag?: string;
   updated_at?: string;
 };
 
