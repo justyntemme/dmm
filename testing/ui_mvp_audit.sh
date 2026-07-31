@@ -45,6 +45,12 @@ require_text "$WEB_APP" "Steam Workshop" \
   "phone/tablet Mods view must show Steam Workshop platform mods when present"
 require_text "$WEB_APP" "source-pill" \
   "mod and action rows must carry visible source tags"
+require_text "$WEB_APP" "Archive upload" \
+  "source settings must show Local Archive as an active upload provider"
+require_text "$WEB_APP" "plugin.catalog ?? plugin.source" \
+  "load-order rows must display provider/native source tags"
+require_text "$WEB_APP" "source-native" \
+  "native plugin rows must have a visible source-pill style"
 require_text "$WEB_APP" "Advanced Profile Tools" \
   "file-level deployment controls must remain an advanced disclosure"
 require_text "$WEB_APP" "These Deck behavior switches are managed from the Decky sidebar settings." \
@@ -70,6 +76,10 @@ require_text "$DECKY_APP" "Auto-install captured downloads" \
   "Decky plugin must expose automatic captured-install behavior"
 require_text "$DECKY_APP" "Auto-enable installed mods" \
   "Decky plugin must expose automatic enable/deploy behavior"
+require_text "$DECKY_APP" "plugin.catalog || plugin.source" \
+  "Decky load-order rows must display provider/native source tags"
+require_text "$DECKY_APP" "native: { border" \
+  "Decky source-pill palette must include native plugin rows"
 reject_text "$DECKY_APP" "Open Nexus Mods" \
   "Decky Manage tab must not expose the removed global external Nexus opener"
 reject_text "$DECKY_APP" "Open Nexus Page" \
