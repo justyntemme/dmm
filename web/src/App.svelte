@@ -1673,10 +1673,10 @@
     const replaces = actions.filter((action) => action.operation === "replace").length;
     const removes = actions.filter((action) => action.operation === "remove").length;
     confirmation = {
-      title: "Apply enabled mods",
+      title: "Apply profile",
       message: `DMM will update ${selectedGame.name}'s game folder to match the enabled mods in the selected profile.`,
-      detail: `${adds} add, ${replaces} replace, ${removes} remove. Advanced file details remain available before or after applying.`,
-      confirmLabel: "Apply Enabled Mods",
+      detail: `${adds} add, ${replaces} update, ${removes} remove. Advanced file details remain available before or after applying.`,
+      confirmLabel: "Apply Profile",
       run: applyPendingProfileChanges
     };
   }
@@ -1749,10 +1749,10 @@
   function askPurgeDeployment() {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     confirmation = {
-      title: "Purge deployed files",
-      message: `DMM will remove the active deployment manifest from ${selectedGame.name}'s game folder.`,
+      title: "Remove DMM-applied files",
+      message: `DMM will remove only the files it applied to ${selectedGame.name}.`,
       detail: `${deploymentStatus.file_count} DMM-owned file${deploymentStatus.file_count === 1 ? "" : "s"} will be removed. Unmanaged files and parent game directories are left alone.`,
-      confirmLabel: "Purge Deployment",
+      confirmLabel: "Remove DMM Files",
       danger: true,
       run: purgeDeployment
     };
@@ -1763,7 +1763,7 @@
     confirmation = {
       title: "Reset managed mods",
       message: `DMM will remove its managed mods for ${selectedGame.name}.`,
-      detail: "This purges DMM-owned deployed files, removes installed mod rows, deletes staging folders, and clears pending installer work. Cached downloads are kept for recovery.",
+      detail: "This removes DMM-applied files, removes installed mod rows, deletes local installed mod files, and clears pending installer work. Cached downloads are kept for recovery.",
       confirmLabel: "Reset Managed Mods",
       danger: true,
       run: resetManagedMods
@@ -1800,8 +1800,8 @@
     if (!selectedGame || !deploymentStatus?.restore_available) return;
     confirmation = {
       title: "Restore last applied state",
-      message: `DMM will restore ${selectedGame.name}'s DMM-owned files to the active deployment manifest.`,
-      detail: deploymentStatus.restore_summary ?? "Only files recorded in DMM's active deployment manifest are touched. Unmanaged files are left alone.",
+      message: `DMM will restore ${selectedGame.name}'s DMM-owned files to the last applied state.`,
+      detail: deploymentStatus.restore_summary ?? "Only files recorded by DMM are touched. Unmanaged files are left alone.",
       confirmLabel: "Restore State",
       run: restoreDeployment
     };
@@ -2555,7 +2555,7 @@
               {#if hasDeployConflicts}
                 <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
               {:else if hasPendingProfileChanges}
-                <p class="deploy-message">Enabled-mod changes are ready. Toggling a mod applies them automatically; Advanced Deployment Tools can apply them now.</p>
+                <p class="deploy-message">Enabled-mod changes are ready. Toggling a mod applies them automatically; Advanced Profile Tools can apply them now.</p>
               {:else if deploymentStatus?.deployed}
                 <p class="deploy-message success">Enabled mods are applied to the game.</p>
               {:else if enabledMods.length === 0}
@@ -2721,7 +2721,7 @@
 
           <details class="deploy-preview">
             <summary>
-              <span>Advanced Deployment Tools</span>
+              <span>Advanced Profile Tools</span>
               <small>
                 {#if hasDeployConflicts}
                   Conflicts
@@ -2876,12 +2876,12 @@
                 </div>
               {/if}
               <div class="deploy-actions utility-actions">
-                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Enabled Mods</button>
-                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Files</button>
+                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Now</button>
+                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Managed Files</button>
                 <button type="button" class="secondary-action" on:click={askRestoreDeployment} disabled={!deploymentStatus?.restore_available}>Restore Last Applied State</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
                 <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
-                <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Purge Managed Files</button>
+                <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Remove DMM Files</button>
                 <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameActionItems.length === 0}>Reset Managed Mods</button>
               </div>
             </section>
