@@ -2196,6 +2196,7 @@
 
   function canCancelJob(job: Job) {
     if (job.type === "steam-workshop-action" && job.status === "failed") return true;
+    if (job.type === "captured-install" && job.status === "failed") return true;
     return !["completed", "failed", "canceled"].includes(job.status);
   }
 

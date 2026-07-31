@@ -2412,6 +2412,44 @@ func TestCancelCapturedInstallRemovesStoredRequest(t *testing.T) {
 	}
 }
 
+func TestCancelFailedCapturedInstallDismissesStoredRequest(t *testing.T) {
+	srv := newTestServer(t)
+
+	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
+	create.Header.Set("Content-Type", "application/json")
+	create.RemoteAddr = "127.0.0.1:1"
+	createRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(createRec, create)
+	if createRec.Code != http.StatusAccepted {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := srv.jobs.Fail(created.Job.ID, "unsupported archive format"); !ok {
+		t.Fatal("failed to mark captured install failed")
+	}
+
+	cancel := httptest.NewRequest(http.MethodPost, "/api/jobs/"+created.Job.ID+"/cancel", nil)
+	cancel.RemoteAddr = "127.0.0.1:1"
+	cancelRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(cancelRec, cancel)
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, body = %s", cancelRec.Code, cancelRec.Body.String())
+	}
+	if !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"status":"canceled"`)) {
+		t.Fatalf("expected canceled job, body = %s", cancelRec.Body.String())
+	}
+	if _, ok := srv.capturedInstalls[created.Job.ID]; ok {
+		t.Fatalf("failed captured install %s was not removed", created.Job.ID)
+	}
+}
+
 func TestInstallCapturedInstallWithoutDownloadLinks(t *testing.T) {
 	srv := newTestServer(t)
 

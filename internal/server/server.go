@@ -5244,7 +5244,7 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"job": job})
 		return
 	}
-	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction {
+	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction && job.Type != "captured-install" {
 		writeJSON(w, http.StatusOK, map[string]any{"job": job})
 		return
 	}
