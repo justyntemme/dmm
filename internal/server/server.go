@@ -271,6 +271,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
+	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
@@ -2391,6 +2392,124 @@ func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Reques
 		"checked": resp.Checked,
 	})
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	installedModID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("installedModID")), 10, 64)
+	if appID == "" || err != nil || installedModID <= 0 {
+		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.InstalledModForSteamApp(r.Context(), appID, installedModID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "installed mod was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if mod.Catalog != "nexus" {
+		http.Error(w, "updates are only available for Nexus mods", http.StatusBadRequest)
+		return
+	}
+	updates, err := s.db.ModUpdatesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	update, ok := updates[mod.ID]
+	if !ok {
+		http.Error(w, "check updates before installing an update", http.StatusConflict)
+		return
+	}
+	if update.Status != "available" || strings.TrimSpace(update.LatestFileID) == "" || update.LatestFileID == mod.SourceFileID {
+		http.Error(w, "no installable update is available for this mod", http.StatusConflict)
+		return
+	}
+	s.cfgMu.RLock()
+	apiKey := s.cfg.Nexus.APIKey
+	s.cfgMu.RUnlock()
+	if strings.TrimSpace(apiKey) == "" {
+		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
+		return
+	}
+
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		SourceURL:  nexusModFileWebURL(mod.SourceGameDomain, mod.SourceModID, update.LatestFileID),
+		GameDomain: mod.SourceGameDomain,
+		ModID:      mod.SourceModID,
+		FileID:     update.LatestFileID,
+	}
+	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		s.logger.Info("mod update duplicate captured install reused", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+		payload := map[string]any{
+			"job":      job,
+			"resolved": pending.Resolved,
+			"source":   pending.Source,
+		}
+		if len(pending.DownloadLinks) > 0 {
+			payload["download_links"] = pending.DownloadLinks
+		}
+		if pending.ArchiveFileName != "" {
+			payload["archive_file_name"] = pending.ArchiveFileName
+		}
+		writeJSON(w, http.StatusAccepted, payload)
+		return
+	}
+
+	payload := capturedInstallJobPayload(s.games, resolved)
+	payload["installed_mod_id"] = strconv.FormatInt(mod.ID, 10)
+	payload["update_from_file_id"] = mod.SourceFileID
+	payload["update_to_file_id"] = update.LatestFileID
+	job := s.jobs.CreateWithPayload("captured-install", "Update: "+mod.Name, payload)
+	response := map[string]any{
+		"job":      job,
+		"resolved": resolved,
+		"source":   "mod-update",
+		"update":   update,
+	}
+	client := s.nexus(apiKey)
+	links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, "", "")
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		response["job"] = job
+		if nexus.IsBrowserDownloadRequired(err) {
+			response["browser_required"] = true
+		}
+		s.logger.Warn("mod update download link resolve failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "error", err)
+		writeJSON(w, http.StatusAccepted, response)
+		return
+	}
+	archiveFileName := strings.TrimSpace(update.LatestFileName)
+	if archiveFileName == "" {
+		archiveFileName = s.nexusArchiveFileName(r.Context(), client, resolved)
+	}
+	if archiveFileName != "" {
+		response["archive_file_name"] = archiveFileName
+	}
+	response["download_links"] = links
+	job, _ = s.jobs.Wait(job.ID, "Update found; downloading "+mod.Name)
+	response["job"] = job
+	s.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved:        resolved,
+		DownloadLinks:   links,
+		Source:          "mod-update",
+		ArchiveFileName: archiveFileName,
+	})
+	started, err := s.startCapturedInstallDownload(job.ID, "mod update")
+	if err != nil {
+		s.logger.Warn("mod update download queue failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		response["job"] = job
+	} else {
+		response["job"] = started
+		response["download_started"] = true
+	}
+	s.logger.Info("mod update queued", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "from_file_id", mod.SourceFileID, "to_file_id", update.LatestFileID)
+	writeJSON(w, http.StatusAccepted, response)
 }
 
 func updateCheckResultForInstalledMod(mod storage.InstalledMod, files []nexus.ModFile, checkedAt string, checkErr error) gameModUpdateCheckResponse {
@@ -5775,6 +5894,20 @@ func (s *Server) appIDForPending(pending capturedInstall) string {
 
 func (s *Server) nexusDomainForSteamAppID(appID string) (string, bool) {
 	return s.games.NexusDomainForSteamAppID(strings.TrimSpace(appID))
+}
+
+func nexusModFileWebURL(gameDomain, modID, fileID string) string {
+	gameDomain = strings.Trim(strings.TrimSpace(gameDomain), "/")
+	modID = strings.Trim(strings.TrimSpace(modID), "/")
+	fileID = strings.Trim(strings.TrimSpace(fileID), "/")
+	if gameDomain == "" || modID == "" {
+		return ""
+	}
+	base := "https://www.nexusmods.com/" + gameDomain + "/mods/" + modID
+	if fileID == "" {
+		return base
+	}
+	return base + "?file_id=" + fileID
 }
 
 func modNameFromArchive(archivePath string, resolved catalog.ResolvedDownload) string {

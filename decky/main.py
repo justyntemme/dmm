@@ -587,6 +587,20 @@ class Plugin:
         self._log(f"mod reinstalled app_id={app_id} installed_mod_id={installed_mod_id}")
         return {"ok": True, "result": result}
 
+    async def update_game_mod(self, app_id, installed_mod_id):
+        app_id = str(app_id or "").strip()
+        installed_mod_id = str(installed_mod_id or "").strip()
+        if not app_id or not installed_mod_id:
+            return {"ok": False, "error": "app_id and installed_mod_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}/update", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to install mod update."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"mod update requested app_id={app_id} installed_mod_id={installed_mod_id} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def sync_workshop(self, app_id, items):
         app_id = str(app_id or "").strip()
         if not app_id:

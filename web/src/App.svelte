@@ -456,7 +456,7 @@
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
-  let busyMods: Record<number, "toggle" | "remove" | "reinstall"> = {};
+  let busyMods: Record<number, "toggle" | "remove" | "reinstall" | "update"> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
   let initialRefreshComplete = false;
@@ -476,7 +476,7 @@
   let eventReconnectDelay = 1000;
   let lastEventID = 0;
 
-  function setBusyMod(modID: number, action: "toggle" | "remove" | "reinstall") {
+  function setBusyMod(modID: number, action: "toggle" | "remove" | "reinstall" | "update") {
     busyMods = { ...busyMods, [modID]: action };
   }
 
@@ -1111,6 +1111,37 @@
         if (!installedMods.some((item) => item.id === result.mod?.id)) installedMods = [...installedMods, result.mod];
       }
       await refreshSelectedGame({ refreshPreview: true, refreshJobs: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearBusyMod(mod.id);
+    }
+  }
+
+  async function updateInstalledMod(mod: InstalledMod) {
+    if (!selectedGame || mod.update?.status !== "available") return;
+    error = "";
+    modUpdateMessage = "";
+    setBusyMod(mod.id, "update");
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        await refreshJobsAndSelectedGame();
+        return;
+      }
+      const result: { job?: Job; browser_required?: boolean } = await response.json();
+      if (result.job) {
+        upsertJob(result.job);
+        modUpdateMessage = result.job.message || result.job.title;
+        if (result.job.status === "failed") {
+          error = result.job.message || "Unable to install this update.";
+        }
+      }
+      if (result.browser_required && !error) {
+        error = "Nexus requires the Deck browser Mod Manager Download button for this update.";
+      }
+      await refreshJobsAndSelectedGame();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -2698,6 +2729,11 @@
                         <input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
                         <em>{busyMods[mod.id] === "toggle" ? "Saving" : mod.enabled ? "On" : "Off"}</em>
                       </label>
+                      {#if mod.update?.status === "available"}
+                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => updateInstalledMod(mod)}>
+                          {busyMods[mod.id] === "update" ? "Queueing..." : "Install Update"}
+                        </button>
+                      {/if}
                       <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
                         {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
                       </button>

@@ -803,6 +803,171 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	}
 }
 
+func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Nexus.APIKey = "secret"
+	srv.cfgMu.Unlock()
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "100",
+		},
+		Name:         "NPC Map Locations",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "npc-map.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "npc-map"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.UpsertModUpdate(context.Background(), storage.ModUpdate{
+		InstalledModID: mod.ID,
+		Status:         "available",
+		LatestFileID:   "101",
+		LatestFileName: "npc-map-2.zip",
+		LatestVersion:  "1.1.0",
+		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.nexus = func(apiKey string) nexusClient {
+		if apiKey != "secret" {
+			t.Fatalf("api key = %q", apiKey)
+		}
+		return fakeNexusClient{
+			links: []nexus.DownloadLink{{URI: "https://example.invalid/npc-map-2.zip", ShortName: "example"}},
+		}
+	}
+	status := srv.downloadGate.status()
+	for i := 0; i < status.Max; i++ {
+		if !srv.acquireCapturedDownloadSlot(context.Background(), fmt.Sprintf("test:%d", i)) {
+			t.Fatalf("failed to occupy download slot %d", i)
+		}
+	}
+	defer func() {
+		for i := 0; i < status.Max; i++ {
+			srv.releaseCapturedDownloadSlot(fmt.Sprintf("test:%d", i))
+		}
+	}()
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/games/413150/mods/%d/update", mod.ID), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cancel := srv.cancelActiveJob(body.Job.ID); cancel != nil {
+			cancel()
+		}
+	}()
+	if body.Job.Type != "captured-install" || body.Job.Status != jobs.StatusQueued {
+		t.Fatalf("job = %+v", body.Job)
+	}
+	if body.Job.Title != "Update: NPC Map Locations" {
+		t.Fatalf("job title = %q", body.Job.Title)
+	}
+	if body.Job.Payload["installed_mod_id"] != strconv.FormatInt(mod.ID, 10) || body.Job.Payload["update_to_file_id"] != "101" {
+		t.Fatalf("job payload = %+v", body.Job.Payload)
+	}
+	pending, ok := srv.capturedInstall(body.Job.ID)
+	if !ok {
+		t.Fatal("captured install was not remembered")
+	}
+	if pending.Source != "mod-update" || pending.Resolved.FileID != "101" || pending.ArchiveFileName != "npc-map-2.zip" {
+		t.Fatalf("pending = %+v", pending)
+	}
+}
+
+func TestUpdateGameModReportsBrowserRequiredWhenNexusRejectsDirectLinks(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Nexus.APIKey = "secret"
+	srv.cfgMu.Unlock()
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "100",
+		},
+		Name:         "NPC Map Locations",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "npc-map.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "npc-map"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.UpsertModUpdate(context.Background(), storage.ModUpdate{
+		InstalledModID: mod.ID,
+		Status:         "available",
+		LatestFileID:   "101",
+		LatestVersion:  "1.1.0",
+		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.nexus = func(string) nexusClient {
+		return fakeNexusClient{err: &nexus.BrowserDownloadRequiredError{GameDomain: "stardewvalley", ModID: "239", FileID: "101"}}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/games/413150/mods/%d/update", mod.ID), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job             jobs.Job `json:"job"`
+		BrowserRequired bool     `json:"browser_required"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Status != jobs.StatusFailed || !body.BrowserRequired {
+		t.Fatalf("body = %+v", body)
+	}
+	if !strings.Contains(body.Job.Message, "browser-generated") {
+		t.Fatalf("job message = %q", body.Job.Message)
+	}
+}
+
 func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	srv := newTestServer(t)
 	status := srv.downloadGate.status()

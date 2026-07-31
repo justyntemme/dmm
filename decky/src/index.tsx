@@ -2626,6 +2626,37 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function updateDeckyMod(mod: ManagedMod) {
+    if (!selectedDeckyGameID || mod.update?.status !== "available") return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyModID(mod.id);
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean }; job?: Job }>("update_game_mod", selectedDeckyGameID, mod.id);
+      if (!result.ok) {
+        await logFrontendEvent("decky mod update failed", { app_id: selectedDeckyGameID, mod_id: mod.id, error: result.error || "" });
+        setError(result.error ?? "Unable to install update.");
+        return;
+      }
+      await loadDeckyGameState(selectedDeckyGameID);
+      const job = result.job ?? result.result?.job;
+      if (job) {
+        setModsResult(job.message || "Update queued.");
+        showJobToast(job);
+        if (job.status === "failed") setError(job.message || "Unable to install update.");
+      } else {
+        setModsResult("Update queued.");
+      }
+      if (result.result?.browser_required && !job?.message) {
+        setError("Nexus requires the Deck browser Mod Manager Download button for this update.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
   async function checkDeckyModUpdates() {
     if (!selectedDeckyGameID || modUpdateBusy) return;
     try {
@@ -3377,6 +3408,7 @@ function DeckyModManagerRoute() {
               <Focusable flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
                 {visibleDeckyMods.map((mod, index) => {
                   const focused = focusedModID === mod.id;
+                  const updateAvailable = mod.update?.status === "available";
                   return (
                     <Focusable
                       key={mod.id}
@@ -3397,11 +3429,12 @@ function DeckyModManagerRoute() {
                         if (modOrderMode) void moveDeckyModInProfile(mod, -1);
                         else void toggleDeckyMod(mod, !mod.enabled);
                       }}
-                      onSecondaryActionDescription={modOrderMode ? "Move Down" : "Reinstall"}
+                      onSecondaryActionDescription={modOrderMode ? "Move Down" : updateAvailable ? "Install Update" : "Reinstall"}
                       onSecondaryButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         if (modOrderMode) void moveDeckyModInProfile(mod, 1);
+                        else if (updateAvailable) void updateDeckyMod(mod);
                         else void reinstallDeckyMod(mod);
                       }}
                       onOptionsActionDescription={modOrderMode ? "Done Ordering" : "Remove"}
@@ -3411,11 +3444,12 @@ function DeckyModManagerRoute() {
                         if (modOrderMode) setModOrderMode(false);
                         else askRemoveDeckyMod(mod);
                       }}
-                      onMenuActionDescription={modOrderMode ? "Done Ordering" : "Remove"}
+                      onMenuActionDescription={modOrderMode ? "Done Ordering" : updateAvailable ? "Reinstall" : "Remove"}
                       onMenuButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         if (modOrderMode) setModOrderMode(false);
+                        else if (updateAvailable) void reinstallDeckyMod(mod);
                         else askRemoveDeckyMod(mod);
                       }}
                       onGamepadFocus={() => {
@@ -3462,7 +3496,7 @@ function DeckyModManagerRoute() {
                         {deckyModUpdateLabel(mod.update)} · {deckyModUpdateDetail(mod.update)}
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                        {modOrderMode ? "A Move Up · Y Move Down · Options Done" : `A ${mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove`}
+                        {modOrderMode ? "A Move Up · Y Move Down · Options Done" : updateAvailable ? `A ${mod.enabled ? "Disable" : "Enable"} · Y Update · Options Remove · Menu Reinstall` : `A ${mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove`}
                       </div>
                     </Focusable>
                   );
