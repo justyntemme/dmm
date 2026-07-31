@@ -1961,6 +1961,29 @@ LIMIT ?
 	return out, rows.Err()
 }
 
+func (db *DB) LatestDeploymentSummaryForSteamApp(ctx context.Context, appID string) (DeploymentSummary, bool, error) {
+	var item DeploymentSummary
+	err := db.conn.QueryRowContext(ctx, `
+SELECT d.id, p.id, p.name, d.status, d.strategy, COUNT(df.id), d.created_at, d.updated_at
+FROM deployments d
+JOIN games g ON g.id = d.game_id
+JOIN profiles p ON p.id = d.profile_id
+LEFT JOIN deployed_files df ON df.deployment_id = d.id
+WHERE g.steam_app_id = ?
+  AND d.status = 'deployed'
+GROUP BY d.id, p.id, p.name, d.status, d.strategy, d.created_at, d.updated_at
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT 1
+`, appID).Scan(&item.ID, &item.ProfileID, &item.ProfileName, &item.Status, &item.Strategy, &item.FileCount, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DeploymentSummary{}, false, nil
+	}
+	if err != nil {
+		return DeploymentSummary{}, false, err
+	}
+	return item, true, nil
+}
+
 func (db *DB) MarkLatestDeploymentPurged(ctx context.Context, appID string) error {
 	_, err := db.conn.ExecContext(ctx, `
 UPDATE deployments

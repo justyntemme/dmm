@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -5059,12 +5060,20 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
-		SourcePath:     filepath.Join(srv.cfg.DataDir, "staging", "LookupAnything", "manifest.json"),
-		TargetPath:     filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json"),
-		Strategy:       deploy.StrategySymlink,
-		ChecksumSHA256: "test",
-	}}); err != nil {
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{
+		{
+			SourcePath:     filepath.Join(srv.cfg.DataDir, "staging", "LookupAnything", "manifest.json"),
+			TargetPath:     filepath.Join(gamePath, "Mods", "LookupAnything", "manifest.json"),
+			Strategy:       deploy.StrategySymlink,
+			ChecksumSHA256: "test",
+		},
+		{
+			SourcePath:     filepath.Join(srv.cfg.DataDir, "staging", "SMAPI", "StardewModdingAPI"),
+			TargetPath:     filepath.Join(gamePath, "StardewModdingAPI"),
+			Strategy:       deploy.StrategyCopy,
+			ChecksumSHA256: "runtime",
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -5090,13 +5099,15 @@ func TestDeployStatusReportsLatestActiveManifest(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Deployed || body.FileCount != 1 || body.Strategy != string(deploy.StrategySymlink) {
+	if !body.Deployed || body.FileCount != 2 || body.Strategy != string(deploy.StrategySymlink) {
 		t.Fatalf("deployment status = %+v", body)
 	}
 	if !body.ApplyRollbackOnFailure || !body.RepairAvailable || !body.RestoreAvailable || !body.PurgeAvailable || body.RecoverySummary == "" || body.RestoreSummary == "" {
 		t.Fatalf("recovery status = %+v", body)
 	}
-	if len(body.SampleFiles) != 1 || !strings.Contains(body.SampleFiles[0], "LookupAnything") {
+	if len(body.SampleFiles) != 2 || !slices.ContainsFunc(body.SampleFiles, func(path string) bool {
+		return strings.Contains(path, "LookupAnything")
+	}) {
 		t.Fatalf("sample files = %+v", body.SampleFiles)
 	}
 

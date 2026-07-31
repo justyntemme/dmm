@@ -633,12 +633,19 @@ func (s *Server) deploymentStatus(ctx context.Context, appID string) (deployment
 	if err != nil {
 		return deploymentStatusResponse{}, err
 	}
+	summary, hasSummary, err := s.db.LatestDeploymentSummaryForSteamApp(ctx, appID)
+	if err != nil {
+		return deploymentStatusResponse{}, err
+	}
 	status := deploymentStatusResponse{
 		Deployed:               len(files) > 0,
 		FileCount:              len(files),
 		ApplyRollbackOnFailure: true,
 	}
 	if status.Deployed {
+		if hasSummary {
+			status.Strategy = summary.Strategy
+		}
 		status.RepairAvailable = true
 		status.RestoreAvailable = true
 		status.PurgeAvailable = true
@@ -648,9 +655,6 @@ func (s *Server) deploymentStatus(ctx context.Context, appID string) (deployment
 		status.RecoverySummary = "No active DMM-owned deployment is recorded. Failed applies still roll back automatically before the job is reported as failed."
 	}
 	for _, file := range files {
-		if status.Strategy == "" && file.Strategy != "" {
-			status.Strategy = string(file.Strategy)
-		}
 		if len(status.SampleFiles) < 3 {
 			status.SampleFiles = append(status.SampleFiles, filepath.ToSlash(file.TargetPath))
 		}

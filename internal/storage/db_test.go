@@ -1067,3 +1067,49 @@ func TestDeploymentHistoryForSteamApp(t *testing.T) {
 		t.Fatalf("older history item = %+v", history[1])
 	}
 }
+
+func TestLatestDeploymentSummaryForSteamAppReportsActiveManifest(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: "/staging/old.txt",
+		TargetPath: "/game/old.txt",
+		Strategy:   deploy.StrategyCopy,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MarkLatestDeploymentPurged(context.Background(), "413150"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{
+		{SourcePath: "/staging/a.txt", TargetPath: "/game/a.txt", Strategy: deploy.StrategySymlink},
+		{SourcePath: "/staging/runtime", TargetPath: "/game/runtime", Strategy: deploy.StrategyCopy},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, ok, err := db.LatestDeploymentSummaryForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("latest active deployment was not found")
+	}
+	if summary.Status != "deployed" || summary.Strategy != string(deploy.StrategySymlink) || summary.FileCount != 2 {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
