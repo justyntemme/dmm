@@ -26,6 +26,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/github"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/thunderstore"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
@@ -154,6 +155,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		catalogs: []catalog.RemoteModCatalog{
 			nexus.Resolver{},
 			thunderstore.Resolver{},
+			github.Resolver{},
 			direct.Resolver{},
 		},
 		games: gameRegistry,
