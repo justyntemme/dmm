@@ -111,6 +111,8 @@
     created_at: string;
   };
 
+  type ClientEventDetail = Record<string, string | number | boolean | null | undefined>;
+
   type DownloadLink = {
     name: string;
     short_name: string;
@@ -523,6 +525,11 @@
   let eventReconnectTimer: number | null = null;
   let eventReconnectDelay = 1000;
   let lastEventID = 0;
+  let actionStateRefreshReasons = new Set<string>();
+  let selectedGameRefreshReasons = new Set<string>();
+  let actionStateRefreshSequence = 0;
+  let selectedGameRefreshSequence = 0;
+  let fullRefreshSequence = 0;
 
   function setBusyMod(modID: number, action: "toggle" | "remove" | "reinstall" | "update") {
     busyMods = { ...busyMods, [modID]: action };
@@ -590,7 +597,7 @@
     return response.json();
   }
 
-  function logClientEvent(message: string, detail: Record<string, string | number | boolean | null | undefined> = {}) {
+  function logClientEvent(message: string, detail: ClientEventDetail = {}) {
     const body = JSON.stringify({ message, detail });
     fetch("/api/client-events", {
       method: "POST",
@@ -601,7 +608,38 @@
     });
   }
 
-  async function refresh() {
+  function compactLogValue(value: unknown, maxLength = 240) {
+    const text = String(value ?? "");
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}...`;
+  }
+
+  function eventDiagnosticDetail(event: DomainEvent): ClientEventDetail {
+    const detail: ClientEventDetail = {
+      event_id: event.id,
+      type: event.type,
+      app_id: event.app_id,
+      job_id: event.job_id,
+      selected_app_id: selectedGame?.app_id ?? "",
+      surface,
+      module: activeGameModule
+    };
+    if (isJob(event.payload)) {
+      detail.job_type = event.payload.type;
+      detail.job_status = event.payload.status;
+      detail.job_app_id = event.payload.app_id ?? event.payload.payload?.app_id;
+      detail.job_game_domain = event.payload.payload?.game_domain;
+    }
+    return detail;
+  }
+
+  function joinedRefreshReasons(reasons: Set<string>) {
+    return Array.from(reasons).filter(Boolean).slice(0, 8).join(",");
+  }
+
+  async function refresh(reason = "manual") {
+    const sequence = ++fullRefreshSequence;
+    logClientEvent("full refresh started", { sequence, reason, selected_app_id: selectedGame?.app_id ?? "", surface });
     error = "";
     try {
       const [nextStatus, nextGames, nextCatalogs] = await Promise.all([
@@ -616,21 +654,32 @@
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
       if (selectedGame) await loadGameState(selectedGame);
+      logClientEvent("full refresh completed", {
+        sequence,
+        reason,
+        games: nextGames.length,
+        catalogs: nextCatalogs.length,
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      logClientEvent("full refresh failed", { sequence, reason, error: compactLogValue(error) });
     } finally {
       loading = false;
       initialRefreshComplete = true;
     }
     try {
-      await refreshActionState();
+      await refreshActionState(`${reason}:action-state`);
       reconcileBusyState();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      logClientEvent("full refresh action state failed", { sequence, reason, error: compactLogValue(error) });
     }
   }
 
-  async function refreshActionState() {
+  async function refreshActionState(reason = "manual") {
+    const sequence = ++actionStateRefreshSequence;
+    logClientEvent("action state refresh started", { sequence, reason, selected_app_id: selectedGame?.app_id ?? "", surface });
     const [nextJobs, nextCandidates] = await Promise.all([
       getJSON<Job[]>("/api/jobs"),
       getJSON<InstallCandidate[]>("/api/install-candidates")
@@ -638,32 +687,51 @@
     jobs = nextJobs;
     globalInstallCandidates = nextCandidates;
     reconcileBusyState();
+    logClientEvent("action state refresh completed", {
+      sequence,
+      reason,
+      jobs: nextJobs.length,
+      actions: nextJobs.filter((job) => isActionJob(job) && !["completed", "canceled"].includes(job.status)).length,
+      candidates: nextCandidates.length,
+      selected_app_id: selectedGame?.app_id ?? ""
+    });
   }
 
-  async function refreshJobsAndSelectedGame() {
+  async function refreshJobsAndSelectedGame(reason = "mutation", refreshPreview = deployPlan !== null) {
     if (refreshJobsInFlight) {
       refreshJobsQueued = true;
+      logClientEvent("jobs selected-game refresh queued", { reason, selected_app_id: selectedGame?.app_id ?? "" });
       return;
     }
     refreshJobsInFlight = true;
+    logClientEvent("jobs selected-game refresh started", { reason, selected_app_id: selectedGame?.app_id ?? "", refresh_preview: refreshPreview });
     try {
-      await refreshActionState();
-      if (selectedGame) await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+      await refreshActionState(`${reason}:jobs`);
+      if (selectedGame) await refreshSelectedGame({ refreshPreview, reason });
       reconcileBusyState();
+      logClientEvent("jobs selected-game refresh completed", { reason, selected_app_id: selectedGame?.app_id ?? "" });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      logClientEvent("jobs selected-game refresh failed", { reason, selected_app_id: selectedGame?.app_id ?? "", error: compactLogValue(error) });
     } finally {
       refreshJobsInFlight = false;
       if (refreshJobsQueued) {
         refreshJobsQueued = false;
-        void refreshJobsAndSelectedGame();
+        void refreshJobsAndSelectedGame(`${reason}:queued`);
       }
     }
   }
 
-  function scheduleActionStateRefresh(refreshSelectedGame = false, refreshPreview = false) {
+  function scheduleActionStateRefresh(refreshSelectedGame = false, refreshPreview = false, reason = "event", event?: DomainEvent) {
+    actionStateRefreshReasons.add(reason);
     actionStateRefreshNeedsSelectedGame = actionStateRefreshNeedsSelectedGame || refreshSelectedGame;
     actionStateRefreshNeedsPreview = actionStateRefreshNeedsPreview || refreshPreview;
+    logClientEvent("action state refresh scheduled", {
+      ...(event ? eventDiagnosticDetail(event) : {}),
+      reason,
+      refresh_selected_game: actionStateRefreshNeedsSelectedGame,
+      refresh_preview: actionStateRefreshNeedsPreview
+    });
     if (actionStateRefreshTimer !== null) return;
     actionStateRefreshTimer = window.setTimeout(() => {
       actionStateRefreshTimer = null;
@@ -674,21 +742,39 @@
   async function flushActionStateRefresh() {
     if (actionStateRefreshInFlight) {
       actionStateRefreshQueued = true;
+      logClientEvent("action state refresh queued while running", {
+        reasons: joinedRefreshReasons(actionStateRefreshReasons),
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
       return;
     }
     actionStateRefreshInFlight = true;
     const shouldRefreshSelectedGame = actionStateRefreshNeedsSelectedGame;
     const shouldRefreshPreview = actionStateRefreshNeedsPreview;
+    const reasons = joinedRefreshReasons(actionStateRefreshReasons) || "event";
+    actionStateRefreshReasons.clear();
     actionStateRefreshNeedsSelectedGame = false;
     actionStateRefreshNeedsPreview = false;
+    logClientEvent("action state event refresh started", {
+      reasons,
+      refresh_selected_game: shouldRefreshSelectedGame,
+      refresh_preview: shouldRefreshPreview,
+      selected_app_id: selectedGame?.app_id ?? ""
+    });
     try {
-      await refreshActionState();
+      await refreshActionState(`event:${reasons}`);
       if (shouldRefreshSelectedGame && selectedGame) {
-        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview, reason: `event:${reasons}` });
       }
+      logClientEvent("action state event refresh completed", {
+        reasons,
+        refresh_selected_game: shouldRefreshSelectedGame,
+        refresh_preview: shouldRefreshPreview,
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      logClientEvent("action state event refresh failed", { error });
+      logClientEvent("action state event refresh failed", { reasons, selected_app_id: selectedGame?.app_id ?? "", error: compactLogValue(error) });
     } finally {
       actionStateRefreshInFlight = false;
       if (actionStateRefreshQueued) {
@@ -742,7 +828,7 @@
   }
 
   function logDomainEvent(event: DomainEvent) {
-    const detail: Record<string, string | number | boolean | null | undefined> = {
+    const detail: ClientEventDetail = {
       id: event.id,
       type: event.type,
       app_id: event.app_id,
@@ -751,7 +837,7 @@
     if (isJob(event.payload)) {
       detail.job_type = event.payload.type;
       detail.job_status = event.payload.status;
-      detail.job_message = event.payload.message;
+      detail.job_message = compactLogValue(event.payload.message);
     }
     logClientEvent("events received", detail);
   }
@@ -763,7 +849,7 @@
     logClientEvent("events reconnect scheduled", { delay_ms: delay, after_id: lastEventID });
     eventReconnectTimer = window.setTimeout(() => {
       eventReconnectTimer = null;
-      scheduleActionStateRefresh(true, deployPlan !== null);
+      scheduleActionStateRefresh(true, deployPlan !== null, "event-reconnect");
       connectEvents();
     }, delay);
   }
@@ -790,7 +876,7 @@
       if (Array.isArray(event.payload)) {
         jobs = event.payload as Job[];
         reconcileBusyState();
-        scheduleActionStateRefresh(Boolean(selectedGame), deployPlan !== null);
+        scheduleActionStateRefresh(Boolean(selectedGame), deployPlan !== null, "jobs.snapshot", event);
       }
       return;
     }
@@ -799,32 +885,44 @@
         upsertJob(event.payload);
         const matchesSelectedGame = Boolean(selectedGame && jobMatchesGame(event.payload, selectedGame));
         if (isActionJob(event.payload) || matchesSelectedGame) {
-          scheduleActionStateRefresh(matchesSelectedGame, matchesSelectedGame && (event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice"));
+          scheduleActionStateRefresh(
+            matchesSelectedGame,
+            matchesSelectedGame && (event.payload.status === "completed" || deployPlan !== null || event.payload.type === "installer-choice"),
+            "job.updated",
+            event
+          );
+        } else {
+          logClientEvent("events refresh skipped", { ...eventDiagnosticDetail(event), reason: "job did not match action center or selected game" });
         }
       }
       return;
     }
     if (event.type === "install.changed") {
-      scheduleActionStateRefresh(eventMatchesSelectedGame(event), eventMatchesSelectedGame(event));
+      const matchesSelectedGame = eventMatchesSelectedGame(event);
+      scheduleActionStateRefresh(matchesSelectedGame, matchesSelectedGame, "install.changed", event);
       return;
     }
     if (event.type === "launch.changed") {
       if (selectedGame && eventMatchesSelectedGame(event)) {
         if (isGameLaunchStatus(event.payload)) gameLaunchStatus = event.payload;
-        scheduleSelectedGameRefresh(false, true);
+        scheduleSelectedGameRefresh(false, true, "launch.changed", event);
+      } else {
+        logClientEvent("events refresh skipped", { ...eventDiagnosticDetail(event), reason: "launch event did not match selected game" });
       }
       return;
     }
     if (event.type === "game.changed") {
-      void refresh();
+      void refresh("game.changed");
       return;
     }
     if (event.type === "workshop.changed" && eventMatchesSelectedGame(event)) {
-      scheduleSelectedGameRefresh(false, true);
+      scheduleSelectedGameRefresh(false, true, "workshop.changed", event);
       return;
     }
     if (["profile_mods.changed", "deployment.changed", "mod_updates.changed"].includes(event.type) && eventMatchesSelectedGame(event)) {
-      scheduleSelectedGameRefresh(true, true);
+      scheduleSelectedGameRefresh(true, true, event.type, event);
+    } else if (["workshop.changed", "profile_mods.changed", "deployment.changed", "mod_updates.changed"].includes(event.type)) {
+      logClientEvent("events refresh skipped", { ...eventDiagnosticDetail(event), reason: "game event did not match selected game" });
     }
   }
 
@@ -848,25 +946,50 @@
     return Boolean(value && typeof value === "object");
   }
 
-  function scheduleSelectedGameRefresh(refreshPreview = false, refreshJobs = false) {
+  function scheduleSelectedGameRefresh(refreshPreview = false, refreshJobs = false, reason = "event", event?: DomainEvent) {
     if (!selectedGame || !initialRefreshComplete) return;
+    selectedGameRefreshReasons.add(reason);
     selectedGameRefreshNeedsPreview = selectedGameRefreshNeedsPreview || refreshPreview;
     selectedGameRefreshNeedsJobs = selectedGameRefreshNeedsJobs || refreshJobs;
+    logClientEvent("selected game refresh scheduled", {
+      ...(event ? eventDiagnosticDetail(event) : {}),
+      reason,
+      refresh_preview: selectedGameRefreshNeedsPreview,
+      refresh_jobs: selectedGameRefreshNeedsJobs,
+      selected_app_id: selectedGame.app_id
+    });
     if (selectedGameRefreshTimer !== null) return;
     selectedGameRefreshTimer = window.setTimeout(async () => {
       const shouldRefreshPreview = selectedGameRefreshNeedsPreview;
       const shouldRefreshJobs = selectedGameRefreshNeedsJobs;
+      const reasons = joinedRefreshReasons(selectedGameRefreshReasons) || "event";
+      const sequence = ++selectedGameRefreshSequence;
       selectedGameRefreshTimer = null;
       selectedGameRefreshNeedsPreview = false;
       selectedGameRefreshNeedsJobs = false;
+      selectedGameRefreshReasons.clear();
+      logClientEvent("selected game event refresh started", {
+        sequence,
+        reasons,
+        selected_app_id: selectedGame?.app_id ?? "",
+        refresh_preview: shouldRefreshPreview,
+        refresh_jobs: shouldRefreshJobs
+      });
       try {
         if (shouldRefreshJobs) {
-          jobs = await getJSON<Job[]>("/api/jobs");
+          await refreshActionState(`selected-game:${reasons}:jobs`);
         }
-        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview });
+        await refreshSelectedGame({ refreshPreview: shouldRefreshPreview, reason: `event:${reasons}` });
+        logClientEvent("selected game event refresh completed", {
+          sequence,
+          reasons,
+          selected_app_id: selectedGame?.app_id ?? "",
+          refresh_preview: shouldRefreshPreview,
+          refresh_jobs: shouldRefreshJobs
+        });
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
-        logClientEvent("selected game event refresh failed", { error });
+        logClientEvent("selected game event refresh failed", { sequence, reasons, selected_app_id: selectedGame?.app_id ?? "", error: compactLogValue(error) });
       } finally {
         reconcileBusyState();
       }
@@ -1006,11 +1129,30 @@
     reconcileBusyState();
   }
 
-  async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean } = {}) {
+  async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean; reason?: string } = {}) {
     if (!selectedGame) return;
-    if (options.refreshJobs) await refreshActionState();
+    const sequence = ++selectedGameRefreshSequence;
+    const appID = selectedGame.app_id;
+    const reason = options.reason ?? "manual";
+    logClientEvent("selected game refresh started", {
+      sequence,
+      reason,
+      selected_app_id: appID,
+      refresh_preview: Boolean(options.refreshPreview),
+      refresh_jobs: Boolean(options.refreshJobs)
+    });
+    if (options.refreshJobs) await refreshActionState(`${reason}:selected-game-jobs`);
     await loadGameState(selectedGame);
     if (options.refreshPreview) await previewDeploy();
+    logClientEvent("selected game refresh completed", {
+      sequence,
+      reason,
+      selected_app_id: selectedGame?.app_id ?? appID,
+      mods: installedMods.length,
+      candidates: installCandidates.length,
+      workshop_items: workshopItems.length,
+      preview_actions: deployableActions.length
+    });
   }
 
   async function updateDeploymentStrategy(strategy: string) {
@@ -1224,7 +1366,7 @@
       const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
-        await refreshJobsAndSelectedGame();
+        await refreshJobsAndSelectedGame("mod-update-error");
         return;
       }
       const result: { job?: Job; browser_required?: boolean; file_url?: string; resolved?: { source_url?: string } } = await response.json();
@@ -1240,7 +1382,7 @@
         modUpdateMessage = "Open the provider file page and use its Mod Manager Download flow for this update.";
         if (!modUpdateBrowserURL) error = modUpdateMessage;
       }
-      await refreshJobsAndSelectedGame();
+      await refreshJobsAndSelectedGame("mod-update");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1357,7 +1499,7 @@
       localArchiveMessage = result.install_started ? "Upload received; installing archive." : "Upload received; install it from Action Center.";
       localArchiveFile = null;
       if (localArchiveInput) localArchiveInput.value = "";
-      await refreshJobsAndSelectedGame();
+      await refreshJobsAndSelectedGame("local-archive");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1509,7 +1651,7 @@
       const result = await response.json();
       if (result.job) upsertJob(result.job);
       resolvedCapture = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
-      await refreshJobsAndSelectedGame();
+      await refreshJobsAndSelectedGame("nexus-search-file");
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1725,14 +1867,15 @@
         return;
       }
       const result = await response.json();
-      upsertJob(result.job);
+      if (result.job) upsertJob(result.job);
       if (result.mod) {
         installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
       }
       installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
+      globalInstallCandidates = globalInstallCandidates.filter((item) => item.id !== candidate.id);
       candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
       candidateStepIndices = Object.fromEntries(Object.entries(candidateStepIndices).filter(([id]) => Number(id) !== candidate.id));
-      await refreshSelectedGame({ refreshPreview: true });
+      await refreshJobsAndSelectedGame("installer-choice-apply", true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1755,8 +1898,9 @@
       if (result.mod) {
         installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
         installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
+        globalInstallCandidates = globalInstallCandidates.filter((item) => item.id !== candidate.id);
       }
-      await refreshSelectedGame({ refreshPreview: true });
+      await refreshJobsAndSelectedGame("installer-choice-retry", true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1773,12 +1917,12 @@
       const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
-        await refreshJobsAndSelectedGame();
+        await refreshJobsAndSelectedGame("job-cancel-error");
         return;
       }
       const result = await response.json();
-      upsertJob(result.job);
-      await refreshJobsAndSelectedGame();
+      if (result.job) upsertJob(result.job);
+      await refreshJobsAndSelectedGame("job-cancel");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1795,13 +1939,12 @@
       const response = await fetch(`/api/captured-installs/${action.id}/install`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
-        await refreshJobsAndSelectedGame();
+        await refreshJobsAndSelectedGame("captured-install-confirm-error", true);
         return;
       }
       const result = await response.json();
-      upsertJob(result.job);
-      await refreshJobsAndSelectedGame();
-      if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+      if (result.job) upsertJob(result.job);
+      await refreshJobsAndSelectedGame("captured-install-confirm", true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1818,13 +1961,12 @@
       const response = await fetch(`/api/captured-installs/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
-        await refreshJobsAndSelectedGame();
+        await refreshJobsAndSelectedGame("captured-install-retry-error", true);
         return;
       }
       const result = await response.json();
-      upsertJob(result.job);
-      await refreshJobsAndSelectedGame();
-      if (selectedGame) await refreshSelectedGame({ refreshPreview: true });
+      if (result.job) upsertJob(result.job);
+      await refreshJobsAndSelectedGame("captured-install-retry", true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1841,12 +1983,12 @@
       const response = await fetch(`/api/workshop/actions/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
-        await refreshJobsAndSelectedGame();
+        await refreshJobsAndSelectedGame("workshop-action-retry-error");
         return;
       }
       const result = await response.json();
-      upsertJob(result.job);
-      await refreshJobsAndSelectedGame();
+      if (result.job) upsertJob(result.job);
+      await refreshJobsAndSelectedGame("workshop-action-retry");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -2113,7 +2255,7 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
-      await refreshJobsAndSelectedGame();
+      await refreshJobsAndSelectedGame("workshop-action");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -2143,7 +2285,7 @@
       const result = await response.json();
       if (result.job) upsertJob(result.job);
       workshopItems = nextItems.map((item, position) => ({ ...item, position }));
-      await refreshJobsAndSelectedGame();
+      await refreshJobsAndSelectedGame("workshop-order");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
