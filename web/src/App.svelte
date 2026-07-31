@@ -2967,10 +2967,10 @@
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label="Open Action Center for this game">
+                <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label={`Open Action Center for this game; ${selectedGameActionCount} open`}>
                   <strong>{selectedGameActionCount}</strong>
-                  <span>Action Center</span>
-                  <em>{selectedGameActionCount === 0 ? "Review" : "Open"}</em>
+                  <span>{selectedGameActionCount === 1 ? "Action" : "Actions"}</span>
+                  <em>Open</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
