@@ -31,16 +31,20 @@ reject_text() {
 
 section "MVP UI product audit"
 
-require_text "$WEB_APP" "type SettingsPage = \"overview\" | \"jobs\" | \"install\" | \"nexus\";" \
-  "mobile settings pages must keep install settings separate from server settings"
+require_text "$WEB_APP" "type SettingsPage = \"overview\" | \"jobs\" | \"install\" | \"sources\" | \"nexus\";" \
+  "mobile settings pages must keep install/provider settings separate from server settings"
 require_text "$WEB_APP" "Selected Profile" \
   "game Plugins view must lead with selected profile state"
 require_text "$WEB_APP" "Installed, disabled in this profile" \
   "game Mods view must include profile-scoped mod state"
-require_text "$WEB_APP" "Add From Nexus" \
-  "Nexus import must live inside the selected game workspace"
+require_text "$WEB_APP" "Add Mod" \
+  "generic mod import must live inside the selected game workspace"
 require_text "$WEB_APP" "Browse Nexus" \
   "phone/tablet UI must expose game-scoped Nexus browsing"
+require_text "$WEB_APP" "Steam Workshop" \
+  "phone/tablet Mods view must show Steam Workshop platform mods when present"
+require_text "$WEB_APP" "source-pill" \
+  "mod and action rows must carry visible source tags"
 require_text "$WEB_APP" "Advanced Profile Tools" \
   "file-level deployment controls must remain an advanced disclosure"
 require_text "$WEB_APP" "These Deck behavior switches are managed from the Decky sidebar settings." \
