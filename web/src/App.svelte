@@ -2523,7 +2523,7 @@
                 <textarea bind:value={captureURL} rows="4" aria-label="Nexus URL" placeholder="Nexus mod URL or nxm:// Mod Manager Download link"></textarea>
                 <button type="submit">Add Mod</button>
               </form>
-              <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Downloads that need unsupported installer logic will be kept as blocked install candidates.</p>
+              <p class="hint">Use a Nexus mod page URL or a Mod Manager Download nxm:// link. Mods that need choices or review will appear in Action Center.</p>
               {#if selectedNexusDomain()}
                 <details class="nexus-browser">
                   <summary>
