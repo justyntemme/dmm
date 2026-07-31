@@ -54,7 +54,7 @@ request "Status" "${BASE_URL}/api/status"
 request "Games" "${BASE_URL}/api/games"
 request "Game Diagnostics (${APP_ID})" "${BASE_URL}/api/games/${APP_ID}/diagnostics"
 request "Jobs" "${BASE_URL}/api/jobs"
-request "Staged Mods (${APP_ID})" "${BASE_URL}/api/games/${APP_ID}/mods"
+request "Profile Mods (${APP_ID})" "${BASE_URL}/api/games/${APP_ID}/mods"
 request "Install Candidates (${APP_ID})" "${BASE_URL}/api/games/${APP_ID}/install-candidates"
 request "Deployment Status (${APP_ID})" "${BASE_URL}/api/games/${APP_ID}/deploy/status"
 
