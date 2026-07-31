@@ -342,7 +342,11 @@ type deploymentStatusResponse struct {
 
 type deploymentSettingsResponse struct {
 	AppID               string                         `json:"app_id"`
+	ProfileID           int64                          `json:"profile_id,omitempty"`
+	ProfileName         string                         `json:"profile_name,omitempty"`
 	Strategy            string                         `json:"strategy"`
+	ProfileStrategy     string                         `json:"profile_strategy"`
+	GameStrategy        string                         `json:"game_strategy"`
 	EffectiveStrategy   string                         `json:"effective_strategy"`
 	Source              string                         `json:"source"`
 	ExtensionDefault    string                         `json:"extension_default"`
@@ -516,7 +520,12 @@ func (s *Server) handleDeploySettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.deploymentSettings(game))
+	settings, err := s.deploymentSettings(r.Context(), game)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Request) {
@@ -540,27 +549,54 @@ func (s *Server) handleUpdateDeploySettings(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "strategy must be extension, symlink, hardlink, or copy", http.StatusBadRequest)
 		return
 	}
-	s.cfgMu.Lock()
-	if s.cfg.Deploy.GameStrategies == nil {
-		s.cfg.Deploy.GameStrategies = map[string]string{}
+	scope := strings.TrimSpace(strings.ToLower(req.Scope))
+	if scope == "" {
+		scope = "profile"
 	}
-	if strategy == "" {
-		delete(s.cfg.Deploy.GameStrategies, appID)
-	} else {
-		s.cfg.Deploy.GameStrategies[appID] = strategy
+	switch scope {
+	case "profile":
+		profile, err := s.profileForDeploymentSettings(r.Context(), appID, req.ProfileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if _, err := s.db.SetProfileDeploymentStrategy(r.Context(), profile.ID, strategy); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.logger.Info("profile deployment settings updated", "app_id", appID, "profile_id", profile.ID, "strategy", strategyOrExtension(strategy))
+	case "game":
+		s.cfgMu.Lock()
+		if s.cfg.Deploy.GameStrategies == nil {
+			s.cfg.Deploy.GameStrategies = map[string]string{}
+		}
+		if strategy == "" {
+			delete(s.cfg.Deploy.GameStrategies, appID)
+		} else {
+			s.cfg.Deploy.GameStrategies[appID] = strategy
+		}
+		cfg := s.cfg
+		s.cfgMu.Unlock()
+		if err := config.Save(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.logger.Info("game deployment settings updated", "app_id", appID, "strategy", strategyOrExtension(strategy))
+	default:
+		http.Error(w, "scope must be profile or game", http.StatusBadRequest)
+		return
 	}
-	cfg := s.cfg
-	s.cfgMu.Unlock()
-	if err := config.Save(cfg); err != nil {
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":   "settings",
+		"scope":    scope,
+		"strategy": strategyOrExtension(strategy),
+	})
+	settings, err := s.deploymentSettings(r.Context(), game)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.logger.Info("deployment settings updated", "app_id", appID, "strategy", strategyOrExtension(strategy))
-	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
-		"action":   "settings",
-		"strategy": strategyOrExtension(strategy),
-	})
-	writeJSON(w, http.StatusOK, s.deploymentSettings(game))
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (s *Server) handleDeployStatus(w http.ResponseWriter, r *http.Request) {
@@ -1170,7 +1206,9 @@ type updateFileConflictWinnerRequest struct {
 }
 
 type updateDeploySettingsRequest struct {
-	Strategy string `json:"strategy"`
+	Strategy  string `json:"strategy"`
+	ProfileID int64  `json:"profile_id"`
+	Scope     string `json:"scope"`
 }
 
 type profileModUpdateResponse struct {
@@ -5992,7 +6030,11 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
-	defaultStrategy := s.defaultDeploymentStrategy(appID)
+	profile, err := s.activeProfile(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	defaultStrategy := s.deploymentStrategyForProfile(appID, profile)
 
 	active, err := s.activeDeploymentMappings(ctx, game, mods)
 	if err != nil {
@@ -6013,11 +6055,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	} else {
 		mappings = append(mappings, hookResult.Mappings...)
 	}
-	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
-	if err != nil {
-		return deploy.Plan{}, err
-	}
-	conflictWinners, err := s.db.ConflictWinnersForProfile(ctx, profileID)
+	conflictWinners, err := s.db.ConflictWinnersForProfile(ctx, profile.ID)
 	if err != nil {
 		return deploy.Plan{}, err
 	}
@@ -6096,25 +6134,36 @@ func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
 	}
 }
 
-func (s *Server) deploymentSettings(game storage.Game) deploymentSettingsResponse {
+func (s *Server) deploymentSettings(ctx context.Context, game storage.Game) (deploymentSettingsResponse, error) {
 	appID := strings.TrimSpace(game.SteamAppID)
-	override, hasOverride := s.deploymentStrategyOverride(appID)
+	profile, err := s.profileForDeploymentSettings(ctx, appID, 0)
+	if err != nil {
+		return deploymentSettingsResponse{}, err
+	}
+	profileStrategy := strings.TrimSpace(profile.DeploymentStrategy)
+	gameStrategy, hasGameStrategy := s.deploymentStrategyOverride(appID)
 	extensionDefault, ok := s.games.DeploymentStrategyForSteamApp(appID)
 	if !ok || !isConcreteDeployStrategy(extensionDefault) {
 		extensionDefault = string(deploy.StrategySymlink)
 	}
 	effective := extensionDefault
 	source := "extension"
-	strategy := ""
-	if hasOverride {
-		effective = override
-		source = "override"
-		strategy = override
+	if hasGameStrategy {
+		effective = gameStrategy
+		source = "game"
+	}
+	if isConcreteDeployStrategy(profileStrategy) {
+		effective = profileStrategy
+		source = "profile"
 	}
 	capabilities, recommended, warnings := s.deploymentStrategyCapabilities(game, effective)
 	return deploymentSettingsResponse{
 		AppID:               appID,
-		Strategy:            strategyOrExtension(strategy),
+		ProfileID:           profile.ID,
+		ProfileName:         profile.Name,
+		Strategy:            strategyOrExtension(profileStrategy),
+		ProfileStrategy:     strategyOrExtension(profileStrategy),
+		GameStrategy:        strategyOrExtension(gameStrategy),
 		EffectiveStrategy:   effective,
 		Source:              source,
 		ExtensionDefault:    extensionDefault,
@@ -6122,7 +6171,37 @@ func (s *Server) deploymentSettings(game storage.Game) deploymentSettingsRespons
 		RecommendedStrategy: recommended,
 		StrategyWarnings:    warnings,
 		Capabilities:        capabilities,
+	}, nil
+}
+
+func (s *Server) profileForDeploymentSettings(ctx context.Context, appID string, profileID int64) (storage.Profile, error) {
+	if profileID > 0 {
+		profile, err := s.db.Profile(ctx, profileID)
+		if err != nil {
+			return storage.Profile{}, err
+		}
+		profileAppID, err := s.db.SteamAppIDForProfile(ctx, profile.ID)
+		if err != nil {
+			return storage.Profile{}, err
+		}
+		if profileAppID != strings.TrimSpace(appID) {
+			return storage.Profile{}, errors.New("profile does not belong to this game")
+		}
+		return profile, nil
 	}
+	profiles, err := s.db.ProfilesForSteamApp(ctx, appID)
+	if err != nil {
+		return storage.Profile{}, err
+	}
+	for _, profile := range profiles {
+		if profile.IsDefault {
+			return profile, nil
+		}
+	}
+	if len(profiles) > 0 {
+		return profiles[0], nil
+	}
+	return storage.Profile{}, errors.New("no profile is available for this game")
 }
 
 func (s *Server) deploymentStrategyOverride(appID string) (string, bool) {
@@ -6136,6 +6215,13 @@ func (s *Server) deploymentStrategyOverride(appID string) (string, bool) {
 		return "", false
 	}
 	return strategy, true
+}
+
+func (s *Server) deploymentStrategyForProfile(appID string, profile storage.Profile) deploy.Strategy {
+	if strategy := strings.TrimSpace(profile.DeploymentStrategy); isConcreteDeployStrategy(strategy) {
+		return deploy.Strategy(strategy)
+	}
+	return s.defaultDeploymentStrategy(appID)
 }
 
 func normalizedDeployStrategyRequest(value string) string {
@@ -6400,24 +6486,32 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 }
 
 func (s *Server) activeProfileID(ctx context.Context, appID string, mods []storage.InstalledMod) (int64, error) {
+	profile, err := s.activeProfile(ctx, appID, mods)
+	if err != nil {
+		return 0, err
+	}
+	return profile.ID, nil
+}
+
+func (s *Server) activeProfile(ctx context.Context, appID string, mods []storage.InstalledMod) (storage.Profile, error) {
 	for _, mod := range mods {
 		if mod.ProfileID > 0 {
-			return mod.ProfileID, nil
+			return s.db.Profile(ctx, mod.ProfileID)
 		}
 	}
 	profiles, err := s.db.ProfilesForSteamApp(ctx, appID)
 	if err != nil {
-		return 0, err
+		return storage.Profile{}, err
 	}
 	for _, profile := range profiles {
 		if profile.IsDefault {
-			return profile.ID, nil
+			return profile, nil
 		}
 	}
 	if len(profiles) > 0 {
-		return profiles[0].ID, nil
+		return profiles[0], nil
 	}
-	return 0, errors.New("no active profile is available")
+	return storage.Profile{}, errors.New("no active profile is available")
 }
 
 func protonLocalAppDataTargetRoot(game storage.Game, spec gameext.PluginActivationSpec) (string, error) {

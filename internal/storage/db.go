@@ -23,10 +23,11 @@ type DB struct {
 }
 
 type Profile struct {
-	ID        int64  `json:"id"`
-	GameID    int64  `json:"game_id"`
-	Name      string `json:"name"`
-	IsDefault bool   `json:"is_default"`
+	ID                 int64  `json:"id"`
+	GameID             int64  `json:"game_id"`
+	Name               string `json:"name"`
+	IsDefault          bool   `json:"is_default"`
+	DeploymentStrategy string `json:"deployment_strategy,omitempty"`
 }
 
 type Game struct {
@@ -199,6 +200,7 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "games", name: "state", definition: "TEXT NOT NULL DEFAULT 'clean_candidate'"},
 		{table: "games", name: "version", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "games", name: "steam_build_id", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "profiles", name: "deployment_strategy", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mods", name: "source_game_domain", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mods", name: "source_mod_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "mod_versions", name: "source_file_id", definition: "TEXT NOT NULL DEFAULT ''"},
@@ -738,7 +740,7 @@ WHERE steam_app_id = ?
 
 func (db *DB) ProfilesForSteamApp(ctx context.Context, appID string) ([]Profile, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT p.id, p.game_id, p.name, p.is_default
+SELECT p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
 FROM profiles p
 JOIN games g ON g.id = p.game_id
 WHERE g.steam_app_id = ?
@@ -753,13 +755,25 @@ ORDER BY p.is_default DESC, p.name ASC
 	for rows.Next() {
 		var profile Profile
 		var isDefault int
-		if err := rows.Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault); err != nil {
+		if err := rows.Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
 			return nil, err
 		}
 		profile.IsDefault = isDefault != 0
 		profiles = append(profiles, profile)
 	}
 	return profiles, rows.Err()
+}
+
+func (db *DB) Profile(ctx context.Context, profileID int64) (Profile, error) {
+	var profile Profile
+	var isDefault int
+	err := db.conn.QueryRowContext(ctx, `
+SELECT id, game_id, name, is_default, deployment_strategy
+FROM profiles
+WHERE id = ?
+`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy)
+	profile.IsDefault = isDefault != 0
+	return profile, err
 }
 
 func (db *DB) CreateProfileForSteamApp(ctx context.Context, appID, name string) (Profile, error) {
@@ -781,10 +795,10 @@ VALUES (?, ?, 0)
 	var profile Profile
 	var isDefault int
 	if err := db.conn.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default
+SELECT id, game_id, name, is_default, deployment_strategy
 FROM profiles
 WHERE game_id = ? AND name = ?
-`, gameID, name).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault); err != nil {
+`, gameID, name).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
 		return Profile{}, err
 	}
 	profile.IsDefault = isDefault != 0
@@ -812,14 +826,26 @@ func (db *DB) SetDefaultProfile(ctx context.Context, profileID int64) (Profile, 
 	var profile Profile
 	var isDefault int
 	if err := tx.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default
+SELECT id, game_id, name, is_default, deployment_strategy
 FROM profiles
 WHERE id = ?
-`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault); err != nil {
+`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
 		return Profile{}, err
 	}
 	profile.IsDefault = isDefault != 0
 	return profile, tx.Commit()
+}
+
+func (db *DB) SetProfileDeploymentStrategy(ctx context.Context, profileID int64, strategy string) (Profile, error) {
+	strategy = strings.TrimSpace(strings.ToLower(strategy))
+	if _, err := db.conn.ExecContext(ctx, `
+UPDATE profiles
+SET deployment_strategy = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`, strategy, profileID); err != nil {
+		return Profile{}, err
+	}
+	return db.Profile(ctx, profileID)
 }
 
 func (db *DB) SteamAppIDForProfile(ctx context.Context, profileID int64) (string, error) {

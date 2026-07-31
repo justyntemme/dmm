@@ -443,6 +443,46 @@ func TestCreateAndSetDefaultProfile(t *testing.T) {
 	}
 }
 
+func TestSetProfileDeploymentStrategy(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	updated, err := db.SetProfileDeploymentStrategy(context.Background(), profiles[0].ID, "copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DeploymentStrategy != "copy" {
+		t.Fatalf("updated profile = %+v", updated)
+	}
+	reset, err := db.SetProfileDeploymentStrategy(context.Background(), profiles[0].ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.DeploymentStrategy != "" {
+		t.Fatalf("reset profile = %+v", reset)
+	}
+}
+
 func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

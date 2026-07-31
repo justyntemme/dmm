@@ -1040,12 +1040,19 @@ func TestDeploySettingsOverrideAndReset(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("put status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if got := srv.defaultDeploymentStrategy("413150"); got != deploy.StrategyCopy {
-		t.Fatalf("defaultDeploymentStrategy = %s", got)
-	}
 	override := getSettings()
-	if override.Strategy != "copy" || override.EffectiveStrategy != "copy" || override.Source != "override" {
-		t.Fatalf("override settings = %+v", override)
+	if override.Strategy != "copy" || override.ProfileStrategy != "copy" || override.EffectiveStrategy != "copy" || override.Source != "profile" || override.ProfileID == 0 {
+		t.Fatalf("profile override settings = %+v", override)
+	}
+	if got := srv.defaultDeploymentStrategy("413150"); got == deploy.StrategyCopy {
+		t.Fatalf("profile override changed game default strategy: %s", got)
+	}
+	profilePlan, err := srv.buildGameDeployPlan(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profilePlan.Strategy != deploy.StrategyCopy {
+		t.Fatalf("profile plan strategy = %s", profilePlan.Strategy)
 	}
 
 	resetReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"strategy":"extension"}`))
@@ -1059,6 +1066,22 @@ func TestDeploySettingsOverrideAndReset(t *testing.T) {
 	reset := getSettings()
 	if reset.Strategy != "extension" || reset.Source != "extension" {
 		t.Fatalf("reset settings = %+v", reset)
+	}
+
+	gameReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"scope":"game","strategy":"copy"}`))
+	gameReq.Header.Set("Content-Type", "application/json")
+	gameReq.RemoteAddr = "127.0.0.1:1"
+	gameRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(gameRec, gameReq)
+	if gameRec.Code != http.StatusOK {
+		t.Fatalf("game override status = %d, body = %s", gameRec.Code, gameRec.Body.String())
+	}
+	if got := srv.defaultDeploymentStrategy("413150"); got != deploy.StrategyCopy {
+		t.Fatalf("game defaultDeploymentStrategy = %s", got)
+	}
+	gameOverride := getSettings()
+	if gameOverride.Strategy != "extension" || gameOverride.GameStrategy != "copy" || gameOverride.EffectiveStrategy != "copy" || gameOverride.Source != "game" {
+		t.Fatalf("game override settings = %+v", gameOverride)
 	}
 
 	invalidReq := httptest.NewRequest(http.MethodPut, "/api/games/413150/deploy/settings", bytes.NewBufferString(`{"strategy":"mirror"}`))

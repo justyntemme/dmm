@@ -65,6 +65,7 @@
     game_id: number;
     name: string;
     is_default: boolean;
+    deployment_strategy?: string;
   };
 
   type Job = {
@@ -282,7 +283,11 @@
 
   type DeploymentSettings = {
     app_id: string;
+    profile_id?: number;
+    profile_name?: string;
     strategy: string;
+    profile_strategy: string;
+    game_strategy: string;
     effective_strategy: string;
     source: string;
     extension_default: string;
@@ -939,7 +944,7 @@
     const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ strategy })
+      body: JSON.stringify({ strategy, profile_id: selectedProfile?.id, scope: "profile" })
     });
     if (!response.ok) {
       error = await response.text();
@@ -2738,15 +2743,20 @@
               <div>
                 <strong>Deployment Strategy</strong>
                 <small>
-                  Effective: {deploymentSettings?.effective_strategy ?? deployPlan?.strategy ?? "symlink"} ·
-                  Default: {deploymentSettings?.extension_default ?? "symlink"}
+                  Profile: {deploymentSettings?.profile_name ?? selectedProfile?.name ?? "Default"} ·
+                  Effective: {deploymentSettings?.effective_strategy ?? deployPlan?.strategy ?? "symlink"}
+                </small>
+                <small>
+                  Source: {deploymentSettings?.source ?? "extension"} ·
+                  Game default: {deploymentSettings?.game_strategy ?? "extension"} ·
+                  Extension: {deploymentSettings?.extension_default ?? "symlink"}
                 </small>
                 {#if deploymentSettings?.recommended_strategy}
                   <small>Recommended: {deploymentSettings.recommended_strategy}</small>
                 {/if}
               </div>
               <select aria-label="Deployment strategy" value={deploymentSettings?.strategy ?? "extension"} on:change={(event) => updateDeploymentStrategy(event.currentTarget.value)}>
-                <option value="extension">Extension Default</option>
+                <option value="extension">Inherit Default</option>
                 <option value="symlink">Symlink</option>
                 <option value="hardlink">Hardlink</option>
                 <option value="copy">Copy</option>
