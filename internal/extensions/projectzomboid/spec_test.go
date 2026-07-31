@@ -20,7 +20,7 @@ func TestExtensionRegistersWorkshopOnlyCapabilities(t *testing.T) {
 	if len(summary.NexusDomains) != 0 {
 		t.Fatalf("Project Zomboid should not declare unverified Nexus domains: %+v", summary.NexusDomains)
 	}
-	if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 4 {
+	if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 5 {
 		t.Fatalf("workshop capability = %+v", summary.Capabilities.SteamWorkshop)
 	}
 	if _, ok := registry.SteamWorkshopForSteamApp(projectzomboid.SteamAppID); !ok {

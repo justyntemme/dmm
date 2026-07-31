@@ -97,7 +97,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 - Open a game with installed Steam Workshop content.
 - Confirm DMM labels Workshop mods as Steam-managed/source-tagged.
-- Test enable/disable/unsubscribe/order only if the game is safe to modify during travel.
+- Move Workshop entries up/down only on a safe test game and confirm DMM queues a `Steam Workshop` order action instead of treating Workshop content like a downloaded archive.
+- Test enable/disable/unsubscribe only if the game is safe to modify during travel.
 - Confirm DMM still allows Nexus/DMM-managed mods for the same game when the extension declares coexistence safe.
 
 ## Source Tags

@@ -207,9 +207,9 @@ func validateSteamWorkshop(spec sdk.SteamWorkshopSpec) []error {
 			errs = append(errs, errors.New("steam workshop action "+id+" name is required"))
 		}
 		switch strings.TrimSpace(action.Kind) {
-		case sdk.SteamWorkshopActionSubscribe, sdk.SteamWorkshopActionUnsubscribe, sdk.SteamWorkshopActionEnable, sdk.SteamWorkshopActionDisable:
+		case sdk.SteamWorkshopActionSubscribe, sdk.SteamWorkshopActionUnsubscribe, sdk.SteamWorkshopActionEnable, sdk.SteamWorkshopActionDisable, sdk.SteamWorkshopActionOrder:
 		default:
-			errs = append(errs, errors.New("steam workshop action "+id+" kind must be subscribe, unsubscribe, enable, or disable"))
+			errs = append(errs, errors.New("steam workshop action "+id+" kind must be subscribe, unsubscribe, enable, disable, or order"))
 		}
 	}
 	return errs

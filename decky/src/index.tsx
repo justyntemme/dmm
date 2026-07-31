@@ -1335,8 +1335,18 @@ async function executeWorkshopAction(job: WorkshopActionJob) {
   const kind = String(job.payload?.kind ?? "").trim();
   const appid = Number.parseInt(appID, 10);
   const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
-  if (!Number.isFinite(appid) || !itemID || !steamApps) {
+  if (!Number.isFinite(appid) || !steamApps) {
     throw new Error("Steam Workshop API is unavailable in this Decky context.");
+  }
+  if (kind === "order") {
+    if (typeof steamApps.SetWorkshopItemsLoadOrder !== "function") throw new Error("Steam Workshop load-order API is unavailable.");
+    const itemIDs = workshopOrderIDsFromJob(job);
+    if (itemIDs.length === 0) throw new Error("Steam Workshop load order did not include any item IDs.");
+    await Promise.resolve(steamApps.SetWorkshopItemsLoadOrder(appid, itemIDs));
+    return;
+  }
+  if (!itemID) {
+    throw new Error("Steam Workshop action did not include an item ID.");
   }
   if (kind === "enable") {
     if (typeof steamApps.SetWorkshopItemsDisabledLocally !== "function") throw new Error("Steam Workshop enable API is unavailable.");
@@ -1362,6 +1372,18 @@ async function executeWorkshopAction(job: WorkshopActionJob) {
     return;
   }
   throw new Error(`Unsupported Steam Workshop action: ${kind}`);
+}
+
+function workshopOrderIDsFromJob(job: WorkshopActionJob): string[] {
+  const raw = String(job.payload?.item_ids_json ?? "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+  } catch (_err) {
+    return [];
+  }
 }
 
 async function syncWorkshopActions() {
@@ -2802,6 +2824,44 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function moveDeckyWorkshopItem(item: WorkshopItem, direction: -1 | 1) {
+    if (!selectedDeckyGameID || !deckyWorkshopSupported || busyWorkshopKey) return;
+    const ordered = [...deckyWorkshopItems].sort((a, b) => a.position - b.position || a.published_file_id.localeCompare(b.published_file_id));
+    const from = ordered.findIndex((entry) => entry.published_file_id === item.published_file_id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ordered.length) {
+      setModsResult(direction < 0 ? "This Workshop item is already first." : "This Workshop item is already last.");
+      return;
+    }
+    [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+    const itemIDs = ordered.map((entry) => entry.published_file_id);
+    try {
+      setError("");
+      setModsResult("");
+      setBusyWorkshopKey(`${item.published_file_id}:order`);
+      const result = await call<[string, string[]], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>(
+        "queue_workshop_order",
+        selectedDeckyGameID,
+        itemIDs
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Unable to queue Steam Workshop load order.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      const job = result.job ?? result.result?.job;
+      setDeckyWorkshopItems(ordered.map((entry, position) => ({ ...entry, position })));
+      setModsResult("Workshop load order queued through Steam.");
+      if (job) showJobToast(job);
+      await syncWorkshopActions();
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyWorkshopKey("");
+    }
+  }
+
   function askUnsubscribeWorkshopItem(item: WorkshopItem) {
     let modal: { Close: () => void } | null = null;
     const closeModal = () => modal?.Close();
@@ -3699,7 +3759,8 @@ function DeckyModManagerRoute() {
                   const toggleKind = disabled ? "enable" : "disable";
                   const toggleKey = `${item.published_file_id}:${toggleKind}`;
                   const unsubscribeKey = `${item.published_file_id}:unsubscribe`;
-                  const busy = busyWorkshopKey === toggleKey || busyWorkshopKey === unsubscribeKey;
+                  const orderKey = `${item.published_file_id}:order`;
+                  const busy = busyWorkshopKey === toggleKey || busyWorkshopKey === unsubscribeKey || busyWorkshopKey === orderKey;
                   const toggleSupported = deckyWorkshopSupported && item.disabled_known;
                   return (
                     <Focusable
@@ -3709,16 +3770,26 @@ function DeckyModManagerRoute() {
                       onActivate={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
+                        if (modOrderMode) void moveDeckyWorkshopItem(item, -1);
+                        else if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
                       }}
                       onClick={() => {
-                        if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
+                        if (modOrderMode) void moveDeckyWorkshopItem(item, -1);
+                        else if (toggleSupported) void queueDeckyWorkshopAction(item, toggleKind);
                       }}
-                      onSecondaryActionDescription="Unsubscribe"
+                      onSecondaryActionDescription={modOrderMode ? "Move Down" : "Unsubscribe"}
                       onSecondaryButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        askUnsubscribeWorkshopItem(item);
+                        if (modOrderMode) void moveDeckyWorkshopItem(item, 1);
+                        else askUnsubscribeWorkshopItem(item);
+                      }}
+                      onOptionsActionDescription={modOrderMode ? "Done Ordering" : "Unsubscribe"}
+                      onOptionsButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (modOrderMode) setModOrderMode(false);
+                        else askUnsubscribeWorkshopItem(item);
                       }}
                       style={{
                         ...deckyCompositeRowStyle(false, !disabled),
@@ -3750,7 +3821,9 @@ function DeckyModManagerRoute() {
                         </span>
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                        A {busyWorkshopKey === toggleKey ? "Queueing" : toggleSupported ? (disabled ? "Enable" : "Disable") : "Sync Needed"} · Y {busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}
+                        {modOrderMode
+                          ? `A Move Up · Y Move Down · Options Done`
+                          : `A ${busyWorkshopKey === toggleKey ? "Queueing" : toggleSupported ? (disabled ? "Enable" : "Disable") : "Sync Needed"} · Y ${busyWorkshopKey === unsubscribeKey ? "Queueing" : "Unsubscribe"}`}
                       </div>
                     </Focusable>
                   );

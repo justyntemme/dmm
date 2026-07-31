@@ -310,6 +310,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods/{modID}/files", s.handleGameNexusModFiles)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
+	mux.HandleFunc("PUT /api/games/{appID}/workshop/order", s.handleSetSteamWorkshopOrder)
 	mux.HandleFunc("POST /api/games/{appID}/workshop/items/{itemID}/actions/{kind}", s.handleQueueSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
@@ -505,6 +506,10 @@ type steamWorkshopActionSpecReply struct {
 
 type steamWorkshopSyncRequest struct {
 	Items []storage.SteamWorkshopItem `json:"items"`
+}
+
+type steamWorkshopOrderRequest struct {
+	ItemIDs []string `json:"item_ids"`
 }
 
 type steamWorkshopActionReport struct {
@@ -2119,12 +2124,61 @@ func (s *Server) handleSyncGameSteamWorkshop(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, state)
 }
 
+func (s *Server) handleSetSteamWorkshopOrder(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	action, ok := s.steamWorkshopActionForKind(appID, gameext.SteamWorkshopActionOrder)
+	if !ok {
+		http.Error(w, "this game extension does not support Steam Workshop action order", http.StatusConflict)
+		return
+	}
+	var req steamWorkshopOrderRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	itemIDs, err := cleanSteamWorkshopOrder(req.ItemIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	state, err := s.steamWorkshopState(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := validateSteamWorkshopOrder(state.Items, itemIDs); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if existing, ok := s.findActiveSteamWorkshopAction(appID, "", gameext.SteamWorkshopActionOrder); ok {
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": existing, "duplicate": true})
+		return
+	}
+	payload, err := steamWorkshopOrderPayload(appID, itemIDs, action)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	job := s.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, action.Name, payload)
+	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to apply Steam Workshop load order")
+	s.logger.Info("steam workshop load order queued", "job_id", job.ID, "app_id", appID, "items", len(itemIDs), "action_id", action.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "item_ids": itemIDs})
+}
+
 func (s *Server) handleQueueSteamWorkshopAction(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	itemID := strings.TrimSpace(r.PathValue("itemID"))
 	kind := strings.TrimSpace(r.PathValue("kind"))
 	if appID == "" || itemID == "" || kind == "" {
 		http.Error(w, "appID, itemID, and kind are required", http.StatusBadRequest)
+		return
+	}
+	if kind == gameext.SteamWorkshopActionOrder {
+		http.Error(w, "Steam Workshop load order must be set through /workshop/order", http.StatusBadRequest)
 		return
 	}
 	action, ok := s.steamWorkshopActionForKind(appID, kind)
@@ -2356,7 +2410,10 @@ func (s *Server) findActiveSteamWorkshopAction(appID, itemID, kind string) (jobs
 		if job.Type != jobTypeSteamWorkshopAction {
 			continue
 		}
-		if job.Payload["app_id"] != appID || job.Payload["item_id"] != itemID || job.Payload["kind"] != kind {
+		if job.Payload["app_id"] != appID || job.Payload["kind"] != kind {
+			continue
+		}
+		if kind != gameext.SteamWorkshopActionOrder && job.Payload["item_id"] != itemID {
 			continue
 		}
 		switch job.Status {
@@ -2365,6 +2422,67 @@ func (s *Server) findActiveSteamWorkshopAction(appID, itemID, kind string) (jobs
 		}
 	}
 	return jobs.Job{}, false
+}
+
+func steamWorkshopOrderPayload(appID string, itemIDs []string, action gameext.SteamWorkshopActionSpec) (jobs.JobPayload, error) {
+	raw, err := json.Marshal(itemIDs)
+	if err != nil {
+		return nil, err
+	}
+	return jobs.JobPayload{
+		"app_id":        strings.TrimSpace(appID),
+		"item_id":       "",
+		"action_id":     strings.TrimSpace(action.ID),
+		"action_name":   strings.TrimSpace(action.Name),
+		"kind":          strings.TrimSpace(action.Kind),
+		"item_ids_json": string(raw),
+		"item_count":    strconv.Itoa(len(itemIDs)),
+	}, nil
+}
+
+func cleanSteamWorkshopOrder(values []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		itemID := strings.TrimSpace(value)
+		if itemID == "" {
+			return nil, errors.New("workshop item ids cannot be empty")
+		}
+		if _, ok := seen[itemID]; ok {
+			return nil, errors.New("workshop item ids cannot contain duplicates")
+		}
+		seen[itemID] = struct{}{}
+		out = append(out, itemID)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("workshop item order is required")
+	}
+	return out, nil
+}
+
+func validateSteamWorkshopOrder(items []storage.SteamWorkshopItem, itemIDs []string) error {
+	if len(items) == 0 {
+		return errors.New("no Steam Workshop items are known for this game yet")
+	}
+	if len(items) != len(itemIDs) {
+		return errors.New("workshop load order must include every known Workshop item")
+	}
+	known := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		itemID := strings.TrimSpace(item.PublishedFileID)
+		if itemID != "" {
+			known[itemID] = struct{}{}
+		}
+	}
+	if len(known) != len(itemIDs) {
+		return errors.New("workshop load order must include every known Workshop item")
+	}
+	for _, itemID := range itemIDs {
+		if _, ok := known[itemID]; !ok {
+			return errors.New("workshop load order contains an unknown Workshop item")
+		}
+	}
+	return nil
 }
 
 func steamWorkshopActionPayload(appID, itemID string, action gameext.SteamWorkshopActionSpec) jobs.JobPayload {

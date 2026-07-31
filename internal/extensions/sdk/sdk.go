@@ -56,6 +56,7 @@ const (
 	SteamWorkshopActionUnsubscribe = "unsubscribe"
 	SteamWorkshopActionEnable      = "enable"
 	SteamWorkshopActionDisable     = "disable"
+	SteamWorkshopActionOrder       = "order"
 )
 
 type SteamWorkshopActionSpec struct {
@@ -95,6 +96,7 @@ func StandardSteamWorkshopActions() []SteamWorkshopActionSpec {
 		{ID: "steam-workshop-disable", Name: "Disable Workshop item", Kind: SteamWorkshopActionDisable},
 		{ID: "steam-workshop-subscribe", Name: "Subscribe Workshop item", Kind: SteamWorkshopActionSubscribe},
 		{ID: "steam-workshop-unsubscribe", Name: "Unsubscribe Workshop item", Kind: SteamWorkshopActionUnsubscribe},
+		{ID: "steam-workshop-order", Name: "Set Workshop load order", Kind: SteamWorkshopActionOrder},
 	}
 }
 

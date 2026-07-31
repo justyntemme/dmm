@@ -462,6 +462,26 @@ class Plugin:
         self._log(f"workshop action queued app_id={app_id} item_id={item_id} kind={kind} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
         return {"ok": True, "result": result, "job": job}
 
+    async def queue_workshop_order(self, app_id, item_ids):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not isinstance(item_ids, list):
+            return {"ok": False, "error": "item_ids must be a list."}
+        cleaned = [str(item_id or "").strip() for item_id in item_ids]
+        if not all(cleaned):
+            return {"ok": False, "error": "item_ids cannot include empty values."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"item_ids": cleaned}).encode("utf-8")
+        path = f"/api/games/{urllib.parse.quote(app_id)}/workshop/order"
+        result, error = self._backend_json_result("PUT", path, payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to queue Steam Workshop load order."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"workshop order queued app_id={app_id} items={len(cleaned)} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def game_install_candidates(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

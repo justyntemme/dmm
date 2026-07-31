@@ -651,6 +651,57 @@ func TestSteamWorkshopActionQueueSupportsDeclaredMutationKinds(t *testing.T) {
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "does not support Steam Workshop action delete") {
 		t.Fatalf("unsupported action status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+
+	orderReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/999/actions/order", nil)
+	orderReq.RemoteAddr = "127.0.0.1:1"
+	orderRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(orderRec, orderReq)
+	if orderRec.Code != http.StatusBadRequest || !strings.Contains(orderRec.Body.String(), "/workshop/order") {
+		t.Fatalf("item-scoped order status = %d, body = %s", orderRec.Code, orderRec.Body.String())
+	}
+}
+
+func TestSteamWorkshopOrderQueuesListScopedAction(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	syncReq := httptest.NewRequest(http.MethodPut, "/api/games/377160/workshop/sync", bytes.NewBufferString(`{"items":[{"published_file_id":"111","subscribed":true,"downloaded":true,"position":0},{"published_file_id":"222","subscribed":true,"downloaded":true,"position":1}]}`))
+	syncReq.Header.Set("Content-Type", "application/json")
+	syncReq.RemoteAddr = "127.0.0.1:1"
+	syncRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("sync status = %d, body = %s", syncRec.Code, syncRec.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/games/377160/workshop/order", bytes.NewBufferString(`{"item_ids":["222","111"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("order status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Job     jobs.Job `json:"job"`
+		ItemIDs []string `json:"item_ids"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Job.Type != jobTypeSteamWorkshopAction || body.Job.Payload["kind"] != "order" || body.Job.Payload["item_ids_json"] != `["222","111"]` {
+		t.Fatalf("order job = %+v", body.Job)
+	}
+	if !slices.Equal(body.ItemIDs, []string{"222", "111"}) {
+		t.Fatalf("item ids = %+v", body.ItemIDs)
+	}
 }
 
 func TestSteamWorkshopActionFailureCanRetryAndCancel(t *testing.T) {

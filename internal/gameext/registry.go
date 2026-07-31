@@ -57,6 +57,15 @@ type LoadOrderSpec = sdk.LoadOrderSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
+
+const (
+	SteamWorkshopActionSubscribe   = sdk.SteamWorkshopActionSubscribe
+	SteamWorkshopActionUnsubscribe = sdk.SteamWorkshopActionUnsubscribe
+	SteamWorkshopActionEnable      = sdk.SteamWorkshopActionEnable
+	SteamWorkshopActionDisable     = sdk.SteamWorkshopActionDisable
+	SteamWorkshopActionOrder       = sdk.SteamWorkshopActionOrder
+)
+
 type DeploymentMod = sdk.DeploymentMod
 
 type ExtensionSummary struct {

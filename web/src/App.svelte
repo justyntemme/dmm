@@ -480,6 +480,7 @@
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
+  let workshopOrderBusy = false;
   let busyMods: Record<number, "toggle" | "remove" | "reinstall" | "update"> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
@@ -2026,6 +2027,36 @@
     }
   }
 
+  async function moveWorkshopItem(index: number, direction: -1 | 1) {
+    if (!selectedGame || !workshopState?.supported || workshopOrderBusy) return;
+    const to = index + direction;
+    if (index < 0 || to < 0 || to >= workshopItems.length) return;
+    const nextItems = workshopItems.map((item) => ({ ...item }));
+    [nextItems[index], nextItems[to]] = [nextItems[to], nextItems[index]];
+    const itemIDs = nextItems.map((item) => item.published_file_id);
+    error = "";
+    workshopOrderBusy = true;
+    try {
+      const response = await fetch(`/api/games/${encodeURIComponent(selectedGame.app_id)}/workshop/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_ids: itemIDs })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
+      workshopItems = nextItems.map((item, position) => ({ ...item, position }));
+      await refreshJobsAndSelectedGame();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      workshopOrderBusy = false;
+    }
+  }
+
   function askUnsubscribeWorkshopItem(item: WorkshopItem) {
     confirmation = {
       title: "Unsubscribe Workshop Item",
@@ -3458,7 +3489,7 @@
                   <span>Sync</span>
                 </article>
               {/if}
-              {#each workshopItems as item}
+              {#each workshopItems as item, index}
                 {@const disabled = item.disabled_known && item.disabled_locally}
                 {@const toggleKind = disabled ? "enable" : "disable"}
                 {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
@@ -3473,6 +3504,12 @@
                   </div>
                   <div class="action-controls">
                     <span>{workshopItemStatus(item)}</span>
+                    <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === 0} on:click={() => moveWorkshopItem(index, -1)}>
+                      Up
+                    </button>
+                    <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === workshopItems.length - 1} on:click={() => moveWorkshopItem(index, 1)}>
+                      Down
+                    </button>
                     <button type="button" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
                       {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}
                     </button>

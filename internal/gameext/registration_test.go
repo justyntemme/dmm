@@ -247,7 +247,7 @@ func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
 		t.Fatalf("workshop-only extension should not invent Nexus domains: %+v", extension.NexusDomains)
 	}
 	workshop, ok := NewRegistry([]Extension{extension}).SteamWorkshopForSteamApp("108600")
-	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 4 {
+	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 5 {
 		t.Fatalf("workshop capability = %+v ok=%v", workshop, ok)
 	}
 }
@@ -342,7 +342,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"conflict ignore ignore pattern: absolute patterns are not allowed",
 		"conflict ignore ignore pattern: path traversal is not allowed",
 		"steam workshop action bad-workshop name is required",
-		"steam workshop action bad-workshop kind must be subscribe, unsubscribe, enable, or disable",
+		"steam workshop action bad-workshop kind must be subscribe, unsubscribe, enable, disable, or order",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)
