@@ -2454,6 +2454,11 @@
     return action.status;
   }
 
+  function actionSource(action: Job) {
+    if (action.type === "steam-workshop-action") return "steam_workshop";
+    return action.payload?.catalog;
+  }
+
   function installerPresetScopeLabel(preset: InstallerChoicePreset) {
     if (preset.reuse_scope === "exact_file") return "Exact file only";
     return "Manual review";
@@ -2626,7 +2631,10 @@
             {#each actionItems as action}
               <article class:failed-action={action.status === "failed"}>
                 <div>
-                  <strong>{action.title}</strong>
+                  <div class="mod-title-line">
+                    <strong>{action.title}</strong>
+                    <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
+                  </div>
 	                    {#if action.message}<p>{action.message}</p>{/if}
 	                    <p class="action-next-step">{actionNextStep(action)}</p>
 	                    <small>{new Date(action.updated_at).toLocaleString()}</small>
@@ -2667,7 +2675,10 @@
                 {@const candidateGame = gameForInstallCandidate(candidate)}
                 <article class:failed-action={candidate.status === "blocked"}>
                   <div>
-                    <strong>{candidate.name}</strong>
+                    <div class="mod-title-line">
+                      <strong>{candidate.name}</strong>
+                      <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                    </div>
                     <p>{candidate.reason}</p>
                     <small>{candidateGame?.name ?? `App ${candidate.steam_app_id}`} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
                   </div>
@@ -3290,7 +3301,10 @@
               {#each selectedGameActionItems as action}
                 <article class:failed-action={action.status === "failed"}>
                   <div>
-                    <strong>{action.title}</strong>
+                    <div class="mod-title-line">
+                      <strong>{action.title}</strong>
+                      <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
+                    </div>
                     {#if action.message}<p>{action.message}</p>{/if}
                     <p class="action-next-step">{actionNextStep(action)}</p>
                     <small>{new Date(action.updated_at).toLocaleString()}</small>
@@ -3330,7 +3344,10 @@
                   {@const selectedChoiceCount = selectionCount(candidateCurrentSelections(candidate))}
                   <article class="failed-action">
                     <div>
-                      <strong>{candidate.name}</strong>
+                      <div class="mod-title-line">
+                        <strong>{candidate.name}</strong>
+                        <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                      </div>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
                       {#if selectedChoiceCount > 0}
@@ -3395,7 +3412,10 @@
                 {#each installerChoicePresets as preset}
                   <article>
                     <div>
-                      <strong>{preset.installer_kind.toUpperCase()} choices</strong>
+                      <div class="mod-title-line">
+                        <strong>{preset.installer_kind.toUpperCase()} choices</strong>
+                        <span class={`source-pill ${sourceClass(preset.catalog)}`}>{sourceLabel(preset.catalog)}</span>
+                      </div>
                       <p>{preset.source_game_domain}/mods/{preset.source_mod_id}/files/{preset.source_file_id}</p>
                       <small>{installerPresetScopeLabel(preset)} · Updated {new Date(preset.updated_at).toLocaleString()}</small>
                     </div>

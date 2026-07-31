@@ -3638,6 +3638,7 @@ func installerChoiceJobPayload(appID string, candidate storage.InstallCandidate)
 		payload = jobs.JobPayload{}
 	}
 	payload["candidate_id"] = strconv.FormatInt(candidate.ID, 10)
+	payload["catalog"] = strings.TrimSpace(candidate.Catalog)
 	payload["game_domain"] = strings.TrimSpace(candidate.SourceGameDomain)
 	payload["mod_id"] = strings.TrimSpace(candidate.SourceModID)
 	payload["file_id"] = strings.TrimSpace(candidate.SourceFileID)
