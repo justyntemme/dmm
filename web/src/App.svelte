@@ -1209,7 +1209,7 @@
       }
       if (result.browser_required) {
         modUpdateBrowserURL = result.file_url ?? result.resolved?.source_url ?? "";
-        modUpdateMessage = "Nexus requires the browser Mod Manager Download button for this update.";
+        modUpdateMessage = "Open the provider file page and use its Mod Manager Download flow for this update.";
         if (!modUpdateBrowserURL) error = modUpdateMessage;
       }
       await refreshJobsAndSelectedGame();
@@ -1244,7 +1244,7 @@
     } as ModUpdate]));
     installedMods = installedMods.map((mod) => updates.has(mod.id) ? { ...mod, update: updates.get(mod.id) } : mod);
     const available = result.results.filter((item) => item.status === "available").length;
-    modUpdateMessage = available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${result.checked} Nexus mod${result.checked === 1 ? "" : "s"}.`;
+    modUpdateMessage = available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${result.checked} supported mod${result.checked === 1 ? "" : "s"}.`;
     modUpdateBusy = false;
     await refreshSelectedGame();
   }
@@ -3025,7 +3025,7 @@
               </div>
               {#if modUpdateMessage}<p class="hint">{modUpdateMessage}</p>{/if}
               {#if modUpdateBrowserURL}
-                <button type="button" class="secondary-action compact" on:click={() => window.open(modUpdateBrowserURL, "_blank", "noopener")}>Open Nexus File Page</button>
+                <button type="button" class="secondary-action compact" on:click={() => window.open(modUpdateBrowserURL, "_blank", "noopener")}>Open Provider File Page</button>
               {/if}
               <div class="mod-list-controls">
                 <label>
@@ -3369,7 +3369,7 @@
             <div class="empty-action-panel">
               <p class="hint">No install actions need attention for this game.</p>
               <div class="empty-action-buttons">
-                <button type="button" on:click={() => openGameModule("plugins")}>Add From Nexus</button>
+                <button type="button" on:click={() => openGameModule("plugins")}>Add Mod</button>
                 <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Manage Mods</button>
               </div>
             </div>
@@ -3632,7 +3632,7 @@
   {:else}
     <section class="empty-state select-game">
       <h2>Select a Game</h2>
-      <p class="hint">Open the games menu to choose a Steam game before importing Nexus mods or managing profiles.</p>
+      <p class="hint">Open the games menu to choose a Steam game before importing mods or managing profiles.</p>
       <button type="button" on:click={() => (drawer = "games")}>Open Games</button>
     </section>
   {/if}

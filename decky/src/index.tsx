@@ -844,7 +844,7 @@ function deckyModUpdateLabel(update?: ModUpdate) {
 }
 
 function deckyModUpdateDetail(update?: ModUpdate) {
-  if (!update) return "Use Check Updates to query Nexus.";
+  if (!update) return "Use Check Updates to query supported providers.";
   if (update.message) return update.message;
   if (update.status === "available") return `Latest ${update.latest_version || update.latest_file_id || "file"}`;
   if (update.status === "current") return "Installed file is current.";
@@ -2747,11 +2747,11 @@ function DeckyModManagerRoute() {
       }
       if (result.result?.browser_required) {
         const fileURL = result.result.file_url || result.result.resolved?.source_url || "";
-        setModsResult("Nexus requires the browser Mod Manager Download button for this update.");
+        setModsResult("Open the provider file page and use its Mod Manager Download flow for this update.");
         if (fileURL) {
           Navigation.NavigateToExternalWeb(fileURL);
         } else {
-          setError("Nexus requires the Deck browser Mod Manager Download button for this update.");
+          setError("Open the provider file page from a browser and use its Mod Manager Download flow for this update.");
         }
       }
     } catch (err) {
@@ -2787,7 +2787,7 @@ function DeckyModManagerRoute() {
       setDeckyMods((items) => items.map((mod) => updates.has(mod.id) ? { ...mod, update: updates.get(mod.id) } : mod));
       const available = (result.results ?? []).filter((item) => item.status === "available").length;
       const checked = result.checked ?? 0;
-      setModsResult(available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${checked} Nexus mod${checked === 1 ? "" : "s"}.`);
+      setModsResult(available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${checked} supported mod${checked === 1 ? "" : "s"}.`);
       await loadDeckyGameState(selectedDeckyGameID);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -2873,7 +2873,7 @@ function DeckyModManagerRoute() {
     modal = showModal(
       <ConfirmModal
         strTitle={`Unsubscribe ${workshopItemName(item)}`}
-        strDescription="Steam will remove this Workshop subscription for the selected game. DMM-managed Nexus mods are not changed."
+        strDescription="Steam will remove this Workshop subscription for the selected game. DMM-managed mods are not changed."
         strOKButtonText="Unsubscribe"
         strCancelButtonText="Cancel"
         onOK={() => {

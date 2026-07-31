@@ -84,7 +84,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - If an update exists, install it.
 - Confirm the old installed row is replaced rather than duplicated.
 - Confirm enabled/disabled state is preserved through the update.
-- If Nexus blocks direct update download, confirm DMM offers `Open Nexus File Page`.
+- If the provider blocks direct update download, confirm DMM offers `Open Provider File Page` or opens the provider file page from Decky.
 
 ## Rollback / Recovery
 
