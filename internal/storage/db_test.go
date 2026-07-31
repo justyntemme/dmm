@@ -128,11 +128,18 @@ CREATE TABLE captured_installs (
 		{"mod_versions", "metadata_json"},
 		{"downloads", "checksum_sha256"},
 		{"installed_mods", "checksum_manifest_json"},
+		{"install_candidates", "replace_installed_mod_id"},
+		{"install_candidates", "replace_staging_path"},
 		{"profile_mods", "priority"},
 		{"jobs", "payload_json"},
 		{"captured_installs", "download_links_json"},
 		{"captured_installs", "source"},
 		{"captured_installs", "archive_file_name"},
+		{"captured_installs", "archive_path"},
+		{"captured_installs", "archive_sha256"},
+		{"captured_installs", "archive_bytes"},
+		{"captured_installs", "replace_installed_mod_id"},
+		{"captured_installs", "replace_staging_path"},
 	} {
 		exists, err := db.hasColumn(context.Background(), item.table, item.column)
 		if err != nil {
@@ -856,6 +863,114 @@ func TestRecordInstalledModKeepsOneInstalledRowAfterRepeatedDownloads(t *testing
 	}
 }
 
+func TestRecordInstalledModReplacementPreservesProfileState(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	secondary, err := db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	disabled := false
+	oldMod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:           "Generic Mod Config Menu",
+		Version:        "145906",
+		ArchivePath:    "/downloads/gmcm-old.zip",
+		StagingPath:    "/staging/gmcm-old",
+		ManifestJSON:   "{}",
+		DefaultEnabled: &disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	defaultPriority := 3
+	if _, err := db.SetProfileModState(context.Background(), oldMod.ProfileID, oldMod.ID, &enabled, &defaultPriority); err != nil {
+		t.Fatal(err)
+	}
+	secondaryPriority := 9
+	if _, err := db.SetProfileModState(context.Background(), secondary.ID, oldMod.ID, &disabled, &secondaryPriority); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertModUpdate(context.Background(), ModUpdate{
+		InstalledModID: oldMod.ID,
+		Status:         "available",
+		LatestFileID:   "145907",
+		CheckedAt:      "2026-07-30T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	newMod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145907",
+		},
+		Name:                  "Generic Mod Config Menu",
+		Version:               "145907",
+		ArchivePath:           "/downloads/gmcm-new.zip",
+		StagingPath:           "/staging/gmcm-new",
+		ManifestJSON:          "{}",
+		DefaultEnabled:        &disabled,
+		ReplaceInstalledModID: oldMod.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.InstalledModForSteamApp(context.Background(), "413150", oldMod.ID); err != sql.ErrNoRows {
+		t.Fatalf("old mod lookup error = %v", err)
+	}
+
+	mods, err := db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if mods[0].ID != newMod.ID || mods[0].SourceFileID != "145907" || !mods[0].Enabled || mods[0].Priority != defaultPriority {
+		t.Fatalf("default profile mod = %+v", mods[0])
+	}
+	secondaryMods, err := db.InstalledModsForProfile(context.Background(), secondary.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondaryMods) != 1 || secondaryMods[0].ID != newMod.ID || secondaryMods[0].Enabled || secondaryMods[0].Priority != secondaryPriority {
+		t.Fatalf("secondary profile mods = %+v", secondaryMods)
+	}
+	updates, err := db.ModUpdatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updates) != 0 {
+		t.Fatalf("updates after replacement = %+v", updates)
+	}
+}
+
 func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {
@@ -881,11 +996,13 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 			ModID:      "2400",
 			FileID:     "160380",
 		},
-		Name:          "SMAPI installer",
-		ArchivePath:   "/downloads/smapi.zip",
-		Status:        "blocked",
-		Reason:        "archive requires an installer",
-		InstallerJSON: `{"name":"SMAPI installer"}`,
+		Name:                  "SMAPI installer",
+		ArchivePath:           "/downloads/smapi.zip",
+		Status:                "blocked",
+		Reason:                "archive requires an installer",
+		InstallerJSON:         `{"name":"SMAPI installer"}`,
+		ReplaceInstalledModID: 42,
+		ReplaceStagingPath:    "/staging/smapi-old",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -895,7 +1012,7 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" || candidates[0].InstallerJSON == "" {
+	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" || candidates[0].InstallerJSON == "" || candidates[0].ReplaceInstalledModID != 42 || candidates[0].ReplaceStagingPath != "/staging/smapi-old" {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 

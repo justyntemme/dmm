@@ -90,20 +90,22 @@ type FileConflictWinner struct {
 }
 
 type InstallCandidate struct {
-	ID               int64  `json:"id"`
-	GameID           int64  `json:"game_id"`
-	SteamAppID       string `json:"steam_app_id"`
-	Name             string `json:"name"`
-	Catalog          string `json:"catalog"`
-	SourceGameDomain string `json:"source_game_domain"`
-	SourceModID      string `json:"source_mod_id"`
-	SourceFileID     string `json:"source_file_id"`
-	ArchivePath      string `json:"archive_path"`
-	ChecksumSHA256   string `json:"checksum_sha256"`
-	Status           string `json:"status"`
-	Reason           string `json:"reason"`
-	InstallerJSON    string `json:"installer_json,omitempty"`
-	ChoicesJSON      string `json:"choices_json,omitempty"`
+	ID                    int64  `json:"id"`
+	GameID                int64  `json:"game_id"`
+	SteamAppID            string `json:"steam_app_id"`
+	Name                  string `json:"name"`
+	Catalog               string `json:"catalog"`
+	SourceGameDomain      string `json:"source_game_domain"`
+	SourceModID           string `json:"source_mod_id"`
+	SourceFileID          string `json:"source_file_id"`
+	ArchivePath           string `json:"archive_path"`
+	ChecksumSHA256        string `json:"checksum_sha256"`
+	Status                string `json:"status"`
+	Reason                string `json:"reason"`
+	InstallerJSON         string `json:"installer_json,omitempty"`
+	ChoicesJSON           string `json:"choices_json,omitempty"`
+	ReplaceInstalledModID int64  `json:"replace_installed_mod_id,omitempty"`
+	ReplaceStagingPath    string `json:"replace_staging_path,omitempty"`
 }
 
 type InstallerChoicePreset struct {
@@ -122,14 +124,16 @@ type InstallerChoicePreset struct {
 }
 
 type CapturedInstall struct {
-	JobID           string                   `json:"job_id"`
-	Resolved        catalog.ResolvedDownload `json:"resolved"`
-	DownloadLinks   []nexus.DownloadLink     `json:"download_links"`
-	Source          string                   `json:"source"`
-	ArchiveFileName string                   `json:"archive_file_name"`
-	ArchivePath     string                   `json:"archive_path"`
-	ArchiveSHA256   string                   `json:"archive_sha256"`
-	ArchiveBytes    int64                    `json:"archive_bytes"`
+	JobID                 string                   `json:"job_id"`
+	Resolved              catalog.ResolvedDownload `json:"resolved"`
+	DownloadLinks         []nexus.DownloadLink     `json:"download_links"`
+	Source                string                   `json:"source"`
+	ArchiveFileName       string                   `json:"archive_file_name"`
+	ArchivePath           string                   `json:"archive_path"`
+	ArchiveSHA256         string                   `json:"archive_sha256"`
+	ArchiveBytes          int64                    `json:"archive_bytes"`
+	ReplaceInstalledModID int64                    `json:"replace_installed_mod_id"`
+	ReplaceStagingPath    string                   `json:"replace_staging_path"`
 }
 
 type ExtensionSnapshot struct {
@@ -209,6 +213,8 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "installed_mods", name: "checksum_manifest_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "install_candidates", name: "installer_json", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "install_candidates", name: "choices_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
+		{table: "install_candidates", name: "replace_installed_mod_id", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "install_candidates", name: "replace_staging_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "deployed_files", name: "restore_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "deployed_files", name: "restore_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
@@ -219,6 +225,8 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "captured_installs", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "captured_installs", name: "replace_installed_mod_id", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "captured_installs", name: "replace_staging_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "extension_snapshots", name: "version", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "extension_snapshots", name: "build_id", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
@@ -744,8 +752,8 @@ func (db *DB) SaveCapturedInstall(ctx context.Context, pending CapturedInstall) 
 		return err
 	}
 	_, err = db.conn.ExecContext(ctx, `
-INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, replace_installed_mod_id, replace_staging_path, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(job_id) DO UPDATE SET
 	resolved_json = excluded.resolved_json,
 	download_links_json = excluded.download_links_json,
@@ -754,14 +762,16 @@ ON CONFLICT(job_id) DO UPDATE SET
 	archive_path = excluded.archive_path,
 	archive_sha256 = excluded.archive_sha256,
 	archive_bytes = excluded.archive_bytes,
+	replace_installed_mod_id = excluded.replace_installed_mod_id,
+	replace_staging_path = excluded.replace_staging_path,
 	updated_at = CURRENT_TIMESTAMP
-`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchiveFileName, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes)
+`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchiveFileName, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes, pending.ReplaceInstalledModID, pending.ReplaceStagingPath)
 	return err
 }
 
 func (db *DB) ListCapturedInstalls(ctx context.Context) ([]CapturedInstall, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes
+SELECT job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, replace_installed_mod_id, replace_staging_path
 FROM captured_installs
 ORDER BY updated_at DESC, created_at DESC
 `)
@@ -773,7 +783,7 @@ ORDER BY updated_at DESC, created_at DESC
 	for rows.Next() {
 		var pending CapturedInstall
 		var resolved, links string
-		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchiveFileName, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes); err != nil {
+		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchiveFileName, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes, &pending.ReplaceInstalledModID, &pending.ReplaceStagingPath); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(resolved), &pending.Resolved); err != nil {
@@ -1034,15 +1044,16 @@ func cleanAbsoluteTargetPath(value string) string {
 }
 
 type RecordInstalledModParams struct {
-	SteamAppID     string
-	Resolved       catalog.ResolvedDownload
-	Name           string
-	Version        string
-	ArchivePath    string
-	ArchiveSHA256  string
-	StagingPath    string
-	ManifestJSON   string
-	DefaultEnabled *bool
+	SteamAppID            string
+	Resolved              catalog.ResolvedDownload
+	Name                  string
+	Version               string
+	ArchivePath           string
+	ArchiveSHA256         string
+	StagingPath           string
+	ManifestJSON          string
+	DefaultEnabled        *bool
+	ReplaceInstalledModID int64
 }
 
 func (db *DB) RecordInstalledMod(ctx context.Context, params RecordInstalledModParams) (InstalledMod, error) {
@@ -1051,6 +1062,9 @@ func (db *DB) RecordInstalledMod(ctx context.Context, params RecordInstalledModP
 	params.Version = strings.TrimSpace(params.Version)
 	params.ArchivePath = strings.TrimSpace(params.ArchivePath)
 	params.StagingPath = strings.TrimSpace(params.StagingPath)
+	if params.ReplaceInstalledModID < 0 {
+		params.ReplaceInstalledModID = 0
+	}
 	if params.SteamAppID == "" {
 		return InstalledMod{}, errors.New("steam app id is required")
 	}
@@ -1135,6 +1149,54 @@ ON CONFLICT(mod_version_id) DO UPDATE SET
 		return InstalledMod{}, err
 	}
 
+	type profileModState struct {
+		profileID int64
+		enabled   int
+		priority  int
+	}
+	var replacementStates []profileModState
+	replaceInstalledMod := params.ReplaceInstalledModID > 0 && params.ReplaceInstalledModID != installedModID
+	if replaceInstalledMod {
+		var replacedGameID int64
+		var replacedCatalog, replacedDomain, replacedModID string
+		if err := tx.QueryRowContext(ctx, `
+SELECT m.game_id, m.catalog, m.source_game_domain, m.source_mod_id
+FROM installed_mods im
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id
+WHERE im.id = ?
+`, params.ReplaceInstalledModID).Scan(&replacedGameID, &replacedCatalog, &replacedDomain, &replacedModID); err != nil {
+			return InstalledMod{}, err
+		}
+		if replacedGameID != gameID ||
+			replacedCatalog != params.Resolved.Catalog ||
+			replacedDomain != params.Resolved.GameDomain ||
+			replacedModID != params.Resolved.ModID {
+			return InstalledMod{}, errors.New("replacement mod does not match installed mod source")
+		}
+		rows, err := tx.QueryContext(ctx, `
+SELECT profile_id, enabled, priority
+FROM profile_mods
+WHERE installed_mod_id = ?
+`, params.ReplaceInstalledModID)
+		if err != nil {
+			return InstalledMod{}, err
+		}
+		for rows.Next() {
+			var state profileModState
+			if err := rows.Scan(&state.profileID, &state.enabled, &state.priority); err != nil {
+				rows.Close()
+				return InstalledMod{}, err
+			}
+			replacementStates = append(replacementStates, state)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return InstalledMod{}, err
+		}
+		rows.Close()
+	}
+
 	var profileID int64
 	if err := tx.QueryRowContext(ctx, `
 SELECT id FROM profiles
@@ -1148,13 +1210,33 @@ LIMIT 1
 	if params.DefaultEnabled != nil && !*params.DefaultEnabled {
 		defaultEnabled = 0
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if len(replacementStates) == 0 {
+		if _, err := tx.ExecContext(ctx, `
 INSERT INTO profile_mods (profile_id, installed_mod_id, enabled, priority, updated_at)
 VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
 ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
 	updated_at = CURRENT_TIMESTAMP
 `, profileID, installedModID, defaultEnabled); err != nil {
-		return InstalledMod{}, err
+			return InstalledMod{}, err
+		}
+	} else {
+		for _, state := range replacementStates {
+			if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_mods (profile_id, installed_mod_id, enabled, priority, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
+	enabled = excluded.enabled,
+	priority = excluded.priority,
+	updated_at = CURRENT_TIMESTAMP
+`, state.profileID, installedModID, state.enabled, state.priority); err != nil {
+				return InstalledMod{}, err
+			}
+		}
+	}
+	if replaceInstalledMod {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM installed_mods WHERE id = ?`, params.ReplaceInstalledModID); err != nil {
+			return InstalledMod{}, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1164,15 +1246,17 @@ ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
 }
 
 type RecordInstallCandidateParams struct {
-	SteamAppID    string
-	Resolved      catalog.ResolvedDownload
-	Name          string
-	ArchivePath   string
-	ArchiveSHA256 string
-	Status        string
-	Reason        string
-	InstallerJSON string
-	ChoicesJSON   string
+	SteamAppID            string
+	Resolved              catalog.ResolvedDownload
+	Name                  string
+	ArchivePath           string
+	ArchiveSHA256         string
+	Status                string
+	Reason                string
+	InstallerJSON         string
+	ChoicesJSON           string
+	ReplaceInstalledModID int64
+	ReplaceStagingPath    string
 }
 
 type InstallerChoicePresetParams struct {
@@ -1190,6 +1274,10 @@ func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCa
 	params.Reason = strings.TrimSpace(params.Reason)
 	params.InstallerJSON = strings.TrimSpace(params.InstallerJSON)
 	params.ChoicesJSON = strings.TrimSpace(params.ChoicesJSON)
+	params.ReplaceStagingPath = strings.TrimSpace(params.ReplaceStagingPath)
+	if params.ReplaceInstalledModID < 0 {
+		params.ReplaceInstalledModID = 0
+	}
 	if params.SteamAppID == "" {
 		return InstallCandidate{}, errors.New("steam app id is required")
 	}
@@ -1214,8 +1302,8 @@ func (db *DB) RecordInstallCandidate(ctx context.Context, params RecordInstallCa
 		return InstallCandidate{}, err
 	}
 	_, err := db.conn.ExecContext(ctx, `
-INSERT INTO install_candidates (game_id, catalog, source_game_domain, source_mod_id, source_file_id, name, archive_path, checksum_sha256, status, reason, installer_json, choices_json, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO install_candidates (game_id, catalog, source_game_domain, source_mod_id, source_file_id, name, archive_path, checksum_sha256, status, reason, installer_json, choices_json, replace_installed_mod_id, replace_staging_path, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(game_id, catalog, source_mod_id, source_file_id) DO UPDATE SET
 	name = excluded.name,
 	archive_path = excluded.archive_path,
@@ -1224,8 +1312,10 @@ ON CONFLICT(game_id, catalog, source_mod_id, source_file_id) DO UPDATE SET
 	reason = excluded.reason,
 	installer_json = excluded.installer_json,
 	choices_json = excluded.choices_json,
+	replace_installed_mod_id = excluded.replace_installed_mod_id,
+	replace_staging_path = excluded.replace_staging_path,
 	updated_at = CURRENT_TIMESTAMP
-`, gameID, params.Resolved.Catalog, params.Resolved.GameDomain, params.Resolved.ModID, params.Resolved.FileID, params.Name, params.ArchivePath, params.ArchiveSHA256, params.Status, params.Reason, params.InstallerJSON, params.ChoicesJSON)
+`, gameID, params.Resolved.Catalog, params.Resolved.GameDomain, params.Resolved.ModID, params.Resolved.FileID, params.Name, params.ArchivePath, params.ArchiveSHA256, params.Status, params.Reason, params.InstallerJSON, params.ChoicesJSON, params.ReplaceInstalledModID, params.ReplaceStagingPath)
 	if err != nil {
 		return InstallCandidate{}, err
 	}
@@ -1353,7 +1443,8 @@ WHERE id = ?
 func (db *DB) InstallCandidatesForSteamApp(ctx context.Context, appID string) ([]InstallCandidate, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json,
+	ic.replace_installed_mod_id, ic.replace_staging_path
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 WHERE g.steam_app_id = ?
@@ -1377,7 +1468,8 @@ ORDER BY ic.updated_at DESC, ic.created_at DESC
 func (db *DB) InstallCandidates(ctx context.Context) ([]InstallCandidate, error) {
 	rows, err := db.conn.QueryContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json,
+	ic.replace_installed_mod_id, ic.replace_staging_path
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 ORDER BY ic.updated_at DESC, ic.created_at DESC
@@ -1400,7 +1492,8 @@ ORDER BY ic.updated_at DESC, ic.created_at DESC
 func (db *DB) InstallCandidateForSteamApp(ctx context.Context, appID string, candidateID int64) (InstallCandidate, error) {
 	row := db.conn.QueryRowContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json,
+	ic.replace_installed_mod_id, ic.replace_staging_path
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 WHERE g.steam_app_id = ? AND ic.id = ?
@@ -1505,7 +1598,8 @@ WHERE id = ? AND game_id IN (SELECT id FROM games WHERE steam_app_id = ?)
 func (db *DB) installCandidate(ctx context.Context, gameID int64, catalog, modID, fileID string) (InstallCandidate, error) {
 	row := db.conn.QueryRowContext(ctx, `
 SELECT ic.id, g.id, g.steam_app_id, ic.name, ic.catalog, ic.source_game_domain, ic.source_mod_id, ic.source_file_id,
-	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json
+	ic.archive_path, ic.checksum_sha256, ic.status, ic.reason, ic.installer_json, ic.choices_json,
+	ic.replace_installed_mod_id, ic.replace_staging_path
 FROM install_candidates ic
 JOIN games g ON g.id = ic.game_id
 WHERE ic.game_id = ? AND ic.catalog = ? AND ic.source_mod_id = ? AND ic.source_file_id = ?
@@ -2112,6 +2206,8 @@ func scanInstallCandidate(scanner installedModScanner) (InstallCandidate, error)
 		&candidate.Reason,
 		&candidate.InstallerJSON,
 		&candidate.ChoicesJSON,
+		&candidate.ReplaceInstalledModID,
+		&candidate.ReplaceStagingPath,
 	); err != nil {
 		return InstallCandidate{}, err
 	}

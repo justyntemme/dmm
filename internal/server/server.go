@@ -64,13 +64,15 @@ type Server struct {
 }
 
 type capturedInstall struct {
-	Resolved        catalog.ResolvedDownload
-	DownloadLinks   []nexus.DownloadLink
-	Source          string
-	ArchiveFileName string
-	ArchivePath     string
-	ArchiveSHA256   string
-	ArchiveBytes    int64
+	Resolved              catalog.ResolvedDownload
+	DownloadLinks         []nexus.DownloadLink
+	Source                string
+	ArchiveFileName       string
+	ArchivePath           string
+	ArchiveSHA256         string
+	ArchiveBytes          int64
+	ReplaceInstalledModID int64
+	ReplaceStagingPath    string
 }
 
 type nexusClient interface {
@@ -161,13 +163,15 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
-			Resolved:        pending.Resolved,
-			DownloadLinks:   pending.DownloadLinks,
-			Source:          pending.Source,
-			ArchiveFileName: pending.ArchiveFileName,
-			ArchivePath:     pending.ArchivePath,
-			ArchiveSHA256:   pending.ArchiveSHA256,
-			ArchiveBytes:    pending.ArchiveBytes,
+			Resolved:              pending.Resolved,
+			DownloadLinks:         pending.DownloadLinks,
+			Source:                pending.Source,
+			ArchiveFileName:       pending.ArchiveFileName,
+			ArchivePath:           pending.ArchivePath,
+			ArchiveSHA256:         pending.ArchiveSHA256,
+			ArchiveBytes:          pending.ArchiveBytes,
+			ReplaceInstalledModID: pending.ReplaceInstalledModID,
+			ReplaceStagingPath:    pending.ReplaceStagingPath,
 		}
 	}
 	srv.jobs = jobs.NewManagerWithSeed(storedJobs, func(job jobs.Job) {
@@ -2494,10 +2498,12 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	job, _ = s.jobs.Wait(job.ID, "Update found; downloading "+mod.Name)
 	response["job"] = job
 	s.rememberCapturedInstall(job.ID, capturedInstall{
-		Resolved:        resolved,
-		DownloadLinks:   links,
-		Source:          "mod-update",
-		ArchiveFileName: archiveFileName,
+		Resolved:              resolved,
+		DownloadLinks:         links,
+		Source:                "mod-update",
+		ArchiveFileName:       archiveFileName,
+		ReplaceInstalledModID: mod.ID,
+		ReplaceStagingPath:    mod.StagingPath,
 	})
 	started, err := s.startCapturedInstallDownload(job.ID, "mod update")
 	if err != nil {
@@ -2924,7 +2930,9 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	} else {
 		s.publishInstallCandidatesChanged(appID, "applied", 1)
 	}
-	s.completeInstalledModJob(r.Context(), job.ID, mod, nil)
+	s.completeInstalledModJob(r.Context(), job.ID, mod, func() {
+		s.cleanupReplacedStaging(r.Context(), job.ID, appID, candidate.ReplaceInstalledModID, candidate.ReplaceStagingPath)
+	})
 	if finalJob, ok := s.jobs.Get(job.ID); ok {
 		job = finalJob
 	}
@@ -3091,7 +3099,9 @@ func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Requ
 	} else {
 		s.publishInstallCandidatesChanged(appID, "retried", 1)
 	}
-	s.completeInstalledModJob(r.Context(), job.ID, mod, nil)
+	s.completeInstalledModJob(r.Context(), job.ID, mod, func() {
+		s.cleanupReplacedStaging(r.Context(), job.ID, appID, candidate.ReplaceInstalledModID, candidate.ReplaceStagingPath)
+	})
 	if finalJob, ok := s.jobs.Get(job.ID); ok {
 		job = finalJob
 	}
@@ -3115,10 +3125,12 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			ModID:      candidate.SourceModID,
 			FileID:     candidate.SourceFileID,
 		},
-		Source:        "install-candidate-retry",
-		ArchivePath:   candidate.ArchivePath,
-		ArchiveSHA256: candidate.ChecksumSHA256,
-		ArchiveBytes:  info.Size(),
+		Source:                "install-candidate-retry",
+		ArchivePath:           candidate.ArchivePath,
+		ArchiveSHA256:         candidate.ChecksumSHA256,
+		ArchiveBytes:          info.Size(),
+		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+		ReplaceStagingPath:    candidate.ReplaceStagingPath,
 	}
 	result := pending.downloadResult()
 	staged, err := s.stageCapturedInstall(ctx, jobID, pending, result)
@@ -3140,15 +3152,17 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			installerJSON = s.evaluatedInstallerJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, selections)
 		}
 		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-			SteamAppID:    candidate.SteamAppID,
-			Resolved:      pending.Resolved,
-			Name:          candidate.Name,
-			ArchivePath:   candidate.ArchivePath,
-			ArchiveSHA256: candidate.ChecksumSHA256,
-			Status:        "needs_choices",
-			Reason:        choice.Error(),
-			InstallerJSON: installerJSON,
-			ChoicesJSON:   choicesJSON,
+			SteamAppID:            candidate.SteamAppID,
+			Resolved:              pending.Resolved,
+			Name:                  candidate.Name,
+			ArchivePath:           candidate.ArchivePath,
+			ArchiveSHA256:         candidate.ChecksumSHA256,
+			Status:                "needs_choices",
+			Reason:                choice.Error(),
+			InstallerJSON:         installerJSON,
+			ChoicesJSON:           choicesJSON,
+			ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+			ReplaceStagingPath:    candidate.ReplaceStagingPath,
 		})
 		if recordErr != nil {
 			return storage.InstalledMod{}, recordErr
@@ -3161,15 +3175,17 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	var unsupported installplan.UnsupportedError
 	if errors.As(err, &unsupported) {
 		_, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-			SteamAppID:    candidate.SteamAppID,
-			Resolved:      pending.Resolved,
-			Name:          candidate.Name,
-			ArchivePath:   candidate.ArchivePath,
-			ArchiveSHA256: candidate.ChecksumSHA256,
-			Status:        "blocked",
-			Reason:        unsupported.Error(),
-			InstallerJSON: candidate.InstallerJSON,
-			ChoicesJSON:   candidate.ChoicesJSON,
+			SteamAppID:            candidate.SteamAppID,
+			Resolved:              pending.Resolved,
+			Name:                  candidate.Name,
+			ArchivePath:           candidate.ArchivePath,
+			ArchiveSHA256:         candidate.ChecksumSHA256,
+			Status:                "blocked",
+			Reason:                unsupported.Error(),
+			InstallerJSON:         candidate.InstallerJSON,
+			ChoicesJSON:           candidate.ChoicesJSON,
+			ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+			ReplaceStagingPath:    candidate.ReplaceStagingPath,
 		})
 		if recordErr != nil {
 			return storage.InstalledMod{}, recordErr
@@ -3307,19 +3323,20 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		FileID:     candidate.SourceFileID,
 	}
 	return s.stageFOMODInstaller(ctx, fomodStageRequest{
-		SteamAppID:    candidate.SteamAppID,
-		JobID:         jobID,
-		CandidateID:   candidate.ID,
-		ExtractPath:   extractPath,
-		StagingPath:   stagingPath,
-		ArchivePath:   candidate.ArchivePath,
-		ArchiveSHA256: candidate.ChecksumSHA256,
-		Resolved:      resolved,
-		Name:          candidate.Name,
-		InstallerKind: inspection.InstallerKind,
-		Installer:     installer,
-		ChoicesJSON:   candidate.ChoicesJSON,
-		Selections:    selections,
+		SteamAppID:            candidate.SteamAppID,
+		JobID:                 jobID,
+		CandidateID:           candidate.ID,
+		ExtractPath:           extractPath,
+		StagingPath:           stagingPath,
+		ArchivePath:           candidate.ArchivePath,
+		ArchiveSHA256:         candidate.ChecksumSHA256,
+		Resolved:              resolved,
+		Name:                  candidate.Name,
+		InstallerKind:         inspection.InstallerKind,
+		Installer:             installer,
+		ChoicesJSON:           candidate.ChoicesJSON,
+		Selections:            selections,
+		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 	})
 }
 
@@ -3371,19 +3388,20 @@ func (s *Server) prepareFOMODWorkspace(ctx context.Context, jobID, extractPath s
 }
 
 type fomodStageRequest struct {
-	SteamAppID    string
-	JobID         string
-	CandidateID   int64
-	ExtractPath   string
-	StagingPath   string
-	ArchivePath   string
-	ArchiveSHA256 string
-	Resolved      catalog.ResolvedDownload
-	Name          string
-	InstallerKind string
-	Installer     fomod.Installer
-	ChoicesJSON   string
-	Selections    map[string][]string
+	SteamAppID            string
+	JobID                 string
+	CandidateID           int64
+	ExtractPath           string
+	StagingPath           string
+	ArchivePath           string
+	ArchiveSHA256         string
+	Resolved              catalog.ResolvedDownload
+	Name                  string
+	InstallerKind         string
+	Installer             fomod.Installer
+	ChoicesJSON           string
+	Selections            map[string][]string
+	ReplaceInstalledModID int64
 }
 
 func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest) (storage.InstalledMod, error) {
@@ -3420,15 +3438,16 @@ func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest)
 	}
 	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(req.SteamAppID, plan.ModType)
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
-		SteamAppID:     req.SteamAppID,
-		Resolved:       req.Resolved,
-		Name:           req.Name,
-		Version:        req.Resolved.FileID,
-		ArchivePath:    req.ArchivePath,
-		ArchiveSHA256:  req.ArchiveSHA256,
-		StagingPath:    req.StagingPath,
-		ManifestJSON:   manifest,
-		DefaultEnabled: &defaultEnabled,
+		SteamAppID:            req.SteamAppID,
+		Resolved:              req.Resolved,
+		Name:                  req.Name,
+		Version:               req.Resolved.FileID,
+		ArchivePath:           req.ArchivePath,
+		ArchiveSHA256:         req.ArchiveSHA256,
+		StagingPath:           req.StagingPath,
+		ManifestJSON:          manifest,
+		DefaultEnabled:        &defaultEnabled,
+		ReplaceInstalledModID: req.ReplaceInstalledModID,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -5057,14 +5076,16 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 	s.capturedInstalls[jobID] = pending
 	s.ensureCapturedInstallJobPayload(jobID, pending.Resolved)
 	if err := s.db.SaveCapturedInstall(context.Background(), storage.CapturedInstall{
-		JobID:           jobID,
-		Resolved:        pending.Resolved,
-		DownloadLinks:   pending.DownloadLinks,
-		Source:          pending.Source,
-		ArchiveFileName: pending.ArchiveFileName,
-		ArchivePath:     pending.ArchivePath,
-		ArchiveSHA256:   pending.ArchiveSHA256,
-		ArchiveBytes:    pending.ArchiveBytes,
+		JobID:                 jobID,
+		Resolved:              pending.Resolved,
+		DownloadLinks:         pending.DownloadLinks,
+		Source:                pending.Source,
+		ArchiveFileName:       pending.ArchiveFileName,
+		ArchivePath:           pending.ArchivePath,
+		ArchiveSHA256:         pending.ArchiveSHA256,
+		ArchiveBytes:          pending.ArchiveBytes,
+		ReplaceInstalledModID: pending.ReplaceInstalledModID,
+		ReplaceStagingPath:    pending.ReplaceStagingPath,
 	}); err != nil {
 		s.logger.Warn("persist captured install failed", "job_id", jobID, "error", err)
 	}
@@ -5322,15 +5343,17 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 			appID := s.appIDForPending(pending)
 			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, jobID, pending.Resolved, choice.Kind, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-				SteamAppID:    appID,
-				Resolved:      pending.Resolved,
-				Name:          modNameFromArchive(result.Path, pending.Resolved),
-				ArchivePath:   result.Path,
-				ArchiveSHA256: result.SHA256,
-				Status:        "needs_choices",
-				Reason:        choice.Error(),
-				InstallerJSON: installerJSON,
-				ChoicesJSON:   choicesJSON,
+				SteamAppID:            appID,
+				Resolved:              pending.Resolved,
+				Name:                  modNameFromArchive(result.Path, pending.Resolved),
+				ArchivePath:           result.Path,
+				ArchiveSHA256:         result.SHA256,
+				Status:                "needs_choices",
+				Reason:                choice.Error(),
+				InstallerJSON:         installerJSON,
+				ChoicesJSON:           choicesJSON,
+				ReplaceInstalledModID: pending.ReplaceInstalledModID,
+				ReplaceStagingPath:    pending.ReplaceStagingPath,
 			})
 			if recordErr != nil {
 				s.logger.Warn("record installer choice candidate failed", "job_id", jobID, "error", recordErr)
@@ -5346,13 +5369,15 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 		var unsupported installplan.UnsupportedError
 		if errors.As(err, &unsupported) {
 			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-				SteamAppID:    s.appIDForPending(pending),
-				Resolved:      pending.Resolved,
-				Name:          modNameFromArchive(result.Path, pending.Resolved),
-				ArchivePath:   result.Path,
-				ArchiveSHA256: result.SHA256,
-				Status:        "blocked",
-				Reason:        unsupported.Error(),
+				SteamAppID:            s.appIDForPending(pending),
+				Resolved:              pending.Resolved,
+				Name:                  modNameFromArchive(result.Path, pending.Resolved),
+				ArchivePath:           result.Path,
+				ArchiveSHA256:         result.SHA256,
+				Status:                "blocked",
+				Reason:                unsupported.Error(),
+				ReplaceInstalledModID: pending.ReplaceInstalledModID,
+				ReplaceStagingPath:    pending.ReplaceStagingPath,
 			}); recordErr != nil {
 				s.logger.Warn("record blocked install candidate failed", "job_id", jobID, "error", recordErr)
 			} else {
@@ -5367,6 +5392,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 	}
 	s.completeInstalledModJob(ctx, jobID, staged, func() {
 		s.forgetCapturedInstall(jobID)
+		s.cleanupReplacedStaging(ctx, jobID, staged.SteamAppID, pending.ReplaceInstalledModID, pending.ReplaceStagingPath)
 	})
 }
 
@@ -5682,18 +5708,19 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 					name = strings.TrimSpace(installer.Name)
 				}
 				staged, err := s.stageFOMODInstaller(ctx, fomodStageRequest{
-					SteamAppID:    appID,
-					JobID:         jobID,
-					ExtractPath:   extractPath,
-					StagingPath:   stagingPath,
-					ArchivePath:   archivePath,
-					ArchiveSHA256: result.SHA256,
-					Resolved:      pending.Resolved,
-					Name:          name,
-					InstallerKind: "fomod",
-					Installer:     installer,
-					ChoicesJSON:   choicesJSON,
-					Selections:    selections,
+					SteamAppID:            appID,
+					JobID:                 jobID,
+					ExtractPath:           extractPath,
+					StagingPath:           stagingPath,
+					ArchivePath:           archivePath,
+					ArchiveSHA256:         result.SHA256,
+					Resolved:              pending.Resolved,
+					Name:                  name,
+					InstallerKind:         "fomod",
+					Installer:             installer,
+					ChoicesJSON:           choicesJSON,
+					Selections:            selections,
+					ReplaceInstalledModID: pending.ReplaceInstalledModID,
 				})
 				if err == nil {
 					s.logger.Info("captured install reused installer choice preset without prompting", "job_id", jobID, "app_id", appID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
@@ -5741,15 +5768,16 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
 	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(appID, installPlan.ModType)
 	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
-		SteamAppID:     appID,
-		Resolved:       pending.Resolved,
-		Name:           name,
-		Version:        pending.Resolved.FileID,
-		ArchivePath:    archivePath,
-		ArchiveSHA256:  result.SHA256,
-		StagingPath:    stagingPath,
-		ManifestJSON:   manifest,
-		DefaultEnabled: &defaultEnabled,
+		SteamAppID:            appID,
+		Resolved:              pending.Resolved,
+		Name:                  name,
+		Version:               pending.Resolved.FileID,
+		ArchivePath:           archivePath,
+		ArchiveSHA256:         result.SHA256,
+		StagingPath:           stagingPath,
+		ManifestJSON:          manifest,
+		DefaultEnabled:        &defaultEnabled,
+		ReplaceInstalledModID: pending.ReplaceInstalledModID,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -7056,6 +7084,11 @@ func (s *Server) deployProgressUpdater(jobID, prefix string) deploy.ProgressFunc
 
 func (s *Server) removeStagingPath(mod storage.InstalledMod) error {
 	path := strings.TrimSpace(mod.StagingPath)
+	return s.removeStagingPathValue(path)
+}
+
+func (s *Server) removeStagingPathValue(path string) error {
+	path = strings.TrimSpace(path)
 	if strings.TrimSpace(path) == "" {
 		return nil
 	}
@@ -7068,6 +7101,42 @@ func (s *Server) removeStagingPath(mod storage.InstalledMod) error {
 		return fmt.Errorf("refusing to remove staging path outside DMM staging root: %s", path)
 	}
 	return os.RemoveAll(path)
+}
+
+func (s *Server) cleanupReplacedStaging(ctx context.Context, jobID, appID string, replaceInstalledModID int64, replaceStagingPath string) {
+	replaceStagingPath = strings.TrimSpace(replaceStagingPath)
+	if replaceInstalledModID <= 0 || replaceStagingPath == "" {
+		return
+	}
+	files, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		s.logger.Warn("replaced staging cleanup skipped because latest deployment could not be read", "job_id", jobID, "app_id", appID, "replace_installed_mod_id", replaceInstalledModID, "staging_path", replaceStagingPath, "error", err)
+		return
+	}
+	for _, file := range files {
+		if pathContains(replaceStagingPath, file.SourcePath) {
+			s.logger.Info("replaced staging cleanup skipped because latest deployment still references it", "job_id", jobID, "app_id", appID, "replace_installed_mod_id", replaceInstalledModID, "staging_path", replaceStagingPath, "source_path", file.SourcePath)
+			return
+		}
+	}
+	if err := s.removeStagingPathValue(replaceStagingPath); err != nil {
+		s.logger.Warn("replaced staging cleanup failed", "job_id", jobID, "app_id", appID, "replace_installed_mod_id", replaceInstalledModID, "staging_path", replaceStagingPath, "error", err)
+		return
+	}
+	s.logger.Info("replaced staging cleanup completed", "job_id", jobID, "app_id", appID, "replace_installed_mod_id", replaceInstalledModID, "staging_path", replaceStagingPath)
+}
+
+func pathContains(root, path string) bool {
+	root = strings.TrimSpace(root)
+	path = strings.TrimSpace(path)
+	if root == "" || path == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(filepath.ToSlash(rel), "../"))
 }
 
 func (s *Server) deploymentAllowedForGame(game storage.Game) error {
