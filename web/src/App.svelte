@@ -1704,10 +1704,10 @@
     const replaces = actions.filter((action) => action.operation === "replace").length;
     const removes = actions.filter((action) => action.operation === "remove").length;
     confirmation = {
-      title: "Apply profile",
+      title: "Apply enabled mods",
       message: `DMM will update ${selectedGame.name}'s game folder to match the enabled mods in the selected profile.`,
       detail: `${adds} add, ${replaces} update, ${removes} remove. Advanced file details remain available before or after applying.`,
-      confirmLabel: "Apply Profile",
+      confirmLabel: "Apply Enabled Mods",
       run: applyPendingProfileChanges
     };
   }
@@ -2912,7 +2912,7 @@
                 </div>
               {/if}
               <div class="deploy-actions utility-actions">
-                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Profile Now</button>
+                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Enabled Mods</button>
                 <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Managed Files</button>
                 <button type="button" class="secondary-action" on:click={askRestoreDeployment} disabled={!deploymentStatus?.restore_available}>Restore Last Applied State</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>

@@ -896,8 +896,22 @@ func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {
 	if !ok {
 		t.Fatal("captured install was not remembered")
 	}
-	if pending.Source != "mod-update" || pending.Resolved.FileID != "101" || pending.ArchiveFileName != "npc-map-2.zip" {
+	if pending.Source != "mod-update" ||
+		pending.Resolved.FileID != "101" ||
+		pending.ArchiveFileName != "npc-map-2.zip" ||
+		pending.ReplaceInstalledModID != mod.ID ||
+		pending.ReplaceStagingPath != mod.StagingPath {
 		t.Fatalf("pending = %+v", pending)
+	}
+	storedPending, err := srv.db.ListCapturedInstalls(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storedPending) != 1 ||
+		storedPending[0].JobID != body.Job.ID ||
+		storedPending[0].ReplaceInstalledModID != mod.ID ||
+		storedPending[0].ReplaceStagingPath != mod.StagingPath {
+		t.Fatalf("stored pending = %+v", storedPending)
 	}
 }
 
