@@ -493,6 +493,7 @@
   $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
   $: selectedGameCapturedInstallActions = selectedGame ? capturedInstallActions.filter((job) => actionMatchesGame(job, selectedGame)) : capturedInstallActions;
   $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => actionMatchesGame(job, selectedGame)) : actionItems;
+  $: selectedGameActionCount = selectedGameActionItems.length + installCandidates.length;
   $: globalActionCount = actionItems.length + actionCenterCandidates.length;
   $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
     ? gameDiagnostics.steam_workshop
@@ -829,6 +830,13 @@
     installerChoicePresets = [];
     await loadGameState(game);
     await previewDeploy();
+  }
+
+  function openGameModule(module: GameModule) {
+    activeGameModule = module;
+    if (module === "actions") {
+      scheduleActionStateRefresh(true, false);
+    }
   }
 
   function applyUIPreferences(nextStatus: Status) {
@@ -2016,7 +2024,7 @@
       return;
     }
     await selectGame(game);
-    activeGameModule = "actions";
+    openGameModule("actions");
   }
 
   function mergeInstallCandidatesForGame(current: InstallCandidate[], appID: string, candidates: InstallCandidate[]) {
@@ -2036,7 +2044,7 @@
     const game = gameForJob(job);
     if (!game) return;
     await selectGame(game);
-    activeGameModule = "actions";
+    openGameModule("actions");
   }
 
   function jobMatchesGame(job: Job, game: Game) {
@@ -2496,11 +2504,11 @@
       </article>
 
       <nav class="module-tabs" aria-label="Game modules">
-        <button type="button" class:active={activeGameModule === "plugins"} on:click={() => (activeGameModule = "plugins")}>Mods</button>
-        <button type="button" class:active={activeGameModule === "actions"} on:click={() => (activeGameModule = "actions")}>Actions</button>
-        <button type="button" class:active={activeGameModule === "profiles"} on:click={() => (activeGameModule = "profiles")}>Profiles</button>
-        <button type="button" class:active={activeGameModule === "review"} on:click={() => (activeGameModule = "review")}>Review</button>
-        <button type="button" class:active={activeGameModule === "paths"} on:click={() => (activeGameModule = "paths")}>Paths</button>
+        <button type="button" class:active={activeGameModule === "plugins"} on:click={() => openGameModule("plugins")}>Mods</button>
+        <button type="button" class:active={activeGameModule === "actions"} on:click={() => openGameModule("actions")}>Actions</button>
+        <button type="button" class:active={activeGameModule === "profiles"} on:click={() => openGameModule("profiles")}>Profiles</button>
+        <button type="button" class:active={activeGameModule === "review"} on:click={() => openGameModule("review")}>Review</button>
+        <button type="button" class:active={activeGameModule === "paths"} on:click={() => openGameModule("paths")}>Paths</button>
       </nav>
 
       {#if activeGameModule === "plugins"}
@@ -2538,10 +2546,10 @@
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <button type="button" class="summary-action" on:click={() => (activeGameModule = "actions")} aria-label="Open Action Center for this game">
-                  <strong>{selectedGameActionItems.length}</strong>
-                  <span>{selectedGameActionItems.length === 1 ? "Action" : "Actions"}</span>
-                  <em>View</em>
+                <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label="Open Action Center for this game">
+                  <strong>{selectedGameActionCount}</strong>
+                  <span>{selectedGameActionCount === 1 ? "Action" : "Actions"}</span>
+                  <em>Open</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
@@ -2906,8 +2914,8 @@
             <div class="empty-action-panel">
               <p class="hint">No install actions need attention for this game.</p>
               <div class="empty-action-buttons">
-                <button type="button" on:click={() => (activeGameModule = "plugins")}>Add From Nexus</button>
-                <button type="button" class="secondary-action compact" on:click={() => (activeGameModule = "plugins")}>Manage Mods</button>
+                <button type="button" on:click={() => openGameModule("plugins")}>Add From Nexus</button>
+                <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Manage Mods</button>
               </div>
             </div>
           {/if}
