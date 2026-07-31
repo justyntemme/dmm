@@ -555,7 +555,7 @@ h2 {
 .deploy-list,
 .management-grid,
 .jobs,
-.request-list,
+.action-list,
 .file-list,
 .link-list,
 .stacked-form {
@@ -1637,7 +1637,7 @@ h2 {
   color: #a1a1aa;
 }
 
-.deploy-list .failed-request {
+.deploy-list .failed-action {
   border-color: #6f2e2e;
   background: #241819;
 }
@@ -1783,7 +1783,7 @@ dd {
   font-weight: 900;
 }
 
-.request-list article {
+.action-list article {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
@@ -1793,29 +1793,29 @@ dd {
   background: #20262e;
 }
 
-.request-list strong,
-.request-list p,
-.request-list small {
+.action-list strong,
+.action-list p,
+.action-list small {
   overflow-wrap: anywhere;
 }
 
-.request-list p {
+.action-list p {
   margin: 4px 0;
   color: #a1a1aa;
 }
 
-.request-list .request-next-step {
+.action-list .action-next-step {
   border-left: 3px solid #7dd3fc;
   padding-left: 8px;
   color: #d4d4d8;
   font-size: 0.88rem;
 }
 
-.request-list small {
+.action-list small {
   color: #7b8490;
 }
 
-.request-list span {
+.action-list span {
   border: 1px solid #365244;
   border-radius: 999px;
   padding: 5px 9px;
@@ -1825,20 +1825,20 @@ dd {
   background: #132018;
 }
 
-.request-list .failed-request span {
+.action-list .failed-action span {
   border-color: #6f2e2e;
   color: #fecaca;
   background: #241819;
 }
 
-.request-actions {
+.action-controls {
   display: grid;
   justify-items: end;
   align-content: start;
   gap: 8px;
 }
 
-.request-actions button {
+.action-controls button {
   min-height: 34px;
   border-color: #7c5f21;
   color: #ffe6a3;
@@ -1846,7 +1846,7 @@ dd {
   white-space: nowrap;
 }
 
-.request-actions button:active {
+.action-controls button:active {
   background: #3a2c15;
 }
 
@@ -1854,7 +1854,7 @@ dd {
   margin-top: 0;
 }
 
-.request-home {
+.action-home {
   display: grid;
   gap: 10px;
 }
@@ -1919,16 +1919,16 @@ dd {
   .panel-heading,
   .job,
   .mod-list article,
-  .request-list article {
+  .action-list article {
     display: grid;
   }
 
   .mod-list article,
-  .request-list article {
+  .action-list article {
     grid-template-columns: 1fr;
   }
 
-  .request-actions {
+  .action-controls {
     justify-items: start;
   }
 

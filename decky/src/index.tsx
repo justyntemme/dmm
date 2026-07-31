@@ -354,7 +354,7 @@ const DMM_DECKY_ROUTE = "/decky-mod-manager";
 const deckyTabOrder: Tab[] = ["main", "mods", "settings", "debug"];
 const deckyTabLabels: Record<Tab, string> = {
   main: "Manage",
-  mods: "Mods",
+  mods: "Games",
   settings: "Settings",
   debug: "Debug"
 };
@@ -2233,7 +2233,7 @@ function DeckyModManagerRoute() {
         return;
       }
       await loadDeckyGameState(selectedDeckyGameID);
-      const applyMessage = result.apply?.message || "Profile changes applied. Restart the game if it is already running.";
+      const applyMessage = result.apply?.message || "Enabled mods applied. Restart the game if it is already running.";
       if (result.apply?.status === "blocked" || result.apply?.status === "failed") {
         setError(applyMessage);
       } else {
@@ -2671,17 +2671,6 @@ function DeckyModManagerRoute() {
     void setMaxConcurrentCapturedDownloadsPerGame(next);
   }
 
-  async function openNexus(gameDomain: string | null = null) {
-    try {
-      setError("");
-      const result = await call<[string | null], { ok: boolean; error?: string; url?: string }>("open_nexus", gameDomain);
-      if (!result.ok) setError(result.error ?? "Unable to open Nexus.");
-      if (result.url) Navigation.NavigateToExternalWeb(result.url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   function openDeckyNexusBrowser() {
     if (!selectedDeckyGameID || !selectedDeckyGame || !selectedNexusDomain) return;
     let modal: { Close: () => void } | null = null;
@@ -2914,15 +2903,6 @@ function DeckyModManagerRoute() {
         >
           Retry Launch Setup
         </Focusable>
-        <Focusable
-          className="dmm-focus-card"
-          focusClassName="dmm-focus-card-focused"
-          onActivate={() => openNexus()}
-          onClick={() => openNexus()}
-          style={deckyCompactActionStyle("neutral")}
-        >
-          Open Nexus Mods
-        </Focusable>
         <div style={{ background: "#111827", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "3px", padding: "7px", width: "100%" }}>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
           <div>URL: {status?.url ?? "Unavailable"}</div>
@@ -3092,14 +3072,9 @@ function DeckyModManagerRoute() {
           </PanelSectionRow>
           <PanelSectionRow>
             {selectedNexusDomain ? (
-              <div style={{ display: "grid", gap: "8px", width: "100%" }}>
-                <ButtonItem layout="below" onClick={openDeckyNexusBrowser}>
-                  Browse Nexus Mods
-                </ButtonItem>
-                <ButtonItem layout="below" onClick={() => openNexus(selectedNexusDomain)}>
-                  Open Nexus Page
-                </ButtonItem>
-              </div>
+              <ButtonItem layout="below" onClick={openDeckyNexusBrowser}>
+                Browse Nexus Mods
+              </ButtonItem>
             ) : (
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
             )}

@@ -3493,16 +3493,16 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "deployment has no changes to apply", http.StatusConflict)
 		return
 	}
-	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
-	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
+	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Applying enabled mods for "+appID)
 	s.logger.Info("deployment confirmed", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
-	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying profile changes", "manual")
+	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying enabled mods", "manual")
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": job, "plan": plan, "applied": result.Applied})
 		return
 	}
-	job, _ = s.jobs.Complete(job.ID, "Applied profile changes to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
+	job, _ = s.jobs.Complete(job.ID, "Applied enabled mods to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
 	response := map[string]any{
 		"job":     job,
 		"plan":    plan,
@@ -3571,10 +3571,10 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 			Plan:    &plan,
 		}
 	}
-	job := s.jobs.CreateWithPayload("deploy", "Apply profile changes", gameJobPayload(appID))
-	job, _ = s.jobs.Run(job.ID, "Applying profile changes for "+appID)
+	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Applying enabled mods for "+appID)
 	s.logger.Info("profile apply started", "job_id", job.ID, "app_id", appID, "source", source, "actions", len(plan.Actions), "strategy", plan.Strategy)
-	result, err := s.applyPreparedDeployment(ctx, appID, job.ID, plan, "Applying profile changes", source)
+	result, err := s.applyPreparedDeployment(ctx, appID, job.ID, plan, "Applying enabled mods", source)
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		return profileApplyResponse{
@@ -3585,7 +3585,7 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 			Applied: result.Applied,
 		}
 	}
-	job, _ = s.jobs.Complete(job.ID, "Applied profile changes to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
+	job, _ = s.jobs.Complete(job.ID, "Applied enabled mods to "+strconv.Itoa(len(result.Applied))+" file"+plural(len(result.Applied)))
 	return profileApplyResponse{
 		Status:  "applied",
 		Message: job.Message,

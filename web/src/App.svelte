@@ -478,11 +478,11 @@
   $: cleanCount = games.filter((game) => game.state === "clean_candidate").length;
   $: reviewCount = games.length - cleanCount;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
-  $: installRequests = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
+  $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
-  $: selectedGameRequests = selectedGame ? installRequests.filter((job) => requestMatchesGame(job, selectedGame)) : installRequests;
-  $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => requestMatchesGame(job, selectedGame)) : actionItems;
+  $: selectedGameCapturedInstallActions = selectedGame ? capturedInstallActions.filter((job) => actionMatchesGame(job, selectedGame)) : capturedInstallActions;
+  $: selectedGameActionItems = selectedGame ? actionItems.filter((job) => actionMatchesGame(job, selectedGame)) : actionItems;
   $: globalActionCount = actionItems.length + actionCenterCandidates.length;
   $: selectedWorkshop = gameDiagnostics?.steam_workshop?.detected
     ? gameDiagnostics.steam_workshop
@@ -491,7 +491,7 @@
       : null;
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
-        if (job.type === "captured-install") return requestMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        if (job.type === "captured-install") return actionMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
         return ["installer-choice", "steam-workshop-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
@@ -1293,7 +1293,7 @@
     }
   }
 
-  async function clearInstallRequests() {
+  async function clearCapturedInstallActions() {
     error = "";
     const response = await fetch("/api/captured-installs", { method: "DELETE" });
     if (!response.ok) {
@@ -1523,7 +1523,7 @@
     }
   }
 
-  async function retryInstallRequest(request: Job) {
+  async function retryCapturedInstallAction(request: Job) {
     if (request.status !== "failed") return;
     error = "";
     setJobBusy(request.id, true);
@@ -1617,10 +1617,10 @@
     const replaces = actions.filter((action) => action.operation === "replace").length;
     const removes = actions.filter((action) => action.operation === "remove").length;
     confirmation = {
-      title: "Apply profile",
-      message: `DMM will update ${selectedGame.name}'s game folder to match the selected profile.`,
+      title: "Apply enabled mods",
+      message: `DMM will update ${selectedGame.name}'s game folder to match the enabled mods in the selected profile.`,
       detail: `${adds} add, ${replaces} replace, ${removes} remove. Advanced file details remain available before or after applying.`,
-      confirmLabel: "Apply Profile",
+      confirmLabel: "Apply Enabled Mods",
       run: applyPendingProfileChanges
     };
   }
@@ -1941,7 +1941,7 @@
     return "Settings";
   }
 
-  function requestMatchesGame(job: Job, game: Game) {
+  function actionMatchesGame(job: Job, game: Game) {
     if (jobMatchesGame(job, game)) return true;
     const haystack = `${job.title} ${job.message}`.toLowerCase().replace(/[^a-z0-9]/g, "");
     const gameName = game.name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1955,7 +1955,7 @@
       const exact = games.find((game) => game.app_id === payloadAppID);
       if (exact) return exact;
     }
-    return games.find((game) => requestMatchesGame(job, game)) ?? null;
+    return games.find((game) => actionMatchesGame(job, game)) ?? null;
   }
 
   function gameForInstallCandidate(candidate: InstallCandidate) {
@@ -2107,7 +2107,7 @@
     return Array.from(new Set(labels));
   }
 
-  function requestNextStep(request: Job) {
+  function actionNextStep(request: Job) {
     if (request.type === "steam-workshop-action") {
       if (request.status === "waiting" || request.status === "queued") return "Waiting for Decky to apply this Steam Workshop change through Steam.";
       if (request.status === "running") return "Decky is applying this Steam Workshop change through Steam.";
@@ -2129,7 +2129,7 @@
     return "This action is retained in job history for diagnostics.";
   }
 
-  function requestStatusLabel(request: Job) {
+  function actionStatusLabel(request: Job) {
     if (request.type === "steam-workshop-action" && (request.status === "waiting" || request.status === "queued")) return "Waiting for Decky";
     if (request.type === "installer-choice" && request.status === "waiting") return "Needs choices";
     if (request.status === "waiting") return "Ready to install";
@@ -2292,11 +2292,11 @@
           <h2>Action Center</h2>
           <span>{globalActionCount} open</span>
         </div>
-        {#if installRequests.length > 0}
-          <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
+        {#if capturedInstallActions.length > 0}
+          <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
         {/if}
         {#if globalActionCount === 0}
-          <div class="request-home">
+          <div class="action-home">
             <div class="empty-state inline-empty">
               <h2>No Actions Needed</h2>
               <p class="hint">Open a game to paste a Nexus URL, or capture an nxm:// link from the Deck browser flow.</p>
@@ -2305,17 +2305,17 @@
           </div>
         {/if}
         {#if actionItems.length > 0}
-          <div class="request-list">
+          <div class="action-list">
             {#each actionItems as request}
-              <article class:failed-request={request.status === "failed"}>
+              <article class:failed-action={request.status === "failed"}>
                 <div>
                   <strong>{request.title}</strong>
 	                    {#if request.message}<p>{request.message}</p>{/if}
-	                    <p class="request-next-step">{requestNextStep(request)}</p>
+	                    <p class="action-next-step">{actionNextStep(request)}</p>
 	                    <small>{new Date(request.updated_at).toLocaleString()}</small>
 	                  </div>
-	                  <div class="request-actions">
-	                    <span>{requestStatusLabel(request)}</span>
+	                  <div class="action-controls">
+	                    <span>{actionStatusLabel(request)}</span>
 	                    {#if request.type === "installer-choice"}
 	                      <button type="button" on:click={() => openActionItem(request)}>{gameForJob(request) ? "Open Choices" : "Choose Game"}</button>
 	                    {/if}
@@ -2325,7 +2325,7 @@
 	                      {/if}
 	                    {/if}
 	                    {#if request.type === "captured-install" && request.status === "failed"}
-	                      <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+	                      <button type="button" on:click={() => retryCapturedInstallAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
 	                    {/if}
 	                    {#if request.type === "steam-workshop-action" && request.status === "failed"}
 	                      <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
@@ -2345,16 +2345,16 @@
               <span>{actionCenterCandidates.length}</span>
             </div>
             <p class="hint">These downloaded archives need installer choices or review before they can be added to a profile.</p>
-            <div class="request-list">
+            <div class="action-list">
               {#each actionCenterCandidates as candidate}
                 {@const candidateGame = gameForInstallCandidate(candidate)}
-                <article class:failed-request={candidate.status === "blocked"}>
+                <article class:failed-action={candidate.status === "blocked"}>
                   <div>
                     <strong>{candidate.name}</strong>
                     <p>{candidate.reason}</p>
                     <small>{candidateGame?.name ?? `App ${candidate.steam_app_id}`} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
                   </div>
-                  <div class="request-actions">
+                  <div class="action-controls">
                     <span>{candidateStatusLabel(candidate)}</span>
                     <button type="button" on:click={() => openInstallCandidate(candidate)}>{candidate.status === "needs_choices" ? "Open Choices" : "Review"}</button>
                   </div>
@@ -2469,7 +2469,7 @@
           {#if selectedGameActivity.length > 0}
             <section class="activity-strip" aria-label="Game activity">
               {#each selectedGameActivity.slice(0, 3) as job}
-                <article class:failed-request={job.status === "failed"}>
+                <article class:failed-action={job.status === "failed"}>
                   <strong>{job.title}</strong>
                   <span>{job.status}</span>
                   {#if job.message}<small>{job.message}</small>{/if}
@@ -2836,7 +2836,7 @@
               </div>
               <div class="deploy-list">
                 {#each deployPlan.actions.slice(0, 24) as action}
-                  <article class:failed-request={action.conflict}>
+                  <article class:failed-action={action.conflict}>
                     <strong>{action.target_relative}</strong>
                     <small>{deployActionDetail(action)}</small>
                   </article>
@@ -2851,8 +2851,8 @@
             <h2>Action Center</h2>
             <span>{selectedGameActionItems.length} open · {installCandidates.length} installers</span>
           </div>
-          {#if selectedGameRequests.length > 0}
-            <button type="button" class="secondary-action" on:click={clearInstallRequests}>Clear Install Actions</button>
+          {#if selectedGameCapturedInstallActions.length > 0}
+            <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <div class="empty-action-panel">
@@ -2864,17 +2864,17 @@
             </div>
           {/if}
           {#if selectedGameActionItems.length > 0}
-            <div class="request-list">
+            <div class="action-list">
               {#each selectedGameActionItems as request}
-                <article class:failed-request={request.status === "failed"}>
+                <article class:failed-action={request.status === "failed"}>
                   <div>
                     <strong>{request.title}</strong>
                     {#if request.message}<p>{request.message}</p>{/if}
-                    <p class="request-next-step">{requestNextStep(request)}</p>
+                    <p class="action-next-step">{actionNextStep(request)}</p>
                     <small>{new Date(request.updated_at).toLocaleString()}</small>
                   </div>
-                    <div class="request-actions">
-                      <span>{requestStatusLabel(request)}</span>
+                    <div class="action-controls">
+                      <span>{actionStatusLabel(request)}</span>
                       {#if request.type === "installer-choice"}
                         <button type="button" on:click={() => openActionItem(request)}>Open Choices</button>
                       {/if}
@@ -2882,7 +2882,7 @@
                         <button type="button" on:click={() => installCapturedMod(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Install"}</button>
                       {/if}
                       {#if request.type === "captured-install" && request.status === "failed"}
-                        <button type="button" on:click={() => retryInstallRequest(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
+                        <button type="button" on:click={() => retryCapturedInstallAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
                       {/if}
                       {#if request.type === "steam-workshop-action" && request.status === "failed"}
                         <button type="button" on:click={() => retryWorkshopAction(request)} disabled={isJobBusy(request)}>{isJobBusy(request) ? "Working..." : "Retry"}</button>
@@ -2902,11 +2902,11 @@
                 <span>{installCandidates.length}</span>
               </div>
               <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Items</button>
-              <div class="request-list">
+              <div class="action-list">
                 {#each installCandidates as candidate}
                   {@const installer = installerForCandidate(candidate)}
                   {@const selectedChoiceCount = selectionCount(candidateCurrentSelections(candidate))}
-                  <article class="failed-request">
+                  <article class="failed-action">
                     <div>
                       <strong>{candidate.name}</strong>
                       <p>{candidate.reason}</p>
@@ -2945,7 +2945,7 @@
                         </div>
                       {/if}
                     </div>
-                    <div class="request-actions">
+                    <div class="action-controls">
                       <span>{candidateStatusLabel(candidate)}</span>
                       {#if installer}
                         <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
@@ -2969,7 +2969,7 @@
                 <span>{installerChoicePresets.length}</span>
               </div>
               <p class="hint">DMM reuses these choices only for the same exact mod file. Forget a preset if you want the installer to ask again.</p>
-              <div class="request-list">
+              <div class="action-list">
                 {#each installerChoicePresets as preset}
                   <article>
                     <div>
@@ -2977,7 +2977,7 @@
                       <p>{preset.source_game_domain}/mods/{preset.source_mod_id}/files/{preset.source_file_id}</p>
                       <small>{installerPresetScopeLabel(preset)} · Updated {new Date(preset.updated_at).toLocaleString()}</small>
                     </div>
-                    <div class="request-actions">
+                    <div class="action-controls">
                       <span>Saved</span>
                       <button type="button" class="secondary-action compact" on:click={() => deleteInstallerChoicePreset(preset)}>Forget</button>
                     </div>
@@ -3081,7 +3081,7 @@
                     <p>{workshopItemDetail(item)}</p>
                     <small>{workshopItemStatus(item)}</small>
                   </div>
-                  <div class="request-actions">
+                  <div class="action-controls">
                     <span>{workshopItemStatus(item)}</span>
                     <button type="button" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
                       {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}

@@ -120,13 +120,6 @@ class Plugin:
         }
         return result
 
-    async def open_nexus(self, game_domain=None):
-        url = "https://www.nexusmods.com"
-        if game_domain:
-            url = f"https://www.nexusmods.com/{game_domain}"
-        self._log(f"open nexus navigation requested: {url}")
-        return {"ok": True, "url": url}
-
     async def nxm_status(self):
         return self._nxm_status()
 

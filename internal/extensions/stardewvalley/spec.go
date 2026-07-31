@@ -221,7 +221,7 @@ func runtimeRequirements() []gamehandler.RuntimeRequirementSpec {
 			Message:     "SMAPI was not found in the Stardew Valley install folder. Deployed SMAPI mods will not load until SMAPI is installed and deployed.",
 			OKMessage:   "SMAPI is present in the Stardew Valley install folder.",
 			HelpURL:     "https://smapi.io/",
-			InstallHint: "Install SMAPI through the same Nexus Mod Manager Download flow, then apply profile changes.",
+			InstallHint: "Install SMAPI through the same Nexus Mod Manager Download flow, then apply enabled mods.",
 			Check:       smapiMarkers,
 		},
 		{

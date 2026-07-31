@@ -1379,9 +1379,9 @@ func TestClientEventLogRedactsSensitiveDetails(t *testing.T) {
 
 func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	srv := newTestServer(t)
-	job := srv.jobs.Create("deploy", "Apply profile changes")
+	job := srv.jobs.Create("deploy", "Apply enabled mods")
 
-	update := srv.deployProgressUpdater(job.ID, "Applying profile changes")
+	update := srv.deployProgressUpdater(job.ID, "Applying enabled mods")
 	update(1, 3, deploy.Action{
 		Operation:      "add",
 		TargetRelative: "Mods/Test/manifest.json",
@@ -1391,7 +1391,7 @@ func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	if !ok {
 		t.Fatal("job was not found")
 	}
-	want := "Applying profile changes 1/3 (add): Mods/Test/manifest.json"
+	want := "Applying enabled mods 1/3 (add): Mods/Test/manifest.json"
 	if got.Status != jobs.StatusRunning || got.Message != want {
 		t.Fatalf("job = %+v, want status running and message %q", got, want)
 	}
