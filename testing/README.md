@@ -257,7 +257,7 @@ The MVP is not considered verified until the installed Decky plugin passes this 
 4. If existing developer-test rows show `needs_recovery`, use Recover Downloads for supported archives or Remove for rows that should not be managed.
 5. Open Nexus from the Deck, click a fresh Stardew Valley Mod Manager Download link, and confirm a captured install appears in the phone/tablet Action Center when user action is required.
 6. Install from the cached captured action in the phone/tablet UI when auto-install is disabled or installer choices are needed.
-7. Confirm the Stardew Plugins tab shows exactly one profile mod row for the installed mod/file.
+7. Confirm the Stardew Mods tab shows exactly one profile mod row for the installed mod/file.
 8. Preview deployment and confirm zero conflicts.
 9. Deploy and confirm the job completes.
 10. Launch Stardew/SMAPI enough to confirm the deployed mod is visible or loaded.
