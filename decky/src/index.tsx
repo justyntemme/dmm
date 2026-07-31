@@ -3070,15 +3070,11 @@ function DeckyModManagerRoute() {
               Change Game
             </ButtonItem>
           </PanelSectionRow>
-          <PanelSectionRow>
-            {selectedNexusDomain ? (
-              <ButtonItem layout="below" onClick={openDeckyNexusBrowser}>
-                Browse Nexus Mods
-              </ButtonItem>
-            ) : (
+          {!selectedNexusDomain && (
+            <PanelSectionRow>
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
-            )}
-          </PanelSectionRow>
+            </PanelSectionRow>
+          )}
           {deckyInstallCandidates.length > 0 && (
             <PanelSectionRow>
               <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
