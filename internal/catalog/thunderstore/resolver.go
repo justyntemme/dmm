@@ -41,6 +41,34 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	if !steamAppIDPattern.MatchString(steamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("Thunderstore URLs must be added from a selected Steam game")
 	}
+	return r.resolveDownload(ctx, strings.TrimSpace(req.URL), steamAppID, ref)
+}
+
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := parseURL(req.SourceURL)
+	if err != nil {
+		return catalog.ResolvedDownload{}, errors.New("Thunderstore update checks require the original package URL")
+	}
+	ref.Version = ""
+	return r.resolveDownload(ctx, packageURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := parseURL(req.SourceURL)
+	if err != nil {
+		return catalog.ResolvedDownload{}, errors.New("Thunderstore update installs require the original package URL")
+	}
+	ref.Version = strings.TrimSpace(req.FileID)
+	if ref.Version == "" {
+		return catalog.ResolvedDownload{}, errors.New("Thunderstore update installs require a package version")
+	}
+	return r.resolveDownload(ctx, packageURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID string, ref packageRef) (catalog.ResolvedDownload, error) {
+	if !steamAppIDPattern.MatchString(steamAppID) {
+		return catalog.ResolvedDownload{}, errors.New("Thunderstore URLs must be added from a selected Steam game")
+	}
 	version, err := r.resolveVersion(ctx, ref)
 	if err != nil {
 		return catalog.ResolvedDownload{}, err
@@ -64,7 +92,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	fileID := versionNumber
 	return catalog.ResolvedDownload{
 		Catalog:    "thunderstore",
-		SourceURL:  strings.TrimSpace(req.URL),
+		SourceURL:  strings.TrimSpace(sourceURL),
 		SteamAppID: steamAppID,
 		GameDomain: sourceDomain,
 		ModID:      modID,
@@ -76,6 +104,21 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 			URI:       downloadURL,
 		}},
 	}, nil
+}
+
+func packageURL(ref packageRef) string {
+	if strings.TrimSpace(ref.Community) != "" {
+		path := "/c/" + url.PathEscape(ref.Community) + "/p/" + url.PathEscape(ref.Namespace) + "/" + url.PathEscape(ref.Name)
+		if strings.TrimSpace(ref.Version) != "" {
+			path += "/v/" + url.PathEscape(ref.Version)
+		}
+		return "https://thunderstore.io" + path
+	}
+	path := "/package/" + url.PathEscape(ref.Namespace) + "/" + url.PathEscape(ref.Name)
+	if strings.TrimSpace(ref.Version) != "" {
+		path += "/" + url.PathEscape(ref.Version)
+	}
+	return "https://thunderstore.io" + path
 }
 
 type packageRef struct {

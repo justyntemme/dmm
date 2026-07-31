@@ -2621,6 +2621,7 @@ type gameModResponse struct {
 	SteamAppID       string                   `json:"steam_app_id"`
 	Name             string                   `json:"name"`
 	Catalog          string                   `json:"catalog"`
+	SourceURL        string                   `json:"source_url,omitempty"`
 	SourceGameDomain string                   `json:"source_game_domain"`
 	SourceModID      string                   `json:"source_mod_id"`
 	SourceFileID     string                   `json:"source_file_id"`
@@ -2673,6 +2674,7 @@ func gameModResponses(mods []storage.InstalledMod, updates map[int64]storage.Mod
 			SteamAppID:       mod.SteamAppID,
 			Name:             mod.Name,
 			Catalog:          mod.Catalog,
+			SourceURL:        mod.SourceURL,
 			SourceGameDomain: mod.SourceGameDomain,
 			SourceModID:      mod.SourceModID,
 			SourceFileID:     mod.SourceFileID,
@@ -2777,6 +2779,10 @@ type nexusModUpdateProvider struct {
 	logger           *slog.Logger
 }
 
+type catalogModUpdateProvider struct {
+	resolver catalog.UpdateModCatalog
+}
+
 func (p nexusModUpdateProvider) CheckInstalledMod(ctx context.Context, mod storage.InstalledMod, checkedAt string) (gameModUpdateCheckResponse, bool) {
 	if !catalogUpdateMetadataComplete(mod) {
 		return unsupportedUpdateCheckResult(mod, checkedAt, "Nexus update checks need known Nexus game, mod, and file IDs."), false
@@ -2844,8 +2850,33 @@ func (p nexusModUpdateProvider) archiveFileName(ctx context.Context, resolved ca
 	return ""
 }
 
+func (p catalogModUpdateProvider) CheckInstalledMod(ctx context.Context, mod storage.InstalledMod, checkedAt string) (gameModUpdateCheckResponse, bool) {
+	latest, err := p.resolver.ResolveLatest(ctx, catalogUpdateResolveRequest(mod, mod.SourceFileID, "", ""))
+	return updateCheckResultForResolvedDownload(mod, latest, catalogDisplayLabel(mod.Catalog), checkedAt, err), true
+}
+
+func (p catalogModUpdateProvider) ResolveInstalledModUpdate(ctx context.Context, mod storage.InstalledMod, update storage.ModUpdate) (modUpdateDownload, error) {
+	resolved, err := p.resolver.ResolveFile(ctx, catalogUpdateResolveRequest(mod, update.LatestFileID, update.LatestFileName, update.LatestVersion))
+	if err != nil {
+		return modUpdateDownload{Resolved: resolved}, err
+	}
+	if len(resolved.DownloadLinks) == 0 {
+		return modUpdateDownload{Resolved: resolved}, errors.New(catalogDisplayLabel(mod.Catalog) + " did not return a downloadable archive")
+	}
+	archiveFileName := strings.TrimSpace(update.LatestFileName)
+	if archiveFileName == "" {
+		archiveFileName = strings.TrimSpace(resolved.FileName)
+	}
+	return modUpdateDownload{
+		Resolved:        resolved,
+		DownloadLinks:   resolved.DownloadLinks,
+		ArchiveFileName: archiveFileName,
+	}, nil
+}
+
 func (s *Server) modUpdateProviderForCatalog(catalogName string) (modUpdateProvider, bool) {
-	switch normalizeCatalogID(catalogName) {
+	id := normalizeCatalogID(catalogName)
+	switch id {
 	case "nexus":
 		s.cfgMu.RLock()
 		apiKey := strings.TrimSpace(s.cfg.Nexus.APIKey)
@@ -2855,9 +2886,18 @@ func (s *Server) modUpdateProviderForCatalog(catalogName string) (modUpdateProvi
 			client:           s.nexus(apiKey),
 			logger:           s.logger,
 		}, true
-	default:
-		return nil, false
 	}
+	for _, resolver := range s.catalogResolvers() {
+		if normalizeCatalogID(resolver.Name()) != id {
+			continue
+		}
+		updateResolver, ok := resolver.(catalog.UpdateModCatalog)
+		if !ok {
+			return nil, false
+		}
+		return catalogModUpdateProvider{resolver: updateResolver}, true
+	}
+	return nil, false
 }
 
 func normalizeCatalogID(value string) string {
@@ -2880,6 +2920,18 @@ func catalogUpdateMetadataComplete(mod storage.InstalledMod) bool {
 	return strings.TrimSpace(mod.SourceGameDomain) != "" &&
 		strings.TrimSpace(mod.SourceModID) != "" &&
 		strings.TrimSpace(mod.SourceFileID) != ""
+}
+
+func catalogUpdateResolveRequest(mod storage.InstalledMod, fileID, fileName, version string) catalog.UpdateResolveRequest {
+	return catalog.UpdateResolveRequest{
+		SteamAppID: strings.TrimSpace(mod.SteamAppID),
+		SourceURL:  strings.TrimSpace(mod.SourceURL),
+		GameDomain: strings.TrimSpace(mod.SourceGameDomain),
+		ModID:      strings.TrimSpace(mod.SourceModID),
+		FileID:     strings.TrimSpace(fileID),
+		FileName:   strings.TrimSpace(fileName),
+		Version:    strings.TrimSpace(version),
+	}
 }
 
 func unsupportedUpdateCheckResult(mod storage.InstalledMod, checkedAt, message string) gameModUpdateCheckResponse {
@@ -3133,6 +3185,44 @@ func updateCheckResultForInstalledMod(mod storage.InstalledMod, files []nexus.Mo
 	}
 	result.Status = "available"
 	version := result.LatestVersion
+	if version == "" {
+		version = result.LatestFileID
+	}
+	result.Message = "Update available: " + version
+	return result
+}
+
+func updateCheckResultForResolvedDownload(mod storage.InstalledMod, latest catalog.ResolvedDownload, label, checkedAt string, checkErr error) gameModUpdateCheckResponse {
+	result := gameModUpdateCheckResponse{
+		InstalledModID: mod.ID,
+		Name:           mod.Name,
+		Status:         "unknown",
+		CurrentFileID:  mod.SourceFileID,
+		CurrentVersion: mod.Version,
+		CheckedAt:      checkedAt,
+	}
+	if checkErr != nil {
+		result.Status = "error"
+		result.Message = "Update check failed: " + checkErr.Error()
+		return result
+	}
+	result.LatestFileID = strings.TrimSpace(latest.FileID)
+	result.LatestFileName = strings.TrimSpace(latest.FileName)
+	result.LatestVersion = strings.TrimSpace(latest.FileID)
+	if result.LatestFileID == "" {
+		result.Message = label + " did not return a comparable latest file for this installed mod."
+		return result
+	}
+	if result.LatestFileID == strings.TrimSpace(mod.SourceFileID) {
+		result.Status = "current"
+		result.Message = "Installed file is current."
+		return result
+	}
+	result.Status = "available"
+	version := result.LatestVersion
+	if version == "" {
+		version = result.LatestFileName
+	}
 	if version == "" {
 		version = result.LatestFileID
 	}

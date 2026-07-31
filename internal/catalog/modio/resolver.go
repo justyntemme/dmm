@@ -45,6 +45,36 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	if !steamAppID.MatchString(selectedSteamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("mod.io URLs must be added from a selected Steam game")
 	}
+	return r.resolveDownload(ctx, strings.TrimSpace(req.URL), selectedSteamAppID, ref)
+}
+
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref := modRef{
+		GameID: strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "modio-"),
+		ModID:  strings.TrimSpace(req.ModID),
+	}
+	if ref.GameID == "" || ref.GameID == req.GameDomain || ref.ModID == "" {
+		return catalog.ResolvedDownload{}, errors.New("mod.io update checks require numeric game and mod IDs")
+	}
+	return r.resolveDownload(ctx, modAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref := modRef{
+		GameID: strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "modio-"),
+		ModID:  strings.TrimSpace(req.ModID),
+		FileID: strings.TrimSpace(req.FileID),
+	}
+	if ref.GameID == "" || ref.GameID == req.GameDomain || ref.ModID == "" || ref.FileID == "" {
+		return catalog.ResolvedDownload{}, errors.New("mod.io update installs require numeric game, mod, and file IDs")
+	}
+	return r.resolveDownload(ctx, modAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) resolveDownload(ctx context.Context, sourceURL, selectedSteamAppID string, ref modRef) (catalog.ResolvedDownload, error) {
+	if !steamAppID.MatchString(selectedSteamAppID) {
+		return catalog.ResolvedDownload{}, errors.New("mod.io URLs must be added from a selected Steam game")
+	}
 	if strings.TrimSpace(r.APIKey) == "" {
 		return catalog.ResolvedDownload{}, errors.New("configure a mod.io API key before importing mod.io URLs")
 	}
@@ -80,7 +110,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	}
 	return catalog.ResolvedDownload{
 		Catalog:    "modio",
-		SourceURL:  strings.TrimSpace(req.URL),
+		SourceURL:  strings.TrimSpace(sourceURL),
 		SteamAppID: selectedSteamAppID,
 		GameDomain: "modio-" + ref.GameID,
 		ModID:      ref.ModID,
@@ -92,6 +122,14 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 			URI:       downloadURL,
 		}},
 	}, nil
+}
+
+func modAPIURL(ref modRef) string {
+	rawURL := "https://api.mod.io/v1/games/" + url.PathEscape(ref.GameID) + "/mods/" + url.PathEscape(ref.ModID)
+	if strings.TrimSpace(ref.FileID) != "" {
+		rawURL += "/files/" + url.PathEscape(ref.FileID)
+	}
+	return rawURL
 }
 
 type modRef struct {

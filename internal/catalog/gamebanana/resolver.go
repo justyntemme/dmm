@@ -39,6 +39,34 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	if !steamAppIDPattern.MatchString(steamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("GameBanana URLs must be added from a selected Steam game")
 	}
+	return r.resolveDownload(ctx, strings.TrimSpace(req.URL), steamAppID, ref)
+}
+
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := parseURL(req.SourceURL)
+	if err != nil {
+		return catalog.ResolvedDownload{}, errors.New("GameBanana update checks require the original submission URL")
+	}
+	ref.FileID = ""
+	return r.resolveDownload(ctx, itemURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := parseURL(req.SourceURL)
+	if err != nil {
+		return catalog.ResolvedDownload{}, errors.New("GameBanana update installs require the original submission URL")
+	}
+	ref.FileID = strings.TrimSpace(req.FileID)
+	if ref.FileID == "" {
+		return catalog.ResolvedDownload{}, errors.New("GameBanana update installs require a file ID")
+	}
+	return r.resolveDownload(ctx, itemURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID string, ref itemRef) (catalog.ResolvedDownload, error) {
+	if !steamAppIDPattern.MatchString(steamAppID) {
+		return catalog.ResolvedDownload{}, errors.New("GameBanana URLs must be added from a selected Steam game")
+	}
 	item, err := r.resolveItem(ctx, ref)
 	if err != nil {
 		return catalog.ResolvedDownload{}, err
@@ -64,7 +92,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	}
 	return catalog.ResolvedDownload{
 		Catalog:    "gamebanana",
-		SourceURL:  strings.TrimSpace(req.URL),
+		SourceURL:  strings.TrimSpace(sourceURL),
 		SteamAppID: steamAppID,
 		GameDomain: "gamebanana-" + strings.ToLower(ref.ItemType),
 		ModID:      ref.ItemID,
@@ -76,6 +104,23 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 			URI:       downloadURL,
 		}},
 	}, nil
+}
+
+func itemURL(ref itemRef) string {
+	section := "mods"
+	switch ref.ItemType {
+	case "Tool":
+		section = "tools"
+	case "Sound":
+		section = "sounds"
+	case "Spray":
+		section = "sprays"
+	}
+	rawURL := "https://gamebanana.com/" + section + "/" + url.PathEscape(ref.ItemID)
+	if strings.TrimSpace(ref.FileID) != "" {
+		rawURL += "?file_id=" + url.QueryEscape(ref.FileID)
+	}
+	return rawURL
 }
 
 type itemRef struct {

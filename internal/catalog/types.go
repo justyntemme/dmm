@@ -13,9 +13,25 @@ type ResolveRequest struct {
 	Source     string
 }
 
+type UpdateResolveRequest struct {
+	SteamAppID string
+	SourceURL  string
+	GameDomain string
+	ModID      string
+	FileID     string
+	FileName   string
+	Version    string
+}
+
 type RemoteModCatalog interface {
 	Name() string
 	ResolveURL(ctx context.Context, req ResolveRequest) (ResolvedDownload, error)
+}
+
+type UpdateModCatalog interface {
+	RemoteModCatalog
+	ResolveLatest(ctx context.Context, req UpdateResolveRequest) (ResolvedDownload, error)
+	ResolveFile(ctx context.Context, req UpdateResolveRequest) (ResolvedDownload, error)
 }
 
 type ModFile struct {

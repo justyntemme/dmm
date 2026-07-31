@@ -48,6 +48,7 @@ type InstalledMod struct {
 	SteamAppID       string `json:"steam_app_id"`
 	Name             string `json:"name"`
 	Catalog          string `json:"catalog"`
+	SourceURL        string `json:"source_url"`
 	SourceGameDomain string `json:"source_game_domain"`
 	SourceModID      string `json:"source_mod_id"`
 	SourceFileID     string `json:"source_file_id"`
@@ -1635,7 +1636,7 @@ latest_download AS (
 	WHERE mod_version_id IS NOT NULL
 	GROUP BY mod_version_id
 )
-SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM installed_mods im
@@ -1752,7 +1753,7 @@ latest_download AS (
 	WHERE mod_version_id IS NOT NULL
 	GROUP BY mod_version_id
 )
-SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM installed_mods im
@@ -1799,7 +1800,7 @@ latest_download AS (
 	WHERE mod_version_id IS NOT NULL
 	GROUP BY mod_version_id
 )
-SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM installed_mods im
@@ -1833,7 +1834,7 @@ latest_download AS (
 	WHERE mod_version_id IS NOT NULL
 	GROUP BY mod_version_id
 )
-SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, COALESCE(ap.id, 0), g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM installed_mods im
@@ -1861,7 +1862,7 @@ WITH latest_download AS (
 	WHERE mod_version_id IS NOT NULL
 	GROUP BY mod_version_id
 )
-SELECT im.id, g.id, p.id, g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, p.id, g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM profiles p
@@ -2000,7 +2001,7 @@ ON CONFLICT(profile_id, installed_mod_id) DO UPDATE SET
 
 func (db *DB) installedModForProfile(ctx context.Context, profileID, installedModID int64) (InstalledMod, error) {
 	row := db.conn.QueryRowContext(ctx, `
-SELECT im.id, g.id, p.id, g.steam_app_id, m.name, m.catalog, m.source_game_domain, m.source_mod_id,
+SELECT im.id, g.id, p.id, g.steam_app_id, m.name, m.catalog, m.source_url, m.source_game_domain, m.source_mod_id,
 	mv.source_file_id, mv.version, COALESCE(d.archive_path, ''), im.staging_path, im.checksum_manifest_json,
 	COALESCE(pm.enabled, 0), COALESCE(pm.priority, 0)
 FROM installed_mods im
@@ -2184,6 +2185,7 @@ func scanInstalledMod(scanner installedModScanner, status string) (InstalledMod,
 		&mod.SteamAppID,
 		&mod.Name,
 		&mod.Catalog,
+		&mod.SourceURL,
 		&mod.SourceGameDomain,
 		&mod.SourceModID,
 		&mod.SourceFileID,

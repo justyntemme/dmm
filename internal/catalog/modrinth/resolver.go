@@ -60,6 +60,30 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	return resolvedDownload(req.URL, steamAppID, ref, file), nil
 }
 
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	projectID := strings.TrimSpace(req.ModID)
+	if projectID == "" {
+		return catalog.ResolvedDownload{}, errors.New("Modrinth update checks require a project ID")
+	}
+	rawURL := "https://api.modrinth.com/v2/project/" + url.PathEscape(projectID)
+	return r.ResolveURL(ctx, catalog.ResolveRequest{
+		URL:        rawURL,
+		SteamAppID: req.SteamAppID,
+	})
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	versionID := strings.TrimSpace(req.FileID)
+	if versionID == "" {
+		return catalog.ResolvedDownload{}, errors.New("Modrinth update installs require a version ID")
+	}
+	rawURL := "https://api.modrinth.com/v2/version/" + url.PathEscape(versionID)
+	return r.ResolveURL(ctx, catalog.ResolveRequest{
+		URL:        rawURL,
+		SteamAppID: req.SteamAppID,
+	})
+}
+
 type modrinthRef struct {
 	Project     string
 	ProjectKind string

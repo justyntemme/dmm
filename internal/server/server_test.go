@@ -24,6 +24,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/modrinth"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/config"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
@@ -968,15 +969,16 @@ func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
 	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
-			Catalog:    "modrinth",
+			Catalog:    "direct",
+			SourceURL:  "https://example.invalid/direct-test.zip",
 			GameDomain: "stardewvalley",
-			ModID:      "project-slug",
-			FileID:     "version-id",
+			ModID:      "direct-test",
+			FileID:     "direct-test.zip",
 		},
-		Name:         "Modrinth Test Mod",
+		Name:         "Direct Test Mod",
 		Version:      "1.0.0",
-		ArchivePath:  filepath.Join(t.TempDir(), "modrinth-test.zip"),
-		StagingPath:  filepath.Join(t.TempDir(), "modrinth-test"),
+		ArchivePath:  filepath.Join(t.TempDir(), "direct-test.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "direct-test"),
 		ManifestJSON: "{}",
 	}); err != nil {
 		t.Fatal(err)
@@ -996,7 +998,7 @@ func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
 	if body.Checked != 0 || len(body.Results) != 1 {
 		t.Fatalf("body = %+v", body)
 	}
-	if body.Results[0].Status != "unsupported" || !strings.Contains(body.Results[0].Message, "Modrinth") {
+	if body.Results[0].Status != "unsupported" || !strings.Contains(body.Results[0].Message, "Direct Archive URL") {
 		t.Fatalf("result = %+v", body.Results[0])
 	}
 
@@ -1011,8 +1013,125 @@ func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
 	if err := json.Unmarshal(modsRec.Body.Bytes(), &mods); err != nil {
 		t.Fatal(err)
 	}
-	if len(mods) != 1 || mods[0].Update == nil || mods[0].Update.Status != "unsupported" || !strings.Contains(mods[0].Update.Message, "Modrinth") {
+	if len(mods) != 1 || mods[0].Update == nil || mods[0].Update.Status != "unsupported" || !strings.Contains(mods[0].Update.Message, "Direct Archive URL") {
 		t.Fatalf("mods = %+v", mods)
+	}
+}
+
+func TestModrinthUpdateProviderCachesAndQueuesLatestVersion(t *testing.T) {
+	srv := newTestServer(t)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/project/AABBCCDD/version":
+			if got := r.URL.Query().Get("include_changelog"); got != "false" {
+				t.Fatalf("include_changelog = %q", got)
+			}
+			_, _ = io.WriteString(w, `[
+				{"id":"old-version","project_id":"AABBCCDD","version_number":"1.0.0","date_published":"2024-01-01T00:00:00Z","files":[{"url":"https://cdn.modrinth.com/data/AABBCCDD/versions/old-version/sodium-old.jar","filename":"sodium-old.jar","primary":true}]},
+				{"id":"new-version","project_id":"AABBCCDD","version_number":"2.0.0","date_published":"2024-03-01T00:00:00Z","files":[{"url":"https://cdn.modrinth.com/data/AABBCCDD/versions/new-version/sodium-new.jar","filename":"sodium-new.jar","primary":true}]}
+			]`)
+		case "/version/new-version":
+			_, _ = io.WriteString(w, `{"id":"new-version","project_id":"AABBCCDD","version_number":"2.0.0","date_published":"2024-03-01T00:00:00Z","files":[{"url":"https://cdn.modrinth.com/data/AABBCCDD/versions/new-version/sodium-new.jar","filename":"sodium-new.jar","primary":true}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{modrinth.Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}}
+	srv.catalogMu.Unlock()
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "modrinth",
+			SourceURL:  "https://modrinth.com/mod/sodium/version/old-version",
+			GameDomain: "modrinth-AABBCCDD",
+			ModID:      "AABBCCDD",
+			FileID:     "old-version",
+		},
+		Name:         "Sodium",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "sodium-old.jar"),
+		StagingPath:  filepath.Join(t.TempDir(), "sodium-old"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkReq := httptest.NewRequest(http.MethodPost, "/api/games/413150/mods/check-updates", nil)
+	checkReq.RemoteAddr = "127.0.0.1:1"
+	checkRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(checkRec, checkReq)
+	if checkRec.Code != http.StatusOK {
+		t.Fatalf("check status = %d, body = %s", checkRec.Code, checkRec.Body.String())
+	}
+	var checkBody modUpdateCheckResponse
+	if err := json.Unmarshal(checkRec.Body.Bytes(), &checkBody); err != nil {
+		t.Fatal(err)
+	}
+	if checkBody.Checked != 1 || len(checkBody.Results) != 1 {
+		t.Fatalf("check body = %+v", checkBody)
+	}
+	if checkBody.Results[0].Status != "available" || checkBody.Results[0].LatestFileID != "new-version" || checkBody.Results[0].LatestFileName != "sodium-new.jar" {
+		t.Fatalf("update result = %+v", checkBody.Results[0])
+	}
+
+	status := srv.downloadGate.status()
+	for i := 0; i < status.Max; i++ {
+		if !srv.acquireCapturedDownloadSlot(context.Background(), fmt.Sprintf("test:%d", i)) {
+			t.Fatalf("failed to occupy download slot %d", i)
+		}
+	}
+	defer func() {
+		for i := 0; i < status.Max; i++ {
+			srv.releaseCapturedDownloadSlot(fmt.Sprintf("test:%d", i))
+		}
+	}()
+
+	updateReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/games/413150/mods/%d/update", mod.ID), nil)
+	updateReq.RemoteAddr = "127.0.0.1:1"
+	updateRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusAccepted {
+		t.Fatalf("update status = %d, body = %s", updateRec.Code, updateRec.Body.String())
+	}
+	var updateBody struct {
+		Job      jobs.Job                 `json:"job"`
+		Resolved catalog.ResolvedDownload `json:"resolved"`
+		FileURL  string                   `json:"file_url"`
+	}
+	if err := json.Unmarshal(updateRec.Body.Bytes(), &updateBody); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cancel := srv.cancelActiveJob(updateBody.Job.ID); cancel != nil {
+			cancel()
+		}
+	}()
+	if updateBody.Job.Type != "captured-install" || updateBody.Job.Status != jobs.StatusQueued {
+		t.Fatalf("job = %+v", updateBody.Job)
+	}
+	if updateBody.Resolved.Catalog != "modrinth" || updateBody.Resolved.FileID != "new-version" || updateBody.FileURL == "" {
+		t.Fatalf("response = %+v", updateBody)
+	}
+	pending, ok := srv.capturedInstall(updateBody.Job.ID)
+	if !ok {
+		t.Fatal("captured install was not remembered")
+	}
+	if pending.Resolved.Catalog != "modrinth" || pending.Resolved.FileID != "new-version" || pending.ArchiveFileName != "sodium-new.jar" {
+		t.Fatalf("pending = %+v", pending)
 	}
 }
 
@@ -1218,15 +1337,16 @@ func TestUpdateGameModRejectsUnsupportedCatalog(t *testing.T) {
 	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
-			Catalog:    "modrinth",
+			Catalog:    "direct",
+			SourceURL:  "https://example.invalid/direct-test.zip",
 			GameDomain: "stardewvalley",
-			ModID:      "project-slug",
-			FileID:     "version-id",
+			ModID:      "direct-test",
+			FileID:     "direct-test.zip",
 		},
-		Name:         "Modrinth Test Mod",
+		Name:         "Direct Test Mod",
 		Version:      "1.0.0",
-		ArchivePath:  filepath.Join(t.TempDir(), "modrinth-test.zip"),
-		StagingPath:  filepath.Join(t.TempDir(), "modrinth-test"),
+		ArchivePath:  filepath.Join(t.TempDir(), "direct-test.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "direct-test"),
 		ManifestJSON: "{}",
 	})
 	if err != nil {
@@ -1249,7 +1369,7 @@ func TestUpdateGameModRejectsUnsupportedCatalog(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Modrinth") {
+	if !strings.Contains(rec.Body.String(), "Direct Archive URL") {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
 }

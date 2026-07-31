@@ -43,6 +43,36 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	if !curseForgeSteamApp.MatchString(selectedSteamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("CurseForge URLs must be added from a selected Steam game")
 	}
+	return r.resolveDownload(ctx, strings.TrimSpace(req.URL), selectedSteamAppID, ref)
+}
+
+func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref := curseForgeRef{
+		GameID: strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "curseforge-"),
+		ModID:  strings.TrimSpace(req.ModID),
+	}
+	if ref.ModID == "" {
+		return catalog.ResolvedDownload{}, errors.New("CurseForge update checks require a mod ID")
+	}
+	return r.resolveDownload(ctx, curseForgeAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref := curseForgeRef{
+		GameID: strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "curseforge-"),
+		ModID:  strings.TrimSpace(req.ModID),
+		FileID: strings.TrimSpace(req.FileID),
+	}
+	if ref.ModID == "" || ref.FileID == "" {
+		return catalog.ResolvedDownload{}, errors.New("CurseForge update installs require mod and file IDs")
+	}
+	return r.resolveDownload(ctx, curseForgeAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
+}
+
+func (r Resolver) resolveDownload(ctx context.Context, sourceURL, selectedSteamAppID string, ref curseForgeRef) (catalog.ResolvedDownload, error) {
+	if !curseForgeSteamApp.MatchString(selectedSteamAppID) {
+		return catalog.ResolvedDownload{}, errors.New("CurseForge URLs must be added from a selected Steam game")
+	}
 	if strings.TrimSpace(r.APIKey) == "" {
 		return catalog.ResolvedDownload{}, errors.New("configure a CurseForge API key before importing CurseForge URLs")
 	}
@@ -87,7 +117,7 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 	}
 	return catalog.ResolvedDownload{
 		Catalog:    "curseforge",
-		SourceURL:  strings.TrimSpace(req.URL),
+		SourceURL:  strings.TrimSpace(sourceURL),
 		SteamAppID: selectedSteamAppID,
 		GameDomain: gameDomain,
 		ModID:      ref.ModID,
@@ -99,6 +129,14 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 			URI:       downloadURL,
 		}},
 	}, nil
+}
+
+func curseForgeAPIURL(ref curseForgeRef) string {
+	rawURL := "https://api.curseforge.com/v1/mods/" + url.PathEscape(ref.ModID)
+	if strings.TrimSpace(ref.FileID) != "" {
+		rawURL += "/files/" + url.PathEscape(ref.FileID)
+	}
+	return rawURL
 }
 
 type curseForgeRef struct {

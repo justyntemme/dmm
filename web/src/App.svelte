@@ -186,6 +186,7 @@
     steam_app_id: string;
     name: string;
     catalog: string;
+    source_url?: string;
     source_game_domain: string;
     source_mod_id: string;
     source_file_id: string;
