@@ -24,7 +24,6 @@ python3 - <<'PY'
 import json
 import os
 import pathlib
-import sqlite3
 import sys
 import time
 import urllib.error
@@ -55,25 +54,10 @@ def request(method, path, body=None):
 
 
 def manifest_targets(mod):
-    db_path = data_dir / "db" / "dmm.sqlite"
-    if not db_path.exists():
-        raise RuntimeError(f"DMM database is missing: {db_path}")
-    # The public mods API intentionally does not expose raw staged manifests.
-    # This live verifier reads DMM's local DB directly to validate file effects.
-    conn = sqlite3.connect(db_path)
-    row = conn.execute(
-        """
-        select im.checksum_manifest_json
-        from installed_mods im
-        where im.id = ?
-        """,
-        (mod.get("id"),),
-    ).fetchone()
-    conn.close()
-    if not row or not row[0]:
+    parsed = mod.get("manifest")
+    if not isinstance(parsed, dict):
         return []
-    parsed = json.loads(row[0])
-    files = parsed.get("files") if isinstance(parsed, dict) else parsed
+    files = parsed.get("files")
     targets = []
     for item in files or []:
         target = item.get("target_relative")
@@ -105,7 +89,14 @@ def set_enabled(profile_id, mod_id, enabled):
     return request("PUT", f"/api/profiles/{profile_id}/mods/{mod_id}", {"enabled": enabled})
 
 
+def is_runtime_mod(mod):
+    mod_type = str(mod.get("mod_type") or "").lower()
+    name = str(mod.get("name") or "").lower()
+    return mod_type in {"smapi", "launch-tool", "script-extender"} or name.startswith("smapi ")
+
+
 diag, mods, deployment = fetch_state()
+baseline_preview = request("GET", f"/api/games/{app_id}/deploy/preview")
 game = diag.get("game") or {}
 game_path = pathlib.Path(game.get("game_path") or "").expanduser().resolve()
 if not game_path:
@@ -127,7 +118,8 @@ for mod in enabled_mods:
 
 selected = None
 selected_targets = []
-for mod in enabled_mods:
+toggle_candidates = [mod for mod in enabled_mods if not is_runtime_mod(mod)] or enabled_mods
+for mod in toggle_candidates:
     targets = targets_by_mod.get(mod["id"], [])
     unique = [target for target in targets if target_counts.get(target) == 1]
     if unique:
@@ -136,54 +128,79 @@ for mod in enabled_mods:
         break
 
 if selected is None:
-    raise RuntimeError("could not find an enabled mod with unique deployment targets")
+    preview_targets_by_mod = {}
+    preview_target_counts = {}
+    for action in baseline_preview.get("actions") or []:
+        mod_id = action.get("installed_mod_id")
+        target = action.get("target_relative")
+        if mod_id is None or not target:
+            continue
+        target_path = pathlib.PurePosixPath(str(target).replace("\\", "/"))
+        if target_path.is_absolute() or ".." in target_path.parts:
+            continue
+        preview_targets_by_mod.setdefault(mod_id, set()).add(str(target_path))
+        preview_target_counts[str(target_path)] = preview_target_counts.get(str(target_path), 0) + 1
+    for mod in toggle_candidates:
+        targets = sorted(preview_targets_by_mod.get(mod["id"], set()))
+        unique = [target for target in targets if preview_target_counts.get(target) == 1]
+        if unique:
+            selected = mod
+            selected_targets = unique
+            break
+
+if selected is None:
+    raise RuntimeError("could not find an enabled mod with unique deployment targets in the active API preview")
 
 profile_id = selected["profile_id"]
 mod_id = selected["id"]
 name = selected.get("name") or f"mod {mod_id}"
 target_paths = [game_path / target for target in selected_targets]
+can_assert_files = game_path.exists() and data_dir.exists()
 print(f"selected_mod={name} id={mod_id} profile={profile_id}")
 print(f"unique_targets={len(target_paths)}")
+if not can_assert_files:
+    print("filesystem_assertions=skipped (run this script on the Steam Deck to inspect deployed files)")
 
 restored = False
 try:
-    set_enabled(profile_id, mod_id, False)
-    preview = request("GET", f"/api/games/{app_id}/deploy/preview")
-    removes = [action for action in preview.get("actions", []) if action.get("operation") == "remove"]
-    if not removes:
-        raise RuntimeError("disabling the selected mod did not produce any remove actions")
-    deploy_profile()
+    disabled = set_enabled(profile_id, mod_id, False)
+    disabled_apply = disabled.get("apply") or {}
+    if disabled_apply.get("status") != "applied":
+        raise RuntimeError(f"disabling the selected mod did not apply cleanly: {disabled_apply}")
     time.sleep(0.2)
 
-    still_present = [str(path) for path in target_paths if path.exists() or path.is_symlink()]
-    if still_present:
-        raise RuntimeError("disabled mod target(s) still exist after deploy: " + ", ".join(still_present[:8]))
+    if can_assert_files:
+        still_present = [str(path) for path in target_paths if path.exists() or path.is_symlink()]
+        if still_present:
+            raise RuntimeError("disabled mod target(s) still exist after deploy: " + ", ".join(still_present[:8]))
 
-    set_enabled(profile_id, mod_id, True)
-    deploy_profile()
+    enabled = set_enabled(profile_id, mod_id, True)
+    enabled_apply = enabled.get("apply") or {}
+    if enabled_apply.get("status") != "applied":
+        raise RuntimeError(f"re-enabling the selected mod did not apply cleanly: {enabled_apply}")
     restored = True
 
-    missing = []
-    external = []
-    for path in target_paths:
-        if not path.exists() and not path.is_symlink():
-            missing.append(str(path))
-            continue
-        if path.is_symlink():
-            try:
-                target = path.resolve(strict=True)
-                target.relative_to(data_dir)
-            except (FileNotFoundError, ValueError):
-                external.append(str(path))
-    if missing:
-        raise RuntimeError("re-enabled mod target(s) are missing after deploy: " + ", ".join(missing[:8]))
-    if external:
-        raise RuntimeError("re-enabled mod symlink(s) do not point into DMM data: " + ", ".join(external[:8]))
+    if can_assert_files:
+        missing = []
+        external = []
+        for path in target_paths:
+            if not path.exists() and not path.is_symlink():
+                missing.append(str(path))
+                continue
+            if path.is_symlink():
+                try:
+                    target = path.resolve(strict=True)
+                    target.relative_to(data_dir)
+                except (FileNotFoundError, ValueError):
+                    external.append(str(path))
+        if missing:
+            raise RuntimeError("re-enabled mod target(s) are missing after deploy: " + ", ".join(missing[:8]))
+        if external:
+            raise RuntimeError("re-enabled mod symlink(s) do not point into DMM data: " + ", ".join(external[:8]))
 finally:
     if not restored:
         try:
             set_enabled(profile_id, mod_id, True)
-            deploy_profile()
             print("restored selected mod after failed check")
         except Exception as exc:
             print(f"failed to restore selected mod: {exc}", file=sys.stderr)
