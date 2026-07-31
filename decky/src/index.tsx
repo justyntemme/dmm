@@ -1078,6 +1078,16 @@ function compactLogValue(value: string) {
   return value.length > 900 ? `${value.slice(0, 900)}...` : value;
 }
 
+function errorLogValue(error: unknown): string {
+  if (error instanceof Error) return compactLogValue(error.message);
+  if (typeof error === "string") return compactLogValue(error);
+  try {
+    return compactLogValue(JSON.stringify(error));
+  } catch (_err) {
+    return String(error);
+  }
+}
+
 async function logSteamClientCapabilities() {
   const root = typeof SteamClient !== "undefined" ? (SteamClient as unknown as Record<string, unknown>) : null;
   if (!root) {
@@ -1456,19 +1466,26 @@ async function syncWorkshopStateForApp(appID: string, options: { force?: boolean
 
   let subscribed: SteamWorkshopClientItem[] = [];
   let downloaded: SteamWorkshopClientItem[] = [];
+  let readFailed = false;
   try {
     if (typeof steamApps.GetSubscribedWorkshopItems === "function") {
       subscribed = await steamApps.GetSubscribedWorkshopItems(appid);
     }
   } catch (err) {
-    await logFrontendEvent("workshop subscribed sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
+    readFailed = true;
+    await logFrontendEvent("workshop subscribed sync failed", { app_id: appID, error: errorLogValue(err) });
   }
   try {
     if (typeof steamApps.GetDownloadedWorkshopItems === "function") {
       downloaded = await steamApps.GetDownloadedWorkshopItems(appid);
     }
   } catch (err) {
-    await logFrontendEvent("workshop downloaded sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
+    readFailed = true;
+    await logFrontendEvent("workshop downloaded sync failed", { app_id: appID, error: errorLogValue(err) });
+  }
+  if (readFailed) {
+    await logFrontendEvent("workshop sync skipped after steam read failure", { app_id: appID });
+    return false;
   }
 
   await enrichWorkshopItemDetails(appID, appid, steamApps, [...(subscribed ?? []), ...(downloaded ?? [])]);
