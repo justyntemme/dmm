@@ -16,8 +16,10 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 ## Guideline 1: Verify Upstream Behavior First
 
+- Do not assume behavior when it can be verified. Before copying, adapting, or claiming compatibility with a mod manager, plugin store, upstream catalog, game extension, installer format, or Steam/Deck API, inspect the source, official documentation, observed runtime state, or a real fixture.
 - Before implementing or changing Vortex-compatible behavior, verify how Vortex or the relevant official game extension models the same behavior from source, documentation, or observed runtime state.
 - Do not guess archive install rules, mod types, deployment roots, launcher behavior, dependency semantics, metadata extraction, or protocol handling when a Vortex implementation or official game-handler source exists.
+- For Vortex plugin behavior, clone or inspect the relevant Vortex extension source before implementation. Do the same for each future plugin store/upstream: inspect its official client/API/schema/source instead of inferring from one downloaded archive.
 - Use source verification as the default path for Nexus/Vortex compatibility work. Local observations from one downloaded mod are useful test fixtures, not architectural authority.
 - When Vortex behavior is Windows-specific or does not map cleanly to Steam Deck/Linux, document the verified Vortex behavior first, then document the Linux-specific adaptation and why it is necessary.
 - If a decision was previously inferred before source verification, mark it for review and either confirm it against upstream source or explicitly redesign it.
@@ -70,6 +72,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - The phone/tablet browser UI is the primary MVP management surface.
 - MVP supports Steam games on Steam Deck only.
 - MVP focuses on Nexus Mods "Mod Manager Download" / Vortex-compatible flows.
+- MVP provider architecture must support all popular non-Steam mod upstreams as first-class future sources, verified from their official APIs/clients before implementation. Nexus remains the first implemented source; Steam Workshop is treated separately as Steam-owned platform content rather than as a normal remote catalog.
+- Persist source/catalog identity for every captured, cached, installed, enabled, disabled, updated, or removed mod. UI surfaces should be able to tag, filter, and sort mods by source.
+- Steam Workshop content should coexist with DMM-managed mods where the game extension declares it safe. Steam Workshop unsubscribe, enable/disable, and load-order movement should use documented or directly verified Steam/Decky APIs; do not add filesystem or client-state hacks for Workshop management.
 - MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
 - Staging, install planning, deployment manifests, and file operations are implementation details for the default experience; they remain inspectable through advanced/power-user surfaces.
 - User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain a supported manual capture path.
