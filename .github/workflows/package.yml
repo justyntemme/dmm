@@ -36,11 +36,6 @@ jobs:
       - name: Build package
         run: make package
 
-      - name: Write checksums
-        run: |
-          cd dist
-          sha256sum decky-mod-manager.tar.gz decky-mod-manager.zip > decky-mod-manager-checksums.txt
-
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
@@ -48,7 +43,6 @@ jobs:
           path: |
             dist/decky-mod-manager.tar.gz
             dist/decky-mod-manager.zip
-            dist/decky-mod-manager-checksums.txt
           if-no-files-found: error
 
       - name: Publish development release assets
@@ -73,5 +67,4 @@ jobs:
           gh release upload "${release_tag}" \
             dist/decky-mod-manager.tar.gz \
             dist/decky-mod-manager.zip \
-            dist/decky-mod-manager-checksums.txt \
             --clobber

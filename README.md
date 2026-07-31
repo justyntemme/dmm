@@ -125,7 +125,7 @@ and starts the existing root-owned test installer wrapper:
 
 That wrapper is intentionally narrow: it only installs the staged DMM package and reboots the Deck after a successful install. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
 
-GitHub Actions builds package artifacts on pushes, pull requests, and manual workflow runs. Every push to `main` also force-updates the `dev-latest` development release with the tarball, ZIP, and checksums. No manual release tag is needed for the current development loop.
+GitHub Actions builds package artifacts on pushes, pull requests, and manual workflow runs. Every push to `main` also force-updates the `dev-latest` development release with the tarball and ZIP. No manual release tag is needed for the current development loop.
 
 ## Logs
 
