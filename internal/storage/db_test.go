@@ -280,6 +280,26 @@ func TestReplaceSteamWorkshopItemsForSteamApp(t *testing.T) {
 	}
 
 	items, changed, err = db.ReplaceSteamWorkshopItems(context.Background(), "377160", []SteamWorkshopItem{
+		{PublishedFileID: "10", Subscribed: true, Downloaded: true, Position: 1},
+		{PublishedFileID: "20", Subscribed: false, Downloaded: true, Position: 2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("partial workshop sync should still update observed membership")
+	}
+	if items[0].Title != "Workshop Ten" {
+		t.Fatalf("partial sync dropped known title: %+v", items[0])
+	}
+	if !items[1].DisabledKnown || !items[1].DisabledLocally {
+		t.Fatalf("partial sync dropped known disabled state: %+v", items[1])
+	}
+	if items[1].Subscribed {
+		t.Fatalf("partial sync should not preserve subscription membership: %+v", items[1])
+	}
+
+	items, changed, err = db.ReplaceSteamWorkshopItems(context.Background(), "377160", []SteamWorkshopItem{
 		{PublishedFileID: "30", Subscribed: true, Downloaded: true},
 	})
 	if err != nil {

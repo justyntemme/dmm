@@ -383,6 +383,7 @@ func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items
 		return nil, false, err
 	}
 	normalized := normalizeSteamWorkshopItems(appID, items)
+	normalized = mergeKnownSteamWorkshopItemFields(existing, normalized)
 	if sameSteamWorkshopItems(existing, normalized) {
 		return existing, false, nil
 	}
@@ -466,6 +467,32 @@ func normalizeSteamWorkshopItems(appID string, items []SteamWorkshopItem) []Stea
 		normalized = append(normalized, item)
 	}
 	return normalized
+}
+
+func mergeKnownSteamWorkshopItemFields(existing, incoming []SteamWorkshopItem) []SteamWorkshopItem {
+	if len(existing) == 0 || len(incoming) == 0 {
+		return incoming
+	}
+	byID := make(map[string]SteamWorkshopItem, len(existing))
+	for _, item := range existing {
+		if item.PublishedFileID != "" {
+			byID[item.PublishedFileID] = item
+		}
+	}
+	for i := range incoming {
+		previous, ok := byID[incoming[i].PublishedFileID]
+		if !ok {
+			continue
+		}
+		if incoming[i].Title == "" && previous.Title != "" {
+			incoming[i].Title = previous.Title
+		}
+		if !incoming[i].DisabledKnown && previous.DisabledKnown {
+			incoming[i].DisabledKnown = true
+			incoming[i].DisabledLocally = previous.DisabledLocally
+		}
+	}
+	return incoming
 }
 
 func sameSteamWorkshopItems(a, b []SteamWorkshopItem) bool {

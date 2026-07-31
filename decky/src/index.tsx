@@ -24,6 +24,7 @@ declare const SteamClient:
       Apps?: {
         SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
         GetSubscribedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
+        GetSubscribedWorkshopItemDetails?: (appid: number, itemIds: string[]) => Promise<SteamWorkshopClientItemDetails[]>;
         GetDownloadedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
         SetWorkshopItemsDisabledLocally?: (appid: number, itemIds: string[], disabled: boolean) => void | Promise<unknown>;
         SetWorkshopItemsLoadOrder?: (appid: number, itemIds: string[]) => void | Promise<unknown>;
@@ -39,15 +40,34 @@ declare const SteamClient:
 type SteamWorkshopClientItem = {
   unAppID?: number;
   appid?: number;
-  ulPublishedFileID?: string;
-  publishedfileid?: string;
-  published_file_id?: string;
+  ulPublishedFileID?: string | number;
+  publishedfileid?: string | number;
+  published_file_id?: string | number;
   title?: string;
   strTitle?: string;
-  bDisabledLocally?: boolean;
-  bDisabled?: boolean;
-  disabled?: boolean;
-  disabled_locally?: boolean;
+  details?: SteamWorkshopClientItemDetails;
+  bDisabledLocally?: boolean | number;
+  bDisabled?: boolean | number;
+  disabled?: boolean | number;
+  disabled_locally?: boolean | number;
+  load_order?: number;
+  time_subscribed?: number;
+  time_updated?: number;
+  file_size?: string | number;
+};
+
+type SteamWorkshopClientItemDetails = {
+  publishedfileid?: string | number;
+  published_file_id?: string | number;
+  title?: string;
+  strTitle?: string;
+  file_size?: string | number;
+  preview_url?: string;
+  short_description?: string;
+  consumer_appid?: number;
+  creator?: unknown;
+  children?: Array<string | number>;
+  tags?: string[];
 };
 
 type BackendStatus = {
@@ -1273,12 +1293,17 @@ async function syncLaunchActions(options: { force?: boolean; sink?: LaunchResult
 }
 
 function workshopIDFromClientItem(item: SteamWorkshopClientItem): string {
-  const raw = item.ulPublishedFileID ?? item.publishedfileid ?? item.published_file_id ?? "";
+  const raw = item.ulPublishedFileID ?? item.publishedfileid ?? item.published_file_id ?? item.details?.publishedfileid ?? item.details?.published_file_id ?? "";
+  return String(raw).trim();
+}
+
+function workshopIDFromClientDetail(detail: SteamWorkshopClientItemDetails): string {
+  const raw = detail.publishedfileid ?? detail.published_file_id ?? "";
   return String(raw).trim();
 }
 
 function workshopTitleFromClientItem(item: SteamWorkshopClientItem): string {
-  const title = item.title ?? item.strTitle ?? "";
+  const title = item.title ?? item.strTitle ?? item.details?.title ?? item.details?.strTitle ?? "";
   return String(title).trim();
 }
 
@@ -1293,13 +1318,68 @@ function workshopDisabledState(item: SteamWorkshopClientItem): { known: boolean;
 
 function workshopRawJSON(item: SteamWorkshopClientItem): string {
   const raw: Record<string, string | number | boolean> = {};
-  for (const key of ["unAppID", "appid", "ulPublishedFileID", "publishedfileid", "published_file_id", "title", "strTitle", "bDisabledLocally", "bDisabled", "disabled", "disabled_locally"] as const) {
+  for (const key of ["unAppID", "appid", "ulPublishedFileID", "publishedfileid", "published_file_id", "title", "strTitle", "bDisabledLocally", "bDisabled", "disabled", "disabled_locally", "load_order", "time_subscribed", "time_updated", "file_size"] as const) {
     const value = item[key];
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       raw[key] = value;
     }
   }
+  if (item.details) {
+    const detail: Record<string, string | number | boolean> = {};
+    for (const key of ["publishedfileid", "published_file_id", "title", "strTitle", "file_size", "preview_url", "short_description", "consumer_appid"] as const) {
+      const value = item.details[key];
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        detail[`details.${key}`] = typeof value === "string" ? compactLogValue(value) : value;
+      }
+    }
+    Object.assign(raw, detail);
+  }
   return JSON.stringify(raw);
+}
+
+function workshopDetailShape(item: SteamWorkshopClientItem): string {
+  const detail = item.details;
+  return compactLogValue(JSON.stringify({
+    id: workshopIDFromClientItem(item),
+    item_keys: loggedObjectKeys(item, 24),
+    detail_keys: loggedObjectKeys(detail, 24),
+    has_title: workshopTitleFromClientItem(item) !== ""
+  }));
+}
+
+async function enrichWorkshopItemDetails(appID: string, appid: number, steamApps: NonNullable<typeof SteamClient>["Apps"], items: SteamWorkshopClientItem[]) {
+  if (items.length === 0 || typeof steamApps?.GetSubscribedWorkshopItemDetails !== "function") return items;
+  const byID = new Map<string, SteamWorkshopClientItem>();
+  const missingDetails: string[] = [];
+  for (const item of items) {
+    const id = workshopIDFromClientItem(item);
+    if (!id || byID.has(id)) continue;
+    byID.set(id, item);
+    if (!item.details || !workshopTitleFromClientItem(item)) missingDetails.push(id);
+  }
+  if (missingDetails.length === 0) return items;
+  try {
+    const details = await steamApps.GetSubscribedWorkshopItemDetails(appid, missingDetails);
+    for (const detail of details ?? []) {
+      const id = workshopIDFromClientDetail(detail);
+      const existing = id ? byID.get(id) : undefined;
+      if (existing) {
+        existing.details = { ...(existing.details ?? {}), ...detail };
+      }
+    }
+    const titled = items.filter((item) => workshopTitleFromClientItem(item) !== "").length;
+    const sample = items.find((item) => item.details) ?? items[0];
+    await logFrontendEvent("workshop detail sync completed", {
+      app_id: appID,
+      requested: missingDetails.length,
+      returned: details?.length ?? 0,
+      titled,
+      sample: sample ? workshopDetailShape(sample) : ""
+    });
+  } catch (err) {
+    await logFrontendEvent("workshop detail sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
+  }
+  return items;
 }
 
 function mergeWorkshopItems(appID: string, subscribed: SteamWorkshopClientItem[], downloaded: SteamWorkshopClientItem[]): WorkshopItem[] {
@@ -1376,6 +1456,7 @@ async function syncWorkshopStateForApp(appID: string, options: { force?: boolean
     await logFrontendEvent("workshop downloaded sync failed", { app_id: appID, error: err instanceof Error ? err.message : String(err) });
   }
 
+  await enrichWorkshopItemDetails(appID, appid, steamApps, [...(subscribed ?? []), ...(downloaded ?? [])]);
   const items = mergeWorkshopItems(appID, subscribed ?? [], downloaded ?? []);
   const result = await call<[string, WorkshopItem[]], { ok: boolean; error?: string }>("sync_workshop", appID, items);
   if (!result.ok) {
