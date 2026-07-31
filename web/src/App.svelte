@@ -2961,7 +2961,10 @@
                         <article class:open={filesOpen}>
                           <button type="button" class="nexus-result-main" on:click={() => loadNexusModFiles(mod)}>
                             <span>
-                              <strong>{mod.name}</strong>
+                              <span class="mod-title-line">
+                                <strong>{mod.name}</strong>
+                                <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
+                              </span>
                               {#if mod.summary}<small>{mod.summary}</small>{/if}
                               <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
                             </span>
@@ -2972,7 +2975,10 @@
                               {#each files as file}
                                 <article class="nexus-file-card">
                                   <span>
-                                    <strong>{file.name || file.file_name}</strong>
+                                    <span class="mod-title-line">
+                                      <strong>{file.name || file.file_name}</strong>
+                                      <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
+                                    </span>
                                     <small>{file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}</small>
                                   </span>
                                   <div class="nexus-file-actions">

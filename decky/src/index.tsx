@@ -1941,7 +1941,10 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                     )}
                   </div>
                   <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
-                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{mod.name}</div>
+                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                      <div style={{ ...deckyTwoLineTextStyle, flex: "1 1 120px", fontWeight: 900 }}>{mod.name}</div>
+                      <span style={deckySourcePillStyle("nexus")}>Nexus</span>
+                    </div>
                     <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, maxHeight: "3.75em", overflow: "hidden", overflowWrap: "anywhere" }}>{mod.summary}</div>
                     <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "10px" }}>
                       <span>v{mod.version || "unknown"}</span>
@@ -1966,7 +1969,10 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                       const fileKey = `${mod.mod_id}:${file.file_id}`;
                       return (
                         <div key={file.file_id} style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "8px", padding: "10px", width: "100%" }}>
-                          <div style={{ ...deckyTwoLineTextStyle, fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
+                          <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                            <div style={{ ...deckyTwoLineTextStyle, flex: "1 1 120px", fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
+                            <span style={deckySourcePillStyle("nexus")}>Nexus</span>
+                          </div>
                           <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
                             {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
                           </div>
