@@ -2105,6 +2105,30 @@
     return mod.enabled ? "Enabled in this profile" : "Installed, disabled in this profile";
   }
 
+  function sourceLabel(catalog: string | undefined) {
+    const source = (catalog ?? "").trim().toLowerCase();
+    if (source === "nexus") return "Nexus";
+    if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
+    if (source === "thunderstore") return "Thunderstore";
+    if (source === "moddb") return "ModDB";
+    if (source === "github" || source === "github_releases") return "GitHub";
+    if (source === "direct") return "Direct";
+    if (source === "local") return "Local";
+    return source ? source.replace(/[_-]+/g, " ") : "Unknown";
+  }
+
+  function sourceClass(catalog: string | undefined) {
+    const source = (catalog ?? "").trim().toLowerCase().replace(/_/g, "-");
+    if (source === "nexus") return "source-nexus";
+    if (source === "steam-workshop" || source === "workshop") return "source-workshop";
+    if (source === "thunderstore") return "source-thunderstore";
+    if (source === "moddb") return "source-moddb";
+    if (source === "github" || source === "github-releases") return "source-github";
+    if (source === "direct") return "source-direct";
+    if (source === "local") return "source-local";
+    return "source-unknown";
+  }
+
   function modUpdateLabel(update: ModUpdate | undefined) {
     if (!update) return "Not checked";
     if (update.status === "available") return "Update Available";
@@ -2709,7 +2733,10 @@
                   {@const orderIndex = installedMods.findIndex((item) => item.id === mod.id)}
                   <article>
                     <div>
-                      <strong>{mod.name}</strong>
+                      <div class="mod-title-line">
+                        <strong>{mod.name}</strong>
+                        <span class={`source-pill ${sourceClass(mod.catalog)}`}>{sourceLabel(mod.catalog)}</span>
+                      </div>
                       {#if metadata || mod.mod_type}
                         <div class="mod-meta">
                           {#if metadata?.unique_id}<span>{metadata.unique_id}</span>{/if}
@@ -3177,7 +3204,10 @@
                 {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
                 <article>
                   <div>
-                    <strong>{workshopItemName(item)}</strong>
+                    <div class="mod-title-line">
+                      <strong>{workshopItemName(item)}</strong>
+                      <span class="source-pill source-workshop">Steam Workshop</span>
+                    </div>
                     <p>{workshopItemDetail(item)}</p>
                     <small>{workshopItemStatus(item)}</small>
                   </div>

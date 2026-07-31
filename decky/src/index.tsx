@@ -149,6 +149,7 @@ type ManagedMod = {
   enabled: boolean;
   priority: number;
   status: string;
+  catalog: string;
   source_game_domain: string;
   source_mod_id: string;
   source_file_id: string;
@@ -598,6 +599,51 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
   };
 }
 
+function sourceLabel(catalog?: string) {
+  const source = (catalog ?? "").trim().toLowerCase();
+  if (source === "nexus") return "Nexus";
+  if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
+  if (source === "thunderstore") return "Thunderstore";
+  if (source === "moddb") return "ModDB";
+  if (source === "github" || source === "github_releases") return "GitHub";
+  if (source === "direct") return "Direct";
+  if (source === "local") return "Local";
+  return source ? source.replace(/[_-]+/g, " ") : "Unknown";
+}
+
+function deckySourcePillStyle(catalog?: string): CSSProperties {
+  const source = (catalog ?? "").trim().toLowerCase().replace(/_/g, "-");
+  const colors: Record<string, { border: string; color: string; background: string }> = {
+    nexus: { border: "#7c3aed", color: "#ede9fe", background: "#2e1065" },
+    "steam-workshop": { border: "#2563eb", color: "#dbeafe", background: "#172554" },
+    workshop: { border: "#2563eb", color: "#dbeafe", background: "#172554" },
+    thunderstore: { border: "#0891b2", color: "#cffafe", background: "#164e63" },
+    moddb: { border: "#ca8a04", color: "#fef3c7", background: "#422006" },
+    github: { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
+    "github-releases": { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
+    direct: { border: "#475569", color: "#cbd5e1", background: "#1e293b" },
+    local: { border: "#475569", color: "#cbd5e1", background: "#1e293b" }
+  };
+  const palette = colors[source] ?? { border: "#475569", color: "#cbd5e1", background: "#1e293b" };
+  return {
+    alignSelf: "flex-start",
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
+    borderRadius: "999px",
+    color: palette.color,
+    flex: "0 0 auto",
+    fontSize: "10px",
+    fontWeight: 900,
+    lineHeight: 1,
+    maxWidth: "100%",
+    overflow: "hidden",
+    padding: "4px 7px",
+    textOverflow: "ellipsis",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap"
+  };
+}
+
 function deckyActionGridStyle(columns: 1 | 2 | 3): CSSProperties {
   const gridTemplateColumns = columns === 3
     ? "repeat(3, minmax(0, 1fr))"
@@ -728,6 +774,7 @@ const launchActionAttempts = new Map<string, number>();
 const completedWorkshopActions = new Set<string>();
 const workshopActionAttempts = new Map<string, number>();
 const workshopStateSyncLastAt = new Map<string, number>();
+const DMM_TOAST_STORAGE_PREFIX = "decky-mod-manager:job-toast:";
 const DMM_EVENT_NAME = "dmm-domain-event";
 const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
 let eventMonitorSocket: WebSocket | null = null;
@@ -1004,6 +1051,22 @@ function isUISettings(value: unknown): value is UISettings {
   return Boolean(value && typeof value === "object");
 }
 
+function storedJobToastState(jobID: string) {
+  try {
+    return window.localStorage.getItem(`${DMM_TOAST_STORAGE_PREFIX}${jobID}`);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function rememberJobToastState(jobID: string, stateKey: string) {
+  try {
+    window.localStorage.setItem(`${DMM_TOAST_STORAGE_PREFIX}${jobID}`, stateKey);
+  } catch (_err) {
+    // Decky can deny localStorage in development contexts; in-memory de-dupe still protects the active instance.
+  }
+}
+
 function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
   if (!candidate.installer_json) return null;
   try {
@@ -1048,12 +1111,13 @@ function selectionCount(selections: Record<string, string[]> | null | undefined)
 async function maybeShowJobToast(job: Job, { seed = false, source = "event" } = {}) {
   if (!isNotifiableJob(job)) return;
   const stateKey = `${job.status}:${job.message || ""}`;
-  const previous = notifiedJobStates.get(job.id);
+  const previous = notifiedJobStates.get(job.id) ?? storedJobToastState(job.id);
   notifiedJobStates.set(job.id, stateKey);
   const updatedAt = Date.parse(job.updated_at || "");
   const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
   const requireRecent = seed || source === "event" || source === "event-snapshot";
   if (previous !== stateKey && (!requireRecent || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+    rememberJobToastState(job.id, stateKey);
     await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
     showJobToast(job);
   }
@@ -3474,7 +3538,10 @@ function DeckyModManagerRoute() {
                         padding: "10px"
                       }}
                     >
-                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{mod.name}</div>
+                      <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{mod.name}</div>
+                        <span style={deckySourcePillStyle(mod.catalog)}>{sourceLabel(mod.catalog)}</span>
+                      </div>
                       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <span
                           style={{
@@ -3648,7 +3715,10 @@ function DeckyModManagerRoute() {
                         padding: "10px"
                       }}
                     >
-                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{workshopItemName(item)}</div>
+                      <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{workshopItemName(item)}</div>
+                        <span style={deckySourcePillStyle("steam_workshop")}>Steam Workshop</span>
+                      </div>
                       <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
                         <span
                           style={{

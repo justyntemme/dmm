@@ -773,6 +773,74 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.mod-title-line {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.mod-title-line strong {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.source-pill {
+  flex: 0 0 auto;
+  max-width: 100%;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #dbeafe;
+  background: #111827;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.source-nexus {
+  border-color: #7c3aed;
+  color: #ede9fe;
+  background: #2e1065;
+}
+
+.source-workshop {
+  border-color: #2563eb;
+  color: #dbeafe;
+  background: #172554;
+}
+
+.source-thunderstore {
+  border-color: #0891b2;
+  color: #cffafe;
+  background: #164e63;
+}
+
+.source-moddb {
+  border-color: #ca8a04;
+  color: #fef3c7;
+  background: #422006;
+}
+
+.source-github {
+  border-color: #52525b;
+  color: #f4f4f5;
+  background: #18181b;
+}
+
+.source-direct,
+.source-local,
+.source-unknown {
+  border-color: #475569;
+  color: #cbd5e1;
+  background: #1e293b;
+}
+
 .mod-list p {
   margin: 4px 0;
   color: #a1a1aa;
