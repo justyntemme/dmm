@@ -1145,7 +1145,7 @@ function isUISettings(value: unknown): value is UISettings {
 }
 
 function diagnosticsTerminalText(diagnostics: Diagnostics | null): string {
-  if (!diagnostics) return "Press Refresh Logs to load diagnostics.";
+  if (!diagnostics) return "Loading logs...";
   const entries = Object.entries(diagnostics.logs);
   if (entries.length === 0) return "No log files were reported.";
   return entries
@@ -1155,6 +1155,17 @@ function diagnosticsTerminalText(diagnostics: Diagnostics | null): string {
       return `${title}\n${body}`;
     })
     .join("\n\n");
+}
+
+function updateResultMessage(result: UpdateResult): string {
+  const parts = [
+    result.message || (result.ok ? "Update installer started." : "Update failed."),
+    result.error && result.error !== result.message ? `Error: ${result.error}` : "",
+    result.log ? `Log: ${result.log}` : "",
+    result.package ? `Package: ${result.package}` : "",
+    result.url ? `URL: ${result.url}` : ""
+  ].filter((part) => part.trim() !== "");
+  return parts.join("\n");
 }
 
 function storedJobToastState(jobID: string) {
@@ -2420,7 +2431,6 @@ function DeckyModManagerRoute() {
   const [importResult, setImportResult] = useState<string>("");
   const [launchResult, setLaunchResult] = useState<string>("");
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
-  const [logMonitorEnabled, setLogMonitorEnabled] = useState<boolean>(false);
   const [updateResult, setUpdateResult] = useState<string>("");
   const [updateBusy, setUpdateBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
@@ -2459,11 +2469,11 @@ function DeckyModManagerRoute() {
   const diagnosticLogText = useMemo(() => diagnosticsTerminalText(diagnostics), [diagnostics]);
 
   useEffect(() => {
-    if (tab !== "debug" || !logMonitorEnabled) return;
-    void loadDiagnostics();
-    const timer = window.setInterval(() => void loadDiagnostics(), 2500);
+    if (tab !== "debug") return;
+    void loadDiagnostics({ quiet: true });
+    const timer = window.setInterval(() => void loadDiagnostics({ quiet: true }), 2500);
     return () => window.clearInterval(timer);
-  }, [tab, logMonitorEnabled]);
+  }, [tab]);
 
   async function refresh() {
     try {
@@ -3354,12 +3364,12 @@ function DeckyModManagerRoute() {
     }
   }
 
-  async function loadDiagnostics() {
+  async function loadDiagnostics(options: { quiet?: boolean } = {}) {
     try {
-      setError("");
+      if (!options.quiet) setError("");
       setDiagnostics(await call<[], Diagnostics>("diagnostics"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (!options.quiet) setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -3369,11 +3379,12 @@ function DeckyModManagerRoute() {
       setUpdateResult("");
       setUpdateBusy(true);
       const result = await call<[], UpdateResult>("install_latest_update");
-      const message = result.message || result.error || (result.ok ? "Update installer started." : "Update failed.");
+      const message = updateResultMessage(result);
       setUpdateResult(message);
       if (!result.ok) {
         setError(result.error || message);
         await logFrontendEvent("debug update failed", { error: result.error || message, log: result.log || "" });
+        await loadDiagnostics({ quiet: true });
         return;
       }
       toaster.toast({
@@ -3389,11 +3400,13 @@ function DeckyModManagerRoute() {
         installer_pid: result.installer_pid ?? 0,
         log: result.log || ""
       });
+      await loadDiagnostics({ quiet: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       setUpdateResult(message);
       await logFrontendEvent("debug update threw", { error: message });
+      await loadDiagnostics({ quiet: true });
     } finally {
       setUpdateBusy(false);
     }
@@ -4319,7 +4332,7 @@ function DeckyModManagerRoute() {
       </PanelSectionRow>
       {updateResult && (
         <PanelSectionRow>
-          <div style={{ color: error ? "#fbbf24" : "#72e0a2", overflowWrap: "anywhere" }}>{updateResult}</div>
+          <div style={{ color: error ? "#fbbf24" : "#72e0a2", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{updateResult}</div>
         </PanelSectionRow>
       )}
       <PanelSectionRow>
@@ -4350,6 +4363,33 @@ function DeckyModManagerRoute() {
         </div>
       </PanelSectionRow>
       <PanelSectionRow>
+        <div style={{ display: "grid", gap: "8px", width: "100%" }}>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: "8px" }}>
+            <strong>Live Logs</strong>
+            <span style={{ color: "#72e0a2", fontSize: "11px", fontWeight: 800 }}>Auto</span>
+          </div>
+          <pre
+            style={{
+              background: "#020617",
+              border: "1px solid #334155",
+              borderRadius: "6px",
+              color: "#d4d4d8",
+              fontFamily: "monospace",
+              fontSize: "10px",
+              lineHeight: 1.35,
+              margin: 0,
+              maxHeight: "420px",
+              overflow: "auto",
+              padding: "10px",
+              whiteSpace: "pre-wrap",
+              width: "100%"
+            }}
+          >
+            {diagnosticLogText}
+          </pre>
+        </div>
+      </PanelSectionRow>
+      <PanelSectionRow>
         <div style={{ paddingRight: "4px", width: "100%" }}>
           <div style={{ fontWeight: 800, marginBottom: "8px" }}>Dependencies</div>
           {dependencies.map((dep) => (
@@ -4365,16 +4405,6 @@ function DeckyModManagerRoute() {
       <PanelSectionRow>
         <ButtonItem layout="below" onClick={registerNXM}>
           Register NXM Handler
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={loadDiagnostics}>
-          Refresh Logs
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem layout="below" onClick={() => setLogMonitorEnabled((enabled) => !enabled)}>
-          {logMonitorEnabled ? "Stop Log Monitor" : "Monitor Logs"}
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
@@ -4400,35 +4430,6 @@ function DeckyModManagerRoute() {
               <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Backend log: {status.logs.backend}</div>
             </>
           )}
-        </div>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <div style={{ display: "grid", gap: "8px", width: "100%" }}>
-          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: "8px" }}>
-            <strong>Log Monitor</strong>
-            <span style={{ color: logMonitorEnabled ? "#72e0a2" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
-              {logMonitorEnabled ? "Live" : "Paused"}
-            </span>
-          </div>
-          <pre
-            style={{
-              background: "#020617",
-              border: "1px solid #334155",
-              borderRadius: "6px",
-              color: "#d4d4d8",
-              fontFamily: "monospace",
-              fontSize: "10px",
-              lineHeight: 1.35,
-              margin: 0,
-              maxHeight: "420px",
-              overflow: "auto",
-              padding: "10px",
-              whiteSpace: "pre-wrap",
-              width: "100%"
-            }}
-          >
-            {diagnosticLogText}
-          </pre>
         </div>
       </PanelSectionRow>
     </>

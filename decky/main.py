@@ -1097,37 +1097,40 @@ class Plugin:
         return downloaded
 
     def _download_file(self, url, target, max_bytes):
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/octet-stream",
-                "User-Agent": "Decky-Mod-Manager-Updater",
-            },
+        curl = shutil.which("curl")
+        if not curl:
+            raise RuntimeError("curl is required to download DMM updates")
+        result = subprocess.run(
+            [
+                curl,
+                "-fL",
+                "--retry",
+                "3",
+                "--connect-timeout",
+                "20",
+                "--max-time",
+                "600",
+                "-A",
+                "Decky-Mod-Manager-Updater",
+                "-o",
+                str(target),
+                url,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._clean_env(),
         )
-        with urllib.request.urlopen(request, timeout=120) as response:
-            status = getattr(response, "status", 200)
-            if status < 200 or status > 299:
-                raise RuntimeError(f"download failed with HTTP {status}")
-            content_length = response.headers.get("Content-Length")
-            if content_length:
-                try:
-                    expected = int(content_length)
-                except ValueError:
-                    expected = 0
-                if expected > max_bytes:
-                    raise RuntimeError(f"package is too large: {expected} bytes")
-            total = 0
-            with target.open("wb") as handle:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise RuntimeError(f"package exceeded maximum size: {max_bytes} bytes")
-                    handle.write(chunk)
+        stderr = self._redact_url(result.stderr.strip())
+        stdout = self._redact_url(result.stdout.strip())
+        self._log(f"update download curl result rc={result.returncode} stdout={stdout[:500]} stderr={stderr[:1200]}")
+        if result.returncode != 0:
+            raise RuntimeError(f"curl failed with code {result.returncode}: {stderr or stdout or 'no output'}")
+        total = target.stat().st_size if target.exists() else 0
         if total == 0:
             raise RuntimeError("downloaded package was empty")
+        if total > max_bytes:
+            raise RuntimeError(f"package exceeded maximum size: {max_bytes} bytes")
         return total
 
     def _validate_update_package(self, package_path):
