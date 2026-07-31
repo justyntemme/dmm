@@ -269,6 +269,7 @@
     candidates: Array<{
       id: number;
       name: string;
+      catalog?: string;
       priority?: number;
       current: boolean;
     }>;
@@ -2409,6 +2410,7 @@
     group.candidates.push({
       id: installedModID,
       name: mod?.name || `Mod ${installedModID}`,
+      catalog: mod?.catalog,
       priority,
       current
     });
@@ -3253,15 +3255,25 @@
                 <p class="hint">When enabled mods write the same file, DMM can use profile order or a file-specific winner.</p>
                 <div class="conflict-choice-list">
                   {#each conflictChoiceTargets as target}
+                    {@const currentCandidate = target.candidates.find((candidate) => candidate.current)}
                     <article>
                       <div>
                         <strong>{target.target_relative}</strong>
-                        <small>Current: {target.current_winner_name} · {target.reason}</small>
+                        <small class="conflict-current-line">
+                          <span>Current: {target.current_winner_name}</span>
+                          {#if currentCandidate?.catalog}
+                            <span class={`source-pill ${sourceClass(currentCandidate.catalog)}`}>{sourceLabel(currentCandidate.catalog)}</span>
+                          {/if}
+                          <span>{target.reason}</span>
+                        </small>
                       </div>
                       <div class="conflict-choice-actions">
                         {#each target.candidates as candidate}
                           <button type="button" class="secondary-action compact" disabled={candidate.current} on:click={() => setFileConflictWinner(target, candidate.id)}>
-                            {candidate.current ? "Using" : "Use"} {candidate.name}
+                            <span>{candidate.current ? "Using" : "Use"} {candidate.name}</span>
+                            {#if candidate.catalog}
+                              <span class={`source-pill ${sourceClass(candidate.catalog)}`}>{sourceLabel(candidate.catalog)}</span>
+                            {/if}
                           </button>
                         {/each}
                         <button type="button" class="secondary-action compact" on:click={() => clearFileConflictWinner(target)}>Use Profile Order</button>

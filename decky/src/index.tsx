@@ -241,6 +241,7 @@ type ConflictChoiceTarget = {
   candidates: Array<{
     id: number;
     name: string;
+    catalog?: string;
     priority?: number;
     current: boolean;
   }>;
@@ -891,6 +892,7 @@ function addDeckyConflictCandidate(group: ConflictChoiceTarget, mods: ManagedMod
   group.candidates.push({
     id: installedModID,
     name: mod?.name || `Mod ${installedModID}`,
+    catalog: mod?.catalog,
     priority,
     current
   });
@@ -3704,6 +3706,7 @@ function DeckyModManagerRoute() {
                   const focused = focusedConflictTarget === target.target_path;
                   const next = nextDeckyConflictCandidate(target);
                   const busy = busyConflictTarget === target.target_path;
+                  const current = target.candidates.find((candidate) => candidate.current);
                   return (
                     <Focusable
                       key={target.target_path}
@@ -3733,11 +3736,17 @@ function DeckyModManagerRoute() {
                       }}
                     >
                       <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{target.target_relative}</div>
-                      <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                        Current: {target.current_winner_name}
+                      <div style={{ alignItems: "center", color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "6px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        <span>Current: {target.current_winner_name}</span>
+                        {current?.catalog && <span style={deckySourcePillStyle(current.catalog)}>{sourceLabel(current.catalog)}</span>}
                       </div>
-                      <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                        {target.candidates.map((candidate) => `${candidate.current ? "Using" : "Option"} ${candidate.name}`).join(" · ")}
+                      <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
+                        {target.candidates.map((candidate) => (
+                          <div key={candidate.id} style={{ alignItems: "center", color: "#d4d4d8", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "6px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                            <span>{candidate.current ? "Using" : "Option"} {candidate.name}</span>
+                            {candidate.catalog && <span style={deckySourcePillStyle(candidate.catalog)}>{sourceLabel(candidate.catalog)}</span>}
+                          </div>
+                        ))}
                       </div>
                       <div style={{ color: next ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
                         {next ? `A Use ${next.name}` : "Only one winner available"} · Y Use Profile Order

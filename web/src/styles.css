@@ -1330,10 +1330,25 @@ h2 {
   color: #a1a1aa;
 }
 
+.conflict-choice-list .conflict-current-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .conflict-choice-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.conflict-choice-actions .secondary-action {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
 }
 
 .deployment-strategy-warnings {
