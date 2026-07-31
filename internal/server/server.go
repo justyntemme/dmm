@@ -2759,17 +2759,190 @@ type gameModUpdateCheckResponse struct {
 	CheckedAt        string `json:"checked_at"`
 }
 
+type modUpdateDownload struct {
+	Resolved        catalog.ResolvedDownload
+	DownloadLinks   []catalog.DownloadLink
+	ArchiveFileName string
+	BrowserRequired bool
+}
+
+type modUpdateProvider interface {
+	CheckInstalledMod(ctx context.Context, mod storage.InstalledMod, checkedAt string) (gameModUpdateCheckResponse, bool)
+	ResolveInstalledModUpdate(ctx context.Context, mod storage.InstalledMod, update storage.ModUpdate) (modUpdateDownload, error)
+}
+
+type nexusModUpdateProvider struct {
+	apiKeyConfigured bool
+	client           nexusClient
+	logger           *slog.Logger
+}
+
+func (p nexusModUpdateProvider) CheckInstalledMod(ctx context.Context, mod storage.InstalledMod, checkedAt string) (gameModUpdateCheckResponse, bool) {
+	if !catalogUpdateMetadataComplete(mod) {
+		return unsupportedUpdateCheckResult(mod, checkedAt, "Nexus update checks need known Nexus game, mod, and file IDs."), false
+	}
+	if !p.apiKeyConfigured {
+		return updateCheckErrorResult(mod, checkedAt, "Nexus API key is not configured."), false
+	}
+	files, err := p.client.Files(ctx, mod.SourceGameDomain, mod.SourceModID)
+	return updateCheckResultForInstalledMod(mod, files.Files, checkedAt, err), true
+}
+
+func (p nexusModUpdateProvider) ResolveInstalledModUpdate(ctx context.Context, mod storage.InstalledMod, update storage.ModUpdate) (modUpdateDownload, error) {
+	if !catalogUpdateMetadataComplete(mod) {
+		return modUpdateDownload{}, errors.New("this Nexus mod is missing game, mod, or file metadata")
+	}
+	if !p.apiKeyConfigured {
+		return modUpdateDownload{}, errors.New("Nexus API key is not configured")
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		SourceURL:  nexusModFileWebURL(mod.SourceGameDomain, mod.SourceModID, update.LatestFileID),
+		GameDomain: mod.SourceGameDomain,
+		ModID:      mod.SourceModID,
+		FileID:     update.LatestFileID,
+	}
+	links, err := p.client.DownloadLinks(ctx, resolved.GameDomain, resolved.ModID, resolved.FileID, "", "")
+	if err != nil {
+		return modUpdateDownload{Resolved: resolved, BrowserRequired: nexus.IsBrowserDownloadRequired(err)}, err
+	}
+	archiveFileName := strings.TrimSpace(update.LatestFileName)
+	if archiveFileName == "" {
+		archiveFileName = p.archiveFileName(ctx, resolved)
+	}
+	return modUpdateDownload{
+		Resolved:        resolved,
+		DownloadLinks:   links,
+		ArchiveFileName: archiveFileName,
+	}, nil
+}
+
+func (p nexusModUpdateProvider) archiveFileName(ctx context.Context, resolved catalog.ResolvedDownload) string {
+	fileID := strings.TrimSpace(resolved.FileID)
+	if fileID == "" {
+		return ""
+	}
+	files, err := p.client.Files(ctx, resolved.GameDomain, resolved.ModID)
+	if err != nil {
+		if p.logger != nil {
+			p.logger.Warn("nexus archive filename lookup failed", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID, "error", err)
+		}
+		return ""
+	}
+	for _, file := range files.Files {
+		if strconv.FormatInt(file.FileID, 10) == fileID {
+			name := strings.TrimSpace(file.FileName)
+			if name == "" && p.logger != nil {
+				p.logger.Info("nexus archive filename empty", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID)
+			}
+			return name
+		}
+	}
+	if p.logger != nil {
+		p.logger.Info("nexus archive filename not found", "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", fileID)
+	}
+	return ""
+}
+
+func (s *Server) modUpdateProviderForCatalog(catalogName string) (modUpdateProvider, bool) {
+	switch normalizeCatalogID(catalogName) {
+	case "nexus":
+		s.cfgMu.RLock()
+		apiKey := strings.TrimSpace(s.cfg.Nexus.APIKey)
+		s.cfgMu.RUnlock()
+		return nexusModUpdateProvider{
+			apiKeyConfigured: apiKey != "",
+			client:           s.nexus(apiKey),
+			logger:           s.logger,
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+func normalizeCatalogID(value string) string {
+	out := strings.ToLower(strings.TrimSpace(value))
+	out = strings.ReplaceAll(out, "-", "_")
+	out = strings.ReplaceAll(out, " ", "_")
+	switch out {
+	case "github_releases", "github_release":
+		return "github"
+	case "mod.io", "mod_io":
+		return "modio"
+	case "steam", "workshop", "steam_workshop":
+		return "steam_workshop"
+	default:
+		return out
+	}
+}
+
+func catalogUpdateMetadataComplete(mod storage.InstalledMod) bool {
+	return strings.TrimSpace(mod.SourceGameDomain) != "" &&
+		strings.TrimSpace(mod.SourceModID) != "" &&
+		strings.TrimSpace(mod.SourceFileID) != ""
+}
+
+func unsupportedUpdateCheckResult(mod storage.InstalledMod, checkedAt, message string) gameModUpdateCheckResponse {
+	return gameModUpdateCheckResponse{
+		InstalledModID: mod.ID,
+		Name:           mod.Name,
+		Status:         "unsupported",
+		CurrentFileID:  mod.SourceFileID,
+		CurrentVersion: mod.Version,
+		Message:        strings.TrimSpace(message),
+		CheckedAt:      checkedAt,
+	}
+}
+
+func updateCheckErrorResult(mod storage.InstalledMod, checkedAt, message string) gameModUpdateCheckResponse {
+	return gameModUpdateCheckResponse{
+		InstalledModID: mod.ID,
+		Name:           mod.Name,
+		Status:         "error",
+		CurrentFileID:  mod.SourceFileID,
+		CurrentVersion: mod.Version,
+		Message:        strings.TrimSpace(message),
+		CheckedAt:      checkedAt,
+	}
+}
+
+func catalogDisplayLabel(catalogName string) string {
+	switch normalizeCatalogID(catalogName) {
+	case "nexus":
+		return "Nexus Mods"
+	case "thunderstore":
+		return "Thunderstore"
+	case "github":
+		return "GitHub Releases"
+	case "modrinth":
+		return "Modrinth"
+	case "gamebanana":
+		return "GameBanana"
+	case "modio":
+		return "mod.io"
+	case "curseforge":
+		return "CurseForge"
+	case "moddb":
+		return "ModDB"
+	case "direct":
+		return "Direct Archive URL"
+	case "local":
+		return "Local Archive"
+	case "steam_workshop":
+		return "Steam Workshop"
+	default:
+		value := strings.TrimSpace(catalogName)
+		if value == "" {
+			return "Unknown source"
+		}
+		return value
+	}
+}
+
 func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
 		http.Error(w, "appID is required", http.StatusBadRequest)
-		return
-	}
-	s.cfgMu.RLock()
-	apiKey := s.cfg.Nexus.APIKey
-	s.cfgMu.RUnlock()
-	if apiKey == "" {
-		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
 		return
 	}
 	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
@@ -2777,28 +2950,20 @@ func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	client := s.nexus(apiKey)
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
 	resp := modUpdateCheckResponse{
 		Results: make([]gameModUpdateCheckResponse, 0, len(mods)),
 	}
 	for _, mod := range mods {
-		if mod.Catalog != "nexus" || strings.TrimSpace(mod.SourceGameDomain) == "" || strings.TrimSpace(mod.SourceModID) == "" || strings.TrimSpace(mod.SourceFileID) == "" {
-			result := gameModUpdateCheckResponse{
-				InstalledModID: mod.ID,
-				Name:           mod.Name,
-				Status:         "unsupported",
-				CurrentFileID:  mod.SourceFileID,
-				CurrentVersion: mod.Version,
-				Message:        "Update checks are only available for Nexus mods installed from a known Nexus file.",
-				CheckedAt:      checkedAt,
-			}
-			resp.Results = append(resp.Results, result)
-			continue
+		provider, ok := s.modUpdateProviderForCatalog(mod.Catalog)
+		var result gameModUpdateCheckResponse
+		checked := false
+		if !ok {
+			result = unsupportedUpdateCheckResult(mod, checkedAt, "Update checks are not available for "+catalogDisplayLabel(mod.Catalog)+" mods yet.")
+		} else {
+			s.logger.Info("catalog mod update check requested", "app_id", appID, "installed_mod_id", mod.ID, "catalog", mod.Catalog, "game_domain", mod.SourceGameDomain, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
+			result, checked = provider.CheckInstalledMod(r.Context(), mod, checkedAt)
 		}
-		s.logger.Info("nexus mod update check requested", "app_id", appID, "installed_mod_id", mod.ID, "game_domain", mod.SourceGameDomain, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
-		files, err := client.Files(r.Context(), mod.SourceGameDomain, mod.SourceModID)
-		result := updateCheckResultForInstalledMod(mod, files.Files, checkedAt, err)
 		if err := s.db.UpsertModUpdate(r.Context(), storage.ModUpdate{
 			InstalledModID:   result.InstalledModID,
 			Status:           result.Status,
@@ -2812,7 +2977,9 @@ func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		resp.Checked++
+		if checked {
+			resp.Checked++
+		}
 		resp.Results = append(resp.Results, result)
 	}
 	s.logger.Info("game mod update check completed", "app_id", appID, "checked", resp.Checked, "results", len(resp.Results))
@@ -2838,8 +3005,9 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if mod.Catalog != "nexus" {
-		http.Error(w, "updates are only available for Nexus mods", http.StatusBadRequest)
+	provider, ok := s.modUpdateProviderForCatalog(mod.Catalog)
+	if !ok {
+		http.Error(w, "updates are not available for "+catalogDisplayLabel(mod.Catalog)+" mods yet", http.StatusBadRequest)
 		return
 	}
 	updates, err := s.db.ModUpdatesForSteamApp(r.Context(), appID)
@@ -2856,23 +3024,14 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no installable update is available for this mod", http.StatusConflict)
 		return
 	}
-	s.cfgMu.RLock()
-	apiKey := s.cfg.Nexus.APIKey
-	s.cfgMu.RUnlock()
-	if strings.TrimSpace(apiKey) == "" {
-		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
+	download, err := provider.ResolveInstalledModUpdate(r.Context(), mod, update)
+	if err != nil && !download.BrowserRequired {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-
-	resolved := catalog.ResolvedDownload{
-		Catalog:    "nexus",
-		SourceURL:  nexusModFileWebURL(mod.SourceGameDomain, mod.SourceModID, update.LatestFileID),
-		GameDomain: mod.SourceGameDomain,
-		ModID:      mod.SourceModID,
-		FileID:     update.LatestFileID,
-	}
+	resolved := download.Resolved
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
-		s.logger.Info("mod update duplicate captured install reused", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+		s.logger.Info("mod update duplicate captured install reused", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
 			"job":      job,
 			"resolved": pending.Resolved,
@@ -2901,25 +3060,21 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		"update":   update,
 		"file_url": resolved.SourceURL,
 	}
-	client := s.nexus(apiKey)
-	links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, "", "")
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		response["job"] = job
-		if nexus.IsBrowserDownloadRequired(err) {
+		if download.BrowserRequired {
 			response["browser_required"] = true
 		}
-		s.logger.Warn("mod update download link resolve failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "error", err)
+		s.logger.Warn("mod update download link resolve failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "error", err)
 		writeJSON(w, http.StatusAccepted, response)
 		return
 	}
-	archiveFileName := strings.TrimSpace(update.LatestFileName)
-	if archiveFileName == "" {
-		archiveFileName = s.nexusArchiveFileName(r.Context(), client, resolved)
-	}
+	archiveFileName := strings.TrimSpace(download.ArchiveFileName)
 	if archiveFileName != "" {
 		response["archive_file_name"] = archiveFileName
 	}
+	links := download.DownloadLinks
 	response["download_links"] = links
 	job, _ = s.jobs.Wait(job.ID, "Update found; downloading "+mod.Name)
 	response["job"] = job
@@ -2940,7 +3095,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		response["job"] = started
 		response["download_started"] = true
 	}
-	s.logger.Info("mod update queued", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "from_file_id", mod.SourceFileID, "to_file_id", update.LatestFileID)
+	s.logger.Info("mod update queued", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "from_file_id", mod.SourceFileID, "to_file_id", update.LatestFileID)
 	writeJSON(w, http.StatusAccepted, response)
 }
 

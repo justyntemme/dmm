@@ -71,10 +71,10 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - MVP install path is a Decky Loader plugin that bundles and controls a Go backend.
 - The phone/tablet browser UI is the primary MVP management surface.
 - MVP supports Steam games on Steam Deck only.
-- MVP focuses first on Nexus Mods "Mod Manager Download" / Vortex-compatible flows, then expands to popular non-Steam mod upstreams as first-class catalog sources.
-- MVP provider architecture must support multiple popular non-Steam mod upstreams, verified from their official APIs/clients before implementation. Nexus remains the first implemented source; direct archive URLs are supported as a generic selected-game import path; Steam Workshop is treated separately as Steam-owned platform content rather than as a normal remote catalog.
+- MVP focuses first on Nexus Mods "Mod Manager Download" / Vortex-compatible flows, and includes popular non-Steam mod upstreams as first-class catalog sources when their official API/client behavior can be verified.
+- MVP provider architecture must support multiple popular non-Steam mod upstreams, verified from their official APIs/clients before implementation. Nexus remains the first critical source; direct archive URLs are supported as a generic selected-game import path; Steam Workshop is treated separately as Steam-owned platform content rather than as a browsed/searchable remote catalog.
 - Persist source/catalog identity for every captured, cached, installed, enabled, disabled, updated, or removed mod. UI surfaces should be able to tag, filter, and sort mods by source.
-- Steam Workshop content should coexist with DMM-managed mods where the game extension declares it safe. Steam Workshop unsubscribe, enable/disable, and load-order movement should use documented or directly verified Steam/Decky APIs; do not add filesystem or client-state hacks for Workshop management.
+- Steam Workshop content should coexist with DMM-managed mods where the game extension declares it safe. Steam Workshop unsubscribe, enable/disable, and load-order movement should use documented or directly verified Steam/Decky APIs; do not add filesystem or client-state hacks for Workshop management. MVP does not need a Steam Workshop search/browse UI.
 - MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
 - Staging, install planning, deployment manifests, and file operations are implementation details for the default experience; they remain inspectable through advanced/power-user surfaces.
 - User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain a supported manual capture path.
@@ -236,10 +236,11 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - File
   - Download
   - Source metadata
-- Search/browse is non-MVP unless required by the Nexus download flow.
+- Search/browse is non-MVP unless required by the Nexus download flow or explicitly prioritized for a verified provider.
 - Each future catalog should own its credential requirements behind a common credentials interface.
 - Avoid hard-coding Nexus game domain mappings where an API can resolve them.
-- Design for future catalogs such as ModDB, Thunderstore, GitHub Releases, direct URL, and local archive import, but do not implement them before the Nexus vertical slice works.
+- Implement verified popular non-Steam sources through the shared catalog pipeline; do not create one-off download or install paths per provider.
+- Credential-gated providers can ship behind explicit key setup. Ask the user for API keys only when live verification requires them.
 
 ## Storage Guidelines
 

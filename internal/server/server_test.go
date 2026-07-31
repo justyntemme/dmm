@@ -953,6 +953,69 @@ func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	}
 }
 
+func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "modrinth",
+			GameDomain: "stardewvalley",
+			ModID:      "project-slug",
+			FileID:     "version-id",
+		},
+		Name:         "Modrinth Test Mod",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "modrinth-test.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "modrinth-test"),
+		ManifestJSON: "{}",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Checked != 0 || len(body.Results) != 1 {
+		t.Fatalf("body = %+v", body)
+	}
+	if body.Results[0].Status != "unsupported" || !strings.Contains(body.Results[0].Message, "Modrinth") {
+		t.Fatalf("result = %+v", body.Results[0])
+	}
+
+	modsReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods", nil)
+	modsReq.RemoteAddr = "127.0.0.1:1"
+	modsRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(modsRec, modsReq)
+	if modsRec.Code != http.StatusOK {
+		t.Fatalf("mods status = %d, body = %s", modsRec.Code, modsRec.Body.String())
+	}
+	var mods []gameModResponse
+	if err := json.Unmarshal(modsRec.Body.Bytes(), &mods); err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Update == nil || mods[0].Update.Status != "unsupported" || !strings.Contains(mods[0].Update.Message, "Modrinth") {
+		t.Fatalf("mods = %+v", mods)
+	}
+}
+
 func TestUpdateGameModQueuesCapturedInstallForLatestFile(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()
@@ -1137,6 +1200,57 @@ func TestUpdateGameModReportsBrowserRequiredWhenNexusRejectsDirectLinks(t *testi
 	}
 	if body.FileURL != "https://www.nexusmods.com/stardewvalley/mods/239?file_id=101" {
 		t.Fatalf("file url = %q", body.FileURL)
+	}
+}
+
+func TestUpdateGameModRejectsUnsupportedCatalog(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "modrinth",
+			GameDomain: "stardewvalley",
+			ModID:      "project-slug",
+			FileID:     "version-id",
+		},
+		Name:         "Modrinth Test Mod",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "modrinth-test.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "modrinth-test"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.UpsertModUpdate(context.Background(), storage.ModUpdate{
+		InstalledModID: mod.ID,
+		Status:         "available",
+		LatestFileID:   "next-version-id",
+		LatestVersion:  "1.1.0",
+		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/games/413150/mods/%d/update", mod.ID), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Modrinth") {
+		t.Fatalf("body = %s", rec.Body.String())
 	}
 }
 
