@@ -9,7 +9,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - Open Decky Mod Manager in Gaming Mode and confirm the backend starts automatically.
 - Phone/tablet URL: `http://192.168.8.102:17942` when the Deck is on the same LAN/hotspot.
 - Confirm Nexus API key is configured in the phone/tablet Settings page.
-- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
+- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, Direct Archive URL, planned credential-gated sources, and Steam Workshop status are listed correctly.
 - If you have mod.io or CurseForge API keys, paste them in Settings > Sources and confirm those sources switch from `Needs Key` to `Ready`.
 
 ## Decky Plugin
@@ -112,6 +112,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - In a selected game on phone/iPad, upload a safe `.zip`, `.7z`, or `.rar` through `Local Archive`.
 - Confirm local archive uploads install through the same Action Center/installer-choice path and show a `Local` source tag.
 - In a selected game, paste a safe `https://modrinth.com/mod/{slug}` or `https://modrinth.com/mod/{slug}/version/{version}` URL and confirm it enters the captured-install flow and is tagged `Modrinth`.
+- In a selected game, paste a safe `https://gamebanana.com/mods/{id}` URL and confirm it enters the captured-install flow and is tagged `GameBanana`.
+- Bare `https://gamebanana.com/dl/{file}` links should import as `Direct` only when added from a selected game, because GameBanana's file API does not expose reliable parent mod/game metadata.
 - With a mod.io key configured, select a safe game and paste a `https://mod.io/g/{game}/m/{mod}` URL. Confirm it enters the captured-install flow and is tagged `mod.io`.
 - With a CurseForge key configured, select a safe game and paste a `https://www.curseforge.com/{game}/{section}/{mod}` URL. Confirm it enters the captured-install flow and is tagged `CurseForge`.
 - Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.

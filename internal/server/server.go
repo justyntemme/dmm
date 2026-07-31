@@ -28,6 +28,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/curseforge"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
+	"github.com/justyntemme/decky-mod-manager/internal/catalog/gamebanana"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/github"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/modio"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/modrinth"
@@ -205,6 +206,7 @@ func catalogResolversForConfig(cfg config.Config) []catalog.RemoteModCatalog {
 		thunderstore.Resolver{},
 		github.Resolver{},
 		modrinth.Resolver{},
+		gamebanana.Resolver{},
 		modio.Resolver{
 			APIKey:     cfg.Catalogs.ModIO.APIKey,
 			APIBaseURL: cfg.Catalogs.ModIO.APIBaseURL,
@@ -1341,6 +1343,17 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Download:   registered["modrinth"],
 			SourceTag:  "modrinth",
 			Notes:      []string{"Project, version, and CDN file URLs resolve through Modrinth's verified public REST API. Browse/search UI is not implemented yet."},
+		},
+		{
+			ID:         "gamebanana",
+			Name:       "GameBanana",
+			Kind:       "remote",
+			Status:     readyIfRegistered(registered, "gamebanana"),
+			Configured: registered["gamebanana"],
+			URLImport:  registered["gamebanana"],
+			Download:   registered["gamebanana"],
+			SourceTag:  "gamebanana",
+			Notes:      []string{"Mod, tool, sound, and spray page URLs resolve through GameBanana's verified Core/Item/Data API. Bare dl/mmdl URLs fall back to selected-game direct archive import."},
 		},
 		{
 			ID:         "direct",

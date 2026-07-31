@@ -856,6 +856,12 @@ h2 {
   background: #064e3b;
 }
 
+.source-gamebanana {
+  border-color: #facc15;
+  color: #fef9c3;
+  background: #422006;
+}
+
 .source-moddb {
   border-color: #ca8a04;
   color: #fef3c7;

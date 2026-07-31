@@ -605,6 +605,7 @@ function sourceLabel(catalog?: string) {
   if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
   if (source === "thunderstore") return "Thunderstore";
   if (source === "modrinth") return "Modrinth";
+  if (source === "gamebanana") return "GameBanana";
   if (source === "modio" || source === "mod.io") return "mod.io";
   if (source === "curseforge") return "CurseForge";
   if (source === "moddb") return "ModDB";
@@ -622,6 +623,7 @@ function deckySourcePillStyle(catalog?: string): CSSProperties {
     workshop: { border: "#2563eb", color: "#dbeafe", background: "#172554" },
     thunderstore: { border: "#0891b2", color: "#cffafe", background: "#164e63" },
     modrinth: { border: "#10b981", color: "#d1fae5", background: "#064e3b" },
+    gamebanana: { border: "#facc15", color: "#fef9c3", background: "#422006" },
     modio: { border: "#16a34a", color: "#dcfce7", background: "#052e16" },
     "mod.io": { border: "#16a34a", color: "#dcfce7", background: "#052e16" },
     curseforge: { border: "#f97316", color: "#ffedd5", background: "#431407" },
@@ -3250,7 +3252,7 @@ function DeckyModManagerRoute() {
           <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1, textTransform: "uppercase" }}>Mod Link</div>
           <input
             aria-label="Mod URL"
-            placeholder="Paste Nexus URL, nxm:// link, or archive URL"
+            placeholder="Paste Nexus, nxm://, provider, or archive URL"
             style={{ ...deckyCompactInputStyle, minHeight: "34px", padding: "6px 9px" }}
             value={importUrl}
             onChange={(event) => setImportUrl(event.currentTarget.value)}
