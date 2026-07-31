@@ -127,6 +127,16 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 - With a CurseForge key configured, select a safe game and paste a `https://www.curseforge.com/{game}/{section}/{mod}` URL. Confirm it enters the captured-install flow and is tagged `CurseForge`.
 - Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.
 
+## Provider Resolve Smoke
+
+Run this from the repo when the Deck server is online:
+
+```bash
+BASE_URL=http://192.168.8.102:17942 APP_ID=413150 ./testing/live_provider_resolve_check.sh
+```
+
+This verifies catalog readiness and provider URL resolution/source tags without downloading or installing archives. `mod.io` and `CurseForge` cases run only when their API keys and test URLs are provided through environment variables.
+
 ## Notes To Send Back
 
 - Game/app ID tested.
