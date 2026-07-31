@@ -94,7 +94,7 @@ if active_install:
 if active_deploy:
     failures.append(f"{active_deploy} deploy/purge/repair job(s) are still active")
 if needs_recovery:
-    warnings.append(f"{needs_recovery} staged mod(s) need recovery")
+    warnings.append(f"{needs_recovery} installed mod(s) need recovery")
 if blocked:
     warnings.append(f"{blocked} downloaded archive(s) are blocked by unsupported install planning")
 if require_deployed and not deployed:
