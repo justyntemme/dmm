@@ -796,6 +796,13 @@ h2 {
   background: #20262e;
 }
 
+.platform-mod-panel {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #303741;
+  padding-top: 10px;
+}
+
 .mod-list strong,
 .mod-list p,
 .mod-list small {

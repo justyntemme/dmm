@@ -549,8 +549,10 @@
   $: conflictChoiceTargets = getConflictChoiceTargets(deployPlan);
   $: enabledMods = installedMods.filter((mod) => mod.enabled);
   $: disabledMods = installedMods.filter((mod) => !mod.enabled);
-  $: modSourceOptions = sourceOptionsForMods(installedMods);
+  $: modSourceOptions = sourceOptionsForMods(installedMods, workshopItems, selectedWorkshop);
   $: visibleInstalledMods = sortModsForList(installedMods.filter((mod) => modSourceFilter === "all" || sourceKey(mod.catalog) === modSourceFilter));
+  $: showWorkshopModRows = Boolean(selectedWorkshop && (modSourceFilter === "all" || modSourceFilter === "steam-workshop") && (workshopItems.length > 0 || selectedWorkshop.management_supported));
+  $: hasVisibleModRows = visibleInstalledMods.length > 0 || showWorkshopModRows;
   $: deployAdds = deployableActions.filter((action) => action.operation === "add").length;
   $: deployReplaces = deployableActions.filter((action) => action.operation === "replace").length;
   $: deployRemoves = deployableActions.filter((action) => action.operation === "remove").length;
@@ -2271,11 +2273,14 @@
     return source || "unknown";
   }
 
-  function sourceOptionsForMods(mods: InstalledMod[]) {
+  function sourceOptionsForMods(mods: InstalledMod[], items: WorkshopItem[], workshop: SteamWorkshop | null) {
     const byKey = new Map<string, string>();
     for (const mod of mods) {
       const key = sourceKey(mod.catalog);
       if (!byKey.has(key)) byKey.set(key, sourceLabel(mod.catalog));
+    }
+    if ((workshop?.detected || items.length > 0) && !byKey.has("steam-workshop")) {
+      byKey.set("steam-workshop", sourceLabel("steam_workshop"));
     }
     return [...byKey.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }
@@ -2993,7 +2998,7 @@
             </div>
           </section>
 
-          {#if installedMods.length === 0}
+          {#if installedMods.length === 0 && !selectedWorkshop}
             <p class="hint">No profile mods yet. Capture or paste a mod link to add a supported mod to this profile.</p>
           {:else}
             <section class="mod-section">
@@ -3028,9 +3033,10 @@
                   </select>
                 </label>
               </div>
-              {#if visibleInstalledMods.length === 0}
+              {#if !hasVisibleModRows}
                 <p class="hint">No mods match the selected source.</p>
-              {:else}
+              {/if}
+              {#if visibleInstalledMods.length > 0}
                 <div class="mod-list">
                 {#each visibleInstalledMods as mod}
                   {@const metadata = primaryModMetadata(mod)}
@@ -3092,6 +3098,64 @@
                   </article>
                 {/each}
                 </div>
+              {/if}
+              {#if showWorkshopModRows}
+                <section class="platform-mod-panel" aria-label="Steam Workshop mods">
+                  <div class="panel-heading compact-heading">
+                    <h3>Steam Workshop</h3>
+                    <span>{workshopItems.length} item{workshopItems.length === 1 ? "" : "s"}</span>
+                  </div>
+                  <p class="hint">{selectedWorkshop?.message ?? "Steam owns these subscriptions; DMM queues supported Steam actions through Decky."}</p>
+                  {#if workshopState?.supported && workshopItems.length === 0}
+                    <div class="mod-list">
+                      <article>
+                        <div>
+                          <div class="mod-title-line">
+                            <strong>No synced Workshop items</strong>
+                            <span class="source-pill source-workshop">Steam Workshop</span>
+                          </div>
+                          <p>Open DMM in the Decky sidebar while Steam is running to sync subscribed Workshop items.</p>
+                        </div>
+                        <div class="mod-actions">
+                          <span>Sync needed</span>
+                        </div>
+                      </article>
+                    </div>
+                  {:else if workshopItems.length > 0}
+                    <div class="mod-list">
+                      {#each workshopItems as item, index}
+                        {@const disabled = item.disabled_known && item.disabled_locally}
+                        {@const toggleKind = disabled ? "enable" : "disable"}
+                        {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
+                        <article>
+                          <div>
+                            <div class="mod-title-line">
+                              <strong>{workshopItemName(item)}</strong>
+                              <span class="source-pill source-workshop">Steam Workshop</span>
+                            </div>
+                            <p>{workshopItemDetail(item)}</p>
+                            <small>{workshopItemStatus(item)}</small>
+                          </div>
+                          <div class="mod-actions">
+                            <span>{workshopItemStatus(item)}</span>
+                            <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === 0} on:click={() => moveWorkshopItem(index, -1)}>
+                              Up
+                            </button>
+                            <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === workshopItems.length - 1} on:click={() => moveWorkshopItem(index, 1)}>
+                              Down
+                            </button>
+                            <button type="button" class="secondary-action compact" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
+                              {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}
+                            </button>
+                            <button type="button" class="secondary-action compact danger-action" disabled={!workshopState?.supported || isWorkshopActionBusy(item, "unsubscribe")} on:click={() => askUnsubscribeWorkshopItem(item)}>
+                              {isWorkshopActionBusy(item, "unsubscribe") ? "Queueing..." : "Unsubscribe"}
+                            </button>
+                          </div>
+                        </article>
+                      {/each}
+                    </div>
+                  {/if}
+                </section>
               {/if}
             </section>
           {/if}
@@ -3504,45 +3568,15 @@
                 </div>
                 <span>{selectedWorkshop.coexistence_allowed ? "External" : "Review"}</span>
               </article>
-              {#if workshopState?.supported && workshopItems.length === 0}
+              {#if workshopState?.supported}
                 <article>
                   <div>
-                    <strong>No synced Workshop items</strong>
-                    <p>Open DMM in the Decky sidebar once while Steam is running to sync subscribed Workshop items from Steam.</p>
+                    <strong>Managed from Mods</strong>
+                    <p>Use the Mods view to reorder, enable, disable, or unsubscribe synced Workshop items alongside DMM-managed mods.</p>
                   </div>
-                  <span>Sync</span>
+                  <span>Mods</span>
                 </article>
               {/if}
-              {#each workshopItems as item, index}
-                {@const disabled = item.disabled_known && item.disabled_locally}
-                {@const toggleKind = disabled ? "enable" : "disable"}
-                {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
-                <article>
-                  <div>
-                    <div class="mod-title-line">
-                      <strong>{workshopItemName(item)}</strong>
-                      <span class="source-pill source-workshop">Steam Workshop</span>
-                    </div>
-                    <p>{workshopItemDetail(item)}</p>
-                    <small>{workshopItemStatus(item)}</small>
-                  </div>
-                  <div class="action-controls">
-                    <span>{workshopItemStatus(item)}</span>
-                    <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === 0} on:click={() => moveWorkshopItem(index, -1)}>
-                      Up
-                    </button>
-                    <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === workshopItems.length - 1} on:click={() => moveWorkshopItem(index, 1)}>
-                      Down
-                    </button>
-                    <button type="button" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
-                      {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}
-                    </button>
-                    <button type="button" class="secondary-action compact danger-action" disabled={!workshopState?.supported || isWorkshopActionBusy(item, "unsubscribe")} on:click={() => askUnsubscribeWorkshopItem(item)}>
-                      {isWorkshopActionBusy(item, "unsubscribe") ? "Queueing..." : "Unsubscribe"}
-                    </button>
-                  </div>
-                </article>
-              {/each}
             </section>
           {/if}
           {#if visibleValidationWarnings.length}
