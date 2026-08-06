@@ -493,6 +493,62 @@ func TestCreateAndSetDefaultProfile(t *testing.T) {
 	}
 }
 
+func TestCreateProfileFromSourceCopiesMembership(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	priority := 7
+	if _, err := db.SetProfileModState(context.Background(), mod.ProfileID, mod.ID, &disabled, &priority); err != nil {
+		t.Fatal(err)
+	}
+
+	clone, err := db.CreateProfileForSteamAppFromSource(context.Background(), "413150", "Test Copy", mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clone.ModCount != 1 || clone.EnabledModCount != 0 {
+		t.Fatalf("clone counts = %+v", clone)
+	}
+	cloneMods, err := db.InstalledModsForProfile(context.Background(), clone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cloneMods) != 1 || cloneMods[0].ID != mod.ID || cloneMods[0].Enabled || cloneMods[0].Priority != 7 {
+		t.Fatalf("clone mods = %+v", cloneMods)
+	}
+}
+
 func TestDeleteProfileRemovesInactiveProfileOnly(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

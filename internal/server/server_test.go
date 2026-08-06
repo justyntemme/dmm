@@ -5605,6 +5605,65 @@ func TestSetDefaultProfileAppliesProfileChanges(t *testing.T) {
 	}
 }
 
+func TestCreateProfileCopiesSourceMembership(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "gmcm.zip"),
+		StagingPath:  filepath.Join(srv.cfg.DataDir, "staging", "gmcm"),
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	priority := 7
+	if _, err := srv.db.SetProfileModState(context.Background(), mod.ProfileID, mod.ID, &disabled, &priority); err != nil {
+		t.Fatal(err)
+	}
+
+	body := fmt.Sprintf(`{"name":"Test Copy","source_profile_id":%d}`, mod.ProfileID)
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/profiles", bytes.NewBufferString(body))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create profile status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var profile storage.Profile
+	if err := json.NewDecoder(rec.Body).Decode(&profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.Name != "Test Copy" || profile.ModCount != 1 || profile.EnabledModCount != 0 {
+		t.Fatalf("created profile = %+v", profile)
+	}
+	mods, err := srv.db.InstalledModsForProfile(context.Background(), profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].ID != mod.ID || mods[0].Enabled || mods[0].Priority != 7 {
+		t.Fatalf("copied profile mods = %+v", mods)
+	}
+}
+
 func TestDeleteDefaultProfileAppliesReplacementBeforeDelete(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

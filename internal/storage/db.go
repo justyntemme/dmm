@@ -948,15 +948,40 @@ GROUP BY p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
 }
 
 func (db *DB) CreateProfileForSteamApp(ctx context.Context, appID, name string) (Profile, error) {
+	return db.CreateProfileForSteamAppFromSource(ctx, appID, name, 0)
+}
+
+func (db *DB) CreateProfileForSteamAppFromSource(ctx context.Context, appID, name string, sourceProfileID int64) (Profile, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Profile{}, errors.New("profile name is required")
 	}
-	var gameID int64
-	if err := db.conn.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, appID).Scan(&gameID); err != nil {
+	if sourceProfileID < 0 {
+		return Profile{}, errors.New("source profile id is invalid")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
 		return Profile{}, err
 	}
-	result, err := db.conn.ExecContext(ctx, `
+	defer tx.Rollback()
+
+	var gameID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, appID).Scan(&gameID); err != nil {
+		return Profile{}, err
+	}
+	if sourceProfileID > 0 {
+		if err := tx.QueryRowContext(ctx, `
+SELECT id
+FROM profiles
+WHERE id = ? AND game_id = ?
+`, sourceProfileID, gameID).Scan(&sourceProfileID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return Profile{}, errors.New("source profile does not belong to this game")
+			}
+			return Profile{}, err
+		}
+	}
+	result, err := tx.ExecContext(ctx, `
 INSERT INTO profiles (game_id, name, is_default)
 VALUES (?, ?, 0)
 `, gameID, name)
@@ -965,6 +990,23 @@ VALUES (?, ?, 0)
 	}
 	profileID, err := result.LastInsertId()
 	if err != nil {
+		return Profile{}, err
+	}
+	if sourceProfileID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_mods (profile_id, installed_mod_id, enabled, priority, updated_at)
+SELECT ?, pm.installed_mod_id, pm.enabled, pm.priority, CURRENT_TIMESTAMP
+FROM profile_mods pm
+JOIN installed_mods im ON im.id = pm.installed_mod_id
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id AND m.game_id = ?
+WHERE pm.profile_id = ?
+ORDER BY pm.priority ASC, pm.installed_mod_id ASC
+`, profileID, gameID, sourceProfileID); err != nil {
+			return Profile{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
 	return db.Profile(ctx, profileID)

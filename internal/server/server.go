@@ -1513,7 +1513,8 @@ type patchUISettingsRequest struct {
 }
 
 type createProfileRequest struct {
-	Name string `json:"name"`
+	Name            string `json:"name"`
+	SourceProfileID int64  `json:"source_profile_id,omitempty"`
 }
 
 type setDefaultProfileResponse struct {
@@ -4978,14 +4979,16 @@ func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	profile, err := s.db.CreateProfileForSteamApp(r.Context(), appID, req.Name)
+	profile, err := s.db.CreateProfileForSteamAppFromSource(r.Context(), appID, req.Name, req.SourceProfileID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.logger.Info("profile created", "app_id", appID, "profile_id", profile.ID, "name", profile.Name, "source_profile_id", req.SourceProfileID, "mod_count", profile.ModCount, "enabled_mod_count", profile.EnabledModCount)
 	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
-		"action":     "profile_created",
-		"profile_id": profile.ID,
+		"action":            "profile_created",
+		"profile_id":        profile.ID,
+		"source_profile_id": req.SourceProfileID,
 	})
 	writeJSON(w, http.StatusCreated, profile)
 }

@@ -467,6 +467,7 @@
   let installCandidates: InstallCandidate[] = [];
   let installerChoicePresets: InstallerChoicePreset[] = [];
   let profileName = "";
+  let copyProfileFromActive = false;
   let captureURL = "";
   let lastCaptureURL = "";
   let resolvedCapture = "";
@@ -1301,13 +1302,17 @@
     const response = await fetch(`/api/games/${selectedGame.app_id}/profiles`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: profileName })
+      body: JSON.stringify({
+        name: profileName,
+        source_profile_id: copyProfileFromActive ? selectedProfile?.id ?? 0 : 0
+      })
     });
     if (!response.ok) {
       error = await response.text();
       return;
     }
     profileName = "";
+    copyProfileFromActive = false;
     await loadProfiles(selectedGame);
   }
 
@@ -4142,6 +4147,10 @@
             <input bind:value={profileName} aria-label="Profile name" placeholder="Profile name" />
             <button type="submit">Create</button>
           </form>
+          <label class="profile-copy-option">
+            <input type="checkbox" bind:checked={copyProfileFromActive} disabled={!selectedProfile} />
+            <span>Start with {selectedProfile?.name ?? "active profile"} mods in the same on/off state</span>
+          </label>
           <div class="profile-list">
             {#each profiles as profile}
               <article class="profile-row" class:active-profile={profile.is_default}>
