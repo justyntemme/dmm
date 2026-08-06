@@ -493,6 +493,79 @@ func TestCreateAndSetDefaultProfile(t *testing.T) {
 	}
 }
 
+func TestDeleteProfileRemovesInactiveProfileOnly(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "287700",
+		Name:        "METAL GEAR SOLID V: THE PHANTOM PAIN",
+		InstallDir:  "MGS_TPP",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/MGS_TPP",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := db.CreateProfileForSteamApp(context.Background(), "287700", "Testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := db.DeleteProfile(context.Background(), profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.ID != profile.ID || deleted.Name != profile.Name {
+		t.Fatalf("deleted profile = %+v", deleted)
+	}
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "287700")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || !profiles[0].IsDefault {
+		t.Fatalf("profiles after delete = %+v", profiles)
+	}
+}
+
+func TestDeleteProfileRejectsLastOrActiveProfile(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DeleteProfile(context.Background(), profiles[0].ID); err == nil {
+		t.Fatal("DeleteProfile deleted the last profile")
+	}
+	inactive, err := db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DeleteProfile(context.Background(), profiles[0].ID); err == nil {
+		t.Fatal("DeleteProfile deleted the active profile directly")
+	}
+	if _, err := db.DeleteProfile(context.Background(), inactive.ID); err != nil {
+		t.Fatalf("inactive delete failed: %v", err)
+	}
+}
+
 func TestSetProfileDeploymentStrategy(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

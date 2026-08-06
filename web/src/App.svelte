@@ -433,6 +433,12 @@
     apply: ProfileApplyResult;
   };
 
+  type DeleteProfileResult = {
+    deleted?: Profile;
+    active_profile: Profile;
+    apply: ProfileApplyResult;
+  };
+
   type Confirmation = {
     title: string;
     message: string;
@@ -1319,6 +1325,45 @@
     await loadProfiles(selectedGame);
     await loadInstalledMods(selectedGame);
     await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  async function deleteProfile(profile: Profile) {
+    if (!selectedGame || profiles.length <= 1) return;
+    error = "";
+    const response = await fetch(`/api/profiles/${profile.id}`, { method: "DELETE" });
+    const raw = await response.text();
+    let result: DeleteProfileResult | null = null;
+    if (raw.trim()) {
+      try {
+        result = JSON.parse(raw) as DeleteProfileResult;
+      } catch {
+        result = null;
+      }
+    }
+    if (!response.ok) {
+      if (result?.apply) handleProfileApplyResult(result.apply);
+      error = result?.apply?.message || raw || "Unable to remove profile.";
+      await refreshSelectedGame({ refreshPreview: true });
+      return;
+    }
+    if (result?.apply) handleProfileApplyResult(result.apply);
+    if (result?.active_profile) installTargetProfileID = String(result.active_profile.id);
+    await refreshSelectedGame({ refreshPreview: true, refreshJobs: true });
+  }
+
+  function askDeleteProfile(profile: Profile) {
+    if (!selectedGame || profiles.length <= 1) return;
+    const replacement = profiles.find((item) => item.id !== profile.id);
+    confirmation = {
+      title: "Remove profile",
+      message: `Remove ${profile.name} from ${selectedGame.name}.`,
+      detail: profile.is_default
+        ? `DMM will switch to ${replacement?.name ?? "another profile"} first, apply that profile, then remove ${profile.name}. Installed mod files and cached downloads are kept.`
+        : "Installed mod files and cached downloads are kept. Only this profile's membership, conflict choices, and history are removed.",
+      confirmLabel: "Remove Profile",
+      danger: true,
+      run: () => deleteProfile(profile)
+    };
   }
 
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
@@ -4092,10 +4137,15 @@
           </form>
           <div class="profile-list">
             {#each profiles as profile}
-              <button type="button" class:active-profile={profile.is_default} on:click={() => setDefaultProfile(profile)}>
-                <span>{profile.name}</span>
-                <strong>{profile.is_default ? "Active" : "Use Profile"}</strong>
-              </button>
+              <article class="profile-row" class:active-profile={profile.is_default}>
+                <button type="button" class="profile-select" on:click={() => setDefaultProfile(profile)}>
+                  <span>{profile.name}</span>
+                  <strong>{profile.is_default ? "Active" : "Use Profile"}</strong>
+                </button>
+                <button type="button" class="profile-delete" disabled={profiles.length <= 1} on:click={() => askDeleteProfile(profile)}>
+                  Remove
+                </button>
+              </article>
             {/each}
           </div>
         </article>

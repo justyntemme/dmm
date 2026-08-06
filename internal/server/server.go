@@ -348,6 +348,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives", s.handleUploadLocalArchive)
+	mux.HandleFunc("DELETE /api/profiles/{profileID}", s.handleDeleteProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
@@ -1518,6 +1519,12 @@ type createProfileRequest struct {
 type setDefaultProfileResponse struct {
 	Profile storage.Profile      `json:"profile"`
 	Apply   profileApplyResponse `json:"apply"`
+}
+
+type deleteProfileResponse struct {
+	Deleted       *storage.Profile     `json:"deleted,omitempty"`
+	ActiveProfile storage.Profile      `json:"active_profile"`
+	Apply         profileApplyResponse `json:"apply"`
 }
 
 type updateProfileModRequest struct {
@@ -4981,6 +4988,102 @@ func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request)
 		"profile_id": profile.ID,
 	})
 	writeJSON(w, http.StatusCreated, profile)
+}
+
+func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	profile, err := s.db.Profile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profiles, err := s.db.ProfilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(profiles) <= 1 {
+		http.Error(w, "cannot delete the last profile for a game", http.StatusBadRequest)
+		return
+	}
+
+	activeProfile := storage.Profile{}
+	apply := profileApplyResponse{Status: "skipped", Message: "Profile deleted; active profile unchanged."}
+	if profile.IsDefault {
+		replacement, ok := replacementProfileForDelete(profiles, profileID)
+		if !ok {
+			http.Error(w, "replacement profile is required", http.StatusBadRequest)
+			return
+		}
+		activeProfile, err = s.db.SetDefaultProfile(r.Context(), replacement.ID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+			"action":     "default_profile_changed",
+			"profile_id": activeProfile.ID,
+			"game_id":    activeProfile.GameID,
+		})
+		apply = s.applyProfileChangesForUserAction(r.Context(), appID, "profile-delete-switch")
+		if apply.Status != "applied" {
+			restored, restoreErr := s.db.SetDefaultProfile(r.Context(), profileID)
+			if restoreErr != nil {
+				s.logger.Error("failed to restore active profile after delete apply failure", "app_id", appID, "profile_id", profileID, "replacement_profile_id", replacement.ID, "error", restoreErr)
+			} else {
+				activeProfile = restored
+				s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+					"action":     "default_profile_restored",
+					"profile_id": restored.ID,
+					"game_id":    restored.GameID,
+				})
+			}
+			writeJSON(w, http.StatusConflict, deleteProfileResponse{ActiveProfile: activeProfile, Apply: apply})
+			return
+		}
+	} else {
+		for _, item := range profiles {
+			if item.IsDefault {
+				activeProfile = item
+				break
+			}
+		}
+		if activeProfile.ID == 0 {
+			activeProfile = profiles[0]
+		}
+	}
+
+	deleted, err := s.db.DeleteProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile deleted", "app_id", appID, "profile_id", deleted.ID, "name", deleted.Name, "active_profile_id", activeProfile.ID)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":            "profile_deleted",
+		"profile_id":        deleted.ID,
+		"active_profile_id": activeProfile.ID,
+		"game_id":           deleted.GameID,
+	})
+	writeJSON(w, http.StatusOK, deleteProfileResponse{Deleted: &deleted, ActiveProfile: activeProfile, Apply: apply})
+}
+
+func replacementProfileForDelete(profiles []storage.Profile, deletedProfileID int64) (storage.Profile, bool) {
+	for _, profile := range profiles {
+		if profile.ID != deletedProfileID {
+			return profile, true
+		}
+	}
+	return storage.Profile{}, false
 }
 
 func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request) {

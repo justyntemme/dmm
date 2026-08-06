@@ -864,7 +864,7 @@ h2 {
   background: #241819;
 }
 
-.profile-list button,
+.profile-row,
 .job {
   display: flex;
   align-items: center;
@@ -872,18 +872,68 @@ h2 {
   gap: 10px;
 }
 
-.profile-list button {
-  min-height: 46px;
+.profile-row {
+  min-width: 0;
   border: 1px solid #303741;
   border-radius: 8px;
-  padding: 0 12px;
-  color: #f4f4f5;
   background: #20262e;
 }
 
-.profile-list .active-profile {
+.profile-row.active-profile {
+  border-color: #76dfa6;
+  background: #14231b;
+}
+
+.profile-select {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 46px;
+  border-radius: 8px 0 0 8px;
+  padding: 0 12px;
+  color: #f4f4f5;
+  background: transparent;
+  text-align: left;
+}
+
+.profile-select span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-select strong {
+  color: #76dfa6;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.profile-row.active-profile .profile-select strong {
   color: #08110d;
+  border-radius: 999px;
+  padding: 5px 8px;
   background: #76dfa6;
+}
+
+.profile-delete {
+  flex: 0 0 auto;
+  min-height: 46px;
+  border-left: 1px solid #303741;
+  border-radius: 0 8px 8px 0;
+  padding: 0 12px;
+  color: #fecaca;
+  background: #241819;
+  font-size: 0.82rem;
+}
+
+.profile-delete:disabled {
+  color: #a1a1aa;
+  background: #20262e;
 }
 
 .mod-list article {

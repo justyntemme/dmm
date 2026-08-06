@@ -959,6 +959,43 @@ WHERE id = ?
 	return profile, tx.Commit()
 }
 
+func (db *DB) DeleteProfile(ctx context.Context, profileID int64) (Profile, error) {
+	if profileID <= 0 {
+		return Profile{}, errors.New("profile id is required")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return Profile{}, err
+	}
+	defer tx.Rollback()
+
+	var profile Profile
+	var isDefault int
+	if err := tx.QueryRowContext(ctx, `
+SELECT id, game_id, name, is_default, deployment_strategy
+FROM profiles
+WHERE id = ?
+`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
+		return Profile{}, err
+	}
+	profile.IsDefault = isDefault != 0
+
+	var profileCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE game_id = ?`, profile.GameID).Scan(&profileCount); err != nil {
+		return Profile{}, err
+	}
+	if profileCount <= 1 {
+		return Profile{}, errors.New("cannot delete the last profile for a game")
+	}
+	if profile.IsDefault {
+		return Profile{}, errors.New("cannot delete the active profile before selecting another profile")
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM profiles WHERE id = ?`, profileID); err != nil {
+		return Profile{}, err
+	}
+	return profile, tx.Commit()
+}
+
 func (db *DB) SetProfileDeploymentStrategy(ctx context.Context, profileID int64, strategy string) (Profile, error) {
 	strategy = strings.TrimSpace(strings.ToLower(strategy))
 	if _, err := db.conn.ExecContext(ctx, `
