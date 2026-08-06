@@ -32,6 +32,28 @@ type Profile struct {
 	Name               string `json:"name"`
 	IsDefault          bool   `json:"is_default"`
 	DeploymentStrategy string `json:"deployment_strategy,omitempty"`
+	ModCount           int    `json:"mod_count"`
+	EnabledModCount    int    `json:"enabled_mod_count"`
+}
+
+type profileScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanProfile(row profileScanner) (Profile, error) {
+	var profile Profile
+	var isDefault int
+	err := row.Scan(
+		&profile.ID,
+		&profile.GameID,
+		&profile.Name,
+		&isDefault,
+		&profile.DeploymentStrategy,
+		&profile.ModCount,
+		&profile.EnabledModCount,
+	)
+	profile.IsDefault = isDefault != 0
+	return profile, err
 }
 
 type Game struct {
@@ -863,10 +885,17 @@ WHERE steam_app_id = ?
 
 func (db *DB) ProfilesForSteamApp(ctx context.Context, appID string) ([]Profile, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
+SELECT p.id, p.game_id, p.name, p.is_default, p.deployment_strategy,
+	COUNT(m.id),
+	COALESCE(SUM(CASE WHEN m.id IS NOT NULL AND pm.enabled != 0 THEN 1 ELSE 0 END), 0)
 FROM profiles p
 JOIN games g ON g.id = p.game_id
+LEFT JOIN profile_mods pm ON pm.profile_id = p.id
+LEFT JOIN installed_mods im ON im.id = pm.installed_mod_id
+LEFT JOIN mod_versions mv ON mv.id = im.mod_version_id
+LEFT JOIN mods m ON m.id = mv.mod_id AND m.game_id = p.game_id
 WHERE g.steam_app_id = ?
+GROUP BY p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
 ORDER BY p.is_default DESC, p.name ASC
 `, appID)
 	if err != nil {
@@ -876,27 +905,28 @@ ORDER BY p.is_default DESC, p.name ASC
 
 	var profiles []Profile
 	for rows.Next() {
-		var profile Profile
-		var isDefault int
-		if err := rows.Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
+		profile, err := scanProfile(rows)
+		if err != nil {
 			return nil, err
 		}
-		profile.IsDefault = isDefault != 0
 		profiles = append(profiles, profile)
 	}
 	return profiles, rows.Err()
 }
 
 func (db *DB) Profile(ctx context.Context, profileID int64) (Profile, error) {
-	var profile Profile
-	var isDefault int
-	err := db.conn.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default, deployment_strategy
-FROM profiles
-WHERE id = ?
-`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy)
-	profile.IsDefault = isDefault != 0
-	return profile, err
+	return scanProfile(db.conn.QueryRowContext(ctx, `
+SELECT p.id, p.game_id, p.name, p.is_default, p.deployment_strategy,
+	COUNT(m.id),
+	COALESCE(SUM(CASE WHEN m.id IS NOT NULL AND pm.enabled != 0 THEN 1 ELSE 0 END), 0)
+FROM profiles p
+LEFT JOIN profile_mods pm ON pm.profile_id = p.id
+LEFT JOIN installed_mods im ON im.id = pm.installed_mod_id
+LEFT JOIN mod_versions mv ON mv.id = im.mod_version_id
+LEFT JOIN mods m ON m.id = mv.mod_id AND m.game_id = p.game_id
+WHERE p.id = ?
+GROUP BY p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
+`, profileID))
 }
 
 func (db *DB) CreateProfileForSteamApp(ctx context.Context, appID, name string) (Profile, error) {
@@ -908,24 +938,18 @@ func (db *DB) CreateProfileForSteamApp(ctx context.Context, appID, name string) 
 	if err := db.conn.QueryRowContext(ctx, `SELECT id FROM games WHERE steam_app_id = ?`, appID).Scan(&gameID); err != nil {
 		return Profile{}, err
 	}
-	_, err := db.conn.ExecContext(ctx, `
+	result, err := db.conn.ExecContext(ctx, `
 INSERT INTO profiles (game_id, name, is_default)
 VALUES (?, ?, 0)
 `, gameID, name)
 	if err != nil {
 		return Profile{}, err
 	}
-	var profile Profile
-	var isDefault int
-	if err := db.conn.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default, deployment_strategy
-FROM profiles
-WHERE game_id = ? AND name = ?
-`, gameID, name).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
+	profileID, err := result.LastInsertId()
+	if err != nil {
 		return Profile{}, err
 	}
-	profile.IsDefault = isDefault != 0
-	return profile, nil
+	return db.Profile(ctx, profileID)
 }
 
 func (db *DB) SetDefaultProfile(ctx context.Context, profileID int64) (Profile, error) {
@@ -946,17 +970,10 @@ func (db *DB) SetDefaultProfile(ctx context.Context, profileID int64) (Profile, 
 		return Profile{}, err
 	}
 
-	var profile Profile
-	var isDefault int
-	if err := tx.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default, deployment_strategy
-FROM profiles
-WHERE id = ?
-`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
+	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
-	profile.IsDefault = isDefault != 0
-	return profile, tx.Commit()
+	return db.Profile(ctx, profileID)
 }
 
 func (db *DB) DeleteProfile(ctx context.Context, profileID int64) (Profile, error) {
@@ -969,16 +986,21 @@ func (db *DB) DeleteProfile(ctx context.Context, profileID int64) (Profile, erro
 	}
 	defer tx.Rollback()
 
-	var profile Profile
-	var isDefault int
-	if err := tx.QueryRowContext(ctx, `
-SELECT id, game_id, name, is_default, deployment_strategy
-FROM profiles
-WHERE id = ?
-`, profileID).Scan(&profile.ID, &profile.GameID, &profile.Name, &isDefault, &profile.DeploymentStrategy); err != nil {
+	profile, err := scanProfile(tx.QueryRowContext(ctx, `
+SELECT p.id, p.game_id, p.name, p.is_default, p.deployment_strategy,
+	COUNT(m.id),
+	COALESCE(SUM(CASE WHEN m.id IS NOT NULL AND pm.enabled != 0 THEN 1 ELSE 0 END), 0)
+FROM profiles p
+LEFT JOIN profile_mods pm ON pm.profile_id = p.id
+LEFT JOIN installed_mods im ON im.id = pm.installed_mod_id
+LEFT JOIN mod_versions mv ON mv.id = im.mod_version_id
+LEFT JOIN mods m ON m.id = mv.mod_id AND m.game_id = p.game_id
+WHERE p.id = ?
+GROUP BY p.id, p.game_id, p.name, p.is_default, p.deployment_strategy
+`, profileID))
+	if err != nil {
 		return Profile{}, err
 	}
-	profile.IsDefault = isDefault != 0
 
 	var profileCount int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE game_id = ?`, profile.GameID).Scan(&profileCount); err != nil {

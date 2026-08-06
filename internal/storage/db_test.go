@@ -784,6 +784,9 @@ func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProfileCounts(t, db, mod.ProfileID, 1, 1)
+	requireProfileCounts(t, db, target.ID, 0, 0)
+
 	copiedEnabled := false
 	copied, err := db.TransferProfileMod(context.Background(), mod.ProfileID, target.ID, mod.ID, false, &copiedEnabled)
 	if err != nil {
@@ -806,6 +809,9 @@ func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
 	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || targetMods[0].Enabled {
 		t.Fatalf("target after copy = %+v", targetMods)
 	}
+	requireProfileCounts(t, db, mod.ProfileID, 1, 1)
+	requireProfileCounts(t, db, target.ID, 1, 0)
+
 	if _, err := db.RemoveProfileMod(context.Background(), target.ID, mod.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -816,6 +822,7 @@ func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
 	if len(targetMods) != 0 {
 		t.Fatalf("target after profile remove = %+v", targetMods)
 	}
+	requireProfileCounts(t, db, target.ID, 0, 0)
 	if _, err := db.InstalledModForSteamApp(context.Background(), "413150", mod.ID); err != nil {
 		t.Fatalf("installed mod should remain after profile remove: %v", err)
 	}
@@ -835,6 +842,86 @@ func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
 	}
 	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || !targetMods[0].Enabled {
 		t.Fatalf("target after move = %+v", targetMods)
+	}
+	requireProfileCounts(t, db, mod.ProfileID, 0, 0)
+	requireProfileCounts(t, db, target.ID, 1, 1)
+}
+
+func TestProfileCountsIgnoreRowsOutsideProfileGame(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{
+		{
+			AppID:       "413150",
+			Name:        "Stardew Valley",
+			InstallDir:  "Stardew Valley",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Stardew Valley",
+			State:       "clean_candidate",
+		},
+		{
+			AppID:       "377160",
+			Name:        "Fallout 4",
+			InstallDir:  "Fallout 4",
+			LibraryPath: "/steam",
+			Path:        "/steam/steamapps/common/Fallout 4",
+			State:       "clean_candidate",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stardewMod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	falloutMod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "377160",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:         "Fallout Fixture",
+		Version:      "2",
+		ArchivePath:  "/downloads/fo4.zip",
+		StagingPath:  "/staging/fo4",
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.conn.Exec(`
+INSERT OR IGNORE INTO profile_mods (profile_id, installed_mod_id, enabled, priority)
+VALUES (?, ?, 1, 10)
+`, stardewMod.ProfileID, falloutMod.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	requireProfileCounts(t, db, stardewMod.ProfileID, 1, 1)
+	profiles, err := db.ProfilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || profiles[0].ModCount != 1 || profiles[0].EnabledModCount != 1 {
+		t.Fatalf("stardew profiles = %+v", profiles)
 	}
 }
 
@@ -951,6 +1038,17 @@ func TestModUpdatesForSteamApp(t *testing.T) {
 	}
 	if len(updates) != 0 {
 		t.Fatalf("updates after delete = %+v", updates)
+	}
+}
+
+func requireProfileCounts(t *testing.T, db *DB, profileID int64, modCount, enabledModCount int) {
+	t.Helper()
+	profile, err := db.Profile(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.ModCount != modCount || profile.EnabledModCount != enabledModCount {
+		t.Fatalf("profile counts = %+v, want mod_count=%d enabled_mod_count=%d", profile, modCount, enabledModCount)
 	}
 }
 

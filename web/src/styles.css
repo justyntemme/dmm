@@ -899,11 +899,23 @@ h2 {
   text-align: left;
 }
 
-.profile-select span {
+.profile-name-block {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.profile-name-block small {
+  color: #a1a1aa;
+  font-size: 0.76rem;
+  line-height: 1.2;
 }
 
 .profile-select strong {

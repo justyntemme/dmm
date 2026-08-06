@@ -86,6 +86,8 @@
     name: string;
     is_default: boolean;
     deployment_strategy?: string;
+    mod_count: number;
+    enabled_mod_count: number;
   };
 
   type Job = {
@@ -4139,7 +4141,10 @@
             {#each profiles as profile}
               <article class="profile-row" class:active-profile={profile.is_default}>
                 <button type="button" class="profile-select" on:click={() => setDefaultProfile(profile)}>
-                  <span>{profile.name}</span>
+                  <span class="profile-name-block">
+                    <span class="profile-name">{profile.name}</span>
+                    <small>{profile.enabled_mod_count} enabled / {profile.mod_count} total</small>
+                  </span>
                   <strong>{profile.is_default ? "Active" : "Use Profile"}</strong>
                 </button>
                 <button type="button" class="profile-delete" disabled={profiles.length <= 1} on:click={() => askDeleteProfile(profile)}>
