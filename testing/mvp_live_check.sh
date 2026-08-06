@@ -66,7 +66,7 @@ if health.get("ok") is not True:
     failures.append("backend health is not ok")
 
 profiles = int(diag.get("profile_count") or 0)
-staged = int(diag.get("staged_mods") or 0)
+installed = int(diag.get("installed_mods") or 0)
 enabled = int(diag.get("enabled_mods") or 0)
 needs_recovery = int(diag.get("needs_recovery") or 0)
 blocked = int(diag.get("blocked_candidates") or 0)
@@ -85,7 +85,7 @@ preview_error = preview.get("error") or ""
 
 if profiles < 1:
     failures.append("no profile exists for the selected game")
-if staged < 1:
+if installed < 1:
     failures.append("no installed profile mods are available")
 if enabled < 1:
     failures.append("no enabled mods are available")
@@ -137,7 +137,7 @@ if isinstance(job_items, list):
 print("summary:")
 print(f"  game={diag.get('game', {}).get('name', diag.get('app_id', 'unknown'))}")
 print(f"  profiles={profiles} default={diag.get('default_profile') or 'none'}")
-print(f"  staged={staged} enabled={enabled} needs_recovery={needs_recovery} blocked={blocked}")
+print(f"  installed={installed} enabled={enabled} needs_recovery={needs_recovery} blocked={blocked}")
 print(f"  deployed={deployed} files={deployed_files} strategy={deployment.get('strategy') or 'none'}")
 print(
     "  preview="
