@@ -310,7 +310,7 @@ After installing and deploying a fresh test mod, run the stricter live acceptanc
 ~/.testing/mvp_live_check.sh
 ```
 
-It fails if the selected game has no staged/enabled mods, still has active install/deploy work, has no active deployment manifest, has no deployed files, cannot build a deployment preview, or reports preview conflicts. Override `APP_ID`, `HOST`, `PORT`, `REQUIRE_DEPLOYED=0`, or `ALLOW_WARNINGS=0` for narrower debugging runs.
+It fails if the selected game has no installed/enabled profile mods, still has active install/deploy work, has no active deployment manifest, has no deployed files, cannot build a deployment preview, or reports preview conflicts. Override `APP_ID`, `HOST`, `PORT`, `REQUIRE_DEPLOYED=0`, or `ALLOW_WARNINGS=0` for narrower debugging runs.
 
 The check also prints handler-derived runtime requirements from diagnostics. For Stardew, deployed SMAPI mods can be present in the game folder while still having no in-game effect if SMAPI is not installed or the game is not launched through it. Use `ALLOW_WARNINGS=0` when you want missing runtime requirements to fail the scripted check.
 

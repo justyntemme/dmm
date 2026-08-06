@@ -145,7 +145,7 @@ try:
             print("\nPASS: captured install completed without stopping at the local install gate.")
             print(
                 "summary: "
-                f"staged={diagnostics.get('staged_mods')} "
+                f"installed={diagnostics.get('installed_mods')} "
                 f"enabled={diagnostics.get('enabled_mods')} "
                 f"blocked={diagnostics.get('blocked_candidates')} "
                 f"active_install={diagnostics.get('active_install_jobs')}"

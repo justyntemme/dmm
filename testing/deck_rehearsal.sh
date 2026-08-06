@@ -309,8 +309,8 @@ if "diagnostics" in label.lower():
     deployment = data.get("deployment", {})
     preview = data.get("preview", {})
     print(
-        "  staged={staged} enabled={enabled} needs_recovery={recovery} blocked={blocked} deployed={deployed} deployed_files={files}".format(
-            staged=data.get("staged_mods", 0),
+        "  installed={installed} enabled={enabled} needs_recovery={recovery} blocked={blocked} deployed={deployed} deployed_files={files}".format(
+            installed=data.get("installed_mods", 0),
             enabled=data.get("enabled_mods", 0),
             recovery=data.get("needs_recovery", 0),
             blocked=data.get("blocked_candidates", 0),
