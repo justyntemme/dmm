@@ -2671,6 +2671,70 @@ func TestInstallCapturedInstallInstallsCachedArchive(t *testing.T) {
 	}
 }
 
+func TestInstallCapturedInstallTargetsSelectedProfile(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "lookup.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"LookupAnything/manifest.json":      `{"Name":"Lookup Anything"}`,
+		"LookupAnything/LookupAnything.dll": "dll",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/541")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded Lookup Anything; install it to add it disabled")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	body := fmt.Sprintf(`{"profile_id":%d}`, target.ID)
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", bytes.NewBufferString(body))
+	installReq.Header.Set("Content-Type", "application/json")
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+	waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+
+	defaultMods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defaultMods) != 0 {
+		t.Fatalf("default profile mods = %+v", defaultMods)
+	}
+	targetMods, err := srv.db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targetMods) != 1 || targetMods[0].ProfileID != target.ID || targetMods[0].Enabled {
+		t.Fatalf("target profile mods = %+v", targetMods)
+	}
+}
+
 func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()
