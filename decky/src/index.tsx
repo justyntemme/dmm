@@ -2608,6 +2608,7 @@ function DeckyModManagerRoute() {
     event.preventDefault();
     event.stopPropagation();
     clearSelectedDeckyGame();
+    void logFrontendEvent("decky selected game cleared", { source: "cancel-button" });
   }
 
   async function loadDeckyGames() {
@@ -4485,6 +4486,13 @@ function DeckyModManagerRoute() {
   }
 
   function handleDeckyRouteButtonDown(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.CANCEL && tab === "games" && selectedDeckyGameID) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSelectedDeckyGame();
+      void logFrontendEvent("decky selected game cleared", { source: "route-cancel" });
+      return;
+    }
     if (event.detail.button === GamepadButton.BUMPER_LEFT) {
       event.preventDefault();
       event.stopPropagation();
