@@ -596,17 +596,18 @@ class Plugin:
         self._log(f"profile mod order updated app_id={app_id} profile_id={profile_id} mods={len(mod_ids)}")
         return {"ok": True, "mods": result.get("mods"), "apply": result.get("apply")}
 
-    async def remove_game_mod(self, app_id, installed_mod_id):
+    async def remove_profile_mod(self, app_id, profile_id, installed_mod_id):
         app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
         installed_mod_id = str(installed_mod_id or "").strip()
-        if not app_id or not installed_mod_id:
-            return {"ok": False, "error": "app_id and installed_mod_id are required."}
+        if not app_id or not profile_id or not installed_mod_id:
+            return {"ok": False, "error": "app_id, profile_id, and installed_mod_id are required."}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
-        result, error = self._backend_json_result("DELETE", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}")
+        result, error = self._backend_json_result("DELETE", f"/api/profiles/{urllib.parse.quote(profile_id)}/mods/{urllib.parse.quote(installed_mod_id)}")
         if result is None:
             return {"ok": False, "error": error or "Unable to remove mod."}
-        self._log(f"mod removed app_id={app_id} installed_mod_id={installed_mod_id}")
+        self._log(f"profile mod removed app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id}")
         return {"ok": True, "result": result}
 
     async def reinstall_game_mod(self, app_id, installed_mod_id):

@@ -4753,7 +4753,7 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	}
 }
 
-func TestDeleteGameModRemovesInstalledRowAndStaging(t *testing.T) {
+func TestRemoveProfileModKeepsInstalledRowAndStaging(t *testing.T) {
 	srv := newTestServer(t)
 	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "541", "files", "160470")
 	if err := os.MkdirAll(filepath.Join(stagingPath, "LookupAnything"), 0o700); err != nil {
@@ -4790,7 +4790,7 @@ func TestDeleteGameModRemovesInstalledRowAndStaging(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10), nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -4802,10 +4802,13 @@ func TestDeleteGameModRemovesInstalledRowAndStaging(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(mods) != 0 {
-		t.Fatalf("mods after delete = %+v", mods)
+		t.Fatalf("profile mods after remove = %+v", mods)
 	}
-	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
-		t.Fatalf("staging path still exists or stat failed unexpectedly: %v", err)
+	if _, err := srv.db.InstalledModForSteamApp(context.Background(), "413150", mod.ID); err != nil {
+		t.Fatalf("installed mod should remain after profile remove: %v", err)
+	}
+	if _, err := os.Stat(stagingPath); err != nil {
+		t.Fatalf("staging path should remain after profile remove: %v", err)
 	}
 }
 
@@ -4859,7 +4862,7 @@ func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
 		t.Fatalf("expected deployed symlink: %v", err)
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10), nil)
 	deleteReq.RemoteAddr = "127.0.0.1:1"
 	deleteRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(deleteRec, deleteReq)
@@ -5067,6 +5070,124 @@ func TestUpdateProfileModPriorityEndpoint(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"priority":-5`)) || !bytes.Contains(rec.Body.Bytes(), []byte(`"enabled":true`)) {
 		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestProfileModTransferAndRemoveEndpoints(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "lookup")
+	sourcePath := filepath.Join(stagingPath, "LookupAnything", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		Name:         "Lookup Anything",
+		Version:      "160470",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "lookup.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: lookupAnythingManifestJSON(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	copyBody := fmt.Sprintf(`{"target_profile_id":%d,"enabled":false}`, target.ID)
+	copyReq := httptest.NewRequest(http.MethodPost, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10)+"/copy", bytes.NewBufferString(copyBody))
+	copyReq.Header.Set("Content-Type", "application/json")
+	copyReq.RemoteAddr = "127.0.0.1:1"
+	copyRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(copyRec, copyReq)
+	if copyRec.Code != http.StatusOK {
+		t.Fatalf("copy status = %d, body = %s", copyRec.Code, copyRec.Body.String())
+	}
+	var copyResult profileModUpdateResponse
+	if err := json.Unmarshal(copyRec.Body.Bytes(), &copyResult); err != nil {
+		t.Fatal(err)
+	}
+	if copyResult.Mod.ProfileID != target.ID || copyResult.Mod.Enabled {
+		t.Fatalf("copy result = %+v", copyResult.Mod)
+	}
+
+	sourceMods, err := srv.db.InstalledModsForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetMods, err := srv.db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceMods) != 1 || sourceMods[0].ID != mod.ID {
+		t.Fatalf("source mods after copy = %+v", sourceMods)
+	}
+	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || targetMods[0].Enabled {
+		t.Fatalf("target mods after copy = %+v", targetMods)
+	}
+
+	removeReq := httptest.NewRequest(http.MethodDelete, "/api/profiles/"+strconv.FormatInt(target.ID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	removeReq.RemoteAddr = "127.0.0.1:1"
+	removeRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(removeRec, removeReq)
+	if removeRec.Code != http.StatusOK {
+		t.Fatalf("remove status = %d, body = %s", removeRec.Code, removeRec.Body.String())
+	}
+	targetMods, err = srv.db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targetMods) != 0 {
+		t.Fatalf("target mods after remove = %+v", targetMods)
+	}
+	if _, err := srv.db.InstalledModForSteamApp(context.Background(), "413150", mod.ID); err != nil {
+		t.Fatalf("installed mod should remain after profile remove: %v", err)
+	}
+
+	moveBody := fmt.Sprintf(`{"target_profile_id":%d,"enabled":true}`, target.ID)
+	moveReq := httptest.NewRequest(http.MethodPost, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10)+"/move", bytes.NewBufferString(moveBody))
+	moveReq.Header.Set("Content-Type", "application/json")
+	moveReq.RemoteAddr = "127.0.0.1:1"
+	moveRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(moveRec, moveReq)
+	if moveRec.Code != http.StatusOK {
+		t.Fatalf("move status = %d, body = %s", moveRec.Code, moveRec.Body.String())
+	}
+	sourceMods, err = srv.db.InstalledModsForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetMods, err = srv.db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceMods) != 0 {
+		t.Fatalf("source mods after move = %+v", sourceMods)
+	}
+	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || !targetMods[0].Enabled {
+		t.Fatalf("target mods after move = %+v", targetMods)
 	}
 }
 
@@ -7130,7 +7251,7 @@ func TestDeployEmptyProfileRemovesCurrentManagedLinks(t *testing.T) {
 	if err := os.WriteFile(sourcePath, []byte(`{"Name":"Lookup Anything"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: "413150",
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    "nexus",
@@ -7143,7 +7264,8 @@ func TestDeployEmptyProfileRemovesCurrentManagedLinks(t *testing.T) {
 		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "mod.zip"),
 		StagingPath:  stagingPath,
 		ManifestJSON: lookupAnythingManifestJSON(),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -7183,6 +7305,9 @@ func TestDeployEmptyProfileRemovesCurrentManagedLinks(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Fatalf("latest deployment files = %+v", files)
+	}
+	if _, err := srv.db.SetDefaultProfile(context.Background(), mod.ProfileID); err != nil {
+		t.Fatal(err)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -7241,7 +7366,7 @@ func TestBuildGameDeployPlanAfterDeletingLastStagedModRemovesCurrentDeployment(t
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/profiles/"+strconv.FormatInt(mod.ProfileID, 10)+"/mods/"+strconv.FormatInt(mod.ID, 10), nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)

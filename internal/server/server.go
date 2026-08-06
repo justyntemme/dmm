@@ -82,6 +82,7 @@ type capturedInstall struct {
 	ArchiveBytes          int64
 	ReplaceInstalledModID int64
 	ReplaceStagingPath    string
+	TargetProfileID       int64
 }
 
 type nexusClient interface {
@@ -180,6 +181,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			ArchiveBytes:          pending.ArchiveBytes,
 			ReplaceInstalledModID: pending.ReplaceInstalledModID,
 			ReplaceStagingPath:    pending.ReplaceStagingPath,
+			TargetProfileID:       pending.TargetProfileID,
 		}
 	}
 	srv.jobs = jobs.NewManagerWithSeed(storedJobs, func(job jobs.Job) {
@@ -321,7 +323,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
-	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
 	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
@@ -352,6 +353,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
+	mux.HandleFunc("DELETE /api/profiles/{profileID}/mods/{installedModID}", s.handleRemoveProfileMod)
+	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/copy", s.handleCopyProfileMod)
+	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/move", s.handleMoveProfileMod)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
@@ -584,6 +588,7 @@ type configureGameLaunchRequest struct {
 
 type applyInstallCandidateRequest struct {
 	Selections map[string][]string `json:"selections"`
+	ProfileID  int64               `json:"profile_id,omitempty"`
 }
 
 type saveInstallCandidateChoicesRequest struct {
@@ -1522,6 +1527,11 @@ type updateProfileModRequest struct {
 
 type updateProfileModOrderRequest struct {
 	ModIDs []int64 `json:"mod_ids"`
+}
+
+type transferProfileModRequest struct {
+	TargetProfileID int64 `json:"target_profile_id"`
+	Enabled         *bool `json:"enabled,omitempty"`
 }
 
 type updateFileConflictWinnerRequest struct {
@@ -3349,35 +3359,6 @@ func newerNexusFile(left, right nexus.ModFile) bool {
 	return left.FileID > right.FileID
 }
 
-func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
-	appID := strings.TrimSpace(r.PathValue("appID"))
-	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
-	if appID == "" || err != nil || installedModID <= 0 {
-		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
-		return
-	}
-	mod, err := s.db.DeleteInstalledModForSteamApp(r.Context(), appID, installedModID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "installed mod was not found", http.StatusNotFound)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := s.removeStagingPath(mod); err != nil {
-		s.logger.Warn("staging cleanup after installed mod removal failed", "app_id", appID, "installed_mod_id", installedModID, "staging_path", mod.StagingPath, "error", err)
-	} else {
-		s.logger.Info("installed mod removed", "app_id", appID, "installed_mod_id", installedModID, "name", mod.Name)
-	}
-	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
-		"action":           "removed",
-		"installed_mod_id": installedModID,
-	})
-	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "mod-removal")
-	writeJSON(w, http.StatusOK, map[string]any{"removed": mod, "apply": apply})
-}
-
 func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
@@ -3414,10 +3395,11 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 			ModID:      mod.SourceModID,
 			FileID:     mod.SourceFileID,
 		},
-		Source:        "installed-mod-reinstall",
-		ArchivePath:   mod.ArchivePath,
-		ArchiveBytes:  info.Size(),
-		ArchiveSHA256: "",
+		Source:          "installed-mod-reinstall",
+		ArchivePath:     mod.ArchivePath,
+		ArchiveBytes:    info.Size(),
+		ArchiveSHA256:   "",
+		TargetProfileID: mod.ProfileID,
 	}
 	staged, err := s.stageCapturedInstall(r.Context(), job.ID, pending, pending.downloadResult())
 	if err != nil {
@@ -3426,14 +3408,15 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		if errors.As(err, &choice) {
 			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, job.ID, pending.Resolved, choice.Kind, choice.Installer)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-				SteamAppID:    appID,
-				Resolved:      pending.Resolved,
-				Name:          mod.Name,
-				ArchivePath:   mod.ArchivePath,
-				Status:        "needs_choices",
-				Reason:        choice.Error(),
-				InstallerJSON: installerJSON,
-				ChoicesJSON:   choicesJSON,
+				SteamAppID:      appID,
+				Resolved:        pending.Resolved,
+				Name:            mod.Name,
+				ArchivePath:     mod.ArchivePath,
+				Status:          "needs_choices",
+				Reason:          choice.Error(),
+				InstallerJSON:   installerJSON,
+				ChoicesJSON:     choicesJSON,
+				TargetProfileID: mod.ProfileID,
 			})
 			if recordErr == nil {
 				s.ensureInstallerChoiceJob(appID, candidate)
@@ -3443,14 +3426,15 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		var unsupported installplan.UnsupportedError
 		if errors.As(err, &unsupported) {
 			if _, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
-				SteamAppID:    appID,
-				Resolved:      pending.Resolved,
-				Name:          mod.Name,
-				ArchivePath:   mod.ArchivePath,
-				Status:        "blocked",
-				Reason:        unsupported.Error(),
-				ChoicesJSON:   "{}",
-				InstallerJSON: "",
+				SteamAppID:      appID,
+				Resolved:        pending.Resolved,
+				Name:            mod.Name,
+				ArchivePath:     mod.ArchivePath,
+				Status:          "blocked",
+				Reason:          unsupported.Error(),
+				ChoicesJSON:     "{}",
+				InstallerJSON:   "",
+				TargetProfileID: mod.ProfileID,
 			}); recordErr == nil {
 				s.publishInstallCandidatesChanged(appID, "blocked", 1)
 			}
@@ -3485,6 +3469,7 @@ type installCandidateResponse struct {
 	ChoicesJSON           string `json:"choices_json,omitempty"`
 	ReplaceInstalledModID int64  `json:"replace_installed_mod_id,omitempty"`
 	ReplaceStagingPath    string `json:"replace_staging_path,omitempty"`
+	TargetProfileID       int64  `json:"target_profile_id,omitempty"`
 }
 
 func installCandidateResponses(candidates []storage.InstallCandidate) []installCandidateResponse {
@@ -3514,6 +3499,7 @@ func installCandidateResponseFor(candidate storage.InstallCandidate) installCand
 		ChoicesJSON:           candidate.ChoicesJSON,
 		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 		ReplaceStagingPath:    candidate.ReplaceStagingPath,
+		TargetProfileID:       candidate.TargetProfileID,
 	}
 }
 
@@ -3698,6 +3684,16 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	}
+	targetProfileID := req.ProfileID
+	if targetProfileID == 0 {
+		targetProfileID = candidate.TargetProfileID
+	}
+	if targetProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, targetProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	job, ok := s.findInstallerChoiceJob(candidate.ID)
 	if ok && job.Status == jobs.StatusRunning {
 		http.Error(w, "installer choices are already being applied", http.StatusConflict)
@@ -3710,9 +3706,9 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 		job = s.jobs.CreateWithPayload("installer-choice", "Installer choices: "+candidate.Name, installerChoiceJobPayload(appID, candidate))
 	}
 	job, _ = s.jobs.Run(job.ID, "Applying installer choices for "+candidate.Name)
-	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status)
+	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status, "target_profile_id", targetProfileID)
 
-	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, selections)
+	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, selections, targetProfileID)
 	if err != nil {
 		s.logger.Warn("installer candidate apply failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -3925,6 +3921,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 		ArchiveBytes:          info.Size(),
 		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 		ReplaceStagingPath:    candidate.ReplaceStagingPath,
+		TargetProfileID:       candidate.TargetProfileID,
 	}
 	result := pending.downloadResult()
 	staged, err := s.stageCapturedInstall(ctx, jobID, pending, result)
@@ -3957,6 +3954,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			ChoicesJSON:           choicesJSON,
 			ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 			ReplaceStagingPath:    candidate.ReplaceStagingPath,
+			TargetProfileID:       candidate.TargetProfileID,
 		})
 		if recordErr != nil {
 			return storage.InstalledMod{}, recordErr
@@ -3980,6 +3978,7 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			ChoicesJSON:           candidate.ChoicesJSON,
 			ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 			ReplaceStagingPath:    candidate.ReplaceStagingPath,
+			TargetProfileID:       candidate.TargetProfileID,
 		})
 		if recordErr != nil {
 			return storage.InstalledMod{}, recordErr
@@ -4062,7 +4061,7 @@ func (s *Server) cancelInstallerChoiceJobs(candidateID int64, message string) {
 	}
 }
 
-func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate, selections map[string][]string) (storage.InstalledMod, error) {
+func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, candidate storage.InstallCandidate, selections map[string][]string, targetProfileID int64) (storage.InstalledMod, error) {
 	if strings.TrimSpace(candidate.ArchivePath) == "" {
 		return storage.InstalledMod{}, errors.New("install candidate archive path is missing")
 	}
@@ -4132,6 +4131,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		ChoicesJSON:           candidate.ChoicesJSON,
 		Selections:            selections,
 		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+		TargetProfileID:       targetProfileID,
 	})
 }
 
@@ -4197,6 +4197,7 @@ type fomodStageRequest struct {
 	ChoicesJSON           string
 	Selections            map[string][]string
 	ReplaceInstalledModID int64
+	TargetProfileID       int64
 }
 
 func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest) (storage.InstalledMod, error) {
@@ -4243,6 +4244,7 @@ func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest)
 		ManifestJSON:          manifest,
 		DefaultEnabled:        &defaultEnabled,
 		ReplaceInstalledModID: req.ReplaceInstalledModID,
+		TargetProfileID:       req.TargetProfileID,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -4284,6 +4286,7 @@ func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest)
 		"planner_id", plan.PlannerID,
 		"instructions", len(plan.Instructions),
 		"installed_mod_id", staged.ID,
+		"target_profile_id", req.TargetProfileID,
 		"enabled", staged.Enabled,
 		"default_enabled", defaultEnabled,
 		"default_enabled_reason", defaultEnabledReason,
@@ -5005,6 +5008,22 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, setDefaultProfileResponse{Profile: profile, Apply: apply})
 }
 
+func (s *Server) validateTargetProfile(ctx context.Context, appID string, profileID int64) error {
+	if profileID <= 0 {
+		return nil
+	}
+	profiles, err := s.db.ProfilesForSteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	for _, profile := range profiles {
+		if profile.ID == profileID {
+			return nil
+		}
+	}
+	return errors.New("target profile does not belong to this game")
+}
+
 func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
 	if err != nil || profileID <= 0 {
@@ -5043,6 +5062,84 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 	})
 	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-update")
 	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
+}
+
+func (s *Server) handleRemoveProfileMod(w http.ResponseWriter, r *http.Request) {
+	profileID, installedModID, ok := profileModPathIDs(w, r)
+	if !ok {
+		return
+	}
+	mod, err := s.db.RemoveProfileMod(r.Context(), profileID, installedModID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile mod removed from profile", "profile_id", profileID, "installed_mod_id", installedModID, "app_id", mod.SteamAppID)
+	s.publishGameEvent(events.TypeProfileModsChanged, mod.SteamAppID, map[string]any{
+		"action":           "removed_from_profile",
+		"profile_id":       profileID,
+		"installed_mod_id": installedModID,
+	})
+	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-remove")
+	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
+}
+
+func (s *Server) handleCopyProfileMod(w http.ResponseWriter, r *http.Request) {
+	s.handleTransferProfileMod(w, r, false)
+}
+
+func (s *Server) handleMoveProfileMod(w http.ResponseWriter, r *http.Request) {
+	s.handleTransferProfileMod(w, r, true)
+}
+
+func (s *Server) handleTransferProfileMod(w http.ResponseWriter, r *http.Request, move bool) {
+	sourceProfileID, installedModID, ok := profileModPathIDs(w, r)
+	if !ok {
+		return
+	}
+	var req transferProfileModRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.TargetProfileID <= 0 {
+		http.Error(w, "target_profile_id is required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.TransferProfileMod(r.Context(), sourceProfileID, req.TargetProfileID, installedModID, move, req.Enabled)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	action := "copied_to_profile"
+	source := "profile-mod-copy"
+	if move {
+		action = "moved_to_profile"
+		source = "profile-mod-move"
+	}
+	s.logger.Info("profile mod transferred", "action", action, "source_profile_id", sourceProfileID, "target_profile_id", req.TargetProfileID, "installed_mod_id", installedModID, "app_id", mod.SteamAppID, "enabled", req.Enabled)
+	s.publishGameEvent(events.TypeProfileModsChanged, mod.SteamAppID, map[string]any{
+		"action":            action,
+		"source_profile_id": sourceProfileID,
+		"target_profile_id": req.TargetProfileID,
+		"installed_mod_id":  installedModID,
+	})
+	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, source)
+	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
+}
+
+func profileModPathIDs(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return 0, 0, false
+	}
+	installedModID, err := strconv.ParseInt(r.PathValue("installedModID"), 10, 64)
+	if err != nil || installedModID <= 0 {
+		http.Error(w, "valid installedModID is required", http.StatusBadRequest)
+		return 0, 0, false
+	}
+	return profileID, installedModID, true
 }
 
 func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request) {
@@ -5450,6 +5547,7 @@ type capturedInstallURLRequest struct {
 	URL        string `json:"url"`
 	SteamAppID string `json:"steam_app_id"`
 	Source     string `json:"source"`
+	ProfileID  int64  `json:"profile_id,omitempty"`
 }
 
 type inspectArchiveRequest struct {
@@ -5495,6 +5593,16 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 	if source == "" {
 		source = "local-upload"
 	}
+	targetProfileID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("profile_id")), 10, 64)
+	if err != nil {
+		targetProfileID = 0
+	}
+	if targetProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, targetProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	s.logger.Info(
 		"local archive upload captured",
 		"source", source,
@@ -5506,8 +5614,14 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		"archive_path", result.Path,
 		"archive_sha256", result.SHA256,
 		"archive_bytes", result.BytesWritten,
+		"target_profile_id", targetProfileID,
 	)
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		if targetProfileID > 0 && pending.TargetProfileID != targetProfileID {
+			pending.TargetProfileID = targetProfileID
+			s.rememberCapturedInstall(job.ID, pending)
+			s.logger.Info("local archive duplicate target profile updated", "job_id", job.ID, "target_profile_id", targetProfileID)
+		}
 		s.logger.Info("local archive duplicate reused", "job_id", job.ID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"job":               jobAPIResponse(job),
@@ -5516,6 +5630,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 			"archive_file_name": pending.ArchiveFileName,
 			"archive_sha256":    pending.ArchiveSHA256,
 			"archive_bytes":     pending.ArchiveBytes,
+			"target_profile_id": pending.TargetProfileID,
 			"duplicate":         true,
 		})
 		return
@@ -5530,6 +5645,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		ArchivePath:     result.Path,
 		ArchiveSHA256:   result.SHA256,
 		ArchiveBytes:    result.BytesWritten,
+		TargetProfileID: targetProfileID,
 	}
 	s.rememberCapturedInstall(job.ID, pending)
 
@@ -5805,6 +5921,13 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if req.ProfileID > 0 {
+		appID := s.appIDForResolved(resolved)
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	source := strings.TrimSpace(req.Source)
 	s.logger.Info(
 		"captured install requested",
@@ -5814,13 +5937,20 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		"game_domain", resolved.GameDomain,
 		"mod_id", resolved.ModID,
 		"file_id", resolved.FileID,
+		"target_profile_id", req.ProfileID,
 	)
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		if req.ProfileID > 0 && pending.TargetProfileID != req.ProfileID {
+			pending.TargetProfileID = req.ProfileID
+			s.rememberCapturedInstall(job.ID, pending)
+			s.logger.Info("captured install duplicate target profile updated", "job_id", job.ID, "target_profile_id", req.ProfileID)
+		}
 		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		payload := map[string]any{
-			"job":      jobAPIResponse(job),
-			"resolved": pending.Resolved,
-			"source":   pending.Source,
+			"job":               jobAPIResponse(job),
+			"resolved":          pending.Resolved,
+			"source":            pending.Source,
+			"target_profile_id": pending.TargetProfileID,
 		}
 		if len(pending.DownloadLinks) > 0 {
 			payload["download_links"] = pending.DownloadLinks
@@ -5856,6 +5986,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			DownloadLinks:   resolved.DownloadLinks,
 			Source:          source,
 			ArchiveFileName: resolved.FileName,
+			TargetProfileID: req.ProfileID,
 		})
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
@@ -5897,6 +6028,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			DownloadLinks:   links,
 			Source:          source,
 			ArchiveFileName: archiveFileName,
+			TargetProfileID: req.ProfileID,
 		})
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
@@ -5917,8 +6049,9 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
 	payload["job"] = jobAPIResponse(job)
 	s.rememberCapturedInstall(job.ID, capturedInstall{
-		Resolved: resolved,
-		Source:   source,
+		Resolved:        resolved,
+		Source:          source,
+		TargetProfileID: req.ProfileID,
 	})
 	writeJSON(w, http.StatusAccepted, payload)
 }
@@ -5997,6 +6130,27 @@ func (s *Server) handleInstallCapturedInstall(w http.ResponseWriter, r *http.Req
 	if jobID == "" {
 		http.Error(w, "jobID is required", http.StatusBadRequest)
 		return
+	}
+	var req capturedInstallURLRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if req.ProfileID > 0 {
+		pending, ok := s.capturedInstall(jobID)
+		if !ok {
+			http.Error(w, "captured mod action was not found; capture the mod link again", http.StatusNotFound)
+			return
+		}
+		appID := s.appIDForPending(pending)
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		pending.TargetProfileID = req.ProfileID
+		s.rememberCapturedInstall(jobID, pending)
 	}
 
 	job, err := s.startCapturedInstallInstall(jobID, "user-started install")
@@ -6230,6 +6384,7 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 		ArchiveBytes:          pending.ArchiveBytes,
 		ReplaceInstalledModID: pending.ReplaceInstalledModID,
 		ReplaceStagingPath:    pending.ReplaceStagingPath,
+		TargetProfileID:       pending.TargetProfileID,
 	}); err != nil {
 		s.logger.Warn("persist captured install failed", "job_id", jobID, "error", err)
 	}
@@ -6498,6 +6653,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 				ChoicesJSON:           choicesJSON,
 				ReplaceInstalledModID: pending.ReplaceInstalledModID,
 				ReplaceStagingPath:    pending.ReplaceStagingPath,
+				TargetProfileID:       pending.TargetProfileID,
 			})
 			if recordErr != nil {
 				s.logger.Warn("record installer choice candidate failed", "job_id", jobID, "error", recordErr)
@@ -6522,6 +6678,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 				Reason:                unsupported.Error(),
 				ReplaceInstalledModID: pending.ReplaceInstalledModID,
 				ReplaceStagingPath:    pending.ReplaceStagingPath,
+				TargetProfileID:       pending.TargetProfileID,
 			}); recordErr != nil {
 				s.logger.Warn("record blocked install candidate failed", "job_id", jobID, "error", recordErr)
 			} else {
@@ -6865,6 +7022,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 					ChoicesJSON:           choicesJSON,
 					Selections:            selections,
 					ReplaceInstalledModID: pending.ReplaceInstalledModID,
+					TargetProfileID:       pending.TargetProfileID,
 				})
 				if err == nil {
 					s.logger.Info("captured install reused installer choice preset without prompting", "job_id", jobID, "app_id", appID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID)
@@ -6922,6 +7080,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		ManifestJSON:          manifest,
 		DefaultEnabled:        &defaultEnabled,
 		ReplaceInstalledModID: pending.ReplaceInstalledModID,
+		TargetProfileID:       pending.TargetProfileID,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
@@ -7064,6 +7223,14 @@ func (s *Server) appIDForPending(pending capturedInstall) string {
 		return appID
 	}
 	appID, _ := s.steamAppIDForNexusDomain(pending.Resolved.GameDomain)
+	return appID
+}
+
+func (s *Server) appIDForResolved(resolved catalog.ResolvedDownload) string {
+	if appID := strings.TrimSpace(resolved.SteamAppID); appID != "" {
+		return appID
+	}
+	appID, _ := s.steamAppIDForNexusDomain(resolved.GameDomain)
 	return appID
 }
 

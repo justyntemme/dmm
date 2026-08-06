@@ -3004,12 +3004,16 @@ function DeckyModManagerRoute() {
   }
 
   async function removeDeckyMod(mod: ManagedMod) {
-    if (!selectedDeckyGameID) return;
+    const profile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0];
+    if (!selectedDeckyGameID || !profile) {
+      setError("Select a profile before removing a mod.");
+      return;
+    }
     try {
       setError("");
       setModsResult("");
       setBusyModID(mod.id);
-      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; apply?: ProfileApplyResult } }>("remove_game_mod", selectedDeckyGameID, mod.id);
+      const result = await call<[string, number, number], { ok: boolean; error?: string; result?: { mod?: ManagedMod; apply?: ProfileApplyResult } }>("remove_profile_mod", selectedDeckyGameID, profile.id, mod.id);
       if (!result.ok) {
         setError(result.error ?? "Unable to remove mod.");
         return;
@@ -3018,7 +3022,7 @@ function DeckyModManagerRoute() {
       const applyMessage = result.result?.apply?.message || "Mod removed. Restart the game if it is already running.";
       if (result.result?.apply?.status === "blocked" || result.result?.apply?.status === "failed") setError(applyMessage);
       else setModsResult(applyMessage);
-      if (result.result?.job) showJobToast(result.result.job);
+      if (result.result?.apply?.job) showJobToast(result.result.apply.job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

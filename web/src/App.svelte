@@ -208,6 +208,7 @@
     reason: string;
     installer_json?: string;
     choices_json?: string;
+    target_profile_id?: number;
   };
 
   type InstallerChoicePreset = {
@@ -500,7 +501,9 @@
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
   let workshopOrderBusy = false;
-  let busyMods: Record<number, "toggle" | "remove" | "reinstall" | "update"> = {};
+  type ModBusyAction = "toggle" | "remove" | "reinstall" | "update" | "copy" | "move";
+
+  let busyMods: Record<number, ModBusyAction> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
   let modUpdateBrowserURL = "";
@@ -519,6 +522,10 @@
   let actionStateRefreshNeedsPreview = false;
   let candidateSelections: Record<number, Record<string, string[]>> = {};
   let candidateStepIndices: Record<number, number> = {};
+  let installTargetProfileID = "";
+  let actionProfileTargets: Record<string, string> = {};
+  let candidateProfileTargets: Record<number, string> = {};
+  let profileTransferTargets: Record<number, string> = {};
   let refreshJobsInFlight = false;
   let refreshJobsQueued = false;
   let eventSocket: WebSocket | null = null;
@@ -531,7 +538,7 @@
   let selectedGameRefreshSequence = 0;
   let fullRefreshSequence = 0;
 
-  function setBusyMod(modID: number, action: "toggle" | "remove" | "reinstall" | "update") {
+  function setBusyMod(modID: number, action: ModBusyAction) {
     busyMods = { ...busyMods, [modID]: action };
   }
 
@@ -546,6 +553,9 @@
   $: sourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform").length;
   $: readySourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform" && catalog.status === "ready").length;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+  $: if (profiles.length > 0 && !profiles.some((profile) => String(profile.id) === installTargetProfileID)) {
+    installTargetProfileID = String(selectedProfile?.id ?? profiles[0].id);
+  }
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
@@ -1129,6 +1139,39 @@
     reconcileBusyState();
   }
 
+  function defaultProfileID() {
+    return selectedProfile?.id ?? profiles[0]?.id ?? 0;
+  }
+
+  function normalizedProfileID(value: string | number | undefined, fallback = defaultProfileID()) {
+    const parsed = Number(value ?? 0);
+    if (parsed > 0 && profiles.some((profile) => profile.id === parsed)) return parsed;
+    return fallback;
+  }
+
+  function selectedInstallProfileID() {
+    return normalizedProfileID(installTargetProfileID);
+  }
+
+  function actionInstallProfileID(action: Job) {
+    return normalizedProfileID(actionProfileTargets[action.id], selectedInstallProfileID());
+  }
+
+  function candidateInstallProfileID(candidate: InstallCandidate) {
+    return normalizedProfileID(candidateProfileTargets[candidate.id], normalizedProfileID(candidate.target_profile_id, selectedInstallProfileID()));
+  }
+
+  function transferProfiles() {
+    if (!selectedProfile) return [];
+    return profiles.filter((profile) => profile.id !== selectedProfile.id);
+  }
+
+  function transferTargetProfileID(mod: InstalledMod) {
+    const fallback = transferProfiles()[0]?.id ?? 0;
+    const target = normalizedProfileID(profileTransferTargets[mod.id], fallback);
+    return target === selectedProfile?.id ? fallback : target;
+  }
+
   async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean; reason?: string } = {}) {
     if (!selectedGame) return;
     const sequence = ++selectedGameRefreshSequence;
@@ -1248,8 +1291,16 @@
     await loadProfiles(selectedGame);
   }
 
+  async function selectProfileByID(profileID: string) {
+    const profile = profiles.find((item) => String(item.id) === profileID);
+    if (!profile) return;
+    await setDefaultProfile(profile);
+  }
+
   async function setDefaultProfile(profile: Profile) {
-    if (!selectedGame || profile.is_default) return;
+    if (!selectedGame) return;
+    installTargetProfileID = String(profile.id);
+    if (profile.is_default) return;
     error = "";
     const response = await fetch(`/api/profiles/${profile.id}/default`, { method: "PUT" });
     if (!response.ok) {
@@ -1312,17 +1363,50 @@
   }
 
   async function removeInstalledMod(mod: InstalledMod) {
-    if (!selectedGame) return;
+    if (!selectedProfile) return;
     error = "";
     setBusyMod(mod.id, "remove");
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, { method: "DELETE" });
       if (!response.ok) {
         error = await response.text();
         return;
       }
-      const result: { removed: InstalledMod; apply: ProfileApplyResult } = await response.json();
+      const result: ProfileModUpdateResult = await response.json();
       installedMods = installedMods.filter((item) => item.id !== mod.id);
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearBusyMod(mod.id);
+    }
+  }
+
+  async function transferInstalledMod(mod: InstalledMod, move: boolean) {
+    if (!selectedProfile) return;
+    const targetProfileID = transferTargetProfileID(mod);
+    if (targetProfileID <= 0 || targetProfileID === selectedProfile.id) {
+      error = "Choose a different target profile first.";
+      return;
+    }
+    const action = move ? "move" : "copy";
+    error = "";
+    setBusyMod(mod.id, action);
+    try {
+      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_profile_id: targetProfileID, enabled: mod.enabled })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: ProfileModUpdateResult = await response.json();
+      if (move) {
+        installedMods = installedMods.filter((item) => item.id !== mod.id);
+      }
       handleProfileApplyResult(result.apply);
       await refreshSelectedGame({ refreshPreview: true });
     } catch (err) {
@@ -1441,27 +1525,56 @@
     };
   }
 
+  async function captureInstallURL(url: string, profileID: number, reason = "captured-install") {
+    if (!selectedGame) return null;
+    const response = await fetch("/api/captured-installs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, steam_app_id: selectedGame.app_id, profile_id: profileID })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const result = await response.json();
+    if (result.job) upsertJob(result.job);
+    if (result.resolved) {
+      resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
+    }
+    downloadLinks = result.download_links ?? [];
+    await refreshJobsAndSelectedGame(reason, true);
+    return result;
+  }
+
   async function resolveCapturedInstall() {
     if (!selectedGame || !captureURL.trim()) return;
     error = "";
     lastCaptureURL = captureURL;
+    const requestedURL = captureURL;
+    const targetProfileID = selectedInstallProfileID();
     nexusFiles = [];
     downloadLinks = [];
-    const response = await fetch("/api/captured-installs/resolve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: captureURL, steam_app_id: selectedGame.app_id })
-    });
-    if (!response.ok) {
-      error = await response.text();
-      return;
+    try {
+      const response = await fetch("/api/captured-installs/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: requestedURL, steam_app_id: selectedGame.app_id, profile_id: targetProfileID })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      upsertJob(result.job);
+      resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
+      nexusFiles = result.files ?? [];
+      downloadLinks = result.download_links ?? [];
+      if (result.resolved?.file_id || (result.download_links ?? []).length > 0) {
+        await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
+      }
+      captureURL = "";
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
     }
-    const result = await response.json();
-    upsertJob(result.job);
-    resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
-    nexusFiles = result.files ?? [];
-    downloadLinks = result.download_links ?? [];
-    captureURL = "";
   }
 
   async function resolveFile(file: NexusFile) {
@@ -1486,6 +1599,7 @@
     try {
       const form = new FormData();
       form.append("archive", localArchiveFile);
+      form.append("profile_id", String(selectedInstallProfileID()));
       const response = await fetch(`/api/games/${selectedGame.app_id}/local-archives`, {
         method: "POST",
         body: form
@@ -1639,19 +1753,8 @@
     busyNexusFileKey = key;
     nexusSearchError = "";
     try {
-      const response = await fetch("/api/captured-installs/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: nexusFileURL(mod.mod_id, file.file_id), steam_app_id: selectedGame.app_id })
-      });
-      if (!response.ok) {
-        nexusSearchError = await response.text();
-        return;
-      }
-      const result = await response.json();
-      if (result.job) upsertJob(result.job);
+      await captureInstallURL(nexusFileURL(mod.mod_id, file.file_id), selectedInstallProfileID(), "nexus-search-file");
       resolvedCapture = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
-      await refreshJobsAndSelectedGame("nexus-search-file");
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -1860,7 +1963,7 @@
       const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selections })
+        body: JSON.stringify({ selections, profile_id: candidateInstallProfileID(candidate) })
       });
       if (!response.ok) {
         error = await response.text();
@@ -1936,7 +2039,11 @@
     setJobBusy(action.id, true);
     markJobProcessing(action, "Installing downloaded archive...");
     try {
-      const response = await fetch(`/api/captured-installs/${action.id}/install`, { method: "POST" });
+      const response = await fetch(`/api/captured-installs/${action.id}/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: actionInstallProfileID(action) })
+      });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame("captured-install-confirm-error", true);
@@ -3221,6 +3328,16 @@
                 <h3>Selected Profile</h3>
                 <span>{selectedProfile?.name ?? "Default"}</span>
               </div>
+              {#if profiles.length > 1}
+                <label class="target-profile-select active-profile-select">
+                  <span>Active Profile</span>
+                  <select value={String(selectedProfile?.id ?? "")} on:change={(event) => selectProfileByID(event.currentTarget.value)}>
+                    {#each profiles as profile}
+                      <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · current" : ""}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               <div class="profile-summary">
                 <div><strong>{enabledMods.length}</strong><span>On</span></div>
                 <div><strong>{disabledMods.length}</strong><span>Off</span></div>
@@ -3248,6 +3365,16 @@
                 <h3>Add Mod</h3>
                 <span>{selectedGameActionItems.length} open</span>
               </div>
+              {#if profiles.length > 0}
+                <label class="target-profile-select">
+                  <span>Install to Profile</span>
+                  <select bind:value={installTargetProfileID}>
+                    {#each profiles as profile}
+                      <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
                 <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus, nxm://, Thunderstore, GitHub, Modrinth, GameBanana, mod.io, CurseForge, or direct archive URL"></textarea>
                 <button type="submit">Add URL</button>
@@ -3444,6 +3571,29 @@
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
                       </div>
+                      {#if transferProfiles().length > 0}
+                        <div class="profile-transfer">
+                          <label class="target-profile-select compact-target">
+                            <span>Other Profile</span>
+                            <select
+                              value={String(transferTargetProfileID(mod))}
+                              on:change={(event) => (profileTransferTargets = { ...profileTransferTargets, [mod.id]: event.currentTarget.value })}
+                            >
+                              {#each transferProfiles() as profile}
+                                <option value={String(profile.id)}>{profile.name}</option>
+                              {/each}
+                            </select>
+                          </label>
+                          <div class="mod-advanced-actions">
+                            <button type="button" class="secondary-action compact" on:click={() => transferInstalledMod(mod, false)} disabled={Boolean(busyMods[mod.id])}>
+                              {busyMods[mod.id] === "copy" ? "Copying..." : "Copy to Profile"}
+                            </button>
+                            <button type="button" class="secondary-action compact" on:click={() => transferInstalledMod(mod, true)} disabled={Boolean(busyMods[mod.id])}>
+                              {busyMods[mod.id] === "move" ? "Moving..." : "Move to Profile"}
+                            </button>
+                          </div>
+                        </div>
+                      {/if}
                     </details>
                   </article>
                 {/each}
@@ -3735,6 +3885,19 @@
                     {#if action.message}<p>{action.message}</p>{/if}
                     <p class="action-next-step">{actionNextStep(action)}</p>
                     <small>{new Date(action.updated_at).toLocaleString()}</small>
+                    {#if action.type === "captured-install" && action.status === "waiting" && profiles.length > 0}
+                      <label class="target-profile-select compact-target">
+                        <span>Install to</span>
+                        <select
+                          value={String(actionInstallProfileID(action))}
+                          on:change={(event) => (actionProfileTargets = { ...actionProfileTargets, [action.id]: event.currentTarget.value })}
+                        >
+                          {#each profiles as profile}
+                            <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                          {/each}
+                        </select>
+                      </label>
+                    {/if}
                   </div>
                     <div class="action-controls">
                       <span>{actionStatusLabel(action)}</span>
@@ -3777,6 +3940,19 @@
                       </div>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
+                      {#if profiles.length > 0}
+                        <label class="target-profile-select compact-target">
+                          <span>Install to</span>
+                          <select
+                            value={String(candidateInstallProfileID(candidate))}
+                            on:change={(event) => (candidateProfileTargets = { ...candidateProfileTargets, [candidate.id]: event.currentTarget.value })}
+                          >
+                            {#each profiles as profile}
+                              <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                            {/each}
+                          </select>
+                        </label>
+                      {/if}
                       {#if selectedChoiceCount > 0}
                         <p class="preset-selection-note">{selectedChoiceCount} choice{selectedChoiceCount === 1 ? "" : "s"} preselected from DMM's saved/default installer state.</p>
                       {/if}
@@ -3904,7 +4080,7 @@
             {#each profiles as profile}
               <button type="button" class:active-profile={profile.is_default} on:click={() => setDefaultProfile(profile)}>
                 <span>{profile.name}</span>
-                <strong>{profile.is_default ? "Default" : "Set default"}</strong>
+                <strong>{profile.is_default ? "Active" : "Use Profile"}</strong>
               </button>
             {/each}
           </div>

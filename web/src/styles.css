@@ -577,6 +577,45 @@ h2 {
   background: #171c22;
 }
 
+.target-profile-select {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.target-profile-select span {
+  color: #a1a1aa;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.target-profile-select select {
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #f4f4f5;
+  background: #171c22;
+}
+
+.compact-target {
+  margin-top: 8px;
+  max-width: 260px;
+}
+
+.active-profile-select {
+  margin-bottom: 12px;
+}
+
+.action-list .failed-action .target-profile-select span {
+  border: 0;
+  padding: 0;
+  color: #a1a1aa;
+  background: transparent;
+}
+
 .hint,
 .path-panel p {
   margin: 0;
@@ -1743,6 +1782,12 @@ h2 {
   margin-top: 8px;
 }
 
+.profile-transfer {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .deploy-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2345,5 +2390,9 @@ dd {
 
   .mod-advanced-actions {
     grid-template-columns: 1fr;
+  }
+
+  .compact-target {
+    max-width: none;
   }
 }

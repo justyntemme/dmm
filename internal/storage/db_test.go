@@ -610,6 +610,204 @@ func TestRecordInstalledModCreatesProfileMod(t *testing.T) {
 	}
 }
 
+func TestRecordInstalledModTargetsSpecificProfile(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	secondary, err := db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "239",
+			FileID:     "165575",
+		},
+		Name:            "NPC Map Locations",
+		Version:         "165575",
+		ArchivePath:     "/downloads/mod.zip",
+		StagingPath:     "/staging/mod",
+		ManifestJSON:    "{}",
+		DefaultEnabled:  &disabled,
+		TargetProfileID: secondary.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.ProfileID != secondary.ID || mod.Enabled {
+		t.Fatalf("targeted mod = %+v", mod)
+	}
+	defaultMods, err := db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defaultMods) != 0 {
+		t.Fatalf("default profile mods = %+v", defaultMods)
+	}
+	secondaryMods, err := db.InstalledModsForProfile(context.Background(), secondary.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondaryMods) != 1 || secondaryMods[0].ID != mod.ID {
+		t.Fatalf("secondary profile mods = %+v", secondaryMods)
+	}
+}
+
+func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copiedEnabled := false
+	copied, err := db.TransferProfileMod(context.Background(), mod.ProfileID, target.ID, mod.ID, false, &copiedEnabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied.ProfileID != target.ID || copied.Enabled {
+		t.Fatalf("copied mod = %+v", copied)
+	}
+	sourceMods, err := db.InstalledModsForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceMods) != 1 || sourceMods[0].ID != mod.ID {
+		t.Fatalf("source after copy = %+v", sourceMods)
+	}
+	targetMods, err := db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || targetMods[0].Enabled {
+		t.Fatalf("target after copy = %+v", targetMods)
+	}
+	if _, err := db.RemoveProfileMod(context.Background(), target.ID, mod.ID); err != nil {
+		t.Fatal(err)
+	}
+	targetMods, err = db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targetMods) != 0 {
+		t.Fatalf("target after profile remove = %+v", targetMods)
+	}
+	if _, err := db.InstalledModForSteamApp(context.Background(), "413150", mod.ID); err != nil {
+		t.Fatalf("installed mod should remain after profile remove: %v", err)
+	}
+	if _, err := db.TransferProfileMod(context.Background(), mod.ProfileID, target.ID, mod.ID, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	sourceMods, err = db.InstalledModsForProfile(context.Background(), mod.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceMods) != 0 {
+		t.Fatalf("source after move = %+v", sourceMods)
+	}
+	targetMods, err = db.InstalledModsForProfile(context.Background(), target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targetMods) != 1 || targetMods[0].ID != mod.ID || !targetMods[0].Enabled {
+		t.Fatalf("target after move = %+v", targetMods)
+	}
+}
+
+func TestProfileModTransferAndRemoveRequireProfileMembership(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := db.CreateProfileForSteamApp(context.Background(), "413150", "Co-op")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "5098",
+			FileID:     "145906",
+		},
+		Name:         "Generic Mod Config Menu",
+		Version:      "145906",
+		ArchivePath:  "/downloads/gmcm.zip",
+		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RemoveProfileMod(context.Background(), target.ID, mod.ID); err == nil {
+		t.Fatal("RemoveProfileMod for non-member succeeded")
+	}
+	if _, err := db.TransferProfileMod(context.Background(), target.ID, mod.ProfileID, mod.ID, true, nil); err == nil {
+		t.Fatal("TransferProfileMod from non-member source succeeded")
+	}
+}
+
 func TestModUpdatesForSteamApp(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {
@@ -1023,6 +1221,7 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 		InstallerJSON:         `{"name":"SMAPI installer"}`,
 		ReplaceInstalledModID: 42,
 		ReplaceStagingPath:    "/staging/smapi-old",
+		TargetProfileID:       99,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1032,7 +1231,7 @@ func TestRecordInstallCandidatePersistsBlockedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" || candidates[0].InstallerJSON == "" || candidates[0].ReplaceInstalledModID != 42 || candidates[0].ReplaceStagingPath != "/staging/smapi-old" {
+	if len(candidates) != 1 || candidates[0].Status != "blocked" || candidates[0].Reason != "archive requires an installer" || candidates[0].InstallerJSON == "" || candidates[0].ReplaceInstalledModID != 42 || candidates[0].ReplaceStagingPath != "/staging/smapi-old" || candidates[0].TargetProfileID != 99 {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 
