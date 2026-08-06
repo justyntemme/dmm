@@ -191,6 +191,8 @@ type Profile = {
   id: number;
   name: string;
   is_default: boolean;
+  mod_count: number;
+  enabled_mod_count: number;
 };
 
 type ManagedMod = {
@@ -989,6 +991,10 @@ function nextDeckyModSort(current: DeckyModSort): DeckyModSort {
   if (current === "az") return "za";
   if (current === "za") return "enabled";
   return "profile";
+}
+
+function profileCountText(profile: Profile) {
+  return `${profile.enabled_mod_count} on / ${profile.mod_count} total`;
 }
 
 function deckyModSortLabel(sort: DeckyModSort) {
@@ -3945,7 +3951,12 @@ function DeckyModManagerRoute() {
                       padding: "10px",
                     }}
                   >
-                    <div style={deckyTwoLineTextStyle}>{profile.name}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={deckyTwoLineTextStyle}>{profile.name}</div>
+                      <div style={{ color: profile.is_default ? "#d1fae5" : "#a1a1aa", fontSize: "11px", lineHeight: 1.2 }}>
+                        {profile.is_default ? "Active - " : ""}{profileCountText(profile)}
+                      </div>
+                    </div>
                   </Focusable>
                 ))}
               </div>

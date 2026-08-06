@@ -1187,6 +1187,11 @@
     return target === selectedProfile?.id ? fallback : target;
   }
 
+  function profileOptionLabel(profile: Profile, defaultLabel = "default") {
+    const state = `${profile.enabled_mod_count} on / ${profile.mod_count} total`;
+    return `${profile.name}${profile.is_default ? ` - ${defaultLabel}` : ""} (${state})`;
+  }
+
   async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean; reason?: string } = {}) {
     if (!selectedGame) return;
     const sequence = ++selectedGameRefreshSequence;
@@ -3387,7 +3392,7 @@
                   <span>Active Profile</span>
                   <select value={String(selectedProfile?.id ?? "")} on:change={(event) => selectProfileByID(event.currentTarget.value)}>
                     {#each profiles as profile}
-                      <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · current" : ""}</option>
+                      <option value={String(profile.id)}>{profileOptionLabel(profile, "current")}</option>
                     {/each}
                   </select>
                 </label>
@@ -3424,7 +3429,7 @@
                   <span>Install to Profile</span>
                   <select bind:value={installTargetProfileID}>
                     {#each profiles as profile}
-                      <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                      <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
                     {/each}
                   </select>
                 </label>
@@ -3634,7 +3639,7 @@
                               on:change={(event) => (profileTransferTargets = { ...profileTransferTargets, [mod.id]: event.currentTarget.value })}
                             >
                               {#each transferProfiles() as profile}
-                                <option value={String(profile.id)}>{profile.name}</option>
+                                <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
                               {/each}
                             </select>
                           </label>
@@ -3954,7 +3959,7 @@
                           on:change={(event) => (actionProfileTargets = { ...actionProfileTargets, [action.id]: event.currentTarget.value })}
                         >
                           {#each profiles as profile}
-                            <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                            <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
                           {/each}
                         </select>
                       </label>
@@ -4009,7 +4014,7 @@
                             on:change={(event) => (candidateProfileTargets = { ...candidateProfileTargets, [candidate.id]: event.currentTarget.value })}
                           >
                             {#each profiles as profile}
-                              <option value={String(profile.id)}>{profile.name}{profile.is_default ? " · default" : ""}</option>
+                              <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
                             {/each}
                           </select>
                         </label>
