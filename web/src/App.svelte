@@ -47,6 +47,22 @@
     markers?: string[];
     steam_workshop?: SteamWorkshop;
     nexus_domains?: string[];
+    extension?: GameExtensionInfo;
+  };
+
+  type GameExtensionInfo = {
+    id: string;
+    name: string;
+    supported: boolean;
+    nexus: boolean;
+    steam_workshop: boolean;
+    installers: boolean;
+    installer_choices: boolean;
+    runtime_requirements: boolean;
+    launch_tools: boolean;
+    plugin_activation: boolean;
+    load_order: boolean;
+    game_versions: boolean;
   };
 
   type SteamWorkshop = {
@@ -455,6 +471,7 @@
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
   type SettingsPage = "overview" | "jobs" | "install" | "sources" | "nexus";
   type GameSort = "recent" | "az" | "za";
+  type GameVisibility = "supported" | "all";
   type ModListSort = "profile" | "source" | "az" | "enabled";
 
   let status: Status | null = null;
@@ -507,6 +524,7 @@
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
   let gameSort: GameSort = "recent";
+  let gameVisibility: GameVisibility = "supported";
   let actionSourceFilter = "all";
   let jobSourceFilter = "all";
   let modSourceFilter = "all";
@@ -595,7 +613,9 @@
         return ["installer-choice", "steam-workshop-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
+  $: supportedGameCount = games.filter(gameHasExtension).length;
   $: filteredGames = sortDrawerGames(games.filter((game) => {
+    if (gameVisibility === "supported" && !gameHasExtension(game)) return false;
     const query = gameQuery.trim().toLowerCase();
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
@@ -2542,6 +2562,8 @@
     return [...items].sort((a, b) => {
       const favoriteDelta = Number(favoriteGameIDs.has(b.app_id)) - Number(favoriteGameIDs.has(a.app_id));
       if (favoriteDelta !== 0) return favoriteDelta;
+      const supportedDelta = Number(gameHasExtension(b)) - Number(gameHasExtension(a));
+      if (supportedDelta !== 0) return supportedDelta;
       if (gameSort === "az") return a.name.localeCompare(b.name);
       if (gameSort === "za") return b.name.localeCompare(a.name);
       const recentDelta = (gameRecent[b.app_id] ?? 0) - (gameRecent[a.app_id] ?? 0);
@@ -2552,6 +2574,22 @@
 
   function stateLabel(state: string) {
     return state === "clean_candidate" ? "Clean" : "Review";
+  }
+
+  function gameHasExtension(game: Game) {
+    return Boolean(game.extension?.supported);
+  }
+
+  function gameCapabilityBadges(game: Game) {
+    const extension = game.extension;
+    if (!extension?.supported) return [{ label: "Unsupported", className: "unsupported" }];
+    const badges = [{ label: "DMM", className: "dmm" }];
+    if (extension.nexus) badges.push({ label: "Nexus", className: "nexus" });
+    if (extension.steam_workshop) badges.push({ label: "Workshop", className: "workshop" });
+    if (extension.installers || extension.installer_choices) badges.push({ label: "Installers", className: "installers" });
+    if (extension.load_order || extension.plugin_activation) badges.push({ label: "Load Order", className: "load-order" });
+    if (extension.launch_tools) badges.push({ label: "Launch", className: "launch" });
+    return badges;
   }
 
   function gameImage(appID: string) {
@@ -3026,7 +3064,14 @@
               <option value="za">Z-A</option>
             </select>
           </label>
-          <span>{favoriteGameIDs.size} pinned</span>
+          <label>
+            <span>Show</span>
+            <select aria-label="Show games" bind:value={gameVisibility}>
+              <option value="supported">Supported</option>
+              <option value="all">All Installed</option>
+            </select>
+          </label>
+          <span>{supportedGameCount} supported · {favoriteGameIDs.size} pinned</span>
         </div>
         <div class="drawer-list game-list">
           {#each filteredGames as game}
@@ -3040,6 +3085,11 @@
                 <span>
                   <strong>{game.name}</strong>
                   <small>{game.app_id} · {stateLabel(game.state)}</small>
+                  <span class="game-capability-row">
+                    {#each gameCapabilityBadges(game) as badge}
+                      <em class={`capability-pill capability-${badge.className}`}>{badge.label}</em>
+                    {/each}
+                  </span>
                 </span>
               </button>
               <button
@@ -3515,10 +3565,10 @@
                   {/if}
                   {#if nexusSearchError}
                     <p class="hint warning-copy">{nexusSearchError}</p>
-                  {/if}
+              {/if}
                 </details>
               {:else}
-                <p class="hint">This game does not have an extension-owned Nexus domain yet.</p>
+                <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include Nexus browsing yet." : "This game does not have a DMM extension yet."}</p>
               {/if}
               {#if resolvedCapture}
                 <p class="hint">Resolved {resolvedCapture}</p>

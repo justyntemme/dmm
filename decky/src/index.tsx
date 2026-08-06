@@ -175,11 +175,27 @@ type ManagedGame = {
   name: string;
   state: string;
   nexus_domains?: string[];
+  extension?: GameExtensionInfo;
   steam_workshop?: {
     detected?: boolean;
     item_count?: number;
     management_supported?: boolean;
   };
+};
+
+type GameExtensionInfo = {
+  id: string;
+  name: string;
+  supported: boolean;
+  nexus: boolean;
+  steam_workshop: boolean;
+  installers: boolean;
+  installer_choices: boolean;
+  runtime_requirements: boolean;
+  launch_tools: boolean;
+  plugin_activation: boolean;
+  load_order: boolean;
+  game_versions: boolean;
 };
 
 type RunningGame = {
@@ -224,6 +240,7 @@ type ModUpdate = {
 
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
+type GameVisibility = "supported" | "all";
 
 type NexusModResult = {
   mod_id: number;
@@ -983,6 +1000,55 @@ function gameSortLabel(sort: GameSort) {
   if (sort === "az") return "A-Z";
   if (sort === "za") return "Z-A";
   return "Recent";
+}
+
+function gameVisibilityLabel(visibility: GameVisibility) {
+  return visibility === "all" ? "All Installed" : "Supported";
+}
+
+function gameHasExtension(game?: ManagedGame | null) {
+  return Boolean(game?.extension?.supported);
+}
+
+function deckyGameCapabilityBadges(game: ManagedGame): Array<{ label: string; kind: string }> {
+  const extension = game.extension;
+  if (!extension?.supported) return [{ label: "Unsupported", kind: "unsupported" }];
+  const badges = [{ label: "DMM", kind: "dmm" }];
+  if (extension.nexus) badges.push({ label: "Nexus", kind: "nexus" });
+  if (extension.steam_workshop) badges.push({ label: "Workshop", kind: "workshop" });
+  if (extension.installers || extension.installer_choices) badges.push({ label: "Install", kind: "installers" });
+  if (extension.load_order || extension.plugin_activation) badges.push({ label: "Order", kind: "load-order" });
+  if (extension.launch_tools) badges.push({ label: "Launch", kind: "launch" });
+  return badges;
+}
+
+function deckyCapabilityPillStyle(kind: string): CSSProperties {
+  const colors: Record<string, { border: string; color: string; background: string }> = {
+    dmm: { border: "#0f766e", color: "#ccfbf1", background: "#134e4a" },
+    nexus: { border: "#7c3aed", color: "#ede9fe", background: "#2e1065" },
+    workshop: { border: "#2563eb", color: "#dbeafe", background: "#172554" },
+    installers: { border: "#ca8a04", color: "#fef3c7", background: "#451a03" },
+    "load-order": { border: "#64748b", color: "#e2e8f0", background: "#1e293b" },
+    launch: { border: "#64748b", color: "#e2e8f0", background: "#1e293b" },
+    unsupported: { border: "#3f3f46", color: "#a1a1aa", background: "#18181b" }
+  };
+  const palette = colors[kind] ?? colors.unsupported;
+  return {
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
+    borderRadius: "999px",
+    color: palette.color,
+    flex: "0 0 auto",
+    fontSize: "9px",
+    fontWeight: 900,
+    lineHeight: 1,
+    maxWidth: "100%",
+    overflow: "hidden",
+    padding: "3px 5px",
+    textOverflow: "ellipsis",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap"
+  };
 }
 
 function nextDeckyModSort(current: DeckyModSort): DeckyModSort {
@@ -2465,6 +2531,7 @@ function DeckyModManagerRoute() {
   const [modOrderMode, setModOrderMode] = useState<boolean>(false);
   const [gameSearch, setGameSearch] = useState<string>("");
   const [gameSort, setGameSortState] = useState<GameSort>("recent");
+  const [gameVisibility, setGameVisibility] = useState<GameVisibility>("supported");
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
@@ -2588,6 +2655,10 @@ function DeckyModManagerRoute() {
     const next = nextGameSort(gameSort);
     setGameSortState(next);
     void patchDeckyUIPreferences({ game_sort: next });
+  }
+
+  function toggleDeckyGameVisibility() {
+    setGameVisibility((current) => current === "supported" ? "all" : "supported");
   }
 
   function cycleDeckyModSort() {
@@ -3548,7 +3619,8 @@ function DeckyModManagerRoute() {
     const syncRunningGame = () => {
       const running = currentRunningGame();
       setRunningGame(running);
-      if (!running || tab !== "games" || !managedGames.some((game) => game.app_id === running.app_id) || selectedDeckyGameID === running.app_id) return;
+      const game = managedGames.find((item) => item.app_id === running?.app_id);
+      if (!running || !game || !gameHasExtension(game) || tab !== "games" || selectedDeckyGameID === running.app_id) return;
       setSelectedDeckyGameID(running.app_id);
       markDeckyGameRecent(running.app_id);
       void loadDeckyGameState(running.app_id);
@@ -3562,26 +3634,30 @@ function DeckyModManagerRoute() {
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
   const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
-  const runningSupported = Boolean(runningGame && managedGames.some((game) => game.app_id === runningGame.app_id));
+  const supportedGameCount = managedGames.filter(gameHasExtension).length;
+  const runningSupported = Boolean(runningGame && gameHasExtension(managedGames.find((game) => game.app_id === runningGame.app_id)));
   const favoriteGameKey = [...favoriteGameIDs].sort().join("|");
   const effectiveModSort = modOrderMode ? "profile" : modSort;
   const visibleManagedGames = useMemo(() => {
     const normalizedGameSearch = gameSearch.trim().toLowerCase();
     const favoriteIDs = new Set(favoriteGameKey ? favoriteGameKey.split("|") : []);
     return [...managedGames].filter((game) => {
+      if (gameVisibility === "supported" && !gameHasExtension(game)) return false;
       if (!normalizedGameSearch) return true;
       return game.name.toLowerCase().includes(normalizedGameSearch) || game.app_id.includes(normalizedGameSearch);
     })
     .sort((a, b) => {
       const favoriteDelta = Number(favoriteIDs.has(b.app_id)) - Number(favoriteIDs.has(a.app_id));
       if (favoriteDelta !== 0) return favoriteDelta;
+      const supportedDelta = Number(gameHasExtension(b)) - Number(gameHasExtension(a));
+      if (supportedDelta !== 0) return supportedDelta;
       if (gameSort === "az") return a.name.localeCompare(b.name);
       if (gameSort === "za") return b.name.localeCompare(a.name);
       const recentDelta = (gameRecent[b.app_id] ?? 0) - (gameRecent[a.app_id] ?? 0);
       if (recentDelta !== 0) return recentDelta;
       return a.name.localeCompare(b.name);
     });
-  }, [managedGames, gameSearch, favoriteGameKey, gameSort, gameRecent]);
+  }, [managedGames, gameSearch, favoriteGameKey, gameSort, gameRecent, gameVisibility]);
   const visibleDeckyMods = useMemo(() => {
     const normalizedModSearch = modSearch.trim().toLowerCase();
     const filtered = deckyMods.filter((mod) =>
@@ -3715,12 +3791,19 @@ function DeckyModManagerRoute() {
             <ButtonItem layout="below" onClick={cycleDeckyGameSort}>
               Sort: {gameSortLabel(gameSort)}
             </ButtonItem>
+            <ButtonItem layout="below" onClick={toggleDeckyGameVisibility}>
+              Show: {gameVisibilityLabel(gameVisibility)}
+            </ButtonItem>
+            <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.2 }}>
+              {supportedGameCount} supported · {favoriteGameIDs.size} favorite{favoriteGameIDs.size === 1 ? "" : "s"}
+            </div>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
             <Focusable flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckySidebarListStyle}>
               {visibleManagedGames.map((game) => {
                 const focused = focusedGameID === game.app_id;
                 const favorite = favoriteGameIDs.has(game.app_id);
+                const badges = deckyGameCapabilityBadges(game);
                 return (
                   <Focusable
                     key={game.app_id}
@@ -3749,6 +3832,11 @@ function DeckyModManagerRoute() {
                     }}
                   >
                     <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", fontWeight: 800 }}>{game.name}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", minWidth: 0 }}>
+                      {badges.map((badge) => (
+                        <span key={`${game.app_id}-${badge.kind}`} style={deckyCapabilityPillStyle(badge.kind)}>{badge.label}</span>
+                      ))}
+                    </div>
                     <div style={{ color: favorite ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
                       {favorite ? "Favorite" : `App ${game.app_id}`} · A Select · Y {favorite ? "Unfavorite" : "Favorite"}
                     </div>
@@ -3869,7 +3957,11 @@ function DeckyModManagerRoute() {
           </PanelSectionRow>
           {!selectedNexusDomain && (
             <PanelSectionRow>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No Nexus page is registered for this game yet.</div>
+              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
+                {selectedDeckyGame?.extension?.supported
+                  ? "This game's DMM extension does not include Nexus browsing yet."
+                  : "This game does not have a DMM extension yet."}
+              </div>
             </PanelSectionRow>
           )}
           {deckyInstallCandidates.length > 0 && (

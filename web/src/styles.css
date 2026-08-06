@@ -257,6 +257,7 @@ h2 {
 .game-drawer-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
 }
@@ -300,7 +301,7 @@ h2 {
   grid-template-columns: 86px minmax(0, 1fr);
   gap: 8px;
   width: 100%;
-  min-height: 68px;
+  min-height: 76px;
   border-radius: 0;
   padding: 8px;
   color: #f4f4f5;
@@ -339,6 +340,64 @@ h2 {
   font-size: 0.82rem;
 }
 
+.game-list .game-capability-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.capability-pill {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: #dbeafe;
+  background: #111827;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.capability-dmm {
+  border-color: #0f766e;
+  color: #ccfbf1;
+  background: #134e4a;
+}
+
+.capability-nexus {
+  border-color: #7c3aed;
+  color: #ede9fe;
+  background: #2e1065;
+}
+
+.capability-workshop {
+  border-color: #2563eb;
+  color: #dbeafe;
+  background: #172554;
+}
+
+.capability-installers {
+  border-color: #ca8a04;
+  color: #fef3c7;
+  background: #451a03;
+}
+
+.capability-load-order,
+.capability-launch {
+  border-color: #64748b;
+  color: #e2e8f0;
+  background: #1e293b;
+}
+
+.capability-unsupported {
+  border-color: #3f3f46;
+  color: #a1a1aa;
+  background: #18181b;
+}
+
 .game-list .needs-review small,
 .review-badge {
   color: #fecaca;
@@ -347,7 +406,7 @@ h2 {
 .favorite-game {
   width: 42px;
   min-width: 42px;
-  min-height: 68px;
+  min-height: 76px;
   border-radius: 0;
   padding: 0;
   color: #a1a1aa;

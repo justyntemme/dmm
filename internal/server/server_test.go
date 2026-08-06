@@ -486,6 +486,22 @@ func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	}
 }
 
+func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
+	stardew := gameExtensionInfoForSteamApp(games.DefaultRegistry, "413150")
+	if stardew == nil || !stardew.Supported || !stardew.Nexus || !stardew.Installers || !stardew.RuntimeRequirements || !stardew.LaunchTools {
+		t.Fatalf("stardew extension info = %+v", stardew)
+	}
+
+	zomboid := gameExtensionInfoForSteamApp(games.DefaultRegistry, "108600")
+	if zomboid == nil || !zomboid.Supported || zomboid.Nexus || !zomboid.SteamWorkshop {
+		t.Fatalf("zomboid extension info = %+v", zomboid)
+	}
+
+	if unsupported := gameExtensionInfoForSteamApp(games.DefaultRegistry, "999999999"); unsupported != nil {
+		t.Fatalf("unsupported extension info = %+v", unsupported)
+	}
+}
+
 func TestGameSteamWorkshopUsesDetectedItemsBeforeDeckySync(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "233860"

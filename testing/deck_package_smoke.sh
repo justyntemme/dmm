@@ -119,11 +119,13 @@ require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-ena
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Commit:" "Decky build metadata UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Build Fingerprint" "Decky visual build marker"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Live Logs" "Decky live log terminal"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Show:" "Decky supported game filter"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/build-info.json" "short_commit" "build metadata"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
   require_file_contains "${asset_file}" "Installed, disabled in this profile" "web profile-scoped mod state"
+  require_file_contains "${asset_file}" "All Installed" "web supported game filter"
   require_file_contains "${asset_file}" "Search Nexus mods" "web in-game Nexus search"
   require_file_contains "${asset_file}" "Browse Nexus" "web in-game Nexus browsing"
   require_file_contains "${asset_file}" "Advanced Profile Tools" "web advanced profile disclosure"

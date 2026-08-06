@@ -515,6 +515,22 @@ type gameResponse struct {
 	Markers       []string            `json:"markers,omitempty"`
 	SteamWorkshop *steam.WorkshopInfo `json:"steam_workshop,omitempty"`
 	NexusDomains  []string            `json:"nexus_domains"`
+	Extension     *gameExtensionInfo  `json:"extension,omitempty"`
+}
+
+type gameExtensionInfo struct {
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	Supported           bool   `json:"supported"`
+	Nexus               bool   `json:"nexus"`
+	SteamWorkshop       bool   `json:"steam_workshop"`
+	Installers          bool   `json:"installers"`
+	InstallerChoices    bool   `json:"installer_choices"`
+	RuntimeRequirements bool   `json:"runtime_requirements"`
+	LaunchTools         bool   `json:"launch_tools"`
+	PluginActivation    bool   `json:"plugin_activation"`
+	LoadOrder           bool   `json:"load_order"`
+	GameVersions        bool   `json:"game_versions"`
 }
 
 type steamWorkshopStateResponse struct {
@@ -2103,9 +2119,31 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 			Markers:       game.Markers,
 			SteamWorkshop: workshopResponse(game.Workshop),
 			NexusDomains:  s.games.NexusDomainsForSteamAppID(game.AppID),
+			Extension:     gameExtensionInfoForSteamApp(s.games, game.AppID),
 		})
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameExtensionInfo {
+	extension, ok := registry.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil
+	}
+	return &gameExtensionInfo{
+		ID:                  strings.TrimSpace(extension.ID),
+		Name:                strings.TrimSpace(extension.Name),
+		Supported:           true,
+		Nexus:               len(extension.NexusDomains) > 0,
+		SteamWorkshop:       extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0,
+		Installers:          len(extension.InstallPlan.Installers) > 0,
+		InstallerChoices:    len(extension.InstallerChoices) > 0,
+		RuntimeRequirements: len(extension.RuntimeRequirements.RuntimeRequirements) > 0 || len(extension.RuntimeRequirements.DependencyMetadataKinds) > 0,
+		LaunchTools:         len(extension.LaunchTools) > 0,
+		PluginActivation:    len(extension.PluginActivations) > 0,
+		LoadOrder:           len(extension.LoadOrders) > 0 || len(extension.Merges) > 0,
+		GameVersions:        len(extension.GameVersionProviders) > 0,
+	}
 }
 
 func (s *Server) annotateSteamWorkshopSupport(games []steam.Game) {
