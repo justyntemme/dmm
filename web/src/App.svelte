@@ -1170,7 +1170,7 @@
   }
 
   function actionInstallProfileID(action: Job) {
-    return normalizedProfileID(actionProfileTargets[action.id], selectedInstallProfileID());
+    return normalizedProfileID(actionProfileTargets[action.id], normalizedProfileID(action.payload?.target_profile_id, selectedInstallProfileID()));
   }
 
   function candidateInstallProfileID(candidate: InstallCandidate) {

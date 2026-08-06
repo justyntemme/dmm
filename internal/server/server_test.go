@@ -2347,7 +2347,8 @@ func TestRememberCapturedInstallBackfillsJobPayload(t *testing.T) {
 			ModID:      "541",
 			FileID:     "160470",
 		},
-		Source: "test",
+		Source:          "test",
+		TargetProfileID: 42,
 	})
 
 	got, ok := srv.jobs.Get(job.ID)
@@ -2356,6 +2357,57 @@ func TestRememberCapturedInstallBackfillsJobPayload(t *testing.T) {
 	}
 	if got.Payload["app_id"] != "413150" || got.Payload["catalog"] != "nexus" || got.Payload["game_domain"] != "stardewvalley" || got.Payload["mod_id"] != "541" || got.Payload["file_id"] != "160470" {
 		t.Fatalf("payload = %+v", got.Payload)
+	}
+	if got.Payload["target_profile_id"] != "42" {
+		t.Fatalf("target profile payload = %+v", got.Payload)
+	}
+}
+
+func TestNormalizeRestoredCapturedInstallPreservesTargetProfilePayload(t *testing.T) {
+	restored := normalizeRestoredJobs([]jobs.Job{{
+		ID:      "job-12",
+		Type:    "captured-install",
+		Title:   "Captured mod",
+		Status:  jobs.StatusRunning,
+		Message: "Downloading",
+		Payload: jobs.JobPayload{
+			"catalog":     "nexus",
+			"game_domain": "stardewvalley",
+		},
+	}}, []storage.CapturedInstall{{
+		JobID: "job-12",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "541",
+			FileID:     "160470",
+		},
+		TargetProfileID: 84,
+	}}, games.DefaultRegistry)
+
+	if len(restored) != 1 {
+		t.Fatalf("restored jobs = %+v", restored)
+	}
+	if restored[0].Payload["target_profile_id"] != "84" {
+		t.Fatalf("restored payload = %+v", restored[0].Payload)
+	}
+	if restored[0].Status != jobs.StatusWaiting {
+		t.Fatalf("restored status = %s", restored[0].Status)
+	}
+}
+
+func TestInstallerChoiceJobPayloadIncludesTargetProfile(t *testing.T) {
+	payload := installerChoiceJobPayload("413150", storage.InstallCandidate{
+		ID:               7,
+		Catalog:          "nexus",
+		SourceGameDomain: "stardewvalley",
+		SourceModID:      "541",
+		SourceFileID:     "160470",
+		TargetProfileID:  126,
+	})
+
+	if payload["target_profile_id"] != "126" {
+		t.Fatalf("payload = %+v", payload)
 	}
 }
 

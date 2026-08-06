@@ -270,6 +270,7 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Captur
 		if len(job.Payload) == 0 {
 			job.Payload = capturedInstallJobPayload(gameRegistry, pending.Resolved)
 		}
+		applyTargetProfilePayload(job.Payload, pending.TargetProfileID)
 		switch job.Status {
 		case jobs.StatusQueued, jobs.StatusRunning:
 			job.Status = jobs.StatusWaiting
@@ -1157,6 +1158,23 @@ func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.Res
 		}
 	}
 	return payload
+}
+
+func capturedInstallJobPayloadForTarget(gameRegistry games.Registry, resolved catalog.ResolvedDownload, targetProfileID int64) jobs.JobPayload {
+	payload := capturedInstallJobPayload(gameRegistry, resolved)
+	applyTargetProfilePayload(payload, targetProfileID)
+	return payload
+}
+
+func applyTargetProfilePayload(payload jobs.JobPayload, targetProfileID int64) {
+	if payload == nil {
+		return
+	}
+	if targetProfileID > 0 {
+		payload["target_profile_id"] = strconv.FormatInt(targetProfileID, 10)
+		return
+	}
+	delete(payload, "target_profile_id")
 }
 
 func capturedInstallTitle(resolved catalog.ResolvedDownload) string {
@@ -3184,7 +3202,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload := capturedInstallJobPayload(s.games, resolved)
+	payload := capturedInstallJobPayloadForTarget(s.games, resolved, mod.ProfileID)
 	payload["installed_mod_id"] = strconv.FormatInt(mod.ID, 10)
 	payload["update_from_file_id"] = mod.SourceFileID
 	payload["update_to_file_id"] = update.LatestFileID
@@ -3221,6 +3239,7 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		ArchiveFileName:       archiveFileName,
 		ReplaceInstalledModID: mod.ID,
 		ReplaceStagingPath:    mod.StagingPath,
+		TargetProfileID:       mod.ProfileID,
 	})
 	started, err := s.startCapturedInstallDownload(job.ID, "mod update")
 	if err != nil {
@@ -4017,6 +4036,7 @@ func installerChoiceJobPayload(appID string, candidate storage.InstallCandidate)
 	payload["game_domain"] = strings.TrimSpace(candidate.SourceGameDomain)
 	payload["mod_id"] = strings.TrimSpace(candidate.SourceModID)
 	payload["file_id"] = strings.TrimSpace(candidate.SourceFileID)
+	applyTargetProfilePayload(payload, candidate.TargetProfileID)
 	for key, value := range payload {
 		if strings.TrimSpace(value) == "" {
 			delete(payload, key)
@@ -5742,7 +5762,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayload(s.games, resolved))
+	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayloadForTarget(s.games, resolved, targetProfileID))
 	job, _ = s.jobs.Wait(job.ID, "Uploaded "+resolved.FileName+"; install it to add it disabled")
 	pending := capturedInstall{
 		Resolved:        resolved,
@@ -6068,7 +6088,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayload(s.games, resolved))
+	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayloadForTarget(s.games, resolved, req.ProfileID))
 	payload := map[string]any{
 		"job":      jobAPIResponse(job),
 		"resolved": resolved,
@@ -6478,7 +6498,7 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
 	s.capturedInstalls[jobID] = pending
-	s.ensureCapturedInstallJobPayload(jobID, pending.Resolved)
+	s.ensureCapturedInstallJobPayload(jobID, pending)
 	if err := s.db.SaveCapturedInstall(context.Background(), storage.CapturedInstall{
 		JobID:                 jobID,
 		Resolved:              pending.Resolved,
@@ -6496,7 +6516,7 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 	}
 }
 
-func (s *Server) ensureCapturedInstallJobPayload(jobID string, resolved catalog.ResolvedDownload) {
+func (s *Server) ensureCapturedInstallJobPayload(jobID string, pending capturedInstall) {
 	job, ok := s.jobs.Get(jobID)
 	if !ok || job.Type != "captured-install" {
 		return
@@ -6505,11 +6525,12 @@ func (s *Server) ensureCapturedInstallJobPayload(jobID string, resolved catalog.
 	for key, value := range job.Payload {
 		next[key] = value
 	}
-	for key, value := range capturedInstallJobPayload(s.games, resolved) {
+	for key, value := range capturedInstallJobPayload(s.games, pending.Resolved) {
 		if strings.TrimSpace(next[key]) == "" {
 			next[key] = value
 		}
 	}
+	applyTargetProfilePayload(next, pending.TargetProfileID)
 	if len(next) == len(job.Payload) {
 		changed := false
 		for key, value := range next {
