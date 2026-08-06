@@ -330,6 +330,14 @@ To verify profile copy/remove behavior without changing the active deployment, r
 
 The script creates or reuses a secondary test profile, copies one active-profile mod into it disabled, removes that copied membership, verifies the source profile membership plus staged files remain intact, then deletes the temporary profile. Set `KEEP_PROFILE=1` if you need to inspect that profile afterward.
 
+To verify profile creation can seed a new loadout from the active profile:
+
+```sh
+~/.testing/live_profile_seed_check.sh
+```
+
+The script creates a temporary profile from the active/default profile, verifies the copied mod memberships, enabled states, profile priorities, and returned profile counts, then deletes the temporary profile.
+
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
 
 ```sh
