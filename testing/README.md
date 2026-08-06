@@ -322,6 +322,14 @@ To verify the core profile enable/disable workflow against live DMM-managed file
 
 The script picks one enabled profile mod with unique deployment targets, disables it through the same profile-mod API used by the web UI, applies the profile, verifies its DMM-managed files are removed from the live game folder, re-enables it, reapplies the profile, and verifies the restored symlinks point back into DMM storage. It attempts to restore the mod if the check fails before completion.
 
+To verify profile copy/remove behavior without changing the active deployment, run:
+
+```sh
+~/.testing/live_profile_transfer_check.sh
+```
+
+The script creates or reuses a secondary test profile, copies one active-profile mod into it disabled, removes that copied membership, and verifies the source profile membership plus staged files remain intact.
+
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
 
 ```sh
