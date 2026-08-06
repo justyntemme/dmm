@@ -1982,7 +1982,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
   }
 }
 
-function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; closeModal: () => void }) {
+function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; profileID?: number; closeModal: () => void }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<NexusSearchSort>("downloads");
   const [timeWindow, setTimeWindow] = useState<NexusTimeWindow>("all");
@@ -2063,15 +2063,17 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
       const url = nexusFileURL(props.gameDomain, mod.mod_id, file.file_id);
       await logFrontendEvent("nexus browser install requested", {
         app_id: props.appID,
+        profile_id: props.profileID ?? 0,
         game_domain: props.gameDomain,
         mod_id: mod.mod_id,
         file_id: file.file_id
       });
-      const result = await call<[string, string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url, props.appID);
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url, props.appID, props.profileID ?? 0);
       if (!result.ok) {
         setError(result.error || "Unable to add this Nexus file.");
         await logFrontendEvent("nexus browser install failed", {
           app_id: props.appID,
+          profile_id: props.profileID ?? 0,
           game_domain: props.gameDomain,
           mod_id: mod.mod_id,
           file_id: file.file_id,
@@ -2083,6 +2085,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
       if (job) showJobToast(job);
       await logFrontendEvent("nexus browser install queued", {
         app_id: props.appID,
+        profile_id: props.profileID ?? 0,
         game_domain: props.gameDomain,
         mod_id: mod.mod_id,
         file_id: file.file_id,
@@ -2098,6 +2101,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
       setError(err instanceof Error ? err.message : String(err));
       await logFrontendEvent("nexus browser install threw", {
         app_id: props.appID,
+        profile_id: props.profileID ?? 0,
         game_domain: props.gameDomain,
         mod_id: mod.mod_id,
         file_id: file.file_id,
@@ -3328,6 +3332,7 @@ function DeckyModManagerRoute() {
         appID={selectedDeckyGameID}
         gameName={selectedDeckyGame.name}
         gameDomain={selectedNexusDomain}
+        profileID={selectedProfile?.id ?? 0}
         closeModal={closeModal}
       />,
       window,
@@ -3442,7 +3447,12 @@ function DeckyModManagerRoute() {
     try {
       setError("");
       setImportResult("");
-      const result = await call<[string, string], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", importUrl, selectedDeckyGameID ?? "");
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job } }>(
+        "add_captured_install",
+        importUrl,
+        selectedDeckyGameID ?? "",
+        selectedProfile?.id ?? 0
+      );
       if (!result.ok) {
         setError(result.error ?? "Unable to capture mod link.");
         return;

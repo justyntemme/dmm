@@ -224,15 +224,22 @@ class Plugin:
                         break
         return f"nxm://{domain}/mods/3753/files/135998?mod_id=3753&file_id=135998&key=test&expires=1"
 
-    async def add_captured_install(self, url, app_id=""):
+    async def add_captured_install(self, url, app_id="", profile_id=0):
         url = str(url or "").strip()
         app_id = str(app_id or "").strip()
-        self._log(f"add captured install requested app_id={app_id} url={self._redact_url(url)}")
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        self._log(f"add captured install requested app_id={app_id} profile_id={profile_id} url={self._redact_url(url)}")
         if not url:
             return {"ok": False, "error": "Mod URL is required."}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
-        payload = json.dumps({"url": url, "steam_app_id": app_id, "source": "decky-plugin"}).encode("utf-8")
+        payload = {"url": url, "steam_app_id": app_id, "source": "decky-plugin"}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        payload = json.dumps(payload).encode("utf-8")
         result, error = self._backend_json_result("POST", "/api/captured-installs", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to capture mod link."}
