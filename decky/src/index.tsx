@@ -313,6 +313,7 @@ type InstallCandidate = {
   source_game_domain: string;
   source_mod_id: string;
   source_file_id: string;
+  target_profile_id?: number;
 };
 
 type FomodInstaller = {
@@ -1687,7 +1688,7 @@ async function syncWorkshopActions() {
   }
 }
 
-function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; closeModal: () => void; onApplied: () => void }) {
+function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; profileID?: number; closeModal: () => void; onApplied: () => void }) {
   const [candidate, setCandidate] = useState<InstallCandidate>(props.candidate);
   const installer = installerForCandidate(candidate);
   const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
@@ -1773,19 +1774,21 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
     setBusy(true);
     setMessage("");
     try {
-      const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>(
+      const targetProfileID = props.profileID || candidate.target_profile_id || 0;
+      const result = await call<[string, number, Record<string, string[]>, number], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>(
         "apply_install_candidate",
         props.appID,
         candidate.id,
-        selections
+        selections,
+        targetProfileID
       );
       if (!result.ok) {
         setMessage(result.error || "Unable to apply installer choices.");
-        await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: candidate.id, error: result.error || "" });
+        await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: candidate.id, profile_id: targetProfileID, error: result.error || "" });
         return;
       }
       if (result.result?.job) showJobToast(result.result.job);
-      await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: candidate.id });
+      await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: candidate.id, profile_id: targetProfileID });
       props.onApplied();
       props.closeModal();
     } catch (err) {
@@ -1939,7 +1942,7 @@ async function maybeShowInstallerChoiceModal(job: Job) {
   }
 }
 
-async function openInstallerChoiceModalForCandidate(appID: string, candidate: InstallCandidate, source: string, onApplied?: () => void) {
+async function openInstallerChoiceModalForCandidate(appID: string, candidate: InstallCandidate, source: string, onApplied?: () => void, profileID = 0) {
   const key = String(candidate.id);
   if (shownInstallerChoiceModals.has(key)) return;
   if (source !== "event") dismissedInstallerChoiceModals.delete(key);
@@ -1961,6 +1964,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
       <InstallerChoiceModal
         appID={appID}
         candidate={candidate}
+        profileID={profileID || candidate.target_profile_id || 0}
         closeModal={closeModal}
         onApplied={() => {
           applied = true;
@@ -3004,7 +3008,7 @@ function DeckyModManagerRoute() {
     if (!selectedDeckyGameID) return;
     void openInstallerChoiceModalForCandidate(selectedDeckyGameID, candidate, "decky-sidebar", () => {
       void loadDeckyGameState(selectedDeckyGameID);
-    });
+    }, selectedProfile?.id ?? 0);
   }
 
   async function removeDeckyMod(mod: ManagedMod) {

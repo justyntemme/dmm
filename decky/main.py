@@ -528,20 +528,27 @@ class Plugin:
         self._log(f"install candidates cleared app_id={app_id} result={result}")
         return {"ok": True, "result": result}
 
-    async def apply_install_candidate(self, app_id, candidate_id, selections):
+    async def apply_install_candidate(self, app_id, candidate_id, selections, profile_id=0):
         app_id = str(app_id or "").strip()
         candidate_id = str(candidate_id or "").strip()
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
         if not app_id or not candidate_id:
             return {"ok": False, "error": "app_id and candidate_id are required."}
         if not isinstance(selections, dict):
             selections = {}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
-        payload = json.dumps({"selections": selections}).encode("utf-8")
+        payload = {"selections": selections}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        payload = json.dumps(payload).encode("utf-8")
         result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates/{urllib.parse.quote(candidate_id)}/apply", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to apply installer choices."}
-        self._log(f"installer choices applied app_id={app_id} candidate_id={candidate_id}")
+        self._log(f"installer choices applied app_id={app_id} candidate_id={candidate_id} profile_id={profile_id}")
         return {"ok": True, "result": result}
 
     async def save_install_candidate_choices(self, app_id, candidate_id, selections):
