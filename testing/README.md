@@ -338,6 +338,14 @@ To verify profile creation can seed a new loadout from the active profile:
 
 The script creates a temporary profile from the active/default profile, verifies the copied mod memberships, enabled states, profile priorities, and returned profile counts, then deletes the temporary profile.
 
+To verify the public rollback/restore endpoint against the active deployment:
+
+```sh
+~/.testing/live_rollback_check.sh
+```
+
+The script requires restore availability by default, calls the restore endpoint, verifies the returned rollback job completed without issues, and confirms the deployment manifest remains active afterward. Set `REQUIRE_RESTORE_AVAILABLE=0` only when debugging a game without an active deployment.
+
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
 
 ```sh
