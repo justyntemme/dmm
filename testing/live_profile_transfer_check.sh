@@ -8,6 +8,7 @@ APP_ID="${APP_ID:-413150}"
 PROFILE_NAME="${PROFILE_NAME:-DMM Live Transfer Check}"
 DATA_DIR="${DATA_DIR:-${HOME}/.local/share/decky-mod-manager}"
 DB_PATH="${DB_PATH:-${DATA_DIR}/db/dmm.sqlite}"
+KEEP_PROFILE="${KEEP_PROFILE:-0}"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -18,11 +19,13 @@ echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "profile_name=${PROFILE_NAME}"
 echo "db_path=${DB_PATH}"
+echo "keep_profile=${KEEP_PROFILE}"
 
 export BASE_URL
 export APP_ID
 export PROFILE_NAME
 export DB_PATH
+export KEEP_PROFILE
 
 python3 - <<'PY'
 import json
@@ -38,6 +41,7 @@ base = os.environ["BASE_URL"].rstrip("/")
 app_id = os.environ["APP_ID"]
 profile_name = os.environ["PROFILE_NAME"]
 db_path = pathlib.Path(os.environ["DB_PATH"]).expanduser()
+keep_profile = os.environ.get("KEEP_PROFILE", "0") != "0"
 
 
 def request(method, path, body=None):
@@ -143,6 +147,13 @@ try:
 finally:
     conn.close()
 
+cleanup_status = "kept"
+if not keep_profile:
+    deleted = request("DELETE", f"/api/profiles/{target_id}")
+    cleanup_status = "deleted"
+    if (deleted.get("deleted") or {}).get("id") != target_id:
+        raise RuntimeError(f"temporary profile cleanup returned unexpected result: {deleted}")
+
 print("summary:")
 print(f"  source_profile={source['name']} ({source['id']})")
 print(f"  target_profile={target['name']} ({target['id']})")
@@ -150,5 +161,6 @@ print(f"  copied_mod={selected.get('name')} ({selected['id']})")
 print("  source_membership=kept")
 print("  target_membership=removed_after_check")
 print("  staging=kept")
+print(f"  test_profile={cleanup_status}")
 print("\nProfile transfer check passed")
 PY

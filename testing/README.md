@@ -328,7 +328,7 @@ To verify profile copy/remove behavior without changing the active deployment, r
 ~/.testing/live_profile_transfer_check.sh
 ```
 
-The script creates or reuses a secondary test profile, copies one active-profile mod into it disabled, removes that copied membership, and verifies the source profile membership plus staged files remain intact.
+The script creates or reuses a secondary test profile, copies one active-profile mod into it disabled, removes that copied membership, verifies the source profile membership plus staged files remain intact, then deletes the temporary profile. Set `KEEP_PROFILE=1` if you need to inspect that profile afterward.
 
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
 
