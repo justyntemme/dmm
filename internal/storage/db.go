@@ -230,7 +230,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if _, err := db.conn.ExecContext(ctx, schema); err != nil {
 		return err
 	}
-	return db.applyAdditiveMigrations(ctx)
+	if err := db.applyAdditiveMigrations(ctx); err != nil {
+		return err
+	}
+	return db.cleanupInvalidProfileMods(ctx)
 }
 
 func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
@@ -286,6 +289,21 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (db *DB) cleanupInvalidProfileMods(ctx context.Context) error {
+	_, err := db.conn.ExecContext(ctx, `
+DELETE FROM profile_mods
+WHERE NOT EXISTS (
+	SELECT 1
+	FROM profiles p
+	JOIN installed_mods im ON im.id = profile_mods.installed_mod_id
+	JOIN mod_versions mv ON mv.id = im.mod_version_id
+	JOIN mods m ON m.id = mv.mod_id AND m.game_id = p.game_id
+	WHERE p.id = profile_mods.profile_id
+)
+`)
+	return err
 }
 
 func (db *DB) hasColumn(ctx context.Context, table, column string) (bool, error) {

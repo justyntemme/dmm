@@ -923,6 +923,32 @@ VALUES (?, ?, 1, 10)
 	if len(profiles) != 1 || profiles[0].ModCount != 1 || profiles[0].EnabledModCount != 1 {
 		t.Fatalf("stardew profiles = %+v", profiles)
 	}
+
+	if err := db.cleanupInvalidProfileMods(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var crossGameMembership int
+	if err := db.conn.QueryRow(`
+SELECT COUNT(*)
+FROM profile_mods
+WHERE profile_id = ? AND installed_mod_id = ?
+`, stardewMod.ProfileID, falloutMod.ID).Scan(&crossGameMembership); err != nil {
+		t.Fatal(err)
+	}
+	if crossGameMembership != 0 {
+		t.Fatalf("cross-game membership count after cleanup = %d", crossGameMembership)
+	}
+	var validMembership int
+	if err := db.conn.QueryRow(`
+SELECT COUNT(*)
+FROM profile_mods
+WHERE profile_id = ? AND installed_mod_id = ?
+`, stardewMod.ProfileID, stardewMod.ID).Scan(&validMembership); err != nil {
+		t.Fatal(err)
+	}
+	if validMembership != 1 {
+		t.Fatalf("valid membership count after cleanup = %d", validMembership)
+	}
 }
 
 func TestProfileModTransferAndRemoveRequireProfileMembership(t *testing.T) {
