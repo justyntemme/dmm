@@ -57,8 +57,17 @@ run_step "Live status snapshot" \
 run_step "MVP live acceptance" \
   env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/mvp_live_check.sh"
 
+run_step "Profile transfer" \
+  env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/live_profile_transfer_check.sh"
+
+run_step "Seeded profile" \
+  env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/live_profile_seed_check.sh"
+
 run_step "Shared UI preferences" \
   env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/live_ui_preferences_check.sh"
+
+run_step "Rollback restore" \
+  env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/live_rollback_check.sh"
 
 run_step "Stardew file visibility" \
   env BASE_URL="${BASE_URL}" APP_ID="${APP_ID}" "${SCRIPT_DIR}/live_stardew_mod_files_check.sh"

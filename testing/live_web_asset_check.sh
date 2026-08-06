@@ -63,9 +63,11 @@ for target in "${tmp_dir}"/*.js; do
     js_checked=1
     for needle in \
       "Installed, disabled in this profile" \
-      "Add From Nexus" \
+      "Add Mod" \
+      "Install to Profile" \
+      "mods in the same on/off state" \
       "Browse Nexus" \
-      "Advanced Deployment Tools" \
+      "Advanced Profile Tools" \
       "These Deck behavior switches are managed from the Decky sidebar settings."
     do
       if ! grep -qF "${needle}" "${target}"; then
