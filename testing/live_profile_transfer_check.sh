@@ -70,6 +70,25 @@ def profile_mod_count(conn, profile_id, installed_mod_id):
     return int(row[0] or 0)
 
 
+def api_profile(profile_id):
+    current = request("GET", f"/api/games/{app_id}/profiles")
+    for profile in current:
+        if int(profile.get("id") or 0) == int(profile_id):
+            return profile
+    raise RuntimeError(f"profile {profile_id} was not returned by the API")
+
+
+def assert_api_counts(profile_id, mod_count, enabled_count, label):
+    profile = api_profile(profile_id)
+    actual_total = int(profile.get("mod_count") or 0)
+    actual_enabled = int(profile.get("enabled_mod_count") or 0)
+    if actual_total != mod_count or actual_enabled != enabled_count:
+        raise RuntimeError(
+            f"{label} profile counts = {actual_enabled}/{actual_total}, "
+            f"want {enabled_count}/{mod_count}: {profile}"
+        )
+
+
 profiles = request("GET", f"/api/games/{app_id}/profiles")
 if not profiles:
     raise RuntimeError("game has no profiles")
@@ -106,9 +125,15 @@ try:
     target_id = int(target["id"])
     api_staging_value = str(selected.get("staging_path") or "").strip()
     staging_path = pathlib.Path(api_staging_value).expanduser() if api_staging_value else None
+    source_total = int(api_profile(source_id).get("mod_count") or 0)
+    source_enabled = int(api_profile(source_id).get("enabled_mod_count") or 0)
+    target_total = int(api_profile(target_id).get("mod_count") or 0)
+    target_enabled = int(api_profile(target_id).get("enabled_mod_count") or 0)
 
     if profile_mod_count(conn, source_id, mod_id) != 1:
         raise RuntimeError("selected mod is not a member of the source profile")
+    assert_api_counts(source_id, source_total, source_enabled, "source before copy")
+    assert_api_counts(target_id, target_total, target_enabled, "target before copy")
 
     copied = request(
         "POST",
@@ -125,6 +150,8 @@ try:
         raise RuntimeError("copy removed the source profile membership")
     if profile_mod_count(conn, target_id, mod_id) != 1:
         raise RuntimeError("copy did not create the target profile membership")
+    assert_api_counts(source_id, source_total, source_enabled, "source after copy")
+    assert_api_counts(target_id, target_total + 1, target_enabled, "target after copy")
 
     removed = request("DELETE", f"/api/profiles/{target_id}/mods/{mod_id}")
     if (removed.get("mod") or {}).get("id") != mod_id:
@@ -134,6 +161,8 @@ try:
         raise RuntimeError("profile remove left the target profile membership")
     if profile_mod_count(conn, source_id, mod_id) != 1:
         raise RuntimeError("profile remove affected the source profile membership")
+    assert_api_counts(source_id, source_total, source_enabled, "source after target remove")
+    assert_api_counts(target_id, target_total, target_enabled, "target after target remove")
 
     installed_row = conn.execute("SELECT staging_path FROM installed_mods WHERE id = ?", (mod_id,)).fetchone()
     if installed_row is None:
@@ -158,6 +187,8 @@ print("summary:")
 print(f"  source_profile={source['name']} ({source['id']})")
 print(f"  target_profile={target['name']} ({target['id']})")
 print(f"  copied_mod={selected.get('name')} ({selected['id']})")
+print(f"  source_counts={source_enabled}/{source_total}")
+print(f"  target_counts_restored={target_enabled}/{target_total}")
 print("  source_membership=kept")
 print("  target_membership=removed_after_check")
 print("  staging=kept")
