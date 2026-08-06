@@ -26,6 +26,7 @@ type FileMapping struct {
 	TargetPolicy   string   `json:"target_policy,omitempty"`
 	Strategy       Strategy `json:"strategy,omitempty"`
 	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	Catalog        string   `json:"catalog,omitempty"`
 	ModID          string   `json:"mod_id,omitempty"`
 	Priority       int      `json:"priority"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
@@ -41,6 +42,7 @@ type Action struct {
 	Operation      string   `json:"operation"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
 	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	Catalog        string   `json:"catalog,omitempty"`
 	ModID          string   `json:"mod_id,omitempty"`
 	Priority       int      `json:"priority,omitempty"`
 	WinnerModID    int64    `json:"winner_installed_mod_id,omitempty"`
@@ -161,6 +163,7 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			Operation:      "add",
 			ChecksumSHA256: mapping.ChecksumSHA256,
 			InstalledModID: mapping.InstalledModID,
+			Catalog:        mapping.Catalog,
 			ModID:          mapping.ModID,
 			Priority:       mapping.Priority,
 		}
@@ -243,6 +246,9 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			Strategy:       file.Strategy,
 			Operation:      "remove",
 			ChecksumSHA256: file.ChecksumSHA256,
+			InstalledModID: file.InstalledModID,
+			Catalog:        file.Catalog,
+			ModID:          file.ModID,
 		})
 	}
 
@@ -378,6 +384,7 @@ func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mapp
 			Operation:      "skip",
 			ChecksumSHA256: loser.mapping.ChecksumSHA256,
 			InstalledModID: loser.mapping.InstalledModID,
+			Catalog:        loser.mapping.Catalog,
 			ModID:          loser.mapping.ModID,
 			Priority:       loser.mapping.Priority,
 			WinnerModID:    winner.mapping.InstalledModID,

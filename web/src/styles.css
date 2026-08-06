@@ -1626,6 +1626,14 @@ h2 {
   font-size: 0.78rem;
 }
 
+.deployment-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
 .deploy-flow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

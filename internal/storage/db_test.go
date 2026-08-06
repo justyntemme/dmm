@@ -128,6 +128,9 @@ CREATE TABLE captured_installs (
 		{"mod_versions", "metadata_json"},
 		{"downloads", "checksum_sha256"},
 		{"installed_mods", "checksum_manifest_json"},
+		{"deployed_files", "installed_mod_id"},
+		{"deployed_files", "catalog"},
+		{"deployed_files", "source_mod_id"},
 		{"install_candidates", "replace_installed_mod_id"},
 		{"install_candidates", "replace_staging_path"},
 		{"profile_mods", "priority"},
@@ -1366,6 +1369,9 @@ func TestRecordDeploymentPersistsChecksum(t *testing.T) {
 		Strategy:       "symlink",
 		ChecksumSHA256: "file-sum",
 		RestoreSHA256:  "restore-sum",
+		InstalledModID: 42,
+		Catalog:        "nexus",
+		ModID:          "541",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -1373,7 +1379,8 @@ func TestRecordDeploymentPersistsChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 || files[0].ChecksumSHA256 != "file-sum" || files[0].RestorePath != "/staging/restore-file.txt" || files[0].RestoreSHA256 != "restore-sum" {
+	if len(files) != 1 || files[0].ChecksumSHA256 != "file-sum" || files[0].RestorePath != "/staging/restore-file.txt" || files[0].RestoreSHA256 != "restore-sum" ||
+		files[0].InstalledModID != 42 || files[0].Catalog != "nexus" || files[0].ModID != "541" {
 		t.Fatalf("files = %+v", files)
 	}
 }
@@ -1396,15 +1403,18 @@ func TestDeploymentHistoryForSteamApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
-		SourcePath: "/staging/a.txt",
-		TargetPath: "/game/a.txt",
-		Strategy:   deploy.StrategySymlink,
+		SourcePath:     "/staging/a.txt",
+		TargetPath:     "/game/a.txt",
+		Strategy:       deploy.StrategySymlink,
+		InstalledModID: 1,
+		Catalog:        "nexus",
+		ModID:          "541",
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{
-		{SourcePath: "/staging/b.txt", TargetPath: "/game/b.txt", Strategy: deploy.StrategyCopy},
-		{SourcePath: "/staging/c.txt", TargetPath: "/game/c.txt", Strategy: deploy.StrategyCopy},
+		{SourcePath: "/staging/b.txt", TargetPath: "/game/b.txt", Strategy: deploy.StrategyCopy, InstalledModID: 2, Catalog: "nexus", ModID: "541"},
+		{SourcePath: "/staging/c.txt", TargetPath: "/game/c.txt", Strategy: deploy.StrategyCopy, InstalledModID: 3, Catalog: "github", ModID: "owner/repo"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1419,9 +1429,24 @@ func TestDeploymentHistoryForSteamApp(t *testing.T) {
 	if history[0].Strategy != string(deploy.StrategyCopy) || history[0].FileCount != 2 || history[0].ProfileName != "Default" {
 		t.Fatalf("latest history item = %+v", history[0])
 	}
+	if sourceCount(history[0].Sources, "github") != 1 || sourceCount(history[0].Sources, "nexus") != 1 {
+		t.Fatalf("latest history sources = %+v", history[0].Sources)
+	}
 	if history[1].Strategy != string(deploy.StrategySymlink) || history[1].FileCount != 1 {
 		t.Fatalf("older history item = %+v", history[1])
 	}
+	if sourceCount(history[1].Sources, "nexus") != 1 {
+		t.Fatalf("older history sources = %+v", history[1].Sources)
+	}
+}
+
+func sourceCount(sources []DeploymentSourceSummary, catalog string) int {
+	for _, source := range sources {
+		if source.Catalog == catalog {
+			return source.FileCount
+		}
+	}
+	return 0
 }
 
 func TestLatestDeploymentSummaryForSteamAppReportsActiveManifest(t *testing.T) {

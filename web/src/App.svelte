@@ -310,8 +310,15 @@
     status: string;
     strategy: string;
     file_count: number;
+    sources?: DeploymentSourceSummary[];
     created_at: string;
     updated_at: string;
+  };
+
+  type DeploymentSourceSummary = {
+    catalog: string;
+    source_tag?: string;
+    file_count: number;
   };
 
   type DeploymentSettings = {
@@ -3823,6 +3830,13 @@
                       <div>
                         <strong>{deployment.status === "deployed" ? "Active deployment" : "Previous deployment"}</strong>
                         <small>{deployment.profile_name} · {deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy}</small>
+                        {#if deployment.sources?.length}
+                          <div class="deployment-source-list" aria-label="Deployment sources">
+                            {#each deployment.sources as source}
+                              <span class={`source-pill ${sourceClass(source.source_tag ?? source.catalog)}`}>{sourceLabel(source.source_tag ?? source.catalog)} · {source.file_count}</span>
+                            {/each}
+                          </div>
+                        {/if}
                       </div>
                       <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
                     </article>

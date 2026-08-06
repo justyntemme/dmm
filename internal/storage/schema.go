@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS deployed_files (
 	link_type TEXT NOT NULL,
 	checksum_sha256 TEXT NOT NULL DEFAULT '',
 	restore_sha256 TEXT NOT NULL DEFAULT '',
+	installed_mod_id INTEGER NOT NULL DEFAULT 0,
+	catalog TEXT NOT NULL DEFAULT '',
+	source_mod_id TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(deployment_id, target_path)
 );

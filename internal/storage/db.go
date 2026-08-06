@@ -77,14 +77,21 @@ type ModUpdate struct {
 }
 
 type DeploymentSummary struct {
-	ID          int64  `json:"id"`
-	ProfileID   int64  `json:"profile_id"`
-	ProfileName string `json:"profile_name"`
-	Status      string `json:"status"`
-	Strategy    string `json:"strategy"`
-	FileCount   int    `json:"file_count"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID          int64                     `json:"id"`
+	ProfileID   int64                     `json:"profile_id"`
+	ProfileName string                    `json:"profile_name"`
+	Status      string                    `json:"status"`
+	Strategy    string                    `json:"strategy"`
+	FileCount   int                       `json:"file_count"`
+	Sources     []DeploymentSourceSummary `json:"sources,omitempty"`
+	CreatedAt   string                    `json:"created_at"`
+	UpdatedAt   string                    `json:"updated_at"`
+}
+
+type DeploymentSourceSummary struct {
+	Catalog   string `json:"catalog"`
+	SourceTag string `json:"source_tag"`
+	FileCount int    `json:"file_count"`
 }
 
 type FileConflictWinner struct {
@@ -228,6 +235,9 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "deployed_files", name: "restore_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "deployed_files", name: "restore_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "deployed_files", name: "installed_mod_id", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "deployed_files", name: "catalog", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "deployed_files", name: "source_mod_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "jobs", name: "payload_json", definition: "TEXT NOT NULL DEFAULT '{}'"},
 		{table: "captured_installs", name: "download_links_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "captured_installs", name: "source", definition: "TEXT NOT NULL DEFAULT ''"},
@@ -2224,9 +2234,9 @@ VALUES (?, ?, 'deployed', ?)
 	}
 	for _, file := range files {
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO deployed_files (deployment_id, source_path, restore_path, target_path, link_type, checksum_sha256, restore_sha256)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-`, deploymentID, file.SourcePath, file.RestorePath, file.TargetPath, string(file.Strategy), file.ChecksumSHA256, file.RestoreSHA256); err != nil {
+INSERT INTO deployed_files (deployment_id, source_path, restore_path, target_path, link_type, checksum_sha256, restore_sha256, installed_mod_id, catalog, source_mod_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, deploymentID, file.SourcePath, file.RestorePath, file.TargetPath, string(file.Strategy), file.ChecksumSHA256, file.RestoreSHA256, file.InstalledModID, file.Catalog, file.ModID); err != nil {
 			return 0, err
 		}
 	}
@@ -2235,7 +2245,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 
 func (db *DB) LatestDeploymentFilesForSteamApp(ctx context.Context, appID string) ([]deploy.AppliedFile, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT df.source_path, df.restore_path, df.target_path, df.link_type, df.checksum_sha256, df.restore_sha256
+SELECT df.source_path, df.restore_path, df.target_path, df.link_type, df.checksum_sha256, df.restore_sha256, df.installed_mod_id, df.catalog, df.source_mod_id
 FROM deployed_files df
 JOIN deployments d ON d.id = df.deployment_id
 JOIN games g ON g.id = d.game_id
@@ -2259,7 +2269,7 @@ ORDER BY df.target_path DESC
 	for rows.Next() {
 		var file deploy.AppliedFile
 		var strategy string
-		if err := rows.Scan(&file.SourcePath, &file.RestorePath, &file.TargetPath, &strategy, &file.ChecksumSHA256, &file.RestoreSHA256); err != nil {
+		if err := rows.Scan(&file.SourcePath, &file.RestorePath, &file.TargetPath, &strategy, &file.ChecksumSHA256, &file.RestoreSHA256, &file.InstalledModID, &file.Catalog, &file.ModID); err != nil {
 			return nil, err
 		}
 		file.Strategy = deploy.Strategy(strategy)
@@ -2299,7 +2309,61 @@ LIMIT ?
 		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := db.attachDeploymentSourceSummaries(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (db *DB) attachDeploymentSourceSummaries(ctx context.Context, summaries []DeploymentSummary) error {
+	if len(summaries) == 0 {
+		return nil
+	}
+	ids := make([]any, 0, len(summaries))
+	positions := make(map[int64]int, len(summaries))
+	placeholders := make([]string, 0, len(summaries))
+	for i := range summaries {
+		ids = append(ids, summaries[i].ID)
+		positions[summaries[i].ID] = i
+		placeholders = append(placeholders, "?")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT deployment_id, catalog, COUNT(*)
+FROM deployed_files
+WHERE deployment_id IN (`+strings.Join(placeholders, ",")+`)
+  AND catalog <> ''
+GROUP BY deployment_id, catalog
+ORDER BY deployment_id DESC, COUNT(*) DESC, catalog ASC
+`, ids...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var deploymentID int64
+		var catalog string
+		var count int
+		if err := rows.Scan(&deploymentID, &catalog, &count); err != nil {
+			return err
+		}
+		index, ok := positions[deploymentID]
+		if !ok {
+			continue
+		}
+		catalog = strings.TrimSpace(catalog)
+		if catalog == "" {
+			continue
+		}
+		summaries[index].Sources = append(summaries[index].Sources, DeploymentSourceSummary{
+			Catalog:   catalog,
+			SourceTag: catalog,
+			FileCount: count,
+		})
+	}
+	return rows.Err()
 }
 
 func (db *DB) LatestDeploymentSummaryForSteamApp(ctx context.Context, appID string) (DeploymentSummary, bool, error) {

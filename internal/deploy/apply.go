@@ -19,6 +19,9 @@ type AppliedFile struct {
 	Strategy       Strategy `json:"strategy"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
 	RestoreSHA256  string   `json:"restore_sha256,omitempty"`
+	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	Catalog        string   `json:"catalog,omitempty"`
+	ModID          string   `json:"mod_id,omitempty"`
 }
 
 type RepairIssue struct {
@@ -105,6 +108,9 @@ func ApplyPreparedWithProgress(plan Plan, progress ProgressFunc) (*AppliedDeploy
 			TargetPath:     action.TargetPath,
 			Strategy:       action.Strategy,
 			ChecksumSHA256: action.ChecksumSHA256,
+			InstalledModID: action.InstalledModID,
+			Catalog:        action.Catalog,
+			ModID:          action.ModID,
 		}
 		if file.ChecksumSHA256 == "" {
 			if sum, err := fileSHA256(file.SourcePath); err == nil {

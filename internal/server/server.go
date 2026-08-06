@@ -8338,6 +8338,7 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 				TargetPolicy:   strings.TrimSpace(file.TargetPolicy),
 				Strategy:       deploy.Strategy(strings.TrimSpace(file.DeployStrategy)),
 				InstalledModID: mod.ID,
+				Catalog:        mod.Catalog,
 				ModID:          mod.SourceModID,
 				Priority:       mod.Priority,
 				ChecksumSHA256: file.SHA256,
