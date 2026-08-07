@@ -49,6 +49,16 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "witcher3-xml-menu-merge", Name: "Witcher 3 XML/menu merge"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "witcher3-mods-settings", Name: "Witcher 3 mods.settings load order"})
+	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
+		ID:       "witcher3-menu-readme-conflicts",
+		Name:     "Witcher 3 menu/readme conflict ignore",
+		Patterns: []string{"README.TXT", "**/*.PART.TXT"},
+	})
+	r.RegisterDeployIgnore(sdk.DeployIgnoreSpec{
+		ID:       "witcher3-menu-readme-deploy",
+		Name:     "Witcher 3 menu/readme deploy ignore",
+		Patterns: []string{"README.TXT", "**/*.PART.TXT"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "will-deploy",
 		Name:    "Generate Witcher 3 mods.settings",

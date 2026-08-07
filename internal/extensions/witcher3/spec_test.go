@@ -225,6 +225,35 @@ func TestExtensionDidDeploySkipsDLCOnlyDeploy(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersVortexDeployIgnorePatterns(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	patterns := registry.DeployIgnorePatternsForSteamApp(witcher3.SteamAppID)
+	if len(patterns) != 2 || patterns[0] != "README.TXT" || patterns[1] != "**/*.PART.TXT" {
+		t.Fatalf("deploy ignore patterns = %+v", patterns)
+	}
+
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	writeFile(t, filepath.Join(staging, "mod", "Mods", "modExample", "content", "scripts", "example.ws"), "script")
+	writeFile(t, filepath.Join(staging, "mod", "README.TXT"), "readme")
+	writeFile(t, filepath.Join(staging, "mod", "bin", "config", "r4game", "user_config_matrix", "pc", "input.PART.TXT"), "part")
+
+	plan, err := deploy.BuildPlanWithOptions(staging, target, deploy.StrategySymlink, []deploy.FileMapping{
+		{SourceRelative: "mod/Mods/modExample/content/scripts/example.ws", TargetRelative: "Mods/modExample/content/scripts/example.ws"},
+		{SourceRelative: "mod/README.TXT", TargetRelative: "README.TXT"},
+		{SourceRelative: "mod/bin/config/r4game/user_config_matrix/pc/input.PART.TXT", TargetRelative: "bin/config/r4game/user_config_matrix/pc/input.PART.TXT"},
+	}, nil, deploy.BuildOptions{
+		IgnoreDeployPatterns: patterns,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 || plan.Actions[0].TargetRelative != "Mods/modExample/content/scripts/example.ws" {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+}
+
 func build(root string) (installplan.Plan, error) {
 	extension := gameext.MustCompileExtension(witcher3.Extension())
 	return gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("witcher3", root)
