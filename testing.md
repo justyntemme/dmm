@@ -41,7 +41,8 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 ## Nexus Capture Flow
 
-- From Gaming Mode Firefox, open a Stardew Valley Nexus mod page.
+- Preferred path: in Decky `Games`, select Stardew Valley, choose `Explore Mods`, open `Nexus Mods`, select a result, and use the controlled DMM browser to view the real Nexus page.
+- Fallback path: from Gaming Mode Firefox, open a Stardew Valley Nexus mod page.
 - Click `Mod Manager Download`.
 - Confirm a Decky toast appears when DMM captures/downloads the archive.
 - Open phone/iPad Action Center:
@@ -55,12 +56,13 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 
 ## Nexus Browse Inside DMM
 
-- In Decky `Games`, select Stardew Valley and open `Browse Nexus`.
+- In Decky `Games`, select Stardew Valley and open `Explore Mods` > `Nexus Mods`.
 - Search a term such as `config`, `content`, or `tractor`.
 - Test sort/time controls.
-- Open file rows.
-- Use `Add` for a file and confirm it enters the same captured-install pipeline.
-- If Nexus requires a browser-generated link, use `Open File Page` and then `Mod Manager Download`.
+- Open a result with `View Mod Page`.
+- Confirm DMM opens the real Nexus page in its controlled browser.
+- Click Nexus' own `Mod Manager Download` / Vortex link on that page.
+- Confirm DMM captures the generated `nxm://` credential, closes the browser after capture, and returns to the selected game's DMM page.
 - Repeat on iPad web UI from the selected Stardew game page.
 
 ## Stardew Runtime Verification
@@ -82,7 +84,7 @@ Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact
 ## FOMOD / Installer Choices
 
 - Test with a known Vortex-compatible FOMOD from a supported game such as Fallout 4 or Skyrim.
-- Capture through browser `Mod Manager Download`, not direct HTTPS file add, unless DMM explicitly says direct install is supported.
+- Capture through the controlled DMM browser's `Mod Manager Download` flow, not direct HTTPS file add, unless DMM explicitly says direct install is supported.
 - Confirm Action Center shows installer choices on phone/iPad.
 - In Gaming Mode, confirm the Decky modal appears automatically when auto-install and auto-display FOMOD are enabled.
 - Change a choice and confirm dependent/conditional choices update without refreshing.
