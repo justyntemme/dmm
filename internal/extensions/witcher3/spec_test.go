@@ -206,6 +206,50 @@ func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) 
 	}
 }
 
+func TestExtensionDidDeployWarnsWhenMenuFragmentsNeedMerge(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	staging := filepath.Join(root, "FriendlyHUD")
+	writeFile(t, filepath.Join(staging, "bin", "config", "r4game", "user_config_matrix", "pc", "user.settings.part.txt"), "[Key]\nValue=1\n")
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:        "Friendly HUD",
+			ModType:     "witcher3menumodroot",
+			Enabled:     true,
+			StagingPath: staging,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !noticeContains(result.Notices, "menu mod fragments") {
+		t.Fatalf("expected menu-fragment notice, got %+v", result.Notices)
+	}
+}
+
+func TestExtensionDidDeployIgnoresMenuInputXMLFragments(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	staging := filepath.Join(root, "FriendlyHUD")
+	writeFile(t, filepath.Join(staging, "bin", "config", "r4game", "user_config_matrix", "pc", "input.xml.part.txt"), "input")
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:        "Friendly HUD",
+			ModType:     "witcher3menumodroot",
+			Enabled:     true,
+			StagingPath: staging,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noticeContains(result.Notices, "menu mod fragments") {
+		t.Fatalf("unexpected menu-fragment notice for input.xml fragment: %+v", result.Notices)
+	}
+}
+
 func TestExtensionDidDeploySkipsDLCOnlyDeploy(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
 
@@ -267,6 +311,15 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, instructions)
+}
+
+func noticeContains(notices []sdk.EventNotice, needle string) bool {
+	for _, notice := range notices {
+		if strings.Contains(notice.Message, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeFile(t *testing.T, path string, contents string) {

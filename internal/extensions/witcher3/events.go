@@ -20,6 +20,7 @@ const (
 	w3LockedModPrefix    = "mod0000_"
 	w3GeneratedVKPrefix  = "dmm:"
 	w3LoadOrderLineBreak = "\r\n"
+	inputXMLFilename     = "input.xml"
 )
 
 var scriptMergeRelevantModTypes = map[string]struct{}{
@@ -72,15 +73,24 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
-	if !deployIncludesScriptMergeRelevantMods(input) {
-		return sdk.EventHandlerResult{}, nil
+	var notices []sdk.EventNotice
+	if deployIncludesScriptMergeRelevantMods(input) {
+		notices = append(notices, sdk.EventNotice{
+			Message:     "Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
+			ToolID:      scriptMergerToolID,
+			ToolName:    "W3 Script Merger",
+			ActionLabel: "Run Script Merger",
+		})
 	}
-	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
-		Message:     "Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
-		ToolID:      scriptMergerToolID,
-		ToolName:    "W3 Script Merger",
-		ActionLabel: "Run Script Merger",
-	}}}, nil
+	if deployIncludesMenuFragments(ctx, input) {
+		notices = append(notices, sdk.EventNotice{
+			Message:     "Witcher 3 menu mod fragments were detected. Vortex generates a profile-specific menu data mod from .part.txt files; DMM has not implemented that merge yet, so review menu/input settings before launching.",
+			ToolID:      "witcher3-menu-mod-merge",
+			ToolName:    "Witcher 3 menu mod merge",
+			ActionLabel: "Review menu settings",
+		})
+	}
+	return sdk.EventHandlerResult{Notices: notices}, nil
 }
 
 func deployIncludesScriptMergeRelevantMods(input sdk.EventHandlerInput) bool {
@@ -120,6 +130,65 @@ func witcherTargetMayNeedScriptMerge(target string) bool {
 		}
 	}
 	return isMenuModFile(rel)
+}
+
+func deployIncludesMenuFragments(ctx context.Context, input sdk.EventHandlerInput) bool {
+	for _, mapping := range input.Mappings {
+		if witcherMenuFragmentPath(mapping.TargetRelative) || witcherMenuFragmentPath(mapping.SourceRelative) || witcherMenuFragmentPath(mapping.SourcePath) {
+			return true
+		}
+	}
+	for _, file := range input.ManagedFiles {
+		if witcherMenuFragmentPath(file.TargetPath) {
+			return true
+		}
+	}
+	for _, mod := range input.Mods {
+		if !mod.Enabled || !strings.EqualFold(mod.ModType, "witcher3menumodroot") || strings.TrimSpace(mod.StagingPath) == "" {
+			continue
+		}
+		if stagingTreeContainsMenuFragment(ctx, mod.StagingPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func stagingTreeContainsMenuFragment(ctx context.Context, root string) bool {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false
+	}
+	found := false
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if witcherMenuFragmentPath(path) {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found && err == nil
+}
+
+func witcherMenuFragmentPath(pathValue string) bool {
+	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(pathValue))))
+	if rel == "." || rel == "" {
+		return false
+	}
+	lower := strings.ToLower(rel)
+	return strings.HasSuffix(lower, partSuffix) && !strings.Contains(lower, inputXMLFilename)
 }
 
 func managedModSettingsEntries(mappings []deploy.FileMapping) []modSettingsEntry {
