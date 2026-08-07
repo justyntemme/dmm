@@ -1272,7 +1272,8 @@ h2 {
   padding-top: 10px;
 }
 
-.nexus-browser summary {
+.nexus-browser summary,
+.explore-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1280,13 +1281,19 @@ h2 {
   min-height: 38px;
   color: #f4f4f5;
   font-weight: 900;
+}
+
+.nexus-browser summary {
   cursor: pointer;
 }
 
-.nexus-browser summary small {
+.nexus-browser summary small,
+.explore-heading small {
+  display: block;
   color: #a1a1aa;
   font-size: 0.78rem;
   font-weight: 800;
+  margin-top: 2px;
 }
 
 .nexus-search-form {

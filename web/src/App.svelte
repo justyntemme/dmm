@@ -516,6 +516,7 @@
   let nexusSearchError = "";
   let nexusSearchMessage = "";
   let busyNexusOpenModID = 0;
+  let exploreSourceID = "nexus";
   let localArchiveFile: File | null = null;
   let localArchiveInput: HTMLInputElement | null = null;
   let localArchiveBusy = false;
@@ -1064,6 +1065,7 @@
     surface = "game";
     activeGameModule = "plugins";
     drawer = null;
+    exploreSourceID = "nexus";
     resolvedCapture = "";
     bulkCaptureMessage = "";
     nexusSearchResults = [];
@@ -1816,6 +1818,24 @@
 
   function selectedNexusDomain() {
     return selectedGame?.nexus_domains?.[0] ?? "";
+  }
+
+  function exploreSourceOptions() {
+    return catalogs.filter((catalog) => catalog.kind !== "platform");
+  }
+
+  function selectedExploreSource() {
+    return exploreSourceOptions().find((catalog) => catalog.id === exploreSourceID) ?? catalogs.find((catalog) => catalog.id === "nexus") ?? null;
+  }
+
+  function selectedExploreSourceReady() {
+    const source = selectedExploreSource();
+    return Boolean(source && source.status === "ready");
+  }
+
+  function selectedExploreSourceBrowseReady() {
+    const source = selectedExploreSource();
+    return Boolean(source && source.id === "nexus" && selectedNexusDomain() && source.search && source.status === "ready");
   }
 
   function nexusModURL(mod: NexusModResult) {
@@ -3611,51 +3631,70 @@
                 <p class="hint success-copy">{localArchiveMessage}</p>
               {/if}
               <p class="hint">Mods that need choices or review will appear in Action Center. Installed mods remain disabled until you enable them in the selected profile.</p>
-              {#if selectedNexusDomain()}
-                <details class="nexus-browser">
-                  <summary>
-                    <span>Explore Nexus Mods</span>
-                    <small>{selectedNexusDomain()}</small>
-                  </summary>
-                  <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
-                    <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
-                    <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
-                    <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
-                    <button type="button" class="secondary-action compact" on:click={toggleNexusCompatibilityFilter}>{nexusSearchVortexOnly ? "Vortex Only" : "All Mods"}</button>
-                    <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
-                  </form>
-                  {#if nexusSearchResults.length > 0}
-                    <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {nexusSearchVortexOnly ? "Vortex-compatible" : "Nexus"} results.</p>
-                    <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
-                    <div class="nexus-results">
-                      {#each nexusSearchResults as mod}
-                        <article>
-                          <div class="nexus-result-main">
-                            <span>
-                              <span class="mod-title-line">
-                                <strong>{mod.name}</strong>
-                                <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
-                              </span>
-                              {#if mod.summary}<small>{mod.summary}</small>{/if}
-                              <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
-                            </span>
-                            <button type="button" on:click={() => openNexusModOnDeck(mod)} disabled={busyNexusOpenModID === mod.mod_id}>
-                              {busyNexusOpenModID === mod.mod_id ? "Opening..." : "Open on Deck"}
-                            </button>
-                          </div>
-                        </article>
-                      {/each}
+              {#if exploreSourceOptions().length > 0}
+                <section class="nexus-browser" aria-label="Explore mods">
+                  <div class="explore-heading">
+                    <div>
+                      <strong>Explore Mods</strong>
+                      <small>{selectedExploreSource()?.name ?? "Select source"}</small>
                     </div>
+                    <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
+                  </div>
+                  <label class="target-profile-select">
+                    <span>Source</span>
+                    <select bind:value={exploreSourceID}>
+                      {#each exploreSourceOptions() as catalog}
+                        <option value={catalog.id}>{catalog.name} · {catalog.status}</option>
+                      {/each}
+                    </select>
+                  </label>
+                  {#if selectedExploreSourceBrowseReady()}
+                    <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
+                      <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
+                      <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
+                      <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
+                      <button type="button" class="secondary-action compact" on:click={toggleNexusCompatibilityFilter}>{nexusSearchVortexOnly ? "Vortex Only" : "All Mods"}</button>
+                      <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
+                    </form>
+                    {#if nexusSearchResults.length > 0}
+                      <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {nexusSearchVortexOnly ? "Vortex-compatible" : "Nexus"} results.</p>
+                      <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
+                      <div class="nexus-results">
+                        {#each nexusSearchResults as mod}
+                          <article>
+                            <div class="nexus-result-main">
+                              <span>
+                                <span class="mod-title-line">
+                                  <strong>{mod.name}</strong>
+                                  <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
+                                </span>
+                                {#if mod.summary}<small>{mod.summary}</small>{/if}
+                                <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
+                              </span>
+                              <button type="button" on:click={() => openNexusModOnDeck(mod)} disabled={busyNexusOpenModID === mod.mod_id}>
+                                {busyNexusOpenModID === mod.mod_id ? "Opening..." : "Open on Deck"}
+                              </button>
+                            </div>
+                          </article>
+                        {/each}
+                      </div>
+                    {/if}
+                    {#if nexusSearchMessage}
+                      <p class="hint success-copy">{nexusSearchMessage}</p>
+                    {/if}
+                    {#if nexusSearchError}
+                      <p class="hint warning-copy">{nexusSearchError}</p>
+                    {/if}
+                  {:else if selectedExploreSource()?.id === "nexus"}
+                    <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include a Nexus domain yet." : "This game does not have a DMM extension yet."}</p>
+                  {:else if selectedExploreSource()?.id === "local"}
+                    <p class="hint">Local archives are added with the upload control above and then installed through the same Action Center flow.</p>
+                  {:else if selectedExploreSourceReady()}
+                    <p class="hint">{selectedExploreSource()?.name} supports URL imports in DMM right now. Paste a mod/package/release URL above to capture it for this game.</p>
+                  {:else}
+                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} is not ready yet. Configure required credentials in Settings > Sources, or use another source.</p>
                   {/if}
-                  {#if nexusSearchMessage}
-                    <p class="hint success-copy">{nexusSearchMessage}</p>
-                  {/if}
-                  {#if nexusSearchError}
-                    <p class="hint warning-copy">{nexusSearchError}</p>
-                  {/if}
-                </details>
-              {:else}
-                <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include Nexus browsing yet." : "This game does not have a DMM extension yet."}</p>
+                </section>
               {/if}
               {#if resolvedCapture}
                 <p class="hint">Resolved {resolvedCapture}</p>
