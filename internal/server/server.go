@@ -1395,7 +1395,7 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Browse:              registered["nexus"] && nexusConfigured,
 			Download:            registered["nexus"] && nexusConfigured,
 			SourceTag:           "nexus",
-			Notes:               []string{"nxm:// capture and Nexus file-page imports are the primary MVP path."},
+			Notes:               []string{"nxm:// capture from DMM's controlled Nexus browser flow is the primary MVP path."},
 		},
 		{
 			ID:         "thunderstore",

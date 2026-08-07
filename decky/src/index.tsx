@@ -4646,7 +4646,7 @@ function DeckyModManagerRoute() {
 	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{selectedExploreSources.filter((source) => source.enabled).length} ready</div>
 	              </div>
 	              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-	                Choose a source for {selectedDeckyGame?.name ?? "this game"}. Downloads are captured through the provider's Mod Manager Download flow.
+	                Choose a source for {selectedDeckyGame?.name ?? "this game"}. Nexus opens the real mod page for Mod Manager Download; URL-only sources use Mod Link.
 	              </div>
 	              {selectedExploreSources.length === 0 && (
 	                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
