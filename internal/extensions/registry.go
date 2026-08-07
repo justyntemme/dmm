@@ -28,6 +28,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
@@ -64,6 +65,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
+		gameext.MustCompileExtension(totalwarrome2.Extension()),
 		gameext.MustCompileExtension(totalwarromeremastered.Extension()),
 		gameext.MustCompileExtension(warno.Extension()),
 		gameext.MustCompileExtension(witcher3.Extension()),

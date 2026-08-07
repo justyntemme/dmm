@@ -51,6 +51,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Stellaris](games/stellaris.md)
 - [Tabletop Simulator](games/tabletop-simulator.md)
 - [Total War: PHARAOH DYNASTIES](games/total-war-pharaoh-dynasties.md)
+- [Total War: ROME II](games/total-war-rome-ii.md)
 - [Total War: ROME REMASTERED](games/total-war-rome-remastered.md)
 - [WARNO](games/warno.md)
 
