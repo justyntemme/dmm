@@ -1127,7 +1127,15 @@ function extensionNoticeActionLabel(job: Job) {
 }
 
 function extensionNoticeHelpURL(job: Job) {
-  const url = String(job.payload?.help_url || "").trim();
+  return safeHTTPURL(job.payload?.help_url);
+}
+
+function runtimeRequirementHelpURL(requirement: RuntimeRequirement) {
+  return safeHTTPURL(requirement.help_url);
+}
+
+function safeHTTPURL(value: unknown) {
+  const url = String(value || "").trim();
   return /^https?:\/\//i.test(url) ? url : "";
 }
 
@@ -4510,6 +4518,37 @@ function DeckyModManagerRoute() {
     await refresh();
   }
 
+  async function openRuntimeRequirementHelp(requirement: RuntimeRequirement) {
+    const helpURL = runtimeRequirementHelpURL(requirement);
+    if (!selectedDeckyGameID || !helpURL) return;
+    try {
+      setError("");
+      await logFrontendEvent("decky runtime requirement help requested", {
+        app_id: selectedDeckyGameID,
+        requirement_id: requirement.id,
+        kind: requirement.kind,
+        url: helpURL
+      });
+      const opened = await openDMMBrowserViewCapture(helpURL, {
+        appID: selectedDeckyGameID,
+        profileID: selectedProfile?.id ?? 0,
+        source: "runtime-requirement-help",
+        title: requirement.name || "DMM Requirement Help"
+      });
+      if (!opened) {
+        setError("DMM could not open the requirement help page. Check Debug Live Logs.");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      await logFrontendEvent("decky runtime requirement help failed", {
+        app_id: selectedDeckyGameID,
+        requirement_id: requirement.id,
+        error: message
+      });
+    }
+  }
+
   useEffect(() => {
     logFrontendEvent("content mounted");
     refresh();
@@ -4981,41 +5020,55 @@ function DeckyModManagerRoute() {
                 <div style={{ color: "#f8fafc", fontWeight: 900 }}>Runtime Requirements</div>
                 <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{deckyRuntimeIssues.length} issue{deckyRuntimeIssues.length === 1 ? "" : "s"}</div>
               </div>
-              {deckyRuntimeIssues.map((requirement) => (
-                <Focusable
-                  key={requirement.id}
-                  className="dmm-sidebar-row"
-                  focusClassName="dmm-sidebar-row-focused"
-                  onActivate={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    if (requirement.kind === "launch-tool") void retryLaunchSetup();
-                  }}
-                  onClick={() => {
-                    if (requirement.kind === "launch-tool") void retryLaunchSetup();
-                  }}
-                  style={{
-                    ...deckyCompositeRowStyle(false),
-                    borderColor: requirement.status === "outdated" ? "#f59e0b" : "#7f1d1d",
-                    padding: "10px"
-                  }}
-                >
-                  <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-                    <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{requirement.name}</div>
-                    <span style={{ ...deckySourcePillStyle("runtime"), background: requirement.status === "outdated" ? "#451a03" : "#450a0a", borderColor: requirement.status === "outdated" ? "#f59e0b" : "#ef4444", color: requirement.status === "outdated" ? "#fde68a" : "#fecaca" }}>{requirement.status}</span>
-                  </div>
-                  <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
-                  {requirement.install_hint && (
-                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.install_hint}</div>
-                  )}
-                  {requirement.help_url && (
-                    <div style={{ color: "#93c5fd", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.help_url}</div>
-                  )}
-                  <div style={{ color: requirement.kind === "launch-tool" ? "#99f6e4" : "#fbbf24", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                    {requirement.kind === "launch-tool" ? "A Retry Launch Setup" : "Resolve before launching with enabled mods"}
-                  </div>
-                </Focusable>
-              ))}
+              {deckyRuntimeIssues.map((requirement) => {
+                const helpURL = runtimeRequirementHelpURL(requirement);
+                const primaryAction = requirement.kind === "launch-tool" ? "Retry Launch Setup" : helpURL ? "Open Help" : "";
+                return (
+                  <Focusable
+                    key={requirement.id}
+                    className="dmm-sidebar-row"
+                    focusClassName="dmm-sidebar-row-focused"
+                    onActivate={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (requirement.kind === "launch-tool") void retryLaunchSetup();
+                      else if (helpURL) void openRuntimeRequirementHelp(requirement);
+                    }}
+                    onClick={() => {
+                      if (requirement.kind === "launch-tool") void retryLaunchSetup();
+                      else if (helpURL) void openRuntimeRequirementHelp(requirement);
+                    }}
+                    onSecondaryActionDescription={requirement.kind === "launch-tool" && helpURL ? "Open Help" : undefined}
+                    onSecondaryButton={helpURL ? (event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void openRuntimeRequirementHelp(requirement);
+                    } : undefined}
+                    style={{
+                      ...deckyCompositeRowStyle(false),
+                      borderColor: requirement.status === "outdated" ? "#f59e0b" : "#7f1d1d",
+                      padding: "10px"
+                    }}
+                  >
+                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{requirement.name}</div>
+                      <span style={{ ...deckySourcePillStyle("runtime"), background: requirement.status === "outdated" ? "#451a03" : "#450a0a", borderColor: requirement.status === "outdated" ? "#f59e0b" : "#ef4444", color: requirement.status === "outdated" ? "#fde68a" : "#fecaca" }}>{requirement.status}</span>
+                    </div>
+                    <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
+                    {requirement.install_hint && (
+                      <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.install_hint}</div>
+                    )}
+                    {helpURL && (
+                      <div style={{ color: "#93c5fd", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{helpURL}</div>
+                    )}
+                    <div style={{ color: primaryAction ? "#99f6e4" : "#fbbf24", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                      {primaryAction
+                        ? `A ${primaryAction}${requirement.kind === "launch-tool" && helpURL ? " · Y Open Help" : ""}`
+                        : "Resolve before launching with enabled mods"}
+                    </div>
+                  </Focusable>
+                );
+              })}
             </div>
           </PanelSectionRow>
         )}
