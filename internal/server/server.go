@@ -1610,6 +1610,7 @@ type patchUISettingsRequest struct {
 	FavoriteGameID string `json:"favorite_game_id"`
 	Favorite       *bool  `json:"favorite"`
 	RecentGameID   string `json:"recent_game_id"`
+	Recent         *bool  `json:"recent"`
 	RecentAt       int64  `json:"recent_at"`
 	GameSort       string `json:"game_sort"`
 }
@@ -1919,14 +1920,18 @@ func (s *Server) handlePatchUISettings(w http.ResponseWriter, r *http.Request) {
 		ui.FavoriteGameIDs = setFavoriteGameID(ui.FavoriteGameIDs, appID, *req.Favorite, 100)
 	}
 	if appID := strings.TrimSpace(req.RecentGameID); appID != "" {
-		at := req.RecentAt
-		if at <= 0 {
-			at = time.Now().UnixMilli()
-		}
 		if ui.RecentGames == nil {
 			ui.RecentGames = map[string]int64{}
 		}
-		ui.RecentGames[appID] = at
+		if req.Recent != nil && !*req.Recent {
+			delete(ui.RecentGames, appID)
+		} else {
+			at := req.RecentAt
+			if at <= 0 {
+				at = time.Now().UnixMilli()
+			}
+			ui.RecentGames[appID] = at
+		}
 		ui.RecentGames = normalizedRecentGames(ui.RecentGames, 100)
 	}
 	if strings.TrimSpace(req.GameSort) != "" {

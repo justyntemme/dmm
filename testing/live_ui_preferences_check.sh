@@ -95,7 +95,13 @@ finally:
         if target in original_recents:
             request("PATCH", "/api/settings/ui", {
                 "recent_game_id": target,
+                "recent": True,
                 "recent_at": int(original_recents[target]),
+            })
+        else:
+            request("PATCH", "/api/settings/ui", {
+                "recent_game_id": target,
+                "recent": False,
             })
 
 print("UI preferences API source-of-truth check passed")

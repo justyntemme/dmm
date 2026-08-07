@@ -380,6 +380,18 @@ func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	if ui["game_sort"] != "az" {
 		t.Fatalf("game_sort = %#v, want az", ui["game_sort"])
 	}
+
+	response = patchUISettings(`{"recent_game_id":"377160","recent":false}`)
+	ui, ok = response["ui"].(map[string]any)
+	if !ok {
+		t.Fatalf("ui response missing after remove: %#v", response["ui"])
+	}
+	recent, ok = ui["recent_games"].(map[string]any)
+	if ok {
+		if _, exists := recent["377160"]; exists {
+			t.Fatalf("recent_games retained removed entry: %#v", recent)
+		}
+	}
 }
 
 func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
