@@ -31,6 +31,7 @@ TESTING_SCRIPTS=(
   "${ROOT_DIR}/testing/live_nexus_browser_handoff_check.sh"
   "${ROOT_DIR}/testing/live_ui_preferences_check.sh"
   "${ROOT_DIR}/testing/live_extension_coverage_check.sh"
+  "${ROOT_DIR}/testing/live_extension_targets_check.sh"
   "${ROOT_DIR}/testing/live_provider_resolve_check.sh"
   "${ROOT_DIR}/testing/live_installed_package_check.sh"
   "${ROOT_DIR}/testing/live_post_install_check.sh"

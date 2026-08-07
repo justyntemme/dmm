@@ -320,6 +320,14 @@ To verify that installed games and extension manifests report honest capability 
 
 The check reports counts for `installer`, `research_blocked`, `browse_only`, `workshop_only`, and unsupported visible games. It fails only on invalid extension metadata by default. Set `REQUIRE_NO_UNSUPPORTED=1` when validating a release candidate that should cover every visible game.
 
+To verify the currently prioritized extension targets expose the expected first-party capabilities, run:
+
+```sh
+~/.testing/live_extension_targets_check.sh
+```
+
+This checks selected high-priority games such as Stardew, Fallout 4, Skyrim, Witcher 3, FF7 Rebirth, Project Zomboid, Jedi Survivor, and Total War: ROME II against the live `/api/games` and `/api/extensions` read models.
+
 To verify non-Nexus provider URL resolution paths without installing archives, run:
 
 ```sh

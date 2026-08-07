@@ -58,6 +58,7 @@ section "Testing script syntax"
     testing/live_nexus_browser_handoff_check.sh \
     testing/live_ui_preferences_check.sh \
     testing/live_extension_coverage_check.sh \
+    testing/live_extension_targets_check.sh \
     testing/live_provider_resolve_check.sh \
     testing/live_installed_package_check.sh \
     testing/live_post_install_check.sh \
@@ -94,6 +95,7 @@ section "Deck testing artifact coverage"
     live_nexus_browser_handoff_check.sh \
     live_ui_preferences_check.sh \
     live_extension_coverage_check.sh \
+    live_extension_targets_check.sh \
     live_provider_resolve_check.sh \
     live_installed_package_check.sh \
     live_post_install_check.sh \
