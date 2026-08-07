@@ -846,6 +846,10 @@ function sourceForInstallCandidate(candidate: InstallCandidate) {
   return candidate.source_tag || candidate.catalog;
 }
 
+function sourceForJob(job: Job) {
+  return job.source_tag || job.catalog || job.payload?.source_tag || job.payload?.catalog || (job.type === "steam-workshop-action" ? "steam_workshop" : "extension");
+}
+
 function catalogStatusLabel(status?: string) {
   const normalized = (status ?? "").trim().toLowerCase();
   if (normalized === "ready") return "Ready";
@@ -1067,6 +1071,39 @@ function eventMatchesAppID(event: DomainEvent, appID: string) {
 function jobMatchesAppID(job: Job, appID: string) {
   const payloadAppID = String(job.payload?.app_id ?? "").trim();
   return !payloadAppID || payloadAppID === appID;
+}
+
+function isDeckyActionCenterJob(job: Job) {
+  if (job.status === "completed" || job.status === "canceled") return false;
+  return ["captured-install", "steam-workshop-action", "extension-notice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type);
+}
+
+function deckyJobBelongsToAppID(job: Job, appID: string) {
+  const directAppID = String(job.app_id || job.payload?.app_id || "").trim();
+  return directAppID !== "" && directAppID === appID;
+}
+
+function deckyActionJobsForGame(jobs: Job[], appID: string) {
+  if (!appID) return [];
+  return jobs.filter((job) => isDeckyActionCenterJob(job) && deckyJobBelongsToAppID(job, appID));
+}
+
+function deckyJobStatusLabel(job: Job) {
+  const status = job.status.replace(/[_-]+/g, " ");
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function deckyJobPrimaryActionLabel(job: Job) {
+  if (job.type === "captured-install" && job.status === "waiting") return "Install";
+  if (job.type === "captured-install" && job.status === "failed") return "Retry";
+  if (job.type === "steam-workshop-action" && job.status === "failed") return "Retry";
+  return "";
+}
+
+function deckyJobCanCancel(job: Job) {
+  if (job.status === "completed" || job.status === "canceled") return false;
+  if (job.status === "failed") return job.type === "captured-install" || job.type === "steam-workshop-action";
+  return true;
 }
 
 function eventShouldSyncLaunchActions(event: DomainEvent) {
@@ -3207,6 +3244,7 @@ function DeckyModManagerRoute() {
   const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
+  const [deckyJobs, setDeckyJobs] = useState<Job[]>([]);
   const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
@@ -3222,11 +3260,13 @@ function DeckyModManagerRoute() {
   const [gameVisibility, setGameVisibility] = useState<GameVisibility>("manageable");
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
+  const [busyJobID, setBusyJobID] = useState<string>("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [modUpdateBusy, setModUpdateBusy] = useState<boolean>(false);
   const [busyWorkshopKey, setBusyWorkshopKey] = useState<string>("");
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
   const [focusedGameID, setFocusedGameID] = useState<string>("");
+  const [focusedJobID, setFocusedJobID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
   const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
   const [focusedConflictTarget, setFocusedConflictTarget] = useState<string>("");
@@ -3367,6 +3407,7 @@ function DeckyModManagerRoute() {
   function clearSelectedDeckyGame() {
     setSelectedDeckyGameID("");
     setFocusedModID(null);
+    setFocusedJobID("");
     setFocusedCandidateID(null);
     setModSearch("");
     setModOrderMode(false);
@@ -3394,6 +3435,7 @@ function DeckyModManagerRoute() {
     if (!appID) {
       setDeckyProfiles([]);
       setDeckyMods([]);
+      setDeckyJobs([]);
       setDeckyInstallCandidates([]);
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
@@ -3402,9 +3444,10 @@ function DeckyModManagerRoute() {
       setDeckyDeployPlan(null);
       return null;
     }
-    const [profilesResult, modsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult] = await Promise.all([
+    const [profilesResult, modsResult, jobsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
+      call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs"),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
       call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
       call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID),
@@ -3421,6 +3464,12 @@ function DeckyModManagerRoute() {
     }
     setDeckyProfiles(profilesResult.profiles);
     setDeckyMods(modsResult.mods);
+    if (jobsResult.ok) {
+      setDeckyJobs(deckyActionJobsForGame(jobsResult.jobs, appID));
+    } else {
+      setDeckyJobs([]);
+      await logFrontendEvent("decky action jobs load failed", { app_id: appID, error: jobsResult.error || "" });
+    }
     if (candidatesResult.ok) {
       setDeckyInstallCandidates(candidatesResult.candidates);
     } else {
@@ -3460,6 +3509,7 @@ function DeckyModManagerRoute() {
     });
     return {
       mods: modsResult.mods,
+      jobs: jobsResult.ok ? deckyActionJobsForGame(jobsResult.jobs, appID) : [],
       candidates: candidatesResult.ok ? candidatesResult.candidates : [],
       workshopItems: workshopResult.ok ? workshopResult.items : [],
       loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null,
@@ -3785,6 +3835,60 @@ function DeckyModManagerRoute() {
     void openInstallerChoiceModalForCandidate(selectedDeckyGameID, candidate, "decky-sidebar", () => {
       void loadDeckyGameState(selectedDeckyGameID);
     }, selectedProfile?.id ?? 0);
+  }
+
+  async function activateDeckyActionJob(job: Job) {
+    if (!selectedDeckyGameID || !deckyJobPrimaryActionLabel(job)) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyJobID(job.id);
+      let result: { ok: boolean; error?: string; job?: Job; result?: { job?: Job } };
+      if (job.type === "captured-install" && job.status === "waiting") {
+        result = await call<[string, number], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("install_captured_install", job.id, selectedProfile?.id ?? 0);
+      } else if (job.type === "captured-install" && job.status === "failed") {
+        result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("retry_captured_install", job.id);
+      } else if (job.type === "steam-workshop-action" && job.status === "failed") {
+        result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("retry_workshop_action", job.id);
+      } else {
+        return;
+      }
+      if (!result.ok) {
+        setError(result.error ?? "Unable to update this action.");
+        return;
+      }
+      const nextJob = result.job ?? result.result?.job;
+      if (nextJob) showJobToast(nextJob);
+      if (job.type === "steam-workshop-action") await syncWorkshopActions();
+      await loadDeckyGameState(selectedDeckyGameID);
+      setModsResult(nextJob?.message || "Action updated.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyJobID("");
+    }
+  }
+
+  async function cancelDeckyActionJob(job: Job) {
+    if (!selectedDeckyGameID || !deckyJobCanCancel(job)) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyJobID(job.id);
+      const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("cancel_job", job.id);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to cancel this action.");
+        return;
+      }
+      const nextJob = result.job ?? result.result?.job;
+      if (nextJob) showJobToast(nextJob);
+      await loadDeckyGameState(selectedDeckyGameID);
+      setModsResult(nextJob?.message || "Action canceled.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyJobID("");
+    }
   }
 
   async function removeDeckyMod(mod: ManagedMod) {
@@ -4539,6 +4643,7 @@ function DeckyModManagerRoute() {
     return sources;
   }, [selectedDeckyGame, selectedNexusDomains.join("|"), selectedNexusDomain, catalogs]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
+  const deckyActionJobs = useMemo(() => deckyActionJobsForGame(deckyJobs, selectedDeckyGameID), [deckyJobs, selectedDeckyGameID]);
   const manageableGameCount = managedGames.filter(gameManageReady).length;
   const extensionGameCount = managedGames.filter(gameHasExtension).length;
   const runningSupported = Boolean(runningGame && gameManageReady(managedGames.find((game) => game.app_id === runningGame.app_id)));
@@ -4922,6 +5027,71 @@ function DeckyModManagerRoute() {
 	              Change Game
 	            </ButtonItem>
 	          </PanelSectionRow>
+          {deckyActionJobs.length > 0 && (
+            <PanelSectionRow>
+              <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
+                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+                  <div style={{ fontWeight: 800 }}>Action Center</div>
+                  <div style={{ color: "#7dd3fc", fontSize: "11px", fontWeight: 800 }}>{deckyActionJobs.length} open</div>
+                </div>
+                {deckyActionJobs.map((job) => {
+                  const focused = focusedJobID === job.id;
+                  const primaryLabel = deckyJobPrimaryActionLabel(job);
+                  const busy = busyJobID === job.id;
+                  const canCancel = deckyJobCanCancel(job);
+                  return (
+                    <Focusable
+                      key={job.id}
+                      className="dmm-sidebar-row"
+                      focusClassName="dmm-sidebar-row-focused"
+                      onActivate={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (primaryLabel) void activateDeckyActionJob(job);
+                      }}
+                      onClick={() => {
+                        if (primaryLabel) void activateDeckyActionJob(job);
+                      }}
+                      onSecondaryActionDescription={canCancel ? "Cancel" : undefined}
+                      onSecondaryButton={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (canCancel) void cancelDeckyActionJob(job);
+                      }}
+                      onGamepadFocus={() => setFocusedJobID(job.id)}
+                      onFocus={() => setFocusedJobID(job.id)}
+                      onMouseEnter={() => setFocusedJobID(job.id)}
+                      preferredFocus={focused}
+                      style={{
+                        ...deckyCompositeRowStyle(focused, job.status === "waiting"),
+                        opacity: busy ? 0.65 : 1,
+                        padding: "10px"
+                      }}
+                    >
+                      <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                        <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 800 }}>{job.title}</div>
+                        <span style={deckySourcePillStyle(sourceForJob(job))}>{sourceLabel(sourceForJob(job))}</span>
+                      </div>
+                      <div style={{ color: job.status === "failed" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+                        {deckyJobStatusLabel(job)} · {job.message || jobToastBody(job)}
+                      </div>
+                      <div style={{ color: primaryLabel ? "#99f6e4" : canCancel ? "#fbbf24" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                        {busy
+                          ? "Working"
+                          : primaryLabel && canCancel
+                            ? `A ${primaryLabel} · Y Cancel`
+                            : primaryLabel
+                              ? `A ${primaryLabel}`
+                              : canCancel
+                                ? "Y Cancel"
+                                : "Review on phone/tablet"}
+                      </div>
+                    </Focusable>
+                  );
+                })}
+              </div>
+            </PanelSectionRow>
+          )}
 	          {deckyInstallCandidates.length > 0 && (
             <PanelSectionRow>
               <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>

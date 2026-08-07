@@ -257,6 +257,52 @@ class Plugin:
             return {"ok": True, "jobs": result}
         return {"ok": False, "error": "Unexpected jobs response.", "jobs": []}
 
+    async def cancel_job(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/jobs/{urllib.parse.quote(job_id)}/cancel", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to cancel job."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"job canceled job_id={job_id} status={(job or {}).get('status', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
+    async def install_captured_install(self, job_id, profile_id=0):
+        job_id = str(job_id or "").strip()
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = {}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        result, error = self._backend_json_result("POST", f"/api/captured-installs/{urllib.parse.quote(job_id)}/install", json.dumps(payload).encode("utf-8"))
+        if result is None:
+            return {"ok": False, "error": error or "Unable to install captured mod."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"captured install started job_id={job_id} profile_id={profile_id} status={(job or {}).get('status', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
+    async def retry_captured_install(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/captured-installs/{urllib.parse.quote(job_id)}/retry", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to retry captured install."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"captured install retried job_id={job_id} status={(job or {}).get('status', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def games(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "games": []}
@@ -686,6 +732,19 @@ class Plugin:
         proceed = bool(result.get("proceed")) if isinstance(result, dict) else False
         self._log(f"workshop action start job_id={job_id} proceed={proceed}")
         return {"ok": True, "proceed": proceed, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def retry_workshop_action(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/workshop/actions/{urllib.parse.quote(job_id)}/retry", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to retry Steam Workshop action."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"workshop action retry queued job_id={job_id} status={(job or {}).get('status', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "job": job, "result": result}
 
     async def record_workshop_action(self, job_id, report):
         job_id = str(job_id or "").strip()
