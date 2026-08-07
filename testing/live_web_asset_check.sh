@@ -66,7 +66,8 @@ for target in "${tmp_dir}"/*.js; do
       "Add Mod" \
       "Install to Profile" \
       "mods in the same on/off state" \
-      "Explore Mods" \
+      "Explore Mod Sources" \
+      "Quick Games" \
       "Open on Deck" \
       "Advanced Profile Tools" \
       "These Deck behavior switches are managed from the Decky sidebar settings."
