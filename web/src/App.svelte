@@ -178,6 +178,13 @@
     checked_at?: string;
   };
 
+  type ModUpdateBrowserPrompt = {
+    url: string;
+    mod_id: number;
+    mod_name: string;
+    title: string;
+  };
+
   type ModDependency = {
     unique_id?: string;
     minimum_version?: string;
@@ -522,7 +529,8 @@
   let busyMods: Record<number, ModBusyAction> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
-  let modUpdateBrowserURL = "";
+  let modUpdateBrowserPrompt: ModUpdateBrowserPrompt | null = null;
+  let modUpdateBrowserOpenBusy = false;
   let modIOAPIKey = "";
   let curseForgeAPIKey = "";
   let catalogSettingsBusy = "";
@@ -1508,7 +1516,7 @@
     if (!selectedGame || mod.update?.status !== "available") return;
     error = "";
     modUpdateMessage = "";
-    modUpdateBrowserURL = "";
+    modUpdateBrowserPrompt = null;
     setBusyMod(mod.id, "update");
     try {
       const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
@@ -1526,9 +1534,18 @@
         }
       }
       if (result.browser_required) {
-        modUpdateBrowserURL = result.file_url ?? result.resolved?.source_url ?? "";
-        modUpdateMessage = "Open the provider file page and use its Mod Manager Download flow for this update.";
-        if (!modUpdateBrowserURL) error = modUpdateMessage;
+        const browserURL = result.file_url ?? result.resolved?.source_url ?? "";
+        modUpdateMessage = "Open this update on the Steam Deck, then click Nexus Mod Manager Download to capture it.";
+        if (browserURL) {
+          modUpdateBrowserPrompt = {
+            url: browserURL,
+            mod_id: mod.id,
+            mod_name: mod.name,
+            title: `Update ${mod.name} - Nexus Mods`
+          };
+        } else {
+          error = modUpdateMessage;
+        }
       }
       await refreshJobsAndSelectedGame("mod-update");
     } catch (err) {
@@ -1542,7 +1559,7 @@
     if (!selectedGame || modUpdateBusy) return;
     error = "";
     modUpdateMessage = "";
-    modUpdateBrowserURL = "";
+    modUpdateBrowserPrompt = null;
     modUpdateBusy = true;
     const response = await fetch(`/api/games/${selectedGame.app_id}/mods/check-updates`, { method: "POST" });
     if (!response.ok) {
@@ -1567,6 +1584,33 @@
     modUpdateMessage = available > 0 ? `${available} update${available === 1 ? "" : "s"} available.` : `Checked ${result.checked} supported mod${result.checked === 1 ? "" : "s"}.`;
     modUpdateBusy = false;
     await refreshSelectedGame();
+  }
+
+  async function openModUpdateOnDeck(prompt: ModUpdateBrowserPrompt | null) {
+    if (!selectedGame || !prompt || modUpdateBrowserOpenBusy) return;
+    error = "";
+    modUpdateBrowserOpenBusy = true;
+    try {
+      const response = await fetch("/api/decky/browser/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: prompt.url,
+          steam_app_id: selectedGame.app_id,
+          profile_id: selectedInstallProfileID(),
+          source: "web-mod-update",
+          title: prompt.title
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      modUpdateMessage = `Opening ${prompt.mod_name} on the Steam Deck. Click Nexus Mod Manager Download there to capture the update.`;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      modUpdateBrowserOpenBusy = false;
+    }
   }
 
   function handleProfileApplyResult(result: ProfileApplyResult | null | undefined) {
@@ -3534,8 +3578,10 @@
                 </div>
               </div>
               {#if modUpdateMessage}<p class="hint">{modUpdateMessage}</p>{/if}
-              {#if modUpdateBrowserURL}
-                <button type="button" class="secondary-action compact" on:click={() => window.open(modUpdateBrowserURL, "_blank", "noopener")}>Open Provider File Page</button>
+              {#if modUpdateBrowserPrompt}
+                <button type="button" class="secondary-action compact" on:click={() => openModUpdateOnDeck(modUpdateBrowserPrompt)} disabled={modUpdateBrowserOpenBusy}>
+                  {modUpdateBrowserOpenBusy ? "Opening..." : "Open Update on Deck"}
+                </button>
               {/if}
               <div class="mod-list-controls">
                 <label>

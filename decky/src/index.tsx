@@ -3717,11 +3717,29 @@ function DeckyModManagerRoute() {
       }
       if (result.result?.browser_required) {
         const fileURL = result.result.file_url || result.result.resolved?.source_url || "";
-        setModsResult("Open the provider file page and use its Mod Manager Download flow for this update.");
+        setModsResult("Open this update in DMM's Nexus browser, then click Nexus Mod Manager Download to capture it.");
         if (fileURL) {
-          Navigation.NavigateToExternalWeb(fileURL);
+          await logFrontendEvent("decky mod update browser required", {
+            app_id: selectedDeckyGameID,
+            mod_id: mod.id,
+            url: fileURL
+          });
+          const opened = await openDMMBrowserViewCapture(fileURL, {
+            appID: selectedDeckyGameID,
+            profileID: selectedProfile?.id ?? 0,
+            source: "decky-mod-update",
+            title: `Update ${mod.name} - Nexus Mods`
+          });
+          await logFrontendEvent("decky mod update browser opened", {
+            app_id: selectedDeckyGameID,
+            mod_id: mod.id,
+            opened
+          });
+          if (!opened) {
+            setError("DMM could not open the controlled Nexus browser. Check Debug Live Logs.");
+          }
         } else {
-          setError("Open the provider file page from a browser and use its Mod Manager Download flow for this update.");
+          setError("Open the Nexus file page from a browser and use its Mod Manager Download flow for this update.");
         }
       }
     } catch (err) {
