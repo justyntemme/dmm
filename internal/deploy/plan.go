@@ -357,11 +357,11 @@ func targetInfoMatchesSource(action Action, targetInfo os.FileInfo) bool {
 	return err == nil && targetSum == expected
 }
 
-func mappingStrategy(mapping FileMapping, fallback Strategy) Strategy {
+func mappingStrategy(mapping FileMapping, defaultStrategy Strategy) Strategy {
 	if mapping.Strategy != "" {
 		return mapping.Strategy
 	}
-	return fallback
+	return defaultStrategy
 }
 
 func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mappings []FileMapping, options BuildOptions) ([]FileMapping, []Action, error) {

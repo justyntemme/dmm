@@ -1205,10 +1205,10 @@
     return selectedProfile?.id ?? profiles[0]?.id ?? 0;
   }
 
-  function normalizedProfileID(value: string | number | undefined, fallback = defaultProfileID()) {
+  function normalizedProfileID(value: string | number | undefined, defaultValue = defaultProfileID()) {
     const parsed = Number(value ?? 0);
     if (parsed > 0 && profiles.some((profile) => profile.id === parsed)) return parsed;
-    return fallback;
+    return defaultValue;
   }
 
   function selectedInstallProfileID() {
@@ -1229,9 +1229,9 @@
   }
 
   function transferTargetProfileID(mod: InstalledMod) {
-    const fallback = transferProfiles()[0]?.id ?? 0;
-    const target = normalizedProfileID(profileTransferTargets[mod.id], fallback);
-    return target === selectedProfile?.id ? fallback : target;
+    const defaultTarget = transferProfiles()[0]?.id ?? 0;
+    const target = normalizedProfileID(profileTransferTargets[mod.id], defaultTarget);
+    return target === selectedProfile?.id ? defaultTarget : target;
   }
 
   function profileOptionLabel(profile: Profile, defaultLabel = "default") {

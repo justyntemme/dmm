@@ -11,7 +11,7 @@ import (
 
 func TestX4ContentArchiveUsesArchiveFolderName(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "MyX4Mod", "content.xml"), `<content id="fallback_id" name="Example X4 Mod" version="1.2" />`)
+	writeFile(t, filepath.Join(root, "MyX4Mod", "content.xml"), `<content id="example_id" name="Example X4 Mod" version="1.2" />`)
 	writeFile(t, filepath.Join(root, "MyX4Mod", "assets", "example.dat"), "payload")
 
 	extension := gameext.MustCompileExtension(Extension())
@@ -31,7 +31,7 @@ func TestX4ContentArchiveUsesArchiveFolderName(t *testing.T) {
 
 func TestX4ContentArchiveUsesIndexFolderWhenRootContentIsLoose(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "content.xml"), `<content id="fallback_id" name="Loose X4 Mod" />`)
+	writeFile(t, filepath.Join(root, "content.xml"), `<content id="example_id" name="Loose X4 Mod" />`)
 	writeFile(t, filepath.Join(root, "index", "patch.xml"), `<diff><add><entry value="extensions/index_named_mod/content.xml" /></add></diff>`)
 	writeFile(t, filepath.Join(root, "libraries", "example.xml"), "payload")
 

@@ -2089,10 +2089,10 @@ func normalizedGameSort(value string) string {
 	}
 }
 
-func parseBoundedQueryInt(raw string, fallback, minValue, maxValue int) int {
+func parseBoundedQueryInt(raw string, defaultValue, minValue, maxValue int) int {
 	value, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		return fallback
+		return defaultValue
 	}
 	if value < minValue {
 		return minValue
@@ -2103,14 +2103,14 @@ func parseBoundedQueryInt(raw string, fallback, minValue, maxValue int) int {
 	return value
 }
 
-func parseQueryBoolDefault(raw string, fallback bool) bool {
+func parseQueryBoolDefault(raw string, defaultValue bool) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return fallback
+		return defaultValue
 	}
 	value, err := strconv.ParseBool(raw)
 	if err != nil {
-		return fallback
+		return defaultValue
 	}
 	return value
 }
@@ -8941,10 +8941,10 @@ func pluginFileBody(lines []string) string {
 	return body
 }
 
-func activationFileName(value, fallback string) string {
+func activationFileName(value, defaultName string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return fallback
+		return defaultName
 	}
 	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
 }

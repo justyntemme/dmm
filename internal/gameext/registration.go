@@ -592,9 +592,9 @@ func validateConflictPattern(pattern string) error {
 	return nil
 }
 
-func defaultString(value, fallback string) string {
+func defaultString(value, defaultValue string) string {
 	if strings.TrimSpace(value) == "" {
-		return fallback
+		return defaultValue
 	}
 	return value
 }

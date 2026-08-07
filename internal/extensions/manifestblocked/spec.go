@@ -142,10 +142,10 @@ func NexusResearchSources(appID, name, domain string) []sdk.SourceRef {
 	}
 }
 
-func defaultString(value, fallback string) string {
+func defaultString(value, defaultValue string) string {
 	value = strings.TrimSpace(value)
 	if value != "" {
 		return value
 	}
-	return fallback
+	return defaultValue
 }

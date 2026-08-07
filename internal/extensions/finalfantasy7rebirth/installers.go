@@ -698,7 +698,7 @@ func hasEnabledFileInRoot(files []string, rootPrefix string) bool {
 	return false
 }
 
-func archiveDerivedFolder(input installplan.BuildInput, fallback string) string {
+func archiveDerivedFolder(input installplan.BuildInput, defaultName string) string {
 	name := strings.TrimSpace(input.ArchiveName)
 	if name == "" {
 		name = strings.TrimSpace(filepath.Base(input.ExtractedRoot))
@@ -707,7 +707,7 @@ func archiveDerivedFolder(input installplan.BuildInput, fallback string) string 
 	name = strings.TrimSuffix(name, ".tar")
 	name = strings.TrimSuffix(name, "-installing")
 	name = strings.TrimSuffix(name, " installing")
-	return sanitizeSegment(firstNonEmpty(name, fallback))
+	return sanitizeSegment(firstNonEmpty(name, defaultName))
 }
 
 func firstNonEmpty(values ...string) string {

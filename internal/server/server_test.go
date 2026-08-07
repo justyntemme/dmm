@@ -3179,7 +3179,7 @@ func TestCapturedDownloadRetryDelayUsesRetryAfter(t *testing.T) {
 		t.Fatalf("clamped retry-after delay = %s", got)
 	}
 	if got := capturedDownloadRetryDelay(2, errors.New("temporary transport failure")); got != 500*time.Millisecond {
-		t.Fatalf("fallback retry delay = %s", got)
+		t.Fatalf("default retry delay = %s", got)
 	}
 }
 

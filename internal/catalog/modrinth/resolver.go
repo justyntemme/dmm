@@ -278,21 +278,21 @@ func (r Resolver) getJSON(ctx context.Context, requestPath string, params map[st
 }
 
 func primaryFile(files []modrinthFile) (modrinthFile, error) {
-	var fallback *modrinthFile
+	var firstCandidate *modrinthFile
 	for index := range files {
 		file := files[index]
 		if strings.TrimSpace(file.URL) == "" || strings.EqualFold(file.FileType, "signature") {
 			continue
 		}
-		if fallback == nil {
-			fallback = &files[index]
+		if firstCandidate == nil {
+			firstCandidate = &files[index]
 		}
 		if file.Primary {
 			return file, nil
 		}
 	}
-	if fallback != nil {
-		return *fallback, nil
+	if firstCandidate != nil {
+		return *firstCandidate, nil
 	}
 	return modrinthFile{}, errors.New("Modrinth version did not include a downloadable file")
 }

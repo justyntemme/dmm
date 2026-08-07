@@ -194,12 +194,12 @@ func firstExistingFile(gamePath string, rels []string) string {
 	return ""
 }
 
-func defaultString(value, fallback string) string {
+func defaultString(value, defaultValue string) string {
 	value = strings.TrimSpace(value)
 	if value != "" {
 		return value
 	}
-	return fallback
+	return defaultValue
 }
 
 func sources() []sdk.SourceRef {
