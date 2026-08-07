@@ -1,8 +1,12 @@
 package extensions
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergeneralszerohour"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
@@ -22,6 +26,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype"
@@ -30,6 +35,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spidermanmilesmorales"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/stacklands"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
@@ -39,7 +45,9 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/transportfever2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -47,9 +55,13 @@ import (
 
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
+		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(citizensleeper.Extension()),
+		gameext.MustCompileExtension(commandconquergeneralszerohour.Extension()),
+		gameext.MustCompileExtension(cultistsimulator.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
+		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
@@ -69,6 +81,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mewgenics.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
+		gameext.MustCompileExtension(plagueincevolved.Extension()),
 		gameext.MustCompileExtension(prototype.Extension()),
 		gameext.MustCompileExtension(prototype2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
@@ -79,13 +92,16 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
+		gameext.MustCompileExtension(stacklands.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
 		gameext.MustCompileExtension(totalwarrome2.Extension()),
 		gameext.MustCompileExtension(totalwarromeremastered.Extension()),
+		gameext.MustCompileExtension(transportfever2.Extension()),
 		gameext.MustCompileExtension(warno.Extension()),
+		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
 		gameext.MustCompileExtension(witcher3.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
 	}

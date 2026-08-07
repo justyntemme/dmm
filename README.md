@@ -12,7 +12,7 @@ MVP vertical slice in active testing:
 - User-level `nxm://` registration captures Nexus Mod Manager Download links from the Deck browser.
 - Svelte + Vite phone/tablet UI shows games, Action Center items, profile mods, profiles, advanced deployment tools, jobs, and settings.
 - SQLite persistence covers games, profiles, jobs, captured installs, installed profile mods, downloads, checksums, and deployment manifests.
-- Nexus API key configuration, URL parsing, download-link resolution, and archive download are implemented.
+- Nexus API key configuration, URL parsing, browser-generated `nxm://` download-link resolution, and archive download are implemented. For non-premium Nexus accounts, the primary install handoff is the controlled DMM browser: open the real Nexus mod page and click Nexus' Mod Manager Download/Vortex link so DMM receives the short-lived credential.
 - Captured URL parsing goes through a catalog resolver boundary so upstreams can plug in without changing the HTTP captured-install handlers.
 - URL-import providers currently include Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, mod.io, CurseForge, direct archive URLs, and local archive uploads. mod.io and CurseForge require user-provided API keys; ModDB stays deferred until a supported automated API/client path is verified.
 - Every installed mod carries a source/catalog identity so the phone/tablet UI and Decky UI can show source tags such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, and `Native`.
