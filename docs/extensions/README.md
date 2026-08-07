@@ -39,6 +39,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Marvel's Spider-Man: Miles Morales](games/spider-man-miles-morales.md)
 - [X4: Foundations](games/x4-foundations.md)
 - [Civilization VII](games/civilization-vii.md)
+- [Dwarf Fortress](games/dwarf-fortress.md)
 - [Portal 2](games/portal-2.md)
 - [Prototype](games/prototype.md)
 - [Prototype 2](games/prototype-2.md)
@@ -46,6 +47,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Star Wars Battlefront II](games/star-wars-battlefront-ii.md)
 - [Star Wars Jedi: Survivor](games/star-wars-jedi-survivor.md)
 - [Stellaris](games/stellaris.md)
+- [Tabletop Simulator](games/tabletop-simulator.md)
 
 ## Research Rule
 

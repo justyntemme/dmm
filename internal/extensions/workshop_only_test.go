@@ -3,7 +3,9 @@ package extensions_test
 import (
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
@@ -16,7 +18,9 @@ func TestInstalledWorkshopOnlyExtensionsRegisterNoNexusDomains(t *testing.T) {
 		appID string
 		ext   gameext.Extension
 	}{
+		{name: dwarffortress.ID, appID: dwarffortress.SteamAppID, ext: gameext.MustCompileExtension(dwarffortress.Extension())},
 		{name: nuclearoption.ID, appID: nuclearoption.SteamAppID, ext: gameext.MustCompileExtension(nuclearoption.Extension())},
+		{name: tabletopsimulator.ID, appID: tabletopsimulator.SteamAppID, ext: gameext.MustCompileExtension(tabletopsimulator.Extension())},
 		{name: totalwarpharaohdynasties.ID, appID: totalwarpharaohdynasties.SteamAppID, ext: gameext.MustCompileExtension(totalwarpharaohdynasties.Extension())},
 		{name: totalwarromeremastered.ID, appID: totalwarromeremastered.SteamAppID, ext: gameext.MustCompileExtension(totalwarromeremastered.Extension())},
 		{name: warno.ID, appID: warno.SteamAppID, ext: gameext.MustCompileExtension(warno.Extension())},
