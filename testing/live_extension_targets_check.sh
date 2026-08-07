@@ -150,6 +150,28 @@ for extension_id, (domain, caps) in installer_targets.items():
     require_domain(extension_id, domain)
     require_caps(extension_id, *caps)
 
+def require_launch_tool(extension_id, tool_id, executable_relative=None, arguments=None, default_primary=None):
+    capabilities = (extensions_by_id.get(extension_id) or {}).get("capabilities") or {}
+    tools = capabilities.get("launch_tools") or []
+    tool = next((item for item in tools if item.get("id") == tool_id), None)
+    if tool is None:
+        failures.append(f"{extension_id} missing launch tool {tool_id}: {tools}")
+        return
+    if executable_relative is not None and tool.get("executable_relative") != executable_relative:
+        failures.append(f"{extension_id} launch tool {tool_id} executable={tool.get('executable_relative')!r} want {executable_relative!r}")
+    if arguments is not None and tool.get("arguments") != arguments:
+        failures.append(f"{extension_id} launch tool {tool_id} arguments={tool.get('arguments')!r} want {arguments!r}")
+    if default_primary is not None and bool(tool.get("default_primary")) != bool(default_primary):
+        failures.append(f"{extension_id} launch tool {tool_id} default_primary={tool.get('default_primary')!r} want {default_primary!r}")
+
+require_launch_tool(
+    "starwarsbattlefront22017",
+    "starwarsbattlefront22017-frosty-launch",
+    executable_relative="FrostyModManager/FrostyModManager.exe",
+    arguments=["-launch default"],
+    default_primary=True,
+)
+
 research_targets = {
     "prototype": "prototype",
     "prototype2": "prototype2",
