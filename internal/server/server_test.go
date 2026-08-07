@@ -6320,6 +6320,52 @@ func TestAnnotateSteamWorkshopSupportUsesExtensionPolicy(t *testing.T) {
 	}
 }
 
+func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	games := []steam.Game{
+		{
+			AppID: fallout4.SteamAppID,
+			Name:  "Fallout 4",
+			Path:  filepath.Join(t.TempDir(), "Fallout 4"),
+			State: "needs_review",
+			Markers: []string{
+				"fallout script extender: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
+			},
+		},
+		{
+			AppID: fallout4.SteamAppID,
+			Name:  "Fallout 4 With Vortex",
+			Path:  filepath.Join(t.TempDir(), "Fallout 4"),
+			State: "needs_review",
+			Markers: []string{
+				"fallout script extender: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
+				"vortex deployment: /steam/steamapps/common/Fallout 4/vortex.deployment.json",
+			},
+		},
+		{
+			AppID: "999999",
+			Name:  "Unknown F4SE-shaped game",
+			Path:  filepath.Join(t.TempDir(), "Unknown"),
+			State: "needs_review",
+			Markers: []string{
+				"fallout script extender: /steam/steamapps/common/Unknown/f4se_loader.exe",
+			},
+		},
+	}
+
+	srv.annotateExtensionKnownExternalMarkers(games)
+
+	if games[0].State != "clean_candidate" || len(games[0].Markers) != 0 {
+		t.Fatalf("known Fallout launch marker still blocked game = %+v", games[0])
+	}
+	if games[1].State != "needs_review" || len(games[1].Markers) != 1 || !strings.Contains(games[1].Markers[0], "vortex deployment") {
+		t.Fatalf("vortex marker was not preserved = %+v", games[1])
+	}
+	if games[2].State != "needs_review" || len(games[2].Markers) != 1 {
+		t.Fatalf("unknown app marker should remain blocking = %+v", games[2])
+	}
+}
+
 func TestBuildGameDeployPlanAllowsEmptyProfileToRemoveCurrentDeployment(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

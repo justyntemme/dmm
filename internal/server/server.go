@@ -2134,6 +2134,7 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.detectGameVersions(r.Context(), games)
+	s.annotateExtensionKnownExternalMarkers(games)
 	s.annotateSteamWorkshopSupport(games)
 	if err := s.db.SyncGames(r.Context(), games); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -2178,6 +2179,89 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		LoadOrder:           len(extension.LoadOrders) > 0 || len(extension.Merges) > 0,
 		GameVersions:        len(extension.GameVersionProviders) > 0,
 	}
+}
+
+func (s *Server) annotateExtensionKnownExternalMarkers(games []steam.Game) {
+	for i := range games {
+		game := &games[i]
+		if len(game.Markers) == 0 {
+			continue
+		}
+		known := extensionKnownLaunchToolMarkerBasenames(s.games, *game)
+		if len(known) == 0 {
+			continue
+		}
+		filtered := make([]string, 0, len(game.Markers))
+		removed := 0
+		for _, marker := range game.Markers {
+			base := externalMarkerBase(marker)
+			if base != "" {
+				if _, ok := known[strings.ToLower(base)]; ok {
+					removed++
+					continue
+				}
+			}
+			filtered = append(filtered, marker)
+		}
+		if removed == 0 {
+			continue
+		}
+		game.Markers = filtered
+		if len(game.Markers) == 0 && game.State == "needs_review" {
+			game.State = "clean_candidate"
+		}
+		s.logger.Info("extension-known external markers ignored", "app_id", game.AppID, "ignored", removed, "remaining", len(game.Markers))
+	}
+}
+
+func extensionKnownLaunchToolMarkerBasenames(registry games.Registry, game steam.Game) map[string]struct{} {
+	extension, ok := registry.ExtensionForSteamApp(game.AppID)
+	if !ok {
+		return nil
+	}
+	known := map[string]struct{}{}
+	add := func(rel string) {
+		rel = filepath.ToSlash(strings.TrimSpace(rel))
+		if rel == "" || rel == "." {
+			return
+		}
+		base := strings.ToLower(filepath.Base(filepath.FromSlash(rel)))
+		if base == "" || base == "." || base == string(filepath.Separator) {
+			return
+		}
+		known[base] = struct{}{}
+	}
+	for _, tool := range extension.LaunchTools {
+		resolved := registry.ResolveLaunchToolForSteamApp(game.AppID, game.Path, tool)
+		add(resolved.ExecutableRelative)
+		for _, rel := range resolved.RequiredFiles {
+			add(rel)
+		}
+		for _, variant := range tool.Variants {
+			add(variant.ExecutableRelative)
+			for _, rel := range variant.RequiredFiles {
+				add(rel)
+			}
+		}
+	}
+	if len(known) == 0 {
+		return nil
+	}
+	return known
+}
+
+func externalMarkerBase(marker string) string {
+	marker = strings.TrimSpace(marker)
+	if marker == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(marker, ": "); idx >= 0 {
+		marker = strings.TrimSpace(marker[idx+2:])
+	}
+	if marker == "" {
+		return ""
+	}
+	return filepath.Base(marker)
 }
 
 func (s *Server) annotateSteamWorkshopSupport(games []steam.Game) {
