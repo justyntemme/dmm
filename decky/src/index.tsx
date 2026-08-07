@@ -2615,7 +2615,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
 
 function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; profileID?: number; closeModal: () => void }) {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<NexusSearchSort>("downloads");
+  const [sort, setSort] = useState<NexusSearchSort>("updated");
   const [timeWindow, setTimeWindow] = useState<NexusTimeWindow>("all");
   const [vortexOnly, setVortexOnly] = useState(true);
   const [mods, setMods] = useState<NexusModResult[]>([]);
@@ -2734,7 +2734,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   }
 
   useEffect(() => {
-    void searchMods("downloads", "all", 0, false);
+    void searchMods("updated", "all", 0, false);
   }, []);
 
   return (

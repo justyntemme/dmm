@@ -512,7 +512,7 @@
   let resolvedCapture = "";
   let bulkCaptureMessage = "";
   let nexusSearchQuery = "";
-  let nexusSearchSort: NexusSearchSort = "downloads";
+  let nexusSearchSort: NexusSearchSort = "updated";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
   let nexusSearchVortexOnly = true;
   let nexusSearchResults: NexusModResult[] = [];
