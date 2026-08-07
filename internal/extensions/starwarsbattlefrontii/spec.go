@@ -79,6 +79,11 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: filepath.ToSlash(filepath.Join(frostyRoot, frostyExecutable)),
 		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(frostyRoot, frostyExecutable))},
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "did-deploy",
+		Name:    "Finish Battlefront II mods in Frosty reminder",
+		Handler: didDeployFrostyReminder,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -98,6 +103,43 @@ func checkFrostyFiles(ctx context.Context, gamePath string) []string {
 		return []string{filepath.ToSlash(path)}
 	}
 	return nil
+}
+
+func didDeployFrostyReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !deployIncludesFBMod(input) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{
+		"Open Frosty Mod Manager and finish importing deployed Battlefront II .fbmod files before launching the game. Steam/Epic users also need DatapathFix configured for mods to load.",
+	}}, nil
+}
+
+func deployIncludesFBMod(input sdk.EventHandlerInput) bool {
+	for _, mod := range input.Mods {
+		if mod.Enabled && mod.ModType == fbmodModType {
+			return true
+		}
+	}
+	for _, mapping := range input.Mappings {
+		if targetInFBModRoot(mapping.TargetRelative) {
+			return true
+		}
+	}
+	for _, file := range input.ManagedFiles {
+		if targetInFBModRoot(file.TargetPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func targetInFBModRoot(target string) bool {
+	target = filepath.ToSlash(strings.TrimSpace(target))
+	root := filepath.ToSlash(fbmodRoot)
+	return target == root || strings.Contains(target, root+"/")
 }
 
 func sources() []sdk.SourceRef {
