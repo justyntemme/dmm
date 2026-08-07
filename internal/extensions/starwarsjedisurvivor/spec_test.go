@@ -53,7 +53,7 @@ func TestPakInstallerCopiesSinglePakFolderIntoModsFolder(t *testing.T) {
 	assertNoTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/ignored.txt")
 }
 
-func TestPakInstallerBlocksMultiplePakChoiceArchives(t *testing.T) {
+func TestPakInstallerRequiresMultiplePakChoiceArchives(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.pak"), "pak")
 	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.pak"), "pak")
@@ -69,6 +69,13 @@ func TestPakInstallerBlocksMultiplePakChoiceArchives(t *testing.T) {
 	if choice.Kind != "archive-file-choice" || len(choice.Installer.Steps) != 1 {
 		t.Fatalf("choice = %+v", choice)
 	}
+	group := choice.Installer.Steps[0].Groups[0]
+	if group.Type != "SelectAtLeastOne" {
+		t.Fatalf("group type = %q", group.Type)
+	}
+	if got := choice.DefaultSelections["starwarsjedi2-pak-choice"]; len(got) != 1 || got[0] != "pak:Wrapper/OptionA.pak" {
+		t.Fatalf("default selections = %+v", choice.DefaultSelections)
+	}
 }
 
 func TestPakInstallerBuildsSelectedMultiplePakChoice(t *testing.T) {
@@ -77,6 +84,7 @@ func TestPakInstallerBuildsSelectedMultiplePakChoice(t *testing.T) {
 	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.sig"), "sig")
 	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.pak"), "pak")
 	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.sig"), "sig")
+	writeFile(t, filepath.Join(root, "Extras", "OptionB_Readme.txt"), "readme")
 
 	extension := gameext.MustCompileExtension(starwarsjedisurvivor.Extension())
 	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathAndSelections(starwarsjedisurvivor.SteamAppID, root, "", map[string][]string{
@@ -85,9 +93,30 @@ func TestPakInstallerBuildsSelectedMultiplePakChoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionB.pak")
-	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionB.sig")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionB.pak")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionB.sig")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Extras/OptionB_Readme.txt")
 	assertNoTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionA.pak")
+}
+
+func TestPakInstallerBuildsAllSelectedMultiplePakChoices(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.pak"), "pak")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.sig"), "sig")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.pak"), "pak")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.sig"), "sig")
+
+	extension := gameext.MustCompileExtension(starwarsjedisurvivor.Extension())
+	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathAndSelections(starwarsjedisurvivor.SteamAppID, root, "", map[string][]string{
+		"starwarsjedi2-pak-choice": {"pak:Wrapper/OptionA.pak", "pak:Wrapper/OptionB.pak"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionA.pak")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionA.sig")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionB.pak")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/Wrapper/OptionB.sig")
 }
 
 func TestR457LoaderInstallerPreservesGameRootRelativePaths(t *testing.T) {

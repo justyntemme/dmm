@@ -3416,10 +3416,10 @@ func TestGenericInstallerChoiceCapturedInstallAppliesSelectedPak(t *testing.T) {
 	if !strings.Contains(mods[0].ManifestJSON, `"mod_type":"starwarsjedi2-pak-modtype"`) {
 		t.Fatalf("manifest = %s", mods[0].ManifestJSON)
 	}
-	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "OptionB.pak")); err != nil {
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "Wrapper", "OptionB.pak")); err != nil {
 		t.Fatalf("selected pak was not staged: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "OptionA.pak")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "Wrapper", "OptionA.pak")); !os.IsNotExist(err) {
 		t.Fatalf("unselected pak was staged: %v", err)
 	}
 }

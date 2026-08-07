@@ -31,14 +31,13 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	if len(paks) == 0 {
 		return installplan.Plan{}, installplan.Unsupported("Star Wars Jedi: Survivor archive does not contain a supported .pak file")
 	}
-	selectedFromChoice := false
+	selectedFromChoice := len(paks) > 1
 	if len(paks) > 1 {
-		selectedPak, ok := selectedPakChoice(input.Selections, paks)
+		selectedPaks, ok := selectedPakChoices(input.Selections, paks)
 		if !ok {
 			return installplan.Plan{}, pakChoiceRequired(paks)
 		}
-		paks = []string{selectedPak}
-		selectedFromChoice = true
+		paks = selectedPaks
 	}
 	rootDir := filepath.ToSlash(filepath.Dir(paks[0]))
 	if rootDir == "." {
@@ -46,41 +45,64 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	}
 	builder := newPlanBuilder(input, pakModType)
 	for _, file := range files {
-		if !sameArchiveFolder(file, rootDir) {
-			continue
+		targetRel := filepath.Base(file)
+		if selectedFromChoice {
+			if !sameVortexRelatedPakAsset(file, paks) {
+				continue
+			}
+			targetRel = file
+		} else {
+			if !sameArchiveFolder(file, rootDir) {
+				continue
+			}
 		}
-		if selectedFromChoice && !sameLogicalPakFile(file, paks[0]) {
-			continue
-		}
-		if err := builder.add(file, filepath.Base(file)); err != nil {
+		if err := builder.add(file, targetRel); err != nil {
 			return installplan.Plan{}, err
 		}
 	}
 	builder.metadata = append(builder.metadata, installplan.ModMetadata{
 		Kind:                       "starwarsjedi2-pak-files",
-		AdditionalLogicalFileNames: []string{filepath.Base(paks[0])},
+		AdditionalLogicalFileNames: pakBaseNames(paks),
 	})
-	return builder.plan(paks[0], "Vortex installer starwarsjedi2-mod matched a single Star Wars Jedi: Survivor .pak archive")
+	return builder.plan(paks[0], "Vortex installer starwarsjedi2-mod matched a Star Wars Jedi: Survivor .pak archive")
 }
 
-func selectedPakChoice(selections map[string][]string, paks []string) (string, bool) {
+func selectedPakChoices(selections map[string][]string, paks []string) ([]string, bool) {
 	selected := selections[pakChoiceGroupID]
-	if len(selected) != 1 {
-		return "", false
+	if len(selected) == 0 {
+		return nil, false
 	}
 	allowed := map[string]string{}
 	for _, pak := range paks {
 		allowed[pakChoiceID(pak)] = pak
 	}
-	pak, ok := allowed[selected[0]]
-	return pak, ok
+	out := make([]string, 0, len(selected))
+	seen := map[string]struct{}{}
+	for _, id := range selected {
+		pak, ok := allowed[id]
+		if !ok {
+			return nil, false
+		}
+		if _, exists := seen[pak]; exists {
+			continue
+		}
+		seen[pak] = struct{}{}
+		out = append(out, pak)
+	}
+	sort.Strings(out)
+	return out, len(out) > 0
 }
 
 func pakChoiceRequired(paks []string) error {
 	options := make([]installplan.ChoiceOption, 0, len(paks))
+	defaults := map[string][]string{}
 	for _, pak := range paks {
+		id := pakChoiceID(pak)
+		if len(defaults[pakChoiceGroupID]) == 0 {
+			defaults[pakChoiceGroupID] = []string{id}
+		}
 		options = append(options, installplan.ChoiceOption{
-			ID:            pakChoiceID(pak),
+			ID:            id,
 			Name:          filepath.Base(pak),
 			Description:   pak,
 			Type:          "Optional",
@@ -97,13 +119,13 @@ func pakChoiceRequired(paks []string) error {
 				Name: "Choose PAK",
 				Groups: []installplan.ChoiceGroup{{
 					ID:      pakChoiceGroupID,
-					Name:    "PAK file",
-					Type:    "SelectExactlyOne",
+					Name:    "PAK files",
+					Type:    "SelectAtLeastOne",
 					Plugins: options,
 				}},
 			}},
 		},
-		nil,
+		defaults,
 	)
 }
 
@@ -213,12 +235,24 @@ func sameArchiveFolder(file, rootDir string) bool {
 	return dir == rootDir
 }
 
-func sameLogicalPakFile(file, pak string) bool {
-	fileBase := filepath.Base(file)
-	pakBase := filepath.Base(pak)
-	fileStem := strings.TrimSuffix(fileBase, filepath.Ext(fileBase))
-	pakStem := strings.TrimSuffix(pakBase, filepath.Ext(pakBase))
-	return strings.EqualFold(fileStem, pakStem)
+func sameVortexRelatedPakAsset(file string, paks []string) bool {
+	fileBase := strings.ToLower(filepath.Base(file))
+	for _, pak := range paks {
+		pakBase := strings.TrimSuffix(strings.ToLower(filepath.Base(pak)), ".pak")
+		if pakBase != "" && strings.HasPrefix(fileBase, pakBase) {
+			return true
+		}
+	}
+	return false
+}
+
+func pakBaseNames(paks []string) []string {
+	out := make([]string, 0, len(paks))
+	for _, pak := range paks {
+		out = append(out, filepath.Base(pak))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func listFiles(root string) ([]string, error) {
