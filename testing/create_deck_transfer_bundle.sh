@@ -42,6 +42,7 @@ FILES=(
   "${ROOT_DIR}/testing/live_profile_toggle_check.sh"
   "${ROOT_DIR}/testing/live_stardew_mod_files_check.sh"
   "${ROOT_DIR}/testing/live_web_asset_check.sh"
+  "${ROOT_DIR}/testing/live_nexus_browser_handoff_check.sh"
   "${ROOT_DIR}/testing/live_installed_package_check.sh"
   "${ROOT_DIR}/testing/live_post_install_check.sh"
   "${ROOT_DIR}/testing/mvp_audit.sh"
@@ -112,6 +113,7 @@ Or run the individual checks:
   ~/.testing/mvp_live_check.sh
   ~/.testing/live_profile_toggle_check.sh
   ~/.testing/live_stardew_mod_files_check.sh
+  ~/.testing/live_nexus_browser_handoff_check.sh
 
 For auto-install validation, start the server from Decky, run:
 

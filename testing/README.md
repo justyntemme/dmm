@@ -304,6 +304,14 @@ To verify the running backend can serve the phone/tablet Svelte UI and every has
 ~/.testing/live_web_asset_check.sh
 ```
 
+To verify that pasted/direct Nexus HTTPS install attempts follow the browser-first handoff flow instead of creating failed install jobs, run:
+
+```sh
+~/.testing/live_nexus_browser_handoff_check.sh
+```
+
+The check posts a known Nexus mod-file URL to the captured-install API, expects a completed `browser_required` handoff job, and verifies the job message tells the user to open the real Nexus page and click `Mod Manager Download`. It does not download the archive or replace the real browser-generated `nxm://` flow.
+
 After installing and deploying a fresh test mod, run the stricter live acceptance check:
 
 ```sh
