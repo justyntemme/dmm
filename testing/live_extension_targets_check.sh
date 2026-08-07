@@ -114,6 +114,7 @@ installer_targets = {
     "civilizationvii": ("civilizationvii", ("installers", "target_roots", "game_versions")),
     "hollowknight": ("hollowknight", ("installers", "runtime_requirements", "game_versions")),
     "discoelysium": ("discoelysium", ("installers", "runtime_requirements", "game_versions")),
+    "citizensleeper": ("citizensleeper", ("installers", "runtime_requirements", "game_versions")),
     "kenshi": ("kenshi", ("installers", "game_versions", "steam_workshop")),
     "rimworld": ("rimworld", ("installers", "game_versions", "steam_workshop")),
     "x4foundations": ("x4foundations", ("installers", "target_roots", "game_versions", "steam_workshop")),
