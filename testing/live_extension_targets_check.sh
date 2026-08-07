@@ -21,6 +21,13 @@ extensions_by_id = {str(extension.get("id", "")): extension for extension in ext
 
 failures = []
 
+hidden_tool_apps = {
+    "2346660": "DFHack - Dwarf Fortress Modding Engine",
+}
+for app_id, name in hidden_tool_apps.items():
+    if app_id in games_by_app:
+        failures.append(f"{name} ({app_id}) should be filtered as a helper/tool app")
+
 workshop_only = {
     "2168680": "nuclearoption",
     "2951630": "totalwarpharaohdynasties",
