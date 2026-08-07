@@ -50,6 +50,9 @@ section "Testing script syntax"
     testing/mvp_live_check.sh \
     testing/live_auto_install_check.sh \
     testing/live_profile_toggle_check.sh \
+    testing/live_profile_transfer_check.sh \
+    testing/live_profile_seed_check.sh \
+    testing/live_rollback_check.sh \
     testing/live_stardew_mod_files_check.sh \
     testing/live_web_asset_check.sh \
     testing/live_nexus_browser_handoff_check.sh \
@@ -83,6 +86,9 @@ section "Deck testing artifact coverage"
     mvp_live_check.sh \
     live_auto_install_check.sh \
     live_profile_toggle_check.sh \
+    live_profile_transfer_check.sh \
+    live_profile_seed_check.sh \
+    live_rollback_check.sh \
     live_stardew_mod_files_check.sh \
     live_web_asset_check.sh \
     live_nexus_browser_handoff_check.sh \

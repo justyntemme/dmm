@@ -40,6 +40,9 @@ FILES=(
   "${ROOT_DIR}/testing/mvp_live_check.sh"
   "${ROOT_DIR}/testing/live_auto_install_check.sh"
   "${ROOT_DIR}/testing/live_profile_toggle_check.sh"
+  "${ROOT_DIR}/testing/live_profile_transfer_check.sh"
+  "${ROOT_DIR}/testing/live_profile_seed_check.sh"
+  "${ROOT_DIR}/testing/live_rollback_check.sh"
   "${ROOT_DIR}/testing/live_stardew_mod_files_check.sh"
   "${ROOT_DIR}/testing/live_web_asset_check.sh"
   "${ROOT_DIR}/testing/live_nexus_browser_handoff_check.sh"
@@ -115,6 +118,9 @@ Or run the individual checks:
   ~/.testing/live_installed_package_check.sh
   ~/.testing/mvp_live_check.sh
   ~/.testing/live_profile_toggle_check.sh
+  ~/.testing/live_profile_transfer_check.sh
+  ~/.testing/live_profile_seed_check.sh
+  ~/.testing/live_rollback_check.sh
   ~/.testing/live_stardew_mod_files_check.sh
   ~/.testing/live_nexus_browser_handoff_check.sh
   ~/.testing/live_extension_coverage_check.sh

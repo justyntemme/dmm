@@ -368,6 +368,8 @@ To verify the public rollback/restore endpoint against the active deployment:
 ~/.testing/live_rollback_check.sh
 ```
 
+These profile-transfer, profile-seed, and rollback checks are included in the Deck transfer bundle because `live_post_install_check.sh` calls them as part of the normal package validation path.
+
 The script requires restore availability by default, calls the restore endpoint, verifies the returned rollback job completed without issues, and confirms the deployment manifest remains active afterward. Set `REQUIRE_RESTORE_AVAILABLE=0` only when debugging a game without an active deployment.
 
 Before launching Stardew, verify that DMM-managed SMAPI mod files are actually visible in the game folder:
