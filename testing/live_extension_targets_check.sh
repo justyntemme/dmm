@@ -61,6 +61,7 @@ required_extensions = {
     "witcher3": "292030",
     "finalfantasy7rebirth": "2909400",
     "civilizationvii": "1295660",
+    "portal2": "620",
 }
 for extension_id, app_id in required_extensions.items():
     summary = extensions_by_id.get(extension_id)

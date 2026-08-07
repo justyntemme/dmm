@@ -7,6 +7,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
@@ -29,6 +30,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
+		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),

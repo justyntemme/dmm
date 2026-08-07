@@ -33,6 +33,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Spyro Reignited Trilogy](games/spyro-reignited-trilogy.md)
 - [X4: Foundations](games/x4-foundations.md)
 - [Civilization VII](games/civilization-vii.md)
+- [Portal 2](games/portal-2.md)
 - [Project Zomboid](games/project-zomboid.md)
 - [Stellaris](games/stellaris.md)
 
