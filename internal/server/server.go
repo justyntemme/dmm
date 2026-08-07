@@ -102,6 +102,7 @@ var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:k
 
 const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
+	jobTypeExtensionNotice     = "extension-notice"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
@@ -1184,6 +1185,33 @@ func gameJobPayload(appID string) jobs.JobPayload {
 		return nil
 	}
 	return jobs.JobPayload{"app_id": appID}
+}
+
+func extensionNoticeJobPayload(appID, event, source, message string) jobs.JobPayload {
+	payload := gameJobPayload(appID)
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["catalog"] = "extension"
+	payload["event"] = strings.TrimSpace(event)
+	payload["source"] = strings.TrimSpace(source)
+	payload["notice_key"] = extensionNoticeKey(appID, event, message)
+	for key, value := range payload {
+		if strings.TrimSpace(value) == "" {
+			delete(payload, key)
+		}
+	}
+	return payload
+}
+
+func extensionNoticeKey(appID, event, message string) string {
+	normalized := strings.Join([]string{
+		strings.TrimSpace(appID),
+		strings.TrimSpace(event),
+		strings.TrimSpace(message),
+	}, "\x00")
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:12])
 }
 
 func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.ResolvedDownload) jobs.JobPayload {
@@ -8428,10 +8456,56 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 			s.logger.Info("extension deployment event message", "app_id", appID, "event", event, "message", message)
 		}
 	}
+	s.queueExtensionNoticeJobs(appID, event, source, game.Name, result.Messages)
 	if len(result.Mappings) > 0 {
 		s.logger.Warn("extension deployment event returned ignored post-event mappings", "app_id", appID, "event", event, "mappings", len(result.Mappings))
 	}
 	return nil
+}
+
+func (s *Server) queueExtensionNoticeJobs(appID, event, source, gameName string, messages []string) {
+	appID = strings.TrimSpace(appID)
+	event = strings.TrimSpace(event)
+	if appID == "" || event == "" || len(messages) == 0 {
+		return
+	}
+	titleName := strings.TrimSpace(gameName)
+	if titleName == "" {
+		titleName = appID
+	}
+	for _, message := range messages {
+		message = strings.TrimSpace(message)
+		if message == "" {
+			continue
+		}
+		payload := extensionNoticeJobPayload(appID, event, source, message)
+		key := payload["notice_key"]
+		if existing, ok := s.findActiveExtensionNoticeJob(key); ok {
+			updated, _ := s.jobs.Wait(existing.ID, message)
+			s.logger.Info("extension notice refreshed", "app_id", appID, "event", event, "job_id", updated.ID, "notice_key", key)
+			continue
+		}
+		job := s.jobs.CreateWithPayload(jobTypeExtensionNotice, "Extension notice: "+titleName, payload)
+		job, _ = s.jobs.Wait(job.ID, message)
+		s.logger.Info("extension notice queued", "app_id", appID, "event", event, "job_id", job.ID, "notice_key", key)
+	}
+}
+
+func (s *Server) findActiveExtensionNoticeJob(noticeKey string) (jobs.Job, bool) {
+	noticeKey = strings.TrimSpace(noticeKey)
+	if noticeKey == "" {
+		return jobs.Job{}, false
+	}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeExtensionNotice || strings.TrimSpace(job.Payload["notice_key"]) != noticeKey {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
 }
 
 func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod {

@@ -7662,6 +7662,33 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	if string(body) != "enabled=true\n" {
 		t.Fatalf("generated file = %q", string(body))
 	}
+	noticeCount := 0
+	for _, job := range srv.jobs.List() {
+		if job.Type != jobTypeExtensionNotice {
+			continue
+		}
+		noticeCount++
+		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" {
+			t.Fatalf("extension notice job = %+v", job)
+		}
+		if !strings.Contains(job.Message, "observed deploy") {
+			t.Fatalf("extension notice message = %q", job.Message)
+		}
+	}
+	if noticeCount != 1 {
+		t.Fatalf("extension notice count = %d", noticeCount)
+	}
+
+	srv.queueExtensionNoticeJobs(appID, "did-deploy", "manual", "Hook Game", []string{"observed deploy"})
+	noticeCount = 0
+	for _, job := range srv.jobs.List() {
+		if job.Type == jobTypeExtensionNotice {
+			noticeCount++
+		}
+	}
+	if noticeCount != 1 {
+		t.Fatalf("extension notice count after duplicate deploy = %d", noticeCount)
+	}
 }
 
 func TestDeployReturnsPendingDeckyLaunchAction(t *testing.T) {

@@ -1,12 +1,14 @@
 package ghostreconbreakpoint_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -30,6 +32,9 @@ func TestExtensionRegistersSourceBackedInstallers(t *testing.T) {
 	}
 	if len(summary.Capabilities.ConflictIgnores) != 1 || len(summary.Capabilities.DeployIgnores) != 1 {
 		t.Fatalf("ignore capabilities = %+v", summary.Capabilities)
+	}
+	if len(summary.Capabilities.EventHandlers) != 1 {
+		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
 }
 
@@ -141,6 +146,26 @@ func TestPlannerLetsFOMODArchivesUseChoiceInstaller(t *testing.T) {
 	var unsupported installplan.UnsupportedError
 	if !errors.As(err, &unsupported) || unsupported.Reason != "no Vortex installer metadata matched this archive" {
 		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestDidDeployReminderQueuesAnvilToolkitMessage(t *testing.T) {
+	result, err := registry().RunEventHandlers(context.Background(), ghostreconbreakpoint.SteamAppID, "did-deploy", gameext.EventHandlerInput{
+		ManagedFiles: []deploy.AppliedFile{{TargetPath: "Extracted/DataPC_patch_01.forge/asset.data"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "Run AnvilToolkit") {
+		t.Fatalf("messages = %+v", result.Messages)
+	}
+
+	empty, err := registry().RunEventHandlers(context.Background(), ghostreconbreakpoint.SteamAppID, "did-deploy", gameext.EventHandlerInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.Messages) != 0 {
+		t.Fatalf("empty deploy messages = %+v", empty.Messages)
 	}
 }
 

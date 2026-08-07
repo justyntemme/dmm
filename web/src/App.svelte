@@ -613,7 +613,7 @@
     installTargetProfileID = String(selectedProfile?.id ?? profiles[0].id);
   }
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
-  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type) && !["completed", "canceled"].includes(job.status));
+  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
   $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
   $: actionSourceOptions = sourceOptionsForActions(actionItems, actionCenterCandidates);
   $: visibleActionItems = filterJobsBySource(actionItems, actionSourceFilter);
@@ -632,7 +632,7 @@
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "captured-install") return actionMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["installer-choice", "steam-workshop-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "steam-workshop-action", "extension-notice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: manageableGameCount = games.filter(gameManageReady).length;
@@ -997,7 +997,7 @@
   }
 
   function isActionJob(job: Job) {
-    return ["captured-install", "installer-choice", "steam-workshop-action"].includes(job.type);
+    return ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type);
   }
 
   function eventMatchesSelectedGame(event: DomainEvent) {
@@ -2704,6 +2704,10 @@
     return !["completed", "failed", "canceled"].includes(job.status);
   }
 
+  function jobCancelLabel(job: Job) {
+    return job.type === "extension-notice" ? "Dismiss" : "Cancel";
+  }
+
   function getDeployableActions(plan: DeployPlan | null) {
     return plan?.actions.filter((action) => action.operation !== "keep" && action.operation !== "skip") ?? [];
   }
@@ -2969,6 +2973,7 @@
 
   function sourceLabel(catalog: string | undefined) {
     const source = (catalog ?? "").trim().toLowerCase();
+    if (source === "extension") return "Extension";
     if (source === "nexus") return "Nexus";
     if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
     if (source === "thunderstore") return "Thunderstore";
@@ -2986,6 +2991,7 @@
 
   function sourceClass(catalog: string | undefined) {
     const source = (catalog ?? "").trim().toLowerCase().replace(/_/g, "-");
+    if (source === "extension") return "source-extension";
     if (source === "nexus") return "source-nexus";
     if (source === "steam-workshop" || source === "workshop") return "source-workshop";
     if (source === "thunderstore") return "source-thunderstore";
@@ -3091,6 +3097,9 @@
   }
 
   function actionNextStep(action: Job) {
+    if (action.type === "extension-notice") {
+      return "Review this extension note before launching the game. Dismiss it when the manual step is handled or not needed.";
+    }
     if (action.type === "steam-workshop-action") {
       if (action.status === "waiting" || action.status === "queued") return "Waiting for Decky to apply this Steam Workshop change through Steam.";
       if (action.status === "running") return "Decky is applying this Steam Workshop change through Steam.";
@@ -3113,6 +3122,7 @@
   }
 
   function actionStatusLabel(action: Job) {
+    if (action.type === "extension-notice" && action.status === "waiting") return "Needs review";
     if (action.type === "steam-workshop-action" && (action.status === "waiting" || action.status === "queued")) return "Waiting for Decky";
     if (action.type === "installer-choice" && action.status === "waiting") return "Needs choices";
     if (action.status === "waiting") return "Ready to install";
@@ -3125,6 +3135,7 @@
   function actionSource(action: Job) {
     if (action.source_tag) return action.source_tag;
     if (action.catalog) return action.catalog;
+    if (action.type === "extension-notice") return "extension";
     if (action.type === "steam-workshop-action") return "steam_workshop";
     return action.payload?.catalog;
   }
@@ -3355,7 +3366,7 @@
 	                      <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
 	                    {/if}
 	                    {#if canCancelJob(action)}
-	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>Cancel</button>
+	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>
 	                    {/if}
 	                  </div>
 	                </article>
@@ -3447,7 +3458,7 @@
 	                  <div class="job-actions">
 	                    <span>{job.status}</span>
 	                    {#if canCancelJob(job)}
-	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)} disabled={isJobBusy(job)}>Cancel</button>
+	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)} disabled={isJobBusy(job)}>{jobCancelLabel(job)}</button>
 	                    {/if}
 	                  </div>
 	                </article>
@@ -4190,7 +4201,7 @@
                         <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
                       {/if}
                       {#if canCancelJob(action)}
-                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>Cancel</button>
+                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>
                       {/if}
                   </div>
                 </article>

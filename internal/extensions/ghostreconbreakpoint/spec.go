@@ -137,6 +137,11 @@ func Register(r sdk.Registrar) {
 		Name:     "Ghost Recon Breakpoint executable marker",
 		Provider: gameVersion,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "did-deploy",
+		Name:    "Run AnvilToolkit repack reminder",
+		Handler: didDeployAnvilToolkitReminder,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -313,6 +318,18 @@ func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersi
 		}
 	}
 	return sdk.GameVersionResult{}, os.ErrNotExist
+}
+
+func didDeployAnvilToolkitReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(input.ManagedFiles) == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{
+		"Run AnvilToolkit to repack Ghost Recon Breakpoint .forge files when this mod requires Anvil data repacking. Check the Nexus mod page for which .forge file to unpack and repack.",
+	}}, nil
 }
 
 func sources() []sdk.SourceRef {

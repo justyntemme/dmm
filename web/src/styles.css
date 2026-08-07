@@ -1176,6 +1176,12 @@ h2 {
   background: #18181b;
 }
 
+.source-extension {
+  border-color: #0f766e;
+  color: #ccfbf1;
+  background: #042f2e;
+}
+
 .source-direct,
 .source-local,
 .source-native,

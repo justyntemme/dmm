@@ -818,6 +818,7 @@ function deckyCompositeRowStyle(focused: boolean, active = false): CSSProperties
 
 function sourceLabel(catalog?: string) {
   const source = (catalog ?? "").trim().toLowerCase();
+  if (source === "extension") return "Extension";
   if (source === "nexus") return "Nexus";
   if (source === "steam_workshop" || source === "steam-workshop" || source === "workshop") return "Steam Workshop";
   if (source === "thunderstore") return "Thunderstore";
@@ -865,6 +866,7 @@ function deckySourcePillStyle(catalog?: string): CSSProperties {
     moddb: { border: "#ca8a04", color: "#fef3c7", background: "#422006" },
     github: { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     "github-releases": { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
+    extension: { border: "#0f766e", color: "#ccfbf1", background: "#042f2e" },
     direct: { border: "#475569", color: "#cbd5e1", background: "#1e293b" },
     local: { border: "#475569", color: "#cbd5e1", background: "#1e293b" },
     native: { border: "#475569", color: "#cbd5e1", background: "#1e293b" }
@@ -985,6 +987,7 @@ function jobToastTitle(job: Job): string {
   if (job.type === "purge") return "DMM purge";
   if (job.type === "repair") return "DMM repair";
   if (job.type === "recover-downloads") return "DMM recovery";
+  if (job.type === "extension-notice") return "DMM extension notice";
   return "Decky Mod Manager";
 }
 
@@ -1698,7 +1701,7 @@ async function handleDeckyBrowserOpenEvent(event: DomainEvent) {
 }
 
 function isNotifiableJob(job: Job) {
-  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type);
+  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action", "extension-notice"].includes(job.type);
 }
 
 function isJob(value: unknown): value is Job {
