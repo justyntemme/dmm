@@ -331,6 +331,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/catalogs", s.handleCatalogs)
+	mux.HandleFunc("POST /api/catalogs/resolve", s.handleResolveCatalogURL)
 	mux.HandleFunc("POST /api/nexus/validate", s.handleValidateNexus)
 	mux.HandleFunc("PUT /api/settings/nexus", s.handleUpdateNexusSettings)
 	mux.HandleFunc("PUT /api/settings/security", s.handleUpdateSecuritySettings)
@@ -400,7 +401,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/captured-installs", s.handleClearCapturedInstalls)
 	mux.HandleFunc("POST /api/captured-installs/bulk", s.handleBulkCapturedInstall)
-	mux.HandleFunc("POST /api/captured-installs/resolve", s.handleResolveCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs", s.handleCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/install", s.handleInstallCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/retry", s.handleRetryCapturedInstall)
@@ -6351,7 +6351,7 @@ func localArchiveFileID(checksum string) string {
 	return checksum
 }
 
-func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResolveCatalogURL(w http.ResponseWriter, r *http.Request) {
 	var req capturedInstallURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -6368,42 +6368,32 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		Source:     req.Source,
 	})
 	if err != nil {
-		s.logger.Warn("captured install resolve failed", "error", err, "source", req.Source)
+		s.logger.Warn("catalog URL resolve failed", "error", err, "source", req.Source)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	job := s.jobs.CreateWithPayload("captured-install-resolve", "Resolve mod URL", capturedInstallJobPayload(s.games, resolved))
 	payload := map[string]any{
-		"job":      jobAPIResponse(job),
 		"resolved": resolved,
 	}
 	s.cfgMu.RLock()
 	apiKey := s.cfg.Nexus.APIKey
 	s.cfgMu.RUnlock()
 	if resolved.Catalog != "nexus" {
-		message := "Resolved " + resolved.Catalog + " URL"
 		if len(resolved.DownloadLinks) > 0 {
 			payload["download_links"] = resolved.DownloadLinks
-			job, _ = s.jobs.Complete(job.ID, message+"; ready to download")
-		} else {
-			job, _ = s.jobs.Complete(job.ID, message+"; no downloadable archive was returned")
 		}
-		payload["job"] = jobAPIResponse(job)
-		writeJSON(w, http.StatusAccepted, payload)
+		writeJSON(w, http.StatusOK, payload)
 		return
 	}
 	if resolved.NXMKey != "" && resolved.FileID != "" && apiKey != "" {
 		links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
-			s.jobs.Fail(job.ID, err.Error())
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
 		payload["download_links"] = links
-		job, _ = s.jobs.Complete(job.ID, "Resolved Nexus browser-generated download links for "+resolved.GameDomain)
-		payload["job"] = jobAPIResponse(job)
-		writeJSON(w, http.StatusAccepted, payload)
+		writeJSON(w, http.StatusOK, payload)
 		return
 	}
 	payload["browser_required"] = true
@@ -6416,9 +6406,8 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		message = "Nexus API key is not configured. Configure it, then capture the Mod Manager Download link again."
 		payload["browser_required"] = false
 	}
-	job, _ = s.jobs.Complete(job.ID, message)
-	payload["job"] = jobAPIResponse(job)
-	writeJSON(w, http.StatusAccepted, payload)
+	payload["message"] = message
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) handleBulkCapturedInstall(w http.ResponseWriter, r *http.Request) {

@@ -1791,26 +1791,20 @@
     const requestedURL = requestedURLs[0] ?? captureURL;
     const targetProfileID = selectedInstallProfileID();
     try {
-      const response = await fetch("/api/captured-installs/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: requestedURL, steam_app_id: selectedGame.app_id, profile_id: targetProfileID })
-      });
-      if (!response.ok) {
-        error = await response.text();
+      const result = await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
+      if (!result) return;
+      if (result.job?.status === "failed") {
+        error = result.job.message || "Unable to add this mod link.";
         return;
       }
-      const result = await response.json();
-      upsertJob(result.job);
-      resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
       if (result.browser_required && isHTTPProviderPage(requestedURL)) {
         await openProviderPageOnDeck(requestedURL, "web-paste-browser-required", "DMM Nexus Download");
         bulkCaptureMessage = "Opening this page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM.";
       } else if (result.resolved?.catalog === "nexus" && !result.resolved?.nxm_key) {
         error = "Nexus installs require the Deck browser flow. Open this mod from DMM, then click Nexus Mod Manager Download on the Nexus page.";
-      } else if (result.resolved?.file_id || (result.download_links ?? []).length > 0) {
-        await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
+      } else {
         captureURL = "";
+        bulkCaptureMessage = result.download_started ? "Mod link captured; downloading archive now." : result.job?.message || "Mod link captured.";
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

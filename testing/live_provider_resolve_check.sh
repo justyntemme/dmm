@@ -105,7 +105,7 @@ optional_cases = [
 
 section("Provider URL resolution")
 for label, raw_url, expected in cases:
-    resolved = request("POST", "/api/captured-installs/resolve", {
+    resolved = request("POST", "/api/catalogs/resolve", {
         "url": raw_url,
         "steam_app_id": app_id,
         "source": "live-provider-resolve-check",
@@ -126,7 +126,7 @@ for label, raw_url, expected in optional_cases:
         continue
     if status != "ready":
         raise RuntimeError(f"{label}: test URL was provided but catalog status is {status!r}")
-    resolved = request("POST", "/api/captured-installs/resolve", {
+    resolved = request("POST", "/api/catalogs/resolve", {
         "url": raw_url,
         "steam_app_id": app_id,
         "source": "live-provider-resolve-check",

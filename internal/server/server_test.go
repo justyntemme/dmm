@@ -2192,24 +2192,24 @@ func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	}
 }
 
-func TestResolveCapturedInstallWithoutNexusKey(t *testing.T) {
+func TestResolveCatalogURLReportsBrowserRequiredForNexusPage(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/witcher3/mods/123?file_id=456"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/catalogs/resolve", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/witcher3/mods/123?file_id=456"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("browser-generated Mod Manager Download link")) {
 		t.Fatalf("expected browser-generated link guidance, body = %s", rec.Body.String())
 	}
 	var body struct {
-		Job             jobs.Job `json:"job"`
-		BrowserRequired bool     `json:"browser_required"`
+		Resolved        catalog.ResolvedDownload `json:"resolved"`
+		BrowserRequired bool                     `json:"browser_required"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -2217,12 +2217,15 @@ func TestResolveCapturedInstallWithoutNexusKey(t *testing.T) {
 	if !body.BrowserRequired {
 		t.Fatalf("browser_required = false, body = %s", rec.Body.String())
 	}
-	if body.Job.Payload["catalog"] != "nexus" || body.Job.Payload["game_domain"] != "witcher3" || body.Job.Payload["mod_id"] != "123" || body.Job.Payload["file_id"] != "456" {
-		t.Fatalf("job payload = %+v", body.Job.Payload)
+	if body.Resolved.Catalog != "nexus" || body.Resolved.GameDomain != "witcher3" || body.Resolved.ModID != "123" || body.Resolved.FileID != "456" {
+		t.Fatalf("resolved = %+v", body.Resolved)
+	}
+	if jobs := srv.jobs.List(); len(jobs) != 0 {
+		t.Fatalf("catalog resolve created jobs = %+v", jobs)
 	}
 }
 
-func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
+func TestResolveCatalogURLUsesRegisteredCatalogResolver(t *testing.T) {
 	srv := newTestServer(t)
 	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
 		resolved: catalog.ResolvedDownload{
@@ -2234,40 +2237,40 @@ func TestResolveCapturedInstallUsesRegisteredCatalogResolver(t *testing.T) {
 		},
 	}}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/catalogs/resolve", bytes.NewBufferString(`{"url":"example://game/mods/1/files/2"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"catalog":"example"`)) {
 		t.Fatalf("expected example catalog, body = %s", rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("no downloadable archive was returned")) {
-		t.Fatalf("expected no-download guidance, body = %s", rec.Body.String())
-	}
 	var body struct {
-		Job jobs.Job `json:"job"`
+		Resolved catalog.ResolvedDownload `json:"resolved"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Job.Payload["catalog"] != "example" || body.Job.Payload["game_domain"] != "game" || body.Job.Payload["mod_id"] != "1" || body.Job.Payload["file_id"] != "2" {
-		t.Fatalf("job payload = %+v", body.Job.Payload)
+	if body.Resolved.Catalog != "example" || body.Resolved.GameDomain != "game" || body.Resolved.ModID != "1" || body.Resolved.FileID != "2" {
+		t.Fatalf("resolved = %+v", body.Resolved)
+	}
+	if jobs := srv.jobs.List(); len(jobs) != 0 {
+		t.Fatalf("catalog resolve created jobs = %+v", jobs)
 	}
 }
 
-func TestResolveCapturedInstallSupportsDirectArchiveForSelectedGame(t *testing.T) {
+func TestResolveCatalogURLSupportsDirectArchiveForSelectedGame(t *testing.T) {
 	srv := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/resolve", bytes.NewBufferString(`{"url":"https://example.com/mods/test-mod.zip","steam_app_id":"413150"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/catalogs/resolve", bytes.NewBufferString(`{"url":"https://example.com/mods/test-mod.zip","steam_app_id":"413150"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"catalog":"direct"`)) {
