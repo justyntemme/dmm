@@ -106,6 +106,11 @@ type DMMBrowserRequest = {
   title: string;
 };
 
+type DMMDeckyReturnContext = {
+  appID: string;
+  tab: Tab;
+};
+
 type DMMBrowserContainerProps = {
   browser: DMMNativeBrowser;
   className?: string;
@@ -975,6 +980,7 @@ let backgroundMonitorsStarted = false;
 let steamBrowserNXMProbeRegistration: unknown = null;
 let activeDMMNativeBrowser: DMMNativeBrowser | null = null;
 let activeDMMBrowserRequest: DMMBrowserRequest | null = null;
+let pendingDMMDeckyReturnContext: DMMDeckyReturnContext | null = null;
 
 type LaunchResultSink = (message: string) => void;
 
@@ -1411,6 +1417,29 @@ function getDMMWindowRouter(): DMMWindowRouter | undefined {
   return typedRouter.WindowStore?.GamepadUIMainWindowInstance ?? typedRouter.WindowStore?.SteamUIWindows?.[0];
 }
 
+function rememberDMMDeckyReturnContext(request: DMMBrowserRequest | null) {
+  const appID = request?.appID?.trim();
+  if (!appID) return;
+  pendingDMMDeckyReturnContext = { appID, tab: "games" };
+  void logFrontendEvent("decky return context stored", {
+    app_id: appID,
+    source: request?.source || "",
+    tab: "games"
+  });
+}
+
+function consumeDMMDeckyReturnContext() {
+  const context = pendingDMMDeckyReturnContext;
+  pendingDMMDeckyReturnContext = null;
+  if (context) {
+    void logFrontendEvent("decky return context consumed", {
+      app_id: context.appID,
+      tab: context.tab
+    });
+  }
+  return context;
+}
+
 function destroyActiveDMMNativeBrowser(source: string) {
   const browser = activeDMMNativeBrowser;
   if (!browser) return;
@@ -1440,10 +1469,13 @@ function navigateDMMRoute(path: string, source: string) {
 function closeDMMNativeBrowserAfterCapture(source: string) {
   const currentPath = window.location.pathname;
   const onBrowserRoute = currentPath.endsWith(DMM_BROWSER_ROUTE);
+  const request = activeDMMBrowserRequest;
   try {
+    rememberDMMDeckyReturnContext(request);
     destroyActiveDMMNativeBrowser(`nxm-captured:${source}`);
     activeDMMBrowserRequest = null;
     void logFrontendEvent("dmm native browser closed after nxm capture", {
+      app_id: request?.appID || "",
       source,
       path: currentPath,
       navigated_to_dmm: onBrowserRoute
@@ -2962,8 +2994,9 @@ function DMMNativeBrowserRoute() {
 }
 
 function DeckyModManagerRoute() {
+  const [initialReturnContext] = useState(() => consumeDMMDeckyReturnContext());
   const selectedDeckyGameRef = useRef<HTMLDivElement | null>(null);
-  const [tab, setTab] = useState<Tab>("main");
+  const [tab, setTab] = useState<Tab>(initialReturnContext?.tab ?? "main");
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [nxm, setNXM] = useState<NXMStatus | null>(null);
@@ -2975,7 +3008,7 @@ function DeckyModManagerRoute() {
   const [updateBusy, setUpdateBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
-  const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>("");
+  const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>(initialReturnContext?.appID ?? "");
   const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
@@ -3238,7 +3271,7 @@ function DeckyModManagerRoute() {
       const running = currentRunningGame();
       setRunningGame(running);
       const runningSupported = running && games.some((game) => game.app_id === running.app_id);
-      const selected = runningSupported ? running.app_id : appID || selectedDeckyGameID;
+      const selected = appID || selectedDeckyGameID || (runningSupported ? running.app_id : "");
       const nextID = selected && games.some((game) => game.app_id === selected) ? selected : "";
       setSelectedDeckyGameID(nextID);
       await loadDeckyGameState(nextID);
@@ -4121,7 +4154,7 @@ function DeckyModManagerRoute() {
       const running = currentRunningGame();
       setRunningGame(running);
       const game = managedGames.find((item) => item.app_id === running?.app_id);
-      if (!running || !game || !gameHasExtension(game) || tab !== "games" || selectedDeckyGameID === running.app_id) return;
+      if (!running || !game || !gameHasExtension(game) || tab !== "games" || selectedDeckyGameID) return;
       setSelectedDeckyGameID(running.app_id);
       markDeckyGameRecent(running.app_id);
       void loadDeckyGameState(running.app_id);
@@ -4134,6 +4167,31 @@ function DeckyModManagerRoute() {
 
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
   const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
+  const selectedExploreSources = useMemo(() => {
+    if (!selectedDeckyGame) return [] as Array<{ id: string; catalog: string; title: string; detail: string; action: string; enabled: boolean }>;
+    const sources: Array<{ id: string; catalog: string; title: string; detail: string; action: string; enabled: boolean }> = [];
+    if (selectedNexusDomain) {
+      sources.push({
+        id: "nexus",
+        catalog: "nexus",
+        title: "Nexus Mods",
+        detail: "Search Nexus, open the mod page, then press Mod Manager Download.",
+        action: "Explore Mods",
+        enabled: true
+      });
+    }
+    if (selectedDeckyGame.extension?.steam_workshop) {
+      sources.push({
+        id: "steam-workshop",
+        catalog: "steam_workshop",
+        title: "Steam Workshop",
+        detail: "Installed Workshop items are managed below. DMM browsing is not enabled for Workshop yet.",
+        action: "Managed Below",
+        enabled: false
+      });
+    }
+    return sources;
+  }, [selectedDeckyGame, selectedNexusDomain]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const supportedGameCount = managedGames.filter(gameHasExtension).length;
   const runningSupported = Boolean(runningGame && gameHasExtension(managedGames.find((game) => game.app_id === runningGame.app_id)));
@@ -4351,21 +4409,15 @@ function DeckyModManagerRoute() {
           {status?.running && selectedDeckyGameID && (
         <>
           <PanelSectionRow>
-            <Focusable
-              ref={selectedDeckyGameRef}
-              className="dmm-sidebar-surface dmm-sidebar-row"
-              data-dmm-selected-game-primary="true"
-              focusClassName="dmm-sidebar-row-focused"
-              onActivate={() => {
-                if (selectedNexusDomain) openDeckyNexusBrowser();
-              }}
-              onClick={() => {
-                if (selectedNexusDomain) openDeckyNexusBrowser();
-              }}
-              onCancelActionDescription="Change Game"
-              onCancelButton={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
+	            <Focusable
+	              ref={selectedDeckyGameRef}
+	              className="dmm-sidebar-surface dmm-sidebar-row"
+	              data-dmm-selected-game-primary="true"
+	              focusClassName="dmm-sidebar-row-focused"
+	              onCancelActionDescription="Change Game"
+	              onCancelButton={(event) => {
+	                event.preventDefault();
+	                event.stopPropagation();
                 clearSelectedDeckyGame();
               }}
               preferredFocus
@@ -4380,17 +4432,64 @@ function DeckyModManagerRoute() {
             >
               <img src={steamHeaderImage(selectedDeckyGameID)} style={{ borderRadius: "5px", height: "42px", objectFit: "cover", width: "74px" }} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{selectedProfile ? `Profile: ${selectedProfile.name}` : "No profile"}</div>
-                <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedDeckyGame?.name ?? selectedDeckyGameID}</div>
-                <div style={{ color: selectedNexusDomain ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, marginTop: "4px", overflowWrap: "anywhere" }}>
-                  {selectedNexusDomain ? "A Browse Nexus · B Change Game" : "B Change Game"}
-                </div>
-              </div>
-            </Focusable>
-          </PanelSectionRow>
-          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
-            <PanelSectionRow>
-              <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{selectedProfile ? `Profile: ${selectedProfile.name}` : "No profile"}</div>
+	                <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedDeckyGame?.name ?? selectedDeckyGameID}</div>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, marginTop: "4px", overflowWrap: "anywhere" }}>
+	                  B Change Game
+	                </div>
+	              </div>
+	            </Focusable>
+	          </PanelSectionRow>
+	          <PanelSectionRow>
+	            <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px" }}>
+	              <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+	                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Explore Mods</div>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{selectedExploreSources.filter((source) => source.enabled).length} ready</div>
+	              </div>
+	              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                Choose a source for {selectedDeckyGame?.name ?? "this game"}. Downloads are captured through the provider's Mod Manager Download flow.
+	              </div>
+	              {selectedExploreSources.length === 0 && (
+	                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
+	                  {selectedDeckyGame?.extension?.supported
+	                    ? "This game's DMM extension does not expose a browsable mod source yet."
+	                    : "This game does not have a DMM extension yet."}
+	                </div>
+	              )}
+	              {selectedExploreSources.map((source) => (
+	                <Focusable
+	                  key={source.id}
+	                  className="dmm-sidebar-row"
+	                  focusClassName="dmm-sidebar-row-focused"
+	                  onActivate={(event) => {
+	                    event.preventDefault();
+	                    event.stopPropagation();
+	                    if (source.id === "nexus" && source.enabled) openDeckyNexusBrowser();
+	                  }}
+	                  onClick={() => {
+	                    if (source.id === "nexus" && source.enabled) openDeckyNexusBrowser();
+	                  }}
+	                  style={{
+	                    ...deckyCompositeRowStyle(false, source.enabled),
+	                    opacity: source.enabled ? 1 : 0.58,
+	                    padding: "10px"
+	                  }}
+	                >
+	                  <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+	                    <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{source.title}</div>
+	                    <span style={deckySourcePillStyle(source.catalog)}>{sourceLabel(source.catalog)}</span>
+	                  </div>
+	                  <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{source.detail}</div>
+	                  <div style={{ color: source.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                    {source.enabled ? `A ${source.action}` : source.action}
+	                  </div>
+	                </Focusable>
+	              ))}
+	            </div>
+	          </PanelSectionRow>
+	          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
+	            <PanelSectionRow>
+	              <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
                 <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
                 <ButtonItem layout="below" onClick={cycleDeckyModSort}>
                   Sort: {deckyModSortLabel(effectiveModSort)}
@@ -4451,21 +4550,12 @@ function DeckyModManagerRoute() {
               </Focusable>
             </PanelSectionRow>
           )}
-          <PanelSectionRow>
-            <ButtonItem layout="below" onClick={clearSelectedDeckyGame}>
-              Change Game
-            </ButtonItem>
-          </PanelSectionRow>
-          {!selectedNexusDomain && (
-            <PanelSectionRow>
-              <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
-                {selectedDeckyGame?.extension?.supported
-                  ? "This game's DMM extension does not include Nexus browsing yet."
-                  : "This game does not have a DMM extension yet."}
-              </div>
-            </PanelSectionRow>
-          )}
-          {deckyInstallCandidates.length > 0 && (
+	          <PanelSectionRow>
+	            <ButtonItem layout="below" onClick={clearSelectedDeckyGame}>
+	              Change Game
+	            </ButtonItem>
+	          </PanelSectionRow>
+	          {deckyInstallCandidates.length > 0 && (
             <PanelSectionRow>
               <div className="dmm-sidebar-surface" style={deckySidebarListStyle}>
                 <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
