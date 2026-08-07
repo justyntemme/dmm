@@ -20,6 +20,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
@@ -90,6 +91,9 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
+		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),
+		gameext.MustCompileExtension(halflife2episodes.Extensions()[1]),
+		gameext.MustCompileExtension(halflife2episodes.Extensions()[2]),
 		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(finalfantasyxx2hdremaster.Extension()),

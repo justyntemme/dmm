@@ -136,6 +136,9 @@ for extension_id, (domain, caps) in installer_targets.items():
     require_caps(extension_id, *caps)
 
 research_targets = {
+    "halflife2lostcoast": "halflife2",
+    "halflife2episodeone": "halflife2",
+    "halflife2episodetwo": "halflife2",
     "prototype": "prototype",
     "prototype2": "prototype2",
     "metalgearsolidvtpp": "metalgearsolidvtpp",

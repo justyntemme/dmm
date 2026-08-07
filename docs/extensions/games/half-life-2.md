@@ -19,6 +19,7 @@
 
 - DMM declares the verified Half-Life 2 Nexus domain `halflife2`.
 - DMM registers the source-verified Steam AppID `220`. Lost Coast and the episodes are no longer registered through this extension because the inspected Vortex package only registers AppID `220`.
+- Lost Coast, Episode One, and Episode Two are registered as separate research-blocked Source-engine targets that use the same verified Nexus domain but do not inherit the base `hl2/custom` installer.
 - DMM checks for `hl2/gameinfo.txt` plus a native Linux or Windows executable marker.
 - DMM installs `.vpk` archives through the source-verified Vortex installer shape into `hl2/custom`.
 - FOMOD archives are skipped so the shared installer-choice pipeline can own them if a future Source-engine extension declares support.
