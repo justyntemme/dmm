@@ -10,9 +10,12 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid2mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid3mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidmc"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidvtpp"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
@@ -36,11 +39,14 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
 		gameext.MustCompileExtension(metalgearandmetalgear2mc.Extension()),
+		gameext.MustCompileExtension(metalgearsolidvtpp.Extension()),
 		gameext.MustCompileExtension(metalgearsolidmc.Extension()),
 		gameext.MustCompileExtension(metalgearsolid2mc.Extension()),
 		gameext.MustCompileExtension(metalgearsolid3mc.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
+		gameext.MustCompileExtension(prototype.Extension()),
+		gameext.MustCompileExtension(prototype2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
