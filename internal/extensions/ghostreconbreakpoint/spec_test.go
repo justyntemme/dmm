@@ -156,16 +156,16 @@ func TestDidDeployReminderQueuesAnvilToolkitMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "Run AnvilToolkit") {
-		t.Fatalf("messages = %+v", result.Messages)
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "Run AnvilToolkit") || result.Notices[0].ToolID != "ghostreconbreakpoint-atk" {
+		t.Fatalf("notices = %+v", result.Notices)
 	}
 
 	empty, err := registry().RunEventHandlers(context.Background(), ghostreconbreakpoint.SteamAppID, "did-deploy", gameext.EventHandlerInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(empty.Messages) != 0 {
-		t.Fatalf("empty deploy messages = %+v", empty.Messages)
+	if len(empty.Notices) != 0 {
+		t.Fatalf("empty deploy notices = %+v", empty.Notices)
 	}
 }
 

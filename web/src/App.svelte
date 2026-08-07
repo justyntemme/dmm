@@ -3184,8 +3184,28 @@
     return Array.from(new Set(labels));
   }
 
+  function extensionNoticeTool(action: Job) {
+    return action.payload?.tool_name || action.payload?.tool_id || "";
+  }
+
+  function extensionNoticeActionLabel(action: Job) {
+    return action.payload?.action_label || (extensionNoticeTool(action) ? `Open ${extensionNoticeTool(action)}` : "");
+  }
+
+  function extensionNoticeHelpURL(action: Job) {
+    const value = action.payload?.help_url ?? "";
+    return value.startsWith("http://") || value.startsWith("https://") ? value : "";
+  }
+
+  function openExtensionNoticeHelp(action: Job) {
+    const url = extensionNoticeHelpURL(action);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   function actionNextStep(action: Job) {
     if (action.type === "extension-notice") {
+      const tool = extensionNoticeTool(action);
+      if (tool) return `${tool} is required for this extension note. Review the linked tool page or dismiss this action when the manual step is handled or not needed.`;
       return "Review this extension note before launching the game. Dismiss it when the manual step is handled or not needed.";
     }
     if (action.type === "steam-workshop-action") {
@@ -3434,6 +3454,9 @@
                     <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
                   </div>
 	                    {#if action.message}<p>{action.message}</p>{/if}
+	                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
+	                      <small>Tool: {extensionNoticeTool(action)}</small>
+	                    {/if}
 	                    <p class="action-next-step">{actionNextStep(action)}</p>
 	                    <small>{new Date(action.updated_at).toLocaleString()}</small>
 	                  </div>
@@ -3452,6 +3475,9 @@
 	                    {/if}
 	                    {#if action.type === "steam-workshop-action" && action.status === "failed"}
 	                      <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
+	                    {/if}
+	                    {#if action.type === "extension-notice" && extensionNoticeHelpURL(action)}
+	                      <button type="button" class="secondary-action compact" on:click={() => openExtensionNoticeHelp(action)}>{extensionNoticeActionLabel(action) || "Open Help"}</button>
 	                    {/if}
 	                    {#if canCancelJob(action)}
 	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>
@@ -4288,6 +4314,9 @@
                       <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
                     </div>
                     {#if action.message}<p>{action.message}</p>{/if}
+                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
+                      <small>Tool: {extensionNoticeTool(action)}</small>
+                    {/if}
                     <p class="action-next-step">{actionNextStep(action)}</p>
                     <small>{new Date(action.updated_at).toLocaleString()}</small>
                     {#if action.type === "captured-install" && action.status === "waiting" && profiles.length > 0}
@@ -4317,6 +4346,9 @@
                       {/if}
                       {#if action.type === "steam-workshop-action" && action.status === "failed"}
                         <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
+                      {/if}
+                      {#if action.type === "extension-notice" && extensionNoticeHelpURL(action)}
+                        <button type="button" class="secondary-action compact" on:click={() => openExtensionNoticeHelp(action)}>{extensionNoticeActionLabel(action) || "Open Help"}</button>
                       {/if}
                       {#if canCancelJob(action)}
                         <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>

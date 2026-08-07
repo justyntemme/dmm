@@ -126,8 +126,8 @@ func TestDidDeployReminderQueuesFrostyMessageForFBMod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "Frosty Mod Manager") || !strings.Contains(result.Messages[0], "DatapathFix") {
-		t.Fatalf("messages = %+v", result.Messages)
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "Frosty Mod Manager") || !strings.Contains(result.Notices[0].Message, "DatapathFix") || result.Notices[0].ToolID != "starwarsbattlefront22017-frosty" {
+		t.Fatalf("notices = %+v", result.Notices)
 	}
 
 	byMapping, err := registry().RunEventHandlers(context.Background(), starwarsbattlefrontii.SteamAppID, "did-deploy", sdk.EventHandlerInput{
@@ -136,16 +136,16 @@ func TestDidDeployReminderQueuesFrostyMessageForFBMod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(byMapping.Messages) != 1 {
-		t.Fatalf("mapping messages = %+v", byMapping.Messages)
+	if len(byMapping.Notices) != 1 {
+		t.Fatalf("mapping notices = %+v", byMapping.Notices)
 	}
 
 	empty, err := registry().RunEventHandlers(context.Background(), starwarsbattlefrontii.SteamAppID, "did-deploy", sdk.EventHandlerInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(empty.Messages) != 0 {
-		t.Fatalf("empty messages = %+v", empty.Messages)
+	if len(empty.Notices) != 0 {
+		t.Fatalf("empty notices = %+v", empty.Notices)
 	}
 }
 

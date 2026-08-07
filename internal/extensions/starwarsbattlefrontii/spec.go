@@ -113,9 +113,13 @@ func didDeployFrostyReminder(ctx context.Context, input sdk.EventHandlerInput) (
 	if !deployIncludesFBMod(input) {
 		return sdk.EventHandlerResult{}, nil
 	}
-	return sdk.EventHandlerResult{Messages: []string{
-		"Open Frosty Mod Manager and finish importing deployed Battlefront II .fbmod files before launching the game. Steam/Epic users also need DatapathFix configured for mods to load.",
-	}}, nil
+	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+		Message:     "Open Frosty Mod Manager and finish importing deployed Battlefront II .fbmod files before launching the game. Steam/Epic users also need DatapathFix configured for mods to load.",
+		ToolID:      "starwarsbattlefront22017-frosty",
+		ToolName:    "Frosty Mod Manager",
+		ActionLabel: "Open Frosty",
+		HelpURL:     "https://frostytoolsuite.com/downloads.html",
+	}}}, nil
 }
 
 func deployIncludesFBMod(input sdk.EventHandlerInput) bool {

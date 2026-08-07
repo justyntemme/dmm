@@ -59,6 +59,7 @@ type LoadOrderSpec = sdk.LoadOrderSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
+type EventNotice = sdk.EventNotice
 
 const (
 	SteamWorkshopActionSubscribe   = sdk.SteamWorkshopActionSubscribe
@@ -545,6 +546,7 @@ func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, inp
 			currentMappings = append(currentMappings, next.Mappings...)
 			out.Mappings = append(out.Mappings, next.Mappings...)
 		}
+		out.Notices = append(out.Notices, next.Notices...)
 		out.Messages = append(out.Messages, next.Messages...)
 	}
 	return out, nil

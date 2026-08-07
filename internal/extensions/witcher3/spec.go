@@ -10,6 +10,8 @@ const (
 	SteamAppIDDX = "499450"
 	VortexGameID = "witcher3"
 	Name         = "The Witcher 3"
+
+	scriptMergerToolID = "W3ScriptMerger"
 )
 
 func Extension() sdk.Extension {
@@ -42,7 +44,7 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
-		ID:                 "W3ScriptMerger",
+		ID:                 scriptMergerToolID,
 		Name:               "W3 Script Merger",
 		ExecutableRelative: "WitcherScriptMerger.exe",
 		RequiredFiles:      []string{"WitcherScriptMerger.exe"},

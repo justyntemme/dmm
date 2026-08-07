@@ -7840,7 +7840,13 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 					if input.Source != "manual" || len(input.ManagedFiles) == 0 {
 						t.Fatalf("did-deploy input = %+v", input)
 					}
-					return sdk.EventHandlerResult{Messages: []string{"observed deploy"}}, nil
+					return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+						Message:     "observed deploy",
+						ToolID:      "hook-tool",
+						ToolName:    "Hook Tool",
+						ActionLabel: "Open Hook Tool",
+						HelpURL:     "https://example.invalid/hook-tool",
+					}}}, nil
 				},
 			})
 		},
@@ -7880,7 +7886,7 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 			continue
 		}
 		noticeCount++
-		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" {
+		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" || job.Payload["tool_id"] != "hook-tool" || job.Payload["action_label"] != "Open Hook Tool" || job.Payload["help_url"] != "https://example.invalid/hook-tool" {
 			t.Fatalf("extension notice job = %+v", job)
 		}
 		if !strings.Contains(job.Message, "observed deploy") {
@@ -7891,7 +7897,13 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 		t.Fatalf("extension notice count = %d", noticeCount)
 	}
 
-	srv.queueExtensionNoticeJobs(appID, "did-deploy", "manual", "Hook Game", []string{"observed deploy"})
+	srv.queueExtensionNoticeJobs(appID, "did-deploy", "manual", "Hook Game", []gameext.EventNotice{{
+		Message:     "observed deploy",
+		ToolID:      "hook-tool",
+		ToolName:    "Hook Tool",
+		ActionLabel: "Open Hook Tool",
+		HelpURL:     "https://example.invalid/hook-tool",
+	}})
 	noticeCount = 0
 	for _, job := range srv.jobs.List() {
 		if job.Type == jobTypeExtensionNotice {

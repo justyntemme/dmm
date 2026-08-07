@@ -1115,10 +1115,27 @@ function deckyJobStatusLabel(job: Job) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function extensionNoticeToolName(job: Job) {
+  return String(job.payload?.tool_name || job.payload?.tool_id || "").trim();
+}
+
+function extensionNoticeActionLabel(job: Job) {
+  const label = String(job.payload?.action_label || "").trim();
+  if (label) return label;
+  const tool = extensionNoticeToolName(job);
+  return tool ? `Open ${tool}` : "Review";
+}
+
+function extensionNoticeHelpURL(job: Job) {
+  const url = String(job.payload?.help_url || "").trim();
+  return /^https?:\/\//i.test(url) ? url : "";
+}
+
 function deckyJobPrimaryActionLabel(job: Job) {
   if (job.type === "captured-install" && job.status === "waiting") return "Install";
   if (job.type === "captured-install" && job.status === "failed") return "Retry";
   if (job.type === "steam-workshop-action" && job.status === "failed") return "Retry";
+  if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) return extensionNoticeActionLabel(job);
   return "";
 }
 
@@ -3875,6 +3892,27 @@ function DeckyModManagerRoute() {
       setError("");
       setModsResult("");
       setBusyJobID(job.id);
+      if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) {
+        const helpURL = extensionNoticeHelpURL(job);
+        await logFrontendEvent("decky extension notice help requested", {
+          app_id: selectedDeckyGameID,
+          job_id: job.id,
+          tool_id: job.payload?.tool_id || "",
+          url: helpURL
+        });
+        const opened = await openDMMBrowserViewCapture(helpURL, {
+          appID: selectedDeckyGameID,
+          profileID: selectedProfile?.id ?? 0,
+          source: "extension-notice-help",
+          title: extensionNoticeActionLabel(job)
+        });
+        if (!opened) {
+          setError("DMM could not open the extension help page. Check Debug Live Logs.");
+          return;
+        }
+        setModsResult("Extension help page opened.");
+        return;
+      }
       let result: { ok: boolean; error?: string; job?: Job; result?: { job?: Job } };
       if (job.type === "captured-install" && job.status === "waiting") {
         result = await call<[string, number], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("install_captured_install", job.id, selectedProfile?.id ?? 0);
@@ -5118,6 +5156,7 @@ function DeckyModManagerRoute() {
                 {deckyActionJobs.map((job) => {
                   const focused = focusedJobID === job.id;
                   const primaryLabel = deckyJobPrimaryActionLabel(job);
+                  const extensionTool = job.type === "extension-notice" ? extensionNoticeToolName(job) : "";
                   const busy = busyJobID === job.id;
                   const canCancel = deckyJobCanCancel(job);
                   return (
@@ -5156,6 +5195,11 @@ function DeckyModManagerRoute() {
                       <div style={{ color: job.status === "failed" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
                         {deckyJobStatusLabel(job)} · {job.message || jobToastBody(job)}
                       </div>
+                      {extensionTool && (
+                        <div style={{ color: "#bae6fd", fontSize: "11px", fontWeight: 700, lineHeight: 1.25, minWidth: 0, overflowWrap: "anywhere" }}>
+                          Tool: {extensionTool}
+                        </div>
+                      )}
                       <div style={{ color: primaryLabel ? "#99f6e4" : canCancel ? "#fbbf24" : "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
                         {busy
                           ? "Working"

@@ -1212,7 +1212,7 @@ func gameJobPayload(appID string) jobs.JobPayload {
 	return jobs.JobPayload{"app_id": appID}
 }
 
-func extensionNoticeJobPayload(appID, event, source, message string) jobs.JobPayload {
+func extensionNoticeJobPayload(appID, event, source string, notice gameext.EventNotice) jobs.JobPayload {
 	payload := gameJobPayload(appID)
 	if payload == nil {
 		payload = jobs.JobPayload{}
@@ -1220,7 +1220,11 @@ func extensionNoticeJobPayload(appID, event, source, message string) jobs.JobPay
 	payload["catalog"] = "extension"
 	payload["event"] = strings.TrimSpace(event)
 	payload["source"] = strings.TrimSpace(source)
-	payload["notice_key"] = extensionNoticeKey(appID, event, message)
+	payload["notice_key"] = extensionNoticeKey(appID, event, notice)
+	payload["tool_id"] = strings.TrimSpace(notice.ToolID)
+	payload["tool_name"] = strings.TrimSpace(notice.ToolName)
+	payload["action_label"] = strings.TrimSpace(notice.ActionLabel)
+	payload["help_url"] = strings.TrimSpace(notice.HelpURL)
 	for key, value := range payload {
 		if strings.TrimSpace(value) == "" {
 			delete(payload, key)
@@ -1229,14 +1233,40 @@ func extensionNoticeJobPayload(appID, event, source, message string) jobs.JobPay
 	return payload
 }
 
-func extensionNoticeKey(appID, event, message string) string {
+func extensionNoticeKey(appID, event string, notice gameext.EventNotice) string {
 	normalized := strings.Join([]string{
 		strings.TrimSpace(appID),
 		strings.TrimSpace(event),
-		strings.TrimSpace(message),
+		strings.TrimSpace(notice.Message),
+		strings.TrimSpace(notice.ToolID),
+		strings.TrimSpace(notice.ActionLabel),
+		strings.TrimSpace(notice.HelpURL),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:12])
+}
+
+func extensionEventNotices(result gameext.EventHandlerResult) []gameext.EventNotice {
+	out := make([]gameext.EventNotice, 0, len(result.Notices)+len(result.Messages))
+	for _, notice := range result.Notices {
+		notice.Message = strings.TrimSpace(notice.Message)
+		notice.ToolID = strings.TrimSpace(notice.ToolID)
+		notice.ToolName = strings.TrimSpace(notice.ToolName)
+		notice.ActionLabel = strings.TrimSpace(notice.ActionLabel)
+		notice.HelpURL = strings.TrimSpace(notice.HelpURL)
+		if notice.Message == "" {
+			continue
+		}
+		out = append(out, notice)
+	}
+	for _, message := range result.Messages {
+		message = strings.TrimSpace(message)
+		if message == "" {
+			continue
+		}
+		out = append(out, gameext.EventNotice{Message: message})
+	}
+	return out
 }
 
 func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.ResolvedDownload) jobs.JobPayload {
@@ -8506,10 +8536,8 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
-	for _, message := range result.Messages {
-		if message = strings.TrimSpace(message); message != "" {
-			s.logger.Info("extension deployment event message", "app_id", game.SteamAppID, "event", event, "message", message)
-		}
+	for _, notice := range extensionEventNotices(result) {
+		s.logger.Info("extension deployment event notice", "app_id", game.SteamAppID, "event", event, "message", notice.Message, "tool_id", notice.ToolID)
 	}
 	if len(result.Mappings) > 0 {
 		s.logger.Info("extension deployment event returned mappings", "app_id", game.SteamAppID, "event", event, "mappings", len(result.Mappings), "replace", result.ReplaceMappings, "work_dir", workDir)
@@ -8558,43 +8586,42 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	if err != nil {
 		return err
 	}
-	for _, message := range result.Messages {
-		if message = strings.TrimSpace(message); message != "" {
-			s.logger.Info("extension deployment event message", "app_id", appID, "event", event, "message", message)
-		}
+	notices := extensionEventNotices(result)
+	for _, notice := range notices {
+		s.logger.Info("extension deployment event notice", "app_id", appID, "event", event, "message", notice.Message, "tool_id", notice.ToolID)
 	}
-	s.queueExtensionNoticeJobs(appID, event, source, game.Name, result.Messages)
+	s.queueExtensionNoticeJobs(appID, event, source, game.Name, notices)
 	if len(result.Mappings) > 0 {
 		s.logger.Warn("extension deployment event returned ignored post-event mappings", "app_id", appID, "event", event, "mappings", len(result.Mappings))
 	}
 	return nil
 }
 
-func (s *Server) queueExtensionNoticeJobs(appID, event, source, gameName string, messages []string) {
+func (s *Server) queueExtensionNoticeJobs(appID, event, source, gameName string, notices []gameext.EventNotice) {
 	appID = strings.TrimSpace(appID)
 	event = strings.TrimSpace(event)
-	if appID == "" || event == "" || len(messages) == 0 {
+	if appID == "" || event == "" || len(notices) == 0 {
 		return
 	}
 	titleName := strings.TrimSpace(gameName)
 	if titleName == "" {
 		titleName = appID
 	}
-	for _, message := range messages {
-		message = strings.TrimSpace(message)
-		if message == "" {
+	for _, notice := range notices {
+		notice.Message = strings.TrimSpace(notice.Message)
+		if notice.Message == "" {
 			continue
 		}
-		payload := extensionNoticeJobPayload(appID, event, source, message)
+		payload := extensionNoticeJobPayload(appID, event, source, notice)
 		key := payload["notice_key"]
 		if existing, ok := s.findActiveExtensionNoticeJob(key); ok {
-			updated, _ := s.jobs.Wait(existing.ID, message)
-			s.logger.Info("extension notice refreshed", "app_id", appID, "event", event, "job_id", updated.ID, "notice_key", key)
+			updated, _ := s.jobs.Wait(existing.ID, notice.Message)
+			s.logger.Info("extension notice refreshed", "app_id", appID, "event", event, "job_id", updated.ID, "notice_key", key, "tool_id", notice.ToolID)
 			continue
 		}
 		job := s.jobs.CreateWithPayload(jobTypeExtensionNotice, "Extension notice: "+titleName, payload)
-		job, _ = s.jobs.Wait(job.ID, message)
-		s.logger.Info("extension notice queued", "app_id", appID, "event", event, "job_id", job.ID, "notice_key", key)
+		job, _ = s.jobs.Wait(job.ID, notice.Message)
+		s.logger.Info("extension notice queued", "app_id", appID, "event", event, "job_id", job.ID, "notice_key", key, "tool_id", notice.ToolID)
 	}
 }
 

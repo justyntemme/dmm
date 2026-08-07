@@ -191,8 +191,8 @@ func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "Script Merger") {
-		t.Fatalf("messages = %+v", result.Messages)
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "Script Merger") || result.Notices[0].ToolID != "W3ScriptMerger" {
+		t.Fatalf("notices = %+v", result.Notices)
 	}
 
 	byMapping, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
@@ -201,8 +201,8 @@ func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(byMapping.Messages) != 1 {
-		t.Fatalf("mapping messages = %+v", byMapping.Messages)
+	if len(byMapping.Notices) != 1 {
+		t.Fatalf("mapping notices = %+v", byMapping.Notices)
 	}
 }
 
@@ -220,8 +220,8 @@ func TestExtensionDidDeploySkipsDLCOnlyDeploy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Messages) != 0 {
-		t.Fatalf("messages = %+v", result.Messages)
+	if len(result.Notices) != 0 {
+		t.Fatalf("notices = %+v", result.Notices)
 	}
 }
 

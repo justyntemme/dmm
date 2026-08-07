@@ -244,5 +244,14 @@ type DeploymentMod struct {
 type EventHandlerResult struct {
 	ReplaceMappings bool
 	Mappings        []deploy.FileMapping
+	Notices         []EventNotice
 	Messages        []string
+}
+
+type EventNotice struct {
+	Message     string
+	ToolID      string
+	ToolName    string
+	ActionLabel string
+	HelpURL     string
 }

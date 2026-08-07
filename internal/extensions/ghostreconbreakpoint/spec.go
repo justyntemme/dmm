@@ -327,9 +327,13 @@ func didDeployAnvilToolkitReminder(ctx context.Context, input sdk.EventHandlerIn
 	if len(input.ManagedFiles) == 0 {
 		return sdk.EventHandlerResult{}, nil
 	}
-	return sdk.EventHandlerResult{Messages: []string{
-		"Run AnvilToolkit to repack Ghost Recon Breakpoint .forge files when this mod requires Anvil data repacking. Check the Nexus mod page for which .forge file to unpack and repack.",
-	}}, nil
+	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+		Message:     "Run AnvilToolkit to repack Ghost Recon Breakpoint .forge files when this mod requires Anvil data repacking. Check the Nexus mod page for which .forge file to unpack and repack.",
+		ToolID:      anvilToolkitModType,
+		ToolName:    "AnvilToolkit",
+		ActionLabel: "Run AnvilToolkit",
+		HelpURL:     "https://www.nexusmods.com/site/mods/455",
+	}}}, nil
 }
 
 func sources() []sdk.SourceRef {

@@ -75,9 +75,12 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 	if !deployIncludesScriptMergeRelevantMods(input) {
 		return sdk.EventHandlerResult{}, nil
 	}
-	return sdk.EventHandlerResult{Messages: []string{
-		"Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
-	}}, nil
+	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+		Message:     "Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
+		ToolID:      scriptMergerToolID,
+		ToolName:    "W3 Script Merger",
+		ActionLabel: "Run Script Merger",
+	}}}, nil
 }
 
 func deployIncludesScriptMergeRelevantMods(input sdk.EventHandlerInput) bool {
