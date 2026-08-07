@@ -103,8 +103,14 @@ type ExtensionCapabilities struct {
 }
 
 type FeatureSummary struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name,omitempty"`
+	ExecutableRelative string   `json:"executable_relative,omitempty"`
+	Arguments          []string `json:"arguments,omitempty"`
+	RequiredFiles      []string `json:"required_files,omitempty"`
+	DefaultPrimary     bool     `json:"default_primary,omitempty"`
+	ModTypes           []string `json:"mod_types,omitempty"`
+	ProviderModTypes   []string `json:"provider_mod_types,omitempty"`
 }
 
 type WorkshopSummary struct {
@@ -641,7 +647,16 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.RuntimeRequirements = append(summary.Capabilities.RuntimeRequirements, FeatureSummary{ID: requirement.ID, Name: requirement.Name})
 	}
 	for _, tool := range extension.LaunchTools {
-		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{ID: tool.ID, Name: tool.Name})
+		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{
+			ID:                 tool.ID,
+			Name:               tool.Name,
+			ExecutableRelative: tool.ExecutableRelative,
+			Arguments:          append([]string(nil), tool.Arguments...),
+			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+			DefaultPrimary:     tool.DefaultPrimary,
+			ModTypes:           appendClean([]string{}, tool.ModTypes...),
+			ProviderModTypes:   appendClean([]string{}, tool.ProviderModTypes...),
+		})
 	}
 	for _, platform := range extension.InstallPlatforms {
 		summary.Capabilities.InstallPlatforms = append(summary.Capabilities.InstallPlatforms, FeatureSummary{ID: platform.ID, Name: platform.Name})

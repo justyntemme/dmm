@@ -35,6 +35,10 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 2 {
 		t.Fatalf("runtime/launch capabilities = %+v", summary.Capabilities)
 	}
+	launchSummary := featureByID(summary.Capabilities.LaunchTools, "starwarsbattlefront22017-frosty-launch")
+	if launchSummary == nil || launchSummary.ExecutableRelative != "FrostyModManager/FrostyModManager.exe" || len(launchSummary.Arguments) != 1 || launchSummary.Arguments[0] != "-launch default" {
+		t.Fatalf("Frosty launch summary = %+v", launchSummary)
+	}
 	if len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
@@ -45,6 +49,15 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if !required || tool.ID != "starwarsbattlefront22017-frosty-launch" || len(tool.Arguments) != 1 || tool.Arguments[0] != "-launch default" {
 		t.Fatalf("primary Frosty launch tool = %+v required=%v", tool, required)
 	}
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
 
 func TestFBModInstallerCopiesSingleVariantFolder(t *testing.T) {
