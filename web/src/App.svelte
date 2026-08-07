@@ -616,6 +616,12 @@
   $: sourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform").length;
   $: readySourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform" && catalog.status === "ready").length;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+  $: {
+    const options = exploreSourceOptions();
+    if (options.length > 0 && !options.some((catalog) => catalog.id === exploreSourceID)) {
+      exploreSourceID = options.find((catalog) => catalog.id === "nexus")?.id ?? options[0].id;
+    }
+  }
   $: if (profiles.length > 0 && !profiles.some((profile) => String(profile.id) === installTargetProfileID)) {
     installTargetProfileID = String(selectedProfile?.id ?? profiles[0].id);
   }
@@ -1875,12 +1881,18 @@
     return cleaned.replace(/\b\w/g, (value) => value.toUpperCase());
   }
 
+  function selectedGameMetadataOnly() {
+    return selectedGame?.extension?.coverage === "metadata_only";
+  }
+
   function exploreSourceOptions() {
+    if (selectedGameMetadataOnly()) return [];
     return catalogs.filter((catalog) => catalog.kind !== "platform");
   }
 
   function selectedExploreSource() {
-    return exploreSourceOptions().find((catalog) => catalog.id === exploreSourceID) ?? catalogs.find((catalog) => catalog.id === "nexus") ?? null;
+    const options = exploreSourceOptions();
+    return options.find((catalog) => catalog.id === exploreSourceID) ?? options.find((catalog) => catalog.id === "nexus") ?? options[0] ?? null;
   }
 
   function selectedExploreSourceReady() {
@@ -3745,23 +3757,27 @@
                 <p class="hint success-copy">{localArchiveMessage}</p>
               {/if}
               <p class="hint">Mods that need choices or review will appear in Action Center. Installed mods remain disabled until you enable them in the selected profile.</p>
-              {#if exploreSourceOptions().length > 0}
+              {#if exploreSourceOptions().length > 0 || selectedExtensionSources().length > 0}
                 <section class="nexus-browser" aria-label="Explore mods">
                   <div class="explore-heading">
                     <div>
-                      <strong>Explore Mods</strong>
-                      <small>{selectedExploreSource()?.name ?? "Select source"}</small>
+                      <strong>{exploreSourceOptions().length > 0 ? "Explore Mods" : "Known Sources"}</strong>
+                      <small>{selectedExploreSource()?.name ?? (selectedGameMetadataOnly() ? "Verified references" : "Select source")}</small>
                     </div>
-                    <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
+                    {#if selectedExploreSource()}
+                      <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
+                    {/if}
                   </div>
-                  <label class="target-profile-select">
-                    <span>Source</span>
-                    <select bind:value={exploreSourceID}>
-                      {#each exploreSourceOptions() as catalog}
-                        <option value={catalog.id}>{catalog.name} · {catalog.status}</option>
-                      {/each}
-                    </select>
-                  </label>
+                  {#if exploreSourceOptions().length > 0}
+                    <label class="target-profile-select">
+                      <span>Source</span>
+                      <select bind:value={exploreSourceID}>
+                        {#each exploreSourceOptions() as catalog}
+                          <option value={catalog.id}>{catalog.name} · {catalog.status}</option>
+                        {/each}
+                      </select>
+                    </label>
+                  {/if}
                   {#if selectedExtensionSources().length > 0}
                     <div class="known-source-list" aria-label="Known source references">
                       <strong>Known Sources</strong>
@@ -3773,7 +3789,9 @@
                       {/each}
                     </div>
                   {/if}
-                  {#if selectedExploreSourceBrowseReady()}
+                  {#if selectedGameMetadataOnly()}
+                    <p class="hint">DMM has verified source references for this game, but no safe automated import or installer path yet. Paste URLs only when you are testing a source-specific extension path.</p>
+                  {:else if selectedExploreSourceBrowseReady()}
                     {#if selectedNexusDomains().length > 1}
                       <label class="target-profile-select">
                         <span>Nexus Game</span>
