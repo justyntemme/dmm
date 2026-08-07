@@ -1,19 +1,26 @@
 package extensions
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/megabonk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearandmetalgear2mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid2mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid3mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidmc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidvtpp"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
@@ -28,6 +35,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
@@ -40,18 +48,25 @@ import (
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
 		gameext.MustCompileExtension(civilizationvii.Extension()),
+		gameext.MustCompileExtension(citizensleeper.Extension()),
+		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
+		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
+		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(finalfantasyxx2hdremaster.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
+		gameext.MustCompileExtension(megabonk.Extension()),
 		gameext.MustCompileExtension(metalgearandmetalgear2mc.Extension()),
 		gameext.MustCompileExtension(metalgearsolidvtpp.Extension()),
 		gameext.MustCompileExtension(metalgearsolidmc.Extension()),
 		gameext.MustCompileExtension(metalgearsolid2mc.Extension()),
 		gameext.MustCompileExtension(metalgearsolid3mc.Extension()),
+		gameext.MustCompileExtension(metroexodus.Extension()),
+		gameext.MustCompileExtension(mewgenics.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(prototype.Extension()),
@@ -65,6 +80,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
+		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
 		gameext.MustCompileExtension(totalwarrome2.Extension()),
