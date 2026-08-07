@@ -448,6 +448,7 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 			Installers          []featureResponse `json:"installers"`
 			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
 			LaunchTools         []featureResponse `json:"launch_tools"`
+			TargetRoots         []featureResponse `json:"target_roots"`
 		} `json:"capabilities"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -461,6 +462,7 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 			Installers          []featureResponse `json:"installers"`
 			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
 			LaunchTools         []featureResponse `json:"launch_tools"`
+			TargetRoots         []featureResponse `json:"target_roots"`
 		} `json:"capabilities"`
 	}{}
 	for _, extension := range body {
@@ -514,8 +516,14 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	if !ok {
 		t.Fatalf("extensions = %+v", body)
 	}
-	if len(zomboid.NexusDomains) != 0 {
+	if len(zomboid.NexusDomains) != 1 || zomboid.NexusDomains[0] != "projectzomboid" {
 		t.Fatalf("project zomboid nexus domains = %+v", zomboid.NexusDomains)
+	}
+	if !featureIDsContain(zomboid.Capabilities.Installers, "vortex:projectzomboid:mod-info") {
+		t.Fatalf("project zomboid installers = %+v", zomboid.Capabilities.Installers)
+	}
+	if !featureIDsContain(zomboid.Capabilities.TargetRoots, "projectzomboid-local-mods") {
+		t.Fatalf("project zomboid target roots = %+v", zomboid.Capabilities.TargetRoots)
 	}
 }
 
@@ -541,7 +549,7 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	}
 
 	zomboid := gameExtensionInfoForSteamApp(games.DefaultRegistry, "108600")
-	if zomboid == nil || !zomboid.Supported || zomboid.Nexus || !zomboid.SteamWorkshop {
+	if zomboid == nil || !zomboid.Supported || !zomboid.Nexus || !zomboid.SteamWorkshop || !zomboid.Installers {
 		t.Fatalf("zomboid extension info = %+v", zomboid)
 	}
 

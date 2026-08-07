@@ -62,6 +62,7 @@ required_extensions = {
     "finalfantasy7rebirth": "2909400",
     "civilizationvii": "1295660",
     "portal2": "620",
+    "projectzomboid": "108600",
 }
 for extension_id, app_id in required_extensions.items():
     summary = extensions_by_id.get(extension_id)
@@ -70,6 +71,13 @@ for extension_id, app_id in required_extensions.items():
         continue
     if app_id not in [str(item) for item in summary.get("steam_app_ids", [])]:
         failures.append(f"{extension_id} missing app {app_id}: {summary.get('steam_app_ids')}")
+
+zomboid = extensions_by_id.get("projectzomboid") or {}
+if "projectzomboid" not in [str(item) for item in zomboid.get("nexus_domains", [])]:
+    failures.append(f"Project Zomboid missing Nexus domain: {zomboid.get('nexus_domains')}")
+zomboid_caps = zomboid.get("capabilities") or {}
+if not zomboid_caps.get("target_roots") or not zomboid_caps.get("installers"):
+    failures.append(f"Project Zomboid archive capabilities missing: {zomboid_caps}")
 
 if failures:
     print("extension target check failed:")
