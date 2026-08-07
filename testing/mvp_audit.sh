@@ -53,6 +53,9 @@ section "Testing script syntax"
     testing/live_stardew_mod_files_check.sh \
     testing/live_web_asset_check.sh \
     testing/live_nexus_browser_handoff_check.sh \
+    testing/live_ui_preferences_check.sh \
+    testing/live_extension_coverage_check.sh \
+    testing/live_provider_resolve_check.sh \
     testing/live_installed_package_check.sh \
     testing/live_post_install_check.sh \
     testing/install_decky_plugin.sh \
@@ -83,6 +86,9 @@ section "Deck testing artifact coverage"
     live_stardew_mod_files_check.sh \
     live_web_asset_check.sh \
     live_nexus_browser_handoff_check.sh \
+    live_ui_preferences_check.sh \
+    live_extension_coverage_check.sh \
+    live_provider_resolve_check.sh \
     live_installed_package_check.sh \
     live_post_install_check.sh \
     mvp_audit.sh

@@ -312,6 +312,22 @@ To verify that pasted/direct Nexus HTTPS install attempts follow the browser-fir
 
 The check posts a known Nexus mod-file URL to the captured-install API, expects a completed `browser_required` handoff job, and verifies the job message tells the user to open the real Nexus page and click `Mod Manager Download`. It does not download the archive or replace the real browser-generated `nxm://` flow.
 
+To verify that installed games and extension manifests report honest capability coverage, run:
+
+```sh
+~/.testing/live_extension_coverage_check.sh
+```
+
+The check reports counts for `installer`, `research_blocked`, `browse_only`, `workshop_only`, and unsupported visible games. It fails only on invalid extension metadata by default. Set `REQUIRE_NO_UNSUPPORTED=1` when validating a release candidate that should cover every visible game.
+
+To verify non-Nexus provider URL resolution paths without installing archives, run:
+
+```sh
+~/.testing/live_provider_resolve_check.sh
+```
+
+The provider check validates ready public providers and confirms ModDB remains deferred until a supported official API/client path is verified. Credential-gated providers run only when their test URL environment variables are set.
+
 After installing and deploying a fresh test mod, run the stricter live acceptance check:
 
 ```sh
