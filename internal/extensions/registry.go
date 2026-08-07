@@ -20,6 +20,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
@@ -101,6 +102,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
+		gameext.MustCompileExtension(gnorpapologue.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),

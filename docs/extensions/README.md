@@ -42,6 +42,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Final Fantasy VII Rebirth](games/final-fantasy-vii-rebirth.md)
 - [Final Fantasy X/X-2 HD Remaster](games/final-fantasy-x-x2-hd-remaster.md)
 - [Ghost Recon Breakpoint](games/ghost-recon-breakpoint.md)
+- [(the) Gnorp Apologue](games/gnorp-apologue.md)
 - [Half-Life](games/half-life.md)
 - [Half-Life 2](games/half-life-2.md)
 - [Heavy Bullets](games/heavy-bullets.md)

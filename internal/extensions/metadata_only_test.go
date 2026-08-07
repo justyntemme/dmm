@@ -16,6 +16,7 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 	}{
 		{appID: "26800", id: "braid", url: "https://www.moddb.com/games/braid/mods"},
 		{appID: "224760", id: "fez", url: "https://www.moddb.com/games/fez/mods"},
+		{appID: "1473350", id: "gnorpapologue", url: "https://gamebanana.com/games/22680"},
 		{appID: "297120", id: "heavybullets", url: "https://www.moddb.com/games/heavy-bullets/mods"},
 		{appID: "219150", id: "hotlinemiami", url: "https://www.moddb.com/games/hotline-miami/mods"},
 		{appID: "214560", id: "markoftheninja", url: "https://www.moddb.com/games/mark-of-the-ninja/mods"},

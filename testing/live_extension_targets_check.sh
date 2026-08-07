@@ -166,6 +166,7 @@ for extension_id, domain in research_targets.items():
 metadata_targets = {
     "braid": "26800",
     "fez": "224760",
+    "gnorpapologue": "1473350",
     "heavybullets": "297120",
     "hotlinemiami": "219150",
     "markoftheninja": "214560",
