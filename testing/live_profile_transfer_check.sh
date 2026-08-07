@@ -9,6 +9,39 @@ PROFILE_NAME="${PROFILE_NAME:-DMM Live Transfer Check}"
 DATA_DIR="${DATA_DIR:-${HOME}/.local/share/decky-mod-manager}"
 DB_PATH="${DB_PATH:-${DATA_DIR}/db/dmm.sqlite}"
 KEEP_PROFILE="${KEEP_PROFILE:-0}"
+SSH_TARGET="${SSH_TARGET:-}"
+SSH_KEY="${SSH_KEY:-${HOME}/.ssh/decky_mod_manager_test}"
+REMOTE_DATA_DIR="${REMOTE_DATA_DIR:-/home/deck/.local/share/decky-mod-manager}"
+
+shell_quote() {
+  printf "%q" "$1"
+}
+
+if [[ -n "${SSH_TARGET}" && "${DMM_REMOTE_CHECK:-0}" != "1" ]]; then
+  ssh_args=(
+    -o IdentityAgent=none
+    -o BatchMode=yes
+    -o IdentitiesOnly=yes
+    -o ConnectTimeout=6
+  )
+  if [[ -f "${SSH_KEY}" ]]; then
+    ssh_args=(-i "${SSH_KEY}" "${ssh_args[@]}")
+  fi
+  remote_base_url="${REMOTE_BASE_URL:-http://127.0.0.1:${PORT}}"
+  remote_db_path="${REMOTE_DB_PATH:-${REMOTE_DATA_DIR}/db/dmm.sqlite}"
+  remote_command=$(
+    printf 'DMM_REMOTE_CHECK=1 PORT=%s HOST=%s BASE_URL=%s APP_ID=%s PROFILE_NAME=%s DATA_DIR=%s DB_PATH=%s KEEP_PROFILE=%s bash -s' \
+      "$(shell_quote "${PORT}")" \
+      "$(shell_quote "127.0.0.1")" \
+      "$(shell_quote "${remote_base_url}")" \
+      "$(shell_quote "${APP_ID}")" \
+      "$(shell_quote "${PROFILE_NAME}")" \
+      "$(shell_quote "${REMOTE_DATA_DIR}")" \
+      "$(shell_quote "${remote_db_path}")" \
+      "$(shell_quote "${KEEP_PROFILE}")"
+  )
+  exec ssh "${ssh_args[@]}" "${SSH_TARGET}" "${remote_command}" < "$0"
+fi
 
 section() {
   printf '\n==> %s\n' "$1"
