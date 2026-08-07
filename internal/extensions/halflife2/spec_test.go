@@ -20,7 +20,7 @@ func TestExtensionRegistersManifestBackedNexusCapability(t *testing.T) {
 	if len(extension.NexusDomains) != 1 || extension.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", extension.NexusDomains)
 	}
-	for _, appID := range []string{HalfLife2AppID, EpisodeOneAppID, EpisodeTwoAppID} {
+	for _, appID := range []string{HalfLife2AppID, LostCoastAppID, EpisodeOneAppID, EpisodeTwoAppID} {
 		if !contains(extension.SteamAppIDs, appID) {
 			t.Fatalf("missing app id %s in %+v", appID, extension.SteamAppIDs)
 		}

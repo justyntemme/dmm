@@ -13,6 +13,7 @@ import (
 
 const (
 	HalfLife2AppID      = "220"
+	LostCoastAppID      = "340"
 	EpisodeOneAppID     = "380"
 	EpisodeTwoAppID     = "420"
 	VortexGameID        = "halflife2"
@@ -25,6 +26,7 @@ var requiredGameFiles = []string{
 	"hl2.sh",
 	"hl2_linux",
 	"hl2/gameinfo.txt",
+	"lostcoast/gameinfo.txt",
 	"episodic/gameinfo.txt",
 	"ep2/gameinfo.txt",
 }
@@ -43,7 +45,7 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{HalfLife2AppID, EpisodeOneAppID, EpisodeTwoAppID},
+		SteamAppIDs:  []string{HalfLife2AppID, LostCoastAppID, EpisodeOneAppID, EpisodeTwoAppID},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
 		Deployment: installplan.DeploymentSpec{

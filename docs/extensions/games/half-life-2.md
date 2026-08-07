@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Steam AppIDs: `220` Half-Life 2, `380` Episode One, `420` Episode Two
+- Steam AppIDs: `220` Half-Life 2, `340` Lost Coast, `380` Episode One, `420` Episode Two
 - DMM extension ID: `halflife2`
 - Nexus domain: `halflife2`
 - Vortex manifest package: Nexus site mod `80`, file `516`, version `1.1.0`
@@ -16,13 +16,13 @@
 
 ## Current DMM Capability
 
-- DMM declares the verified Half-Life 2 Nexus domain for Half-Life 2 and its two episodes.
-- DMM checks for the shared Linux Source executable/script and the `hl2`, `episodic`, and `ep2` `gameinfo.txt` files.
+- DMM declares the verified Half-Life 2 Nexus domain for Half-Life 2, Lost Coast, and the two episodes.
+- DMM checks for the shared Linux Source executable/script and the `hl2`, `lostcoast`, `episodic`, and `ep2` `gameinfo.txt` files.
 - Archive installs are intentionally blocked because the Vortex extension package/source has not been inspected and Source-engine mods can use multiple incompatible layouts.
 
 ## Beta Gaps
 
 - Inspect the actual Vortex Half-Life 2 extension package before adding installer rules.
 - Classify representative Nexus archives for base `hl2`, `episodic`, `ep2`, `custom`, VPK, sourcemods, and external-tool flows.
-- Decide whether Lost Coast (`340`) belongs in this extension after source/package review; it shares the Steam install dir but was not explicitly called out by the verified Vortex manifest description.
+- Confirm the exact Lost Coast (`340`) behavior after source/package review; it is currently registered only because it shares the live Steam install dir and remains install-blocked.
 - Add only extension-owned installers that map verified layouts to safe DMM-owned deployment roots.
