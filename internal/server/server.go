@@ -1986,6 +1986,11 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 	if req.Title == "" {
 		req.Title = "DMM Browser"
 	}
+	if err := s.validateDeckyBrowserOpenTarget(r.Context(), req); err != nil {
+		s.logger.Warn("decky browser open rejected", "app_id", req.SteamAppID, "profile_id", req.ProfileID, "source", req.Source, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	expiresAt := time.Now().UTC().Add(45 * time.Second)
 	payload := map[string]any{
 		"url":        req.URL,
@@ -2012,6 +2017,38 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 		"app_id":     req.SteamAppID,
 		"expires_at": expiresAt,
 	})
+}
+
+func (s *Server) validateDeckyBrowserOpenTarget(ctx context.Context, req deckyBrowserOpenRequest) error {
+	resolved, err := nexus.ParseURL(req.URL)
+	if err != nil {
+		if errors.Is(err, catalog.ErrUnsupportedURL) {
+			return nil
+		}
+		return err
+	}
+
+	selectedAppID := strings.TrimSpace(req.SteamAppID)
+	resolvedAppID := strings.TrimSpace(s.appIDForResolved(resolved))
+	if selectedAppID != "" {
+		if resolvedAppID != "" && resolvedAppID != selectedAppID {
+			return fmt.Errorf("provider page belongs to Steam app %s, not selected app %s", resolvedAppID, selectedAppID)
+		}
+		if _, ok := s.registeredNexusDomainForSteamAppID(selectedAppID, resolved.GameDomain); !ok {
+			return fmt.Errorf("Nexus domain %s is not registered for selected Steam app %s", resolved.GameDomain, selectedAppID)
+		}
+	}
+
+	profileAppID := resolvedAppID
+	if profileAppID == "" {
+		profileAppID = selectedAppID
+	}
+	if req.ProfileID > 0 && profileAppID != "" {
+		if err := s.validateTargetProfile(ctx, profileAppID, req.ProfileID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func normalizedUIConfig(ui config.UIConfig) config.UIConfig {

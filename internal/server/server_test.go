@@ -396,10 +396,21 @@ func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 
 func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
 	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID: "413150",
+		Name:  "Stardew Valley",
+		State: "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Deck")
+	if err != nil {
+		t.Fatal(err)
+	}
 	sub := srv.events.Subscribe(0)
 	defer sub.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400","steam_app_id":"413150","profile_id":7,"source":"web-test","title":"Test Mod"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(fmt.Sprintf(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400","steam_app_id":"413150","profile_id":%d,"source":"web-test","title":"Test Mod"}`, profile.ID)))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -427,7 +438,7 @@ func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.URL != "https://www.nexusmods.com/stardewvalley/mods/2400" || payload.ProfileID != 7 || payload.Source != "web-test" || payload.Title != "Test Mod" {
+		if payload.URL != "https://www.nexusmods.com/stardewvalley/mods/2400" || payload.ProfileID != profile.ID || payload.Source != "web-test" || payload.Title != "Test Mod" {
 			t.Fatalf("payload = %+v", payload)
 		}
 		expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
@@ -439,6 +450,40 @@ func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for decky browser event")
+	}
+}
+
+func TestDeckyBrowserOpenRejectsNexusPageForDifferentSelectedGame(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{
+		{AppID: "413150", Name: "Stardew Valley", State: "clean_candidate"},
+		{AppID: "377160", Name: "Fallout 4", State: "clean_candidate"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Deck")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := srv.events.Subscribe(0)
+	defer sub.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(fmt.Sprintf(`{"url":"https://www.nexusmods.com/fallout4/mods/1","steam_app_id":"413150","profile_id":%d,"source":"web-test","title":"Wrong Game"}`, profile.ID)))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "not selected app 413150") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+	select {
+	case event := <-sub.C:
+		t.Fatalf("unexpected event after rejected browser open: %+v", event)
+	default:
 	}
 }
 
