@@ -32,6 +32,19 @@ func TestExtensionPlansLooseDataArchiveIntoFalloutData(t *testing.T) {
 	assertTarget(t, plan.Instructions, "Data/Meshes/armor.nif")
 }
 
+func TestExtensionRegistersFalloutLondonCompatibleDownloads(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	domains := registry.NexusDomainsForSteamAppID(fallout4.SteamAppID)
+	if !contains(domains, fallout4.VortexGameID) || !contains(domains, fallout4.FalloutLondonNexusDomain) {
+		t.Fatalf("nexus domains = %+v", domains)
+	}
+	appID, ok := registry.SteamAppIDForNexusDomain(fallout4.FalloutLondonNexusDomain)
+	if !ok || appID != fallout4.SteamAppID {
+		t.Fatalf("Fallout London domain maps to appID %q ok=%v", appID, ok)
+	}
+}
+
 func TestExtensionPlansTopLevelDataArchiveWithoutDuplicatingDataPath(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "Data", "Example.esp"), "plugin")

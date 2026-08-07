@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	SteamAppID   = "377160"
-	VortexGameID = "fallout4"
-	Name         = "Fallout 4"
+	SteamAppID               = "377160"
+	VortexGameID             = "fallout4"
+	FalloutLondonNexusDomain = "fallout4london"
+	Name                     = "Fallout 4"
 )
 
 func Extension() sdk.Extension {
@@ -30,7 +31,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  []string{SteamAppID},
-		NexusDomains: []string{VortexGameID},
+		NexusDomains: []string{VortexGameID, FalloutLondonNexusDomain},
 		VortexGameID: VortexGameID,
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
