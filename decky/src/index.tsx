@@ -828,6 +828,7 @@ function sourceLabel(catalog?: string) {
   if (source === "modio" || source === "mod.io") return "mod.io";
   if (source === "curseforge") return "CurseForge";
   if (source === "moddb") return "ModDB";
+  if (source === "itchio" || source === "itch.io") return "itch.io";
   if (source === "github" || source === "github_releases") return "GitHub";
   if (source === "direct") return "Direct";
   if (source === "local") return "Local";
@@ -865,6 +866,8 @@ function deckySourcePillStyle(catalog?: string): CSSProperties {
     "mod.io": { border: "#16a34a", color: "#dcfce7", background: "#052e16" },
     curseforge: { border: "#f97316", color: "#ffedd5", background: "#431407" },
     moddb: { border: "#ca8a04", color: "#fef3c7", background: "#422006" },
+    itchio: { border: "#ef4444", color: "#fee2e2", background: "#450a0a" },
+    "itch.io": { border: "#ef4444", color: "#fee2e2", background: "#450a0a" },
     github: { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     "github-releases": { border: "#52525b", color: "#f4f4f5", background: "#18181b" },
     extension: { border: "#0f766e", color: "#ccfbf1", background: "#042f2e" },

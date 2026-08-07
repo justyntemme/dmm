@@ -219,7 +219,7 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	for _, item := range catalogs {
 		byID[item.ID] = item
 	}
-	for _, id := range []string{"nexus", "thunderstore", "github", "modrinth", "gamebanana", "direct", "modio", "curseforge", "moddb", "local", "steam_workshop"} {
+	for _, id := range []string{"nexus", "thunderstore", "github", "modrinth", "gamebanana", "direct", "modio", "curseforge", "moddb", "itchio", "local", "steam_workshop"} {
 		if byID[id].ID == "" {
 			t.Fatalf("missing catalog %q in %+v", id, catalogs)
 		}
@@ -262,6 +262,12 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	}
 	if got := byID["moddb"].Capabilities; len(got) != 0 {
 		t.Fatalf("moddb capabilities = %+v", got)
+	}
+	if got := byID["itchio"]; got.Status != "deferred" || got.URLImport || got.Download || got.Configured {
+		t.Fatalf("itch.io catalog = %+v", got)
+	}
+	if got := byID["itchio"].Capabilities; len(got) != 0 {
+		t.Fatalf("itch.io capabilities = %+v", got)
 	}
 	if got := byID["steam_workshop"]; got.Status != "ready" || got.Kind != "platform" || !got.InstalledManagement || got.URLImport {
 		t.Fatalf("steam workshop catalog = %+v", got)

@@ -3022,6 +3022,7 @@
     if (source === "modio" || source === "mod.io") return "mod.io";
     if (source === "curseforge") return "CurseForge";
     if (source === "moddb") return "ModDB";
+    if (source === "itchio" || source === "itch.io") return "itch.io";
     if (source === "github" || source === "github_releases") return "GitHub";
     if (source === "direct") return "Direct";
     if (source === "local") return "Local";
@@ -3040,6 +3041,7 @@
     if (source === "modio" || source === "mod.io") return "source-modio";
     if (source === "curseforge") return "source-curseforge";
     if (source === "moddb") return "source-moddb";
+    if (source === "itchio" || source === "itch.io") return "source-itchio";
     if (source === "github" || source === "github-releases") return "source-github";
     if (source === "direct") return "source-direct";
     if (source === "local") return "source-local";

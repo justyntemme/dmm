@@ -51,6 +51,7 @@ for catalog_id in [
     "modio",
     "curseforge",
     "moddb",
+    "itchio",
     "steam_workshop",
 ]:
     item = by_id.get(catalog_id)
@@ -61,6 +62,9 @@ for catalog_id in [
 moddb = by_id.get("moddb", {})
 if moddb.get("status") != "deferred":
     raise RuntimeError(f"expected ModDB to remain deferred until a supported API/client path is verified, got {moddb}")
+itchio = by_id.get("itchio", {})
+if itchio.get("status") != "deferred":
+    raise RuntimeError(f"expected itch.io to remain deferred until a supported arbitrary mod import path is verified, got {itchio}")
 
 cases = [
     (

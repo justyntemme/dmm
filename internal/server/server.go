@@ -1515,6 +1515,14 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Notes:     []string{"No verified supported automated ModDB API is wired yet; direct archive URLs remain the safe import path."},
 		},
 		{
+			ID:        "itchio",
+			Name:      "itch.io",
+			Kind:      "remote",
+			Status:    "deferred",
+			SourceTag: "itchio",
+			Notes:     []string{"Official itch.io APIs cover account/project workflows, but DMM has not verified a safe arbitrary mod-page import/download API. Direct archive URLs remain the safe import path."},
+		},
+		{
 			ID:            "local",
 			Name:          "Local Archive",
 			Kind:          "local",

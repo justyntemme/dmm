@@ -1158,6 +1158,12 @@ h2 {
   background: #422006;
 }
 
+.source-itchio {
+  border-color: #ef4444;
+  color: #fee2e2;
+  background: #450a0a;
+}
+
 .source-modio {
   border-color: #16a34a;
   color: #dcfce7;
