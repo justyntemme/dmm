@@ -1386,18 +1386,21 @@ h2 {
 
 .nexus-search-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(4, auto);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
 
 .nexus-search-form input {
+  grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
 }
 
 .nexus-search-form button {
-  white-space: nowrap;
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
 }
 
 .nexus-results {
@@ -1507,13 +1510,12 @@ h2 {
 }
 
 .profile-summary .summary-action em {
-  position: absolute;
-  right: 8px;
-  bottom: 7px;
+  align-self: end;
   color: #76dfa6;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-style: normal;
   font-weight: 900;
+  line-height: 1.1;
   text-transform: uppercase;
 }
 
@@ -2587,18 +2589,6 @@ dd {
 
   .deploy-flow {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .nexus-search-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .nexus-search-form input {
-    grid-column: 1 / -1;
-  }
-
-  .nexus-search-form button {
-    width: 100%;
   }
 
   .mod-advanced-actions {
