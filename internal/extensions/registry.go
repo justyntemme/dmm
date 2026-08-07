@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
@@ -22,6 +23,7 @@ import (
 
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
+		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
