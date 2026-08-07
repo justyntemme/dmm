@@ -622,6 +622,7 @@ type launchToolResponse struct {
 	Name               string   `json:"name"`
 	ExecutableRelative string   `json:"executable_relative"`
 	ExecutablePath     string   `json:"executable_path"`
+	Arguments          []string `json:"arguments,omitempty"`
 	RequiredFiles      []string `json:"required_files,omitempty"`
 	SourceExtension    string   `json:"source_extension"`
 }
@@ -1029,13 +1030,14 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
 
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
-	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative)
+	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, tool.Arguments...)
 	resp.DesiredOptions = desired
 	resp.Tool = &launchToolResponse{
 		ID:                 tool.ID,
 		Name:               tool.Name,
 		ExecutableRelative: tool.ExecutableRelative,
 		ExecutablePath:     executablePath,
+		Arguments:          append([]string(nil), tool.Arguments...),
 		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
 		SourceExtension:    extension.ID,
 	}

@@ -55,10 +55,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ID:                 "loader",
 				Name:               "Sample Loader",
 				ExecutableRelative: "loader",
+				Arguments:          []string{"--native"},
 				RequiredFiles:      []string{"loader", "loader.dll"},
 				Variants: []sdk.LaunchToolVariantSpec{{
 					PlatformID:         "windows",
 					ExecutableRelative: "loader.exe",
+					Arguments:          []string{"--windows"},
 					RequiredFiles:      []string{"loader.exe", "loader.dll"},
 				}},
 				DefaultPrimary:   true,
@@ -153,7 +155,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	_, baseTool, _ := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}})
 	resolvedTool := registry.ResolveLaunchToolForSteamApp("100", gamePath, baseTool)
-	if resolvedTool.ExecutableRelative != "loader.exe" || len(resolvedTool.RequiredFiles) != 2 || resolvedTool.RequiredFiles[0] != "loader.exe" {
+	if resolvedTool.ExecutableRelative != "loader.exe" || len(resolvedTool.Arguments) != 1 || resolvedTool.Arguments[0] != "--windows" || len(resolvedTool.RequiredFiles) != 2 || resolvedTool.RequiredFiles[0] != "loader.exe" {
 		t.Fatalf("resolved launch tool = %+v", resolvedTool)
 	}
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
@@ -376,9 +378,11 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				ID:                 "tool",
 				Name:               "Tool",
 				ExecutableRelative: "../tool",
+				Arguments:          []string{"bad\narg"},
 				Variants: []sdk.LaunchToolVariantSpec{{
 					PlatformID:         "bad/platform",
 					ExecutableRelative: "../tool.exe",
+					Arguments:          []string{"bad\rarg"},
 				}},
 			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
@@ -421,8 +425,10 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"install platform bad/platform name is required",
 		"install platform bad/platform marker: path traversal is not allowed",
 		"launch tool tool executable path: path traversal is not allowed",
+		"launch tool tool argument: must not contain control line breaks",
 		"launch tool tool variant platform id must be a simple identifier",
 		"launch tool tool variant executable path: path traversal is not allowed",
+		"launch tool tool variant argument: must not contain control line breaks",
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or fallout4",
 		"plugin activation plugins plugin extension must be a file extension",

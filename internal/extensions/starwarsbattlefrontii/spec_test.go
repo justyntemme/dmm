@@ -12,6 +12,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -36,6 +37,13 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	}
 	if len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+	_, tool, required := registry.RequiredPrimaryLaunchToolForSteamApp(starwarsbattlefrontii.SteamAppID, []gamehandler.RuntimeMod{{
+		Enabled: true,
+		ModType: "starwarsbattlefront22017-fbmod",
+	}})
+	if !required || tool.ID != "starwarsbattlefront22017-frosty-launch" || len(tool.Arguments) != 1 || tool.Arguments[0] != "-launch default" {
+		t.Fatalf("primary Frosty launch tool = %+v required=%v", tool, required)
 	}
 }
 

@@ -545,6 +545,11 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		if err := validateRelativePath(tool.ExecutableRelative); err != nil {
 			errs = append(errs, errors.New("launch tool "+id+" executable path: "+err.Error()))
 		}
+		for _, argument := range tool.Arguments {
+			if err := validateLaunchArgument(argument); err != nil {
+				errs = append(errs, errors.New("launch tool "+id+" argument: "+err.Error()))
+			}
+		}
 		for _, path := range tool.RequiredFiles {
 			if err := validateRelativePath(path); err != nil {
 				errs = append(errs, errors.New("launch tool "+id+" required file: "+err.Error()))
@@ -561,6 +566,11 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 			if err := validateRelativePath(variant.ExecutableRelative); err != nil {
 				errs = append(errs, errors.New("launch tool "+id+" variant executable path: "+err.Error()))
 			}
+			for _, argument := range variant.Arguments {
+				if err := validateLaunchArgument(argument); err != nil {
+					errs = append(errs, errors.New("launch tool "+id+" variant argument: "+err.Error()))
+				}
+			}
 			for _, path := range variant.RequiredFiles {
 				if err := validateRelativePath(path); err != nil {
 					errs = append(errs, errors.New("launch tool "+id+" variant required file: "+err.Error()))
@@ -574,6 +584,13 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateLaunchArgument(argument string) error {
+	if strings.ContainsAny(argument, "\x00\r\n") {
+		return errors.New("must not contain control line breaks")
+	}
+	return nil
 }
 
 func validateConflictPattern(pattern string) error {

@@ -362,6 +362,9 @@ func ResolveLaunchToolForPlatform(tool LaunchToolSpec, platformID string) Launch
 		if strings.TrimSpace(variant.ExecutableRelative) != "" {
 			resolved.ExecutableRelative = variant.ExecutableRelative
 		}
+		if len(variant.Arguments) > 0 {
+			resolved.Arguments = append([]string(nil), variant.Arguments...)
+		}
 		if len(variant.RequiredFiles) > 0 {
 			resolved.RequiredFiles = append([]string(nil), variant.RequiredFiles...)
 		}

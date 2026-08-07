@@ -69,6 +69,7 @@ func Register(r sdk.Registrar) {
 		ID:                 "starwarsbattlefront22017-frosty-launch",
 		Name:               "Launch Modded Game",
 		ExecutableRelative: filepath.ToSlash(filepath.Join(frostyRoot, frostyExecutable)),
+		Arguments:          []string{"-launch default"},
 		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(frostyRoot, frostyExecutable))},
 		DefaultPrimary:     true,
 		ModTypes:           []string{fbmodModType},

@@ -58,8 +58,17 @@ func LocalConfigPaths(ctx context.Context, userdataRoot string) ([]string, error
 	return paths, nil
 }
 
-func DesiredLaunchOptions(gamePath, executableRelative string) string {
-	return fmt.Sprintf("%q %%command%%", filepath.ToSlash(filepath.Join(gamePath, filepath.FromSlash(executableRelative))))
+func DesiredLaunchOptions(gamePath, executableRelative string, arguments ...string) string {
+	parts := []string{fmt.Sprintf("%q", filepath.ToSlash(filepath.Join(gamePath, filepath.FromSlash(executableRelative))))}
+	for _, argument := range arguments {
+		argument = strings.TrimSpace(argument)
+		if argument == "" {
+			continue
+		}
+		parts = append(parts, argument)
+	}
+	parts = append(parts, "%command%")
+	return strings.Join(parts, " ")
 }
 
 func LaunchOptionsContainTarget(ctx context.Context, appID, target string) []string {

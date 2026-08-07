@@ -39,6 +39,14 @@ func TestLaunchOptionsFromVDFReadsSoftwareAppsBlock(t *testing.T) {
 	}
 }
 
+func TestDesiredLaunchOptionsIncludesArguments(t *testing.T) {
+	got := DesiredLaunchOptions("/games/STAR WARS Battlefront II", "FrostyModManager/FrostyModManager.exe", "-launch default")
+	want := `"/games/STAR WARS Battlefront II/FrostyModManager/FrostyModManager.exe" -launch default %command%`
+	if got != want {
+		t.Fatalf("desired launch options = %q, want %q", got, want)
+	}
+}
+
 func TestLaunchOptionsFromVDFReportsAppWithoutLaunchOptions(t *testing.T) {
 	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LastPlayed" "1785361913" } } } } }`
 

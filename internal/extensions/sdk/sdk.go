@@ -127,6 +127,7 @@ type LaunchToolSpec struct {
 	ID                 string
 	Name               string
 	ExecutableRelative string
+	Arguments          []string
 	RequiredFiles      []string
 	Variants           []LaunchToolVariantSpec
 	DefaultPrimary     bool
@@ -137,6 +138,7 @@ type LaunchToolSpec struct {
 type LaunchToolVariantSpec struct {
 	PlatformID         string
 	ExecutableRelative string
+	Arguments          []string
 	RequiredFiles      []string
 }
 

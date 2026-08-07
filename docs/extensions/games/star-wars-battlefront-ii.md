@@ -22,14 +22,13 @@
 - Single `.fbmod` archives install the files from the matched `.fbmod` folder into `FrostyModManager/Mods/StarWarsBattlefrontII`.
 - Multi-`.fbmod` archives pause as DMM installer-choice actions so the user can choose the variant before staging.
 - Frosty Mod Manager is registered as a required runtime dependency for `.fbmod` mods.
-- Frosty Mod Manager is registered as the primary launch tool when enabled Battlefront II `.fbmod` mods are present.
+- Frosty Mod Manager is registered as the primary launch tool when enabled Battlefront II `.fbmod` mods are present, including the Vortex-verified `-launch default` argument.
 
 ## Beta Gaps
 
-- The current Nexus extension describes additional Frosty Mod Manager automation that is not yet implemented in DMM.
 - DMM does not auto-install Frosty Mod Manager yet.
 - DMM does not run Frosty Mod Manager or clean/rebuild Frosty `ModData` yet.
-- Frosty plugins, DatapathFix, and current extension variant-selection behavior require source-backed parity work before promotion.
+- Frosty plugins, DatapathFix setup, and Frosty project/import automation require source-backed parity work before promotion.
 - Live Nexus archive validation is required.
 
 ## Validation Targets
