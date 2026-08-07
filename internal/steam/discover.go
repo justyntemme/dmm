@@ -199,6 +199,7 @@ var knownSteamHelperAppIDs = map[string]struct{}{
 	"3658110": {}, // Proton 10.0
 	"1161040": {}, // Proton BattlEye Runtime
 	"1826330": {}, // Proton EasyAntiCheat Runtime
+	"993090":  {}, // Lossless Scaling utility app
 }
 
 func IsHelperApp(appID, name, installDir string) bool {
