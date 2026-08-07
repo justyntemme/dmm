@@ -45,10 +45,14 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Prototype](games/prototype.md)
 - [Prototype 2](games/prototype-2.md)
 - [Project Zomboid](games/project-zomboid.md)
+- [Nuclear Option](games/nuclear-option.md)
 - [Star Wars Battlefront II](games/star-wars-battlefront-ii.md)
 - [Star Wars Jedi: Survivor](games/star-wars-jedi-survivor.md)
 - [Stellaris](games/stellaris.md)
 - [Tabletop Simulator](games/tabletop-simulator.md)
+- [Total War: PHARAOH DYNASTIES](games/total-war-pharaoh-dynasties.md)
+- [Total War: ROME REMASTERED](games/total-war-rome-remastered.md)
+- [WARNO](games/warno.md)
 
 ## Research Rule
 
