@@ -16,8 +16,13 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 	}{
 		{appID: "26800", id: "braid", url: "https://www.moddb.com/games/braid/mods"},
 		{appID: "224760", id: "fez", url: "https://www.moddb.com/games/fez/mods"},
+		{appID: "297120", id: "heavybullets", url: "https://www.moddb.com/games/heavy-bullets/mods"},
 		{appID: "219150", id: "hotlinemiami", url: "https://www.moddb.com/games/hotline-miami/mods"},
+		{appID: "214560", id: "markoftheninja", url: "https://www.moddb.com/games/mark-of-the-ninja/mods"},
+		{appID: "220860", id: "mcpixel", url: "https://www.moddb.com/games/mcpixel/mods"},
 		{appID: "242680", id: "nuclearthrone", url: "https://www.moddb.com/games/nuclear-throne/mods"},
+		{appID: "218230", id: "planetside2", url: "https://www.moddb.com/games/planetside-2/addons"},
+		{appID: "1216320", id: "shieldwall", url: "https://www.moddb.com/games/shieldwall/mods"},
 		{appID: "455910", id: "starwarsroguesquadron", url: "https://www.moddb.com/games/star-wars-rogue-squadron/mods"},
 	}
 	for _, tt := range tests {

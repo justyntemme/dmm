@@ -23,10 +23,13 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/heavybullets"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hotlinemiami"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/markoftheninja"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mcpixel"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/megabonk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearandmetalgear2mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid2mc"
@@ -41,6 +44,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/planetside2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/potioncraft"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
@@ -50,6 +54,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spelunky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spidermanmilesmorales"
@@ -101,11 +106,14 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[1]),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[2]),
+		gameext.MustCompileExtension(heavybullets.Extension()),
 		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(hotlinemiami.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
+		gameext.MustCompileExtension(markoftheninja.Extension()),
 		gameext.MustCompileExtension(finalfantasyxx2hdremaster.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
+		gameext.MustCompileExtension(mcpixel.Extension()),
 		gameext.MustCompileExtension(megabonk.Extension()),
 		gameext.MustCompileExtension(metalgearandmetalgear2mc.Extension()),
 		gameext.MustCompileExtension(metalgearsolidvtpp.Extension()),
@@ -121,6 +129,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(plagueincevolved.Extension()),
+		gameext.MustCompileExtension(planetside2.Extension()),
 		gameext.MustCompileExtension(potioncraft.Extension()),
 		gameext.MustCompileExtension(prototype.Extension()),
 		gameext.MustCompileExtension(prototype2.Extension()),
@@ -129,6 +138,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(ridersrepublic.Extension()),
 		gameext.MustCompileExtension(rometotalwar.Extension()),
+		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
 		gameext.MustCompileExtension(stardewvalley.Extension()),
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),

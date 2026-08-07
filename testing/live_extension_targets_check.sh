@@ -166,8 +166,13 @@ for extension_id, domain in research_targets.items():
 metadata_targets = {
     "braid": "26800",
     "fez": "224760",
+    "heavybullets": "297120",
     "hotlinemiami": "219150",
+    "markoftheninja": "214560",
+    "mcpixel": "220860",
     "nuclearthrone": "242680",
+    "planetside2": "218230",
+    "shieldwall": "1216320",
     "starwarsroguesquadron": "455910",
 }
 for extension_id, app_id in metadata_targets.items():
