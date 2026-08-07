@@ -136,6 +136,7 @@ type DeckyExploreSource = {
   enabled: boolean;
   behavior: "browse" | "paste" | "info";
   gameDomain?: string;
+  informational?: boolean;
 };
 
 const DMMBrowserContainer = findModuleChild((mod: unknown) => {
@@ -1202,6 +1203,17 @@ function firstExtensionSourceNote(game?: ManagedGame | null) {
   if (!source) return "";
   if (source.name && source.url) return `${source.name}: ${source.url}`;
   return source.name || source.url || "";
+}
+
+function sourceTagForExtensionURL(url?: string) {
+  const normalized = (url || "").toLowerCase();
+  if (normalized.includes("moddb.com")) return "moddb";
+  if (normalized.includes("nexusmods.com")) return "nexus";
+  if (normalized.includes("gamebanana.com")) return "gamebanana";
+  if (normalized.includes("modrinth.com")) return "modrinth";
+  if (normalized.includes("thunderstore.io")) return "thunderstore";
+  if (normalized.includes("github.com")) return "github";
+  return "direct";
 }
 
 function deckyCapabilityPillStyle(kind: string): CSSProperties {
@@ -4403,6 +4415,21 @@ function DeckyModManagerRoute() {
     const catalogSourceTag = (catalog: CatalogStatus) => catalog.source_tag || catalog.id;
     const firstNote = (catalog: CatalogStatus) => catalog.notes?.find((note) => note.trim() !== "") ?? "";
     const nexusCatalog = catalogs.find((catalog) => catalog.id === "nexus");
+    if (selectedDeckyGame.extension?.coverage === "metadata_only") {
+      selectedDeckyGame.extension.sources?.filter((source) => source.name || source.url).forEach((source, index) => {
+        const catalog = sourceTagForExtensionURL(source.url);
+        sources.push({
+          id: `known:${index}`,
+          catalog,
+          title: source.name || "Known Source",
+          detail: source.url || "Verified source reference. DMM has no safe automated import path for this game yet.",
+          action: "Not Automated",
+          enabled: false,
+          behavior: "info",
+          informational: true
+        });
+      });
+    }
     if (nexusCatalog) {
       const nexusReady = nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse);
       if (selectedNexusDomains.length > 0) {
@@ -4810,7 +4837,7 @@ function DeckyModManagerRoute() {
 	                  }}
 	                  style={{
 	                    ...deckyCompositeRowStyle(false, source.enabled),
-	                    opacity: source.enabled ? 1 : 0.58,
+	                    opacity: source.enabled || source.informational ? 1 : 0.58,
 	                    padding: "10px"
 	                  }}
 	                >
@@ -4819,7 +4846,7 @@ function DeckyModManagerRoute() {
 	                    <span style={deckySourcePillStyle(source.catalog)}>{sourceLabel(source.catalog)}</span>
 	                  </div>
 	                  <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{source.detail}</div>
-	                  <div style={{ color: source.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                  <div style={{ color: source.enabled ? "#99f6e4" : source.informational ? "#fbbf24" : "#a1a1aa", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
 	                    {source.enabled ? `A ${source.action}` : source.action}
 	                  </div>
 	                </Focusable>

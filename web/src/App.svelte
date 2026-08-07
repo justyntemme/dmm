@@ -1900,6 +1900,11 @@
     return source.name || source.url || "";
   }
 
+  function selectedExtensionSources() {
+    if (selectedGame?.extension?.coverage !== "metadata_only") return [];
+    return selectedGame.extension.sources?.filter((item) => (item.name || item.url)) ?? [];
+  }
+
   function nexusModURL(mod: NexusModResult) {
     if (mod.url) return mod.url;
     const domain = selectedNexusDomain();
@@ -3757,6 +3762,17 @@
                       {/each}
                     </select>
                   </label>
+                  {#if selectedExtensionSources().length > 0}
+                    <div class="known-source-list" aria-label="Known source references">
+                      <strong>Known Sources</strong>
+                      {#each selectedExtensionSources() as source}
+                        <p>
+                          <span>{source.name || "Source reference"}</span>
+                          {#if source.url}<small>{source.url}</small>{/if}
+                        </p>
+                      {/each}
+                    </div>
+                  {/if}
                   {#if selectedExploreSourceBrowseReady()}
                     {#if selectedNexusDomains().length > 1}
                       <label class="target-profile-select">
