@@ -1,7 +1,13 @@
 package portal2
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -43,9 +49,35 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
+	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+		ID:          "portal2-dlc3-folder",
+		Name:        "Portal 2 portal2_dlc3 folder",
+		Kind:        "game-folder",
+		Required:    true,
+		ModTypes:    []string{modType},
+		Message:     "Portal 2 is missing the portal2_dlc3 folder required by the Vortex extension. Deploy the selected profile so DMM can create and populate it.",
+		OKMessage:   "Portal 2 has the portal2_dlc3 folder required by the Vortex extension.",
+		InstallHint: "Enable a Portal 2 mod and apply the selected profile. DMM will create portal2_dlc3 as part of the managed deployment.",
+		Check:       checkDLC3Folder,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func checkDLC3Folder(ctx context.Context, gamePath string) []string {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return nil
+	}
+	path := filepath.Join(gamePath, portal2DLC3Root)
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return []string{filepath.ToSlash(path)}
+	}
+	return nil
 }
 
 func sources() []sdk.SourceRef {

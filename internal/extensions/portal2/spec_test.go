@@ -1,11 +1,13 @@
 package portal2
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -19,6 +21,9 @@ func TestPortal2ExtensionRegistersDLC3Installer(t *testing.T) {
 	}
 	if len(extension.InstallPlan.Installers) != 1 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
+	}
+	if len(extension.RuntimeRequirements.RuntimeRequirements) != 1 {
+		t.Fatalf("runtime requirements = %+v", extension.RuntimeRequirements.RuntimeRequirements)
 	}
 	installer := extension.InstallPlan.Installers[0]
 	if installer.InstructionMode != installplan.InstructionArchiveRoot || !installer.StripCommonRoot {
@@ -53,6 +58,30 @@ func TestPortal2PlannerBuildsDLC3ArchiveRoot(t *testing.T) {
 		if _, ok := targets[want]; !ok {
 			t.Fatalf("missing target %q in %+v", want, plan.Instructions)
 		}
+	}
+}
+
+func TestPortal2RuntimeRequirementReportsDLC3Folder(t *testing.T) {
+	extension := gameext.MustCompileExtension(Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	gamePath := t.TempDir()
+	reqs := registry.RuntimeRequirements(context.Background(), SteamAppID, gamePath, []gamehandler.RuntimeMod{{
+		ModType: modType,
+		Enabled: true,
+	}})
+	if len(reqs) != 1 || reqs[0].Status != gamehandler.RequirementMissing {
+		t.Fatalf("requirements before folder = %+v", reqs)
+	}
+
+	if err := os.Mkdir(filepath.Join(gamePath, portal2DLC3Root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reqs = registry.RuntimeRequirements(context.Background(), SteamAppID, gamePath, []gamehandler.RuntimeMod{{
+		ModType: modType,
+		Enabled: true,
+	}})
+	if len(reqs) != 1 || reqs[0].Status != gamehandler.RequirementOK || len(reqs[0].Details) != 1 {
+		t.Fatalf("requirements after folder = %+v", reqs)
 	}
 }
 
