@@ -352,6 +352,12 @@ To verify the core profile enable/disable workflow against live DMM-managed file
 ~/.testing/live_profile_toggle_check.sh
 ```
 
+From the development workstation, run the same filesystem-aware check on the Steam Deck with:
+
+```sh
+SSH_TARGET=deck@192.168.8.102 bash ./testing/live_profile_toggle_check.sh
+```
+
 The script picks one enabled profile mod with unique deployment targets, disables it through the same profile-mod API used by the web UI, applies the profile, verifies its DMM-managed files are removed from the live game folder, re-enables it, reapplies the profile, and verifies the restored symlinks point back into DMM storage. It attempts to restore the mod if the check fails before completion.
 
 To verify profile copy/remove behavior without changing the active deployment, run:
@@ -360,12 +366,24 @@ To verify profile copy/remove behavior without changing the active deployment, r
 ~/.testing/live_profile_transfer_check.sh
 ```
 
+From the development workstation:
+
+```sh
+SSH_TARGET=deck@192.168.8.102 bash ./testing/live_profile_transfer_check.sh
+```
+
 The script creates or reuses a secondary test profile, copies one active-profile mod into it disabled, removes that copied membership, verifies the source profile membership plus staged files remain intact, then deletes the temporary profile. Set `KEEP_PROFILE=1` if you need to inspect that profile afterward.
 
 To verify profile creation can seed a new loadout from the active profile:
 
 ```sh
 ~/.testing/live_profile_seed_check.sh
+```
+
+From the development workstation:
+
+```sh
+SSH_TARGET=deck@192.168.8.102 bash ./testing/live_profile_seed_check.sh
 ```
 
 The script creates a temporary profile from the active/default profile, verifies the copied mod memberships, enabled states, profile priorities, and returned profile counts, then deletes the temporary profile.
@@ -384,6 +402,12 @@ Before launching Stardew, verify that DMM-managed SMAPI mod files are actually v
 
 ```sh
 ~/.testing/live_stardew_mod_files_check.sh
+```
+
+From the development workstation:
+
+```sh
+SSH_TARGET=deck@192.168.8.102 bash ./testing/live_stardew_mod_files_check.sh
 ```
 
 This checks the active deployment manifest, the Stardew `Mods/` directory, and visible `manifest.json` symlinks. It fails if enabled profile mods are not represented by DMM-managed symlinked manifests under the game folder. This does not replace launching Stardew/SMAPI, but it proves the file-system side of the in-game visibility path.
