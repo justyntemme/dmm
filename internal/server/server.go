@@ -65,6 +65,10 @@ type Server struct {
 	catalogs  []catalog.RemoteModCatalog
 	games     games.Registry
 
+	gameDiscoveryMu      sync.Mutex
+	gameDiscoveryCache   []steam.Game
+	gameDiscoveryCacheAt time.Time
+
 	pendingMu        sync.Mutex
 	capturedInstalls map[string]capturedInstall
 
@@ -102,6 +106,7 @@ const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
+	gameDiscoveryCacheTTL      = 10 * time.Second
 )
 
 type installerChoiceRequiredError struct {
@@ -2128,17 +2133,14 @@ func mustMarshalJSONString(value any) string {
 }
 
 func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
-	games, err := steam.Discover(r.Context())
+	forceRefresh := truthyQueryValue(r.URL.Query().Get("refresh"))
+	games, cached, err := s.discoverGames(r.Context(), forceRefresh)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	s.detectGameVersions(r.Context(), games)
-	s.annotateExtensionKnownExternalMarkers(games)
-	s.annotateSteamWorkshopSupport(games)
-	if err := s.db.SyncGames(r.Context(), games); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	if cached {
+		s.logger.Debug("using cached steam game discovery", "games", len(games))
 	}
 	responses := make([]gameResponse, 0, len(games))
 	for _, game := range games {
@@ -2158,6 +2160,50 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.Game, bool, error) {
+	s.gameDiscoveryMu.Lock()
+	defer s.gameDiscoveryMu.Unlock()
+	if !forceRefresh && len(s.gameDiscoveryCache) > 0 && time.Since(s.gameDiscoveryCacheAt) < gameDiscoveryCacheTTL {
+		return cloneSteamGames(s.gameDiscoveryCache), true, nil
+	}
+	games, err := steam.Discover(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	s.detectGameVersions(ctx, games)
+	s.annotateExtensionKnownExternalMarkers(games)
+	s.annotateSteamWorkshopSupport(games)
+	if err := s.db.SyncGames(ctx, games); err != nil {
+		return nil, false, err
+	}
+	s.gameDiscoveryCache = cloneSteamGames(games)
+	s.gameDiscoveryCacheAt = time.Now()
+	return cloneSteamGames(games), false, nil
+}
+
+func truthyQueryValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneSteamGames(games []steam.Game) []steam.Game {
+	if len(games) == 0 {
+		return nil
+	}
+	out := make([]steam.Game, len(games))
+	for i, game := range games {
+		out[i] = game
+		out[i].Markers = append([]string(nil), game.Markers...)
+		out[i].Workshop.SampleItemIDs = append([]string(nil), game.Workshop.SampleItemIDs...)
+		out[i].Workshop.ItemIDs = append([]string(nil), game.Workshop.ItemIDs...)
+	}
+	return out
 }
 
 func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameExtensionInfo {

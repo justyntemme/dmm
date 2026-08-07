@@ -6366,6 +6366,35 @@ func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.
 	}
 }
 
+func TestGameDiscoveryCacheHelpers(t *testing.T) {
+	for _, value := range []string{"1", "true", "YES", "on"} {
+		if !truthyQueryValue(value) {
+			t.Fatalf("truthyQueryValue(%q) = false", value)
+		}
+	}
+	for _, value := range []string{"", "0", "false", "no", "off"} {
+		if truthyQueryValue(value) {
+			t.Fatalf("truthyQueryValue(%q) = true", value)
+		}
+	}
+
+	original := []steam.Game{{
+		AppID:   "413150",
+		Markers: []string{"marker"},
+		Workshop: steam.WorkshopInfo{
+			SampleItemIDs: []string{"1"},
+			ItemIDs:       []string{"2"},
+		},
+	}}
+	cloned := cloneSteamGames(original)
+	cloned[0].Markers[0] = "changed"
+	cloned[0].Workshop.SampleItemIDs[0] = "changed"
+	cloned[0].Workshop.ItemIDs[0] = "changed"
+	if original[0].Markers[0] != "marker" || original[0].Workshop.SampleItemIDs[0] != "1" || original[0].Workshop.ItemIDs[0] != "2" {
+		t.Fatalf("clone mutated original = %+v", original[0])
+	}
+}
+
 func TestBuildGameDeployPlanAllowsEmptyProfileToRemoveCurrentDeployment(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
