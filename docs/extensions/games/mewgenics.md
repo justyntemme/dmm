@@ -10,17 +10,21 @@
 ## Verified Sources
 
 - Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
-- Mewgenics Vortex extension page: `https://www.nexusmods.com/site/mods/1691`
-- Vortex bundled game extension source check: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
+- Mewgenics Vortex extension package `0.3.2`: `https://www.nexusmods.com/site/mods/1691`
+- Vortex package source file: `index.js` from Nexus site mod `1691`, file `8709`
 - Live Steam Deck path check: `/home/deck/.local/share/Steam/steamapps/common/Mewgenics`
 
 ## Current DMM Capability
 
-- Registers the Steam AppID and Nexus domain from the Vortex manifest.
+- Registers the Steam AppID and Nexus domain from the verified Vortex extension package.
 - Checks for `Mewgenics.exe` and `resources.gpak`.
-- Blocks archive installs because the manifest describes generated launch commands, load-order-driven behavior, and Mewtator/root installs.
+- Supports Vortex-backed installers for normal `description.json`/content-folder mods, Mewjector DLL mods, Mewjector, Mewtator, and Mewgenics Save Editor archives.
+- Generates DMM-owned `mods/modlist.txt` and root `launch.bat` during deployment from enabled profile mappings, matching Vortex's load-order-driven launch-file model.
+- Registers `launch.bat` as the extension primary launch tool for enabled Mewgenics mods.
+- Blocks the Vortex fallback installer instead of copying arbitrary unknown root files.
 
 ## Beta Gaps
 
-- Inspect the Vortex package and representative archives.
-- Add extension lifecycle support for generated launch scripts and load-order-derived launch arguments before enabling installs.
+- Live-test representative Nexus Mewgenics archives.
+- Live-test Steam Deck launch behavior for generated `launch.bat`. Vortex marks it as a shell launch tool; DMM's current launch-tool API does not yet model a separate shell flag.
+- Add a generic launch-tool shell/argument contract if `launch.bat` cannot be executed through the current Steam launch-option bridge.

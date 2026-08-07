@@ -1,36 +1,171 @@
 package mewgenics
 
 import (
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/manifestblocked"
+	"context"
+	"os"
+	"path/filepath"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 const (
 	SteamAppID   = "686060"
 	VortexGameID = "mewgenics"
 	Name         = "Mewgenics"
+
+	modType          = "mewgenics-mod"
+	mewjectorModType = "mewgenics-mewjectormod"
+	mewjectorType    = "mewgenics-mewjector"
+	mewtatorType     = "mewgenics-mewtator"
+	saveEditorType   = "mewgenics-saveeditor"
+	fallbackType     = "mewgenics-fallback-blocked"
+
+	modRoot        = "mods"
+	launchBAT      = "launch.bat"
+	modListRel     = "mods/modlist.txt"
+	gameExecutable = "Mewgenics.exe"
 )
 
 func Extension() sdk.Extension {
-	return manifestblocked.Extension(manifestblocked.Spec{
-		ID:                VortexGameID,
-		Name:              Name,
-		SteamAppIDs:       []string{SteamAppID},
-		NexusDomains:      []string{VortexGameID},
-		VortexGameID:      VortexGameID,
-		UnsupportedReason: "Mewgenics has a verified Vortex extension manifest entry, but the extension source/package has not yet been inspected. The manifest page describes generated launch commands, load-order-driven script creation, Mewtator/root installs, and mods-folder installs, so DMM blocks archive installs until those lifecycle hooks are implemented in the extension.",
-		RequiredFiles: []string{
-			"Mewgenics.exe",
-			"resources.gpak",
-		},
-		RequirementMessage:     "The Mewgenics game folder is missing files needed for future extension support.",
-		RequirementOKMessage:   "The Mewgenics game folder contains the expected executable and resources package.",
-		RequirementInstallHint: "Verify Mewgenics files in Steam before testing Mewgenics mods.",
-		Sources: []sdk.SourceRef{
-			{Name: "Vortex central extension manifest entry site-mod-1691-file-8709", URL: "https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json"},
-			{Name: "Mewgenics Vortex extension page", URL: "https://www.nexusmods.com/site/mods/1691"},
-			{Name: "Checked Vortex bundled game extensions; no Mewgenics source found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
-			{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
+	return sdk.Extension{
+		ID:       VortexGameID,
+		Name:     Name,
+		Version:  "0.3.2-dmm.1",
+		BuildID:  "first-party-go",
+		Register: Register,
+	}
+}
+
+func Register(r sdk.Registrar) {
+	r.RegisterGame(sdk.GameRegistration{
+		SteamAppIDs:  []string{SteamAppID},
+		NexusDomains: []string{VortexGameID},
+		VortexGameID: VortexGameID,
+		Deployment: installplan.DeploymentSpec{
+			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: mewjectorModType, TargetRoot: modRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: mewjectorType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: mewtatorType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: saveEditorType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: fallbackType, TargetRoot: ""})
+
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:mewtator",
+		VortexInstallerID: "mewgenics-mewtator",
+		Priority:          25,
+		ModType:           mewtatorType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchMewtator,
+		CustomBuild:       buildMewtator,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:saveeditor",
+		VortexInstallerID: "mewgenics-saveeeditor",
+		Priority:          26,
+		ModType:           saveEditorType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchSaveEditor,
+		CustomBuild:       buildSaveEditor,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:mewjector",
+		VortexInstallerID: "mewgenics-mewjector",
+		Priority:          27,
+		ModType:           mewjectorType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchMewjector,
+		CustomBuild:       buildMewjector,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:mod",
+		VortexInstallerID: "mewgenics-mod",
+		Priority:          28,
+		ModType:           modType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchMewgenicsMod,
+		CustomBuild:       buildMewgenicsMod,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:mewjector-mod",
+		VortexInstallerID: "mewgenics-mewjectormod",
+		Priority:          33,
+		ModType:           mewjectorModType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchMewjectorMod,
+		CustomBuild:       buildMewjectorMod,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:mewgenics:fallback-blocked",
+		VortexInstallerID: "mewgenics-fallback",
+		Priority:          49,
+		ModType:           fallbackType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchFallbackBlocked,
+		InstructionMode:   installplan.InstructionUnsupported,
+		UnsupportedReason: "Mewgenics Vortex fallback installer reached. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify this archive safely.",
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "mewgenics-customlaunch",
+		Name:               "Mewgenics Mod Launch",
+		ExecutableRelative: launchBAT,
+		RequiredFiles:      []string{launchBAT},
+		DefaultPrimary:     true,
+		ModTypes:           []string{modType, mewjectorModType},
+	})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "mewgenics-modlist", Name: "Mewgenics modlist.txt"})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Generate Mewgenics launch files",
+		Handler: willDeploy,
+	})
+	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+		ID:       "mewgenics-executable",
+		Name:     "Mewgenics executable marker",
+		Provider: gameVersion,
+	})
+	for _, pattern := range []string{
+		"**/CHANGELOG.md",
+		"**/readme.txt",
+		"**/README.txt",
+		"**/ReadMe.txt",
+		"**/Readme.txt",
+	} {
+		r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
+			ID:       "mewgenics-ignore-" + sanitizeID(pattern),
+			Name:     "Mewgenics ignored metadata " + pattern,
+			Patterns: []string{pattern},
+		})
+	}
+	for _, ref := range sources() {
+		r.RegisterSource(ref)
+	}
+}
+
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	for _, rel := range []string{gameExecutable} {
+		if info, err := os.Stat(filepath.Join(input.GamePath, rel)); err == nil && !info.IsDir() {
+			return sdk.GameVersionResult{Version: "installed", Source: rel}, nil
+		}
+	}
+	return sdk.GameVersionResult{}, os.ErrNotExist
+}
+
+func sources() []sdk.SourceRef {
+	return []sdk.SourceRef{
+		{Name: "Vortex central extension manifest entry site-mod-1691-file-8709", URL: "https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json"},
+		{Name: "Mewgenics Vortex extension package v0.3.2", URL: "https://www.nexusmods.com/site/mods/1691?tab=files"},
+		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
+	}
 }

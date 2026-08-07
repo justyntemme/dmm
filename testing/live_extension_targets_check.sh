@@ -123,6 +123,7 @@ installer_targets = {
     "spidermanmilesmorales": ("spidermanmilesmorales", ("installers", "runtime_requirements", "launch_tools", "merges", "load_orders", "event_handlers")),
     "portal2": ("portal2", ("installers",)),
     "thebindingofisaacrebirth": ("thebindingofisaacrebirth", ("installers", "game_versions")),
+    "mewgenics": ("mewgenics", ("installers", "launch_tools", "load_orders", "event_handlers", "game_versions")),
     "projectzomboid": ("projectzomboid", ("installers", "target_roots", "steam_workshop")),
     "starwarsjedisurvivor": ("starwarsjedisurvivor", ("installers", "load_orders", "event_handlers")),
 }
