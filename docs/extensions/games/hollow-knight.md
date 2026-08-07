@@ -11,6 +11,8 @@
 
 - Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
 - Hollow Knight Vortex extension page: `https://www.nexusmods.com/site/mods/376`
+- Hollow Knight Vortex extension package v2.1.1, Nexus site mod `376`, file `7365`, downloaded through the configured Nexus API key for source review.
+- Vortex shared `modtype-bepinex` source: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex`
 - Vortex bundled game extension source check: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
 - Live Steam Deck path check: `/run/media/deck/games/steamapps/common/Hollow Knight`
 
@@ -18,9 +20,19 @@
 
 - Registers the Steam AppID and Nexus domain from the Vortex manifest.
 - Checks for the executable, Unity data folder, and managed assembly folder.
-- Blocks archive installs because the manifest describes automatic BepInEx setup, managed DLL replacement, asset placement, and fallback behavior that must be source-verified.
+- Implements source-backed Vortex installer behavior for:
+  - `hollow_knight_Data` root-folder archives.
+  - BepInEx runtime packages.
+  - BepInEx root folders (`plugins`, `config`, `patchers`).
+  - BepInEx plugin DLL archives.
+  - BepInEx Configuration Manager archives.
+  - `Assembly-CSharp.dll` replacements under `hollow_knight_Data/Managed`.
+  - Unity `.assets`, `.resource`, and `.ress` files under `hollow_knight_Data`.
+- Blocks the Vortex fallback installer rather than writing unknown files to the game root without a specific extension-owned rule.
+- Reports a BepInEx runtime requirement when BepInEx mods are enabled.
 
 ## Beta Gaps
 
-- Inspect the current Vortex extension package and representative Nexus archives.
-- Add extension-owned BepInEx, managed assembly, Unity asset, and plugin-folder installers.
+- Live archive validation with representative Nexus Hollow Knight mods.
+- BepInEx automatic dependency download/install remains blocked until DMM has generic dependency-helper support.
+- The Vortex fallback notification flow is intentionally blocked in DMM until the UI can present a clear manual-review path.
