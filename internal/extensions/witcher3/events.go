@@ -22,6 +22,12 @@ const (
 	w3LoadOrderLineBreak = "\r\n"
 )
 
+var scriptMergeRelevantModTypes = map[string]struct{}{
+	"witcher3menumodroot": {},
+	"witcher3tl":          {},
+	"witcher3-mod-root":   {},
+}
+
 type modSettingsEntry struct {
 	Name     string
 	VK       string
@@ -60,6 +66,57 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 		}},
 		Messages: []string{fmt.Sprintf("Witcher 3 mods.settings generated with %d managed entries.", len(entries))},
 	}, nil
+}
+
+func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !deployIncludesScriptMergeRelevantMods(input) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{
+		"Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
+	}}, nil
+}
+
+func deployIncludesScriptMergeRelevantMods(input sdk.EventHandlerInput) bool {
+	for _, mod := range input.Mods {
+		if !mod.Enabled {
+			continue
+		}
+		if _, ok := scriptMergeRelevantModTypes[mod.ModType]; ok {
+			return true
+		}
+	}
+	for _, mapping := range input.Mappings {
+		if witcherTargetMayNeedScriptMerge(mapping.TargetRelative) {
+			return true
+		}
+	}
+	for _, file := range input.ManagedFiles {
+		if witcherTargetMayNeedScriptMerge(file.TargetPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func witcherTargetMayNeedScriptMerge(target string) bool {
+	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(target))))
+	if rel == "." || rel == "" {
+		return false
+	}
+	segments := strings.Split(rel, "/")
+	if len(segments) >= 2 && strings.EqualFold(segments[0], "Mods") {
+		return true
+	}
+	for _, segment := range segments {
+		if strings.EqualFold(segment, "scripts") {
+			return true
+		}
+	}
+	return isMenuModFile(rel)
 }
 
 func managedModSettingsEntries(mappings []deploy.FileMapping) []modSettingsEntry {

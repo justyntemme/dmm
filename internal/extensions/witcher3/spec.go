@@ -54,6 +54,11 @@ func Register(r sdk.Registrar) {
 		Name:    "Generate Witcher 3 mods.settings",
 		Handler: willDeploy,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "did-deploy",
+		Name:    "Remind about Witcher 3 Script Merger after mod changes",
+		Handler: didDeployScriptMergerReminder,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

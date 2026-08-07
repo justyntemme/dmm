@@ -136,8 +136,8 @@ func TestExtensionWillDeployGeneratesManagedModsSettings(t *testing.T) {
 	if !registry.HasEventHandlerForSteamApp("292030", "will-deploy") {
 		t.Fatal("expected Witcher 3 will-deploy handler")
 	}
-	if registry.HasEventHandlerForSteamApp("292030", "did-deploy") {
-		t.Fatal("did-deploy should not be advertised until it has an implementation")
+	if !registry.HasEventHandlerForSteamApp("292030", "did-deploy") {
+		t.Fatal("expected Witcher 3 did-deploy handler")
 	}
 
 	root := t.TempDir()
@@ -175,6 +175,53 @@ func TestExtensionWillDeployGeneratesManagedModsSettings(t *testing.T) {
 	}
 	if strings.Contains(body, "dlcExample") {
 		t.Fatalf("mods.settings included DLC entry:\n%s", body)
+	}
+}
+
+func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:    "Script Mod",
+			ModType: "witcher3tl",
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "Script Merger") {
+		t.Fatalf("messages = %+v", result.Messages)
+	}
+
+	byMapping, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{TargetRelative: "Mods/modExample/content/scripts/example.ws"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byMapping.Messages) != 1 {
+		t.Fatalf("mapping messages = %+v", byMapping.Messages)
+	}
+}
+
+func TestExtensionDidDeploySkipsDLCOnlyDeploy(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:    "DLC Mod",
+			ModType: "witcher3dlc",
+			Enabled: true,
+		}},
+		Mappings: []deploy.FileMapping{{TargetRelative: "DLC/dlcExample/content/example.bundle"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 0 {
+		t.Fatalf("messages = %+v", result.Messages)
 	}
 }
 
