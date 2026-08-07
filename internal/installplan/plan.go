@@ -155,10 +155,13 @@ type ChoiceStep struct {
 }
 
 type ChoiceGroup struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	Type    string         `json:"type"`
-	Plugins []ChoiceOption `json:"plugins,omitempty"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Type        string         `json:"type"`
+	Description string         `json:"description,omitempty"`
+	Placeholder string         `json:"placeholder,omitempty"`
+	Required    bool           `json:"required,omitempty"`
+	Plugins     []ChoiceOption `json:"plugins,omitempty"`
 }
 
 type ChoiceOption struct {

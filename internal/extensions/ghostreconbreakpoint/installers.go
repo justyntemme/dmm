@@ -13,6 +13,7 @@ const (
 	extractedFolder  = "Extracted"
 	buildtableFolder = "Individual Buildtables"
 	renameFolder     = "RENAME_ME_TO_FORGE_NAME.forge"
+	renameChoiceID   = "ghostreconbreakpoint-forge-folder-name"
 )
 
 func matchAnvilToolkit(root string) bool {
@@ -68,6 +69,30 @@ func matchLooseData(root string) bool {
 	return !hasFOMOD(root) && firstFileExt(root, ".data") != ""
 }
 
+func buildDataFolder(input installplan.BuildInput) (installplan.Plan, error) {
+	forgeName, ok := selectedForgeFolderName(input.Selections)
+	if !ok {
+		return installplan.Plan{}, forgeFolderNameChoiceRequired(input.ArchiveName)
+	}
+	dir := firstDirContaining(input.ExtractedRoot, ".data")
+	if strings.TrimSpace(dir) == "" {
+		return installplan.Plan{}, installplan.Unsupported("Ghost Recon Breakpoint .data folder installer matched but no .data folder was found")
+	}
+	return buildFromContentRoot(input, filepath.Dir(dir), filepath.Join(extractedFolder, forgeName), ".data folder")
+}
+
+func buildLooseData(input installplan.BuildInput) (installplan.Plan, error) {
+	forgeName, ok := selectedForgeFolderName(input.Selections)
+	if !ok {
+		return installplan.Plan{}, forgeFolderNameChoiceRequired(input.ArchiveName)
+	}
+	file := firstFileExt(input.ExtractedRoot, ".data")
+	if strings.TrimSpace(file) == "" {
+		return installplan.Plan{}, installplan.Unsupported("Ghost Recon Breakpoint loose .data installer matched but no .data file was found")
+	}
+	return buildFromContentRoot(input, filepath.Dir(file), filepath.Join(extractedFolder, forgeName), ".data file")
+}
+
 func matchForgeFile(root string) bool {
 	return !hasFOMOD(root) && firstFileExt(root, ".forge") != ""
 }
@@ -88,6 +113,61 @@ func buildRoot(input installplan.BuildInput) (installplan.Plan, error) {
 
 func matchFallback(root string) bool {
 	return !hasFOMOD(root)
+}
+
+func selectedForgeFolderName(selections map[string][]string) (string, bool) {
+	if len(selections) == 0 {
+		return "", false
+	}
+	values := selections[renameChoiceID]
+	if len(values) == 0 {
+		return "", false
+	}
+	name := strings.TrimSpace(values[0])
+	if name == "" {
+		return "", false
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".forge") {
+		name += ".forge"
+	}
+	lower := strings.ToLower(name)
+	if lower == ".forge" || strings.EqualFold(name, renameFolder) {
+		return "", false
+	}
+	if filepath.IsAbs(name) || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return "", false
+	}
+	if filepath.Base(name) != name {
+		return "", false
+	}
+	return name, true
+}
+
+func forgeFolderNameChoiceRequired(archiveName string) error {
+	reason := "Ghost Recon Breakpoint .data archives need the target .forge folder name before DMM can stage them safely."
+	if strings.TrimSpace(archiveName) != "" {
+		reason = reason + " Check the Nexus mod page instructions for " + archiveName + "."
+	}
+	return installplan.ChoiceRequired(
+		"extension-text-choice",
+		reason,
+		installplan.ChoiceInstaller{
+			Name: "Ghost Recon Breakpoint Forge Folder",
+			Steps: []installplan.ChoiceStep{{
+				ID:   "ghostreconbreakpoint-forge-folder",
+				Name: "Name the .forge folder",
+				Groups: []installplan.ChoiceGroup{{
+					ID:          renameChoiceID,
+					Name:        ".forge folder name",
+					Type:        "Text",
+					Description: "Enter the exact .forge folder this mod's .data files belong under. DMM appends .forge if you omit it.",
+					Placeholder: renameFolder,
+					Required:    true,
+				}},
+			}},
+		},
+		nil,
+	)
 }
 
 func buildFromContentRoot(input installplan.BuildInput, contentRoot, targetPrefix, marker string) (installplan.Plan, error) {

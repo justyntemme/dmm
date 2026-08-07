@@ -68,18 +68,65 @@ func TestPlannerBuildsRootVideosPlan(t *testing.T) {
 	assertTarget(t, plan.Instructions, "videos/intro.webm")
 }
 
-func TestPlannerBlocksLooseDataPendingRenameChoiceSupport(t *testing.T) {
+func TestPlannerRequiresForgeFolderNameForLooseData(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "asset.data"), "data")
 
 	_, err := registry().BuildInstallPlan(ghostreconbreakpoint.SteamAppID, root)
 	if err == nil {
-		t.Fatal("expected unsupported error")
+		t.Fatal("expected choice-required error")
 	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "free-text .forge folder rename prompt") {
+	var choice installplan.ChoiceRequiredError
+	if !errors.As(err, &choice) || choice.Kind != "extension-text-choice" {
 		t.Fatalf("error = %#v", err)
 	}
+	if len(choice.Installer.Steps) != 1 || len(choice.Installer.Steps[0].Groups) != 1 {
+		t.Fatalf("installer = %+v", choice.Installer)
+	}
+	group := choice.Installer.Steps[0].Groups[0]
+	if group.Type != "Text" || !group.Required || !strings.Contains(group.Placeholder, ".forge") {
+		t.Fatalf("group = %+v", group)
+	}
+}
+
+func TestPlannerBuildsLooseDataWithForgeFolderSelection(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "asset.data"), "data")
+
+	plan, err := registry().BuildInstallPlanWithGamePathArchiveAndSelections(
+		ghostreconbreakpoint.SteamAppID,
+		root,
+		"",
+		"Example.zip",
+		map[string][]string{"ghostreconbreakpoint-forge-folder-name": {"DataPC_patch_01"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "ghostreconbreakpoint-loosedata" || plan.PlannerID != "vortex:ghostreconbreakpoint:loosedata" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan.Instructions, "Extracted/DataPC_patch_01.forge/asset.data")
+}
+
+func TestPlannerBuildsDataFolderWithForgeFolderSelection(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "23_-_TEAMMATE_Template.data", "asset.bin"), "data")
+
+	plan, err := registry().BuildInstallPlanWithGamePathArchiveAndSelections(
+		ghostreconbreakpoint.SteamAppID,
+		root,
+		"",
+		"Example.zip",
+		map[string][]string{"ghostreconbreakpoint-forge-folder-name": {"DataPC_patch_01.forge"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "ghostreconbreakpoint-datafolder" || plan.PlannerID != "vortex:ghostreconbreakpoint:datafolder" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan.Instructions, "Extracted/DataPC_patch_01.forge/23_-_TEAMMATE_Template.data/asset.bin")
 }
 
 func TestPlannerLetsFOMODArchivesUseChoiceInstaller(t *testing.T) {

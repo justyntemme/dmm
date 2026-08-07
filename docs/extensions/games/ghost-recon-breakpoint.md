@@ -34,6 +34,8 @@
   - individual `.buildtable` archives into `Extracted/DataPC_patch_01.forge/Extracted/23_-_TEAMMATE_Template.data`
   - `Extracted` folder archives into the game root
   - `.forge` folder archives into `Extracted/<forge-folder>/...`
+  - `.data` folder archives into `Extracted/<user-entered-forge-folder>/...` after an extension-owned text installer choice
+  - loose `.data` file archives into `Extracted/<user-entered-forge-folder>/...` after an extension-owned text installer choice
   - `.forge` file replacement archives into the game root
   - root-folder archives containing `videos`
 - Publishes Vortex-equivalent readme conflict/deploy ignores for `**/readme.txt`.
@@ -41,7 +43,7 @@
 
 ## Beta Gaps
 
-- `.data` folder archives and loose `.data` archives remain blocked because Vortex requires a free-text `.forge` folder rename prompt before deployment.
+- `.data` folder archives and loose `.data` archives now use DMM's generic extension text-choice flow instead of Vortex's post-install rename dialog. This still needs live validation with representative Nexus archives.
 - The Vortex fallback installer remains blocked because arbitrary root placement is not safe without a specific extension-owned rule.
 - DMM does not yet mirror Vortex's post-deploy "Run AnvilToolkit to repack .forge files" notification/action as a complete tool lifecycle.
 - Live-test representative Breakpoint archives through the BrowserView `nxm://` flow before treating this as release-ready.

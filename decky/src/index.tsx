@@ -481,6 +481,9 @@ type FomodGroup = {
   id: string;
   name: string;
   type: string;
+  description?: string;
+  placeholder?: string;
+  required?: boolean;
   plugins?: FomodPlugin[];
 };
 
@@ -1770,12 +1773,17 @@ function fomodGroupInputType(group: FomodGroup) {
   return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
 }
 
+function fomodGroupIsText(group: FomodGroup) {
+  const type = fomodGroupType(group);
+  return type === "text" || type === "textinput";
+}
+
 function visibleFomodSteps(installer: FomodInstaller) {
   return (installer.steps ?? []).filter((step) => step.visible !== false);
 }
 
 function installerRequiresSelections(installer: FomodInstaller) {
-  return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => (group.plugins ?? []).length > 0));
+  return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => fomodGroupIsText(group) || (group.plugins ?? []).length > 0));
 }
 
 function fomodPluginSelectable(plugin: FomodPlugin) {
@@ -1792,6 +1800,9 @@ function fomodPluginType(plugin: FomodPlugin) {
 }
 
 function fomodGroupValid(group: FomodGroup, selections: Record<string, string[]>) {
+  if (fomodGroupIsText(group)) {
+    return !group.required || (selections[group.id]?.[0] ?? "").trim() !== "";
+  }
   const selected = (selections[group.id] ?? []).filter((id) => {
     const plugin = (group.plugins ?? []).find((item) => item.id === id);
     return plugin ? fomodPluginSelectable(plugin) : false;
@@ -2291,6 +2302,16 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
     void saveChoices(next);
   }
 
+  function groupTextValue(group: FomodGroup) {
+    return selections[group.id]?.[0] ?? "";
+  }
+
+  function setGroupTextSelection(group: FomodGroup, value: string, save: boolean) {
+    const next = { ...selections, [group.id]: value.trim() === "" ? [] : [value] };
+    setSelections(next);
+    if (save) void saveChoices(next);
+  }
+
   function setPluginSelection(group: FomodGroup, plugin: FomodPlugin, checked: boolean) {
     const type = fomodGroupType(group);
     if (fomodPluginLocked(group, plugin)) return;
@@ -2403,37 +2424,53 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
                   {currentStep.groups?.map((group) => (
                     <fieldset key={group.id} style={{ border: `1px solid ${fomodGroupValid(group, selections) ? "#303741" : "#fbbf24"}`, borderRadius: "6px", display: "grid", gap: "8px", margin: 0, padding: "10px" }}>
                       <legend style={{ color: "#7dd3fc", fontWeight: 800, padding: "0 4px" }}>{group.name}</legend>
-                      {fomodGroupType(group) === "selectatmostone" && (
-                        <label style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
-                          <input
-                            type="radio"
-                            name={`candidate-${candidate.id}-${group.id}`}
-                            checked={(selections[group.id] ?? []).length === 0}
+                      {group.description && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35, overflowWrap: "anywhere" }}>{group.description}</div>}
+                      {fomodGroupIsText(group) ? (
+                        <div style={{ display: "grid", gap: "6px" }}>
+                          <TextField
+                            label=""
+                            value={groupTextValue(group)}
                             disabled={busy}
-                            onChange={() => clearGroupSelection(group)}
+                            onChange={(event) => setGroupTextSelection(group, event.currentTarget.value, false)}
+                            onBlur={(event) => setGroupTextSelection(group, event.currentTarget.value, true)}
                           />
-                          <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
-                            <strong>None</strong>
-                            <small style={{ color: "#a1a1aa" }}>Do not install an option from this group.</small>
-                          </span>
-                        </label>
+                          {group.placeholder && <small style={{ color: "#a1a1aa" }}>Example: {group.placeholder}</small>}
+                        </div>
+                      ) : (
+                        <>
+                          {fomodGroupType(group) === "selectatmostone" && (
+                            <label style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
+                              <input
+                                type="radio"
+                                name={`candidate-${candidate.id}-${group.id}`}
+                                checked={(selections[group.id] ?? []).length === 0}
+                                disabled={busy}
+                                onChange={() => clearGroupSelection(group)}
+                              />
+                              <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                                <strong>None</strong>
+                                <small style={{ color: "#a1a1aa" }}>Do not install an option from this group.</small>
+                              </span>
+                            </label>
+                          )}
+                          {group.plugins?.map((plugin) => (
+                            <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)", opacity: fomodPluginSelectable(plugin) ? 1 : 0.58 }}>
+                              <input
+                                type={fomodGroupInputType(group)}
+                                name={`candidate-${candidate.id}-${group.id}`}
+                                checked={pluginSelected(group, plugin)}
+                                disabled={busy || fomodPluginLocked(group, plugin)}
+                                onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
+                              />
+                              <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                                <strong>{plugin.name}</strong>
+                                {fomodPluginType(plugin) && <small style={{ color: "#a1a1aa" }}>{fomodPluginType(plugin)}</small>}
+                                {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
+                              </span>
+                            </label>
+                          ))}
+                        </>
                       )}
-                      {group.plugins?.map((plugin) => (
-                        <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)", opacity: fomodPluginSelectable(plugin) ? 1 : 0.58 }}>
-                          <input
-                            type={fomodGroupInputType(group)}
-                            name={`candidate-${candidate.id}-${group.id}`}
-                            checked={pluginSelected(group, plugin)}
-                            disabled={busy || fomodPluginLocked(group, plugin)}
-                            onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
-                          />
-                          <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
-                            <strong>{plugin.name}</strong>
-                            {fomodPluginType(plugin) && <small style={{ color: "#a1a1aa" }}>{fomodPluginType(plugin)}</small>}
-                            {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
-                          </span>
-                        </label>
-                      ))}
                       {!fomodGroupValid(group, selections) && <div style={{ color: "#fbbf24", fontSize: "11px" }}>This group needs a valid selection before continuing.</div>}
                     </fieldset>
                   ))}

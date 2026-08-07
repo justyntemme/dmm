@@ -253,6 +253,9 @@
     id: string;
     name: string;
     type: string;
+    description?: string;
+    placeholder?: string;
+    required?: boolean;
     plugins?: FomodPlugin[];
   };
 
@@ -2044,12 +2047,17 @@
     return type === "selectexactlyone" || type === "selectatmostone" ? "radio" : "checkbox";
   }
 
+  function fomodGroupIsText(group: FomodGroup) {
+    const type = fomodGroupType(group);
+    return type === "text" || type === "textinput";
+  }
+
   function visibleFomodSteps(installer: FomodInstaller) {
     return (installer.steps ?? []).filter((step) => step.visible !== false);
   }
 
   function installerRequiresSelections(installer: FomodInstaller) {
-    return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => (group.plugins ?? []).length > 0));
+    return visibleFomodSteps(installer).some((step) => (step.groups ?? []).some((group) => fomodGroupIsText(group) || (group.plugins ?? []).length > 0));
   }
 
   function candidateCurrentSelections(candidate: InstallCandidate) {
@@ -2071,6 +2079,17 @@
 
   function fomodPluginType(plugin: FomodPlugin) {
     return (plugin.effective_type ?? plugin.type ?? "").trim();
+  }
+
+  function candidateGroupTextValue(candidate: InstallCandidate, group: FomodGroup) {
+    return candidateCurrentSelections(candidate)[group.id]?.[0] ?? "";
+  }
+
+  function setCandidateTextSelection(candidate: InstallCandidate, group: FomodGroup, value: string, save: boolean) {
+    const current = candidateCurrentSelections(candidate);
+    const next = { ...current, [group.id]: value.trim() === "" ? [] : [value] };
+    candidateSelections = { ...candidateSelections, [candidate.id]: next };
+    if (save) void saveCandidateSelections(candidate, next);
   }
 
   function clearCandidateGroupSelection(candidate: InstallCandidate, group: FomodGroup) {
@@ -2109,6 +2128,9 @@
   }
 
   function candidateGroupValid(candidate: InstallCandidate, group: FomodGroup) {
+    if (fomodGroupIsText(group)) {
+      return !group.required || candidateGroupTextValue(candidate, group).trim() !== "";
+    }
     const selected = (candidateCurrentSelections(candidate)[group.id] ?? []).filter((id) => {
       const plugin = (group.plugins ?? []).find((item) => item.id === id);
       return plugin ? fomodPluginSelectable(plugin) : false;
@@ -4228,37 +4250,52 @@
                               {#each step.groups ?? [] as group}
                                 <fieldset class:invalid-group={!candidateGroupValid(candidate, group)}>
                                   <legend>{group.name}</legend>
-                                  {#if fomodGroupType(group) === "selectatmostone"}
-                                    <label class="installer-none-option">
-                                      <input
-                                        type="radio"
-                                        name={`candidate-${candidate.id}-${group.id}`}
-                                        checked={(candidateCurrentSelections(candidate)[group.id] ?? []).length === 0}
-                                        disabled={isInstallCandidateBusy(candidate)}
-                                        on:change={() => clearCandidateGroupSelection(candidate, group)}
-                                      />
-                                      <span>
-                                        <strong>None</strong>
-                                        <small>Do not install an option from this group.</small>
-                                      </span>
-                                    </label>
+                                  {#if group.description}
+                                    <p class="installer-field-hint">{group.description}</p>
                                   {/if}
-                                  {#each group.plugins ?? [] as plugin}
-                                    <label class:option-disabled={!fomodPluginSelectable(plugin)}>
-                                      <input
-                                        type={fomodGroupInputType(group)}
-                                        name={`candidate-${candidate.id}-${group.id}`}
-                                        checked={isCandidatePluginSelected(candidate, group, plugin)}
-                                        disabled={fomodPluginLocked(group, plugin) || isInstallCandidateBusy(candidate)}
-                                        on:change={(event) => setCandidatePluginSelection(candidate, group, plugin, event.currentTarget.checked)}
-                                      />
-                                      <span>
-                                        <strong>{plugin.name}</strong>
-                                        {#if fomodPluginType(plugin)}<small>{fomodPluginType(plugin)}</small>{/if}
-                                        {#if plugin.description}<em>{plugin.description}</em>{/if}
-                                      </span>
-                                    </label>
-                                  {/each}
+                                  {#if fomodGroupIsText(group)}
+                                    <input
+                                      class="installer-text-input"
+                                      type="text"
+                                      value={candidateGroupTextValue(candidate, group)}
+                                      placeholder={group.placeholder ?? ""}
+                                      disabled={isInstallCandidateBusy(candidate)}
+                                      on:input={(event) => setCandidateTextSelection(candidate, group, event.currentTarget.value, false)}
+                                      on:change={(event) => setCandidateTextSelection(candidate, group, event.currentTarget.value, true)}
+                                    />
+                                  {:else}
+                                    {#if fomodGroupType(group) === "selectatmostone"}
+                                      <label class="installer-none-option">
+                                        <input
+                                          type="radio"
+                                          name={`candidate-${candidate.id}-${group.id}`}
+                                          checked={(candidateCurrentSelections(candidate)[group.id] ?? []).length === 0}
+                                          disabled={isInstallCandidateBusy(candidate)}
+                                          on:change={() => clearCandidateGroupSelection(candidate, group)}
+                                        />
+                                        <span>
+                                          <strong>None</strong>
+                                          <small>Do not install an option from this group.</small>
+                                        </span>
+                                      </label>
+                                    {/if}
+                                    {#each group.plugins ?? [] as plugin}
+                                      <label class:option-disabled={!fomodPluginSelectable(plugin)}>
+                                        <input
+                                          type={fomodGroupInputType(group)}
+                                          name={`candidate-${candidate.id}-${group.id}`}
+                                          checked={isCandidatePluginSelected(candidate, group, plugin)}
+                                          disabled={fomodPluginLocked(group, plugin) || isInstallCandidateBusy(candidate)}
+                                          on:change={(event) => setCandidatePluginSelection(candidate, group, plugin, event.currentTarget.checked)}
+                                        />
+                                        <span>
+                                          <strong>{plugin.name}</strong>
+                                          {#if fomodPluginType(plugin)}<small>{fomodPluginType(plugin)}</small>{/if}
+                                          {#if plugin.description}<em>{plugin.description}</em>{/if}
+                                        </span>
+                                      </label>
+                                    {/each}
+                                  {/if}
                                   {#if !candidateGroupValid(candidate, group)}
                                     <p class="installer-validation">This group needs a valid selection before continuing.</p>
                                   {/if}

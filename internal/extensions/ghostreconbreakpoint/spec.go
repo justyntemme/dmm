@@ -215,8 +215,8 @@ func installers() []installplan.InstallerSpec {
 			ModType:           dataFolderModType,
 			NameSource:        installplan.NameSourceArchive,
 			CustomMatch:       matchDataFolder,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Ghost Recon Breakpoint .data folder archives require Vortex's free-text .forge folder rename prompt before deployment. DMM blocks this until generic extension-owned text installer choices are implemented.",
+			CustomBuild:       buildDataFolder,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:ghostreconbreakpoint:loosedata",
@@ -225,8 +225,8 @@ func installers() []installplan.InstallerSpec {
 			ModType:           looseDataModType,
 			NameSource:        installplan.NameSourceArchive,
 			CustomMatch:       matchLooseData,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Ghost Recon Breakpoint loose .data archives require Vortex's free-text .forge folder rename prompt before deployment. DMM blocks this until generic extension-owned text installer choices are implemented.",
+			CustomBuild:       buildLooseData,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:ghostreconbreakpoint:forgefile",
