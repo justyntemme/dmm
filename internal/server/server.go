@@ -6587,7 +6587,7 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 			ModID:      resolved.ModID,
 			FileID:     resolved.FileID,
 		}).Error()
-		job, _ = s.jobs.Fail(job.ID, message)
+		job, _ = s.jobs.Complete(job.ID, message)
 		resp.Job = jobAPIResponse(job)
 		resp.BrowserRequired = true
 		s.logger.Info(

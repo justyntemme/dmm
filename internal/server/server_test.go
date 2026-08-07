@@ -2320,8 +2320,8 @@ func TestCapturedInstallNexusHTTPSRequiresBrowserGeneratedLink(t *testing.T) {
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"browser_required":true`)) {
 		t.Fatalf("expected browser_required response, body = %s", rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"failed"`)) {
-		t.Fatalf("expected failed job status, body = %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"completed"`)) {
+		t.Fatalf("expected completed handoff job status, body = %s", rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("Mod Manager Download")) {
 		t.Fatalf("expected Mod Manager Download guidance, body = %s", rec.Body.String())
