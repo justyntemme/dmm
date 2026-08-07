@@ -4180,7 +4180,7 @@ func TestRecoverDownloadsStagesExtensionlessArchive(t *testing.T) {
 	}
 }
 
-func TestRecoverDownloadsRestagesInvalidInstalledModWithoutTargets(t *testing.T) {
+func TestRecoverDownloadsSkipsAlreadyInstalledSourceFile(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -4224,14 +4224,14 @@ func TestRecoverDownloadsRestagesInvalidInstalledModWithoutTargets(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if staged != 1 || skipped != 0 {
+	if staged != 0 || skipped != 1 {
 		t.Fatalf("staged=%d skipped=%d", staged, skipped)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mods) != 1 || !strings.Contains(mods[0].ManifestJSON, `"target_relative":"Mods/LookupAnything/manifest.json"`) {
+	if len(mods) != 1 || strings.Contains(mods[0].ManifestJSON, `"target_relative"`) {
 		t.Fatalf("mods = %+v", mods)
 	}
 }
@@ -8230,7 +8230,7 @@ func TestApplyInstallPlanGeneratesFileFromGamePath(t *testing.T) {
 	}
 }
 
-func TestInvalidManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testing.T) {
+func TestInvalidManifestWithoutTargetMappingsFailsDeployment(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
@@ -8275,12 +8275,12 @@ func TestInvalidManifestWithoutTargetMappingsNeedsRecoveryAndIsSkipped(t *testin
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"needs_recovery"`)) {
-		t.Fatalf("body = %s", rec.Body.String())
+	if bytes.Contains(rec.Body.Bytes(), []byte(`"status":"needs_recovery"`)) {
+		t.Fatalf("obsolete recovery status leaked in body = %s", rec.Body.String())
 	}
 
 	_, err := srv.buildGameDeployPlan(context.Background(), "413150")
-	if err == nil || !strings.Contains(err.Error(), "enabled mods need recovery") {
+	if err == nil || !strings.Contains(err.Error(), "has no target mapping") {
 		t.Fatalf("error = %v", err)
 	}
 }

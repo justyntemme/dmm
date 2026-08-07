@@ -98,8 +98,6 @@ type nexusClient interface {
 
 type nexusClientFactory func(apiKey string) nexusClient
 
-var errUndeployableInstalledMod = errors.New("installed mod lacks install-plan target mappings")
-
 var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:key|expires|md5|token|api_key)=)[^&"'\s]+`)
 
 const (
@@ -532,7 +530,6 @@ type gameDiagnosticsResponse struct {
 	DefaultProfile      string                           `json:"default_profile,omitempty"`
 	InstalledMods       int                              `json:"installed_mods"`
 	EnabledMods         int                              `json:"enabled_mods"`
-	NeedsRecovery       int                              `json:"needs_recovery"`
 	BlockedCandidates   int                              `json:"blocked_candidates"`
 	ActiveInstallJobs   int                              `json:"active_install_jobs"`
 	ActiveDeployJobs    int                              `json:"active_deploy_jobs"`
@@ -832,7 +829,6 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	markUndeployableInstalledMods(mods)
 	if _, err := s.cleanupDuplicateInstallCandidates(r.Context(), appID, "game-diagnostics"); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -868,9 +864,6 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	for _, mod := range mods {
 		if mod.Enabled {
 			resp.EnabledMods++
-		}
-		if mod.Status == "needs_recovery" {
-			resp.NeedsRecovery++
 		}
 	}
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(r.Context(), appID, game.GamePath, runtimeModsForRequirements(mods))
@@ -1121,9 +1114,6 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 	}
 	if resp.InstalledMods == 0 {
 		warnings = append(warnings, "no installed profile mods are available")
-	}
-	if resp.NeedsRecovery > 0 {
-		warnings = append(warnings, strconv.Itoa(resp.NeedsRecovery)+" installed mods need recovery before deployment")
 	}
 	if resp.BlockedCandidates > 0 {
 		warnings = append(warnings, strconv.Itoa(resp.BlockedCandidates)+" downloaded archives are blocked by unsupported install planning")
@@ -2907,7 +2897,6 @@ func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	markUndeployableInstalledMods(mods)
 	updates, err := s.db.ModUpdatesForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -5512,9 +5501,6 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if !hasInstallPlanTargets(mod.ManifestJSON) {
-		mod.Status = "needs_recovery"
-	}
 	s.logger.Info("profile mod state updated", "profile_id", profileID, "installed_mod_id", installedModID, "enabled", req.Enabled, "priority", req.Priority)
 	s.publishGameEvent(events.TypeProfileModsChanged, mod.SteamAppID, map[string]any{
 		"action":           "updated",
@@ -5621,7 +5607,6 @@ func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	markUndeployableInstalledMods(mods)
 	appID := ""
 	if len(mods) > 0 {
 		appID = mods[0].SteamAppID
@@ -7374,11 +7359,9 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 	}
 	installedFiles := make(map[string]struct{}, len(installed))
 	for _, mod := range installed {
-		if hasInstallPlanTargets(mod.ManifestJSON) {
+		if strings.TrimSpace(mod.SourceModID) != "" && strings.TrimSpace(mod.SourceFileID) != "" {
 			installedFiles[mod.SourceModID+"/"+mod.SourceFileID] = struct{}{}
-			continue
 		}
-		s.logger.Info("download recovery will restage installed mod without install-plan targets", "job_id", jobID, "app_id", appID, "installed_mod_id", mod.ID, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
 	}
 
 	root := filepath.Join(s.cfg.DataDir, "downloads", "nexus", domain, "mods")
@@ -8050,27 +8033,6 @@ func stagedManifestFiles(manifestJSON string) ([]stagedManifestFile, error) {
 	return manifest.Files, nil
 }
 
-func hasInstallPlanTargets(manifestJSON string) bool {
-	files, err := stagedManifestFiles(manifestJSON)
-	if err != nil || len(files) == 0 {
-		return false
-	}
-	for _, file := range files {
-		if strings.TrimSpace(file.Path) == "" || strings.TrimSpace(file.TargetRelative) == "" {
-			return false
-		}
-	}
-	return true
-}
-
-func markUndeployableInstalledMods(mods []storage.InstalledMod) {
-	for i := range mods {
-		if !hasInstallPlanTargets(mods[i].ManifestJSON) {
-			mods[i].Status = "needs_recovery"
-		}
-	}
-}
-
 func runtimeModsForRequirements(mods []storage.InstalledMod) []gamehandler.RuntimeMod {
 	runtimeMods := make([]gamehandler.RuntimeMod, 0, len(mods))
 	for _, mod := range mods {
@@ -8189,9 +8151,6 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		if len(managedFiles) > 0 {
 			return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, managedFiles)
 		}
-		if active.DeployableMods > 0 && active.UndeployableMods == active.DeployableMods {
-			return deploy.Plan{}, errors.New("enabled mods need recovery before they can be applied")
-		}
 		return deploy.BuildPlanWithManagedFiles(stagingRoot, game.GamePath, defaultStrategy, nil, nil)
 	}
 	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, defaultStrategy, mappings, managedFiles, deploy.BuildOptions{
@@ -8201,9 +8160,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 }
 
 type activeDeploymentMappingsResult struct {
-	Mappings         []deploy.FileMapping
-	DeployableMods   int
-	UndeployableMods int
+	Mappings []deploy.FileMapping
 }
 
 func (s *Server) activeDeploymentMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod) (activeDeploymentMappingsResult, error) {
@@ -8224,14 +8181,8 @@ func (s *Server) activeDeploymentMappings(ctx context.Context, game storage.Game
 		if !mod.Enabled && !deployAsRuntimeToolProvider {
 			continue
 		}
-		result.DeployableMods++
 		next, err := s.deployMappingsForInstalledMod(ctx, game, mod)
 		if err != nil {
-			if errors.Is(err, errUndeployableInstalledMod) {
-				s.logger.Info("skipping staged mod without install-plan targets", "app_id", appID, "installed_mod_id", mod.ID, "name", mod.Name, "mod_id", mod.SourceModID, "file_id", mod.SourceFileID)
-				result.UndeployableMods++
-				continue
-			}
 			return activeDeploymentMappingsResult{}, err
 		}
 		if deployAsRuntimeToolProvider && !mod.Enabled {
@@ -8945,10 +8896,10 @@ func installedModType(mod storage.InstalledMod) string {
 func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage.Game, mod storage.InstalledMod) ([]deploy.FileMapping, error) {
 	stagingPath := strings.TrimSpace(mod.StagingPath)
 	if stagingPath == "" {
-		return nil, fmt.Errorf("%w: installed mod %q has no staging path; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+		return nil, fmt.Errorf("installed mod %q has no staging path; remove or reinstall this mod", mod.Name)
 	}
 	if info, err := os.Stat(stagingPath); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("%w: installed mod %q staging path is missing; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+		return nil, fmt.Errorf("installed mod %q staging path is missing; remove or reinstall this mod", mod.Name)
 	}
 	manifestFiles, err := stagedManifestFiles(mod.ManifestJSON)
 	if err != nil {
@@ -8962,7 +8913,7 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 			}
 			targetRelative := strings.TrimSpace(file.TargetRelative)
 			if targetRelative == "" {
-				return nil, fmt.Errorf("%w: installed mod %q has no target mapping; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+				return nil, fmt.Errorf("installed mod %q has no target mapping; remove or reinstall this mod", mod.Name)
 			}
 			targetRoot, err := s.resolveManifestTargetRoot(ctx, game, file.TargetRoot)
 			if err != nil {
@@ -8983,7 +8934,7 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 		}
 		return mappings, nil
 	}
-	return nil, fmt.Errorf("%w: installed mod %q does not have a deployable manifest; recover downloads or reinstall this mod", errUndeployableInstalledMod, mod.Name)
+	return nil, fmt.Errorf("installed mod %q does not have a deployable manifest; remove or reinstall this mod", mod.Name)
 }
 
 func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Game, rootID string) (string, error) {

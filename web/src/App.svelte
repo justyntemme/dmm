@@ -2837,13 +2837,11 @@
   }
 
   function modStatusText(mod: InstalledMod) {
-    if (mod.status === "needs_recovery") return "Needs repair";
     if (mod.status === "installed") return mod.enabled ? "Enabled" : "Installed";
     return mod.status;
   }
 
   function modProfileStateText(mod: InstalledMod) {
-    if (mod.status === "needs_recovery") return "Needs repair before it can be used";
     return mod.enabled ? "Enabled in this profile" : "Installed, disabled in this profile";
   }
 
@@ -3783,7 +3781,7 @@
                       <small>{modProfileStateText(mod)}</small>
                     </div>
                     <div class="mod-actions">
-                      <span class:warning-status={mod.status === "needs_recovery"}>{busyMods[mod.id] ? "Working" : modStatusText(mod)}</span>
+                      <span>{busyMods[mod.id] ? "Working" : modStatusText(mod)}</span>
                       <label class="mod-toggle">
                         <input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
                         <em>{busyMods[mod.id] === "toggle" ? "Saving" : mod.enabled ? "On" : "Off"}</em>

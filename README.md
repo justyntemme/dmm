@@ -26,7 +26,7 @@ MVP vertical slice in active testing:
 - Installer selection, mod type deployment roots, metadata extraction, and deployment eligibility are separate spec-owned concerns. Installed mod manifests preserve Vortex-style planner evidence plus manifest attributes such as logical file names, unique IDs, versions, content-pack targets, and dependencies.
 - Repeated downloads/reinstalls of the same Nexus file are de-duplicated in the profile mod list.
 - Profile mods can be removed from the Mods pane without deleting the cached download.
-- Older developer-test records without install-plan target mappings are shown as `needs_recovery` and skipped by deployment; use Recover Downloads to reinstall supported archives with the current planner, or remove the affected row.
+- Installed mods are expected to carry extension-produced target mappings. Invalid developer-test rows without deployable manifests fail deployment clearly and should be removed or reinstalled.
 - ZIP extraction is handled in-process with path-traversal checks.
 - Extensionless Nexus CDN archive paths are detected by file signature.
 - Failed downloads that reached DMM-managed storage can be recovered from the game Mods pane.
