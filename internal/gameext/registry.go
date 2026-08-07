@@ -216,10 +216,15 @@ func (r Registry) BuildInstallPlanWithGamePath(gameID, extractedRoot, gamePath s
 }
 
 func (r Registry) BuildInstallPlanWithGamePathAndSelections(gameID, extractedRoot, gamePath string, selections map[string][]string) (installplan.Plan, error) {
+	return r.BuildInstallPlanWithGamePathArchiveAndSelections(gameID, extractedRoot, gamePath, "", selections)
+}
+
+func (r Registry) BuildInstallPlanWithGamePathArchiveAndSelections(gameID, extractedRoot, gamePath, archiveName string, selections map[string][]string) (installplan.Plan, error) {
 	options := installplan.BuildOptions{}
 	if platform, ok := r.InstallPlatformForSteamApp(gameID, gamePath); ok {
 		options.PlatformID = platform.ID
 	}
+	options.ArchiveName = strings.TrimSpace(archiveName)
 	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
 }

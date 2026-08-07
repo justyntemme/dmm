@@ -4440,7 +4440,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	plan, err := s.games.BuildInstallPlanWithGamePathAndSelections(candidate.SteamAppID, extractPath, game.GamePath, selections)
+	plan, err := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(candidate.SteamAppID, extractPath, game.GamePath, filepath.Base(candidate.ArchivePath), selections)
 	if err != nil {
 		if choice, ok := installerChoiceFromPlanError(err); ok {
 			return storage.InstalledMod{}, choice
@@ -7517,7 +7517,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		}
 		return storage.InstalledMod{}, installplan.Unsupported(inspection.InstallerKind + " installer UI is not implemented yet")
 	}
-	installPlan, err := s.games.BuildInstallPlanWithGamePath(appID, extractPath, game.GamePath)
+	installPlan, err := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(appID, extractPath, game.GamePath, filepath.Base(archivePath), nil)
 	if err != nil {
 		if choice, ok := installerChoiceFromPlanError(err); ok {
 			s.logger.Info("captured install requires extension installer choices", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind)
