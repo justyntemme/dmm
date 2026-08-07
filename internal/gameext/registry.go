@@ -30,6 +30,7 @@ type Extension struct {
 	GameVersionProviders []sdk.GameVersionProviderSpec
 	PluginActivations    []sdk.PluginActivationSpec
 	ConflictIgnores      []sdk.ConflictIgnoreSpec
+	DeployIgnores        []sdk.DeployIgnoreSpec
 	TargetRoots          []sdk.TargetRootSpec
 	SteamWorkshop        sdk.SteamWorkshopSpec
 	Sources              []sdk.SourceRef
@@ -44,6 +45,7 @@ type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
+type DeployIgnoreSpec = sdk.DeployIgnoreSpec
 type TargetRootSpec = sdk.TargetRootSpec
 type TargetRootInput = sdk.TargetRootInput
 type TargetRootResult = sdk.TargetRootResult
@@ -92,6 +94,7 @@ type ExtensionCapabilities struct {
 	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
 	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
 	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
+	DeployIgnores       []FeatureSummary `json:"deploy_ignores,omitempty"`
 	TargetRoots         []FeatureSummary `json:"target_roots,omitempty"`
 	SteamWorkshop       *WorkshopSummary `json:"steam_workshop,omitempty"`
 	Merges              []FeatureSummary `json:"merges,omitempty"`
@@ -439,6 +442,23 @@ func (r Registry) ConflictIgnorePatternsForSteamApp(appID string) []string {
 	return append([]string(nil), patterns...)
 }
 
+func (r Registry) DeployIgnorePatternsForSteamApp(appID string) []string {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil
+	}
+	var patterns []string
+	for _, spec := range extension.DeployIgnores {
+		for _, pattern := range spec.Patterns {
+			pattern = strings.TrimSpace(pattern)
+			if pattern != "" {
+				patterns = append(patterns, pattern)
+			}
+		}
+	}
+	return append([]string(nil), patterns...)
+}
+
 func (r Registry) SteamWorkshopForSteamApp(appID string) (SteamWorkshopSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -632,6 +652,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, ignore := range extension.ConflictIgnores {
 		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
 	}
+	for _, ignore := range extension.DeployIgnores {
+		summary.Capabilities.DeployIgnores = append(summary.Capabilities.DeployIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
+	}
 	for _, root := range extension.TargetRoots {
 		summary.Capabilities.TargetRoots = append(summary.Capabilities.TargetRoots, FeatureSummary{ID: root.ID, Name: root.Name})
 	}
@@ -661,6 +684,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
+	sortFeatureSummaries(summary.Capabilities.DeployIgnores)
 	sortFeatureSummaries(summary.Capabilities.TargetRoots)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)

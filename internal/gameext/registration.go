@@ -123,6 +123,13 @@ func (r *Registrar) RegisterConflictIgnore(spec sdk.ConflictIgnoreSpec) {
 	r.extension.ConflictIgnores = append(r.extension.ConflictIgnores, spec)
 }
 
+func (r *Registrar) RegisterDeployIgnore(spec sdk.DeployIgnoreSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.DeployIgnores = append(r.extension.DeployIgnores, spec)
+}
+
 func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
 	if strings.TrimSpace(ref.Name) == "" && strings.TrimSpace(ref.URL) == "" {
 		return
@@ -182,6 +189,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
+	errs = append(errs, validateDeployIgnores(extension.DeployIgnores)...)
 	errs = append(errs, validateTargetRoots(extension.TargetRoots)...)
 	errs = append(errs, validateInstallPlanTargetRoots(extension.InstallPlan, extension.TargetRoots)...)
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
@@ -494,6 +502,29 @@ func validateConflictIgnores(specs []sdk.ConflictIgnoreSpec) []error {
 		for _, pattern := range spec.Patterns {
 			if err := validateConflictPattern(pattern); err != nil {
 				errs = append(errs, errors.New("conflict ignore "+id+" pattern: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateDeployIgnores(specs []sdk.DeployIgnoreSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("deploy ignore id is required"))
+			continue
+		}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("deploy ignore "+id+" name is required"))
+		}
+		if len(spec.Patterns) == 0 {
+			errs = append(errs, errors.New("deploy ignore "+id+" must declare at least one pattern"))
+		}
+		for _, pattern := range spec.Patterns {
+			if err := validateConflictPattern(pattern); err != nil {
+				errs = append(errs, errors.New("deploy ignore "+id+" pattern: "+err.Error()))
 			}
 		}
 	}

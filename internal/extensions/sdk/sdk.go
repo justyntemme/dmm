@@ -32,6 +32,7 @@ type Registrar interface {
 	RegisterGameVersionProvider(GameVersionProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
 	RegisterConflictIgnore(ConflictIgnoreSpec)
+	RegisterDeployIgnore(DeployIgnoreSpec)
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
 	RegisterLoadOrder(LoadOrderSpec)
@@ -177,6 +178,12 @@ type PluginActivationSpec struct {
 }
 
 type ConflictIgnoreSpec struct {
+	ID       string
+	Name     string
+	Patterns []string
+}
+
+type DeployIgnoreSpec struct {
 	ID       string
 	Name     string
 	Patterns []string

@@ -93,6 +93,11 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				Name:     "Sample ignored conflict",
 				Patterns: []string{"**/ignored.txt"},
 			})
+			r.RegisterDeployIgnore(sdk.DeployIgnoreSpec{
+				ID:       "sample-deploy-ignore",
+				Name:     "Sample ignored deploy",
+				Patterns: []string{"**/readme*"},
+			})
 			r.RegisterSteamWorkshop(sdk.SteamWorkshopSpec{
 				AllowCoexistence: true,
 				Actions: []sdk.SteamWorkshopActionSpec{
@@ -204,6 +209,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if patterns := registry.ConflictIgnorePatternsForSteamApp("100"); len(patterns) != 1 || patterns[0] != "**/ignored.txt" {
 		t.Fatalf("conflict ignore patterns = %+v", patterns)
+	}
+	if len(summary.Capabilities.DeployIgnores) != 1 || summary.Capabilities.DeployIgnores[0].ID != "sample-deploy-ignore" {
+		t.Fatalf("deploy ignore capabilities = %+v", summary.Capabilities.DeployIgnores)
+	}
+	if patterns := registry.DeployIgnorePatternsForSteamApp("100"); len(patterns) != 1 || patterns[0] != "**/readme*" {
+		t.Fatalf("deploy ignore patterns = %+v", patterns)
 	}
 	workshop, ok := registry.SteamWorkshopForSteamApp("100")
 	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 1 || workshop.Actions[0].Kind != "unsubscribe" {

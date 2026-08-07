@@ -69,6 +69,7 @@ type Plan struct {
 
 type BuildOptions struct {
 	IgnoreConflictPatterns []string
+	IgnoreDeployPatterns   []string
 	ConflictWinners        map[string]int64
 }
 
@@ -114,7 +115,11 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		managedByTarget[filepath.Clean(file.TargetPath)] = file
 	}
 	desiredTargets := make(map[string]struct{}, len(mappings))
-	winners, skipped, err := prioritizeMappings(targetRoot, strategy, mappings, options)
+	deployableMappings, err := filterDeployableMappings(mappings, options.IgnoreDeployPatterns)
+	if err != nil {
+		return Plan{}, err
+	}
+	winners, skipped, err := prioritizeMappings(targetRoot, strategy, deployableMappings, options)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -267,6 +272,24 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 	return plan, nil
 }
 
+func filterDeployableMappings(mappings []FileMapping, patterns []string) ([]FileMapping, error) {
+	if len(mappings) == 0 || len(patterns) == 0 {
+		return mappings, nil
+	}
+	filtered := make([]FileMapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		targetRel, err := cleanRelative(mapping.TargetRelative)
+		if err != nil {
+			return nil, err
+		}
+		if ignoredTargetPattern(filepath.ToSlash(targetRel), patterns) {
+			continue
+		}
+		filtered = append(filtered, mapping)
+	}
+	return filtered, nil
+}
+
 func targetRootForMapping(defaultRoot, mappedRoot string) (string, string, error) {
 	mappedRoot = strings.TrimSpace(mappedRoot)
 	if mappedRoot == "" {
@@ -408,6 +431,10 @@ func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mapp
 }
 
 func ignoredConflictTarget(targetRelative string, patterns []string) bool {
+	return ignoredTargetPattern(targetRelative, patterns)
+}
+
+func ignoredTargetPattern(targetRelative string, patterns []string) bool {
 	target := strings.ToLower(filepath.ToSlash(strings.TrimSpace(targetRelative)))
 	if target == "" {
 		return false
@@ -419,8 +446,15 @@ func ignoredConflictTarget(targetRelative string, patterns []string) bool {
 		}
 		if strings.HasPrefix(pattern, "**/") {
 			suffix := strings.TrimPrefix(pattern, "**/")
-			if target == suffix || strings.HasSuffix(target, "/"+suffix) {
-				return true
+			segments := strings.Split(target, "/")
+			for i := range segments {
+				candidate := strings.Join(segments[i:], "/")
+				if candidate == suffix {
+					return true
+				}
+				if ok, err := path.Match(suffix, candidate); err == nil && ok {
+					return true
+				}
 			}
 		}
 		if ok, err := path.Match(pattern, target); err == nil && ok {

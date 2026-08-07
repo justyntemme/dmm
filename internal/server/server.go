@@ -8166,6 +8166,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 	}
 	return deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, defaultStrategy, mappings, managedFiles, deploy.BuildOptions{
 		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
+		IgnoreDeployPatterns:   s.games.DeployIgnorePatternsForSteamApp(appID),
 		ConflictWinners:        conflictWinners,
 	})
 }

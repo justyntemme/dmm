@@ -111,6 +111,37 @@ func TestBuildPlanSkipsExistingTargetWhenConflictPatternIsIgnored(t *testing.T) 
 	}
 }
 
+func TestBuildPlanOmitsTargetsMatchedByDeployIgnorePattern(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	if err := os.MkdirAll(filepath.Join(staging, "mod", "docs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "mod", "docs", "readme.txt"), []byte("ignored"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "mod", "content.vfs0"), []byte("mod"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlanWithOptions(staging, target, StrategySymlink, []FileMapping{
+		{SourceRelative: "mod/docs/readme.txt", TargetRelative: "docs/readme.txt"},
+		{SourceRelative: "mod/content.vfs0", TargetRelative: "content.vfs0"},
+	}, nil, BuildOptions{
+		IgnoreDeployPatterns: []string{"**/readme*"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Actions) != 1 {
+		t.Fatalf("actions = %+v", plan.Actions)
+	}
+	if plan.Actions[0].TargetRelative != "content.vfs0" {
+		t.Fatalf("target relative = %q", plan.Actions[0].TargetRelative)
+	}
+}
+
 func TestBuildPlanUsesMappingStrategyOverride(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")
