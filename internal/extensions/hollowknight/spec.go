@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	bepinexext "github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -76,8 +77,8 @@ func Register(r sdk.Registrar) {
 		Priority:          9,
 		ModType:           bepinexConfigModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchBepInExConfigManager,
-		CustomBuild:       buildBepInExConfigManager,
+		CustomMatch:       bepinexext.MatchConfigManager,
+		CustomBuild:       bepinexext.BuildConfigManager(Name),
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -86,8 +87,8 @@ func Register(r sdk.Registrar) {
 		Priority:          10,
 		ModType:           bepinexInjectorModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchBepInExInjector,
-		CustomBuild:       buildBepInExInjector,
+		CustomMatch:       bepinexext.MatchInjector,
+		CustomBuild:       bepinexext.BuildInjector(Name),
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -96,8 +97,8 @@ func Register(r sdk.Registrar) {
 		Priority:          10,
 		ModType:           bepinexRootModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchBepInExRootMod,
-		CustomBuild:       buildBepInExRootMod,
+		CustomMatch:       bepinexext.MatchRootMod,
+		CustomBuild:       bepinexext.BuildRootMod(Name),
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -106,8 +107,8 @@ func Register(r sdk.Registrar) {
 		Priority:          13,
 		ModType:           bepinexPluginModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchBepInExPlugin,
-		CustomBuild:       buildBepInExPlugin,
+		CustomMatch:       bepinexext.MatchPlugin(bepinexext.PluginMatchOptions{ExcludeBasenames: []string{assemblyFile, configManagerFile}}),
+		CustomBuild:       bepinexext.BuildPlugin(Name, bepinexext.PluginMatchOptions{ExcludeBasenames: []string{assemblyFile, configManagerFile}}),
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -150,7 +151,14 @@ func Register(r sdk.Registrar) {
 		OKMessage:   "BepInEx is present in the Hollow Knight game folder.",
 		InstallHint: "Install BepInEx for Hollow Knight, then enable and deploy it from DMM before enabling BepInEx plugin mods.",
 		HelpURL:     "https://github.com/BepInEx/BepInEx/releases",
-		Check:       checkBepInExFiles,
+		Check: bepinexext.RuntimePresenceCheck([]string{
+			"BepInEx/core/BepInEx.dll",
+			"BepInEx/core/BepInEx.Core.dll",
+			"BepInEx/core/BepInEx.Preloader.dll",
+			"BepinEx/core/BepInEx.dll",
+			"BepinEx/core/BepInEx.Core.dll",
+			"BepinEx/core/BepInEx.Preloader.dll",
+		}),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "hollowknight-steam-executable",
@@ -175,28 +183,6 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
-}
-
-func checkBepInExFiles(ctx context.Context, gamePath string) []string {
-	if err := ctx.Err(); err != nil {
-		return nil
-	}
-	gamePath = strings.TrimSpace(gamePath)
-	if gamePath == "" {
-		return nil
-	}
-	for _, root := range []string{"BepInEx", "BepinEx"} {
-		for _, rel := range []string{
-			filepath.Join(root, "core", "BepInEx.dll"),
-			filepath.Join(root, "core", "BepInEx.Core.dll"),
-			filepath.Join(root, "core", "BepInEx.Preloader.dll"),
-		} {
-			if info, err := os.Stat(filepath.Join(gamePath, rel)); err == nil && !info.IsDir() {
-				return []string{filepath.ToSlash(filepath.Join(gamePath, rel))}
-			}
-		}
-	}
-	return nil
 }
 
 func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
