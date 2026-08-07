@@ -1859,6 +1859,16 @@
     return (selectedGame?.nexus_domains ?? []).map((domain) => domain.trim().toLowerCase()).filter(Boolean);
   }
 
+  function nexusDomainLabel(domain: string) {
+    const cleaned = String(domain || "")
+      .trim()
+      .replace(/([a-z])([0-9])/gi, "$1 $2")
+      .replace(/([0-9])([a-z])/gi, "$1 $2")
+      .replace(/[-_]+/g, " ");
+    if (!cleaned) return "Nexus";
+    return cleaned.replace(/\b\w/g, (value) => value.toUpperCase());
+  }
+
   function exploreSourceOptions() {
     return catalogs.filter((catalog) => catalog.kind !== "platform");
   }
@@ -3740,7 +3750,7 @@
                         <span>Nexus Game</span>
                         <select bind:value={nexusBrowseDomain} on:change={resetNexusSearchResults}>
                           {#each selectedNexusDomains() as domain}
-                            <option value={domain}>{domain}</option>
+                            <option value={domain}>{nexusDomainLabel(domain)}</option>
                           {/each}
                         </select>
                       </label>
