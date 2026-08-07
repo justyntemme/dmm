@@ -1,0 +1,42 @@
+package extensions_test
+
+import (
+	"testing"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+)
+
+func TestInstalledWorkshopOnlyExtensionsRegisterNoNexusDomains(t *testing.T) {
+	tests := []struct {
+		name  string
+		appID string
+		ext   gameext.Extension
+	}{
+		{name: nuclearoption.ID, appID: nuclearoption.SteamAppID, ext: gameext.MustCompileExtension(nuclearoption.Extension())},
+		{name: totalwarpharaohdynasties.ID, appID: totalwarpharaohdynasties.SteamAppID, ext: gameext.MustCompileExtension(totalwarpharaohdynasties.Extension())},
+		{name: totalwarromeremastered.ID, appID: totalwarromeremastered.SteamAppID, ext: gameext.MustCompileExtension(totalwarromeremastered.Extension())},
+		{name: warno.ID, appID: warno.SteamAppID, ext: gameext.MustCompileExtension(warno.Extension())},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := gameext.NewRegistry([]gameext.Extension{tt.ext})
+			summary := registry.ExtensionSummaries()[0]
+			if len(summary.SteamAppIDs) != 1 || summary.SteamAppIDs[0] != tt.appID {
+				t.Fatalf("steam app ids = %+v", summary.SteamAppIDs)
+			}
+			if len(summary.NexusDomains) != 0 {
+				t.Fatalf("workshop-only extension must not declare unverified Nexus domains: %+v", summary.NexusDomains)
+			}
+			if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 5 {
+				t.Fatalf("workshop capability = %+v", summary.Capabilities.SteamWorkshop)
+			}
+			if _, ok := registry.SteamWorkshopForSteamApp(tt.appID); !ok {
+				t.Fatal("missing Steam Workshop support")
+			}
+		})
+	}
+}
