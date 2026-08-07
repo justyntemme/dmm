@@ -3689,10 +3689,14 @@
                     <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include a Nexus domain yet." : "This game does not have a DMM extension yet."}</p>
                   {:else if selectedExploreSource()?.id === "local"}
                     <p class="hint">Local archives are added with the upload control above and then installed through the same Action Center flow.</p>
+                  {:else if selectedExploreSource()?.status === "deferred"}
+                    <p class="hint">{selectedExploreSource()?.notes?.[0] ?? `${selectedExploreSource()?.name ?? "This source"} is deferred until a supported official automated API or client path is verified.`}</p>
                   {:else if selectedExploreSourceReady()}
                     <p class="hint">{selectedExploreSource()?.name} supports URL imports in DMM right now. Paste a mod/package/release URL above to capture it for this game.</p>
+                  {:else if selectedExploreSource()?.credentials_required}
+                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} needs an API key before DMM can import URLs. Configure it in Settings > Sources, or use another source.</p>
                   {:else}
-                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} is not ready yet. Configure required credentials in Settings > Sources, or use another source.</p>
+                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} is not ready yet. Use another source or paste a direct archive URL if one is available.</p>
                   {/if}
                 </section>
               {/if}

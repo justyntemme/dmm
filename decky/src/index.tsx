@@ -127,6 +127,16 @@ type DMMFocusedNodeEvent = CustomEvent<{
   };
 }>;
 
+type DeckyExploreSource = {
+  id: string;
+  catalog: string;
+  title: string;
+  detail: string;
+  action: string;
+  enabled: boolean;
+  behavior: "browse" | "paste" | "info";
+};
+
 const DMMBrowserContainer = findModuleChild((mod: unknown) => {
   if (!mod || typeof mod !== "object") return undefined;
   for (const value of Object.values(mod as Record<string, unknown>)) {
@@ -201,6 +211,24 @@ type BackendStatus = {
     backend: string;
   };
   error?: string;
+};
+
+type CatalogStatus = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  configured?: boolean;
+  credentials_required?: boolean;
+  capabilities?: string[];
+  url_import?: boolean;
+  search?: boolean;
+  browse?: boolean;
+  download?: boolean;
+  archive_upload?: boolean;
+  installed_management?: boolean;
+  source_tag?: string;
+  notes?: string[];
 };
 
 type BuildInfo = {
@@ -806,6 +834,15 @@ function sourceForManagedMod(mod: ManagedMod) {
 
 function sourceForInstallCandidate(candidate: InstallCandidate) {
   return candidate.source_tag || candidate.catalog;
+}
+
+function catalogStatusLabel(status?: string) {
+  const normalized = (status ?? "").trim().toLowerCase();
+  if (normalized === "ready") return "Ready";
+  if (normalized === "needs_credentials") return "Needs Key";
+  if (normalized === "deferred") return "Deferred";
+  if (normalized === "planned") return "Planned";
+  return normalized ? normalized.replace(/[_-]+/g, " ") : "Unknown";
 }
 
 function deckySourcePillStyle(catalog?: string): CSSProperties {
@@ -3067,6 +3104,7 @@ function DeckyModManagerRoute() {
   const [updateBusy, setUpdateBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
+  const [catalogs, setCatalogs] = useState<CatalogStatus[]>([]);
   const [selectedDeckyGameID, setSelectedDeckyGameID] = useState<string>(initialReturnContext?.appID ?? "");
   const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [deckyProfiles, setDeckyProfiles] = useState<Profile[]>([]);
@@ -3116,6 +3154,12 @@ function DeckyModManagerRoute() {
       applyDeckyUIPreferences(nextStatus);
       setDependencies(await call<[], Dependency[]>("dependencies"));
       setNXM(await call<[], NXMStatus>("nxm_status"));
+      const catalogResult = await call<[], { ok: boolean; error?: string; catalogs: CatalogStatus[] }>("catalogs");
+      if (catalogResult.ok) {
+        setCatalogs(catalogResult.catalogs);
+      } else {
+        await logFrontendEvent("decky catalogs load failed", { error: catalogResult.error || "" });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -4245,30 +4289,104 @@ function DeckyModManagerRoute() {
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
   const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
   const selectedExploreSources = useMemo(() => {
-    if (!selectedDeckyGame) return [] as Array<{ id: string; catalog: string; title: string; detail: string; action: string; enabled: boolean }>;
-    const sources: Array<{ id: string; catalog: string; title: string; detail: string; action: string; enabled: boolean }> = [];
-    if (selectedNexusDomain) {
+    if (!selectedDeckyGame) return [] as DeckyExploreSource[];
+    const sources: DeckyExploreSource[] = [];
+    const catalogSourceTag = (catalog: CatalogStatus) => catalog.source_tag || catalog.id;
+    const firstNote = (catalog: CatalogStatus) => catalog.notes?.find((note) => note.trim() !== "") ?? "";
+    const nexusCatalog = catalogs.find((catalog) => catalog.id === "nexus");
+    if (nexusCatalog) {
+      const enabled = Boolean(selectedNexusDomain && nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse));
+      sources.push({
+        id: "nexus",
+        catalog: catalogSourceTag(nexusCatalog),
+        title: "Nexus Mods",
+        detail: enabled
+          ? "Search Nexus, open the real mod page, then press Mod Manager Download."
+          : selectedNexusDomain
+            ? "Nexus is not ready. Configure the Nexus API key from the phone/tablet Settings screen."
+            : "This extension does not declare a Nexus domain yet.",
+        action: enabled ? "Explore Mods" : catalogStatusLabel(nexusCatalog.status),
+        enabled,
+        behavior: enabled ? "browse" : "info"
+      });
+    } else if (selectedDeckyGame.extension?.supported && !selectedNexusDomain) {
       sources.push({
         id: "nexus",
         catalog: "nexus",
         title: "Nexus Mods",
-        detail: "Search Nexus, open the mod page, then press Mod Manager Download.",
-        action: "Explore Mods",
-        enabled: true
+        detail: "This extension does not declare a Nexus domain yet.",
+        action: "Unavailable",
+        enabled: false,
+        behavior: "info"
       });
     }
+    for (const catalog of catalogs) {
+      if (catalog.kind === "platform" || catalog.id === "nexus" || catalog.id === "local") continue;
+      const sourceTag = catalogSourceTag(catalog);
+      const readyURLImport = catalog.status === "ready" && Boolean(catalog.url_import && catalog.download);
+      if (readyURLImport) {
+        sources.push({
+          id: catalog.id,
+          catalog: sourceTag,
+          title: catalog.name,
+          detail: `Paste a ${catalog.name} URL in Mod Link while ${selectedDeckyGame.name} is selected. DMM will use the normal captured-install pipeline.`,
+          action: "Paste URL",
+          enabled: true,
+          behavior: "paste"
+        });
+        continue;
+      }
+      if (catalog.status === "needs_credentials" || catalog.credentials_required) {
+        sources.push({
+          id: catalog.id,
+          catalog: sourceTag,
+          title: catalog.name,
+          detail: firstNote(catalog) || "This source needs an API key before DMM can import URLs.",
+          action: "Needs Key",
+          enabled: false,
+          behavior: "info"
+        });
+        continue;
+      }
+      if (catalog.status === "deferred") {
+        sources.push({
+          id: catalog.id,
+          catalog: sourceTag,
+          title: catalog.name,
+          detail: firstNote(catalog) || "This source is deferred until a supported official automated API or client path is verified.",
+          action: "Deferred",
+          enabled: false,
+          behavior: "info"
+        });
+        continue;
+      }
+    }
+    const localCatalog = catalogs.find((catalog) => catalog.id === "local");
+    if (localCatalog?.archive_upload) {
+      sources.push({
+        id: "local",
+        catalog: catalogSourceTag(localCatalog),
+        title: "Local Archive",
+        detail: "Archive upload is available from the phone/tablet UI for this selected game.",
+        action: "Use Phone",
+        enabled: false,
+        behavior: "info"
+      });
+    }
+    const workshopCatalog = catalogs.find((catalog) => catalog.id === "steam_workshop");
     if (selectedDeckyGame.extension?.steam_workshop) {
       sources.push({
         id: "steam-workshop",
-        catalog: "steam_workshop",
-        title: "Steam Workshop",
-        detail: "Installed Workshop items are managed below. DMM browsing is not enabled for Workshop yet.",
+        catalog: workshopCatalog?.source_tag || "steam_workshop",
+        title: workshopCatalog?.name || "Steam Workshop",
+        detail: "Installed Workshop items are managed below. DMM browsing is not enabled for Workshop.",
         action: "Managed Below",
-        enabled: false
+        enabled: false,
+        behavior: "info"
       });
     }
     return sources;
-  }, [selectedDeckyGame, selectedNexusDomain]);
+  }, [selectedDeckyGame, selectedNexusDomain, catalogs]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const supportedGameCount = managedGames.filter(gameHasExtension).length;
   const runningSupported = Boolean(runningGame && gameHasExtension(managedGames.find((game) => game.app_id === runningGame.app_id)));
@@ -4379,6 +4497,11 @@ function DeckyModManagerRoute() {
         </div>
         <div style={{ background: "#111827", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "5px", padding: "7px", width: "100%" }}>
           <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1, textTransform: "uppercase" }}>Mod Link</div>
+          {selectedDeckyGame && (
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.2, overflowWrap: "anywhere" }}>
+              Target: {selectedDeckyGame.name}{selectedProfile ? ` · ${selectedProfile.name}` : ""}
+            </div>
+          )}
           <input
             aria-label="Mod URL"
             placeholder="Paste Nexus, nxm://, provider, or archive URL"
@@ -4541,10 +4664,22 @@ function DeckyModManagerRoute() {
 	                  onActivate={(event) => {
 	                    event.preventDefault();
 	                    event.stopPropagation();
-	                    if (source.id === "nexus" && source.enabled) openDeckyNexusBrowser();
+	                    if (!source.enabled) return;
+	                    if (source.behavior === "browse") openDeckyNexusBrowser();
+	                    if (source.behavior === "paste") {
+	                      setTab("main");
+	                      setImportResult(`Paste a ${source.title} URL in Mod Link for ${selectedDeckyGame?.name ?? "this game"}.`);
+	                      void logFrontendEvent("decky source paste selected", { app_id: selectedDeckyGameID, source: source.id });
+	                    }
 	                  }}
 	                  onClick={() => {
-	                    if (source.id === "nexus" && source.enabled) openDeckyNexusBrowser();
+	                    if (!source.enabled) return;
+	                    if (source.behavior === "browse") openDeckyNexusBrowser();
+	                    if (source.behavior === "paste") {
+	                      setTab("main");
+	                      setImportResult(`Paste a ${source.title} URL in Mod Link for ${selectedDeckyGame?.name ?? "this game"}.`);
+	                      void logFrontendEvent("decky source paste selected", { app_id: selectedDeckyGameID, source: source.id });
+	                    }
 	                  }}
 	                  style={{
 	                    ...deckyCompositeRowStyle(false, source.enabled),

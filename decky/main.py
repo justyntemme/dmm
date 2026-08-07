@@ -267,6 +267,17 @@ class Plugin:
             return {"ok": True, "games": result}
         return {"ok": False, "error": "Unexpected games response.", "games": []}
 
+    async def catalogs(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "catalogs": []}
+        result, error = self._backend_json_result("GET", "/api/catalogs")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to load mod sources.", "catalogs": []}
+        if isinstance(result, list):
+            self._log(f"catalogs loaded count={len(result)}")
+            return {"ok": True, "catalogs": result}
+        return {"ok": False, "error": "Unexpected catalogs response.", "catalogs": []}
+
     async def nexus_mods(self, app_id, query="", sort="downloads", time_window="all", count=20, offset=0, vortex_only=True):
         app_id = str(app_id or "").strip()
         if not app_id:
