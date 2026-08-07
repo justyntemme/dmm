@@ -5,6 +5,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearandmetalgear2mc"
@@ -41,6 +42,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
+		gameext.MustCompileExtension(finalfantasyxx2hdremaster.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
 		gameext.MustCompileExtension(metalgearandmetalgear2mc.Extension()),
 		gameext.MustCompileExtension(metalgearsolidvtpp.Extension()),

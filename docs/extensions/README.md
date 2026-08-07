@@ -27,6 +27,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Skyrim Special Edition](games/skyrim-special-edition.md)
 - [The Witcher 3](games/witcher-3.md)
 - [Final Fantasy VII Rebirth](games/final-fantasy-vii-rebirth.md)
+- [Final Fantasy X/X-2 HD Remaster](games/final-fantasy-x-x2-hd-remaster.md)
 - [Kenshi](games/kenshi.md)
 - [RimWorld](games/rimworld.md)
 - [Halo: The Master Chief Collection](games/halo-master-chief-collection.md)
