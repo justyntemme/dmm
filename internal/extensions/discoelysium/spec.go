@@ -26,7 +26,7 @@ const (
 	bepinexConfigModType   = "discoelysium-bepinex-config-manager"
 	assemblyModType        = "discoelysium-assemblydll"
 	assetsModType          = "discoelysium-assets"
-	fallbackModType        = "discoelysium-fallback-blocked"
+	unclassifiedModType    = "discoelysium-unclassified-blocked"
 
 	bepinexRoot       = "BepInEx"
 	bepinexPluginRoot = bepinexRoot + "/plugins"
@@ -58,7 +58,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterModType(installplan.ModTypeSpec{ID: bepinexConfigModType, TargetRoot: bepinexRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: assemblyModType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: assetsModType, TargetRoot: dataFolder})
-	r.RegisterModType(installplan.ModTypeSpec{ID: fallbackModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: unclassifiedModType, TargetRoot: ""})
 
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:discoelysium:root",
@@ -131,14 +131,14 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:discoelysium:fallback-blocked",
-		VortexInstallerID: "discoelysium-fallback",
+		ID:                "vortex:discoelysium:unclassified-blocked",
+		VortexInstallerID: "discoelysium-unclassified",
 		Priority:          49,
-		ModType:           fallbackModType,
+		ModType:           unclassifiedModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchFallbackBlocked,
+		CustomMatch:       matchUnclassifiedArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Disco Elysium Vortex fallback installer reached. DMM blocks this archive until a specific extension-owned rule can place the files safely.",
+		UnsupportedReason: "Disco Elysium archive layout is not classified by the verified extension rules. DMM blocks it until a specific extension-owned rule can place the files safely.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "discoelysium-bepinex-installed",

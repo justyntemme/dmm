@@ -112,7 +112,7 @@ func buildMewjectorMod(input installplan.BuildInput) (installplan.Plan, error) {
 	return buildFromArchiveSlice(input, files, rootPath, filepath.Base(marker), "", "vortex-mewjector-mod", marker, "Vortex Mewgenics installer matched a Mewjector DLL mod")
 }
 
-func matchFallbackBlocked(root string) bool {
+func matchUnclassifiedArchive(root string) bool {
 	files, err := listFiles(root)
 	return err == nil && len(files) > 0
 }

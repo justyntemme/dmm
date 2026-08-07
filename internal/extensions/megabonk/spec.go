@@ -41,7 +41,7 @@ const (
 	melonConfigModType          = "megabonk-melonloader-config"
 	customCharsBepInExModType   = "megabonk-customcharacters-bepinex"
 	customCharsMelonModType     = "megabonk-customcharacters-melonloader"
-	fallbackModType             = "megabonk-fallback-blocked"
+	unclassifiedModType         = "megabonk-unclassified-blocked"
 
 	bepInExRoot             = "BepInEx"
 	bepInExPluginsRoot      = "BepInEx/plugins"
@@ -146,7 +146,7 @@ func modTypes() []installplan.ModTypeSpec {
 		{ID: melonConfigModType, TargetRoot: melonConfigRoot},
 		{ID: customCharsBepInExModType, TargetRoot: customCharsBepInExRoot},
 		{ID: customCharsMelonModType, TargetRoot: customCharsMelonRoot},
-		{ID: fallbackModType, TargetRoot: ""},
+		{ID: unclassifiedModType, TargetRoot: ""},
 	}
 }
 
@@ -258,14 +258,14 @@ func installers() []installplan.InstallerSpec {
 			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
-			ID:                "vortex:megabonk:fallback-blocked",
-			VortexInstallerID: "megabonk-fallback",
+			ID:                "vortex:megabonk:unclassified-blocked",
+			VortexInstallerID: "megabonk-unclassified",
 			Priority:          99,
-			ModType:           fallbackModType,
+			ModType:           unclassifiedModType,
 			NameSource:        installplan.NameSourceArchive,
-			CustomMatch:       matchFallbackBlocked,
+			CustomMatch:       matchUnclassifiedArchive,
 			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Megabonk Vortex fallback installer reached. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify this archive safely.",
+			UnsupportedReason: "Megabonk archive layout is not classified by the verified extension rules. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify it safely.",
 		},
 	}
 }

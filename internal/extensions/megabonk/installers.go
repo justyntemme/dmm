@@ -275,7 +275,7 @@ func buildPlugin(input installplan.BuildInput) (installplan.Plan, error) {
 	return buildFromContentRootWithModType(input, rootPath, targetRoot, modType, "vortex-plugin", marker, "Vortex Megabonk plugin installer matched loader-specific DLL markers")
 }
 
-func matchFallbackBlocked(root string) bool {
+func matchUnclassifiedArchive(root string) bool {
 	if containsFOMOD(root) {
 		return false
 	}

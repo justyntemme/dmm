@@ -26,7 +26,7 @@ const (
 	bepinexConfigModType   = "hollowknight-bepinex-config-manager"
 	assemblyModType        = "hollowknight-assemblydll"
 	assetsModType          = "hollowknight-assets"
-	fallbackModType        = "hollowknight-fallback-blocked"
+	unclassifiedModType    = "hollowknight-unclassified-blocked"
 
 	bepinexRoot       = "BepInEx"
 	bepinexPluginRoot = bepinexRoot + "/plugins"
@@ -58,7 +58,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterModType(installplan.ModTypeSpec{ID: bepinexConfigModType, TargetRoot: bepinexRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: assemblyModType, TargetRoot: managedDir})
 	r.RegisterModType(installplan.ModTypeSpec{ID: assetsModType, TargetRoot: dataFolder})
-	r.RegisterModType(installplan.ModTypeSpec{ID: fallbackModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: unclassifiedModType, TargetRoot: ""})
 
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:hollowknight:root",
@@ -131,14 +131,14 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:hollowknight:fallback-blocked",
-		VortexInstallerID: "hollowknight-fallback",
+		ID:                "vortex:hollowknight:unclassified-blocked",
+		VortexInstallerID: "hollowknight-unclassified",
 		Priority:          49,
-		ModType:           fallbackModType,
+		ModType:           unclassifiedModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchFallbackBlocked,
+		CustomMatch:       matchUnclassifiedArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Hollow Knight Vortex fallback installer reached. DMM blocks this archive until a specific extension-owned rule can place the files safely.",
+		UnsupportedReason: "Hollow Knight archive layout is not classified by the verified extension rules. DMM blocks it until a specific extension-owned rule can place the files safely.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "hollowknight-bepinex-installed",

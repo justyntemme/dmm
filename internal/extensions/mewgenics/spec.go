@@ -19,7 +19,7 @@ const (
 	mewjectorType    = "mewgenics-mewjector"
 	mewtatorType     = "mewgenics-mewtator"
 	saveEditorType   = "mewgenics-saveeditor"
-	fallbackType     = "mewgenics-fallback-blocked"
+	unclassifiedType = "mewgenics-unclassified-blocked"
 
 	modRoot        = "mods"
 	launchBAT      = "launch.bat"
@@ -51,7 +51,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterModType(installplan.ModTypeSpec{ID: mewjectorType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: mewtatorType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: saveEditorType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: fallbackType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: unclassifiedType, TargetRoot: ""})
 
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:mewgenics:mewtator",
@@ -104,14 +104,14 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:mewgenics:fallback-blocked",
-		VortexInstallerID: "mewgenics-fallback",
+		ID:                "vortex:mewgenics:unclassified-blocked",
+		VortexInstallerID: "mewgenics-unclassified",
 		Priority:          49,
-		ModType:           fallbackType,
+		ModType:           unclassifiedType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchFallbackBlocked,
+		CustomMatch:       matchUnclassifiedArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Mewgenics Vortex fallback installer reached. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify this archive safely.",
+		UnsupportedReason: "Mewgenics archive layout is not classified by the verified extension rules. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify it safely.",
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "mewgenics-customlaunch",

@@ -149,13 +149,13 @@ func TestAssetsInstaller(t *testing.T) {
 	assertTarget(t, plan, "disco_Data/sharedassets1.resource")
 }
 
-func TestFallbackInstallerIsBlocked(t *testing.T) {
+func TestUnclassifiedArchiveIsBlocked(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "manual", "readme.txt"), "readme")
 
 	_, err := build(root)
 	if err == nil {
-		t.Fatal("expected fallback block")
+		t.Fatal("expected unclassified archive block")
 	}
 	var unsupported installplan.UnsupportedError
 	if !errors.As(err, &unsupported) || unsupported.Reason == "" {

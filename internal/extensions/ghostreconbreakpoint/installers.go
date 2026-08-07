@@ -111,7 +111,7 @@ func buildRoot(input installplan.BuildInput) (installplan.Plan, error) {
 	return buildFromContentRoot(input, filepath.Dir(dir), "", "videos")
 }
 
-func matchFallback(root string) bool {
+func matchUnclassifiedArchive(root string) bool {
 	return !hasFOMOD(root)
 }
 

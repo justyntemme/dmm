@@ -241,7 +241,7 @@ func buildAssetsMod(input installplan.BuildInput) (installplan.Plan, error) {
 	return buildFromContentRoot(input, rootRel, input.TargetRoot, "vortex-assets", marker, "Vortex Hollow Knight assets installer matched Unity asset/resource files", nil)
 }
 
-func matchFallbackBlocked(root string) bool {
+func matchUnclassifiedArchive(root string) bool {
 	if containsFOMOD(root) {
 		return false
 	}
