@@ -805,6 +805,43 @@ func TestSteamWorkshopActionQueueSupportsDeclaredMutationKinds(t *testing.T) {
 	}
 }
 
+func TestSteamWorkshopActionQueueRejectsConflictingItemActions(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: t.TempDir(),
+		Path:        filepath.Join(t.TempDir(), "Fallout 4"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/123/actions/disable", nil)
+	firstReq.RemoteAddr = "127.0.0.1:1"
+	firstRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(firstRec, firstReq)
+	if firstRec.Code != http.StatusAccepted {
+		t.Fatalf("first queue status = %d, body = %s", firstRec.Code, firstRec.Body.String())
+	}
+
+	duplicateReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/123/actions/disable", nil)
+	duplicateReq.RemoteAddr = "127.0.0.1:1"
+	duplicateRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(duplicateRec, duplicateReq)
+	if duplicateRec.Code != http.StatusAccepted || !strings.Contains(duplicateRec.Body.String(), `"duplicate":true`) {
+		t.Fatalf("duplicate queue status = %d, body = %s", duplicateRec.Code, duplicateRec.Body.String())
+	}
+
+	conflictReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/workshop/items/123/actions/unsubscribe", nil)
+	conflictReq.RemoteAddr = "127.0.0.1:1"
+	conflictRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(conflictRec, conflictReq)
+	if conflictRec.Code != http.StatusConflict || !strings.Contains(conflictRec.Body.String(), "pending disable action") {
+		t.Fatalf("conflict queue status = %d, body = %s", conflictRec.Code, conflictRec.Body.String())
+	}
+}
+
 func TestSteamWorkshopOrderQueuesListScopedAction(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

@@ -2570,6 +2570,12 @@ func (s *Server) handleQueueSteamWorkshopAction(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
 		return
 	}
+	if existing, ok := s.findActiveSteamWorkshopItemAction(appID, itemID); ok {
+		existingKind := strings.TrimSpace(existing.Payload["kind"])
+		s.logger.Info("steam workshop action rejected because item already has active action", "app_id", appID, "item_id", itemID, "requested_kind", kind, "active_kind", existingKind, "active_job_id", existing.ID)
+		http.Error(w, "Steam Workshop item already has a pending "+existingKind+" action", http.StatusConflict)
+		return
+	}
 	job := s.jobs.CreateWithPayload(jobTypeSteamWorkshopAction, action.Name, steamWorkshopActionPayload(appID, itemID, action))
 	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to apply Steam Workshop action")
 	s.logger.Info("steam workshop action queued", "job_id", job.ID, "app_id", appID, "item_id", itemID, "kind", kind, "action_id", action.ID)
@@ -2802,6 +2808,25 @@ func (s *Server) findActiveSteamWorkshopAction(appID, itemID, kind string) (jobs
 			continue
 		}
 		if kind != gameext.SteamWorkshopActionOrder && job.Payload["item_id"] != itemID {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusWaiting, jobs.StatusRunning:
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
+}
+
+func (s *Server) findActiveSteamWorkshopItemAction(appID, itemID string) (jobs.Job, bool) {
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeSteamWorkshopAction {
+			continue
+		}
+		if job.Payload["app_id"] != appID || job.Payload["item_id"] != itemID {
+			continue
+		}
+		if strings.TrimSpace(job.Payload["kind"]) == gameext.SteamWorkshopActionOrder {
 			continue
 		}
 		switch job.Status {
