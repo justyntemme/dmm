@@ -270,7 +270,7 @@ After installing the package and starting the server, collect the current live s
 ~/.testing/live_post_install_check.sh
 ```
 
-This runs the installed-package verifier, backend health check, web UI asset check, backend status snapshot, MVP live acceptance check, profile transfer check, seeded-profile check, shared UI preference check, rollback check, and Stardew file visibility check in order. Use it as the first command after installing a package and starting the server from Decky.
+This runs the installed-package verifier, backend health check, web UI asset check, backend status snapshot, MVP live acceptance check, profile transfer check, seeded-profile check, shared UI preference check, extension coverage check, extension target check, rollback check, and Stardew file visibility check in order. Use it as the first command after installing a package and starting the server from Decky.
 
 The web UI asset check verifies both reachability and key profile-first UI strings from the served JavaScript bundle.
 
