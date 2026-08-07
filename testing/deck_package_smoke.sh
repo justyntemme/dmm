@@ -127,7 +127,7 @@ for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Installed, disabled in this profile" "web profile-scoped mod state"
   require_file_contains "${asset_file}" "All Installed" "web supported game filter"
   require_file_contains "${asset_file}" "Search Nexus mods" "web in-game Nexus search"
-  require_file_contains "${asset_file}" "Explore Nexus Mods" "web in-game Nexus browsing"
+  require_file_contains "${asset_file}" "Explore Mods" "web in-game source browsing"
   require_file_contains "${asset_file}" "Open on Deck" "web browser-first Nexus result action"
   require_file_contains "${asset_file}" "Advanced Profile Tools" "web advanced profile disclosure"
   require_file_contains "${asset_file}" "These Deck behavior switches are managed from the Decky sidebar settings." "web install settings Decky ownership note"
