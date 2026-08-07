@@ -1,11 +1,16 @@
 package extensions
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/brawlhalla"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergenerals"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergeneralszerohour"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
@@ -13,6 +18,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
@@ -25,23 +31,34 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidvtpp"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/potioncraft"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/quake4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/spelunky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spidermanmilesmorales"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stacklands"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/steinsgate"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/thekingiswatching"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
@@ -55,17 +72,23 @@ import (
 
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
+		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
+		gameext.MustCompileExtension(blasphemous.Extension()),
+		gameext.MustCompileExtension(brawlhalla.Extension()),
 		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(citizensleeper.Extension()),
+		gameext.MustCompileExtension(commandconquergenerals.Extension()),
 		gameext.MustCompileExtension(commandconquergeneralszerohour.Extension()),
 		gameext.MustCompileExtension(cultistsimulator.Extension()),
+		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
+		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
@@ -79,22 +102,33 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(metalgearsolid3mc.Extension()),
 		gameext.MustCompileExtension(metroexodus.Extension()),
 		gameext.MustCompileExtension(mewgenics.Extension()),
+		gameext.MustCompileExtension(mirrorsedge.Extension()),
+		gameext.MustCompileExtension(mrprepper.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
+		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(plagueincevolved.Extension()),
+		gameext.MustCompileExtension(potioncraft.Extension()),
 		gameext.MustCompileExtension(prototype.Extension()),
 		gameext.MustCompileExtension(prototype2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
+		gameext.MustCompileExtension(quake4.Extension()),
 		gameext.MustCompileExtension(rimworld.Extension()),
+		gameext.MustCompileExtension(ridersrepublic.Extension()),
+		gameext.MustCompileExtension(rometotalwar.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
 		gameext.MustCompileExtension(stardewvalley.Extension()),
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),
+		gameext.MustCompileExtension(spelunky.Extension()),
 		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
+		gameext.MustCompileExtension(steinsgate.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(stacklands.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
+		gameext.MustCompileExtension(thedivision2.Extension()),
+		gameext.MustCompileExtension(thekingiswatching.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
 		gameext.MustCompileExtension(totalwarrome2.Extension()),

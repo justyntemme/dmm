@@ -257,6 +257,12 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	if got := byID["curseforge"]; got.Status != "needs_credentials" || got.Configured || got.URLImport || !got.CredentialsRequired {
 		t.Fatalf("curseforge catalog = %+v", got)
 	}
+	if got := byID["moddb"]; got.Status != "deferred" || got.URLImport || got.Download || got.Configured {
+		t.Fatalf("moddb catalog = %+v", got)
+	}
+	if got := byID["moddb"].Capabilities; len(got) != 0 {
+		t.Fatalf("moddb capabilities = %+v", got)
+	}
 	if got := byID["steam_workshop"]; got.Status != "ready" || got.Kind != "platform" || !got.InstalledManagement || got.URLImport {
 		t.Fatalf("steam workshop catalog = %+v", got)
 	}

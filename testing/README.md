@@ -218,7 +218,7 @@ It copies the DMM data directory and Stardew install to `/tmp`, rewrites the cop
 
 Set `KEEP_TMP=1` to inspect the copied data and server log after the run.
 
-For Stardew test data, the rehearsal should mark legacy rows as `needs_recovery` when needed, recover supported archives, record unsupported archives as blocked candidates, preview with zero conflicts, deploy the expected DMM-managed links for the copied profile, and purge the same managed links. The exact link count changes as new test mods are added.
+For Stardew test data, the rehearsal should recover supported cached archives that are not already installed, record unsupported archives as blocked candidates, fail clearly on invalid installed rows without deployable manifests, preview with zero conflicts, deploy the expected DMM-managed links for the copied profile, and purge the same managed links. The exact link count changes as new test mods are added.
 
 When validating a specific Vortex metadata ingestion case from cached Nexus downloads, pass expected source mod IDs and optional planner IDs:
 
