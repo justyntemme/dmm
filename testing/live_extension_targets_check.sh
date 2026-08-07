@@ -64,6 +64,7 @@ required_extensions = {
     "portal2": "620",
     "projectzomboid": "108600",
     "starwarsjedisurvivor": "1774580",
+    "totalwarrome2": "214950",
 }
 for extension_id, app_id in required_extensions.items():
     summary = extensions_by_id.get(extension_id)
@@ -86,6 +87,13 @@ if "starwarsjedisurvivor" not in [str(item) for item in jedi.get("nexus_domains"
 jedi_caps = jedi.get("capabilities") or {}
 if not jedi_caps.get("installers") or not jedi_caps.get("load_orders") or not jedi_caps.get("event_handlers"):
     failures.append(f"Jedi Survivor capabilities missing: {jedi_caps}")
+
+rome2 = extensions_by_id.get("totalwarrome2") or {}
+if "totalwarrome2" not in [str(item) for item in rome2.get("nexus_domains", [])]:
+    failures.append(f"Total War ROME II missing Nexus domain: {rome2.get('nexus_domains')}")
+rome2_caps = rome2.get("capabilities") or {}
+if not rome2_caps.get("installers") or rome2_caps.get("steam_workshop"):
+    failures.append(f"Total War ROME II capability mismatch: {rome2_caps}")
 
 if failures:
     print("extension target check failed:")
