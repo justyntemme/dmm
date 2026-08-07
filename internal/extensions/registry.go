@@ -21,6 +21,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
@@ -56,8 +57,9 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spelunky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spidermanmilesmorales"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
@@ -72,6 +74,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thekingiswatching"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/thomaswasalone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
@@ -104,6 +107,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(gnorpapologue.Extension()),
+		gameext.MustCompileExtension(godhood.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),
@@ -144,6 +148,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
+		gameext.MustCompileExtension(sno.Extension()),
 		gameext.MustCompileExtension(stardewvalley.Extension()),
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),
 		gameext.MustCompileExtension(spelunky.Extension()),
@@ -157,6 +162,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
 		gameext.MustCompileExtension(thedivision2.Extension()),
 		gameext.MustCompileExtension(thekingiswatching.Extension()),
+		gameext.MustCompileExtension(thomaswasalone.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
 		gameext.MustCompileExtension(totalwarrome2.Extension()),

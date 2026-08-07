@@ -17,6 +17,7 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 		{appID: "26800", id: "braid", url: "https://www.moddb.com/games/braid/mods"},
 		{appID: "224760", id: "fez", url: "https://www.moddb.com/games/fez/mods"},
 		{appID: "1473350", id: "gnorpapologue", url: "https://gamebanana.com/games/22680"},
+		{appID: "917150", id: "godhood", url: "https://abbeygames.com/game/godhood/"},
 		{appID: "297120", id: "heavybullets", url: "https://www.moddb.com/games/heavy-bullets/mods"},
 		{appID: "219150", id: "hotlinemiami", url: "https://www.moddb.com/games/hotline-miami/mods"},
 		{appID: "214560", id: "markoftheninja", url: "https://www.moddb.com/games/mark-of-the-ninja/mods"},
@@ -25,7 +26,9 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 		{appID: "218230", id: "planetside2", url: "https://www.moddb.com/games/planetside-2/addons"},
 		{appID: "1216320", id: "shieldwall", url: "https://www.moddb.com/games/shieldwall/mods"},
 		{appID: "202170", id: "sleepingdogs", url: "https://www.moddb.com/games/sleeping-dogs/mods"},
+		{appID: "2943150", id: "sno", url: "https://store.steampowered.com/app/2943150/SN_Ultimate_Freeriding/"},
 		{appID: "455910", id: "starwarsroguesquadron", url: "https://www.moddb.com/games/star-wars-rogue-squadron/mods"},
+		{appID: "220780", id: "thomaswasalone", url: "https://www.moddb.com/games/thomas-was-alone/mods"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.id, func(t *testing.T) {
