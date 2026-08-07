@@ -14,6 +14,9 @@ import (
 )
 
 func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
+	variantShell := false
+	variantDetach := false
+	variantExclusive := false
 	extension, err := CompileExtension(sdk.Extension{
 		ID:      "sample",
 		Name:    "Sample Game",
@@ -62,7 +65,13 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 					ExecutableRelative: "loader.exe",
 					Arguments:          []string{"--windows"},
 					RequiredFiles:      []string{"loader.exe", "loader.dll"},
+					Shell:              &variantShell,
+					Detach:             &variantDetach,
+					Exclusive:          &variantExclusive,
 				}},
+				Shell:            true,
+				Detach:           true,
+				Exclusive:        true,
 				DefaultPrimary:   true,
 				ModTypes:         []string{"mod"},
 				ProviderModTypes: []string{"loader-mod"},
@@ -155,7 +164,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	_, baseTool, _ := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}})
 	resolvedTool := registry.ResolveLaunchToolForSteamApp("100", gamePath, baseTool)
-	if resolvedTool.ExecutableRelative != "loader.exe" || len(resolvedTool.Arguments) != 1 || resolvedTool.Arguments[0] != "--windows" || len(resolvedTool.RequiredFiles) != 2 || resolvedTool.RequiredFiles[0] != "loader.exe" {
+	if resolvedTool.ExecutableRelative != "loader.exe" || len(resolvedTool.Arguments) != 1 || resolvedTool.Arguments[0] != "--windows" || len(resolvedTool.RequiredFiles) != 2 || resolvedTool.RequiredFiles[0] != "loader.exe" || resolvedTool.Shell || resolvedTool.Detach || resolvedTool.Exclusive {
 		t.Fatalf("resolved launch tool = %+v", resolvedTool)
 	}
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
@@ -186,6 +195,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
+	}
+	if !summary.Capabilities.LaunchTools[0].Shell || !summary.Capabilities.LaunchTools[0].Detach || !summary.Capabilities.LaunchTools[0].Exclusive {
+		t.Fatalf("launch tool flags = %+v", summary.Capabilities.LaunchTools[0])
 	}
 	if len(summary.Capabilities.InstallPlatforms) != 1 || summary.Capabilities.InstallPlatforms[0].ID != "windows" {
 		t.Fatalf("install platform capabilities = %+v", summary.Capabilities.InstallPlatforms)

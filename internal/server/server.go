@@ -624,6 +624,9 @@ type launchToolResponse struct {
 	ExecutablePath     string   `json:"executable_path"`
 	Arguments          []string `json:"arguments,omitempty"`
 	RequiredFiles      []string `json:"required_files,omitempty"`
+	Shell              bool     `json:"shell,omitempty"`
+	Detach             bool     `json:"detach,omitempty"`
+	Exclusive          bool     `json:"exclusive,omitempty"`
 	SourceExtension    string   `json:"source_extension"`
 }
 
@@ -1039,11 +1042,18 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		ExecutablePath:     executablePath,
 		Arguments:          append([]string(nil), tool.Arguments...),
 		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+		Shell:              tool.Shell,
+		Detach:             tool.Detach,
+		Exclusive:          tool.Exclusive,
 		SourceExtension:    extension.ID,
 	}
 	resp.MissingFiles = gameext.MissingLaunchToolFiles(game.GamePath, tool)
 	if len(resp.MissingFiles) > 0 {
 		resp.Details = append(resp.Details, "Required launch-tool files are missing; deploy the required mod loader first.")
+		return resp, nil
+	}
+	if unsupported, reason := unsupportedSteamLaunchToolBridge(tool); unsupported {
+		resp.Details = append(resp.Details, reason)
 		return resp, nil
 	}
 	resp.CanConfigure = true
@@ -1082,6 +1092,18 @@ func launchOptionsConfigured(currentOptions, desiredOptions, executablePath stri
 		return true
 	}
 	return strings.Contains(currentOptions, strings.TrimSpace(executablePath))
+}
+
+func unsupportedSteamLaunchToolBridge(tool games.LaunchToolSpec) (bool, string) {
+	if !tool.Shell {
+		return false, ""
+	}
+	switch strings.ToLower(filepath.Ext(tool.ExecutableRelative)) {
+	case ".bat", ".cmd", ".ps1":
+		return true, "This extension launch tool is a shell script. DMM has recorded the Vortex tool metadata, but the current Steam launch-option bridge cannot safely run this script type yet."
+	default:
+		return false, ""
+	}
 }
 
 func launchActionRisk(currentOptions string) string {

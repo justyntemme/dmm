@@ -130,6 +130,9 @@ type LaunchToolSpec struct {
 	Arguments          []string
 	RequiredFiles      []string
 	Variants           []LaunchToolVariantSpec
+	Shell              bool
+	Detach             bool
+	Exclusive          bool
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
@@ -140,6 +143,9 @@ type LaunchToolVariantSpec struct {
 	ExecutableRelative string
 	Arguments          []string
 	RequiredFiles      []string
+	Shell              *bool
+	Detach             *bool
+	Exclusive          *bool
 }
 
 type GameVersionProviderSpec struct {

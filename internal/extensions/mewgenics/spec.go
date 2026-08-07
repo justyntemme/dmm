@@ -118,6 +118,9 @@ func Register(r sdk.Registrar) {
 		Name:               "Mewgenics Mod Launch",
 		ExecutableRelative: launchBAT,
 		RequiredFiles:      []string{launchBAT},
+		Shell:              true,
+		Detach:             true,
+		Exclusive:          true,
 		DefaultPrimary:     true,
 		ModTypes:           []string{modType, mewjectorModType},
 	})

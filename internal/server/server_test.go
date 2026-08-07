@@ -34,6 +34,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
@@ -7336,6 +7337,74 @@ func TestGameLaunchStatusUsesWindowsStardewLaunchToolVariant(t *testing.T) {
 	}
 	if body.Tool == nil || body.Tool.ExecutableRelative != "StardewModdingAPI.exe" {
 		t.Fatalf("launch tool = %+v", body.Tool)
+	}
+}
+
+func TestGameLaunchStatusBlocksUnsupportedShellScriptLaunchToolBridge(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Mewgenics")
+	for _, rel := range []string{"Mewgenics.exe", "launch.bat"} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("tool"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       mewgenics.SteamAppID,
+		Name:        "Mewgenics",
+		InstallDir:  "Mewgenics",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "mewgenics", "mods", "1", "files", "1")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "CoolCats"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "CoolCats", "description.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: mewgenics.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "mewgenics",
+			ModID:      "1",
+			FileID:     "1",
+		},
+		Name:         "CoolCats",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "coolcats.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"mewgenics","mod_type":"mewgenics-mod","files":[{"path":"CoolCats/description.json","target_relative":"mods/CoolCats/description.json","size":2,"sha256":"test"}]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+mewgenics.SteamAppID+"/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body gameLaunchStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Required || body.Configured || body.CanConfigure || body.Action != nil {
+		t.Fatalf("launch status = %+v", body)
+	}
+	if body.Tool == nil || body.Tool.ID != "mewgenics-customlaunch" || !body.Tool.Shell || !body.Tool.Detach || !body.Tool.Exclusive {
+		t.Fatalf("launch tool = %+v", body.Tool)
+	}
+	if len(body.Details) == 0 || !strings.Contains(body.Details[len(body.Details)-1], "shell script") {
+		t.Fatalf("details = %+v", body.Details)
 	}
 }
 

@@ -25,8 +25,11 @@ func TestExtensionRegistersVortexBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) < 5 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if toolSummary := summary.Capabilities.LaunchTools[0]; !toolSummary.Shell || !toolSummary.Detach || !toolSummary.Exclusive {
+		t.Fatalf("launch tool metadata = %+v", toolSummary)
+	}
 	_, tool, required := registry.RequiredPrimaryLaunchToolForSteamApp(SteamAppID, []gamehandler.RuntimeMod{{Enabled: true, ModType: modType}})
-	if !required || tool.ID != "mewgenics-customlaunch" {
+	if !required || tool.ID != "mewgenics-customlaunch" || !tool.Shell || !tool.Detach || !tool.Exclusive {
 		t.Fatalf("launch tool = %+v required=%v", tool, required)
 	}
 }

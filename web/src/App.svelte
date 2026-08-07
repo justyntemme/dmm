@@ -435,7 +435,13 @@
     tool?: {
       id: string;
       name: string;
+      executable_relative?: string;
       executable_path: string;
+      arguments?: string[];
+      required_files?: string[];
+      shell?: boolean;
+      detach?: boolean;
+      exclusive?: boolean;
       source_extension: string;
     };
     action?: {

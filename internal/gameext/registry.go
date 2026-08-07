@@ -108,6 +108,9 @@ type FeatureSummary struct {
 	ExecutableRelative string   `json:"executable_relative,omitempty"`
 	Arguments          []string `json:"arguments,omitempty"`
 	RequiredFiles      []string `json:"required_files,omitempty"`
+	Shell              bool     `json:"shell,omitempty"`
+	Detach             bool     `json:"detach,omitempty"`
+	Exclusive          bool     `json:"exclusive,omitempty"`
 	DefaultPrimary     bool     `json:"default_primary,omitempty"`
 	ModTypes           []string `json:"mod_types,omitempty"`
 	ProviderModTypes   []string `json:"provider_mod_types,omitempty"`
@@ -373,6 +376,15 @@ func ResolveLaunchToolForPlatform(tool LaunchToolSpec, platformID string) Launch
 		}
 		if len(variant.RequiredFiles) > 0 {
 			resolved.RequiredFiles = append([]string(nil), variant.RequiredFiles...)
+		}
+		if variant.Shell != nil {
+			resolved.Shell = *variant.Shell
+		}
+		if variant.Detach != nil {
+			resolved.Detach = *variant.Detach
+		}
+		if variant.Exclusive != nil {
+			resolved.Exclusive = *variant.Exclusive
 		}
 		resolved.Variants = nil
 		return resolved
@@ -653,6 +665,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ExecutableRelative: tool.ExecutableRelative,
 			Arguments:          append([]string(nil), tool.Arguments...),
 			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+			Shell:              tool.Shell,
+			Detach:             tool.Detach,
+			Exclusive:          tool.Exclusive,
 			DefaultPrimary:     tool.DefaultPrimary,
 			ModTypes:           appendClean([]string{}, tool.ModTypes...),
 			ProviderModTypes:   appendClean([]string{}, tool.ProviderModTypes...),
