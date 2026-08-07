@@ -272,6 +272,14 @@ type DomainEvent = {
   created_at?: string;
 };
 
+type DeckyBrowserOpenPayload = {
+  url: string;
+  profile_id?: number;
+  source?: string;
+  title?: string;
+  expires_at?: string;
+};
+
 type ManagedGame = {
   app_id: string;
   name: string;
@@ -969,6 +977,7 @@ const launchActionAttempts = new Map<string, number>();
 const completedWorkshopActions = new Set<string>();
 const workshopActionAttempts = new Map<string, number>();
 const workshopStateSyncLastAt = new Map<string, number>();
+const handledDeckyBrowserOpenEvents = new Set<number>();
 const DMM_TOAST_STORAGE_PREFIX = "decky-mod-manager:job-toast:";
 const DMM_EVENT_NAME = "dmm-domain-event";
 const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
@@ -1593,6 +1602,47 @@ async function openDMMBrowserViewCapture(initialURL: string, options: { appID?: 
   }
 }
 
+async function handleDeckyBrowserOpenEvent(event: DomainEvent) {
+  if (handledDeckyBrowserOpenEvents.has(event.id)) return;
+  handledDeckyBrowserOpenEvents.add(event.id);
+  if (!isDeckyBrowserOpenPayload(event.payload)) {
+    await logFrontendEvent("decky browser open skipped invalid payload", { event_id: event.id });
+    return;
+  }
+  const payload = event.payload;
+  const expiresAt = payload.expires_at ? Date.parse(payload.expires_at) : NaN;
+  if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+    await logFrontendEvent("decky browser open skipped expired event", {
+      event_id: event.id,
+      app_id: event.app_id || "",
+      expires_at: payload.expires_at || ""
+    });
+    return;
+  }
+  const appID = event.app_id || "";
+  const profileID = typeof payload.profile_id === "number" && Number.isFinite(payload.profile_id) ? payload.profile_id : 0;
+  await logFrontendEvent("decky browser open event received", {
+    event_id: event.id,
+    app_id: appID,
+    profile_id: profileID,
+    source: payload.source || "event",
+    url: payload.url
+  });
+  const opened = await openDMMBrowserViewCapture(payload.url, {
+    appID,
+    profileID,
+    source: payload.source || "event",
+    title: payload.title || "DMM Browser"
+  });
+  if (!opened) {
+    await logFrontendEvent("decky browser open event failed", {
+      event_id: event.id,
+      app_id: appID,
+      source: payload.source || "event"
+    });
+  }
+}
+
 function isNotifiableJob(job: Job) {
   return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type);
 }
@@ -1603,6 +1653,12 @@ function isJob(value: unknown): value is Job {
 
 function isUISettings(value: unknown): value is UISettings {
   return Boolean(value && typeof value === "object");
+}
+
+function isDeckyBrowserOpenPayload(value: unknown): value is DeckyBrowserOpenPayload {
+  if (!value || typeof value !== "object") return false;
+  const payload = value as DeckyBrowserOpenPayload;
+  return typeof payload.url === "string" && payload.url.trim().length > 0;
 }
 
 function diagnosticsTerminalText(diagnostics: Diagnostics | null): string {
@@ -2707,6 +2763,9 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
 
 async function handleDeckyDomainEvent(event: DomainEvent) {
   if (event.id > eventMonitorLastID) eventMonitorLastID = event.id;
+  if (event.type === "decky.browser.open") {
+    await handleDeckyBrowserOpenEvent(event);
+  }
   if (event.type === "jobs.snapshot" && Array.isArray(event.payload)) {
     for (const item of event.payload) {
       if (!isJob(item)) continue;

@@ -39,8 +39,10 @@ require_text "$WEB_APP" "Installed, disabled in this profile" \
   "game Mods view must include profile-scoped mod state"
 require_text "$WEB_APP" "Add Mod" \
   "generic mod import must live inside the selected game workspace"
-require_text "$WEB_APP" "Browse Nexus" \
+require_text "$WEB_APP" "Explore Nexus Mods" \
   "phone/tablet UI must expose game-scoped Nexus browsing"
+require_text "$WEB_APP" "Open on Deck" \
+  "phone/tablet Nexus browsing must use the Deck browser capture flow"
 require_text "$WEB_APP" "Steam Workshop" \
   "phone/tablet Mods view must show Steam Workshop platform mods when present"
 require_text "$WEB_APP" "source-pill" \

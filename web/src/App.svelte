@@ -131,20 +131,6 @@
 
   type ClientEventDetail = Record<string, string | number | boolean | null | undefined>;
 
-  type DownloadLink = {
-    name: string;
-    short_name: string;
-    URI: string;
-  };
-
-  type NexusFile = {
-    file_id: number;
-    name: string;
-    version: string;
-    file_name: string;
-    size: number;
-  };
-
   type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
   type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 
@@ -486,9 +472,7 @@
   let profileName = "";
   let copyProfileFromActive = false;
   let captureURL = "";
-  let lastCaptureURL = "";
   let resolvedCapture = "";
-  let nexusFiles: NexusFile[] = [];
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "downloads";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
@@ -497,14 +481,12 @@
   let nexusSearchTotal = 0;
   let nexusSearchBusy = false;
   let nexusSearchError = "";
-  let selectedNexusModID: number | null = null;
-  let nexusFilesByMod: Record<number, NexusFile[]> = {};
-  let busyNexusFileKey = "";
+  let nexusSearchMessage = "";
+  let busyNexusOpenModID = 0;
   let localArchiveFile: File | null = null;
   let localArchiveInput: HTMLInputElement | null = null;
   let localArchiveBusy = false;
   let localArchiveMessage = "";
-  let downloadLinks: DownloadLink[] = [];
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
   let deploymentSettings: DeploymentSettings | null = null;
@@ -1049,13 +1031,11 @@
     activeGameModule = "plugins";
     drawer = null;
     resolvedCapture = "";
-    nexusFiles = [];
     nexusSearchResults = [];
     nexusSearchTotal = 0;
-    selectedNexusModID = null;
-    nexusFilesByMod = {};
-    busyNexusFileKey = "";
-    downloadLinks = [];
+    nexusSearchError = "";
+    nexusSearchMessage = "";
+    busyNexusOpenModID = 0;
     deployPlan = null;
     deploymentStatus = null;
     deploymentSettings = null;
@@ -1624,7 +1604,6 @@
     if (result.resolved) {
       resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
     }
-    downloadLinks = result.download_links ?? [];
     await refreshJobsAndSelectedGame(reason, true);
     return result;
   }
@@ -1632,11 +1611,8 @@
   async function resolveCapturedInstall() {
     if (!selectedGame || !captureURL.trim()) return;
     error = "";
-    lastCaptureURL = captureURL;
     const requestedURL = captureURL;
     const targetProfileID = selectedInstallProfileID();
-    nexusFiles = [];
-    downloadLinks = [];
     try {
       const response = await fetch("/api/captured-installs/resolve", {
         method: "POST",
@@ -1650,23 +1626,15 @@
       const result = await response.json();
       upsertJob(result.job);
       resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
-      nexusFiles = result.files ?? [];
-      downloadLinks = result.download_links ?? [];
-      if (result.resolved?.file_id || (result.download_links ?? []).length > 0) {
+      if (result.resolved?.catalog === "nexus" && !result.resolved?.nxm_key) {
+        error = "Nexus installs require the Deck browser flow. Open the Nexus page from DMM, then click Nexus Mod Manager Download on that page.";
+      } else if (result.resolved?.file_id || (result.download_links ?? []).length > 0) {
         await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
+        captureURL = "";
       }
-      captureURL = "";
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
-  }
-
-  async function resolveFile(file: NexusFile) {
-    if (!lastCaptureURL) return;
-    const nextURL = new URL(lastCaptureURL);
-    nextURL.searchParams.set("file_id", String(file.file_id));
-    captureURL = nextURL.toString();
-    await resolveCapturedInstall();
   }
 
   function handleLocalArchiveChange(event: Event) {
@@ -1709,13 +1677,10 @@
     return selectedGame?.nexus_domains?.[0] ?? "";
   }
 
-  function nexusFileURL(modID: number, fileID: number) {
+  function nexusModURL(mod: NexusModResult) {
+    if (mod.url) return mod.url;
     const domain = selectedNexusDomain();
-    return `https://www.nexusmods.com/${encodeURIComponent(domain)}/mods/${modID}?file_id=${fileID}`;
-  }
-
-  function openNexusFilePage(modID: number, fileID: number) {
-    window.open(nexusFileURL(modID, fileID), "_blank", "noopener");
+    return `https://www.nexusmods.com/${encodeURIComponent(domain)}/mods/${mod.mod_id}`;
   }
 
   function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
@@ -1773,6 +1738,7 @@
     if (!selectedGame) return;
     nexusSearchBusy = true;
     nexusSearchError = "";
+    nexusSearchMessage = "";
     try {
       const params = new URLSearchParams({
         q: nexusSearchQuery,
@@ -1814,35 +1780,32 @@
     void searchNexusMods();
   }
 
-  async function loadNexusModFiles(mod: NexusModResult) {
+  async function openNexusModOnDeck(mod: NexusModResult) {
     if (!selectedGame) return;
-    selectedNexusModID = mod.mod_id;
+    const url = nexusModURL(mod);
     nexusSearchError = "";
-    if (nexusFilesByMod[mod.mod_id]) return;
-    busyNexusFileKey = `files:${mod.mod_id}`;
+    nexusSearchMessage = "";
+    busyNexusOpenModID = mod.mod_id;
     try {
-      const result = await getJSON<{ files: NexusFile[] }>(`/api/games/${selectedGame.app_id}/nexus/mods/${mod.mod_id}/files`);
-      nexusFilesByMod = { ...nexusFilesByMod, [mod.mod_id]: result.files ?? [] };
-      if ((result.files ?? []).length === 0) nexusSearchError = "This Nexus mod did not return installable files.";
+      const response = await fetch("/api/decky/browser/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          steam_app_id: selectedGame.app_id,
+          profile_id: selectedInstallProfileID(),
+          source: "web-nexus-search",
+          title: `${mod.name} - Nexus Mods`
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      nexusSearchMessage = "Opening this Nexus page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM.";
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
     } finally {
-      busyNexusFileKey = "";
-    }
-  }
-
-  async function addNexusSearchFile(mod: NexusModResult, file: NexusFile) {
-    if (!selectedGame || !selectedNexusDomain()) return;
-    const key = `${mod.mod_id}:${file.file_id}`;
-    busyNexusFileKey = key;
-    nexusSearchError = "";
-    try {
-      await captureInstallURL(nexusFileURL(mod.mod_id, file.file_id), selectedInstallProfileID(), "nexus-search-file");
-      resolvedCapture = `${selectedNexusDomain()}/mods/${mod.mod_id}/files/${file.file_id}`;
-    } catch (err) {
-      nexusSearchError = err instanceof Error ? err.message : String(err);
-    } finally {
-      busyNexusFileKey = "";
+      busyNexusOpenModID = 0;
     }
   }
 
@@ -3510,7 +3473,7 @@
               {#if selectedNexusDomain()}
                 <details class="nexus-browser">
                   <summary>
-                    <span>Browse Nexus</span>
+                    <span>Explore Nexus Mods</span>
                     <small>{selectedNexusDomain()}</small>
                   </summary>
                   <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
@@ -3522,12 +3485,11 @@
                   </form>
                   {#if nexusSearchResults.length > 0}
                     <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {nexusSearchVortexOnly ? "Vortex-compatible" : "Nexus"} results.</p>
+                    <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
                     <div class="nexus-results">
                       {#each nexusSearchResults as mod}
-                        {@const files = nexusFilesByMod[mod.mod_id] ?? []}
-                        {@const filesOpen = selectedNexusModID === mod.mod_id}
-                        <article class:open={filesOpen}>
-                          <button type="button" class="nexus-result-main" on:click={() => loadNexusModFiles(mod)}>
+                        <article>
+                          <div class="nexus-result-main">
                             <span>
                               <span class="mod-title-line">
                                 <strong>{mod.name}</strong>
@@ -3536,55 +3498,26 @@
                               {#if mod.summary}<small>{mod.summary}</small>{/if}
                               <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
                             </span>
-                            <b>{busyNexusFileKey === `files:${mod.mod_id}` ? "Loading" : filesOpen ? "Hide" : "Files"}</b>
-                          </button>
-                          {#if filesOpen && files.length > 0}
-                            <div class="nexus-file-list">
-                              {#each files as file}
-                                <article class="nexus-file-card">
-                                  <span>
-                                    <span class="mod-title-line">
-                                      <strong>{file.name || file.file_name}</strong>
-                                      <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
-                                    </span>
-                                    <small>{file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}</small>
-                                  </span>
-                                  <div class="nexus-file-actions">
-                                    <button type="button" class="secondary-action compact" on:click={() => openNexusFilePage(mod.mod_id, file.file_id)}>Open Page</button>
-                                    <button type="button" on:click={() => addNexusSearchFile(mod, file)} disabled={busyNexusFileKey === `${mod.mod_id}:${file.file_id}`}>
-                                      <em>{busyNexusFileKey === `${mod.mod_id}:${file.file_id}` ? "Adding" : "Add"}</em>
-                                    </button>
-                                  </div>
-                                </article>
-                              {/each}
-                            </div>
-                          {/if}
+                            <button type="button" on:click={() => openNexusModOnDeck(mod)} disabled={busyNexusOpenModID === mod.mod_id}>
+                              {busyNexusOpenModID === mod.mod_id ? "Opening..." : "Open on Deck"}
+                            </button>
+                          </div>
                         </article>
                       {/each}
                     </div>
                   {/if}
+                  {#if nexusSearchMessage}
+                    <p class="hint success-copy">{nexusSearchMessage}</p>
+                  {/if}
                   {#if nexusSearchError}
                     <p class="hint warning-copy">{nexusSearchError}</p>
-              {/if}
+                  {/if}
                 </details>
               {:else}
                 <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include Nexus browsing yet." : "This game does not have a DMM extension yet."}</p>
               {/if}
               {#if resolvedCapture}
                 <p class="hint">Resolved {resolvedCapture}</p>
-              {/if}
-              {#if nexusFiles.length > 0}
-                <div class="file-list">
-                  {#each nexusFiles as file}
-                    <button type="button" on:click={() => resolveFile(file)}>
-                      <span>
-                        <strong>{file.name || file.file_name}</strong>
-                        <small>{file.file_name} · v{file.version || "unknown"}</small>
-                      </span>
-                      <em>Use</em>
-                    </button>
-                  {/each}
-                </div>
               {/if}
             </div>
           </section>

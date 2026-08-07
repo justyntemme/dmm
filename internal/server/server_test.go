@@ -369,6 +369,54 @@ func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	}
 }
 
+func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
+	srv := newTestServer(t)
+	sub := srv.events.Subscribe(0)
+	defer sub.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400","steam_app_id":"413150","profile_id":7,"source":"web-test","title":"Test Mod"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	select {
+	case event := <-sub.C:
+		if event.Type != events.TypeDeckyBrowserOpen {
+			t.Fatalf("event type = %s, want %s", event.Type, events.TypeDeckyBrowserOpen)
+		}
+		if event.AppID != "413150" {
+			t.Fatalf("event app id = %q, want 413150", event.AppID)
+		}
+		var payload struct {
+			URL       string `json:"url"`
+			ProfileID int64  `json:"profile_id"`
+			Source    string `json:"source"`
+			Title     string `json:"title"`
+			ExpiresAt string `json:"expires_at"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.URL != "https://www.nexusmods.com/stardewvalley/mods/2400" || payload.ProfileID != 7 || payload.Source != "web-test" || payload.Title != "Test Mod" {
+			t.Fatalf("payload = %+v", payload)
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
+		if err != nil {
+			t.Fatalf("expires_at parse = %v", err)
+		}
+		if time.Until(expiresAt) <= 0 || time.Until(expiresAt) > time.Minute {
+			t.Fatalf("expires_at = %s", payload.ExpiresAt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for decky browser event")
+	}
+}
+
 func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	srv := newTestServer(t)
 

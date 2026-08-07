@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -308,6 +309,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/install-candidates", s.handleInstallCandidates)
+	mux.HandleFunc("POST /api/decky/browser/open", s.handleDeckyBrowserOpen)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
 	mux.HandleFunc("GET /api/workshop/actions", s.handleSteamWorkshopActions)
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/start", s.handleStartSteamWorkshopAction)
@@ -1547,6 +1549,14 @@ type patchUISettingsRequest struct {
 	GameSort       string `json:"game_sort"`
 }
 
+type deckyBrowserOpenRequest struct {
+	URL        string `json:"url"`
+	SteamAppID string `json:"steam_app_id"`
+	ProfileID  int64  `json:"profile_id"`
+	Source     string `json:"source"`
+	Title      string `json:"title"`
+}
+
 type createProfileRequest struct {
 	Name            string `json:"name"`
 	SourceProfileID int64  `json:"source_profile_id,omitempty"`
@@ -1910,6 +1920,59 @@ func (s *Server) handlePatchUISettings(w http.ResponseWriter, r *http.Request) {
 		Payload: events.MustPayload(ui),
 	})
 	s.handleStatus(w, r)
+}
+
+func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) {
+	var req deckyBrowserOpenRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		http.Error(w, "url is required", http.StatusBadRequest)
+		return
+	}
+	parsed, err := url.Parse(req.URL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		http.Error(w, "url must be an http or https provider page", http.StatusBadRequest)
+		return
+	}
+	req.SteamAppID = strings.TrimSpace(req.SteamAppID)
+	req.Source = strings.TrimSpace(req.Source)
+	if req.Source == "" {
+		req.Source = "web"
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		req.Title = "DMM Browser"
+	}
+	expiresAt := time.Now().UTC().Add(45 * time.Second)
+	payload := map[string]any{
+		"url":        req.URL,
+		"profile_id": req.ProfileID,
+		"source":     req.Source,
+		"title":      req.Title,
+		"expires_at": expiresAt.Format(time.RFC3339Nano),
+	}
+	s.logger.Info(
+		"decky browser open requested",
+		"app_id", req.SteamAppID,
+		"profile_id", req.ProfileID,
+		"source", req.Source,
+		"title", req.Title,
+		"expires_at", expiresAt,
+	)
+	s.publishEvent(events.Event{
+		Type:    events.TypeDeckyBrowserOpen,
+		AppID:   req.SteamAppID,
+		Payload: events.MustPayload(payload),
+	})
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"ok":         true,
+		"app_id":     req.SteamAppID,
+		"expires_at": expiresAt,
+	})
 }
 
 func normalizedUIConfig(ui config.UIConfig) config.UIConfig {

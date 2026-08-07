@@ -19,6 +19,7 @@ const (
 	TypeInstallChanged     = "install.changed"
 	TypeModUpdatesChanged  = "mod_updates.changed"
 	TypeUIChanged          = "ui.changed"
+	TypeDeckyBrowserOpen   = "decky.browser.open"
 )
 
 type Event struct {

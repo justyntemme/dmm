@@ -66,7 +66,8 @@ for target in "${tmp_dir}"/*.js; do
       "Add Mod" \
       "Install to Profile" \
       "mods in the same on/off state" \
-      "Browse Nexus" \
+      "Explore Nexus Mods" \
+      "Open on Deck" \
       "Advanced Profile Tools" \
       "These Deck behavior switches are managed from the Decky sidebar settings."
     do
