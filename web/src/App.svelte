@@ -491,7 +491,7 @@
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
   type SettingsPage = "overview" | "jobs" | "install" | "sources" | "nexus";
   type GameSort = "recent" | "az" | "za";
-  type GameVisibility = "supported" | "all";
+  type GameVisibility = "manageable" | "extensions" | "all";
   type ModListSort = "profile" | "source" | "az" | "enabled";
 
   let status: Status | null = null;
@@ -542,7 +542,7 @@
   let activeSettingsPage: SettingsPage = "overview";
   let gameQuery = "";
   let gameSort: GameSort = "recent";
-  let gameVisibility: GameVisibility = "supported";
+  let gameVisibility: GameVisibility = "manageable";
   let actionSourceFilter = "all";
   let jobSourceFilter = "all";
   let modSourceFilter = "all";
@@ -632,9 +632,11 @@
         return ["installer-choice", "steam-workshop-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
-  $: supportedGameCount = games.filter(gameHasExtension).length;
+  $: manageableGameCount = games.filter(gameManageReady).length;
+  $: extensionGameCount = games.filter(gameHasExtension).length;
   $: filteredGames = sortDrawerGames(games.filter((game) => {
-    if (gameVisibility === "supported" && !gameHasExtension(game)) return false;
+    if (gameVisibility === "manageable" && !gameManageReady(game)) return false;
+    if (gameVisibility === "extensions" && !gameHasExtension(game)) return false;
     const query = gameQuery.trim().toLowerCase();
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
@@ -2688,6 +2690,8 @@
     return [...items].sort((a, b) => {
       const favoriteDelta = Number(favoriteGameIDs.has(b.app_id)) - Number(favoriteGameIDs.has(a.app_id));
       if (favoriteDelta !== 0) return favoriteDelta;
+      const readyDelta = Number(gameManageReady(b)) - Number(gameManageReady(a));
+      if (readyDelta !== 0) return readyDelta;
       const supportedDelta = Number(gameHasExtension(b)) - Number(gameHasExtension(a));
       if (supportedDelta !== 0) return supportedDelta;
       if (gameSort === "az") return a.name.localeCompare(b.name);
@@ -2704,6 +2708,11 @@
 
   function gameHasExtension(game: Game) {
     return Boolean(game.extension?.supported);
+  }
+
+  function gameManageReady(game: Game) {
+    const coverage = game.extension?.coverage;
+    return coverage === "installer" || coverage === "workshop_only";
   }
 
   function gameCapabilityBadges(game: Game) {
@@ -3192,11 +3201,12 @@
           <label>
             <span>Show</span>
             <select aria-label="Show games" bind:value={gameVisibility}>
-              <option value="supported">Supported</option>
+              <option value="manageable">Manage Ready</option>
+              <option value="extensions">DMM Extensions</option>
               <option value="all">All Installed</option>
             </select>
           </label>
-          <span>{supportedGameCount} supported · {favoriteGameIDs.size} pinned</span>
+          <span>{manageableGameCount} ready · {extensionGameCount} extensions · {favoriteGameIDs.size} pinned</span>
         </div>
         <div class="drawer-list game-list">
           {#each filteredGames as game}

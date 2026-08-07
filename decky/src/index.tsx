@@ -380,7 +380,7 @@ type ModUpdate = {
 
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
-type GameVisibility = "supported" | "all";
+type GameVisibility = "manageable" | "extensions" | "all";
 
 type NexusModResult = {
   mod_id: number;
@@ -1149,11 +1149,18 @@ function gameSortLabel(sort: GameSort) {
 }
 
 function gameVisibilityLabel(visibility: GameVisibility) {
-  return visibility === "all" ? "All Installed" : "Supported";
+  if (visibility === "all") return "All Installed";
+  if (visibility === "extensions") return "DMM Extensions";
+  return "Manage Ready";
 }
 
 function gameHasExtension(game?: ManagedGame | null) {
   return Boolean(game?.extension?.supported);
+}
+
+function gameManageReady(game?: ManagedGame | null) {
+  const coverage = game?.extension?.coverage;
+  return coverage === "installer" || coverage === "workshop_only";
 }
 
 function deckyGameCapabilityBadges(game: ManagedGame): Array<{ label: string; kind: string }> {
@@ -3128,7 +3135,7 @@ function DeckyModManagerRoute() {
   const [modOrderMode, setModOrderMode] = useState<boolean>(false);
   const [gameSearch, setGameSearch] = useState<string>("");
   const [gameSort, setGameSortState] = useState<GameSort>("recent");
-  const [gameVisibility, setGameVisibility] = useState<GameVisibility>("supported");
+  const [gameVisibility, setGameVisibility] = useState<GameVisibility>("manageable");
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyModID, setBusyModID] = useState<number | null>(null);
@@ -3261,7 +3268,11 @@ function DeckyModManagerRoute() {
   }
 
   function toggleDeckyGameVisibility() {
-    setGameVisibility((current) => current === "supported" ? "all" : "supported");
+    setGameVisibility((current) => {
+      if (current === "manageable") return "extensions";
+      if (current === "extensions") return "all";
+      return "manageable";
+    });
   }
 
   function cycleDeckyModSort() {
@@ -3380,7 +3391,7 @@ function DeckyModManagerRoute() {
       const games = await loadDeckyGames();
       const running = currentRunningGame();
       setRunningGame(running);
-      const runningSupported = running && games.some((game) => game.app_id === running.app_id);
+      const runningSupported = running && games.some((game) => game.app_id === running.app_id && gameManageReady(game));
       const selected = appID || selectedDeckyGameID || (runningSupported ? running.app_id : "");
       const nextID = selected && games.some((game) => game.app_id === selected) ? selected : "";
       setSelectedDeckyGameID(nextID);
@@ -4282,7 +4293,7 @@ function DeckyModManagerRoute() {
       const running = currentRunningGame();
       setRunningGame(running);
       const game = managedGames.find((item) => item.app_id === running?.app_id);
-      if (!running || !game || !gameHasExtension(game) || tab !== "games" || selectedDeckyGameID) return;
+      if (!running || !game || !gameManageReady(game) || tab !== "games" || selectedDeckyGameID) return;
       setSelectedDeckyGameID(running.app_id);
       markDeckyGameRecent(running.app_id);
       void loadDeckyGameState(running.app_id);
@@ -4395,21 +4406,25 @@ function DeckyModManagerRoute() {
     return sources;
   }, [selectedDeckyGame, selectedNexusDomain, catalogs]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
-  const supportedGameCount = managedGames.filter(gameHasExtension).length;
-  const runningSupported = Boolean(runningGame && gameHasExtension(managedGames.find((game) => game.app_id === runningGame.app_id)));
+  const manageableGameCount = managedGames.filter(gameManageReady).length;
+  const extensionGameCount = managedGames.filter(gameHasExtension).length;
+  const runningSupported = Boolean(runningGame && gameManageReady(managedGames.find((game) => game.app_id === runningGame.app_id)));
   const favoriteGameKey = [...favoriteGameIDs].sort().join("|");
   const effectiveModSort = modOrderMode ? "profile" : modSort;
   const visibleManagedGames = useMemo(() => {
     const normalizedGameSearch = gameSearch.trim().toLowerCase();
     const favoriteIDs = new Set(favoriteGameKey ? favoriteGameKey.split("|") : []);
     return [...managedGames].filter((game) => {
-      if (gameVisibility === "supported" && !gameHasExtension(game)) return false;
+      if (gameVisibility === "manageable" && !gameManageReady(game)) return false;
+      if (gameVisibility === "extensions" && !gameHasExtension(game)) return false;
       if (!normalizedGameSearch) return true;
       return game.name.toLowerCase().includes(normalizedGameSearch) || game.app_id.includes(normalizedGameSearch);
     })
     .sort((a, b) => {
       const favoriteDelta = Number(favoriteIDs.has(b.app_id)) - Number(favoriteIDs.has(a.app_id));
       if (favoriteDelta !== 0) return favoriteDelta;
+      const readyDelta = Number(gameManageReady(b)) - Number(gameManageReady(a));
+      if (readyDelta !== 0) return readyDelta;
       const supportedDelta = Number(gameHasExtension(b)) - Number(gameHasExtension(a));
       if (supportedDelta !== 0) return supportedDelta;
       if (gameSort === "az") return a.name.localeCompare(b.name);
@@ -4543,7 +4558,7 @@ function DeckyModManagerRoute() {
           <div style={{ alignItems: "center", display: "flex", gap: "10px", width: "100%" }}>
             <img src={steamHeaderImage(runningGame.app_id)} style={{ borderRadius: "5px", height: "42px", objectFit: "cover", width: "74px" }} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: runningSupported ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{runningSupported ? "Running game selected" : "Running game not supported yet"}</div>
+              <div style={{ color: runningSupported ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800, textTransform: "uppercase" }}>{runningSupported ? "Running game selected" : "Running game is not manage-ready yet"}</div>
               <div style={{ fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{runningGame.name}</div>
             </div>
           </div>
@@ -4561,7 +4576,7 @@ function DeckyModManagerRoute() {
               Show: {gameVisibilityLabel(gameVisibility)}
             </ButtonItem>
             <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800, lineHeight: 1.2 }}>
-              {supportedGameCount} supported · {favoriteGameIDs.size} favorite{favoriteGameIDs.size === 1 ? "" : "s"}
+              {manageableGameCount} ready · {extensionGameCount} extensions · {favoriteGameIDs.size} favorite{favoriteGameIDs.size === 1 ? "" : "s"}
             </div>
             {managedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games loaded.</div>}
             {managedGames.length > 0 && visibleManagedGames.length === 0 && <div style={{ color: "#a1a1aa" }}>No games match this search.</div>}
