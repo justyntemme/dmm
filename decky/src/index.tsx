@@ -381,6 +381,23 @@ type ModUpdate = {
   checked_at?: string;
 };
 
+type RuntimeRequirement = {
+  id: string;
+  name: string;
+  kind: string;
+  required: boolean;
+  status: string;
+  message: string;
+  details?: string[];
+  help_url?: string;
+  install_hint?: string;
+};
+
+type GameDiagnostics = {
+  runtime_requirements?: RuntimeRequirement[];
+  validation_warnings?: string[];
+};
+
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 type GameVisibility = "manageable" | "extensions" | "all";
@@ -3251,6 +3268,7 @@ function DeckyModManagerRoute() {
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
   const [deckyDeploymentStatus, setDeckyDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [deckyDeployPlan, setDeckyDeployPlan] = useState<DeployPlan | null>(null);
+  const [deckyDiagnostics, setDeckyDiagnostics] = useState<GameDiagnostics | null>(null);
   const [modsResult, setModsResult] = useState<string>("");
   const [modSearch, setModSearch] = useState<string>("");
   const [modSort, setModSort] = useState<DeckyModSort>("profile");
@@ -3442,9 +3460,10 @@ function DeckyModManagerRoute() {
       setDeckyLoadOrder(null);
       setDeckyDeploymentStatus(null);
       setDeckyDeployPlan(null);
+      setDeckyDiagnostics(null);
       return null;
     }
-    const [profilesResult, modsResult, jobsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult] = await Promise.all([
+    const [profilesResult, modsResult, jobsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult, diagnosticsResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
       call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs"),
@@ -3452,7 +3471,8 @@ function DeckyModManagerRoute() {
       call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
       call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID),
       call<[string], { ok: boolean; error?: string; status?: DeploymentStatus }>("game_deploy_status", appID),
-      call<[string], { ok: boolean; error?: string; plan?: DeployPlan | null }>("game_deploy_preview", appID)
+      call<[string], { ok: boolean; error?: string; plan?: DeployPlan | null }>("game_deploy_preview", appID),
+      call<[string], { ok: boolean; error?: string; diagnostics?: GameDiagnostics | null }>("game_diagnostics", appID)
     ]);
     if (!profilesResult.ok) {
       setError(profilesResult.error ?? "Unable to load profiles.");
@@ -3498,6 +3518,12 @@ function DeckyModManagerRoute() {
     } else {
       setDeckyDeployPlan(null);
     }
+    if (diagnosticsResult.ok && diagnosticsResult.diagnostics) {
+      setDeckyDiagnostics(diagnosticsResult.diagnostics);
+    } else {
+      setDeckyDiagnostics(null);
+      if (!diagnosticsResult.ok) await logFrontendEvent("decky diagnostics load failed", { app_id: appID, error: diagnosticsResult.error || "" });
+    }
     if (workshopResult.ok && workshopResult.state?.supported) void syncWorkshopStateForApp(appID).then((synced) => {
       if (synced) {
         void call<[string], { ok: boolean; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID).then((next) => {
@@ -3514,7 +3540,8 @@ function DeckyModManagerRoute() {
       workshopItems: workshopResult.ok ? workshopResult.items : [],
       loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null,
       deploymentStatus: deployStatusResult.ok ? deployStatusResult.status : null,
-      deployPlan: deployPreviewResult.ok ? deployPreviewResult.plan : null
+      deployPlan: deployPreviewResult.ok ? deployPreviewResult.plan : null,
+      diagnostics: diagnosticsResult.ok ? diagnosticsResult.diagnostics : null
     };
   }
 
@@ -4643,6 +4670,10 @@ function DeckyModManagerRoute() {
     return sources;
   }, [selectedDeckyGame, selectedNexusDomains.join("|"), selectedNexusDomain, catalogs]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
+  const deckyRuntimeIssues = useMemo(
+    () => (deckyDiagnostics?.runtime_requirements ?? []).filter((requirement) => requirement.status !== "ok"),
+    [deckyDiagnostics]
+  );
   const deckyActionJobs = useMemo(() => deckyActionJobsForGame(deckyJobs, selectedDeckyGameID), [deckyJobs, selectedDeckyGameID]);
   const manageableGameCount = managedGames.filter(gameManageReady).length;
   const extensionGameCount = managedGames.filter(gameHasExtension).length;
@@ -4898,8 +4929,53 @@ function DeckyModManagerRoute() {
 	                  B Change Game
 	                </div>
 	              </div>
-	            </Focusable>
-	          </PanelSectionRow>
+          </Focusable>
+        </PanelSectionRow>
+        {deckyRuntimeIssues.length > 0 && (
+          <PanelSectionRow>
+            <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px" }}>
+              <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Runtime Requirements</div>
+                <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{deckyRuntimeIssues.length} issue{deckyRuntimeIssues.length === 1 ? "" : "s"}</div>
+              </div>
+              {deckyRuntimeIssues.map((requirement) => (
+                <Focusable
+                  key={requirement.id}
+                  className="dmm-sidebar-row"
+                  focusClassName="dmm-sidebar-row-focused"
+                  onActivate={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (requirement.kind === "launch-tool") void retryLaunchSetup();
+                  }}
+                  onClick={() => {
+                    if (requirement.kind === "launch-tool") void retryLaunchSetup();
+                  }}
+                  style={{
+                    ...deckyCompositeRowStyle(false),
+                    borderColor: requirement.status === "outdated" ? "#f59e0b" : "#7f1d1d",
+                    padding: "10px"
+                  }}
+                >
+                  <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+                    <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{requirement.name}</div>
+                    <span style={{ ...deckySourcePillStyle("runtime"), background: requirement.status === "outdated" ? "#451a03" : "#450a0a", borderColor: requirement.status === "outdated" ? "#f59e0b" : "#ef4444", color: requirement.status === "outdated" ? "#fde68a" : "#fecaca" }}>{requirement.status}</span>
+                  </div>
+                  <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
+                  {requirement.install_hint && (
+                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.install_hint}</div>
+                  )}
+                  {requirement.help_url && (
+                    <div style={{ color: "#93c5fd", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.help_url}</div>
+                  )}
+                  <div style={{ color: requirement.kind === "launch-tool" ? "#99f6e4" : "#fbbf24", fontSize: "11px", fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                    {requirement.kind === "launch-tool" ? "A Retry Launch Setup" : "Resolve before launching with enabled mods"}
+                  </div>
+                </Focusable>
+              ))}
+            </div>
+          </PanelSectionRow>
+        )}
 	          <PanelSectionRow>
 	            <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px" }}>
 	              <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>

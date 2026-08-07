@@ -385,6 +385,20 @@ class Plugin:
             return {"ok": True, "mods": result}
         return {"ok": False, "error": "Unexpected mods response.", "mods": []}
 
+    async def game_diagnostics(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "diagnostics": None}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "diagnostics": None}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/diagnostics")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load game diagnostics.", "diagnostics": None}
+        requirements = result.get("runtime_requirements")
+        requirement_count = len(requirements) if isinstance(requirements, list) else 0
+        self._log(f"game diagnostics loaded app_id={app_id} runtime_requirements={requirement_count}")
+        return {"ok": True, "diagnostics": result}
+
     async def game_load_order(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:
