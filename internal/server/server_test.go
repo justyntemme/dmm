@@ -951,6 +951,41 @@ func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
 	}
 }
 
+func TestGameNexusModsSearchCanUseAlternateRegisteredDomain(t *testing.T) {
+	srv := newTestServer(t)
+	var captured nexus.ModSearchRequest
+	srv.nexus = func(apiKey string) nexusClient {
+		return fakeNexusClient{searchReq: &captured}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/377160/nexus/mods?domain=fallout4london", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if captured.GameDomain != "fallout4london" {
+		t.Fatalf("game domain = %q", captured.GameDomain)
+	}
+}
+
+func TestGameNexusModsSearchRejectsUnregisteredDomain(t *testing.T) {
+	srv := newTestServer(t)
+	srv.nexus = func(apiKey string) nexusClient {
+		t.Fatal("nexus client should not be called for an unregistered domain")
+		return fakeNexusClient{}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/377160/nexus/mods?domain=skyrimspecialedition", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()

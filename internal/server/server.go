@@ -1771,6 +1771,10 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gameDomain, ok := s.nexusDomainForSteamAppID(appID)
+	requestedDomain := strings.TrimSpace(r.URL.Query().Get("domain"))
+	if requestedDomain != "" {
+		gameDomain, ok = s.registeredNexusDomainForSteamAppID(appID, requestedDomain)
+	}
 	if !ok {
 		http.Error(w, "no Nexus domain is registered for this game", http.StatusNotFound)
 		return
@@ -7884,6 +7888,19 @@ func (s *Server) appIDForResolved(resolved catalog.ResolvedDownload) string {
 
 func (s *Server) nexusDomainForSteamAppID(appID string) (string, bool) {
 	return s.games.NexusDomainForSteamAppID(strings.TrimSpace(appID))
+}
+
+func (s *Server) registeredNexusDomainForSteamAppID(appID, domain string) (string, bool) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return "", false
+	}
+	for _, registered := range s.games.NexusDomainsForSteamAppID(strings.TrimSpace(appID)) {
+		if strings.EqualFold(registered, domain) {
+			return strings.ToLower(strings.TrimSpace(registered)), true
+		}
+	}
+	return "", false
 }
 
 func nexusModFileWebURL(gameDomain, modID, fileID string) string {

@@ -520,6 +520,7 @@
   let nexusSearchBusy = false;
   let nexusSearchError = "";
   let nexusSearchMessage = "";
+  let nexusBrowseDomain = "";
   let busyNexusOpenModID = 0;
   let exploreSourceID = "nexus";
   let localArchiveFile: File | null = null;
@@ -1079,6 +1080,7 @@
     nexusSearchTotal = 0;
     nexusSearchError = "";
     nexusSearchMessage = "";
+    nexusBrowseDomain = game.nexus_domains?.[0]?.trim().toLowerCase() ?? "";
     busyNexusOpenModID = 0;
     deployPlan = null;
     deploymentStatus = null;
@@ -1848,7 +1850,13 @@
   }
 
   function selectedNexusDomain() {
-    return selectedGame?.nexus_domains?.[0] ?? "";
+    const domains = selectedNexusDomains();
+    if (domains.includes(nexusBrowseDomain)) return nexusBrowseDomain;
+    return domains[0] ?? "";
+  }
+
+  function selectedNexusDomains() {
+    return (selectedGame?.nexus_domains ?? []).map((domain) => domain.trim().toLowerCase()).filter(Boolean);
   }
 
   function exploreSourceOptions() {
@@ -1934,6 +1942,7 @@
     try {
       const params = new URLSearchParams({
         q: nexusSearchQuery,
+        domain: selectedNexusDomain(),
         sort: nextSort,
         time_window: nextWindow,
         count: "20",
@@ -1970,6 +1979,13 @@
   function toggleNexusCompatibilityFilter() {
     nexusSearchVortexOnly = !nexusSearchVortexOnly;
     void searchNexusMods();
+  }
+
+  function resetNexusSearchResults() {
+    nexusSearchResults = [];
+    nexusSearchTotal = 0;
+    nexusSearchError = "";
+    nexusSearchMessage = "";
   }
 
   async function openNexusModOnDeck(mod: NexusModResult) {
@@ -3717,6 +3733,16 @@
                     </select>
                   </label>
                   {#if selectedExploreSourceBrowseReady()}
+                    {#if selectedNexusDomains().length > 1}
+                      <label class="target-profile-select">
+                        <span>Nexus Game</span>
+                        <select bind:value={nexusBrowseDomain} on:change={resetNexusSearchResults}>
+                          {#each selectedNexusDomains() as domain}
+                            <option value={domain}>{domain}</option>
+                          {/each}
+                        </select>
+                      </label>
+                    {/if}
                     <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
                       <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
                       <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>

@@ -278,7 +278,7 @@ class Plugin:
             return {"ok": True, "catalogs": result}
         return {"ok": False, "error": "Unexpected catalogs response.", "catalogs": []}
 
-    async def nexus_mods(self, app_id, query="", sort="downloads", time_window="all", count=20, offset=0, vortex_only=True):
+    async def nexus_mods(self, app_id, query="", sort="downloads", time_window="all", count=20, offset=0, vortex_only=True, domain=""):
         app_id = str(app_id or "").strip()
         if not app_id:
             return {"ok": False, "error": "app_id is required.", "mods": [], "total_count": 0}
@@ -296,6 +296,7 @@ class Plugin:
         vortex_only_enabled = vortex_only_value not in ("0", "false", "no", "off")
         params = urllib.parse.urlencode({
             "q": str(query or "").strip(),
+            "domain": str(domain or "").strip(),
             "sort": str(sort or "downloads").strip(),
             "time_window": str(time_window or "all").strip(),
             "count": max(1, min(count, 50)),
@@ -309,7 +310,7 @@ class Plugin:
         mods = result.get("mods") if isinstance(result, dict) else None
         if not isinstance(mods, list):
             return {"ok": False, "error": "Unexpected Nexus search response.", "mods": [], "total_count": 0}
-        self._log(f"nexus mods searched app_id={app_id} query_present={bool(str(query or '').strip())} sort={sort} time_window={time_window} count={len(mods)}")
+        self._log(f"nexus mods searched app_id={app_id} domain_present={bool(str(domain or '').strip())} query_present={bool(str(query or '').strip())} sort={sort} time_window={time_window} count={len(mods)}")
         return {"ok": True, "mods": mods, "total_count": int(result.get("total_count") or len(mods))}
 
     async def game_profiles(self, app_id):

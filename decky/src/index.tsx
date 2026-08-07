@@ -135,6 +135,7 @@ type DeckyExploreSource = {
   action: string;
   enabled: boolean;
   behavior: "browse" | "paste" | "info";
+  gameDomain?: string;
 };
 
 const DMMBrowserContainer = findModuleChild((mod: unknown) => {
@@ -1158,6 +1159,16 @@ function gameVisibilityLabel(visibility: GameVisibility) {
   if (visibility === "all") return "All Installed";
   if (visibility === "extensions") return "DMM Extensions";
   return "Manage Ready";
+}
+
+function nexusDomainLabel(domain: string) {
+  const cleaned = String(domain || "")
+    .trim()
+    .replace(/([a-z])([0-9])/gi, "$1 $2")
+    .replace(/([0-9])([a-z])/gi, "$1 $2")
+    .replace(/[-_]+/g, " ");
+  if (!cleaned) return "Nexus";
+  return cleaned.replace(/\b\w/g, (value) => value.toUpperCase());
 }
 
 function gameHasExtension(game?: ManagedGame | null) {
@@ -2620,7 +2631,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     setError("");
     setMessage("");
     try {
-      const result = await call<[string, string, string, string, number, number, boolean], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
+      const result = await call<[string, string, string, string, number, number, boolean, string], { ok: boolean; error?: string; mods: NexusModResult[]; total_count: number }>(
         "nexus_mods",
         props.appID,
         query,
@@ -2628,7 +2639,8 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
         nextWindow,
         pageSize,
         nextOffset,
-        nextVortexOnly
+        nextVortexOnly,
+        props.gameDomain
       );
       if (!result.ok) {
         setError(result.error || "Unable to search Nexus Mods.");
@@ -4086,15 +4098,16 @@ function DeckyModManagerRoute() {
     void setMaxConcurrentCapturedDownloadsPerGame(next);
   }
 
-  function openDeckyNexusBrowser() {
-    if (!selectedDeckyGameID || !selectedDeckyGame || !selectedNexusDomain) return;
+  function openDeckyNexusBrowser(gameDomain = selectedNexusDomain) {
+    gameDomain = String(gameDomain || "").trim().toLowerCase();
+    if (!selectedDeckyGameID || !selectedDeckyGame || !gameDomain) return;
     let modal: { Close: () => void } | null = null;
     const closeModal = () => modal?.Close();
     modal = showModal(
       <NexusBrowserModal
         appID={selectedDeckyGameID}
         gameName={selectedDeckyGame.name}
-        gameDomain={selectedNexusDomain}
+        gameDomain={gameDomain}
         profileID={selectedProfile?.id ?? 0}
         closeModal={closeModal}
       />,
@@ -4371,7 +4384,8 @@ function DeckyModManagerRoute() {
   }, [tab, managedGames, selectedDeckyGameID]);
 
   const selectedDeckyGame = managedGames.find((game) => game.app_id === selectedDeckyGameID) ?? null;
-  const selectedNexusDomain = selectedDeckyGame?.nexus_domains?.[0] ?? "";
+  const selectedNexusDomains = (selectedDeckyGame?.nexus_domains ?? []).map((domain) => domain.trim().toLowerCase()).filter(Boolean);
+  const selectedNexusDomain = selectedNexusDomains[0] ?? "";
   const selectedExploreSources = useMemo(() => {
     if (!selectedDeckyGame) return [] as DeckyExploreSource[];
     const sources: DeckyExploreSource[] = [];
@@ -4379,20 +4393,34 @@ function DeckyModManagerRoute() {
     const firstNote = (catalog: CatalogStatus) => catalog.notes?.find((note) => note.trim() !== "") ?? "";
     const nexusCatalog = catalogs.find((catalog) => catalog.id === "nexus");
     if (nexusCatalog) {
-      const enabled = Boolean(selectedNexusDomain && nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse));
-      sources.push({
-        id: "nexus",
-        catalog: catalogSourceTag(nexusCatalog),
-        title: "Nexus Mods",
-        detail: enabled
-          ? "Search Nexus, open the real mod page, then press Mod Manager Download."
-          : selectedNexusDomain
-            ? "Nexus is not ready. Configure the Nexus API key from the phone/tablet Settings screen."
-            : "This extension does not declare a Nexus domain yet.",
-        action: enabled ? "Explore Mods" : catalogStatusLabel(nexusCatalog.status),
-        enabled,
-        behavior: enabled ? "browse" : "info"
-      });
+      const nexusReady = nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse);
+      if (selectedNexusDomains.length > 0) {
+        selectedNexusDomains.forEach((domain) => {
+          const enabled = Boolean(nexusReady);
+          sources.push({
+            id: `nexus:${domain}`,
+            catalog: catalogSourceTag(nexusCatalog),
+            title: selectedNexusDomains.length > 1 ? `Nexus Mods - ${nexusDomainLabel(domain)}` : "Nexus Mods",
+            detail: enabled
+              ? `Search ${domain}, open the real mod page, then press Mod Manager Download.`
+              : "Nexus is not ready. Configure the Nexus API key from the phone/tablet Settings screen.",
+            action: enabled ? "Explore Mods" : catalogStatusLabel(nexusCatalog.status),
+            enabled,
+            behavior: enabled ? "browse" : "info",
+            gameDomain: domain
+          });
+        });
+      } else {
+        sources.push({
+          id: "nexus",
+          catalog: catalogSourceTag(nexusCatalog),
+          title: "Nexus Mods",
+          detail: "This extension does not declare a Nexus domain yet.",
+          action: "Unavailable",
+          enabled: false,
+          behavior: "info"
+        });
+      }
     } else if (selectedDeckyGame.extension?.supported && !selectedNexusDomain) {
       sources.push({
         id: "nexus",
@@ -4470,7 +4498,7 @@ function DeckyModManagerRoute() {
       });
     }
     return sources;
-  }, [selectedDeckyGame, selectedNexusDomain, catalogs]);
+  }, [selectedDeckyGame, selectedNexusDomains.join("|"), selectedNexusDomain, catalogs]);
   const selectedProfile = deckyProfiles.find((item) => item.is_default) ?? deckyProfiles[0] ?? null;
   const manageableGameCount = managedGames.filter(gameManageReady).length;
   const extensionGameCount = managedGames.filter(gameHasExtension).length;
@@ -4753,7 +4781,7 @@ function DeckyModManagerRoute() {
 	                    event.preventDefault();
 	                    event.stopPropagation();
 	                    if (!source.enabled) return;
-	                    if (source.behavior === "browse") openDeckyNexusBrowser();
+	                    if (source.behavior === "browse") openDeckyNexusBrowser(source.gameDomain);
 	                    if (source.behavior === "paste") {
 	                      setTab("main");
 	                      setImportResult(`Paste a ${source.title} URL in Mod Link for ${selectedDeckyGame?.name ?? "this game"}.`);
@@ -4762,7 +4790,7 @@ function DeckyModManagerRoute() {
 	                  }}
 	                  onClick={() => {
 	                    if (!source.enabled) return;
-	                    if (source.behavior === "browse") openDeckyNexusBrowser();
+	                    if (source.behavior === "browse") openDeckyNexusBrowser(source.gameDomain);
 	                    if (source.behavior === "paste") {
 	                      setTab("main");
 	                      setImportResult(`Paste a ${source.title} URL in Mod Link for ${selectedDeckyGame?.name ?? "this game"}.`);
