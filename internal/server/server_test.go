@@ -926,42 +926,6 @@ func TestGameNexusModsSearchUsesRegisteredDomain(t *testing.T) {
 	}
 }
 
-func TestGameNexusModFilesUsesConfiguredAPIKey(t *testing.T) {
-	srv := newTestServer(t)
-	srv.cfgMu.Lock()
-	srv.cfg.Nexus.APIKey = "secret"
-	srv.cfgMu.Unlock()
-	var gotKey string
-	srv.nexus = func(apiKey string) nexusClient {
-		gotKey = apiKey
-		return fakeNexusClient{
-			files: nexus.FilesResponse{Files: []nexus.ModFile{
-				{FileID: 135998, Name: "SMAPI", FileName: "smapi-old.zip", UploadedAt: 1000},
-				{FileID: 135999, Name: "SMAPI", FileName: "smapi-new.zip", UploadedAt: 2000},
-				{FileID: 136000, Name: "SMAPI", FileName: "smapi-same-time.zip", UploadedAt: 2000},
-			}},
-		}
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/nexus/mods/2400/files", nil)
-	req.RemoteAddr = "127.0.0.1:1"
-	rec := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if gotKey != "secret" {
-		t.Fatalf("apiKey = %q", gotKey)
-	}
-	var body nexus.FilesResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.Files) != 3 || body.Files[0].FileID != 136000 || body.Files[1].FileID != 135999 || body.Files[2].FileID != 135998 {
-		t.Fatalf("files = %+v", body.Files)
-	}
-}
-
 func TestCheckGameModUpdatesCachesNexusResult(t *testing.T) {
 	srv := newTestServer(t)
 	srv.cfgMu.Lock()
@@ -2215,14 +2179,18 @@ func TestResolveCapturedInstallWithoutNexusKey(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !bytes.Contains(rec.Body.Bytes(), []byte("configure Nexus API key")) {
-		t.Fatalf("expected missing api key guidance, body = %s", rec.Body.String())
+	if !bytes.Contains(rec.Body.Bytes(), []byte("browser-generated Mod Manager Download link")) {
+		t.Fatalf("expected browser-generated link guidance, body = %s", rec.Body.String())
 	}
 	var body struct {
-		Job jobs.Job `json:"job"`
+		Job             jobs.Job `json:"job"`
+		BrowserRequired bool     `json:"browser_required"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
+	}
+	if !body.BrowserRequired {
+		t.Fatalf("browser_required = false, body = %s", rec.Body.String())
 	}
 	if body.Job.Payload["catalog"] != "nexus" || body.Job.Payload["game_domain"] != "witcher3" || body.Job.Payload["mod_id"] != "123" || body.Job.Payload["file_id"] != "456" {
 		t.Fatalf("job payload = %+v", body.Job.Payload)
@@ -2313,6 +2281,35 @@ func TestCapturedInstallRejectsCatalogWithoutDownloadProvider(t *testing.T) {
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("catalog example did not return a downloadable archive")) {
 		t.Fatalf("expected missing download guidance, body = %s", rec.Body.String())
+	}
+}
+
+func TestCapturedInstallNexusHTTPSRequiresBrowserGeneratedLink(t *testing.T) {
+	srv := newTestServer(t)
+	srv.cfgMu.Lock()
+	srv.cfg.Nexus.APIKey = "secret"
+	srv.cfgMu.Unlock()
+	srv.nexus = func(apiKey string) nexusClient {
+		t.Fatalf("nexus client should not be called for browserless HTTPS capture; apiKey=%q", apiKey)
+		return fakeNexusClient{}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400?file_id=135998","steam_app_id":"413150"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"browser_required":true`)) {
+		t.Fatalf("expected browser_required response, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"status":"failed"`)) {
+		t.Fatalf("expected failed job status, body = %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("Mod Manager Download")) {
+		t.Fatalf("expected Mod Manager Download guidance, body = %s", rec.Body.String())
 	}
 }
 

@@ -316,7 +316,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/retry", s.handleRetrySteamWorkshopAction)
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/complete", s.handleCompleteSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
-	mux.HandleFunc("GET /api/games/{appID}/nexus/mods/{modID}/files", s.handleGameNexusModFiles)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/order", s.handleSetSteamWorkshopOrder)
@@ -1755,41 +1754,6 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) handleGameNexusModFiles(w http.ResponseWriter, r *http.Request) {
-	appID := strings.TrimSpace(r.PathValue("appID"))
-	modID := strings.TrimSpace(r.PathValue("modID"))
-	if appID == "" || modID == "" {
-		http.Error(w, "appID and modID are required", http.StatusBadRequest)
-		return
-	}
-	gameDomain, ok := s.nexusDomainForSteamAppID(appID)
-	if !ok {
-		http.Error(w, "no Nexus domain is registered for this game", http.StatusNotFound)
-		return
-	}
-	s.cfgMu.RLock()
-	apiKey := s.cfg.Nexus.APIKey
-	s.cfgMu.RUnlock()
-	if apiKey == "" {
-		http.Error(w, "nexus api key is not configured", http.StatusBadRequest)
-		return
-	}
-	s.logger.Info("nexus mod files requested", "app_id", appID, "game_domain", gameDomain, "mod_id", modID)
-	files, err := s.nexus(apiKey).Files(r.Context(), gameDomain, modID)
-	if err != nil {
-		s.logger.Warn("nexus mod files failed", "app_id", appID, "game_domain", gameDomain, "mod_id", modID, "error", err)
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-	sort.SliceStable(files.Files, func(i, j int) bool {
-		if files.Files[i].UploadedAt != files.Files[j].UploadedAt {
-			return files.Files[i].UploadedAt > files.Files[j].UploadedAt
-		}
-		return files.Files[i].FileID > files.Files[j].FileID
-	})
-	writeJSON(w, http.StatusOK, files)
 }
 
 func (s *Server) handleUpdateSecuritySettings(w http.ResponseWriter, r *http.Request) {
@@ -6100,34 +6064,28 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusAccepted, payload)
 		return
 	}
-	if resolved.FileID != "" {
-		if apiKey != "" {
-			links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
-			if err != nil {
-				s.jobs.Fail(job.ID, err.Error())
-				writeError(w, http.StatusBadGateway, err)
-				return
-			}
-			payload["download_links"] = links
-			job, _ = s.jobs.Complete(job.ID, "Resolved Nexus download links for "+resolved.GameDomain)
-			payload["job"] = jobAPIResponse(job)
-			writeJSON(w, http.StatusAccepted, payload)
-			return
-		}
-	} else if apiKey != "" {
-		files, err := s.nexus(apiKey).Files(r.Context(), resolved.GameDomain, resolved.ModID)
+	if resolved.NXMKey != "" && resolved.FileID != "" && apiKey != "" {
+		links, err := s.nexus(apiKey).DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
 			s.jobs.Fail(job.ID, err.Error())
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		payload["files"] = files.Files
+		payload["download_links"] = links
+		job, _ = s.jobs.Complete(job.ID, "Resolved Nexus browser-generated download links for "+resolved.GameDomain)
+		payload["job"] = jobAPIResponse(job)
+		writeJSON(w, http.StatusAccepted, payload)
+		return
 	}
-	message := "Resolved Nexus URL for " + resolved.GameDomain
-	if resolved.FileID != "" {
-		message += "; configure Nexus API key to request download links"
-	} else {
-		message += "; choose a file before download"
+	payload["browser_required"] = true
+	message := (&nexus.BrowserDownloadRequiredError{
+		GameDomain: resolved.GameDomain,
+		ModID:      resolved.ModID,
+		FileID:     resolved.FileID,
+	}).Error()
+	if resolved.NXMKey != "" && apiKey == "" {
+		message = "Nexus API key is not configured. Configure it, then capture the Mod Manager Download link again."
+		payload["browser_required"] = false
 	}
 	job, _ = s.jobs.Complete(job.ID, message)
 	payload["job"] = jobAPIResponse(job)
@@ -6241,6 +6199,26 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	s.cfgMu.RLock()
 	apiKey := s.cfg.Nexus.APIKey
 	s.cfgMu.RUnlock()
+	if resolved.NXMKey == "" || resolved.FileID == "" {
+		message := (&nexus.BrowserDownloadRequiredError{
+			GameDomain: resolved.GameDomain,
+			ModID:      resolved.ModID,
+			FileID:     resolved.FileID,
+		}).Error()
+		job, _ = s.jobs.Fail(job.ID, message)
+		payload["job"] = jobAPIResponse(job)
+		payload["browser_required"] = true
+		s.logger.Info(
+			"captured nexus install requires browser-generated link",
+			"job_id", job.ID,
+			"source", source,
+			"game_domain", resolved.GameDomain,
+			"mod_id", resolved.ModID,
+			"file_id", resolved.FileID,
+		)
+		writeJSON(w, http.StatusAccepted, payload)
+		return
+	}
 	if apiKey != "" {
 		client := s.nexus(apiKey)
 		links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
