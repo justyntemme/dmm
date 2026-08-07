@@ -65,7 +65,7 @@ func TestRequiredFilesCheckAcceptsNativeLinuxInstall(t *testing.T) {
 	writeFile(t, filepath.Join(root, "hl2_linux"), "elf")
 	writeFile(t, filepath.Join(root, "hl2", "gameinfo.txt"), "gameinfo")
 
-	got := checkRequiredGameFiles(context.Background(), root)
+	got := requiredFilesCheck(requiredGameFiles)(context.Background(), root)
 	if len(got) != 2 {
 		t.Fatalf("required details = %+v", got)
 	}
@@ -76,7 +76,7 @@ func TestRequiredFilesCheckAcceptsWindowsInstall(t *testing.T) {
 	writeFile(t, filepath.Join(root, "hl2.exe"), "exe")
 	writeFile(t, filepath.Join(root, "hl2", "gameinfo.txt"), "gameinfo")
 
-	got := checkRequiredGameFiles(context.Background(), root)
+	got := requiredFilesCheck(requiredGameFiles)(context.Background(), root)
 	if len(got) != 2 {
 		t.Fatalf("required details = %+v", got)
 	}

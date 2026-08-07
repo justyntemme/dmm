@@ -26,77 +26,152 @@ var (
 	executableMarkers = []string{"hl2_linux", "hl2.sh", "hl2.exe"}
 )
 
+type SourceVPKSpec struct {
+	ID                string
+	Name              string
+	Version           string
+	BuildID           string
+	SteamAppIDs       []string
+	NexusDomains      []string
+	VortexGameID      string
+	VPKModType        string
+	TargetRoot        string
+	InstallerID       string
+	VortexInstallerID string
+	RequiredFiles     []string
+	Sources           []sdk.SourceRef
+}
+
 func Extension() sdk.Extension {
-	return sdk.Extension{
-		ID:       VortexGameID,
-		Name:     Name,
-		Version:  "1.1.0-dmm.1",
-		BuildID:  "first-party-go",
-		Register: Register,
-	}
+	return SourceVPKExtension(SourceVPKSpec{
+		ID:                VortexGameID,
+		Name:              Name,
+		Version:           "1.1.0-dmm.1",
+		BuildID:           "first-party-go",
+		SteamAppIDs:       []string{HalfLife2AppID},
+		NexusDomains:      []string{VortexGameID},
+		VortexGameID:      VortexGameID,
+		VPKModType:        vpkModType,
+		TargetRoot:        vpkRoot,
+		InstallerID:       "vortex:halflife2:vpk",
+		VortexInstallerID: "half-life2-mod",
+		RequiredFiles:     requiredGameFiles,
+		Sources:           sources(),
+	})
 }
 
 func Register(r sdk.Registrar) {
+	RegisterSourceVPK(r, SourceVPKSpec{
+		ID:                VortexGameID,
+		Name:              Name,
+		SteamAppIDs:       []string{HalfLife2AppID},
+		NexusDomains:      []string{VortexGameID},
+		VortexGameID:      VortexGameID,
+		VPKModType:        vpkModType,
+		TargetRoot:        vpkRoot,
+		InstallerID:       "vortex:halflife2:vpk",
+		VortexInstallerID: "half-life2-mod",
+		RequiredFiles:     requiredGameFiles,
+		Sources:           sources(),
+	})
+}
+
+func SourceVPKExtension(spec SourceVPKSpec) sdk.Extension {
+	if strings.TrimSpace(spec.Version) == "" {
+		spec.Version = "1.1.0-dmm.1"
+	}
+	if strings.TrimSpace(spec.BuildID) == "" {
+		spec.BuildID = "first-party-go"
+	}
+	return sdk.Extension{
+		ID:      spec.ID,
+		Name:    spec.Name,
+		Version: spec.Version,
+		BuildID: spec.BuildID,
+		Register: func(r sdk.Registrar) {
+			RegisterSourceVPK(r, spec)
+		},
+	}
+}
+
+func RegisterSourceVPK(r sdk.Registrar, spec SourceVPKSpec) {
+	id := strings.TrimSpace(spec.ID)
+	modType := defaultString(spec.VPKModType, id+"-vpk")
+	targetRoot := strings.Trim(strings.TrimSpace(spec.TargetRoot), "/")
+	installerID := defaultString(spec.InstallerID, "vortex:"+id+":vpk")
+	vortexInstallerID := defaultString(spec.VortexInstallerID, "half-life2-mod")
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{HalfLife2AppID},
-		NexusDomains: []string{VortexGameID},
-		VortexGameID: VortexGameID,
+		SteamAppIDs:  spec.SteamAppIDs,
+		NexusDomains: spec.NexusDomains,
+		VortexGameID: defaultString(spec.VortexGameID, id),
 		Deployment: installplan.DeploymentSpec{
 			DefaultStrategy:       installplan.DeployStrategySymlink,
 			AllowNeedsReviewState: true,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: vpkModType, TargetRoot: vpkRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: targetRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:halflife2:vpk",
-		VortexInstallerID: "half-life2-mod",
+		ID:                installerID,
+		VortexInstallerID: vortexInstallerID,
 		Priority:          25,
-		ModType:           vpkModType,
+		ModType:           modType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchVPKArchive,
-		CustomBuild:       buildVPKArchive,
-		InstructionMode:   installplan.InstructionCustom,
+		CustomBuild: func(input installplan.BuildInput) (installplan.Plan, error) {
+			return buildVPKArchive(input, targetRoot)
+		},
+		InstructionMode: installplan.InstructionCustom,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
-		ID:          "halflife2-required-files",
-		Name:        "Half-Life 2 install files",
+		ID:          id + "-required-files",
+		Name:        spec.Name + " install files",
 		Kind:        "game-files",
 		Required:    true,
-		ModTypes:    []string{vpkModType},
-		Message:     "The Half-Life 2 game folder is missing files needed for VPK deployment.",
-		OKMessage:   "The Half-Life 2 game folder contains the expected executable marker and hl2/gameinfo.txt.",
-		InstallHint: "Verify Half-Life 2 files in Steam before testing Half-Life 2 VPK mods.",
-		Check:       checkRequiredGameFiles,
+		ModTypes:    []string{modType},
+		Message:     spec.Name + " is missing files needed for VPK deployment.",
+		OKMessage:   spec.Name + " contains the expected executable marker and Source gameinfo.txt.",
+		InstallHint: "Verify " + spec.Name + " files in Steam before testing Source VPK mods.",
+		Check:       requiredFilesCheck(spec.RequiredFiles),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:       "halflife2-executable",
-		Name:     "Half-Life 2 executable marker",
+		ID:       id + "-executable",
+		Name:     spec.Name + " executable marker",
 		Provider: gameVersion,
 	})
-	for _, ref := range sources() {
+	for _, ref := range spec.Sources {
 		r.RegisterSource(ref)
 	}
 }
 
-func checkRequiredGameFiles(ctx context.Context, gamePath string) []string {
-	if err := ctx.Err(); err != nil {
-		return nil
-	}
-	gamePath = strings.TrimSpace(gamePath)
-	if gamePath == "" || firstExistingFile(gamePath, executableMarkers) == "" {
-		return nil
-	}
-	details := make([]string, 0, len(requiredGameFiles)+1)
-	details = append(details, filepath.ToSlash(firstExistingFile(gamePath, executableMarkers)))
-	for _, rel := range requiredGameFiles {
-		path := filepath.Join(gamePath, filepath.FromSlash(rel))
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			details = append(details, filepath.ToSlash(path))
-			continue
+func requiredFilesCheck(requiredFiles []string) func(context.Context, string) []string {
+	required := make([]string, 0, len(requiredFiles))
+	for _, rel := range requiredFiles {
+		rel = strings.TrimSpace(rel)
+		if rel != "" {
+			required = append(required, filepath.ToSlash(rel))
 		}
-		return nil
 	}
-	return details
+	return func(ctx context.Context, gamePath string) []string {
+		if err := ctx.Err(); err != nil {
+			return nil
+		}
+		gamePath = strings.TrimSpace(gamePath)
+		marker := firstExistingFile(gamePath, executableMarkers)
+		if gamePath == "" || marker == "" {
+			return nil
+		}
+		details := make([]string, 0, len(required)+1)
+		details = append(details, filepath.ToSlash(marker))
+		for _, rel := range required {
+			path := filepath.Join(gamePath, filepath.FromSlash(rel))
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+				details = append(details, filepath.ToSlash(path))
+				continue
+			}
+			return nil
+		}
+		return details
+	}
 }
 
 func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
@@ -117,6 +192,14 @@ func firstExistingFile(gamePath string, rels []string) string {
 		}
 	}
 	return ""
+}
+
+func defaultString(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func sources() []sdk.SourceRef {

@@ -123,6 +123,9 @@ installer_targets = {
     "x4foundations": ("x4foundations", ("installers", "target_roots", "game_versions", "steam_workshop")),
     "halothemasterchiefcollection": ("halothemasterchiefcollection", ("installers", "launch_tools", "game_versions", "event_handlers")),
     "halflife2": ("halflife2", ("installers", "runtime_requirements", "game_versions")),
+    "halflife2lostcoast": ("halflife2", ("installers", "runtime_requirements", "game_versions")),
+    "halflife2episodeone": ("halflife2", ("installers", "runtime_requirements", "game_versions")),
+    "halflife2episodetwo": ("halflife2", ("installers", "runtime_requirements", "game_versions")),
     "metroexodus": ("metroexodus", ("installers", "runtime_requirements", "launch_tools", "game_versions", "conflict_ignores", "deploy_ignores")),
     "ghostreconbreakpoint": ("ghostreconbreakpoint", ("installers", "runtime_requirements", "launch_tools", "game_versions", "conflict_ignores", "deploy_ignores")),
     "spyroreignitedtrilogy": ("spyroreignitedtrilogy", ("installers", "merges", "load_orders", "event_handlers")),
@@ -141,9 +144,6 @@ for extension_id, (domain, caps) in installer_targets.items():
     require_caps(extension_id, *caps)
 
 research_targets = {
-    "halflife2lostcoast": "halflife2",
-    "halflife2episodeone": "halflife2",
-    "halflife2episodetwo": "halflife2",
     "prototype": "prototype",
     "prototype2": "prototype2",
     "rometotalwar": "rometotalwar",

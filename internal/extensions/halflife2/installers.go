@@ -20,7 +20,7 @@ func matchVPKArchive(root string) bool {
 	return err == nil && firstVPK(files) != ""
 }
 
-func buildVPKArchive(input installplan.BuildInput) (installplan.Plan, error) {
+func buildVPKArchive(input installplan.BuildInput, targetRoot string) (installplan.Plan, error) {
 	files, err := listFiles(input.ExtractedRoot)
 	if err != nil {
 		return installplan.Plan{}, err
@@ -41,7 +41,7 @@ func buildVPKArchive(input installplan.BuildInput) (installplan.Plan, error) {
 		if !pathWithinRoot(file, rootRel) || !strings.EqualFold(filepath.Ext(file), vpkExtension) {
 			continue
 		}
-		targetRel := filepath.ToSlash(filepath.Join(input.TargetRoot, filepath.Base(file)))
+		targetRel := filepath.ToSlash(filepath.Join(targetRoot, filepath.Base(file)))
 		plan.Instructions = append(plan.Instructions, installplan.Instruction{
 			Kind:            installplan.InstructionKindCopy,
 			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
