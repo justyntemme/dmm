@@ -13,6 +13,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
@@ -36,6 +37,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
 		gameext.MustCompileExtension(stardewvalley.Extension()),
+		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
