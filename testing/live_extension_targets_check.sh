@@ -76,6 +76,7 @@ required_extensions = {
     "starwarsjedisurvivor": "1774580",
     "prototype": "10150",
     "prototype2": "115320",
+    "rometotalwar": "4760",
     "metalgearsolidvtpp": "287700",
     "finalfantasyxx2hdremaster": "359870",
     "totalwarrome2": "214950",
@@ -145,6 +146,7 @@ research_targets = {
     "halflife2episodetwo": "halflife2",
     "prototype": "prototype",
     "prototype2": "prototype2",
+    "rometotalwar": "rometotalwar",
     "metalgearsolidvtpp": "metalgearsolidvtpp",
     "finalfantasyxx2hdremaster": "finalfantasyxx2hdremaster",
     "totalwarrome2": "totalwarrome2",
@@ -172,6 +174,10 @@ if "totalwarrome2" not in [str(item) for item in rome2.get("nexus_domains", [])]
 rome2_caps = rome2.get("capabilities") or {}
 if not rome2_caps.get("installers") or rome2_caps.get("steam_workshop"):
     failures.append(f"Total War ROME II capability mismatch: {rome2_caps}")
+
+rome = extensions_by_id.get("rometotalwar") or {}
+if "4770" not in [str(item) for item in rome.get("steam_app_ids", [])]:
+    failures.append(f"Rome: Total War extension missing Alexander AppID 4770: {rome.get('steam_app_ids')}")
 
 if failures:
     print("extension target check failed:")

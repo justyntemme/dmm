@@ -2,7 +2,7 @@
 
 ## Identity
 
-- Steam AppID: `4760`
+- Steam AppIDs: `4760` (Rome: Total War), `4770` (Rome: Total War - Alexander)
 - DMM extension ID: `rometotalwar`
 - Nexus domain: `rometotalwar`
 
@@ -15,6 +15,7 @@
 ## Current DMM Capability
 
 - DMM declares the verified Nexus domain for browsing/capture.
+- DMM maps the Alexander expansion AppID to the same research-blocked extension because Nexus exposes a shared Rome: Total War domain and the installed games share the same family.
 - Archive installs are blocked until data packs, mod-folder launches, and expansion behavior are reviewed.
 
 ## Beta Gaps
