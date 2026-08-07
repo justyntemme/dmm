@@ -4659,7 +4659,7 @@ function DeckyModManagerRoute() {
           sources.push({
             id: `nexus:${domain}`,
             catalog: catalogSourceTag(nexusCatalog),
-            title: selectedNexusDomains.length > 1 ? `Nexus Mods - ${nexusDomainLabel(domain)}` : "Nexus Mods",
+            title: selectedNexusDomains.length > 1 ? `Explore Nexus Mods - ${nexusDomainLabel(domain)}` : "Explore Nexus Mods",
             detail: enabled
               ? `Search ${domain}, open the real mod page, then press Mod Manager Download.`
               : "Nexus is not ready. Configure the Nexus API key from the phone/tablet Settings screen.",
@@ -4673,7 +4673,7 @@ function DeckyModManagerRoute() {
         sources.push({
           id: "nexus",
           catalog: catalogSourceTag(nexusCatalog),
-          title: "Nexus Mods",
+          title: "Explore Nexus Mods",
           detail: firstExtensionSourceNote(selectedDeckyGame) || "This extension does not declare a Nexus domain yet.",
           action: "Unavailable",
           enabled: false,
@@ -4684,7 +4684,7 @@ function DeckyModManagerRoute() {
       sources.push({
         id: "nexus",
         catalog: "nexus",
-        title: "Nexus Mods",
+        title: "Explore Nexus Mods",
         detail: firstExtensionSourceNote(selectedDeckyGame) || "This extension does not declare a Nexus domain yet.",
         action: "Unavailable",
         enabled: false,

@@ -3793,7 +3793,7 @@
                 <section class="nexus-browser" aria-label="Explore mods">
                   <div class="explore-heading">
                     <div>
-                      <strong>{exploreSourceOptions().length > 0 ? "Explore Mods" : "Known Sources"}</strong>
+                      <strong>{exploreSourceOptions().length > 0 ? "Explore Mod Sources" : "Known Sources"}</strong>
                       <small>{selectedExploreSource()?.name ?? (selectedGameMetadataOnly() ? "Verified references" : "Select source")}</small>
                     </div>
                     {#if selectedExploreSource()}
