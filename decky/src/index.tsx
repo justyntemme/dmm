@@ -2744,7 +2744,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                 </div>
                 <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(1)}>
                   <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => void openModPage(mod)} onClick={() => void openModPage(mod)} style={deckyCompactActionStyle("neutral")}>
-                    Open Page
+                    View Mod Page
                   </Focusable>
                 </Focusable>
               </div>
@@ -3988,7 +3988,7 @@ function DeckyModManagerRoute() {
         closeModal={closeModal}
       />,
       window,
-      { strTitle: "Browse Nexus Mods", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
+      { strTitle: "Explore Mods - Nexus", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
     );
   }
 
