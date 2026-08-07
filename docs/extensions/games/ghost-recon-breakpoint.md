@@ -11,16 +11,37 @@
 
 - Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
 - Ghost Recon Breakpoint Vortex extension page: `https://www.nexusmods.com/site/mods/972`
+- Verified Vortex extension package file: `https://www.nexusmods.com/site/mods/972?tab=files&file_id=7463`
 - Vortex bundled game extension source check: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
 - Live Steam Deck path check: `/home/deck/.local/share/Steam/steamapps/common/Ghost Recon Breakpoint`
 
 ## Current DMM Capability
 
-- Registers the Steam AppID and Nexus domain from the Vortex manifest.
-- Checks for the DirectX/Vulkan executables, a base forge archive, and `sounddata/pc`.
-- Blocks archive installs because the manifest describes AnvilToolkit, forge-file repacking, and rename prompts that need dedicated extension-framework support.
+- Registers Steam AppID `2231380` and Nexus domain `ghostreconbreakpoint`.
+- Mirrors the verified Vortex package's game registration:
+  - executable: `GRB.exe`
+  - mod path: game root `.`
+  - required files: `GRB.exe`
+  - mod merging and cleanup enabled
+- Registers Vortex-declared tools:
+  - Launch Game Ubisoft Plus: `GRB_UPP.exe`
+  - Launch Vulkan Game: `GRB_vulkan.exe`
+  - Custom Launch: `GRB.exe`
+  - AnvilToolkit: `anviltoolkit.exe`
+- Implements source-verified copy-only installers for:
+  - AnvilToolkit archives containing `anviltoolkit.exe`
+  - sound `.pck` archives into `sounddata/pc`
+  - individual `.buildtable` archives into `Extracted/DataPC_patch_01.forge/Extracted/23_-_TEAMMATE_Template.data`
+  - `Extracted` folder archives into the game root
+  - `.forge` folder archives into `Extracted/<forge-folder>/...`
+  - `.forge` file replacement archives into the game root
+  - root-folder archives containing `videos`
+- Publishes Vortex-equivalent readme conflict/deploy ignores for `**/readme.txt`.
+- Adds runtime diagnostics for required game files and AnvilToolkit presence.
 
 ## Beta Gaps
 
-- Inspect the Vortex package and representative archives.
-- Add generic external-tool/rename-prompt/repack lifecycle support before enabling Breakpoint installs.
+- `.data` folder archives and loose `.data` archives remain blocked because Vortex requires a free-text `.forge` folder rename prompt before deployment.
+- The Vortex fallback installer remains blocked because arbitrary root placement is not safe without a specific extension-owned rule.
+- DMM does not yet mirror Vortex's post-deploy "Run AnvilToolkit to repack .forge files" notification/action as a complete tool lifecycle.
+- Live-test representative Breakpoint archives through the BrowserView `nxm://` flow before treating this as release-ready.
