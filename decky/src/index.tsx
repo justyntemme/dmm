@@ -1673,7 +1673,7 @@ function closeDMMNativeBrowserAfterCapture(source: string) {
       path: currentPath,
       navigated_to_dmm: onBrowserRoute
     });
-    if (onBrowserRoute) {
+    if (request?.appID || onBrowserRoute) {
       navigateDMMRoute(DMM_DECKY_ROUTE, "nxm-captured");
     }
   } catch (err) {
@@ -3211,7 +3211,14 @@ function DMMNativeBrowserRoute() {
   }, []);
 
   const closeBrowser = () => {
+    rememberDMMDeckyReturnContext(activeDMMBrowserRequest);
     destroyActiveDMMNativeBrowser("route-close");
+    if (activeDMMBrowserRequest?.appID) {
+      activeDMMBrowserRequest = null;
+      navigateDMMRoute(DMM_DECKY_ROUTE, "browser-close");
+      return;
+    }
+    activeDMMBrowserRequest = null;
     Navigation.NavigateBack();
   };
 
