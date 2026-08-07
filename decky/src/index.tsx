@@ -4429,6 +4429,7 @@ function DeckyModManagerRoute() {
           informational: true
         });
       });
+      return sources;
     }
     if (nexusCatalog) {
       const nexusReady = nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse);
