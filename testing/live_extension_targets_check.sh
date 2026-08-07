@@ -60,10 +60,21 @@ required_extensions = {
     "skyrimse": "489830",
     "witcher3": "292030",
     "finalfantasy7rebirth": "2909400",
+    "starwarsbattlefront22017": "1237950",
     "civilizationvii": "1295660",
+    "kenshi": "233860",
+    "rimworld": "294100",
+    "x4foundations": "392160",
+    "halothemasterchiefcollection": "976730",
+    "spyroreignitedtrilogy": "996580",
+    "spidermanmilesmorales": "1817190",
     "portal2": "620",
     "projectzomboid": "108600",
     "starwarsjedisurvivor": "1774580",
+    "prototype": "10150",
+    "prototype2": "115320",
+    "metalgearsolidvtpp": "287700",
+    "finalfantasyxx2hdremaster": "359870",
     "totalwarrome2": "214950",
 }
 for extension_id, app_id in required_extensions.items():
@@ -74,9 +85,61 @@ for extension_id, app_id in required_extensions.items():
     if app_id not in [str(item) for item in summary.get("steam_app_ids", [])]:
         failures.append(f"{extension_id} missing app {app_id}: {summary.get('steam_app_ids')}")
 
+def require_domain(extension_id, domain):
+    summary = extensions_by_id.get(extension_id) or {}
+    if domain not in [str(item) for item in summary.get("nexus_domains", [])]:
+        failures.append(f"{extension_id} missing Nexus domain {domain}: {summary.get('nexus_domains')}")
+
+def require_caps(extension_id, *caps):
+    summary = extensions_by_id.get(extension_id) or {}
+    capabilities = summary.get("capabilities") or {}
+    for cap in caps:
+        if not capabilities.get(cap):
+            failures.append(f"{extension_id} missing capability {cap}: {capabilities}")
+    return capabilities
+
+def require_coverage(extension_id, coverage):
+    summary = extensions_by_id.get(extension_id) or {}
+    if summary.get("coverage") != coverage:
+        failures.append(f"{extension_id} coverage={summary.get('coverage')} want {coverage}")
+
+installer_targets = {
+    "stardewvalley": ("stardewvalley", ("installers", "runtime_requirements", "launch_tools")),
+    "fallout4": ("fallout4", ("installers", "installer_choices", "runtime_requirements", "launch_tools", "plugin_activations")),
+    "skyrimse": ("skyrimspecialedition", ("installers", "installer_choices", "runtime_requirements", "launch_tools", "plugin_activations")),
+    "witcher3": ("witcher3", ("installers", "event_handlers")),
+    "finalfantasy7rebirth": ("finalfantasy7rebirth", ("installers", "target_roots", "event_handlers")),
+    "starwarsbattlefront22017": ("starwarsbattlefront22017", ("installers", "runtime_requirements", "launch_tools")),
+    "civilizationvii": ("civilizationvii", ("installers", "target_roots", "game_versions")),
+    "kenshi": ("kenshi", ("installers", "game_versions", "steam_workshop")),
+    "rimworld": ("rimworld", ("installers", "game_versions", "steam_workshop")),
+    "x4foundations": ("x4foundations", ("installers", "target_roots", "game_versions", "steam_workshop")),
+    "halothemasterchiefcollection": ("halothemasterchiefcollection", ("installers", "launch_tools", "game_versions", "event_handlers")),
+    "spyroreignitedtrilogy": ("spyroreignitedtrilogy", ("installers", "merges", "load_orders", "event_handlers")),
+    "spidermanmilesmorales": ("spidermanmilesmorales", ("installers", "runtime_requirements", "launch_tools", "merges", "load_orders", "event_handlers")),
+    "portal2": ("portal2", ("installers",)),
+    "projectzomboid": ("projectzomboid", ("installers", "target_roots", "steam_workshop")),
+    "starwarsjedisurvivor": ("starwarsjedisurvivor", ("installers", "load_orders", "event_handlers")),
+}
+
+for extension_id, (domain, caps) in installer_targets.items():
+    require_coverage(extension_id, "installer")
+    require_domain(extension_id, domain)
+    require_caps(extension_id, *caps)
+
+research_targets = {
+    "prototype": "prototype",
+    "prototype2": "prototype2",
+    "metalgearsolidvtpp": "metalgearsolidvtpp",
+    "finalfantasyxx2hdremaster": "finalfantasyxx2hdremaster",
+    "totalwarrome2": "totalwarrome2",
+}
+for extension_id, domain in research_targets.items():
+    require_coverage(extension_id, "research_blocked")
+    require_domain(extension_id, domain)
+    require_caps(extension_id, "installers")
+
 zomboid = extensions_by_id.get("projectzomboid") or {}
-if "projectzomboid" not in [str(item) for item in zomboid.get("nexus_domains", [])]:
-    failures.append(f"Project Zomboid missing Nexus domain: {zomboid.get('nexus_domains')}")
 zomboid_caps = zomboid.get("capabilities") or {}
 if not zomboid_caps.get("target_roots") or not zomboid_caps.get("installers"):
     failures.append(f"Project Zomboid archive capabilities missing: {zomboid_caps}")
