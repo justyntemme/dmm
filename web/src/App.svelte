@@ -3650,7 +3650,7 @@
                 <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label={`Open Action Center for this game; ${selectedGameActionCount} open`}>
                   <strong>{selectedGameActionCount}</strong>
                   <span>{selectedGameActionCount === 1 ? "Action" : "Actions"}</span>
-                  <em>Open</em>
+                  <em>Action Center</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
