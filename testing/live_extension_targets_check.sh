@@ -119,6 +119,7 @@ installer_targets = {
     "rimworld": ("rimworld", ("installers", "game_versions", "steam_workshop")),
     "x4foundations": ("x4foundations", ("installers", "target_roots", "game_versions", "steam_workshop")),
     "halothemasterchiefcollection": ("halothemasterchiefcollection", ("installers", "launch_tools", "game_versions", "event_handlers")),
+    "halflife2": ("halflife2", ("installers", "runtime_requirements", "game_versions")),
     "spyroreignitedtrilogy": ("spyroreignitedtrilogy", ("installers", "merges", "load_orders", "event_handlers")),
     "spidermanmilesmorales": ("spidermanmilesmorales", ("installers", "runtime_requirements", "launch_tools", "merges", "load_orders", "event_handlers")),
     "portal2": ("portal2", ("installers",)),

@@ -12,32 +12,25 @@ import (
 )
 
 const (
-	HalfLife2AppID      = "220"
-	LostCoastAppID      = "340"
-	EpisodeOneAppID     = "380"
-	EpisodeTwoAppID     = "420"
-	VortexGameID        = "halflife2"
-	Name                = "Half-Life 2"
-	researchModType     = "halflife2-research-blocked"
-	extensionManifestID = "site-mod-80-file-516"
+	HalfLife2AppID       = "220"
+	VortexGameID         = "halflife2"
+	VortexInternalGameID = "half-life2"
+	Name                 = "Half-Life 2"
+
+	vpkModType = "halflife2-vpk"
+	vpkRoot    = "hl2/custom"
 )
 
-var requiredGameFiles = []string{
-	"hl2.sh",
-	"hl2_linux",
-	"hl2/gameinfo.txt",
-	"lostcoast/gameinfo.txt",
-	"episodic/gameinfo.txt",
-	"ep2/gameinfo.txt",
-}
-
-const unsupportedReason = "Half-Life 2 has a verified Vortex extension manifest entry, but the extension source/package has not yet been inspected. Source-engine mods can target base game folders, episode folders, custom folders, VPK archives, sourcemods, or external tools, so DMM blocks archive installs until those layouts are classified into extension-owned installer rules."
+var (
+	requiredGameFiles = []string{"hl2/gameinfo.txt"}
+	executableMarkers = []string{"hl2_linux", "hl2.sh", "hl2.exe"}
+)
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:       VortexGameID,
 		Name:     Name,
-		Version:  "0.1.0",
+		Version:  "1.1.0-dmm.1",
 		BuildID:  "first-party-go",
 		Register: Register,
 	}
@@ -45,7 +38,7 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{HalfLife2AppID, LostCoastAppID, EpisodeOneAppID, EpisodeTwoAppID},
+		SteamAppIDs:  []string{HalfLife2AppID},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
 		Deployment: installplan.DeploymentSpec{
@@ -53,27 +46,32 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: researchModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: vpkModType, TargetRoot: vpkRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "research:halflife2:blocked",
-		VortexInstallerID: "halflife2-research-blocked",
-		Priority:          10000,
-		ModType:           researchModType,
+		ID:                "vortex:halflife2:vpk",
+		VortexInstallerID: "half-life2-mod",
+		Priority:          25,
+		ModType:           vpkModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       func(string) bool { return true },
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: unsupportedReason,
+		CustomMatch:       matchVPKArchive,
+		CustomBuild:       buildVPKArchive,
+		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "halflife2-required-files",
 		Name:        "Half-Life 2 install files",
 		Kind:        "game-files",
 		Required:    true,
-		ModTypes:    []string{researchModType},
-		Message:     "The Half-Life 2 game folder is missing files needed for future extension support.",
-		OKMessage:   "The Half-Life 2 game folder contains the expected shared Source-engine executable and episode folders.",
-		InstallHint: "Verify Half-Life 2, Episode One, and Episode Two files in Steam before testing Half-Life 2 mods.",
+		ModTypes:    []string{vpkModType},
+		Message:     "The Half-Life 2 game folder is missing files needed for VPK deployment.",
+		OKMessage:   "The Half-Life 2 game folder contains the expected executable marker and hl2/gameinfo.txt.",
+		InstallHint: "Verify Half-Life 2 files in Steam before testing Half-Life 2 VPK mods.",
 		Check:       checkRequiredGameFiles,
+	})
+	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+		ID:       "halflife2-executable",
+		Name:     "Half-Life 2 executable marker",
+		Provider: gameVersion,
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -85,35 +83,55 @@ func checkRequiredGameFiles(ctx context.Context, gamePath string) []string {
 		return nil
 	}
 	gamePath = strings.TrimSpace(gamePath)
-	if gamePath == "" {
+	if gamePath == "" || firstExistingFile(gamePath, executableMarkers) == "" {
 		return nil
 	}
-	details := make([]string, 0, len(requiredGameFiles))
+	details := make([]string, 0, len(requiredGameFiles)+1)
+	details = append(details, filepath.ToSlash(firstExistingFile(gamePath, executableMarkers)))
 	for _, rel := range requiredGameFiles {
 		path := filepath.Join(gamePath, filepath.FromSlash(rel))
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			details = append(details, filepath.ToSlash(path))
+			continue
 		}
-	}
-	if len(details) != len(requiredGameFiles) {
 		return nil
 	}
 	return details
 }
 
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	if marker := firstExistingFile(input.GamePath, executableMarkers); marker != "" {
+		return sdk.GameVersionResult{Version: "installed", Source: filepath.ToSlash(strings.TrimPrefix(marker, strings.TrimRight(input.GamePath, string(filepath.Separator))+string(filepath.Separator)))}, nil
+	}
+	return sdk.GameVersionResult{}, os.ErrNotExist
+}
+
+func firstExistingFile(gamePath string, rels []string) string {
+	for _, rel := range rels {
+		path := filepath.Join(gamePath, filepath.FromSlash(rel))
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
 func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
-			Name: "Vortex central extension manifest entry " + extensionManifestID,
+			Name: "Vortex central extension manifest entry site-mod-80-file-516",
 			URL:  "https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json",
 		},
 		{
-			Name: "Half-Life 2 Vortex extension page",
-			URL:  "https://www.nexusmods.com/site/mods/80",
+			Name: "Half-Life 2 Vortex extension package v1.1.0",
+			URL:  "https://www.nexusmods.com/site/mods/80?tab=files",
 		},
 		{
-			Name: "Checked Vortex bundled game extensions; no Half-Life 2 source found",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
+			Name: "Nexus API domain verification for halflife2",
+			URL:  "https://api.nexusmods.com/v1/games/halflife2.json",
 		},
 		{
 			Name: "Live Steam Deck executable/path verification",

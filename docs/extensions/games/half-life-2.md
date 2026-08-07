@@ -2,27 +2,29 @@
 
 ## Identity
 
-- Steam AppIDs: `220` Half-Life 2, `340` Lost Coast, `380` Episode One, `420` Episode Two
+- Steam AppID: `220` Half-Life 2
 - DMM extension ID: `halflife2`
 - Nexus domain: `halflife2`
 - Vortex manifest package: Nexus site mod `80`, file `516`, version `1.1.0`
+- Vortex package game ID: `half-life2`
 
 ## Verified Sources
 
 - Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
-- Half-Life 2 Vortex extension page: `https://www.nexusmods.com/site/mods/80`
-- Vortex bundled game extension source check: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
+- Half-Life 2 Vortex extension package v1.1.0: `https://www.nexusmods.com/site/mods/80?tab=files`
+- Nexus API domain verification: `https://api.nexusmods.com/v1/games/halflife2.json`
 - Live Steam Deck path check: `/home/deck/.local/share/Steam/steamapps/common/Half-Life 2`
 
 ## Current DMM Capability
 
-- DMM declares the verified Half-Life 2 Nexus domain for Half-Life 2, Lost Coast, and the two episodes.
-- DMM checks for the shared Linux Source executable/script and the `hl2`, `lostcoast`, `episodic`, and `ep2` `gameinfo.txt` files.
-- Archive installs are intentionally blocked because the Vortex extension package/source has not been inspected and Source-engine mods can use multiple incompatible layouts.
+- DMM declares the verified Half-Life 2 Nexus domain `halflife2`.
+- DMM registers the source-verified Steam AppID `220`. Lost Coast and the episodes are no longer registered through this extension because the inspected Vortex package only registers AppID `220`.
+- DMM checks for `hl2/gameinfo.txt` plus a native Linux or Windows executable marker.
+- DMM installs `.vpk` archives through the source-verified Vortex installer shape into `hl2/custom`.
+- FOMOD archives are skipped so the shared installer-choice pipeline can own them if a future Source-engine extension declares support.
 
 ## Beta Gaps
 
-- Inspect the actual Vortex Half-Life 2 extension package before adding installer rules.
-- Classify representative Nexus archives for base `hl2`, `episodic`, `ep2`, `custom`, VPK, sourcemods, and external-tool flows.
-- Confirm the exact Lost Coast (`340`) behavior after source/package review; it is currently registered only because it shares the live Steam install dir and remains install-blocked.
-- Add only extension-owned installers that map verified layouts to safe DMM-owned deployment roots.
+- Validate representative Nexus Half-Life 2 VPK archives through the browser `nxm://` capture path.
+- Add separate source-backed handling for Lost Coast and the episodes only after their Vortex/official behavior is verified.
+- Keep sourcemods, root-folder replacements, custom folder bundles, and external tool flows blocked until source or representative archive behavior is verified.
