@@ -200,6 +200,7 @@ var knownSteamHelperAppIDs = map[string]struct{}{
 	"1161040": {}, // Proton BattlEye Runtime
 	"1826330": {}, // Proton EasyAntiCheat Runtime
 	"993090":  {}, // Lossless Scaling utility app
+	"2346660": {}, // DFHack - Dwarf Fortress Modding Engine
 }
 
 func IsHelperApp(appID, name, installDir string) bool {
@@ -222,6 +223,8 @@ func isSteamHelperName(value string) bool {
 	case strings.HasPrefix(value, "proton ") && strings.Contains(value, "runtime"):
 		return true
 	case strings.HasPrefix(value, "proton ") && len(value) > len("proton ") && value[len("proton ")] >= '0' && value[len("proton ")] <= '9':
+		return true
+	case strings.HasPrefix(value, "dfhack") && strings.Contains(value, "dwarf fortress"):
 		return true
 	default:
 		return false

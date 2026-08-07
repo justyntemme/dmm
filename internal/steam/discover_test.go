@@ -49,6 +49,7 @@ func TestIsHelperApp(t *testing.T) {
 		{appID: "1628350", name: "Steam Linux Runtime 3.0 (sniper)", want: true},
 		{appID: "228980", name: "Steamworks Common Redistributables", want: true},
 		{appID: "993090", name: "Lossless Scaling", want: true},
+		{appID: "2346660", name: "DFHack - Dwarf Fortress Modding Engine", want: true},
 		{appID: "413150", name: "Stardew Valley", want: false},
 		{appID: "292030", name: "The Witcher 3: Wild Hunt", want: false},
 	}
