@@ -9,15 +9,23 @@ import {
   PanelSection,
   PanelSectionRow,
   Router,
+  SteamSpinner,
+  Tabs,
   TextField,
   ToggleField,
+  findModuleChild,
+  gamepadTabbedPageClasses,
+  mainBrowserClasses,
   showModal,
+  sleep,
   staticClasses,
+  steamSpinnerClasses,
+  type Tab as DeckyUITab,
   type GamepadEvent
 } from "@decky/ui";
 import { call, definePlugin, routerHook, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
-import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentType, CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 declare const SteamClient:
   | {
@@ -34,8 +42,97 @@ declare const SteamClient:
       GameSessions?: {
         RegisterForAppLifetimeNotifications?: (callback: (notification: { unAppID: number; bRunning: boolean }) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
       };
+      Overlay?: {
+        GetOverlayBrowserInfo?: () => Promise<unknown[]>;
+        HandleProtocolForOverlayBrowser?: (appId: number, protocol: string) => void;
+        RegisterForOverlayBrowserProtocols?: (callback: (payload: { unAppID?: number; strScheme?: string; bAdded?: boolean; [key: string]: unknown }) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
+      };
+      Browser?: {
+        StartDownload?: (url: string) => void;
+      };
+      BrowserView?: {
+        Destroy?: (browserView: SteamBrowserViewPopup) => void;
+      };
+      System?: {
+        OpenInSystemBrowser?: (url: string) => void;
+      };
+      URL?: {
+        ExecuteSteamURL?: (url: string) => void;
+        RegisterForRunSteamURL?: (section: string, callback: (param0: number, url: string) => void) => { unregister?: () => void; Unregister?: () => void } | (() => void);
+      };
+      WebChat?: {
+        OpenURLInClient?: (url: string, pid: number, forceExternal: boolean) => void;
+      };
     }
   | undefined;
+
+type SteamBrowserViewPopup = {
+  GoBack?: () => void;
+  GoForward?: () => void;
+  LoadURL?: (url: string) => void;
+  ReplaceURL?: (url: string) => void;
+  SetBlockedProtocols?: (protocols: string) => void;
+  SetBounds?: (x: number, y: number, width: number, height: number) => void;
+  SetName?: (browserName: string) => void;
+  SetFocus?: (value: boolean) => void;
+  SetVisible?: (value: boolean) => void;
+  SetWindowStackingOrder?: (value: number) => void;
+  SetSteamURLCallback?: (callback: (url: string) => void) => void;
+  on?: (event: string, callback: (...args: unknown[]) => void) => void;
+  off?: (event: string, callback: (...args: unknown[]) => void) => void;
+};
+
+type DMMNativeBrowser = {
+  m_browserView: SteamBrowserViewPopup;
+  m_URLRequested?: string;
+  LoadURL?: (url: string) => void;
+  Destroy?: () => void;
+  name?: string;
+};
+
+type DMMWindowRouter = {
+  CreateBrowserView?: (name: string) => DMMNativeBrowser;
+  HeaderStore?: {
+    GetCurrentBrowserAndBackstack?: () => { browser?: { name?: string } | null } | null;
+    SetCurrentBrowserAndBackstack?: (browser: DMMNativeBrowser | null, includeBackstack: boolean) => void;
+  };
+};
+
+type DMMBrowserRequest = {
+  appID: string;
+  initialURL: string;
+  profileID: number;
+  source: string;
+  title: string;
+};
+
+type DMMBrowserContainerProps = {
+  browser: DMMNativeBrowser;
+  className?: string;
+  visible?: boolean;
+  hideForModals?: boolean;
+  external?: boolean;
+  displayURLBar?: boolean;
+  autoFocus?: boolean;
+};
+
+type DMMFocusedNodeEvent = CustomEvent<{
+  focusedNode?: {
+    BChildTakeFocus?: () => void;
+  };
+}>;
+
+const DMMBrowserContainer = findModuleChild((mod: unknown) => {
+  if (!mod || typeof mod !== "object") return undefined;
+  for (const value of Object.values(mod as Record<string, unknown>)) {
+    if (typeof value !== "function") continue;
+    const source = value.toString();
+    if (source.includes("displayURLBar") && source.includes("BExternalTriggeredLoad()")) {
+      return value;
+    }
+  }
+  return undefined;
+}) as ComponentType<DMMBrowserContainerProps> | undefined;
 
 type SteamWorkshopClientItem = {
   unAppID?: number;
@@ -255,16 +352,6 @@ type NexusModResult = {
   url: string;
 };
 
-type NexusModFile = {
-  file_id: number;
-  name: string;
-  version: string;
-  category_id: number;
-  file_name: string;
-  size: number;
-  uploaded_timestamp: number;
-};
-
 type ProfileApplyResult = {
   status: string;
   message?: string;
@@ -446,6 +533,9 @@ type GameSort = "recent" | "az" | "za";
 type DeckyModSort = "profile" | "source" | "az" | "za" | "enabled";
 
 const DMM_DECKY_ROUTE = "/decky-mod-manager";
+const DMM_BROWSER_ROUTE = "/decky-mod-manager-browser";
+const DMM_NATIVE_BROWSER_NAME = "DeckyModManagerBrowser";
+const DMM_NATIVE_BROWSER_TAB_ID = "dmm-native-browser-tab";
 const deckyTabOrder: Tab[] = ["main", "games", "settings", "debug"];
 const deckyTabLabels: Record<Tab, string> = {
   main: "Manage",
@@ -882,6 +972,9 @@ let eventMonitorReconnectTimer: number | null = null;
 let eventMonitorReconnectDelay = 1000;
 let eventMonitorLastID = 0;
 let backgroundMonitorsStarted = false;
+let steamBrowserNXMProbeRegistration: unknown = null;
+let activeDMMNativeBrowser: DMMNativeBrowser | null = null;
+let activeDMMBrowserRequest: DMMBrowserRequest | null = null;
 
 type LaunchResultSink = (message: string) => void;
 
@@ -1113,23 +1206,6 @@ function compactNumber(value: number | undefined) {
   return normalized.toLocaleString(undefined, { maximumFractionDigits: 0, notation: normalized >= 10_000 ? "compact" : "standard" });
 }
 
-function formatBytes(value: number | undefined) {
-  const bytes = Number(value ?? 0);
-  if (!Number.isFinite(bytes) || bytes <= 0) return "Unknown size";
-  const units = ["B", "KB", "MB", "GB"];
-  let amount = bytes;
-  let unit = 0;
-  while (amount >= 1024 && unit < units.length - 1) {
-    amount /= 1024;
-    unit++;
-  }
-  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-function nexusFileURL(gameDomain: string, modID: number, fileID: number) {
-  return `https://www.nexusmods.com/${encodeURIComponent(gameDomain)}/mods/${modID}?file_id=${fileID}`;
-}
-
 function focusDeckyRef(ref: { current: HTMLElement | null }, label: string, logDetail: Record<string, string | number | boolean> = {}) {
   window.setTimeout(() => {
     const target = ref.current;
@@ -1188,6 +1264,16 @@ function errorLogValue(error: unknown): string {
   }
 }
 
+function compactUnknownLogValue(value: unknown): string {
+  if (typeof value === "string") return compactLogValue(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return compactLogValue(JSON.stringify(value));
+  } catch (_err) {
+    return String(value);
+  }
+}
+
 async function logSteamClientCapabilities() {
   const root = typeof SteamClient !== "undefined" ? (SteamClient as unknown as Record<string, unknown>) : null;
   if (!root) {
@@ -1197,12 +1283,258 @@ async function logSteamClientCapabilities() {
   const detail: Record<string, string | number | boolean> = {
     top_level: compactLogValue(loggedObjectKeys(root))
   };
-  for (const section of ["Apps", "GameSessions", "Workshop", "UGC", "RemoteStorage", "Cloud"]) {
+  for (const section of ["Apps", "GameSessions", "Workshop", "UGC", "RemoteStorage", "Cloud", "Overlay", "Browser", "BrowserView", "System", "URL", "WebChat"]) {
     detail[section] = compactLogValue(loggedObjectKeys(root[section]));
   }
   const appWorkshopMethods = loggedObjectKeyList(root.Apps).filter((key) => /workshop|subscrib|ugc/i.test(key));
   detail.AppsWorkshop = compactLogValue(appWorkshopMethods.join(","));
   await logFrontendEvent("steam client capabilities", detail);
+}
+
+async function startSteamBrowserNXMProbe(probeURL: string, selectedAppID = "") {
+  const root = typeof SteamClient !== "undefined" ? SteamClient : undefined;
+  const overlay = root?.Overlay;
+  const detail: Record<string, string | number | boolean> = {
+    probe_url: probeURL,
+    selected_app_id: selectedAppID,
+    has_overlay_register: typeof overlay?.RegisterForOverlayBrowserProtocols === "function",
+    has_overlay_handle: typeof overlay?.HandleProtocolForOverlayBrowser === "function",
+    has_navigation_external: typeof Navigation?.NavigateToExternalWeb === "function"
+  };
+  await logSteamClientCapabilities();
+  await logFrontendEvent("steam browser nxm probe starting", detail);
+
+  if (steamBrowserNXMProbeRegistration) {
+    unregisterSteamCallback(steamBrowserNXMProbeRegistration);
+    steamBrowserNXMProbeRegistration = null;
+    await logFrontendEvent("steam browser nxm probe previous listener removed");
+  }
+
+  if (typeof overlay?.RegisterForOverlayBrowserProtocols === "function") {
+    try {
+      steamBrowserNXMProbeRegistration = overlay.RegisterForOverlayBrowserProtocols((payload) => {
+        const appID = Number(payload?.unAppID ?? selectedAppID ?? 0);
+        const scheme = String(payload?.strScheme ?? "");
+        void logFrontendEvent("steam browser nxm protocol callback", {
+          app_id: Number.isFinite(appID) ? appID : 0,
+          scheme,
+          added: Boolean(payload?.bAdded),
+          payload: compactUnknownLogValue(payload)
+        });
+        if (scheme.toLowerCase() === "nxm" && typeof overlay.HandleProtocolForOverlayBrowser === "function") {
+          try {
+            overlay.HandleProtocolForOverlayBrowser(Number.isFinite(appID) ? appID : 0, scheme);
+            void logFrontendEvent("steam browser nxm protocol handle invoked", { app_id: Number.isFinite(appID) ? appID : 0, scheme });
+          } catch (err) {
+            void logFrontendEvent("steam browser nxm protocol handle failed", { error: errorLogValue(err), scheme });
+          }
+        }
+      });
+      await logFrontendEvent("steam browser nxm probe listener registered");
+    } catch (err) {
+      await logFrontendEvent("steam browser nxm probe listener failed", { error: errorLogValue(err) });
+    }
+  } else {
+    await logFrontendEvent("steam browser nxm probe listener unavailable");
+  }
+
+  try {
+    Navigation.NavigateToExternalWeb(probeURL);
+    await logFrontendEvent("steam browser nxm probe page opened", { probe_url: probeURL });
+  } catch (err) {
+    await logFrontendEvent("steam browser nxm probe page open failed", { error: errorLogValue(err), probe_url: probeURL });
+  }
+}
+
+function looksLikeNXMURL(value: unknown): value is string {
+  return typeof value === "string" && value.trim().toLowerCase().startsWith("nxm://");
+}
+
+function nexusBrowserCredentialRequired(message: string | undefined) {
+  const normalized = String(message || "").toLowerCase();
+  return normalized.includes("browser-generated") || normalized.includes("mod manager download") || normalized.includes("without visiting nexusmods.com");
+}
+
+async function captureNXMFromDMMBrowser(rawURL: string, appID: string, profileID: number, source: string) {
+  const url = rawURL.trim();
+  await logFrontendEvent("dmm browser nxm capture requested", {
+    app_id: appID,
+    profile_id: profileID,
+    source,
+    url
+  });
+  const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url, appID, profileID);
+  if (!result.ok) {
+    await logFrontendEvent("dmm browser nxm capture failed", {
+      app_id: appID,
+      profile_id: profileID,
+      source,
+      error: result.error || ""
+    });
+    toaster.toast({
+      title: "DMM capture failed",
+      body: result.error || "DMM could not capture the Nexus download link.",
+      duration: 9000,
+      critical: true,
+      playSound: true,
+      showToast: true
+    });
+    return;
+  }
+  const job = result.result?.job;
+  if (job) showJobToast(job);
+  await logFrontendEvent("dmm browser nxm captured", {
+    app_id: appID,
+    profile_id: profileID,
+    source,
+    job_id: job?.id || "",
+    status: job?.status || ""
+  });
+  toaster.toast({
+    title: "DMM captured Nexus download",
+    body: job?.message || "The Nexus Mod Manager Download link was sent to DMM.",
+    duration: 7000,
+    critical: false,
+    playSound: true,
+    showToast: true
+  });
+}
+
+function getDMMWindowRouter(): DMMWindowRouter | undefined {
+  const typedRouter = Router as unknown as {
+    WindowStore?: {
+      GamepadUIMainWindowInstance?: DMMWindowRouter;
+      SteamUIWindows?: DMMWindowRouter[];
+    };
+  };
+  return typedRouter.WindowStore?.GamepadUIMainWindowInstance ?? typedRouter.WindowStore?.SteamUIWindows?.[0];
+}
+
+function destroyActiveDMMNativeBrowser(source: string) {
+  const browser = activeDMMNativeBrowser;
+  if (!browser) return;
+  activeDMMNativeBrowser = null;
+  try {
+    browser.m_browserView?.SetFocus?.(false);
+    browser.Destroy?.();
+    void logFrontendEvent("dmm native browser destroyed", { source });
+  } catch (err) {
+    void logFrontendEvent("dmm native browser destroy failed", { source, error: errorLogValue(err) });
+  }
+}
+
+function navigateDMMRoute(path: string, source: string) {
+  Navigation.Navigate(path);
+  Navigation.CloseSideMenus();
+  void logFrontendEvent("decky navigation requested", { source, path });
+  window.setTimeout(() => {
+    void logFrontendEvent("decky navigation observed", {
+      source,
+      path,
+      current_path: window.location.pathname
+    });
+  }, 300);
+}
+
+function registerDMMNativeBrowserEvents(browser: DMMNativeBrowser, request: DMMBrowserRequest) {
+  const handledNXMURLs = new Set<string>();
+  const captureOnce = (url: unknown, eventName: string) => {
+    if (!looksLikeNXMURL(url)) return;
+    const normalized = url.trim();
+    if (handledNXMURLs.has(normalized)) return;
+    handledNXMURLs.add(normalized);
+    void captureNXMFromDMMBrowser(normalized, request.appID, request.profileID, `native-${eventName}`);
+  };
+  const browserView = browser.m_browserView;
+  browserView.SetName?.(request.title);
+  browserView.SetBlockedProtocols?.("nxm;nxm-protocol");
+  browserView.SetSteamURLCallback?.((url) => {
+    void logFrontendEvent("dmm native browser steam url", { source: request.source, url });
+    captureOnce(url, "steam-url");
+  });
+  const logEvent = (eventName: string, args: unknown[]) => {
+    void logFrontendEvent(`dmm native browser ${eventName}`, {
+      source: request.source,
+      args: compactUnknownLogValue(args)
+    });
+    for (const arg of args) captureOnce(arg, eventName);
+  };
+  for (const eventName of ["start-request", "start-loading", "new-tab", "blocked-request", "load-error", "finished-request", "history-changed", "set-title", "focus-changed", "before-close"]) {
+    browserView.on?.(eventName, (...args: unknown[]) => logEvent(eventName, args));
+  }
+}
+
+async function openDMMBrowserViewCapture(initialURL: string, options: { appID?: string; profileID?: number; source?: string; title?: string } = {}) {
+  const appID = options.appID || "";
+  const profileID = options.profileID || 0;
+  const source = options.source || "dmm-native-browser";
+  const title = options.title || "DMM Browser";
+  const request: DMMBrowserRequest = { appID, initialURL, profileID, source, title };
+  const windowRouter = getDMMWindowRouter();
+  activeDMMBrowserRequest = request;
+  await logSteamClientCapabilities();
+  await logFrontendEvent("dmm native browser opening", {
+    app_id: appID,
+    profile_id: profileID,
+    source,
+    url: initialURL,
+    has_window_router: Boolean(windowRouter),
+    has_create_browser_view: typeof windowRouter?.CreateBrowserView === "function",
+    has_header_store: Boolean(windowRouter?.HeaderStore),
+    has_browser_container: Boolean(DMMBrowserContainer)
+  });
+  if (!DMMBrowserContainer) {
+    toaster.toast({
+      title: "DMM browser unavailable",
+      body: "Steam's native BrowserContainer component could not be found.",
+      duration: 9000,
+      critical: true,
+      playSound: true,
+      showToast: true
+    });
+    return false;
+  }
+  if (typeof windowRouter?.CreateBrowserView !== "function") {
+    toaster.toast({
+      title: "DMM browser unavailable",
+      body: "Steam's Gamepad UI browser factory is unavailable.",
+      duration: 9000,
+      critical: true,
+      playSound: true,
+      showToast: true
+    });
+    return false;
+  }
+
+  try {
+    destroyActiveDMMNativeBrowser(source);
+    const browser = windowRouter.CreateBrowserView(DMM_NATIVE_BROWSER_NAME);
+    activeDMMNativeBrowser = browser;
+    registerDMMNativeBrowserEvents(browser, request);
+    browser.m_browserView?.SetVisible?.(true);
+    browser.m_browserView?.SetFocus?.(true);
+    windowRouter.HeaderStore?.SetCurrentBrowserAndBackstack?.(browser, true);
+    browser.LoadURL?.(initialURL);
+    navigateDMMRoute(DMM_BROWSER_ROUTE, source);
+    await logFrontendEvent("dmm native browser opened", {
+      source,
+      route: DMM_BROWSER_ROUTE,
+      url: initialURL,
+      has_load_url: typeof browser.LoadURL === "function"
+    });
+    return true;
+  } catch (err) {
+    await logFrontendEvent("dmm native browser open failed", { source, url: initialURL, error: errorLogValue(err) });
+    toaster.toast({
+      title: "DMM browser failed",
+      body: errorLogValue(err),
+      duration: 9000,
+      critical: true,
+      playSound: true,
+      showToast: true
+    });
+    return false;
+  }
 }
 
 function isNotifiableJob(job: Job) {
@@ -2066,10 +2398,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   const [mods, setMods] = useState<NexusModResult[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [offset, setOffset] = useState(0);
-  const [selectedModID, setSelectedModID] = useState<number | null>(null);
-  const [filesByMod, setFilesByMod] = useState<Record<number, NexusModFile[]>>({});
   const [busy, setBusy] = useState(false);
-  const [busyFileKey, setBusyFileKey] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const pageSize = 20;
@@ -2109,82 +2438,43 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     }
   }
 
-  async function loadFiles(mod: NexusModResult) {
-    setSelectedModID(mod.mod_id);
-    setError("");
-    setMessage("");
-    if (filesByMod[mod.mod_id]) return;
-    setBusyFileKey(`files:${mod.mod_id}`);
-    try {
-      const result = await call<[string, string], { ok: boolean; error?: string; files: NexusModFile[] }>("nexus_mod_files", props.appID, String(mod.mod_id));
-      if (!result.ok) {
-        setError(result.error || "Unable to load Nexus files. Check the Nexus API key in DMM settings.");
-        return;
-      }
-      setFilesByMod((current) => ({ ...current, [mod.mod_id]: result.files ?? [] }));
-      if ((result.files ?? []).length === 0) setMessage("This mod did not return installable files from Nexus.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyFileKey("");
-    }
-  }
-
-  async function installFile(mod: NexusModResult, file: NexusModFile) {
-    const key = `${mod.mod_id}:${file.file_id}`;
-    setBusyFileKey(key);
+  async function openModPage(mod: NexusModResult) {
     setError("");
     setMessage("");
     try {
-      const url = nexusFileURL(props.gameDomain, mod.mod_id, file.file_id);
-      await logFrontendEvent("nexus browser install requested", {
+      await logFrontendEvent("nexus browser mod page requested", {
+        app_id: props.appID,
+        profile_id: props.profileID ?? 0,
+        game_domain: props.gameDomain,
+        mod_id: mod.mod_id
+      });
+      const opened = await openDMMBrowserViewCapture(mod.url, {
+        appID: props.appID,
+        profileID: props.profileID ?? 0,
+        source: "nexus-mod-page",
+        title: `DMM Nexus - ${mod.name}`
+      });
+      await logFrontendEvent("nexus browser mod page opened", {
         app_id: props.appID,
         profile_id: props.profileID ?? 0,
         game_domain: props.gameDomain,
         mod_id: mod.mod_id,
-        file_id: file.file_id
+        opened
       });
-      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job } }>("add_captured_install", url, props.appID, props.profileID ?? 0);
-      if (!result.ok) {
-        setError(result.error || "Unable to add this Nexus file.");
-        await logFrontendEvent("nexus browser install failed", {
-          app_id: props.appID,
-          profile_id: props.profileID ?? 0,
-          game_domain: props.gameDomain,
-          mod_id: mod.mod_id,
-          file_id: file.file_id,
-          error: result.error || ""
-        });
+      if (!opened) {
+        setError("DMM could not open the controlled Nexus browser. Check Debug Live Logs.");
         return;
       }
-      const job = result.result?.job;
-      if (job) showJobToast(job);
-      await logFrontendEvent("nexus browser install queued", {
-        app_id: props.appID,
-        profile_id: props.profileID ?? 0,
-        game_domain: props.gameDomain,
-        mod_id: mod.mod_id,
-        file_id: file.file_id,
-        job_id: job?.id || "",
-        status: job?.status || ""
-      });
-      if (job?.status === "failed") {
-        setError(job.message || "DMM could not start this Nexus download.");
-        return;
-      }
-      setMessage(job?.message || `${file.name || file.file_name || mod.name} was sent to DMM.`);
+      props.closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      await logFrontendEvent("nexus browser install threw", {
+      await logFrontendEvent("nexus browser mod page threw", {
         app_id: props.appID,
         profile_id: props.profileID ?? 0,
         game_domain: props.gameDomain,
         mod_id: mod.mod_id,
-        file_id: file.file_id,
         error: err instanceof Error ? err.message : String(err)
       });
-    } finally {
-      setBusyFileKey("");
     }
   }
 
@@ -2305,18 +2595,16 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{vortexOnly ? "No Vortex-compatible mods matched this search." : "No Nexus mods matched this search."}</div>
           )}
           {mods.map((mod) => {
-            const files = filesByMod[mod.mod_id] ?? [];
-            const filesOpen = selectedModID === mod.mod_id;
             return (
               <div
                 key={mod.mod_id}
                 className="dmm-sidebar-row"
                 style={{
-                  ...deckyCompositeRowStyle(filesOpen),
+                  ...deckyCompositeRowStyle(false),
                   alignSelf: "start",
                   background: "#111827",
                   flexShrink: 0,
-                  minHeight: filesOpen ? "auto" : "146px",
+                  minHeight: "146px",
                   padding: "10px"
                 }}
               >
@@ -2342,41 +2630,11 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                     </div>
                   </div>
                 </div>
-                <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(2)}>
-                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => Navigation.NavigateToExternalWeb(mod.url)} onClick={() => Navigation.NavigateToExternalWeb(mod.url)} style={deckyCompactActionStyle("neutral")}>
+                <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(1)}>
+                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => void openModPage(mod)} onClick={() => void openModPage(mod)} style={deckyCompactActionStyle("neutral")}>
                     Open Page
                   </Focusable>
-                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => loadFiles(mod)} onClick={() => loadFiles(mod)} style={deckyCompactActionStyle("neutral", filesOpen || busyFileKey === `files:${mod.mod_id}`)}>
-                    {busyFileKey === `files:${mod.mod_id}` ? "Loading Files" : filesOpen ? "Refresh Files" : "Show Files"}
-                  </Focusable>
                 </Focusable>
-                {filesOpen && (
-                  <div style={{ display: "grid", gap: "8px", width: "100%" }}>
-                    {files.length === 0 && busyFileKey !== `files:${mod.mod_id}` && <div style={{ color: "#a1a1aa" }}>No files loaded yet.</div>}
-                    {files.map((file) => {
-                      const fileKey = `${mod.mod_id}:${file.file_id}`;
-                      return (
-                        <div key={file.file_id} style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "8px", padding: "10px", width: "100%" }}>
-                          <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-                            <div style={{ ...deckyTwoLineTextStyle, flex: "1 1 120px", fontWeight: 800 }}>{file.name || file.file_name || `File ${file.file_id}`}</div>
-                            <span style={deckySourcePillStyle("nexus")}>Nexus</span>
-                          </div>
-                          <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>
-                            {file.file_name || "Nexus file"} · {formatBytes(file.size)} · v{file.version || "unknown"}
-                          </div>
-                          <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(2)}>
-                            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => Navigation.NavigateToExternalWeb(nexusFileURL(props.gameDomain, mod.mod_id, file.file_id))} onClick={() => Navigation.NavigateToExternalWeb(nexusFileURL(props.gameDomain, mod.mod_id, file.file_id))} style={deckyCompactActionStyle("neutral")}>
-                              Open File Page
-                            </Focusable>
-                            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => installFile(mod, file)} onClick={() => installFile(mod, file)} style={deckyCompactActionStyle("neutral", busyFileKey === fileKey)}>
-                              {busyFileKey === fileKey ? "Adding To DMM" : "Install With DMM"}
-                            </Focusable>
-                          </Focusable>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -2493,12 +2751,190 @@ function stopBackgroundMonitors() {
   if (!backgroundMonitorsStarted) return;
   backgroundMonitorsStarted = false;
   closeEventMonitor();
+  if (steamBrowserNXMProbeRegistration) {
+    unregisterSteamCallback(steamBrowserNXMProbeRegistration);
+    steamBrowserNXMProbeRegistration = null;
+  }
+  destroyActiveDMMNativeBrowser("background-stop");
   logFrontendEvent("background monitors stopped");
 }
 
 function openDeckyModManagerRoute() {
-  Router.CloseSideMenus();
-  Router.Navigate(DMM_DECKY_ROUTE);
+  navigateDMMRoute(DMM_DECKY_ROUTE, "open-decky-mod-manager");
+}
+
+function DMMNativeBrowserTab(props: { browser: DMMNativeBrowser | null; closeBrowser: () => void; error: string; ready: boolean }) {
+  if (props.error) {
+    return (
+      <div style={{ color: "#f87171", padding: "18px", overflowWrap: "anywhere" }}>
+        {props.error}
+      </div>
+    );
+  }
+
+  if (!props.browser || !DMMBrowserContainer) {
+    return (
+      <div style={{ color: "#f87171", padding: "18px", overflowWrap: "anywhere" }}>
+        DMM native browser is unavailable.
+      </div>
+    );
+  }
+
+  if (!props.ready) {
+    return (
+      <div style={{ alignItems: "center", display: "flex", height: "100%", justifyContent: "center", width: "100%" }}>
+        <SteamSpinner />
+      </div>
+    );
+  }
+
+  return (
+    <Focusable
+      className="dmm-native-browser-focus"
+      noFocusRing
+      onCancelButton={props.closeBrowser}
+      onCancelActionDescription="Back"
+      onGamepadFocus={async (event: GamepadEvent) => {
+        await sleep(1);
+        const focusEvent = event as unknown as DMMFocusedNodeEvent;
+        focusEvent.detail.focusedNode?.BChildTakeFocus?.();
+      }}
+    >
+      <DMMBrowserContainer
+        browser={props.browser}
+        className={mainBrowserClasses?.ExternalBrowserContainer}
+        visible
+        hideForModals
+        external
+        displayURLBar={false}
+        autoFocus={false}
+      />
+    </Focusable>
+  );
+}
+
+function DMMNativeBrowserRoute() {
+  const [browser, setBrowser] = useState<DMMNativeBrowser | null>(activeDMMNativeBrowser);
+  const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState(DMM_NATIVE_BROWSER_TAB_ID);
+  const [mountReady, setMountReady] = useState(false);
+  const request = activeDMMBrowserRequest;
+
+  useEffect(() => {
+    const windowRouter = getDMMWindowRouter();
+    const currentBrowser = activeDMMNativeBrowser;
+    void logFrontendEvent("dmm native browser route mounted", {
+      source: request?.source || "",
+      path: window.location.pathname,
+      has_active_browser: Boolean(currentBrowser),
+      has_browser_container: Boolean(DMMBrowserContainer),
+      external_browser_class: mainBrowserClasses?.ExternalBrowserContainer || ""
+    });
+    if (!currentBrowser) {
+      const message = "DMM native browser route mounted without an active browser.";
+      setError(message);
+      void logFrontendEvent("dmm native browser route missing browser", { source: request?.source || "" });
+      return;
+    }
+    let mountTimer: number | undefined;
+    try {
+      windowRouter?.HeaderStore?.SetCurrentBrowserAndBackstack?.(currentBrowser, true);
+      currentBrowser.m_browserView?.SetVisible?.(true);
+      currentBrowser.m_browserView?.SetFocus?.(true);
+      setBrowser(currentBrowser);
+      mountTimer = window.setTimeout(() => {
+        setMountReady(true);
+        void logFrontendEvent("dmm native browser route browser attached", {
+          source: request?.source || "",
+          url: request?.initialURL || "",
+          has_browser_container: Boolean(DMMBrowserContainer),
+          has_header_store: Boolean(windowRouter?.HeaderStore)
+        });
+      }, 800);
+      void logFrontendEvent("dmm native browser route prepared", {
+        source: request?.source || "",
+        url: request?.initialURL || "",
+        has_browser_container: Boolean(DMMBrowserContainer),
+        has_header_store: Boolean(windowRouter?.HeaderStore)
+      });
+    } catch (err) {
+      const message = errorLogValue(err);
+      setError(message);
+      void logFrontendEvent("dmm native browser route mount failed", { source: request?.source || "", error: message });
+    }
+    return () => {
+      try {
+        if (typeof mountTimer === "number") window.clearTimeout(mountTimer);
+        const current = windowRouter?.HeaderStore?.GetCurrentBrowserAndBackstack?.();
+        if (current?.browser?.name === DMM_NATIVE_BROWSER_NAME) {
+          windowRouter?.HeaderStore?.SetCurrentBrowserAndBackstack?.(null, false);
+        }
+        destroyActiveDMMNativeBrowser("route-unmount");
+      } catch (err) {
+        void logFrontendEvent("dmm native browser route cleanup failed", { source: request?.source || "", error: errorLogValue(err) });
+      }
+    };
+  }, []);
+
+  const closeBrowser = () => {
+    destroyActiveDMMNativeBrowser("route-close");
+    Navigation.NavigateBack();
+  };
+
+  const tabs = useMemo<DeckyUITab[]>(() => [{
+    id: DMM_NATIVE_BROWSER_TAB_ID,
+    title: "Browser",
+    content: <DMMNativeBrowserTab browser={browser} closeBrowser={closeBrowser} error={error} ready={mountReady} />,
+    footer: {
+      onCancelButton: closeBrowser,
+      onCancelActionDescription: "Back"
+    }
+  }], [browser, error, mountReady]);
+
+  return (
+    <div className="dmm-native-browser-tabs" style={{ background: "#050914", height: "calc(100% - 40px)", marginTop: "40px", overflow: "hidden", width: "100%" }}>
+      <style>{`
+        .dmm-native-browser-tabs {
+          background: #050914;
+        }
+        .dmm-native-browser-tabs .${gamepadTabbedPageClasses?.Floating || ""} .${gamepadTabbedPageClasses?.TabContentsScroll || ""} {
+          clip: initial;
+        }
+        .dmm-native-browser-tabs .${gamepadTabbedPageClasses?.TabHeaderRowWrapper || ""} {
+          background: #060709;
+        }
+        .dmm-native-browser-tabs .${gamepadTabbedPageClasses?.FixCenterAlignScroll || ""} {
+          padding: 5px 0;
+        }
+        .dmm-native-browser-tabs .${gamepadTabbedPageClasses?.TabContentsScroll || ""} {
+          bottom: var(--gamepadui-current-footer-height);
+          padding: 0;
+        }
+        .dmm-native-browser-tabs .dmm-native-browser-focus {
+          height: 100%;
+          min-height: 100%;
+          overflow: hidden;
+          position: relative;
+          width: 100%;
+        }
+        .dmm-native-browser-tabs .${mainBrowserClasses?.ExternalBrowserContainer || ""} {
+          background: #050914;
+          height: 100%;
+          top: 44px;
+          width: 100%;
+        }
+        .dmm-native-browser-tabs .${steamSpinnerClasses?.SpinnerLoaderContainer || ""} {
+          background: transparent;
+        }
+      `}</style>
+      <Tabs
+        activeTab={activeTab}
+        autoFocusContents
+        onShowTab={(nextTab: string) => setActiveTab(nextTab)}
+        tabs={tabs}
+      />
+    </div>
+  );
 }
 
 function DeckyModManagerRoute() {
@@ -3452,6 +3888,47 @@ function DeckyModManagerRoute() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function probeSteamBrowserNXM() {
+    try {
+      setError("");
+      const nextStatus = status ?? await call<[], BackendStatus>("status");
+      if (!status) setStatus(nextStatus);
+      const port = nextStatus.port || 17942;
+      const probeURL = `http://127.0.0.1:${port}/debug/nxm-probe`;
+      await startSteamBrowserNXMProbe(probeURL, selectedDeckyGameID);
+      setUpdateResult("Steam browser NXM probe started. Click the probe link in the browser, then check Live Logs.");
+      await loadDiagnostics({ quiet: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setUpdateResult(message);
+      await logFrontendEvent("steam browser nxm probe threw", { error: message });
+    }
+  }
+
+  async function probeDMMBrowserViewNXM() {
+    try {
+      setError("");
+      const nextStatus = status ?? await call<[], BackendStatus>("status");
+      if (!status) setStatus(nextStatus);
+      const port = nextStatus.port || 17942;
+      const probeURL = `http://127.0.0.1:${port}/debug/nxm-probe`;
+      const opened = await openDMMBrowserViewCapture(probeURL, {
+        appID: selectedDeckyGameID,
+        profileID: selectedProfile?.id ?? 0,
+        source: "debug-browser-view-nxm-probe",
+        title: "DMM BrowserView NXM Probe"
+      });
+      setUpdateResult(opened ? "DMM BrowserView NXM probe opened. Click the probe link, then check Live Logs." : "DMM BrowserView NXM probe could not open. Check Live Logs.");
+      await loadDiagnostics({ quiet: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setUpdateResult(message);
+      await logFrontendEvent("dmm browser view nxm probe threw", { error: message });
     }
   }
 
@@ -4540,6 +5017,16 @@ function DeckyModManagerRoute() {
         </ButtonItem>
       </PanelSectionRow>
       <PanelSectionRow>
+        <ButtonItem layout="below" onClick={probeSteamBrowserNXM}>
+          Probe Steam Browser NXM
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={probeDMMBrowserViewNXM}>
+          Probe DMM BrowserView NXM
+        </ButtonItem>
+      </PanelSectionRow>
+      <PanelSectionRow>
         <div>
           <div>Registered: {nxm?.registered ? "Yes" : "No"}</div>
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Current: {nxm?.current_handler || "None"}</div>
@@ -4706,7 +5193,8 @@ function QuickAccessContent() {
 
 export default definePlugin(() => {
   startBackgroundMonitors();
-  routerHook.addRoute(DMM_DECKY_ROUTE, DeckyModManagerRoute);
+  routerHook.addRoute(DMM_BROWSER_ROUTE, () => <DMMNativeBrowserRoute />);
+  routerHook.addRoute(DMM_DECKY_ROUTE, () => <DeckyModManagerRoute />);
   return {
     name: "Decky Mod Manager",
     title: <div className={staticClasses.Title}>Decky Mod Manager</div>,
@@ -4714,6 +5202,7 @@ export default definePlugin(() => {
     content: <QuickAccessContent />,
     icon: <FaPowerOff />,
     onDismount() {
+      routerHook.removeRoute(DMM_BROWSER_ROUTE);
       routerHook.removeRoute(DMM_DECKY_ROUTE);
       stopBackgroundMonitors();
     }

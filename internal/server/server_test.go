@@ -887,11 +887,11 @@ func TestGameNexusModFilesUsesConfiguredAPIKey(t *testing.T) {
 	srv.nexus = func(apiKey string) nexusClient {
 		gotKey = apiKey
 		return fakeNexusClient{
-			files: nexus.FilesResponse{Files: []nexus.ModFile{{
-				FileID:   135998,
-				Name:     "SMAPI",
-				FileName: "smapi.zip",
-			}}},
+			files: nexus.FilesResponse{Files: []nexus.ModFile{
+				{FileID: 135998, Name: "SMAPI", FileName: "smapi-old.zip", UploadedAt: 1000},
+				{FileID: 135999, Name: "SMAPI", FileName: "smapi-new.zip", UploadedAt: 2000},
+				{FileID: 136000, Name: "SMAPI", FileName: "smapi-same-time.zip", UploadedAt: 2000},
+			}},
 		}
 	}
 
@@ -909,7 +909,7 @@ func TestGameNexusModFilesUsesConfiguredAPIKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Files) != 1 || body.Files[0].FileID != 135998 {
+	if len(body.Files) != 3 || body.Files[0].FileID != 136000 || body.Files[1].FileID != 135999 || body.Files[2].FileID != 135998 {
 		t.Fatalf("files = %+v", body.Files)
 	}
 }

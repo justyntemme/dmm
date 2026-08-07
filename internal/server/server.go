@@ -368,6 +368,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/install", s.handleInstallCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/retry", s.handleRetryCapturedInstall)
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
+	mux.HandleFunc("GET /debug/nxm-probe", s.handleNXMProbePage)
 	mux.Handle("/", s.staticHandler())
 	return lanOnlyMiddleware(func() bool {
 		s.cfgMu.RLock()
@@ -1772,6 +1773,12 @@ func (s *Server) handleGameNexusModFiles(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	sort.SliceStable(files.Files, func(i, j int) bool {
+		if files.Files[i].UploadedAt != files.Files[j].UploadedAt {
+			return files.Files[i].UploadedAt > files.Files[j].UploadedAt
+		}
+		return files.Files[i].FileID > files.Files[j].FileID
+	})
 	writeJSON(w, http.StatusOK, files)
 }
 
@@ -8665,6 +8672,55 @@ func (s *Server) handleInspectArchive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleNXMProbePage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DMM NXM Probe</title>
+  <style>
+    body {
+      background: #09111f;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 24px;
+    }
+    main {
+      display: grid;
+      gap: 16px;
+      max-width: 720px;
+    }
+    a {
+      align-items: center;
+      background: #14b8a6;
+      border-radius: 8px;
+      color: #042f2e;
+      display: inline-flex;
+      font-weight: 800;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      text-decoration: none;
+    }
+    code {
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>DMM NXM Browser Probe</h1>
+    <p>Click the test link below from the Steam browser. DMM will log whether Decky receives a protocol event before Steam shows an unknown scheme error.</p>
+    <a href="nxm://dmmprobe/mods/1/files/2?key=dmm-steam-browser-probe&amp;expires=9999999999&amp;user_id=0">Open NXM Probe Link</a>
+    <code>nxm://dmmprobe/mods/1/files/2?key=dmm-steam-browser-probe&amp;expires=9999999999&amp;user_id=0</code>
+  </main>
+</body>
+</html>`)
 }
 
 func (s *Server) staticHandler() http.Handler {
