@@ -337,6 +337,7 @@ type GameExtensionInfo = {
   plugin_activation: boolean;
   load_order: boolean;
   game_versions: boolean;
+  sources?: Array<{ name?: string; url?: string }>;
 };
 
 type RunningGame = {
@@ -1194,6 +1195,13 @@ function deckyGameCapabilityBadges(game: ManagedGame): Array<{ label: string; ki
   if (extension.load_order || extension.plugin_activation) badges.push({ label: "Order", kind: "load-order" });
   if (extension.launch_tools) badges.push({ label: "Launch", kind: "launch" });
   return badges;
+}
+
+function firstExtensionSourceNote(game?: ManagedGame | null) {
+  const source = game?.extension?.sources?.find((item) => (item.name || item.url));
+  if (!source) return "";
+  if (source.name && source.url) return `${source.name}: ${source.url}`;
+  return source.name || source.url || "";
 }
 
 function deckyCapabilityPillStyle(kind: string): CSSProperties {
@@ -4418,7 +4426,7 @@ function DeckyModManagerRoute() {
           id: "nexus",
           catalog: catalogSourceTag(nexusCatalog),
           title: "Nexus Mods",
-          detail: "This extension does not declare a Nexus domain yet.",
+          detail: firstExtensionSourceNote(selectedDeckyGame) || "This extension does not declare a Nexus domain yet.",
           action: "Unavailable",
           enabled: false,
           behavior: "info"
@@ -4429,7 +4437,7 @@ function DeckyModManagerRoute() {
         id: "nexus",
         catalog: "nexus",
         title: "Nexus Mods",
-        detail: "This extension does not declare a Nexus domain yet.",
+        detail: firstExtensionSourceNote(selectedDeckyGame) || "This extension does not declare a Nexus domain yet.",
         action: "Unavailable",
         enabled: false,
         behavior: "info"

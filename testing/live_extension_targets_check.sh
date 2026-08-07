@@ -163,6 +163,24 @@ for extension_id, domain in research_targets.items():
     require_domain(extension_id, domain)
     require_caps(extension_id, "installers")
 
+metadata_targets = {
+    "braid": "26800",
+    "fez": "224760",
+    "hotlinemiami": "219150",
+    "nuclearthrone": "242680",
+    "starwarsroguesquadron": "455910",
+}
+for extension_id, app_id in metadata_targets.items():
+    require_coverage(extension_id, "metadata_only")
+    summary = extensions_by_id.get(extension_id) or {}
+    if app_id not in [str(item) for item in summary.get("steam_app_ids", [])]:
+        failures.append(f"{extension_id} missing app {app_id}: {summary.get('steam_app_ids')}")
+    if summary.get("nexus_domains"):
+        failures.append(f"{extension_id} should not declare Nexus domains: {summary.get('nexus_domains')}")
+    caps = summary.get("capabilities") or {}
+    if any(caps.get(cap) for cap in ("installers", "steam_workshop", "installer_choices")):
+        failures.append(f"{extension_id} should remain metadata-only: {caps}")
+
 zomboid = extensions_by_id.get("projectzomboid") or {}
 zomboid_caps = zomboid.get("capabilities") or {}
 if not zomboid_caps.get("target_roots") or not zomboid_caps.get("installers"):

@@ -270,6 +270,38 @@ func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
 	}
 }
 
+func TestCompileExtensionAllowsVerifiedMetadataOnlyGame(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "metadata-only",
+		Name:    "Metadata Only",
+		Version: "0.1.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs: []string{"26800"},
+			})
+			r.RegisterSource(sdk.SourceRef{
+				Name: "Verified ModDB page",
+				URL:  "https://www.moddb.com/games/braid/mods",
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(extension.NexusDomains) != 0 {
+		t.Fatalf("metadata-only extension should not invent Nexus domains: %+v", extension.NexusDomains)
+	}
+	coverage, label := ExtensionCoverage(extension)
+	if coverage != CoverageMetadataOnly || label != "Metadata only" {
+		t.Fatalf("metadata coverage = %q/%q", coverage, label)
+	}
+	summary := NewRegistry([]Extension{extension}).ExtensionSummaries()[0]
+	if summary.Coverage != CoverageMetadataOnly || len(summary.Sources) != 1 {
+		t.Fatalf("metadata summary = %+v", summary)
+	}
+}
+
 func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 	extension, err := CompileExtension(sdk.Extension{
 		ID:      "research-game",

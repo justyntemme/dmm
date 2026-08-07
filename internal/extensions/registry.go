@@ -4,6 +4,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/braid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/brawlhalla"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
@@ -15,6 +16,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
@@ -22,6 +24,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/hotlinemiami"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/megabonk"
@@ -35,6 +38,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
@@ -54,6 +58,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsroguesquadron"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/steinsgate"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
@@ -76,6 +81,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),
+		gameext.MustCompileExtension(braid.Extension()),
 		gameext.MustCompileExtension(brawlhalla.Extension()),
 		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(citizensleeper.Extension()),
@@ -88,6 +94,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
+		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
@@ -95,6 +102,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[1]),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[2]),
 		gameext.MustCompileExtension(hollowknight.Extension()),
+		gameext.MustCompileExtension(hotlinemiami.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(finalfantasyxx2hdremaster.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
@@ -109,6 +117,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mirrorsedge.Extension()),
 		gameext.MustCompileExtension(mrprepper.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
+		gameext.MustCompileExtension(nuclearthrone.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(plagueincevolved.Extension()),
@@ -125,6 +134,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),
 		gameext.MustCompileExtension(spelunky.Extension()),
 		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
+		gameext.MustCompileExtension(starwarsroguesquadron.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(steinsgate.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),

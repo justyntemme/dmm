@@ -65,6 +65,12 @@
     plugin_activation: boolean;
     load_order: boolean;
     game_versions: boolean;
+    sources?: SourceRef[];
+  };
+
+  type SourceRef = {
+    name?: string;
+    url?: string;
   };
 
   type SteamWorkshop = {
@@ -1885,6 +1891,13 @@
   function selectedExploreSourceBrowseReady() {
     const source = selectedExploreSource();
     return Boolean(source && source.id === "nexus" && selectedNexusDomain() && source.search && source.status === "ready");
+  }
+
+  function selectedExtensionSourceNote() {
+    const source = selectedGame?.extension?.sources?.find((item) => (item.name || item.url));
+    if (!source) return "";
+    if (source.name && source.url) return `${source.name}: ${source.url}`;
+    return source.name || source.url || "";
   }
 
   function nexusModURL(mod: NexusModResult) {
@@ -3793,6 +3806,9 @@
                     {/if}
                   {:else if selectedExploreSource()?.id === "nexus"}
                     <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include a Nexus domain yet." : "This game does not have a DMM extension yet."}</p>
+                    {#if selectedExtensionSourceNote()}
+                      <p class="hint">{selectedExtensionSourceNote()}</p>
+                    {/if}
                   {:else if selectedExploreSource()?.id === "local"}
                     <p class="hint">Local archives are added with the upload control above and then installed through the same Action Center flow.</p>
                   {:else if selectedExploreSource()?.status === "deferred"}

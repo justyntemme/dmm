@@ -576,6 +576,11 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 		t.Fatalf("bastion extension info = %+v", bastion)
 	}
 
+	braid := gameExtensionInfoForSteamApp(games.DefaultRegistry, "26800")
+	if braid == nil || !braid.Supported || braid.Coverage != gameext.CoverageMetadataOnly || braid.Nexus || braid.Installers || len(braid.Sources) == 0 {
+		t.Fatalf("braid extension info = %+v", braid)
+	}
+
 	if unsupported := gameExtensionInfoForSteamApp(games.DefaultRegistry, "999999999"); unsupported != nil {
 		t.Fatalf("unsupported extension info = %+v", unsupported)
 	}

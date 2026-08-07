@@ -556,20 +556,21 @@ type gameResponse struct {
 }
 
 type gameExtensionInfo struct {
-	ID                  string `json:"id"`
-	Name                string `json:"name"`
-	Supported           bool   `json:"supported"`
-	Coverage            string `json:"coverage"`
-	CoverageLabel       string `json:"coverage_label"`
-	Nexus               bool   `json:"nexus"`
-	SteamWorkshop       bool   `json:"steam_workshop"`
-	Installers          bool   `json:"installers"`
-	InstallerChoices    bool   `json:"installer_choices"`
-	RuntimeRequirements bool   `json:"runtime_requirements"`
-	LaunchTools         bool   `json:"launch_tools"`
-	PluginActivation    bool   `json:"plugin_activation"`
-	LoadOrder           bool   `json:"load_order"`
-	GameVersions        bool   `json:"game_versions"`
+	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
+	Supported           bool                `json:"supported"`
+	Coverage            string              `json:"coverage"`
+	CoverageLabel       string              `json:"coverage_label"`
+	Nexus               bool                `json:"nexus"`
+	SteamWorkshop       bool                `json:"steam_workshop"`
+	Installers          bool                `json:"installers"`
+	InstallerChoices    bool                `json:"installer_choices"`
+	RuntimeRequirements bool                `json:"runtime_requirements"`
+	LaunchTools         bool                `json:"launch_tools"`
+	PluginActivation    bool                `json:"plugin_activation"`
+	LoadOrder           bool                `json:"load_order"`
+	GameVersions        bool                `json:"game_versions"`
+	Sources             []gameext.SourceRef `json:"sources,omitempty"`
 }
 
 type steamWorkshopStateResponse struct {
@@ -2291,6 +2292,7 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		PluginActivation:    len(extension.PluginActivations) > 0,
 		LoadOrder:           len(extension.LoadOrders) > 0 || len(extension.Merges) > 0,
 		GameVersions:        len(extension.GameVersionProviders) > 0,
+		Sources:             append([]gameext.SourceRef(nil), extension.Sources...),
 	}
 }
 

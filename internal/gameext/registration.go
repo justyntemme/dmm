@@ -178,8 +178,8 @@ func validateExtension(extension Extension) error {
 	if len(extension.SteamAppIDs) == 0 {
 		errs = append(errs, errors.New("extension must register at least one Steam app id"))
 	}
-	if len(extension.NexusDomains) == 0 && !extension.SteamWorkshop.AllowCoexistence && len(extension.SteamWorkshop.Actions) == 0 {
-		errs = append(errs, errors.New("extension must register at least one Nexus domain or Steam Workshop capability"))
+	if len(extension.NexusDomains) == 0 && !extension.SteamWorkshop.AllowCoexistence && len(extension.SteamWorkshop.Actions) == 0 && len(extension.Sources) == 0 {
+		errs = append(errs, errors.New("extension must register at least one Nexus domain, Steam Workshop capability, or verified source reference"))
 	}
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
 	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
