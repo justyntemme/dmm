@@ -10,17 +10,17 @@
 ## Verified Sources
 
 - Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
-- The Binding of Isaac Vortex extension page: `https://www.nexusmods.com/site/mods/516`
-- Vortex bundled game extension source check: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
+- The Binding of Isaac Vortex extension package `1.0.0`: `https://www.nexusmods.com/site/mods/516`
+- Vortex package source file: `index.js` from Nexus site mod `516`, file `4127`
 - Live Steam Deck path check: `/run/media/deck/games/steamapps/common/The Binding of Isaac Rebirth`
 
 ## Current DMM Capability
 
-- Registers the Steam AppID and Nexus domain from the Vortex manifest.
-- Checks for the executable and resources folders.
-- Blocks archive installs until Afterbirth+/Repentance mod-folder and resources rules are verified.
+- Registers the Steam AppID and Nexus domain from the verified Vortex extension package.
+- Checks for `isaac-ng.exe`.
+- Supports Vortex's default `modPath: "mods"` archive-root deployment while preserving the archive's top-level mod folder.
 
 ## Beta Gaps
 
-- Inspect the Vortex package and representative archives.
-- Add extension-owned mod-folder/resources installers and any load-order/profile semantics needed for Isaac mods.
+- Live-test representative Nexus Isaac archives.
+- Add narrower installers only if source review of specific Isaac archive classes proves the default Vortex `mods` path is insufficient.
