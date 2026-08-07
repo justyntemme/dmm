@@ -2351,6 +2351,64 @@ func TestCapturedInstallCapturesNXMLink(t *testing.T) {
 	}
 }
 
+func TestBulkCapturedInstallUsesCapturedInstallPipeline(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	target, err := srv.db.CreateProfileForSteamApp(context.Background(), "413150", "Bulk")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/captured-installs/bulk", bytes.NewBufferString(`{
+		"urls": [
+			"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998",
+			"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998",
+			"nxm://stardewvalley/mods/541/files/160470?key=test&expires=1&mod_id=541&file_id=160470"
+		],
+		"steam_app_id": "413150",
+		"profile_id": `+strconv.FormatInt(target.ID, 10)+`,
+		"source": "test-bulk"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body capturedInstallBulkResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Total != 2 || body.Accepted != 2 || body.Failed != 0 {
+		t.Fatalf("bulk response = %+v", body)
+	}
+	if jobs := srv.jobs.List(); len(jobs) != 2 {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+	pending, err := srv.db.ListCapturedInstalls(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("pending captured installs = %+v", pending)
+	}
+	for _, item := range pending {
+		if item.Source != "test-bulk" || item.TargetProfileID != target.ID {
+			t.Fatalf("pending captured install did not preserve source/profile: %+v", item)
+		}
+	}
+}
+
 func TestCapturedInstallReusesDuplicateWaitingRequest(t *testing.T) {
 	srv := newTestServer(t)
 	body := `{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"nxm-handler"}`

@@ -400,6 +400,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
 	mux.HandleFunc("POST /api/jobs/{jobID}/cancel", s.handleCancelJob)
 	mux.HandleFunc("DELETE /api/captured-installs", s.handleClearCapturedInstalls)
+	mux.HandleFunc("POST /api/captured-installs/bulk", s.handleBulkCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/resolve", s.handleResolveCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs", s.handleCapturedInstall)
 	mux.HandleFunc("POST /api/captured-installs/{jobID}/install", s.handleInstallCapturedInstall)
@@ -6012,6 +6013,46 @@ type capturedInstallURLRequest struct {
 	ProfileID  int64  `json:"profile_id,omitempty"`
 }
 
+type capturedInstallBulkRequest struct {
+	URLs       []string `json:"urls"`
+	Text       string   `json:"text"`
+	SteamAppID string   `json:"steam_app_id"`
+	Source     string   `json:"source"`
+	ProfileID  int64    `json:"profile_id,omitempty"`
+}
+
+type capturedInstallResponse struct {
+	Job             jobResponse              `json:"job"`
+	Resolved        catalog.ResolvedDownload `json:"resolved"`
+	Source          string                   `json:"source,omitempty"`
+	TargetProfileID int64                    `json:"target_profile_id,omitempty"`
+	DownloadLinks   []nexus.DownloadLink     `json:"download_links,omitempty"`
+	ArchiveFileName string                   `json:"archive_file_name,omitempty"`
+	BrowserRequired bool                     `json:"browser_required,omitempty"`
+	Duplicate       bool                     `json:"duplicate,omitempty"`
+	DownloadStarted bool                     `json:"download_started,omitempty"`
+	AutoInstall     bool                     `json:"auto_install,omitempty"`
+}
+
+type capturedInstallBulkItemResponse struct {
+	Index           int                       `json:"index"`
+	URL             string                    `json:"url"`
+	OK              bool                      `json:"ok"`
+	Error           string                    `json:"error,omitempty"`
+	Job             *jobResponse              `json:"job,omitempty"`
+	Resolved        *catalog.ResolvedDownload `json:"resolved,omitempty"`
+	BrowserRequired bool                      `json:"browser_required,omitempty"`
+	Duplicate       bool                      `json:"duplicate,omitempty"`
+}
+
+type capturedInstallBulkResponse struct {
+	Total           int                               `json:"total"`
+	Accepted        int                               `json:"accepted"`
+	Failed          int                               `json:"failed"`
+	BrowserRequired int                               `json:"browser_required"`
+	Items           []capturedInstallBulkItemResponse `json:"items"`
+}
+
 type inspectArchiveRequest struct {
 	Path string `json:"path"`
 }
@@ -6356,32 +6397,119 @@ func (s *Server) handleResolveCapturedInstall(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusAccepted, payload)
 }
 
+func (s *Server) handleBulkCapturedInstall(w http.ResponseWriter, r *http.Request) {
+	var req capturedInstallBulkRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	urls := capturedInstallBulkURLs(req)
+	if len(urls) == 0 {
+		http.Error(w, "at least one url is required", http.StatusBadRequest)
+		return
+	}
+	if len(urls) > 50 {
+		http.Error(w, "bulk capture is limited to 50 urls at a time", http.StatusBadRequest)
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = "bulk-capture"
+	}
+	s.logger.Info("bulk captured install requested", "count", len(urls), "source", source, "app_id", req.SteamAppID, "target_profile_id", req.ProfileID)
+	out := capturedInstallBulkResponse{
+		Total: len(urls),
+		Items: make([]capturedInstallBulkItemResponse, 0, len(urls)),
+	}
+	for index, url := range urls {
+		item := capturedInstallBulkItemResponse{Index: index, URL: url}
+		result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
+			URL:        url,
+			SteamAppID: req.SteamAppID,
+			Source:     source,
+			ProfileID:  req.ProfileID,
+		})
+		if err != nil {
+			out.Failed++
+			item.Error = err.Error()
+			s.logger.Warn("bulk captured install item failed", "index", index, "source", source, "app_id", req.SteamAppID, "error", err)
+			out.Items = append(out.Items, item)
+			continue
+		}
+		out.Accepted++
+		item.OK = true
+		item.Job = &result.Job
+		item.Resolved = &result.Resolved
+		item.BrowserRequired = result.BrowserRequired
+		item.Duplicate = result.Duplicate
+		if result.BrowserRequired {
+			out.BrowserRequired++
+		}
+		out.Items = append(out.Items, item)
+	}
+	s.logger.Info("bulk captured install completed", "count", out.Total, "accepted", out.Accepted, "failed", out.Failed, "browser_required", out.BrowserRequired, "source", source, "app_id", req.SteamAppID)
+	writeJSON(w, http.StatusAccepted, out)
+}
+
+func capturedInstallBulkURLs(req capturedInstallBulkRequest) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(req.URLs))
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, url := range req.URLs {
+		add(url)
+	}
+	for _, line := range strings.Split(req.Text, "\n") {
+		for _, segment := range strings.Split(line, ",") {
+			for _, field := range strings.Fields(segment) {
+				add(field)
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 	var req capturedInstallURLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	req.URL = strings.TrimSpace(req.URL)
-	if req.URL == "" {
-		http.Error(w, "url is required", http.StatusBadRequest)
+	result, err := s.createCapturedInstall(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	resolved, err := s.resolveCatalogURL(r.Context(), catalog.ResolveRequest{
+	writeJSON(w, http.StatusAccepted, result)
+}
+
+func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallURLRequest) (capturedInstallResponse, error) {
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return capturedInstallResponse{}, errors.New("url is required")
+	}
+	resolved, err := s.resolveCatalogURL(ctx, catalog.ResolveRequest{
 		URL:        req.URL,
 		SteamAppID: req.SteamAppID,
 		Source:     req.Source,
 	})
 	if err != nil {
 		s.logger.Warn("captured install parse failed", "error", err, "source", req.Source)
-		writeError(w, http.StatusBadRequest, err)
-		return
+		return capturedInstallResponse{}, err
 	}
 	if req.ProfileID > 0 {
 		appID := s.appIDForResolved(resolved)
-		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
+		if err := s.validateTargetProfile(ctx, appID, req.ProfileID); err != nil {
+			return capturedInstallResponse{}, err
 		}
 	}
 	source := strings.TrimSpace(req.Source)
@@ -6402,41 +6530,41 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("captured install duplicate target profile updated", "job_id", job.ID, "target_profile_id", req.ProfileID)
 		}
 		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
-		payload := map[string]any{
-			"job":               jobAPIResponse(job),
-			"resolved":          pending.Resolved,
-			"source":            pending.Source,
-			"target_profile_id": pending.TargetProfileID,
+		resp := capturedInstallResponse{
+			Job:             jobAPIResponse(job),
+			Resolved:        pending.Resolved,
+			Source:          pending.Source,
+			TargetProfileID: pending.TargetProfileID,
+			Duplicate:       true,
 		}
 		if len(pending.DownloadLinks) > 0 {
-			payload["download_links"] = pending.DownloadLinks
+			resp.DownloadLinks = pending.DownloadLinks
 		}
 		if pending.ArchiveFileName != "" {
-			payload["archive_file_name"] = pending.ArchiveFileName
+			resp.ArchiveFileName = pending.ArchiveFileName
 		}
-		writeJSON(w, http.StatusAccepted, payload)
-		return
+		return resp, nil
 	}
 
 	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayloadForTarget(s.games, resolved, req.ProfileID))
-	payload := map[string]any{
-		"job":      jobAPIResponse(job),
-		"resolved": resolved,
-		"source":   source,
+	resp := capturedInstallResponse{
+		Job:             jobAPIResponse(job),
+		Resolved:        resolved,
+		Source:          source,
+		TargetProfileID: req.ProfileID,
 	}
 	if resolved.Catalog != "nexus" {
 		if len(resolved.DownloadLinks) == 0 {
 			job, _ = s.jobs.Fail(job.ID, "catalog "+resolved.Catalog+" did not return a downloadable archive")
-			payload["job"] = jobAPIResponse(job)
-			writeJSON(w, http.StatusAccepted, payload)
-			return
+			resp.Job = jobAPIResponse(job)
+			return resp, nil
 		}
 		if resolved.FileName != "" {
-			payload["archive_file_name"] = resolved.FileName
+			resp.ArchiveFileName = resolved.FileName
 		}
-		payload["download_links"] = resolved.DownloadLinks
+		resp.DownloadLinks = resolved.DownloadLinks
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
-		payload["job"] = jobAPIResponse(job)
+		resp.Job = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:        resolved,
 			DownloadLinks:   resolved.DownloadLinks,
@@ -6451,14 +6579,13 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "catalog", resolved.Catalog, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = jobAPIResponse(job)
+			resp.Job = jobAPIResponse(job)
 		} else {
-			payload["job"] = jobAPIResponse(started)
-			payload["download_started"] = true
-			payload["auto_install"] = autoInstall
+			resp.Job = jobAPIResponse(started)
+			resp.DownloadStarted = true
+			resp.AutoInstall = autoInstall
 		}
-		writeJSON(w, http.StatusAccepted, payload)
-		return
+		return resp, nil
 	}
 	s.cfgMu.RLock()
 	apiKey := s.cfg.Nexus.APIKey
@@ -6470,8 +6597,8 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			FileID:     resolved.FileID,
 		}).Error()
 		job, _ = s.jobs.Fail(job.ID, message)
-		payload["job"] = jobAPIResponse(job)
-		payload["browser_required"] = true
+		resp.Job = jobAPIResponse(job)
+		resp.BrowserRequired = true
 		s.logger.Info(
 			"captured nexus install requires browser-generated link",
 			"job_id", job.ID,
@@ -6480,25 +6607,23 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 			"mod_id", resolved.ModID,
 			"file_id", resolved.FileID,
 		)
-		writeJSON(w, http.StatusAccepted, payload)
-		return
+		return resp, nil
 	}
 	if apiKey != "" {
 		client := s.nexus(apiKey)
-		links, err := client.DownloadLinks(r.Context(), resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
+		links, err := client.DownloadLinks(ctx, resolved.GameDomain, resolved.ModID, resolved.FileID, resolved.NXMKey, resolved.Expires)
 		if err != nil {
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = jobAPIResponse(job)
-			writeJSON(w, http.StatusAccepted, payload)
-			return
+			resp.Job = jobAPIResponse(job)
+			return resp, nil
 		}
-		archiveFileName := s.nexusArchiveFileName(r.Context(), client, resolved)
-		payload["download_links"] = links
+		archiveFileName := s.nexusArchiveFileName(ctx, client, resolved)
+		resp.DownloadLinks = links
 		if archiveFileName != "" {
-			payload["archive_file_name"] = archiveFileName
+			resp.ArchiveFileName = archiveFileName
 		}
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
-		payload["job"] = jobAPIResponse(job)
+		resp.Job = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
 			Resolved:        resolved,
 			DownloadLinks:   links,
@@ -6513,23 +6638,22 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.logger.Warn("captured install immediate download failed", "job_id", job.ID, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
-			payload["job"] = jobAPIResponse(job)
+			resp.Job = jobAPIResponse(job)
 		} else {
-			payload["job"] = jobAPIResponse(started)
-			payload["download_started"] = true
-			payload["auto_install"] = autoInstall
+			resp.Job = jobAPIResponse(started)
+			resp.DownloadStarted = true
+			resp.AutoInstall = autoInstall
 		}
-		writeJSON(w, http.StatusAccepted, payload)
-		return
+		return resp, nil
 	}
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
-	payload["job"] = jobAPIResponse(job)
+	resp.Job = jobAPIResponse(job)
 	s.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved:        resolved,
 		Source:          source,
 		TargetProfileID: req.ProfileID,
 	})
-	writeJSON(w, http.StatusAccepted, payload)
+	return resp, nil
 }
 
 func (s *Server) nexusArchiveFileName(ctx context.Context, client nexusClient, resolved catalog.ResolvedDownload) string {

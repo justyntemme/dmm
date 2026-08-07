@@ -355,6 +355,31 @@
     reason: string;
   };
 
+  type BulkCapturedInstallItem = {
+    index: number;
+    url: string;
+    ok: boolean;
+    error?: string;
+    job?: Job;
+    resolved?: {
+      catalog: string;
+      game_domain?: string;
+      steam_app_id?: string;
+      mod_id?: string;
+      file_id?: string;
+    };
+    browser_required?: boolean;
+    duplicate?: boolean;
+  };
+
+  type BulkCapturedInstallResult = {
+    total: number;
+    accepted: number;
+    failed: number;
+    browser_required: number;
+    items: BulkCapturedInstallItem[];
+  };
+
   type PluginLoadOrder = {
     app_id: string;
     supported: boolean;
@@ -480,6 +505,7 @@
   let copyProfileFromActive = false;
   let captureURL = "";
   let resolvedCapture = "";
+  let bulkCaptureMessage = "";
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "downloads";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
@@ -1039,6 +1065,7 @@
     activeGameModule = "plugins";
     drawer = null;
     resolvedCapture = "";
+    bulkCaptureMessage = "";
     nexusSearchResults = [];
     nexusSearchTotal = 0;
     nexusSearchError = "";
@@ -1622,6 +1649,25 @@
     }
   }
 
+  function captureInputURLs(value: string) {
+    const seen = new Set<string>();
+    const urls: string[] = [];
+    const add = (candidate: string) => {
+      const url = candidate.trim();
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      urls.push(url);
+    };
+    for (const line of value.split(/\n/)) {
+      for (const segment of line.split(",")) {
+        for (const field of segment.trim().split(/\s+/)) {
+          add(field);
+        }
+      }
+    }
+    return urls;
+  }
+
   function askRemoveInstalledMod(mod: InstalledMod) {
     confirmation = {
       title: "Remove profile mod",
@@ -1635,6 +1681,7 @@
 
   async function captureInstallURL(url: string, profileID: number, reason = "captured-install") {
     if (!selectedGame) return null;
+    bulkCaptureMessage = "";
     const response = await fetch("/api/captured-installs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1652,10 +1699,60 @@
     return result;
   }
 
+  async function captureBulkInstallURLs(urls: string[], profileID: number) {
+    if (!selectedGame || urls.length === 0) return;
+    bulkCaptureMessage = "";
+    const response = await fetch("/api/captured-installs/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        urls,
+        steam_app_id: selectedGame.app_id,
+        profile_id: profileID,
+        source: "web-bulk-capture"
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const result: BulkCapturedInstallResult = await response.json();
+    for (const item of result.items ?? []) {
+      if (item.job) upsertJob(item.job);
+    }
+    const failed = (result.items ?? []).filter((item) => !item.ok);
+    const browserRequired = result.browser_required ?? 0;
+    const duplicateCount = (result.items ?? []).filter((item) => item.duplicate).length;
+    const parts = [`${result.accepted} of ${result.total} links added`];
+    if (duplicateCount > 0) parts.push(`${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"} reused`);
+    if (browserRequired > 0) parts.push(`${browserRequired} need the Deck browser`);
+    if (result.failed > 0) parts.push(`${result.failed} failed`);
+    bulkCaptureMessage = parts.join(" · ");
+    if (failed.length > 0) {
+      captureURL = failed.map((item) => item.url).join("\n");
+      error = failed.slice(0, 3).map((item) => item.error || `${item.url} failed`).join("\n");
+    } else {
+      captureURL = "";
+      if (browserRequired > 0) {
+        error = "Some Nexus links require the Deck browser flow. Open those mod pages from DMM, then click Nexus Mod Manager Download on the Nexus page.";
+      }
+    }
+    await refreshJobsAndSelectedGame("captured-install-bulk", true);
+  }
+
   async function resolveCapturedInstall() {
     if (!selectedGame || !captureURL.trim()) return;
     error = "";
-    const requestedURL = captureURL;
+    bulkCaptureMessage = "";
+    const requestedURLs = captureInputURLs(captureURL);
+    if (requestedURLs.length > 1) {
+      try {
+        await captureBulkInstallURLs(requestedURLs, selectedInstallProfileID());
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err);
+      }
+      return;
+    }
+    const requestedURL = requestedURLs[0] ?? captureURL;
     const targetProfileID = selectedInstallProfileID();
     try {
       const response = await fetch("/api/captured-installs/resolve", {
@@ -3497,8 +3594,8 @@
                 </label>
               {/if}
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Nexus, nxm://, Thunderstore, GitHub, Modrinth, GameBanana, mod.io, CurseForge, or direct archive URL"></textarea>
-                <button type="submit">Add URL</button>
+                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Paste one link, or one link per line for bulk import. Supports Nexus, nxm://, Thunderstore, GitHub, Modrinth, GameBanana, mod.io, CurseForge, or direct archive URLs."></textarea>
+                <button type="submit">Add URL(s)</button>
               </form>
               <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
                 <label class="local-archive-picker">
@@ -3562,6 +3659,9 @@
               {/if}
               {#if resolvedCapture}
                 <p class="hint">Resolved {resolvedCapture}</p>
+              {/if}
+              {#if bulkCaptureMessage}
+                <p class="hint success-copy">{bulkCaptureMessage}</p>
               {/if}
             </div>
           </section>
