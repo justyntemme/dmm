@@ -1427,6 +1427,15 @@ function nexusBrowserCredentialRequired(message: string | undefined) {
   return normalized.includes("browser-generated") || normalized.includes("mod manager download") || normalized.includes("without visiting nexusmods.com");
 }
 
+function isHTTPProviderPage(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 async function captureNXMFromDMMBrowser(rawURL: string, appID: string, profileID: number, source: string) {
   const url = rawURL.trim();
   await logFrontendEvent("dmm browser nxm capture requested", {
@@ -4242,9 +4251,10 @@ function DeckyModManagerRoute() {
     try {
       setError("");
       setImportResult("");
-      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job } }>(
+      const requestedURL = importUrl.trim();
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean; resolved?: { source_url?: string } } }>(
         "add_captured_install",
-        importUrl,
+        requestedURL,
         selectedDeckyGameID ?? "",
         selectedProfile?.id ?? 0
       );
@@ -4252,8 +4262,24 @@ function DeckyModManagerRoute() {
         setError(result.error ?? "Unable to capture mod link.");
         return;
       }
-      setImportUrl("");
       const job = result.result?.job;
+      if (result.result?.browser_required && isHTTPProviderPage(requestedURL)) {
+        const opened = await openDMMBrowserViewCapture(result.result.resolved?.source_url || requestedURL, {
+          appID: selectedDeckyGameID ?? "",
+          profileID: selectedProfile?.id ?? 0,
+          source: "decky-paste-browser-required",
+          title: `${selectedDeckyGame?.name ?? "DMM"} - Nexus Mods`
+        });
+        if (!opened) {
+          setError("DMM could not open the controlled Nexus browser. Check Debug Live Logs.");
+          return;
+        }
+        setImportUrl("");
+        setImportResult("Opened the Nexus page. Click Mod Manager Download there to add it to DMM.");
+        if (job) showJobToast(job as Job);
+        return;
+      }
+      setImportUrl("");
       setImportResult(job?.message || job?.title || "Mod link captured.");
       if (job) {
         const stateKey = `${job.status}:${job.message || ""}`;

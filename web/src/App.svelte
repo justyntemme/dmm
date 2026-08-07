@@ -1649,6 +1649,33 @@
     }
   }
 
+  async function openProviderPageOnDeck(url: string, source: string, title: string) {
+    if (!selectedGame) return;
+    const response = await fetch("/api/decky/browser/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        steam_app_id: selectedGame.app_id,
+        profile_id: selectedInstallProfileID(),
+        source,
+        title
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  }
+
+  function isHTTPProviderPage(value: string) {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
   function handleProfileApplyResult(result: ProfileApplyResult | null | undefined) {
     if (!result) return;
     if (result.job) upsertJob(result.job);
@@ -1776,8 +1803,11 @@
       const result = await response.json();
       upsertJob(result.job);
       resolvedCapture = `${result.resolved.catalog}:${result.resolved.game_domain || result.resolved.steam_app_id}/mods/${result.resolved.mod_id}${result.resolved.file_id ? `/files/${result.resolved.file_id}` : ""}`;
-      if (result.resolved?.catalog === "nexus" && !result.resolved?.nxm_key) {
-        error = "Nexus installs require the Deck browser flow. Open the Nexus page from DMM, then click Nexus Mod Manager Download on that page.";
+      if (result.browser_required && isHTTPProviderPage(requestedURL)) {
+        await openProviderPageOnDeck(requestedURL, "web-paste-browser-required", "DMM Nexus Download");
+        bulkCaptureMessage = "Opening this page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM.";
+      } else if (result.resolved?.catalog === "nexus" && !result.resolved?.nxm_key) {
+        error = "Nexus installs require the Deck browser flow. Open this mod from DMM, then click Nexus Mod Manager Download on the Nexus page.";
       } else if (result.resolved?.file_id || (result.download_links ?? []).length > 0) {
         await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
         captureURL = "";
