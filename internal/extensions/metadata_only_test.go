@@ -24,6 +24,7 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 		{appID: "242680", id: "nuclearthrone", url: "https://www.moddb.com/games/nuclear-throne/mods"},
 		{appID: "218230", id: "planetside2", url: "https://www.moddb.com/games/planetside-2/addons"},
 		{appID: "1216320", id: "shieldwall", url: "https://www.moddb.com/games/shieldwall/mods"},
+		{appID: "202170", id: "sleepingdogs", url: "https://www.moddb.com/games/sleeping-dogs/mods"},
 		{appID: "455910", id: "starwarsroguesquadron", url: "https://www.moddb.com/games/star-wars-rogue-squadron/mods"},
 	}
 	for _, tt := range tests {

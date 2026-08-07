@@ -17,7 +17,7 @@ import (
 const defaultBaseURL = "https://thunderstore.io"
 
 var (
-	legacyPackagePath    = regexp.MustCompile(`^/package/([^/]+)/([^/]+)(?:/([^/]+))?/?$`)
+	classicPackagePath   = regexp.MustCompile(`^/package/([^/]+)/([^/]+)(?:/([^/]+))?/?$`)
 	communityPackagePath = regexp.MustCompile(`^/c/([^/]+)/p/([^/]+)/([^/]+)(?:/v/([^/]+))?/?$`)
 	thunderstorePart     = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	steamAppIDPattern    = regexp.MustCompile(`^[0-9]+$`)
@@ -180,7 +180,7 @@ func parseURL(raw string) (packageRef, error) {
 			Version:   unescapePathPart(matches[4]),
 		})
 	}
-	if matches := legacyPackagePath.FindStringSubmatch(u.EscapedPath()); len(matches) == 4 {
+	if matches := classicPackagePath.FindStringSubmatch(u.EscapedPath()); len(matches) == 4 {
 		return validateRef(packageRef{
 			Namespace: unescapePathPart(matches[1]),
 			Name:      unescapePathPart(matches[2]),
