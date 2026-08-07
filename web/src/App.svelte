@@ -3102,7 +3102,7 @@
 
   function candidateStatusLabel(candidate: InstallCandidate) {
     if (candidate.status === "needs_choices") return "Needs choices";
-    if (candidate.status === "blocked") return "Blocked";
+    if (candidate.status === "blocked") return "Needs review";
     return candidate.status;
   }
 
@@ -3328,12 +3328,12 @@
           </div>
         {/if}
         {#if visibleActionCenterCandidates.length > 0}
-          <section class="blocked-candidates" aria-label="Installer items">
+          <section class="blocked-candidates" aria-label="Install review items">
             <div class="panel-heading compact-heading">
-              <h3>Installer Items</h3>
+              <h3>Install Review</h3>
               <span>{visibleActionCenterCandidates.length}</span>
             </div>
-            <p class="hint">These downloaded archives need installer choices or review before they can be added to a profile.</p>
+            <p class="hint">These downloaded archives need choices or review before they can be added to a profile.</p>
             <div class="action-list">
               {#each visibleActionCenterCandidates as candidate}
                 {@const candidateGame = gameForInstallCandidate(candidate)}
@@ -4100,7 +4100,7 @@
         <article class="workspace-panel">
           <div class="panel-heading">
             <h2>Action Center</h2>
-            <span>{selectedGameActionItems.length} open · {installCandidates.length} installers</span>
+            <span>{selectedGameActionItems.length} open · {installCandidates.length} review</span>
           </div>
           {#if selectedGameCapturedInstallActions.length > 0}
             <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
@@ -4163,9 +4163,9 @@
             </div>
           {/if}
           {#if installCandidates.length > 0}
-            <section class="blocked-candidates" aria-label="Blocked install candidates">
+            <section class="blocked-candidates" aria-label="Install review items">
               <div class="panel-heading compact-heading">
-                <h3>Installer Choices</h3>
+                <h3>Install Review</h3>
                 <span>{installCandidates.length}</span>
               </div>
               <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Items</button>

@@ -4809,7 +4809,7 @@ function DeckyModManagerRoute() {
                         <span style={deckySourcePillStyle(sourceForInstallCandidate(candidate))}>{sourceLabel(sourceForInstallCandidate(candidate))}</span>
                       </div>
                       <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
-                        {candidate.status === "blocked" ? "Blocked installer" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}
+                        {candidate.status === "blocked" ? "Needs review" : "Installer choices"} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}
                       </div>
                       {candidate.reason && (
                         <div style={{ color: candidate.status === "blocked" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
