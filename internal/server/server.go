@@ -3438,11 +3438,17 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		"file_url": resolved.SourceURL,
 	}
 	if err != nil {
+		if download.BrowserRequired {
+			message := "Open the Nexus mod page in DMM's controlled browser, then click Mod Manager Download to capture this update."
+			job, _ = s.jobs.Complete(job.ID, message)
+			response["job"] = jobAPIResponse(job)
+			response["browser_required"] = true
+			s.logger.Info("mod update requires browser-generated download link", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+			writeJSON(w, http.StatusAccepted, response)
+			return
+		}
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		response["job"] = jobAPIResponse(job)
-		if download.BrowserRequired {
-			response["browser_required"] = true
-		}
 		s.logger.Warn("mod update download link resolve failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "error", err)
 		writeJSON(w, http.StatusAccepted, response)
 		return

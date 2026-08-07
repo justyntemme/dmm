@@ -1466,10 +1466,10 @@ func TestUpdateGameModReportsBrowserRequiredWhenNexusRejectsDirectLinks(t *testi
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Job.Status != jobs.StatusFailed || !body.BrowserRequired {
+	if body.Job.Status != jobs.StatusCompleted || !body.BrowserRequired {
 		t.Fatalf("body = %+v", body)
 	}
-	if !strings.Contains(body.Job.Message, "browser-generated") {
+	if !strings.Contains(body.Job.Message, "Mod Manager Download") {
 		t.Fatalf("job message = %q", body.Job.Message)
 	}
 	if body.FileURL != "https://www.nexusmods.com/stardewvalley/mods/239?file_id=101" {
