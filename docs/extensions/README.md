@@ -35,6 +35,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Civilization VII](games/civilization-vii.md)
 - [Portal 2](games/portal-2.md)
 - [Project Zomboid](games/project-zomboid.md)
+- [Star Wars Jedi: Survivor](games/star-wars-jedi-survivor.md)
 - [Stellaris](games/stellaris.md)
 
 ## Research Rule

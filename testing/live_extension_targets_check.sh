@@ -63,6 +63,7 @@ required_extensions = {
     "civilizationvii": "1295660",
     "portal2": "620",
     "projectzomboid": "108600",
+    "starwarsjedisurvivor": "1774580",
 }
 for extension_id, app_id in required_extensions.items():
     summary = extensions_by_id.get(extension_id)
@@ -78,6 +79,13 @@ if "projectzomboid" not in [str(item) for item in zomboid.get("nexus_domains", [
 zomboid_caps = zomboid.get("capabilities") or {}
 if not zomboid_caps.get("target_roots") or not zomboid_caps.get("installers"):
     failures.append(f"Project Zomboid archive capabilities missing: {zomboid_caps}")
+
+jedi = extensions_by_id.get("starwarsjedisurvivor") or {}
+if "starwarsjedisurvivor" not in [str(item) for item in jedi.get("nexus_domains", [])]:
+    failures.append(f"Jedi Survivor missing Nexus domain: {jedi.get('nexus_domains')}")
+jedi_caps = jedi.get("capabilities") or {}
+if not jedi_caps.get("installers") or not jedi_caps.get("load_orders") or not jedi_caps.get("event_handlers"):
+    failures.append(f"Jedi Survivor capabilities missing: {jedi_caps}")
 
 if failures:
     print("extension target check failed:")
