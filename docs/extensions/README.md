@@ -30,6 +30,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Kenshi](games/kenshi.md)
 - [RimWorld](games/rimworld.md)
 - [Halo: The Master Chief Collection](games/halo-master-chief-collection.md)
+- [Metal Gear Solid 2 Master Collection](games/metal-gear-solid-2-master-collection.md)
 - [Spyro Reignited Trilogy](games/spyro-reignited-trilogy.md)
 - [X4: Foundations](games/x4-foundations.md)
 - [Civilization VII](games/civilization-vii.md)

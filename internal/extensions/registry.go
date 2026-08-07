@@ -6,6 +6,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolid2mc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
@@ -31,6 +32,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
 		gameext.MustCompileExtension(masterchiefcollection.Extension()),
+		gameext.MustCompileExtension(metalgearsolid2mc.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
