@@ -212,10 +212,15 @@ func (r Registry) BuildInstallPlan(gameID, extractedRoot string) (installplan.Pl
 }
 
 func (r Registry) BuildInstallPlanWithGamePath(gameID, extractedRoot, gamePath string) (installplan.Plan, error) {
+	return r.BuildInstallPlanWithGamePathAndSelections(gameID, extractedRoot, gamePath, nil)
+}
+
+func (r Registry) BuildInstallPlanWithGamePathAndSelections(gameID, extractedRoot, gamePath string, selections map[string][]string) (installplan.Plan, error) {
 	options := installplan.BuildOptions{}
 	if platform, ok := r.InstallPlatformForSteamApp(gameID, gamePath); ok {
 		options.PlatformID = platform.ID
 	}
+	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
 }
 
@@ -532,6 +537,21 @@ func (r Registry) RequireSteamApp(appID string) (Extension, error) {
 
 func canonical(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func cloneSelections(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(values))
+	for key, selection := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = append([]string(nil), selection...)
+	}
+	return out
 }
 
 func launchToolApplies(tool LaunchToolSpec, mods []gamehandler.RuntimeMod) bool {

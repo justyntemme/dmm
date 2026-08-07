@@ -83,6 +83,7 @@ type Registry struct {
 
 type BuildOptions struct {
 	PlatformID string
+	Selections map[string][]string
 }
 
 type GameSpec struct {
@@ -133,9 +134,84 @@ type BuildInput struct {
 	Installer     InstallerSpec
 	TargetRoot    string
 	TargetRootID  string
+	Selections    map[string][]string
 }
 
 type CustomBuildFunc func(BuildInput) (Plan, error)
+
+type ChoiceInstaller struct {
+	Kind  string       `json:"kind,omitempty"`
+	Name  string       `json:"name"`
+	Steps []ChoiceStep `json:"steps,omitempty"`
+}
+
+type ChoiceStep struct {
+	ID      string        `json:"id"`
+	Name    string        `json:"name"`
+	Visible *bool         `json:"visible,omitempty"`
+	Groups  []ChoiceGroup `json:"groups,omitempty"`
+}
+
+type ChoiceGroup struct {
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Plugins []ChoiceOption `json:"plugins,omitempty"`
+}
+
+type ChoiceOption struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	Type          string `json:"type,omitempty"`
+	EffectiveType string `json:"effective_type,omitempty"`
+}
+
+type ChoiceRequiredError struct {
+	Kind              string
+	Reason            string
+	Installer         ChoiceInstaller
+	DefaultSelections map[string][]string
+}
+
+func (e ChoiceRequiredError) Error() string {
+	if strings.TrimSpace(e.Reason) != "" {
+		return e.Reason
+	}
+	if strings.TrimSpace(e.Kind) != "" {
+		return e.Kind + " installer choices are required"
+	}
+	return "installer choices are required"
+}
+
+func ChoiceRequired(kind, reason string, installer ChoiceInstaller, defaults map[string][]string) error {
+	kind = strings.TrimSpace(kind)
+	installer.Kind = firstNonEmpty([]string{strings.TrimSpace(installer.Kind), kind}, kind)
+	if strings.TrimSpace(installer.Name) == "" {
+		installer.Name = "Installer Choices"
+	}
+	return ChoiceRequiredError{
+		Kind:              kind,
+		Reason:            strings.TrimSpace(reason),
+		Installer:         installer,
+		DefaultSelections: cloneSelections(defaults),
+	}
+}
+
+func cloneSelections(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(values))
+	for key, selection := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = append([]string(nil), selection...)
+	}
+	return out
+}
 
 type MatchSpec struct {
 	ManifestFileName      string
@@ -296,9 +372,13 @@ func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (P
 		if !matchesInstaller(extractedRoot, installer) {
 			continue
 		}
-		plan, err := buildWithInstaller(spec, installer, extractedRoot)
+		plan, err := buildWithInstaller(spec, installer, extractedRoot, options)
 		if err == nil {
 			return plan, nil
+		}
+		var choice ChoiceRequiredError
+		if errors.As(err, &choice) {
+			return Plan{}, err
 		}
 		if reason := strings.TrimSpace(installer.UnsupportedReason); reason != "" {
 			return Plan{}, Unsupported(reason)
@@ -313,7 +393,7 @@ func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (P
 	return Plan{}, Unsupported("no Vortex installer metadata matched this archive")
 }
 
-func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot string) (Plan, error) {
+func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot string, options BuildOptions) (Plan, error) {
 	if installer.InstructionMode == InstructionUnsupported {
 		return Plan{}, Unsupported(installer.UnsupportedReason)
 	}
@@ -346,6 +426,7 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 			Installer:     installer,
 			TargetRoot:    installer.TargetRoot,
 			TargetRootID:  installer.TargetRootID,
+			Selections:    cloneSelections(options.Selections),
 		})
 	default:
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " uses an unsupported instruction mode")

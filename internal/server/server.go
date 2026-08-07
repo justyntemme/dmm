@@ -110,15 +110,46 @@ const (
 )
 
 type installerChoiceRequiredError struct {
-	Kind      string
-	Installer fomod.Installer
+	Kind          string
+	Reason        string
+	Installer     fomod.Installer
+	InstallerJSON string
+	ChoicesJSON   string
 }
 
 func (e installerChoiceRequiredError) Error() string {
+	if strings.TrimSpace(e.Reason) != "" {
+		return e.Reason
+	}
 	if strings.TrimSpace(e.Kind) == "" {
 		return "installer choices are required"
 	}
 	return e.Kind + " installer choices are required"
+}
+
+func installerChoiceFromPlanError(err error) (installerChoiceRequiredError, bool) {
+	var choice installplan.ChoiceRequiredError
+	if !errors.As(err, &choice) {
+		return installerChoiceRequiredError{}, false
+	}
+	installerJSON, marshalErr := json.Marshal(choice.Installer)
+	if marshalErr != nil {
+		return installerChoiceRequiredError{}, false
+	}
+	choices := choice.DefaultSelections
+	if choices == nil {
+		choices = map[string][]string{}
+	}
+	choicesJSON, marshalErr := json.Marshal(choices)
+	if marshalErr != nil {
+		return installerChoiceRequiredError{}, false
+	}
+	return installerChoiceRequiredError{
+		Kind:          strings.TrimSpace(choice.Kind),
+		Reason:        choice.Error(),
+		InstallerJSON: string(installerJSON),
+		ChoicesJSON:   string(choicesJSON),
+	}, true
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -3635,7 +3666,7 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		s.logger.Warn("installed mod reinstall failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", err)
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
-			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, job.ID, pending.Resolved, choice.Kind, choice.Installer)
+			installerJSON, choicesJSON := s.installerChoiceStateForRequired(context.Background(), appID, job.ID, pending.Resolved, choice)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:      appID,
 				Resolved:        pending.Resolved,
@@ -3852,7 +3883,12 @@ func (s *Server) handleSaveInstallCandidateChoices(w http.ResponseWriter, r *htt
 		return
 	}
 	installerJSON := candidate.InstallerJSON
-	if installer, ok := fomodInstallerFromCandidate(candidate); ok {
+	if candidateInstallerKind(candidate) == "fomod" {
+		installer, ok := fomodInstallerFromCandidate(candidate)
+		if !ok {
+			writeError(w, http.StatusBadRequest, errors.New("stored FOMOD installer choices could not be parsed"))
+			return
+		}
 		installerJSON = s.evaluatedInstallerJSON(r.Context(), appID, "", installer, req.Selections)
 	}
 	candidate, err = s.db.SaveInstallCandidateChoicesAndInstaller(r.Context(), appID, candidateID, string(choicesJSON), installerJSON)
@@ -3988,11 +4024,42 @@ func fomodInstallerFromCandidate(candidate storage.InstallCandidate) (fomod.Inst
 	return installer, true
 }
 
+func candidateInstallerKind(candidate storage.InstallCandidate) string {
+	raw := strings.TrimSpace(candidate.InstallerJSON)
+	if raw == "" {
+		return ""
+	}
+	var envelope struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err == nil && strings.TrimSpace(envelope.Kind) != "" {
+		return strings.ToLower(strings.TrimSpace(envelope.Kind))
+	}
+	if _, ok := fomodInstallerFromCandidate(candidate); ok {
+		return "fomod"
+	}
+	return ""
+}
+
 func (s *Server) installerChoiceStateForResolved(ctx context.Context, appID, jobID string, resolved catalog.ResolvedDownload, installerKind string, installer fomod.Installer) (string, string) {
 	if selections, preset, ok := s.installerChoicePresetSelections(ctx, appID, jobID, resolved, installerKind); ok {
 		return s.evaluatedInstallerJSON(ctx, appID, jobID, installer, selections), preset
 	}
 	return s.installerChoiceStateJSON(ctx, appID, jobID, installer, nil)
+}
+
+func (s *Server) installerChoiceStateForRequired(ctx context.Context, appID, jobID string, resolved catalog.ResolvedDownload, choice installerChoiceRequiredError) (string, string) {
+	if strings.TrimSpace(choice.InstallerJSON) != "" {
+		choicesJSON := strings.TrimSpace(choice.ChoicesJSON)
+		if choicesJSON == "" {
+			choicesJSON = "{}"
+		}
+		if _, preset, ok := s.installerChoicePresetSelections(ctx, appID, jobID, resolved, choice.Kind); ok {
+			choicesJSON = preset
+		}
+		return choice.InstallerJSON, choicesJSON
+	}
+	return s.installerChoiceStateForResolved(ctx, appID, jobID, resolved, choice.Kind, choice.Installer)
 }
 
 func (s *Server) installerChoicePresetSelections(ctx context.Context, appID, jobID string, resolved catalog.ResolvedDownload, installerKind string) (map[string][]string, string, bool) {
@@ -4160,15 +4227,15 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 	var choice installerChoiceRequiredError
 	if errors.As(err, &choice) {
 		choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
-		installerJSON := ""
+		installerJSON := strings.TrimSpace(candidate.InstallerJSON)
 		if choicesJSON == "" || choicesJSON == "{}" {
-			installerJSON, choicesJSON = s.installerChoiceStateForResolved(ctx, candidate.SteamAppID, jobID, pending.Resolved, choice.Kind, choice.Installer)
+			installerJSON, choicesJSON = s.installerChoiceStateForRequired(ctx, candidate.SteamAppID, jobID, pending.Resolved, choice)
 		}
 		var selections map[string][]string
 		if err := json.Unmarshal([]byte(choicesJSON), &selections); err != nil {
 			selections = nil
 		}
-		if installerJSON == "" {
+		if installerJSON == "" && strings.TrimSpace(choice.InstallerJSON) == "" {
 			installerJSON = s.evaluatedInstallerJSON(ctx, candidate.SteamAppID, jobID, choice.Installer, selections)
 		}
 		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
@@ -4325,20 +4392,6 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	if inspection.InstallerKind != "fomod" {
-		return storage.InstalledMod{}, errors.New("only FOMOD installer candidates are supported")
-	}
-	var installer fomod.Installer
-	if strings.TrimSpace(candidate.InstallerJSON) != "" {
-		if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
-			return storage.InstalledMod{}, err
-		}
-	} else {
-		installer, err = fomod.Parse(extractPath)
-		if err != nil {
-			return storage.InstalledMod{}, err
-		}
-	}
 	resolved := catalog.ResolvedDownload{
 		Catalog:    candidate.Catalog,
 		SourceURL:  candidate.ArchivePath,
@@ -4346,23 +4399,104 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 		ModID:      candidate.SourceModID,
 		FileID:     candidate.SourceFileID,
 	}
-	return s.stageFOMODInstaller(ctx, fomodStageRequest{
+	installerKind := candidateInstallerKind(candidate)
+	if installerKind == "" && inspection.InstallerKind == "fomod" {
+		installerKind = "fomod"
+	}
+	if installerKind == "fomod" {
+		var installer fomod.Installer
+		if strings.TrimSpace(candidate.InstallerJSON) != "" {
+			if err := json.Unmarshal([]byte(candidate.InstallerJSON), &installer); err != nil {
+				return storage.InstalledMod{}, err
+			}
+		} else {
+			installer, err = fomod.Parse(extractPath)
+			if err != nil {
+				return storage.InstalledMod{}, err
+			}
+		}
+		return s.stageFOMODInstaller(ctx, fomodStageRequest{
+			SteamAppID:            candidate.SteamAppID,
+			JobID:                 jobID,
+			CandidateID:           candidate.ID,
+			ExtractPath:           extractPath,
+			StagingPath:           stagingPath,
+			ArchivePath:           candidate.ArchivePath,
+			ArchiveSHA256:         candidate.ChecksumSHA256,
+			Resolved:              resolved,
+			Name:                  candidate.Name,
+			InstallerKind:         "fomod",
+			Installer:             installer,
+			ChoicesJSON:           candidate.ChoicesJSON,
+			Selections:            selections,
+			ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+			TargetProfileID:       targetProfileID,
+		})
+	}
+	if installerKind == "" {
+		return storage.InstalledMod{}, errors.New("installer candidate kind is missing")
+	}
+	game, err := s.db.GameBySteamApp(ctx, candidate.SteamAppID)
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	plan, err := s.games.BuildInstallPlanWithGamePathAndSelections(candidate.SteamAppID, extractPath, game.GamePath, selections)
+	if err != nil {
+		if choice, ok := installerChoiceFromPlanError(err); ok {
+			return storage.InstalledMod{}, choice
+		}
+		return storage.InstalledMod{}, err
+	}
+	staged, defaultEnabled, defaultEnabledReason, err := s.stageInstallPlan(installPlanStageRequest{
 		SteamAppID:            candidate.SteamAppID,
 		JobID:                 jobID,
-		CandidateID:           candidate.ID,
-		ExtractPath:           extractPath,
+		Plan:                  plan,
 		StagingPath:           stagingPath,
+		GamePath:              game.GamePath,
 		ArchivePath:           candidate.ArchivePath,
 		ArchiveSHA256:         candidate.ChecksumSHA256,
 		Resolved:              resolved,
-		Name:                  candidate.Name,
-		InstallerKind:         inspection.InstallerKind,
-		Installer:             installer,
-		ChoicesJSON:           candidate.ChoicesJSON,
-		Selections:            selections,
 		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
 		TargetProfileID:       targetProfileID,
 	})
+	if err != nil {
+		return storage.InstalledMod{}, err
+	}
+	choicesJSON := strings.TrimSpace(candidate.ChoicesJSON)
+	if choicesJSON == "" {
+		choicesJSON = "{}"
+	}
+	if selections != nil {
+		if body, err := json.Marshal(selections); err == nil {
+			choicesJSON = string(body)
+		} else {
+			s.logger.Warn("extension installer choice preset marshal failed", "job_id", jobID, "app_id", candidate.SteamAppID, "candidate_id", candidate.ID, "installer_kind", installerKind, "error", err)
+		}
+	}
+	if err := s.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    candidate.SteamAppID,
+		Resolved:      resolved,
+		InstallerKind: installerKind,
+		ChoicesJSON:   choicesJSON,
+	}); err != nil {
+		s.logger.Warn("extension installer choice preset save failed", "job_id", jobID, "app_id", candidate.SteamAppID, "candidate_id", candidate.ID, "installer_kind", installerKind, "error", err)
+	}
+	s.logger.Info(
+		"extension installer choice staged",
+		"job_id", jobID,
+		"app_id", candidate.SteamAppID,
+		"candidate_id", candidate.ID,
+		"installer_kind", installerKind,
+		"mod_type", plan.ModType,
+		"planner_id", plan.PlannerID,
+		"instructions", len(plan.Instructions),
+		"installed_mod_id", staged.ID,
+		"target_profile_id", targetProfileID,
+		"enabled", staged.Enabled,
+		"default_enabled", defaultEnabled,
+		"default_enabled_reason", defaultEnabledReason,
+	)
+	return staged, nil
 }
 
 func (s *Server) prepareFOMODWorkspace(ctx context.Context, jobID, extractPath string, inspection archive.Inspection) (string, archive.Inspection, error) {
@@ -6983,7 +7117,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
 			appID := s.appIDForPending(pending)
-			installerJSON, choicesJSON := s.installerChoiceStateForResolved(context.Background(), appID, jobID, pending.Resolved, choice.Kind, choice.Installer)
+			installerJSON, choicesJSON := s.installerChoiceStateForRequired(context.Background(), appID, jobID, pending.Resolved, choice)
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:            appID,
 				Resolved:              pending.Resolved,
@@ -7191,7 +7325,7 @@ func (s *Server) recoverDownloadedMods(ctx context.Context, jobID, appID string)
 			if _, err := s.stageCapturedInstall(ctx, jobID, pending, result); err != nil {
 				var choice installerChoiceRequiredError
 				if errors.As(err, &choice) {
-					installerJSON, choicesJSON := s.installerChoiceStateForResolved(ctx, appID, jobID, pending.Resolved, choice.Kind, choice.Installer)
+					installerJSON, choicesJSON := s.installerChoiceStateForRequired(ctx, appID, jobID, pending.Resolved, choice)
 					candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 						SteamAppID:    appID,
 						Resolved:      pending.Resolved,
@@ -7385,6 +7519,10 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	}
 	installPlan, err := s.games.BuildInstallPlanWithGamePath(appID, extractPath, game.GamePath)
 	if err != nil {
+		if choice, ok := installerChoiceFromPlanError(err); ok {
+			s.logger.Info("captured install requires extension installer choices", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind)
+			return storage.InstalledMod{}, choice
+		}
 		s.logger.Info("captured install has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
 		return storage.InstalledMod{}, err
 	}
@@ -7400,40 +7538,20 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		"detections", len(installPlan.DetectedFrom),
 		"instructions", len(installPlan.Instructions),
 	)
-	if err := applyInstallPlan(installPlan, stagingPath, game.GamePath); err != nil {
-		if cleanupErr := os.RemoveAll(stagingPath); cleanupErr != nil {
-			s.logger.Warn("failed install-plan staging cleanup failed", "job_id", jobID, "staging_path", stagingPath, "error", cleanupErr)
-		}
-		return storage.InstalledMod{}, err
-	}
-	manifest, err := stagedManifestJSONWithPlan(stagingPath, installPlan)
-	if err != nil {
-		return storage.InstalledMod{}, err
-	}
-	name := modNameFromStaging(archivePath, pending.Resolved, installPlan)
-	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(appID, installPlan.ModType)
-	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+	staged, defaultEnabled, defaultEnabledReason, err := s.stageInstallPlan(installPlanStageRequest{
 		SteamAppID:            appID,
-		Resolved:              pending.Resolved,
-		Name:                  name,
-		Version:               pending.Resolved.FileID,
+		JobID:                 jobID,
+		Plan:                  installPlan,
+		StagingPath:           stagingPath,
+		GamePath:              game.GamePath,
 		ArchivePath:           archivePath,
 		ArchiveSHA256:         result.SHA256,
-		StagingPath:           stagingPath,
-		ManifestJSON:          manifest,
-		DefaultEnabled:        &defaultEnabled,
+		Resolved:              pending.Resolved,
 		ReplaceInstalledModID: pending.ReplaceInstalledModID,
 		TargetProfileID:       pending.TargetProfileID,
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
-	}
-	if defaultEnabled && !staged.Enabled {
-		enabled := true
-		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
-		if err != nil {
-			return storage.InstalledMod{}, err
-		}
 	}
 	s.logger.Info(
 		"captured install staged",
@@ -7453,6 +7571,58 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
+}
+
+type installPlanStageRequest struct {
+	SteamAppID            string
+	JobID                 string
+	Plan                  installplan.Plan
+	StagingPath           string
+	GamePath              string
+	ArchivePath           string
+	ArchiveSHA256         string
+	Resolved              catalog.ResolvedDownload
+	ReplaceInstalledModID int64
+	TargetProfileID       int64
+}
+
+func (s *Server) stageInstallPlan(req installPlanStageRequest) (storage.InstalledMod, bool, string, error) {
+	if err := applyInstallPlan(req.Plan, req.StagingPath, req.GamePath); err != nil {
+		if cleanupErr := os.RemoveAll(req.StagingPath); cleanupErr != nil {
+			s.logger.Warn("failed install-plan staging cleanup failed", "job_id", req.JobID, "staging_path", req.StagingPath, "error", cleanupErr)
+		}
+		return storage.InstalledMod{}, false, "", err
+	}
+	manifest, err := stagedManifestJSONWithPlan(req.StagingPath, req.Plan)
+	if err != nil {
+		return storage.InstalledMod{}, false, "", err
+	}
+	name := modNameFromStaging(req.ArchivePath, req.Resolved, req.Plan)
+	defaultEnabled, defaultEnabledReason := s.defaultEnableInstalledMod(req.SteamAppID, req.Plan.ModType)
+	staged, err := s.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:            req.SteamAppID,
+		Resolved:              req.Resolved,
+		Name:                  name,
+		Version:               req.Resolved.FileID,
+		ArchivePath:           req.ArchivePath,
+		ArchiveSHA256:         req.ArchiveSHA256,
+		StagingPath:           req.StagingPath,
+		ManifestJSON:          manifest,
+		DefaultEnabled:        &defaultEnabled,
+		ReplaceInstalledModID: req.ReplaceInstalledModID,
+		TargetProfileID:       req.TargetProfileID,
+	})
+	if err != nil {
+		return storage.InstalledMod{}, false, "", err
+	}
+	if defaultEnabled && !staged.Enabled {
+		enabled := true
+		staged, err = s.db.SetProfileModState(context.Background(), staged.ProfileID, staged.ID, &enabled, nil)
+		if err != nil {
+			return storage.InstalledMod{}, false, "", err
+		}
+	}
+	return staged, defaultEnabled, defaultEnabledReason, nil
 }
 
 func applyInstallPlan(plan installplan.Plan, stagingPath string, gamePath string) error {

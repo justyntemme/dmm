@@ -36,6 +36,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
@@ -3253,6 +3254,96 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 	if choiceJob.Payload["app_id"] != "377160" || choiceJob.Payload["candidate_id"] != strconv.FormatInt(candidates[0].ID, 10) || choiceJob.Payload["mod_id"] != "999" {
 		t.Fatalf("installer choice payload = %+v", choiceJob.Payload)
+	}
+}
+
+func TestGenericInstallerChoiceCapturedInstallAppliesSelectedPak(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Jedi Survivor")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       starwarsjedisurvivor.SteamAppID,
+		Name:        starwarsjedisurvivor.Name,
+		InstallDir:  "Jedi Survivor",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "multi-pak.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"Wrapper/OptionA.pak": "pak-a",
+		"Wrapper/OptionA.sig": "sig-a",
+		"Wrapper/OptionB.pak": "pak-b",
+		"Wrapper/OptionB.sig": "sig-b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: starwarsjedisurvivor/mods/10")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded archive; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: starwarsjedisurvivor.VortexGameID,
+			ModID:      "10",
+			FileID:     "20",
+		},
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "installer choices required") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), starwarsjedisurvivor.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "needs_choices" || !strings.Contains(candidates[0].InstallerJSON, "archive-file-choice") {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/games/"+starwarsjedisurvivor.SteamAppID+"/install-candidates/"+strconv.FormatInt(candidates[0].ID, 10)+"/choices", bytes.NewBufferString(`{"selections":{"starwarsjedi2-pak-choice":["pak:Wrapper/OptionB.pak"]}}`))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveReq.RemoteAddr = "127.0.0.1:1"
+	saveRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("save status = %d, body = %s", saveRec.Code, saveRec.Body.String())
+	}
+
+	applyReq := httptest.NewRequest(http.MethodPost, "/api/games/"+starwarsjedisurvivor.SteamAppID+"/install-candidates/"+strconv.FormatInt(candidates[0].ID, 10)+"/apply", bytes.NewBufferString(`{}`))
+	applyReq.Header.Set("Content-Type", "application/json")
+	applyReq.RemoteAddr = "127.0.0.1:1"
+	applyRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(applyRec, applyReq)
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("apply status = %d, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), starwarsjedisurvivor.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if !strings.Contains(mods[0].ManifestJSON, `"mod_type":"starwarsjedi2-pak-modtype"`) {
+		t.Fatalf("manifest = %s", mods[0].ManifestJSON)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "OptionB.pak")); err != nil {
+		t.Fatalf("selected pak was not staged: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "OptionA.pak")); !os.IsNotExist(err) {
+		t.Fatalf("unselected pak was staged: %v", err)
 	}
 }
 

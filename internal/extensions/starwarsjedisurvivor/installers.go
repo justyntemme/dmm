@@ -12,6 +12,8 @@ import (
 
 const pakExtension = ".pak"
 
+const pakChoiceGroupID = "starwarsjedi2-pak-choice"
+
 func matchPakArchive(root string) bool {
 	files, err := listFiles(root)
 	if err != nil {
@@ -29,8 +31,14 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	if len(paks) == 0 {
 		return installplan.Plan{}, installplan.Unsupported("Star Wars Jedi: Survivor archive does not contain a supported .pak file")
 	}
+	selectedFromChoice := false
 	if len(paks) > 1 {
-		return installplan.Plan{}, installplan.Unsupported("Star Wars Jedi: Survivor archive contains multiple .pak choices; DMM needs a generic PAK selection UI before it can install this archive safely")
+		selectedPak, ok := selectedPakChoice(input.Selections, paks)
+		if !ok {
+			return installplan.Plan{}, pakChoiceRequired(paks)
+		}
+		paks = []string{selectedPak}
+		selectedFromChoice = true
 	}
 	rootDir := filepath.ToSlash(filepath.Dir(paks[0]))
 	if rootDir == "." {
@@ -39,6 +47,9 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	builder := newPlanBuilder(input, pakModType)
 	for _, file := range files {
 		if !sameArchiveFolder(file, rootDir) {
+			continue
+		}
+		if selectedFromChoice && !sameLogicalPakFile(file, paks[0]) {
 			continue
 		}
 		if err := builder.add(file, filepath.Base(file)); err != nil {
@@ -50,6 +61,54 @@ func buildPakArchive(input installplan.BuildInput) (installplan.Plan, error) {
 		AdditionalLogicalFileNames: []string{filepath.Base(paks[0])},
 	})
 	return builder.plan(paks[0], "Vortex installer starwarsjedi2-mod matched a single Star Wars Jedi: Survivor .pak archive")
+}
+
+func selectedPakChoice(selections map[string][]string, paks []string) (string, bool) {
+	selected := selections[pakChoiceGroupID]
+	if len(selected) != 1 {
+		return "", false
+	}
+	allowed := map[string]string{}
+	for _, pak := range paks {
+		allowed[pakChoiceID(pak)] = pak
+	}
+	pak, ok := allowed[selected[0]]
+	return pak, ok
+}
+
+func pakChoiceRequired(paks []string) error {
+	options := make([]installplan.ChoiceOption, 0, len(paks))
+	for _, pak := range paks {
+		options = append(options, installplan.ChoiceOption{
+			ID:            pakChoiceID(pak),
+			Name:          filepath.Base(pak),
+			Description:   pak,
+			Type:          "Optional",
+			EffectiveType: "Optional",
+		})
+	}
+	return installplan.ChoiceRequired(
+		"archive-file-choice",
+		"Star Wars Jedi: Survivor archive contains multiple .pak options; choose the .pak file Vortex would prompt for before DMM installs it.",
+		installplan.ChoiceInstaller{
+			Name: "Star Wars Jedi: Survivor PAK Selection",
+			Steps: []installplan.ChoiceStep{{
+				ID:   "pak-selection",
+				Name: "Choose PAK",
+				Groups: []installplan.ChoiceGroup{{
+					ID:      pakChoiceGroupID,
+					Name:    "PAK file",
+					Type:    "SelectExactlyOne",
+					Plugins: options,
+				}},
+			}},
+		},
+		nil,
+	)
+}
+
+func pakChoiceID(pak string) string {
+	return "pak:" + filepath.ToSlash(pak)
 }
 
 func matchR457Loader(root string) bool {
@@ -152,6 +211,14 @@ func sameArchiveFolder(file, rootDir string) bool {
 		dir = ""
 	}
 	return dir == rootDir
+}
+
+func sameLogicalPakFile(file, pak string) bool {
+	fileBase := filepath.Base(file)
+	pakBase := filepath.Base(pak)
+	fileStem := strings.TrimSuffix(fileBase, filepath.Ext(fileBase))
+	pakStem := strings.TrimSuffix(pakBase, filepath.Ext(pakBase))
+	return strings.EqualFold(fileStem, pakStem)
 }
 
 func listFiles(root string) ([]string, error) {

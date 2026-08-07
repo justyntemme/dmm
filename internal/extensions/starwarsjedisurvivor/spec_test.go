@@ -60,12 +60,34 @@ func TestPakInstallerBlocksMultiplePakChoiceArchives(t *testing.T) {
 
 	_, err := build(root)
 	if err == nil {
-		t.Fatal("expected unsupported multi-pak archive")
+		t.Fatal("expected choice-required multi-pak archive")
 	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) {
+	var choice installplan.ChoiceRequiredError
+	if !errors.As(err, &choice) {
 		t.Fatalf("error = %T %v", err, err)
 	}
+	if choice.Kind != "archive-file-choice" || len(choice.Installer.Steps) != 1 {
+		t.Fatalf("choice = %+v", choice)
+	}
+}
+
+func TestPakInstallerBuildsSelectedMultiplePakChoice(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.pak"), "pak")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionA.sig"), "sig")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.pak"), "pak")
+	writeFile(t, filepath.Join(root, "Wrapper", "OptionB.sig"), "sig")
+
+	extension := gameext.MustCompileExtension(starwarsjedisurvivor.Extension())
+	plan, err := gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathAndSelections(starwarsjedisurvivor.SteamAppID, root, "", map[string][]string{
+		"starwarsjedi2-pak-choice": {"pak:Wrapper/OptionB.pak"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionB.pak")
+	assertCopyTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionB.sig")
+	assertNoTarget(t, plan.Instructions, "SwGame/Content/Paks/~mods/OptionA.pak")
 }
 
 func TestR457LoaderInstallerPreservesGameRootRelativePaths(t *testing.T) {
