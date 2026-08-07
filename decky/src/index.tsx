@@ -1398,6 +1398,7 @@ async function captureNXMFromDMMBrowser(rawURL: string, appID: string, profileID
     playSound: true,
     showToast: true
   });
+  window.setTimeout(() => closeDMMNativeBrowserAfterCapture(source), 250);
 }
 
 function getDMMWindowRouter(): DMMWindowRouter | undefined {
@@ -1434,6 +1435,29 @@ function navigateDMMRoute(path: string, source: string) {
       current_path: window.location.pathname
     });
   }, 300);
+}
+
+function closeDMMNativeBrowserAfterCapture(source: string) {
+  const currentPath = window.location.pathname;
+  const onBrowserRoute = currentPath.endsWith(DMM_BROWSER_ROUTE);
+  try {
+    destroyActiveDMMNativeBrowser(`nxm-captured:${source}`);
+    activeDMMBrowserRequest = null;
+    void logFrontendEvent("dmm native browser closed after nxm capture", {
+      source,
+      path: currentPath,
+      navigated_to_dmm: onBrowserRoute
+    });
+    if (onBrowserRoute) {
+      navigateDMMRoute(DMM_DECKY_ROUTE, "nxm-captured");
+    }
+  } catch (err) {
+    void logFrontendEvent("dmm native browser close after nxm capture failed", {
+      source,
+      path: currentPath,
+      error: errorLogValue(err)
+    });
+  }
 }
 
 function registerDMMNativeBrowserEvents(browser: DMMNativeBrowser, request: DMMBrowserRequest) {
