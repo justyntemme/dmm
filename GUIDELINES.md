@@ -75,7 +75,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - MVP provider architecture must support all popular non-Steam mod upstreams we can verify through official APIs, documented clients, schemas, or source review. Nexus remains the first critical source; direct archive URLs are supported as a generic selected-game import path; Steam Workshop is treated separately as Steam-owned platform content rather than as a browsed/searchable remote catalog.
 - Persist source/catalog identity for every captured, cached, installed, enabled, disabled, updated, or removed mod. Every visible mod row should show a small source pill, and UI surfaces should be able to tag, filter, and sort mods by source.
 - Steam Workshop content should coexist with DMM-managed mods where the game extension declares it safe. Steam Workshop unsubscribe, enable/disable, and load-order movement should use documented or directly verified Steam/Decky APIs; do not add filesystem or client-state hacks for Workshop management. MVP does not need a Steam Workshop search/browse UI, only installed Workshop content management.
-- MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the Deck browser, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download it, approve it if approval is required, and then manage it as a mod in the selected profile.
+- MVP workflow: capture a Nexus `nxm://` Mod Manager Download link from the controlled Decky browser flow, or paste a Nexus `https://www.nexusmods.com/...` URL / `nxm://` URL into Decky or the phone UI, resolve it, download/cache it immediately while the link is fresh, then install it into the selected profile through Action Center when manual install is required.
 - Staging, install planning, deployment manifests, and file operations are implementation details for the default experience; they remain inspectable through advanced/power-user surfaces.
 - User-level `nxm://` OS protocol registration is MVP for the Deck browser flow; pasted `nxm://` links remain a supported manual capture path.
 - Future direction is to replace Vortex more broadly, but first milestones stay narrow and Steam Deck-focused.
@@ -114,7 +114,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - The default user mental model is profile-first:
   - Select game.
   - Use the selected/default profile.
-  - Download or approve a mod.
+  - Download or install a captured mod.
   - See the mod in that profile.
   - Enable/disable mods with simple toggles.
   - Apply profile changes when needed.
@@ -346,7 +346,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Support common Nexus archive formats needed by Vortex-compatible downloads, starting with `.zip` and adding `.7z`/`.rar` as needed.
 - FOMOD detection and a clear unsupported-installer failure are part of the current MVP slice.
 - Interactive FOMOD installer support is required for complete no-phone modding and must not silently stage archives that need user choices before that UI exists.
-- Auto-enable may proceed only for installers that can produce a complete plan without user choices, or for installer-choice mods with a saved preset/headless choice set that was previously approved by the user.
+- Auto-enable may proceed only for installers that can produce a complete plan without user choices, or for installer-choice mods with a saved preset/headless choice set that was previously chosen by the user.
 - First-time FOMOD installs must pause as an installer-choice request until the user completes the options either in a phone/tablet web UI or a Decky-native choice surface.
 - Persist pending installer-choice jobs after the post-MVP installer architecture is selected, so the user can disconnect and resume choosing options later.
 - Prefer safe Go libraries for archive handling where practical.
