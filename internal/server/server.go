@@ -1140,9 +1140,6 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 	if resp.ProfileCount == 0 {
 		warnings = append(warnings, "no profiles are available")
 	}
-	if resp.InstalledMods == 0 {
-		warnings = append(warnings, "no installed profile mods are available")
-	}
 	if resp.BlockedCandidates > 0 {
 		warnings = append(warnings, strconv.Itoa(resp.BlockedCandidates)+" downloaded archives are blocked by unsupported install planning")
 	}
