@@ -325,6 +325,8 @@ type GameExtensionInfo = {
   id: string;
   name: string;
   supported: boolean;
+  coverage?: string;
+  coverage_label?: string;
   nexus: boolean;
   steam_workshop: boolean;
   installers: boolean;
@@ -1157,10 +1159,11 @@ function gameHasExtension(game?: ManagedGame | null) {
 function deckyGameCapabilityBadges(game: ManagedGame): Array<{ label: string; kind: string }> {
   const extension = game.extension;
   if (!extension?.supported) return [{ label: "Unsupported", kind: "unsupported" }];
-  const badges = [{ label: "DMM", kind: "dmm" }];
+  const coverage = extension.coverage ?? "metadata_only";
+  const badges = [{ label: extension.coverage_label ?? "DMM", kind: `coverage-${coverage}` }];
   if (extension.nexus) badges.push({ label: "Nexus", kind: "nexus" });
   if (extension.steam_workshop) badges.push({ label: "Workshop", kind: "workshop" });
-  if (extension.installers || extension.installer_choices) badges.push({ label: "Install", kind: "installers" });
+  if (coverage === "installer" && (extension.installers || extension.installer_choices)) badges.push({ label: "Install", kind: "installers" });
   if (extension.load_order || extension.plugin_activation) badges.push({ label: "Order", kind: "load-order" });
   if (extension.launch_tools) badges.push({ label: "Launch", kind: "launch" });
   return badges;
@@ -1169,6 +1172,11 @@ function deckyGameCapabilityBadges(game: ManagedGame): Array<{ label: string; ki
 function deckyCapabilityPillStyle(kind: string): CSSProperties {
   const colors: Record<string, { border: string; color: string; background: string }> = {
     dmm: { border: "#0f766e", color: "#ccfbf1", background: "#134e4a" },
+    "coverage-installer": { border: "#0f766e", color: "#ccfbf1", background: "#134e4a" },
+    "coverage-research_blocked": { border: "#d97706", color: "#ffedd5", background: "#431407" },
+    "coverage-browse_only": { border: "#7c3aed", color: "#ede9fe", background: "#2e1065" },
+    "coverage-workshop_only": { border: "#2563eb", color: "#dbeafe", background: "#172554" },
+    "coverage-metadata_only": { border: "#64748b", color: "#e2e8f0", background: "#1e293b" },
     nexus: { border: "#7c3aed", color: "#ede9fe", background: "#2e1065" },
     workshop: { border: "#2563eb", color: "#dbeafe", background: "#172554" },
     installers: { border: "#ca8a04", color: "#fef3c7", background: "#451a03" },

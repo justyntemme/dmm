@@ -367,6 +367,36 @@ h2 {
   background: #134e4a;
 }
 
+.capability-coverage-installer {
+  border-color: #0f766e;
+  color: #ccfbf1;
+  background: #134e4a;
+}
+
+.capability-coverage-research_blocked {
+  border-color: #d97706;
+  color: #ffedd5;
+  background: #431407;
+}
+
+.capability-coverage-browse_only {
+  border-color: #7c3aed;
+  color: #ede9fe;
+  background: #2e1065;
+}
+
+.capability-coverage-workshop_only {
+  border-color: #2563eb;
+  color: #dbeafe;
+  background: #172554;
+}
+
+.capability-coverage-metadata_only {
+  border-color: #64748b;
+  color: #e2e8f0;
+  background: #1e293b;
+}
+
 .capability-nexus {
   border-color: #7c3aed;
   color: #ede9fe;

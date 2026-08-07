@@ -54,6 +54,8 @@
     id: string;
     name: string;
     supported: boolean;
+    coverage?: string;
+    coverage_label?: string;
     nexus: boolean;
     steam_workshop: boolean;
     installers: boolean;
@@ -2707,10 +2709,11 @@
   function gameCapabilityBadges(game: Game) {
     const extension = game.extension;
     if (!extension?.supported) return [{ label: "Unsupported", className: "unsupported" }];
-    const badges = [{ label: "DMM", className: "dmm" }];
+    const coverage = extension.coverage ?? "metadata_only";
+    const badges = [{ label: extension.coverage_label ?? "DMM", className: `coverage-${coverage}` }];
     if (extension.nexus) badges.push({ label: "Nexus", className: "nexus" });
     if (extension.steam_workshop) badges.push({ label: "Workshop", className: "workshop" });
-    if (extension.installers || extension.installer_choices) badges.push({ label: "Installers", className: "installers" });
+    if (coverage === "installer" && (extension.installers || extension.installer_choices)) badges.push({ label: "Installers", className: "installers" });
     if (extension.load_order || extension.plugin_activation) badges.push({ label: "Load Order", className: "load-order" });
     if (extension.launch_tools) badges.push({ label: "Launch", className: "launch" });
     return badges;

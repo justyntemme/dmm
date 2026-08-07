@@ -165,6 +165,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.Version != "1.2.3" || summary.BuildID != "test-build" {
 		t.Fatalf("summary version/build = %+v", summary)
 	}
+	if summary.Coverage != CoverageInstaller || summary.CoverageLabel != "Installer support" {
+		t.Fatalf("summary coverage = %q/%q", summary.Coverage, summary.CoverageLabel)
+	}
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "sample:installer" {
 		t.Fatalf("installer capabilities = %+v", summary.Capabilities.Installers)
 	}
@@ -246,9 +249,51 @@ func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
 	if len(extension.NexusDomains) != 0 {
 		t.Fatalf("workshop-only extension should not invent Nexus domains: %+v", extension.NexusDomains)
 	}
+	coverage, label := ExtensionCoverage(extension)
+	if coverage != CoverageWorkshopOnly || label != "Workshop only" {
+		t.Fatalf("workshop coverage = %q/%q", coverage, label)
+	}
 	workshop, ok := NewRegistry([]Extension{extension}).SteamWorkshopForSteamApp("108600")
 	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 5 {
 		t.Fatalf("workshop capability = %+v ok=%v", workshop, ok)
+	}
+}
+
+func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "research-game",
+		Name:    "Research Game",
+		Version: "0.1.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"200"},
+				NexusDomains: []string{"researchgame"},
+				VortexGameID: "researchgame",
+				Deployment: installplan.DeploymentSpec{
+					AllowNeedsReviewState: true,
+				},
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "research-mod"})
+			r.RegisterInstaller(installplan.InstallerSpec{
+				ID:                "research:blocked",
+				VortexInstallerID: "research-blocked",
+				ModType:           "research-mod",
+				InstructionMode:   installplan.InstructionUnsupported,
+				UnsupportedReason: "source review required",
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage, label := ExtensionCoverage(extension)
+	if coverage != CoverageResearchBlocked || label != "Research needed" {
+		t.Fatalf("coverage = %q/%q", coverage, label)
+	}
+	summaries := NewRegistry([]Extension{extension}).ExtensionSummaries()
+	if len(summaries) != 1 || summaries[0].Coverage != CoverageResearchBlocked {
+		t.Fatalf("summaries = %+v", summaries)
 	}
 }
 

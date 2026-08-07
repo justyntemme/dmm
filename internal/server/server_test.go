@@ -551,13 +551,23 @@ func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 
 func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	stardew := gameExtensionInfoForSteamApp(games.DefaultRegistry, "413150")
-	if stardew == nil || !stardew.Supported || !stardew.Nexus || !stardew.Installers || !stardew.RuntimeRequirements || !stardew.LaunchTools {
+	if stardew == nil || !stardew.Supported || stardew.Coverage != gameext.CoverageInstaller || !stardew.Nexus || !stardew.Installers || !stardew.RuntimeRequirements || !stardew.LaunchTools {
 		t.Fatalf("stardew extension info = %+v", stardew)
 	}
 
 	zomboid := gameExtensionInfoForSteamApp(games.DefaultRegistry, "108600")
-	if zomboid == nil || !zomboid.Supported || !zomboid.Nexus || !zomboid.SteamWorkshop || !zomboid.Installers {
+	if zomboid == nil || !zomboid.Supported || zomboid.Coverage != gameext.CoverageInstaller || !zomboid.Nexus || !zomboid.SteamWorkshop || !zomboid.Installers {
 		t.Fatalf("zomboid extension info = %+v", zomboid)
+	}
+
+	stellaris := gameExtensionInfoForSteamApp(games.DefaultRegistry, "281990")
+	if stellaris == nil || !stellaris.Supported || stellaris.Coverage != gameext.CoverageWorkshopOnly || !stellaris.SteamWorkshop || stellaris.Installers {
+		t.Fatalf("stellaris extension info = %+v", stellaris)
+	}
+
+	bastion := gameExtensionInfoForSteamApp(games.DefaultRegistry, "107100")
+	if bastion == nil || !bastion.Supported || bastion.Coverage != gameext.CoverageResearchBlocked || !bastion.Nexus || !bastion.Installers {
+		t.Fatalf("bastion extension info = %+v", bastion)
 	}
 
 	if unsupported := gameExtensionInfoForSteamApp(games.DefaultRegistry, "999999999"); unsupported != nil {

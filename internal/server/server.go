@@ -558,6 +558,8 @@ type gameExtensionInfo struct {
 	ID                  string `json:"id"`
 	Name                string `json:"name"`
 	Supported           bool   `json:"supported"`
+	Coverage            string `json:"coverage"`
+	CoverageLabel       string `json:"coverage_label"`
 	Nexus               bool   `json:"nexus"`
 	SteamWorkshop       bool   `json:"steam_workshop"`
 	Installers          bool   `json:"installers"`
@@ -2233,10 +2235,13 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 	if !ok {
 		return nil
 	}
+	coverage, coverageLabel := gameext.ExtensionCoverage(extension)
 	return &gameExtensionInfo{
 		ID:                  strings.TrimSpace(extension.ID),
 		Name:                strings.TrimSpace(extension.Name),
 		Supported:           true,
+		Coverage:            coverage,
+		CoverageLabel:       coverageLabel,
 		Nexus:               len(extension.NexusDomains) > 0,
 		SteamWorkshop:       extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0,
 		Installers:          len(extension.InstallPlan.Installers) > 0,

@@ -69,15 +69,17 @@ const (
 type DeploymentMod = sdk.DeploymentMod
 
 type ExtensionSummary struct {
-	ID           string                `json:"id"`
-	Name         string                `json:"name"`
-	Version      string                `json:"version"`
-	BuildID      string                `json:"build_id"`
-	SteamAppIDs  []string              `json:"steam_app_ids"`
-	NexusDomains []string              `json:"nexus_domains"`
-	VortexGameID string                `json:"vortex_game_id"`
-	Sources      []SourceRef           `json:"sources,omitempty"`
-	Capabilities ExtensionCapabilities `json:"capabilities"`
+	ID            string                `json:"id"`
+	Name          string                `json:"name"`
+	Version       string                `json:"version"`
+	BuildID       string                `json:"build_id"`
+	SteamAppIDs   []string              `json:"steam_app_ids"`
+	NexusDomains  []string              `json:"nexus_domains"`
+	VortexGameID  string                `json:"vortex_game_id"`
+	Coverage      string                `json:"coverage"`
+	CoverageLabel string                `json:"coverage_label"`
+	Sources       []SourceRef           `json:"sources,omitempty"`
+	Capabilities  ExtensionCapabilities `json:"capabilities"`
 }
 
 type ExtensionCapabilities struct {
@@ -106,6 +108,14 @@ type WorkshopSummary struct {
 	AllowCoexistence bool             `json:"allow_coexistence"`
 	Actions          []FeatureSummary `json:"actions,omitempty"`
 }
+
+const (
+	CoverageInstaller       = "installer"
+	CoverageResearchBlocked = "research_blocked"
+	CoverageBrowseOnly      = "browse_only"
+	CoverageWorkshopOnly    = "workshop_only"
+	CoverageMetadataOnly    = "metadata_only"
+)
 
 type Registry struct {
 	extensions             []Extension
@@ -582,15 +592,18 @@ func launchToolApplies(tool LaunchToolSpec, mods []gamehandler.RuntimeMod) bool 
 }
 
 func summarizeExtension(extension Extension) ExtensionSummary {
+	coverage, coverageLabel := ExtensionCoverage(extension)
 	summary := ExtensionSummary{
-		ID:           extension.ID,
-		Name:         extension.Name,
-		Version:      extension.Version,
-		BuildID:      extension.BuildID,
-		SteamAppIDs:  appendClean([]string{}, extension.SteamAppIDs...),
-		NexusDomains: appendClean([]string{}, extension.NexusDomains...),
-		VortexGameID: extension.InstallPlan.VortexGameID,
-		Sources:      append([]SourceRef(nil), extension.Sources...),
+		ID:            extension.ID,
+		Name:          extension.Name,
+		Version:       extension.Version,
+		BuildID:       extension.BuildID,
+		SteamAppIDs:   appendClean([]string{}, extension.SteamAppIDs...),
+		NexusDomains:  appendClean([]string{}, extension.NexusDomains...),
+		VortexGameID:  extension.InstallPlan.VortexGameID,
+		Coverage:      coverage,
+		CoverageLabel: coverageLabel,
+		Sources:       append([]SourceRef(nil), extension.Sources...),
 	}
 	for _, modType := range extension.InstallPlan.ModTypes {
 		summary.Capabilities.ModTypes = append(summary.Capabilities.ModTypes, FeatureSummary{ID: modType.ID, Name: modType.TargetRoot})
@@ -653,6 +666,31 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
 	return summary
+}
+
+func ExtensionCoverage(extension Extension) (string, string) {
+	supportedInstallers := 0
+	blockedInstallers := 0
+	for _, installer := range extension.InstallPlan.Installers {
+		if installer.InstructionMode == installplan.InstructionUnsupported {
+			blockedInstallers++
+			continue
+		}
+		supportedInstallers++
+	}
+	if supportedInstallers > 0 || len(extension.InstallerChoices) > 0 {
+		return CoverageInstaller, "Installer support"
+	}
+	if blockedInstallers > 0 {
+		return CoverageResearchBlocked, "Research needed"
+	}
+	if extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0 {
+		return CoverageWorkshopOnly, "Workshop only"
+	}
+	if len(extension.NexusDomains) > 0 {
+		return CoverageBrowseOnly, "Browse only"
+	}
+	return CoverageMetadataOnly, "Metadata only"
 }
 
 func sortFeatureSummaries(features []FeatureSummary) {
