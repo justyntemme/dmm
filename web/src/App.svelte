@@ -663,6 +663,7 @@
     if (!query) return true;
     return game.name.toLowerCase().includes(query) || game.app_id.includes(query);
   }));
+  $: homeQuickGames = sortDrawerGames(games.filter(gameManageReady)).slice(0, 6);
   $: title = surface === "settings" ? settingsTitle(activeSettingsPage) : surface === "actions" ? "Action Center" : selectedGame?.name ?? "Select a Game";
   $: deployableActions = getDeployableActions(deployPlan);
   $: conflictChoiceTargets = getConflictChoiceTargets(deployPlan);
@@ -3438,7 +3439,30 @@
               <h2>No Actions Needed</h2>
               <p class="hint">Open a game to paste a mod URL, or capture an nxm:// link from the Deck browser flow.</p>
             </div>
-            <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
+            {#if homeQuickGames.length > 0}
+              <section class="home-game-panel" aria-label="Quick games">
+                <div class="panel-heading compact-heading">
+                  <h3>Quick Games</h3>
+                  <button type="button" class="secondary-action compact" on:click={() => (drawer = "games")}>All Games</button>
+                </div>
+                <div class="home-game-grid">
+                  {#each homeQuickGames as game}
+                    <button type="button" class="home-game-card" on:click={() => selectGame(game)}>
+                      <img src={gameImage(game.app_id)} alt="" loading="lazy" />
+                      <span>
+                        <strong>{game.name}</strong>
+                        <small>
+                          {#if isFavoriteGame(game.app_id)}Pinned · {/if}
+                          {game.extension?.coverage_label ?? stateLabel(game.state)}
+                        </small>
+                      </span>
+                    </button>
+                  {/each}
+                </div>
+              </section>
+            {:else}
+              <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
+            {/if}
           </div>
         {/if}
         {#if globalActionCount > 0 && visibleActionItems.length === 0 && visibleActionCenterCandidates.length === 0}

@@ -2475,6 +2475,65 @@ dd {
   gap: 10px;
 }
 
+.home-game-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #111827;
+}
+
+.home-game-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.home-game-card {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 8px;
+  color: #f4f4f5;
+  text-align: left;
+  background: #0b1220;
+}
+
+.home-game-card:active {
+  border-color: #14b8a6;
+  background: #132c2c;
+}
+
+.home-game-card img {
+  width: 92px;
+  height: 43px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #242a31;
+}
+
+.home-game-card span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.home-game-card strong,
+.home-game-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-game-card small {
+  color: #a1a1aa;
+  font-size: 0.82rem;
+}
+
 .empty-action-panel {
   display: grid;
   gap: 12px;
@@ -2522,6 +2581,10 @@ dd {
   .management-grid {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
     align-items: start;
+  }
+
+  .home-game-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
