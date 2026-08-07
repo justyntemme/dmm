@@ -36,6 +36,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 - [Metal Gear Solid 2 Master Collection](games/metal-gear-solid-2-master-collection.md)
 - [Metal Gear Solid 3 Master Collection](games/metal-gear-solid-3-master-collection.md)
 - [Spyro Reignited Trilogy](games/spyro-reignited-trilogy.md)
+- [Marvel's Spider-Man: Miles Morales](games/spider-man-miles-morales.md)
 - [X4: Foundations](games/x4-foundations.md)
 - [Civilization VII](games/civilization-vii.md)
 - [Portal 2](games/portal-2.md)
