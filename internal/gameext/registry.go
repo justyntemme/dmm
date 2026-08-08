@@ -65,6 +65,8 @@ type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
 type EventNotice = sdk.EventNotice
+type EventProgress = sdk.EventProgress
+type EventProgressFunc = sdk.EventProgressFunc
 
 const (
 	SteamWorkshopActionSubscribe   = sdk.SteamWorkshopActionSubscribe

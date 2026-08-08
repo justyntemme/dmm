@@ -2346,6 +2346,27 @@ func TestDeployProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
 	}
 }
 
+func TestExtensionEventProgressUpdaterPublishesReadableJobMessage(t *testing.T) {
+	srv := newTestServer(t)
+	job := srv.jobs.Create("deploy", "Apply enabled mods")
+
+	update := srv.extensionEventProgressUpdater(job.ID, "Preparing deployment")
+	update(gameext.EventProgress{
+		Message:   "Merging SnakeBite package Test Package",
+		Completed: 2,
+		Total:     4,
+	})
+
+	got, ok := srv.jobs.Get(job.ID)
+	if !ok {
+		t.Fatal("job was not found")
+	}
+	want := "Preparing deployment: Merging SnakeBite package Test Package 2/4"
+	if got.Status != jobs.StatusRunning || got.Message != want {
+		t.Fatalf("job = %+v, want status running and message %q", got, want)
+	}
+}
+
 func TestResolveCatalogURLReportsBrowserRequiredForNexusPage(t *testing.T) {
 	srv := newTestServer(t)
 
@@ -8578,6 +8599,10 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 				Name:  "Generate hook file",
 				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
 					willDeployCalls++
+					if input.Progress == nil {
+						t.Fatal("will-deploy input did not include progress callback")
+					}
+					input.ReportProgress("Generating hook file", 1, 1)
 					if input.AppID != appID || input.ProfileID == 0 || input.WorkDir == "" {
 						t.Fatalf("will-deploy input = %+v", input)
 					}

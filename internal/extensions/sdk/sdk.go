@@ -270,6 +270,26 @@ type EventHandlerInput struct {
 	Mappings     []deploy.FileMapping
 	ManagedFiles []deploy.AppliedFile
 	Mods         []DeploymentMod
+	Progress     EventProgressFunc
+}
+
+type EventProgressFunc func(EventProgress)
+
+type EventProgress struct {
+	Message   string
+	Completed int
+	Total     int
+}
+
+func (input EventHandlerInput) ReportProgress(message string, completed, total int) {
+	if input.Progress == nil {
+		return
+	}
+	input.Progress(EventProgress{
+		Message:   message,
+		Completed: completed,
+		Total:     total,
+	})
 }
 
 type DeploymentMod struct {

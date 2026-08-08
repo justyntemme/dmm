@@ -5380,20 +5380,24 @@ func (s *Server) handleDeployPreview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	appID := r.PathValue("appID")
-	plan, err := s.buildGameDeployPlan(r.Context(), appID)
+	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Preparing deployment for "+appID)
+	plan, err := s.buildGameDeployPlanWithProgress(r.Context(), appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, err.Error())
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if len(plan.Conflicts) > 0 {
+		job, _ = s.jobs.Complete(job.ID, "Deployment has conflicts to review")
 		http.Error(w, "deployment has conflicts; resolve them before deploying", http.StatusConflict)
 		return
 	}
 	if !hasDeployableActions(plan) {
+		job, _ = s.jobs.Complete(job.ID, "Deployment has no changes to apply")
 		http.Error(w, "deployment has no changes to apply", http.StatusConflict)
 		return
 	}
-	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Applying enabled mods for "+appID)
 	s.logger.Info("deployment confirmed", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying enabled mods", "manual")
@@ -5448,30 +5452,37 @@ func (s *Server) postDeploymentLaunchStatus(ctx context.Context, appID, parentJo
 }
 
 func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, source string) profileApplyResponse {
-	plan, err := s.buildGameDeployPlan(ctx, appID)
+	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Preparing deployment for "+appID)
+	plan, err := s.buildGameDeployPlanWithProgress(ctx, appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
 		s.logger.Warn("profile apply preview failed", "app_id", appID, "source", source, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
 		return profileApplyResponse{
 			Status:  "failed",
 			Message: "Profile was updated, but DMM could not preview game-folder changes: " + err.Error(),
+			Job:     &job,
 		}
 	}
 	if len(plan.Conflicts) > 0 {
 		s.logger.Info("profile apply blocked by conflicts", "app_id", appID, "source", source, "conflicts", len(plan.Conflicts))
+		job, _ = s.jobs.Complete(job.ID, "Profile has conflicts to review before applying")
 		return profileApplyResponse{
 			Status:  "blocked",
 			Message: "Profile was updated, but " + strconv.Itoa(len(plan.Conflicts)) + " conflict" + plural(len(plan.Conflicts)) + " need review before applying.",
+			Job:     &job,
 			Plan:    &plan,
 		}
 	}
 	if !hasDeployableActions(plan) {
+		job, _ = s.jobs.Complete(job.ID, "Profile is already applied.")
 		return profileApplyResponse{
 			Status:  "applied",
 			Message: "Profile is already applied.",
+			Job:     &job,
 			Plan:    &plan,
 		}
 	}
-	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Applying enabled mods for "+appID)
 	s.logger.Info("profile apply started", "job_id", job.ID, "app_id", appID, "source", source, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	result, err := s.applyPreparedDeployment(ctx, appID, job.ID, plan, "Applying enabled mods", source)
@@ -8786,7 +8797,7 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		finish()
 		return
 	}
-	plan, err := s.buildGameDeployPlan(ctx, staged.SteamAppID)
+	plan, err := s.buildGameDeployPlanWithProgress(ctx, staged.SteamAppID, s.extensionEventProgressUpdater(jobID, "Preparing deployment"))
 	if err != nil {
 		message := "Installed " + staged.Name + " enabled; deploy preview failed: " + err.Error()
 		s.logger.Warn("auto-enable deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
@@ -9631,6 +9642,10 @@ func fileSHA256(path string) (string, error) {
 }
 
 func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.Plan, error) {
+	return s.buildGameDeployPlanWithProgress(ctx, appID, nil)
+}
+
+func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID string, progress gameext.EventProgressFunc) (deploy.Plan, error) {
 	if strings.TrimSpace(appID) == "" {
 		return deploy.Plan{}, errors.New("appID is required")
 	}
@@ -9671,7 +9686,7 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	mappings = append(mappings, activationMappings...)
-	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy")
+	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy", progress)
 	if err != nil {
 		return deploy.Plan{}, err
 	}
@@ -9977,7 +9992,7 @@ func strategyOrExtension(strategy string) string {
 	return strings.TrimSpace(strategy)
 }
 
-func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string) (gameext.EventHandlerResult, error) {
+func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, managedFiles []deploy.AppliedFile, stagingRoot, event string, progress gameext.EventProgressFunc) (gameext.EventHandlerResult, error) {
 	if !s.games.HasEventHandlerForSteamApp(game.SteamAppID, event) {
 		return gameext.EventHandlerResult{}, nil
 	}
@@ -10003,6 +10018,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 		Mappings:     append([]deploy.FileMapping(nil), mappings...),
 		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
 		Mods:         deploymentModsForHooks(mods),
+		Progress:     progress,
 	})
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
@@ -10711,6 +10727,29 @@ func (s *Server) deployProgressUpdater(jobID, prefix string) deploy.ProgressFunc
 		message := fmt.Sprintf("%s %d/%d (%s)", prefix, completed, total, operation)
 		if action.TargetRelative != "" {
 			message += ": " + action.TargetRelative
+		}
+		s.jobs.Run(jobID, message)
+	}
+}
+
+func (s *Server) extensionEventProgressUpdater(jobID, prefix string) gameext.EventProgressFunc {
+	var lastUpdate time.Time
+	return func(progress gameext.EventProgress) {
+		message := strings.TrimSpace(progress.Message)
+		if message == "" {
+			message = "Running extension deployment hook"
+		}
+		if progress.Total > 0 && progress.Completed > 0 {
+			message += fmt.Sprintf(" %d/%d", progress.Completed, progress.Total)
+		}
+		now := time.Now()
+		done := progress.Total > 0 && progress.Completed >= progress.Total
+		if !done && !lastUpdate.IsZero() && now.Sub(lastUpdate) < 750*time.Millisecond {
+			return
+		}
+		lastUpdate = now
+		if strings.TrimSpace(prefix) != "" {
+			message = strings.TrimSpace(prefix) + ": " + message
 		}
 		s.jobs.Run(jobID, message)
 	}

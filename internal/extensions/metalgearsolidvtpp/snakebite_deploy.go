@@ -36,6 +36,7 @@ func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInpu
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
+	input.ReportProgress("Scanning enabled SnakeBite packages", 1, 1)
 	packages, err := enabledSnakeBitePackages(input)
 	if err != nil {
 		return sdk.EventHandlerResult{}, err
@@ -94,10 +95,13 @@ func buildSnakeBiteArchive(ctx context.Context, input sdk.EventHandlerInput, pac
 	if err := ctx.Err(); err != nil {
 		return "", "", nil, err
 	}
+	totalSteps := len(packages) + 3
+	input.ReportProgress("Resolving MGSV base archive", 1, totalSteps)
 	baseZeroPath, restorePath, err := snakeBiteBaseZeroArchive(input)
 	if err != nil {
 		return "", "", nil, err
 	}
+	input.ReportProgress("Reading MGSV base archive "+snakeBiteZeroArchiveRel, 2, totalSteps)
 	zeroArchive, err := gzs.ReadQAR(baseZeroPath)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("read MGSV base 00.dat: %w", err)
@@ -109,10 +113,11 @@ func buildSnakeBiteArchive(ctx context.Context, input sdk.EventHandlerInput, pac
 	sources := snakeBiteArchiveSources(input, baseZeroPath)
 	mergedFPKs := map[uint64]struct{}{}
 	var messages []string
-	for _, pkg := range packages {
+	for index, pkg := range packages {
 		if err := ctx.Err(); err != nil {
 			return "", "", nil, err
 		}
+		input.ReportProgress("Merging SnakeBite package "+pkg.mod.Name, index+3, totalSteps)
 		pkgMessages, err := applySnakeBitePackage(input, pkg, sources, entries, mergedFPKs)
 		if err != nil {
 			return "", "", nil, err
@@ -127,6 +132,7 @@ func buildSnakeBiteArchive(ctx context.Context, input sdk.EventHandlerInput, pac
 	if flags == 0 {
 		flags = 3150048
 	}
+	input.ReportProgress("Writing generated MGSV archive "+snakeBiteZeroArchiveRel, totalSteps, totalSteps)
 	generatedPath := filepath.Join(input.WorkDir, "metalgearsolidvtpp-snakebite", snakeBiteZeroArchiveRel)
 	if err := gzs.WriteQAR(generatedPath, gzs.QARFile{Flags: flags, Version: zeroArchive.Version, Entries: outEntries}); err != nil {
 		return "", "", nil, fmt.Errorf("write generated MGSV 00.dat: %w", err)
