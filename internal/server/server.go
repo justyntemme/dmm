@@ -5537,7 +5537,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(plan.Conflicts) > 0 {
 		job, _ = s.jobs.Complete(job.ID, "Deployment has conflicts to review")
-		http.Error(w, "deployment has conflicts; resolve them before deploying", http.StatusConflict)
+		http.Error(w, "enabled mods have file conflicts; resolve them before applying", http.StatusConflict)
 		return
 	}
 	if !hasDeployableActions(plan) {
@@ -8938,15 +8938,15 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		})
 	}
 	if !s.autoEnableInstalledMods() && !staged.Enabled {
-		message := "Installed " + staged.Name + " disabled; enable it to deploy"
+		message := "Installed " + staged.Name + " disabled; enable it to apply to the game"
 		s.jobs.Complete(jobID, message)
 		publishInstalled(false, message)
 		finish()
 		return
 	}
-	plan, err := s.buildGameDeployPlanWithProgress(ctx, staged.SteamAppID, s.extensionEventProgressUpdater(jobID, "Preparing deployment"))
+	plan, err := s.buildGameDeployPlanWithProgress(ctx, staged.SteamAppID, s.extensionEventProgressUpdater(jobID, "Preparing enabled mods"))
 	if err != nil {
-		message := "Installed " + staged.Name + " enabled; deploy preview failed: " + err.Error()
+		message := "Installed " + staged.Name + " enabled; apply preview failed: " + err.Error()
 		s.logger.Warn("auto-enable deploy preview failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 		s.jobs.Complete(jobID, message)
 		publishInstalled(true, message)
@@ -8954,7 +8954,7 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		return
 	}
 	if len(plan.Conflicts) > 0 {
-		message := "Installed " + staged.Name + " enabled; deployment has conflicts to review"
+		message := "Installed " + staged.Name + " enabled; file conflicts need review before it can apply"
 		s.logger.Info("auto-enable deploy blocked by conflicts", "job_id", jobID, "app_id", staged.SteamAppID, "conflicts", len(plan.Conflicts))
 		s.jobs.Complete(jobID, message)
 		publishInstalled(true, message)
@@ -8962,20 +8962,20 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		return
 	}
 	if !hasDeployableActions(plan) {
-		message := "Installed " + staged.Name + " enabled; deployment is already up to date"
+		message := "Installed " + staged.Name + " enabled; enabled mods are already applied"
 		s.logger.Info("auto-enable deploy skipped because deployment is already current", "job_id", jobID, "app_id", staged.SteamAppID, "actions", len(plan.Actions))
 		s.jobs.Complete(jobID, message)
 		publishInstalled(true, message)
 		finish()
 		return
 	}
-	result, err := s.applyPreparedDeployment(ctx, staged.SteamAppID, jobID, plan, "Deploying enabled mod", "auto-enable")
+	result, err := s.applyPreparedDeployment(ctx, staged.SteamAppID, jobID, plan, "Applying enabled mods", "auto-enable")
 	if err != nil {
 		s.jobs.Fail(jobID, err.Error())
 		finish()
 		return
 	}
-	message := "Installed, enabled, and deployed " + staged.Name
+	message := "Installed, enabled, and applied " + staged.Name
 	if result.Launch != nil && result.Launch.Action != nil {
 		message += "; launch tool setup pending"
 	}

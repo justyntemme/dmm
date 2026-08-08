@@ -3018,7 +3018,7 @@ func TestInstallCapturedInstallInstallsCachedArchive(t *testing.T) {
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
-	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
+	if completed.Message != "Installed Lookup Anything disabled; enable it to apply to the game" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
@@ -3157,7 +3157,7 @@ func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	}
 
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
-	if completed.Message != "Installed, enabled, and deployed Lookup Anything" {
+	if completed.Message != "Installed, enabled, and applied Lookup Anything" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
@@ -3246,7 +3246,7 @@ func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 		t.Fatalf("started job = %+v", started)
 	}
 	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
-	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
+	if completed.Message != "Installed Lookup Anything disabled; enable it to apply to the game" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	if completed.Payload["download_bytes_written"] == "" {
@@ -4646,7 +4646,7 @@ func TestCapturedInstallDownloadsImmediatelyAndWaitsForInstallConfirmation(t *te
 		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
 	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
-	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
+	if completed.Message != "Installed Lookup Anything disabled; enable it to apply to the game" {
 		t.Fatalf("completed job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
@@ -5814,7 +5814,7 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 		t.Fatal(err)
 	}
 	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
-	if !strings.Contains(completed.Message, "enabled, and deployed") {
+	if !strings.Contains(completed.Message, "enabled, and applied") {
 		t.Fatalf("job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")

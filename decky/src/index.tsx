@@ -1069,13 +1069,13 @@ function jobToastBody(job: Job): string {
 
 function jobToastTitle(job: Job): string {
   if (job.status === "failed") {
-    if (job.type === "deploy") return "DMM deployment failed";
+    if (job.type === "deploy") return "Applying enabled mods failed";
     if (job.type === "rollback") return "DMM rollback failed";
     if (job.type === "purge") return "DMM purge failed";
     if (job.type === "repair") return "DMM repair failed";
     return "DMM action failed";
   }
-  if (job.type === "deploy") return "DMM deployment";
+  if (job.type === "deploy") return "Applying enabled mods";
   if (job.type === "rollback") return "DMM rollback";
   if (job.type === "purge") return "DMM purge";
   if (job.type === "repair") return "DMM repair";
