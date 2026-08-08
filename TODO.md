@@ -11,7 +11,10 @@
    - Latest deployed state: Decky no longer immediately reopens the same FOMOD modal after `Apply Choices`; candidate auto-display is suppressed while the backend apply job is in progress and released when the installer-choice job reaches a terminal state.
    - Latest deployed state: installed mods now have an explicit reconfigure path. Normal reinstall reuses saved choices; Decky `Menu Reconfigure` and the phone/tablet `Reconfigure` button force installer choices to appear again from the cached archive.
 3. Implement MGSV/SnakeBite-style packed archive mutation as a generic extension-framework capability.
-   - Required before enabling MGSV `.MGSV` packages: safe QAR/FPK mutation, backup, verify, rollback, and extension-owned game-specific directives.
+   - Current local state: MGSV `.MGSV` packages are extension-detected, staged as event-hook-only mods, and deployed through extension-owned QAR/FPK generation for `master/0/00.dat` and `master/0/01.dat` with restore-aware `patch-existing` mappings.
+   - Current local state: SnakeBite source-verified conflict defaults are mirrored by blocking enabled packages that touch the same QAR path or the same file inside the same FPK. Errors tell the user to disable one mod or move it to another profile.
+   - Current local state: SnakeBite metadata compatibility is extension-validated. Pre-`0.8.0.0` metadata is blocked, `MGSVersion=0.0.0.0` is wildcard, and package-required newer MGSV versions are blocked through the MGSV `mgsvtpp.exe` version provider.
+   - Remaining: live Deck validation against a real Nexus SnakeBite package and a polished conflict-review surface beyond the failed deploy/action message.
 4. Continue source-verified target extension validation and fill only the generic API gaps exposed by real Vortex/source behavior.
 
 ## Current Manual-Test Loop
@@ -169,7 +172,10 @@
 
 17. Final MVP phone/tablet UX overhaul.
    - Treat the current phone/tablet app as functionally useful but not shippable.
+   - Current active design pass is Decky plugin UI only. Phone/tablet rewrite comes later.
+   - The Decky plugin redesign is a ground-up rewrite from blank schematics. The existing UI is only a feature/API inventory, not the design baseline.
    - Redesign the mobile/tablet web app around the same strong product quality now present in the Decky UI: clear game context, profile-first mod management, readable Action Center, polished installer-choice/FOMOD flow, source pills, update state, rollback/recovery, and advanced deployment tools without overwhelming normal users.
+   - Approved Decky direction: default tabs are `Actions`, `Games`, and `Settings`; no `Home`; `Actions` shows running-game context; `Games` auto-opens the running game when detected; selected game pages are simple: `Launch Game`, then `Explore Mods` / `Import Archive`, then warning rows only if needed, then the mod list; active profile is a dropdown with `Add New Profile` at the bottom; B returns from selected game to game list; no `Change Game`; no selected-game segmented control; no `Add` segment; no paste-link import in the current Decky redesign; healthy review diagnostics are hidden; `Explore Mods` uses unified results with source-filter toggles; debug tools live inside Settings behind a `Show Debug` toggle; binary settings use Apple-inspired toggle rows; restore/recovery is excluded from the Decky redesign until reworked.
    - iPad/tablet layout must be first-class, not a stretched phone view.
    - Complete this as the final MVP gate after the backend/deployment/FOMOD/provider pipeline is stable enough that the UI is not being redesigned around moving targets.
 
