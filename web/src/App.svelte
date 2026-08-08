@@ -340,6 +340,26 @@
     conflicts: DeployAction[];
   };
 
+  type DeployPreviewSummary = {
+    available: boolean;
+    add: number;
+    replace: number;
+    remove: number;
+    keep: number;
+    skip: number;
+    conflicts: number;
+    error?: string;
+  };
+
+  type DeploymentRestorePreview = {
+    deployment_id: number;
+    current_file_count: number;
+    target_file_count: number;
+    summary: DeployPreviewSummary;
+    sample_files?: string[];
+    plan: DeployPlan;
+  };
+
   type ConflictChoiceTarget = {
     target_path: string;
     target_relative: string;
@@ -599,6 +619,8 @@
   let deploymentStatus: DeploymentStatus | null = null;
   let deploymentSettings: DeploymentSettings | null = null;
   let deploymentHistory: DeploymentHistoryItem[] = [];
+  let restorePointPreview: DeploymentRestorePreview | null = null;
+  let restorePointPreviewBusy = 0;
   let pluginLoadOrder: PluginLoadOrder | null = null;
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
@@ -1277,6 +1299,8 @@
     deploymentStatus = null;
     deploymentSettings = null;
     deploymentHistory = [];
+    restorePointPreview = null;
+    restorePointPreviewBusy = 0;
     gameDiagnostics = null;
     gameLaunchStatus = null;
     installCandidates = [];
@@ -1397,6 +1421,9 @@
     deploymentStatus = nextDeploymentStatus;
     deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
+    if (restorePointPreview && !deploymentHistory.some((deployment) => deployment.id === restorePointPreview?.deployment_id)) {
+      restorePointPreview = null;
+    }
     pluginLoadOrder = nextPluginLoadOrder;
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
@@ -2984,6 +3011,22 @@
     };
   }
 
+  async function previewRestoreDeploymentPoint(deployment: DeploymentHistoryItem) {
+    if (!selectedGame) return;
+    error = "";
+    restorePointPreviewBusy = deployment.id;
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/history/${deployment.id}/preview`);
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      restorePointPreview = await response.json();
+    } finally {
+      restorePointPreviewBusy = 0;
+    }
+  }
+
   async function restoreDeploymentPoint(deployment: DeploymentHistoryItem) {
     if (!selectedGame || deployment.active) return;
     error = "";
@@ -2994,15 +3037,21 @@
     }
     const result = await response.json();
     upsertJob(result.job);
+    restorePointPreview = null;
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
 
   function askRestoreDeploymentPoint(deployment: DeploymentHistoryItem) {
     if (!selectedGame || deployment.active) return;
+    const preview = restorePointPreview?.deployment_id === deployment.id ? restorePointPreview : null;
+    const summary = preview?.summary;
+    const detail = summary
+      ? `${new Date(deployment.created_at).toLocaleString()} · ${deployment.profile_name}. Restore delta: ${summary.add} add, ${summary.replace} update, ${summary.remove} remove, ${summary.conflicts} conflict${summary.conflicts === 1 ? "" : "s"}. DMM touches only files from its deployment manifests.`
+      : `${new Date(deployment.created_at).toLocaleString()} · ${deployment.profile_name} · ${deployment.file_count} file${deployment.file_count === 1 ? "" : "s"} · ${deploymentPointDelta(deployment)}. DMM removes newer managed files that are not part of this point.`;
     confirmation = {
       title: "Restore deployment point",
       message: `DMM will restore ${selectedGame.name} to the selected deployment point.`,
-      detail: `${new Date(deployment.created_at).toLocaleString()} · ${deployment.profile_name} · ${deployment.file_count} file${deployment.file_count === 1 ? "" : "s"} · ${deploymentPointDelta(deployment)}. DMM removes newer managed files that are not part of this point.`,
+      detail,
       confirmLabel: "Restore Point",
       run: () => restoreDeploymentPoint(deployment)
     };
@@ -4844,12 +4893,34 @@
                             {/each}
                           </div>
                         {/if}
+                        {#if restorePointPreview?.deployment_id === deployment.id}
+                          <div class="deployment-restore-preview" aria-label="Restore point preview">
+                            <div>
+                              <strong>Restore Delta</strong>
+                              <span>{restorePointPreview.current_file_count} current -> {restorePointPreview.target_file_count} restored</span>
+                            </div>
+                            <div class="deployment-restore-counts">
+                              <span>{restorePointPreview.summary.add} add</span>
+                              <span>{restorePointPreview.summary.replace} update</span>
+                              <span>{restorePointPreview.summary.remove} remove</span>
+                              <span>{restorePointPreview.summary.conflicts} conflict{restorePointPreview.summary.conflicts === 1 ? "" : "s"}</span>
+                            </div>
+                            {#if restorePointPreview.sample_files?.length}
+                              <div class="deployment-restore-samples">
+                                {#each restorePointPreview.sample_files as file}
+                                  <small>{file}</small>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+                        {/if}
                       </div>
                       <div class="deployment-history-actions">
                         <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
                         {#if deployment.active}
                           <span>Current</span>
                         {:else}
+                          <button type="button" class="secondary-action compact" on:click={() => previewRestoreDeploymentPoint(deployment)} disabled={restorePointPreviewBusy === deployment.id}>{restorePointPreviewBusy === deployment.id ? "Previewing" : "Preview"}</button>
                           <button type="button" class="secondary-action compact" on:click={() => askRestoreDeploymentPoint(deployment)}>Restore Point</button>
                         {/if}
                       </div>

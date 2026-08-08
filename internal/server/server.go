@@ -398,6 +398,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/games/{appID}/deploy/settings", s.handleUpdateDeploySettings)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/history", s.handleDeployHistory)
+	mux.HandleFunc("GET /api/games/{appID}/deploy/history/{deploymentID}/preview", s.handlePreviewDeployHistoryPoint)
 	mux.HandleFunc("POST /api/games/{appID}/deploy/history/{deploymentID}/restore", s.handleRestoreDeployHistoryPoint)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
 	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
@@ -553,6 +554,15 @@ type deployPreviewSummary struct {
 	Skip      int    `json:"skip"`
 	Conflicts int    `json:"conflicts"`
 	Error     string `json:"error,omitempty"`
+}
+
+type deploymentRestorePreviewResponse struct {
+	DeploymentID     int64                `json:"deployment_id"`
+	CurrentFileCount int                  `json:"current_file_count"`
+	TargetFileCount  int                  `json:"target_file_count"`
+	Summary          deployPreviewSummary `json:"summary"`
+	SampleFiles      []string             `json:"sample_files,omitempty"`
+	Plan             deploy.Plan          `json:"plan"`
 }
 
 type gameDiagnosticsResponse struct {
@@ -5695,6 +5705,29 @@ func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
 }
 
+func (s *Server) handlePreviewDeployHistoryPoint(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	deploymentID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("deploymentID")), 10, 64)
+	if err != nil || deploymentID <= 0 {
+		http.Error(w, "valid deploymentID is required", http.StatusBadRequest)
+		return
+	}
+	preview, err := s.deploymentPointRestorePreview(r.Context(), appID, deploymentID)
+	if err != nil {
+		if errors.Is(err, errDeploymentPointNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, preview)
+}
+
 func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
@@ -5706,20 +5739,16 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 		http.Error(w, "valid deploymentID is required", http.StatusBadRequest)
 		return
 	}
-	targetFiles, err := s.db.DeploymentFilesForSteamAppDeployment(r.Context(), appID, deploymentID)
+	preview, err := s.deploymentPointRestorePreview(r.Context(), appID, deploymentID)
 	if err != nil {
+		if errors.Is(err, errDeploymentPointNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if len(targetFiles) == 0 {
-		http.Error(w, "deployment point was not found or has no files", http.StatusNotFound)
-		return
-	}
-	currentFiles, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	plan := preview.Plan
 
 	payload := gameJobPayload(appID)
 	if payload == nil {
@@ -5728,8 +5757,7 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 	payload["deployment_id"] = strconv.FormatInt(deploymentID, 10)
 	job := s.jobs.CreateWithPayload("rollback", "Restore selected deployment point", payload)
 	job, _ = s.jobs.Run(job.ID, "Restoring DMM-owned files to deployment point "+strconv.FormatInt(deploymentID, 10))
-	plan := deploymentPointRestorePlan(currentFiles, targetFiles)
-	s.logger.Info("deployment point restore started", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "actions", len(plan.Actions), "target_files", len(targetFiles), "current_files", len(currentFiles))
+	s.logger.Info("deployment point restore started", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "actions", len(plan.Actions), "target_files", preview.TargetFileCount, "current_files", preview.CurrentFileCount)
 	if len(plan.Conflicts) > 0 {
 		message := "Restore blocked by " + strconv.Itoa(len(plan.Conflicts)) + " unmanaged file conflict" + plural(len(plan.Conflicts))
 		s.logger.Warn("deployment point restore blocked", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "conflicts", len(plan.Conflicts))
@@ -5744,7 +5772,7 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan})
 		return
 	}
-	newDeploymentID, err := s.db.RecordDeployment(r.Context(), appID, deploymentPointStrategy(targetFiles), deployment.Files)
+	newDeploymentID, err := s.db.RecordDeployment(r.Context(), appID, deploymentPointStrategyFromPlan(plan), deployment.Files)
 	if err != nil {
 		rollbackErr := deployment.Rollback()
 		if rollbackErr != nil {
@@ -5778,6 +5806,32 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 		"removed":           removed,
 	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan, "deployment_id": newDeploymentID})
+}
+
+var errDeploymentPointNotFound = errors.New("deployment point was not found or has no files")
+
+func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string, deploymentID int64) (deploymentRestorePreviewResponse, error) {
+	targetFiles, err := s.db.DeploymentFilesForSteamAppDeployment(ctx, appID, deploymentID)
+	if err != nil {
+		return deploymentRestorePreviewResponse{}, err
+	}
+	if len(targetFiles) == 0 {
+		return deploymentRestorePreviewResponse{}, errDeploymentPointNotFound
+	}
+	currentFiles, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		return deploymentRestorePreviewResponse{}, err
+	}
+	plan := deploymentPointRestorePlan(currentFiles, targetFiles)
+	preview := deploymentRestorePreviewResponse{
+		DeploymentID:     deploymentID,
+		CurrentFileCount: len(currentFiles),
+		TargetFileCount:  len(targetFiles),
+		Summary:          summarizeDeployPreview(plan),
+		SampleFiles:      deploymentRestoreSampleFiles(plan, 6),
+		Plan:             plan,
+	}
+	return preview, nil
 }
 
 func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) deploy.Plan {
@@ -5831,6 +5885,39 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) 
 		Strategy: deploymentPointStrategy(targetFiles),
 		Actions:  actions,
 	}
+}
+
+func deploymentRestoreSampleFiles(plan deploy.Plan, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	samples := make([]string, 0, min(limit, len(plan.Actions)))
+	for _, action := range plan.Actions {
+		if action.Operation == "keep" || strings.TrimSpace(action.TargetPath) == "" {
+			continue
+		}
+		label := strings.TrimSpace(action.TargetRelative)
+		if label == "" {
+			label = filepath.ToSlash(action.TargetPath)
+		}
+		samples = append(samples, action.Operation+": "+label)
+		if len(samples) >= limit {
+			break
+		}
+	}
+	return samples
+}
+
+func deploymentPointStrategyFromPlan(plan deploy.Plan) deploy.Strategy {
+	if plan.Strategy != "" {
+		return plan.Strategy
+	}
+	for _, action := range plan.Actions {
+		if action.Strategy != "" {
+			return action.Strategy
+		}
+	}
+	return deploy.StrategySymlink
 }
 
 func cleanOptionalPath(path string) string {

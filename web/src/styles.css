@@ -2021,6 +2021,57 @@ h2 {
   min-width: 0;
 }
 
+.deployment-restore-preview {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  border: 1px solid #3e4650;
+  border-radius: 6px;
+  padding: 8px;
+  background: #0d131a;
+}
+
+.deployment-restore-preview > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.deployment-restore-preview > div:first-child span {
+  color: #a1a1aa;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.deployment-restore-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.deployment-restore-counts span {
+  border: 1px solid #303741;
+  border-radius: 999px;
+  padding: 4px 6px;
+  color: #d4d4d8;
+  background: #12171d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.deployment-restore-samples {
+  display: grid;
+  gap: 4px;
+}
+
+.deployment-restore-samples small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .deploy-flow {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

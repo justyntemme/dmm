@@ -7652,6 +7652,38 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	previewReq := httptest.NewRequest(http.MethodGet, "/api/games/413150/deploy/history/"+strconv.FormatInt(oldID, 10)+"/preview", nil)
+	previewReq.RemoteAddr = "127.0.0.1:1"
+	previewRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(previewRec, previewReq)
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, body = %s", previewRec.Code, previewRec.Body.String())
+	}
+	var previewBody struct {
+		DeploymentID     int64    `json:"deployment_id"`
+		CurrentFileCount int      `json:"current_file_count"`
+		TargetFileCount  int      `json:"target_file_count"`
+		SampleFiles      []string `json:"sample_files"`
+		Summary          struct {
+			Add     int `json:"add"`
+			Replace int `json:"replace"`
+			Remove  int `json:"remove"`
+		} `json:"summary"`
+		Plan deploy.Plan `json:"plan"`
+	}
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &previewBody); err != nil {
+		t.Fatal(err)
+	}
+	if previewBody.DeploymentID != oldID || previewBody.CurrentFileCount != 1 || previewBody.TargetFileCount != 1 {
+		t.Fatalf("preview identity/counts = %+v", previewBody)
+	}
+	if previewBody.Summary.Add != 1 || previewBody.Summary.Remove != 1 || previewBody.Summary.Replace != 0 {
+		t.Fatalf("preview summary = %+v", previewBody.Summary)
+	}
+	if len(previewBody.Plan.Actions) != 2 || len(previewBody.SampleFiles) == 0 {
+		t.Fatalf("preview plan/sample = %+v", previewBody)
+	}
+
 	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy/history/"+strconv.FormatInt(oldID, 10)+"/restore", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
