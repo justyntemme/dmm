@@ -5811,6 +5811,10 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 var errDeploymentPointNotFound = errors.New("deployment point was not found or has no files")
 
 func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string, deploymentID int64) (deploymentRestorePreviewResponse, error) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return deploymentRestorePreviewResponse{}, err
+	}
 	targetFiles, err := s.db.DeploymentFilesForSteamAppDeployment(ctx, appID, deploymentID)
 	if err != nil {
 		return deploymentRestorePreviewResponse{}, err
@@ -5822,7 +5826,7 @@ func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string
 	if err != nil {
 		return deploymentRestorePreviewResponse{}, err
 	}
-	plan := deploymentPointRestorePlan(currentFiles, targetFiles)
+	plan := deploymentPointRestorePlan(currentFiles, targetFiles, game.GamePath)
 	preview := deploymentRestorePreviewResponse{
 		DeploymentID:     deploymentID,
 		CurrentFileCount: len(currentFiles),
@@ -5834,7 +5838,14 @@ func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string
 	return preview, nil
 }
 
-func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) deploy.Plan {
+func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, targetRoot string) deploy.Plan {
+	targetRoot = strings.TrimSpace(targetRoot)
+	cleanTargetRoot := ""
+	targetRoots := map[string]string{}
+	if targetRoot != "" {
+		cleanTargetRoot = filepath.Clean(targetRoot)
+		targetRoots["game"] = cleanTargetRoot
+	}
 	targetByPath := make(map[string]deploy.AppliedFile, len(targetFiles))
 	for _, file := range targetFiles {
 		target := filepath.Clean(file.TargetPath)
@@ -5849,9 +5860,13 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) 
 		if _, keep := targetByPath[target]; keep {
 			continue
 		}
+		targetRootLabel, targetRel := deploymentRestoreTargetLabel(cleanTargetRoot, target)
+		targetRoots[targetRootLabel] = targetRootForLabel(cleanTargetRoot, targetRootLabel, target)
 		actions = append(actions, deploy.Action{
 			RestorePath:    file.RestorePath,
 			TargetPath:     target,
+			TargetRoot:     targetRootLabel,
+			TargetRelative: targetRel,
 			Strategy:       file.Strategy,
 			Operation:      "remove",
 			ChecksumSHA256: file.ChecksumSHA256,
@@ -5869,10 +5884,14 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) 
 		if _, err := os.Lstat(target); err == nil {
 			operation = "replace"
 		}
+		targetRootLabel, targetRel := deploymentRestoreTargetLabel(cleanTargetRoot, target)
+		targetRoots[targetRootLabel] = targetRootForLabel(cleanTargetRoot, targetRootLabel, target)
 		actions = append(actions, deploy.Action{
 			SourcePath:     filepath.Clean(file.SourcePath),
 			RestorePath:    cleanOptionalPath(file.RestorePath),
 			TargetPath:     target,
+			TargetRoot:     targetRootLabel,
+			TargetRelative: targetRel,
 			Strategy:       file.Strategy,
 			Operation:      operation,
 			ChecksumSHA256: file.ChecksumSHA256,
@@ -5882,9 +5901,27 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) 
 		})
 	}
 	return deploy.Plan{
-		Strategy: deploymentPointStrategy(targetFiles),
-		Actions:  actions,
+		TargetRoot:  cleanTargetRoot,
+		TargetRoots: targetRoots,
+		Strategy:    deploymentPointStrategy(targetFiles),
+		Actions:     actions,
 	}
+}
+
+func deploymentRestoreTargetLabel(targetRoot, target string) (string, string) {
+	if targetRoot != "" {
+		if rel, err := filepath.Rel(targetRoot, target); err == nil && rel != "." && !filepath.IsAbs(rel) && !strings.HasPrefix(filepath.ToSlash(rel), "../") {
+			return "game", filepath.ToSlash(rel)
+		}
+	}
+	return "external", filepath.ToSlash(target)
+}
+
+func targetRootForLabel(targetRoot, label, target string) string {
+	if label == "game" {
+		return targetRoot
+	}
+	return filepath.Dir(target)
 }
 
 func deploymentRestoreSampleFiles(plan deploy.Plan, limit int) []string {
