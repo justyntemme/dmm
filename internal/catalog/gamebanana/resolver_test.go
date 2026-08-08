@@ -94,6 +94,68 @@ func TestResolveURLUsesDownloadPagePath(t *testing.T) {
 	}
 }
 
+func TestResolveURLRetriesEmptyAPIResponse(t *testing.T) {
+	attempts := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			return
+		}
+		writeGameBananaJSON(t, w, itemResponse{
+			Name: "Retry Mod",
+			Files: map[string]fileRecord{
+				"1": {ID: "1", FileName: "retry.zip", DownloadURL: "https://gamebanana.com/dl/1"},
+			},
+		})
+	}))
+	t.Cleanup(api.Close)
+
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
+		URL:        "https://gamebanana.com/mods/626069",
+		SteamAppID: "413150",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d", attempts)
+	}
+	if resolved.FileName != "retry.zip" {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+}
+
+func TestResolveURLRetriesTransientAPIStatus(t *testing.T) {
+	attempts := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			http.Error(w, "temporary", http.StatusBadGateway)
+			return
+		}
+		writeGameBananaJSON(t, w, itemResponse{
+			Name: "Retry Mod",
+			Files: map[string]fileRecord{
+				"1": {ID: "1", FileName: "retry.zip", DownloadURL: "https://gamebanana.com/dl/1"},
+			},
+		})
+	}))
+	t.Cleanup(api.Close)
+
+	_, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
+		URL:        "https://gamebanana.com/mods/626069",
+		SteamAppID: "413150",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d", attempts)
+	}
+}
+
 func TestResolveURLRequiresSelectedSteamGame(t *testing.T) {
 	api := newGameBananaTestAPI(t)
 	_, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{

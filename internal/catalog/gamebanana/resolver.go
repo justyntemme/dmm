@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 )
 
 const defaultAPIBaseURL = "https://api.gamebanana.com"
+const maxAPIRequestAttempts = 3
 
 var steamAppIDPattern = regexp.MustCompile(`^[0-9]+$`)
 
@@ -301,6 +303,28 @@ func (r Resolver) resolveItem(ctx context.Context, ref itemRef) (itemResponse, e
 }
 
 func (r Resolver) getJSON(ctx context.Context, requestPath string, params map[string]string, out any) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxAPIRequestAttempts; attempt++ {
+		err := r.getJSONOnce(ctx, requestPath, params, out)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isTransientAPIError(err) || ctx.Err() != nil || attempt == maxAPIRequestAttempts {
+			return err
+		}
+		timer := time.NewTimer(time.Duration(attempt) * 150 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return lastErr
+}
+
+func (r Resolver) getJSONOnce(ctx context.Context, requestPath string, params map[string]string, out any) error {
 	baseURL := strings.TrimRight(strings.TrimSpace(r.APIBaseURL), "/")
 	if baseURL == "" {
 		baseURL = defaultAPIBaseURL
@@ -332,12 +356,32 @@ func (r Resolver) getJSON(ctx context.Context, requestPath string, params map[st
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("GameBanana API request failed: %s", resp.Status)
+		return apiStatusError{statusCode: resp.StatusCode, status: resp.Status}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return err
 	}
 	return nil
+}
+
+type apiStatusError struct {
+	statusCode int
+	status     string
+}
+
+func (err apiStatusError) Error() string {
+	return "GameBanana API request failed: " + err.status
+}
+
+func isTransientAPIError(err error) bool {
+	var status apiStatusError
+	if errors.As(err, &status) {
+		return status.statusCode == http.StatusTooManyRequests || status.statusCode >= 500
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "eof")
 }
 
 func selectFile(files map[string]fileRecord, requestedID string) (fileRecord, error) {
