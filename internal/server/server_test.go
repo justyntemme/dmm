@@ -4166,11 +4166,19 @@ func TestInstallCandidateSelectionsUseBackendDefaultsForEmptyStoredChoices(t *te
 func TestUploadLocalArchiveAutoInstallsArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
-	if err := os.MkdirAll(gamePath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(gamePath, "StardewModdingAPI"), []byte("smapi"), 0o700); err != nil {
-		t.Fatal(err)
+	for _, rel := range []string{
+		"StardewValley",
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -7740,11 +7748,19 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
-	if err := os.MkdirAll(gamePath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(gamePath, "StardewModdingAPI"), []byte("smapi"), 0o700); err != nil {
-		t.Fatal(err)
+	for _, rel := range []string{
+		"StardewValley",
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",

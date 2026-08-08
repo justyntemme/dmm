@@ -469,33 +469,76 @@ func smapiManifestMetadata(path string) installplan.ModMetadata {
 }
 
 func smapiMarkers(ctx context.Context, gamePath string) []string {
-	var details []string
-	for _, rel := range []string{
-		SMAPIExecutable,
-		"StardewModdingAPI.exe",
-		"StardewModdingAPI.dll",
-		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
-	} {
-		if ctx.Err() != nil {
+	for _, files := range smapiPlatformRequiredFiles(gamePath) {
+		details, ok := existingFiles(ctx, gamePath, files)
+		if ok {
 			return details
 		}
-		path := filepath.Join(gamePath, rel)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			details = append(details, filepath.ToSlash(path))
-		}
 	}
-	return details
+	return nil
 }
 
 func smapiLaunchMarkers(ctx context.Context, gamePath string) []string {
 	if ctx.Err() != nil {
 		return nil
 	}
-	for _, executable := range []string{SMAPIExecutable, SMAPIWindowsExecutable} {
+	for _, executable := range smapiPlatformExecutables(gamePath) {
 		markers := steam.LaunchOptionsContainTarget(ctx, SteamAppID, filepath.ToSlash(filepath.Join(gamePath, executable)))
 		if len(markers) > 0 {
 			return markers
 		}
 	}
 	return nil
+}
+
+func smapiPlatformRequiredFiles(gamePath string) [][]string {
+	linux := []string{
+		SMAPIExecutable,
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	}
+	windows := []string{
+		SMAPIWindowsExecutable,
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	}
+	if platformFileExists(gamePath, "Stardew Valley.exe") {
+		return [][]string{windows}
+	}
+	if platformFileExists(gamePath, "StardewValley") {
+		return [][]string{linux}
+	}
+	return [][]string{linux, windows}
+}
+
+func smapiPlatformExecutables(gamePath string) []string {
+	if platformFileExists(gamePath, "Stardew Valley.exe") {
+		return []string{SMAPIWindowsExecutable}
+	}
+	if platformFileExists(gamePath, "StardewValley") {
+		return []string{SMAPIExecutable}
+	}
+	return []string{SMAPIExecutable, SMAPIWindowsExecutable}
+}
+
+func platformFileExists(gamePath, rel string) bool {
+	path := filepath.Join(gamePath, filepath.FromSlash(rel))
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func existingFiles(ctx context.Context, gamePath string, rels []string) ([]string, bool) {
+	details := make([]string, 0, len(rels))
+	for _, rel := range rels {
+		if ctx.Err() != nil {
+			return nil, false
+		}
+		path := filepath.Join(gamePath, filepath.FromSlash(rel))
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			details = append(details, filepath.ToSlash(path))
+			continue
+		}
+		return nil, false
+	}
+	return details, true
 }

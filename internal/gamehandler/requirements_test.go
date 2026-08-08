@@ -44,16 +44,41 @@ func TestStardewRuntimeRequirementsMissingSMAPI(t *testing.T) {
 
 func TestStardewRuntimeRequirementsDetectSMAPI(t *testing.T) {
 	gamePath := t.TempDir()
-	smapi := filepath.Join(gamePath, "StardewModdingAPI")
-	if err := os.WriteFile(smapi, []byte("smapi"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeRuntimeFile(t, gamePath, "StardewValley")
+	writeRuntimeFile(t, gamePath, "StardewModdingAPI")
+	writeRuntimeFile(t, gamePath, "StardewModdingAPI.dll")
+	writeRuntimeFile(t, gamePath, filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"))
 	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
 	if len(reqs) != 2 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
 	req, ok := reqByID(reqs, "stardew-smapi-installed")
-	if !ok || req.Status != RequirementOK || len(req.Details) != 1 {
+	if !ok || req.Status != RequirementOK || len(req.Details) != 3 {
+		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
+func TestStardewRuntimeRequirementsRequireCompleteSMAPIFileSet(t *testing.T) {
+	gamePath := t.TempDir()
+	writeRuntimeFile(t, gamePath, "StardewValley")
+	writeRuntimeFile(t, gamePath, "StardewModdingAPI")
+
+	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
+	if reqStatus(reqs, "stardew-smapi-installed") != RequirementMissing {
+		t.Fatalf("partial SMAPI install should not satisfy requirement: %+v", reqs)
+	}
+}
+
+func TestStardewRuntimeRequirementsDetectWindowsSMAPI(t *testing.T) {
+	gamePath := t.TempDir()
+	writeRuntimeFile(t, gamePath, "Stardew Valley.exe")
+	writeRuntimeFile(t, gamePath, "StardewModdingAPI.exe")
+	writeRuntimeFile(t, gamePath, "StardewModdingAPI.dll")
+	writeRuntimeFile(t, gamePath, filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"))
+
+	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
+	req, ok := reqByID(reqs, "stardew-smapi-installed")
+	if !ok || req.Status != RequirementOK || len(req.Details) != 3 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
 }
@@ -62,6 +87,7 @@ func TestStardewRuntimeRequirementsDetectSteamLaunchOption(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	gamePath := filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Stardew Valley")
+	writeRuntimeFile(t, gamePath, "StardewValley")
 	configPath := filepath.Join(home, ".local", "share", "Steam", "userdata", "1", "config", "localconfig.vdf")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatal(err)
@@ -77,6 +103,45 @@ func TestStardewRuntimeRequirementsDetectSteamLaunchOption(t *testing.T) {
 	req, ok := reqByID(reqs, "stardew-smapi-launch")
 	if !ok || req.Status != RequirementOK || len(req.Details) != 1 || !strings.Contains(req.Message, "launch option") {
 		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
+func TestStardewRuntimeRequirementsDetectWindowsSteamLaunchOption(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	gamePath := filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Stardew Valley")
+	writeRuntimeFile(t, gamePath, "Stardew Valley.exe")
+	configPath := filepath.Join(home, ".local", "share", "Steam", "userdata", "1", "config", "localconfig.vdf")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "413150" { "LaunchOptions" "\"` + filepath.ToSlash(filepath.Join(gamePath, "StardewModdingAPI.exe")) + `\" %command%" } } } } } }`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
+	req, ok := reqByID(reqs, "stardew-smapi-launch")
+	if !ok || req.Status != RequirementOK || len(req.Details) != 1 {
+		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
+func TestStardewRuntimeRequirementsRejectWrongPlatformLaunchOption(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	gamePath := filepath.Join(home, ".local", "share", "Steam", "steamapps", "common", "Stardew Valley")
+	writeRuntimeFile(t, gamePath, "Stardew Valley.exe")
+	configPath := filepath.Join(home, ".local", "share", "Steam", "userdata", "1", "config", "localconfig.vdf")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `"UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "413150" { "LaunchOptions" "\"` + filepath.ToSlash(filepath.Join(gamePath, "StardewModdingAPI")) + `\" %command%" } } } } } }`
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reqs := RuntimeRequirements(context.Background(), "413150", gamePath, []RuntimeMod{{Enabled: true, ModType: "stardew-smapi-mod"}})
+	if reqStatus(reqs, "stardew-smapi-launch") != RequirementMissing {
+		t.Fatalf("wrong-platform launch option should not satisfy requirement: %+v", reqs)
 	}
 }
 
@@ -329,4 +394,15 @@ func reqStatus(reqs []RuntimeRequirement, id string) RequirementStatus {
 		return ""
 	}
 	return req.Status
+}
+
+func writeRuntimeFile(t *testing.T, root, rel string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("test"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 }
