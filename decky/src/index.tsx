@@ -863,6 +863,8 @@ const deckySidebarListStyle: CSSProperties = {
   width: "100%"
 };
 
+const deckyLocalArchivePageSize = 12;
+
 const deckySidebarSurfaceStyle: CSSProperties = {
   boxSizing: "border-box",
   display: "grid",
@@ -3679,6 +3681,7 @@ function DeckyModManagerRoute() {
   const [localArchiveBrowserPath, setLocalArchiveBrowserPath] = useState<string>("");
   const [localArchiveBrowserParentPath, setLocalArchiveBrowserParentPath] = useState<string>("");
   const [localArchivePathInput, setLocalArchivePathInput] = useState<string>("");
+  const [localArchiveBrowserLimit, setLocalArchiveBrowserLimit] = useState<number>(deckyLocalArchivePageSize);
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
@@ -5076,6 +5079,7 @@ function DeckyModManagerRoute() {
       setLocalArchiveBrowserPath(result.current_path ?? "");
       setLocalArchiveBrowserParentPath(result.parent_path ?? "");
       setLocalArchivePathInput(result.current_path ?? "");
+      setLocalArchiveBrowserLimit(deckyLocalArchivePageSize);
       setDeckyLocalArchives((result.entries ?? []).filter((entry) => entry.kind === "file").map((entry) => ({
         path: entry.path,
         name: entry.name,
@@ -5096,6 +5100,7 @@ function DeckyModManagerRoute() {
       return;
     }
     setLocalArchiveBrowserOpen(true);
+    setLocalArchiveBrowserLimit(deckyLocalArchivePageSize);
     await browseDeckyLocalArchives("");
   }
 
@@ -5352,6 +5357,8 @@ function DeckyModManagerRoute() {
         .some((value) => String(value ?? "").toLowerCase().includes(normalizedModSearch))
     );
   }, [deckyWorkshopItems, modSearch]);
+  const visibleLocalArchiveEntries = localArchiveBrowserEntries.slice(0, localArchiveBrowserLimit);
+  const hiddenLocalArchiveEntryCount = Math.max(0, localArchiveBrowserEntries.length - visibleLocalArchiveEntries.length);
   const visibleManagedGameIDs = visibleManagedGames.map((game) => game.app_id).join("|");
   const visibleDeckyModIDs = visibleDeckyMods.map((mod) => String(mod.id)).join("|");
 
@@ -5713,7 +5720,12 @@ function DeckyModManagerRoute() {
 	                  {localArchiveBrowserEntries.length === 0 && (
 	                    <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No folders or supported archive files found here.</div>
 	                  )}
-	                  {localArchiveBrowserEntries.slice(0, 12).map((archiveEntry) => {
+	                  {localArchiveBrowserEntries.length > 0 && (
+	                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                      Showing {visibleLocalArchiveEntries.length} of {localArchiveBrowserEntries.length} folders/archive files.
+	                    </div>
+	                  )}
+	                  {visibleLocalArchiveEntries.map((archiveEntry) => {
 	                    const focused = focusedLocalArchivePath === archiveEntry.path;
 	                    const busy = busyLocalArchivePath === archiveEntry.path;
 	                    const isDirectory = archiveEntry.kind === "directory";
@@ -5743,7 +5755,7 @@ function DeckyModManagerRoute() {
 	                      >
 	                        <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
 	                          <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{archiveEntry.name}</div>
-	                          <span style={deckySourcePillStyle(isDirectory ? "direct" : "local")}>{isDirectory ? "Folder" : "Manual"}</span>
+	                          <span style={deckySourcePillStyle(isDirectory ? "direct" : "local")}>{isDirectory ? "Folder" : "Local"}</span>
 	                        </div>
 	                        <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
 	                          {isDirectory ? "Open folder" : `${formatBytes(archiveEntry.bytes ?? 0)} · ${archiveEntry.extension || "archive"}`}
@@ -5754,26 +5766,48 @@ function DeckyModManagerRoute() {
 	                      </Focusable>
 	                    );
 	                  })}
+	                  {hiddenLocalArchiveEntryCount > 0 && (
+	                    <Focusable
+	                      className="dmm-sidebar-row"
+	                      focusClassName="dmm-sidebar-row-focused"
+	                      onActivate={(event) => {
+	                        event.preventDefault();
+	                        event.stopPropagation();
+	                        setLocalArchiveBrowserLimit((current) => current + deckyLocalArchivePageSize);
+	                      }}
+	                      onClick={() => setLocalArchiveBrowserLimit((current) => current + deckyLocalArchivePageSize)}
+	                      style={{
+	                        ...deckyCompositeRowStyle(false),
+	                        padding: "10px"
+	                      }}
+	                    >
+	                      <div style={{ color: "#f8fafc", fontWeight: 900 }}>Show More</div>
+	                      <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                        {hiddenLocalArchiveEntryCount} more item{hiddenLocalArchiveEntryCount === 1 ? "" : "s"} in this folder.
+	                      </div>
+	                      <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>A Show next {Math.min(deckyLocalArchivePageSize, hiddenLocalArchiveEntryCount)}</div>
+	                    </Focusable>
+	                  )}
 	                </>
 	              )}
 	            </div>
 	          </PanelSectionRow>
-		          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
+	          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
 	            <PanelSectionRow>
 	              <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
-                <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
-                <ButtonItem layout="below" onClick={cycleDeckyModSort}>
-                  Sort: {deckyModSortLabel(effectiveModSort)}
-                </ButtonItem>
-                <ButtonItem layout="below" onClick={toggleDeckyModOrderMode}>
-                  Order Mode: {modOrderMode ? "On" : "Off"}
-                </ButtonItem>
-                <ButtonItem layout="below" onClick={checkDeckyModUpdates} disabled={modUpdateBusy || deckyMods.length === 0}>
-                  {modUpdateBusy ? "Checking Updates..." : "Check Updates"}
-                </ButtonItem>
-              </div>
-            </PanelSectionRow>
-          )}
+	                <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
+	                <ButtonItem layout="below" onClick={cycleDeckyModSort}>
+	                  Sort: {deckyModSortLabel(effectiveModSort)}
+	                </ButtonItem>
+	                <ButtonItem layout="below" onClick={toggleDeckyModOrderMode}>
+	                  Order Mode: {modOrderMode ? "On" : "Off"}
+	                </ButtonItem>
+	                <ButtonItem layout="below" onClick={checkDeckyModUpdates} disabled={modUpdateBusy || deckyMods.length === 0}>
+	                  {modUpdateBusy ? "Checking Updates..." : "Check Updates"}
+	                </ButtonItem>
+	              </div>
+	            </PanelSectionRow>
+	          )}
           <PanelSectionRow>
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Toggling a mod applies the selected profile. Restart a running game to pick up changes.</div>
           </PanelSectionRow>
