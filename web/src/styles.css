@@ -1675,6 +1675,11 @@ h2 {
   background: #14231b;
 }
 
+.profile-summary .summary-action strong {
+  font-size: 0.9rem;
+  line-height: 1.1;
+}
+
 .profile-summary .summary-action:hover,
 .profile-summary .summary-action:focus-visible {
   border-color: #76dfa6;
