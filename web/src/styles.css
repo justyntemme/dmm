@@ -1499,6 +1499,25 @@ h2 {
   cursor: pointer;
 }
 
+.nexus-browser summary::-webkit-details-marker {
+  display: none;
+}
+
+.nexus-browser summary::marker {
+  content: "";
+}
+
+.nexus-browser summary em {
+  border: 1px solid #365244;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #76dfa6;
+  background: #132018;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .nexus-browser summary small,
 .explore-heading small {
   display: block;

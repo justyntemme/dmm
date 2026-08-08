@@ -4425,16 +4425,17 @@
               </section>
               <p class="hint">Mods that need choices or review will appear in Action Center. Nexus page links finish on the Deck browser because Nexus generates the download key there.</p>
               {#if exploreSourceOptions().length > 0}
-                <section class="nexus-browser" aria-label="Explore mods">
-                  <div class="explore-heading">
+                <details class="nexus-browser" aria-label="Explore mods" open={nexusSearchResults.length > 0 || Boolean(nexusSearchMessage || nexusSearchError)}>
+                  <summary class="explore-heading">
                     <div>
-                      <strong>Explore Mods</strong>
-                      <small>Nexus Mods</small>
+                      <strong>Explore Nexus Mods</strong>
+                      <small>Search Vortex-compatible mods for this game</small>
                     </div>
                     {#if selectedExploreSource()}
                       <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
                     {/if}
-                  </div>
+                    <em>Browse</em>
+                  </summary>
                   {#if exploreSourceOptions().length > 1}
                     <label class="target-profile-select">
                       <span>Source</span>
@@ -4510,7 +4511,7 @@
                   {:else}
                     <p class="hint">{selectedExploreSource()?.name ?? "This source"} is not ready yet. Use another source or paste a direct archive URL if one is available.</p>
                   {/if}
-                </section>
+                </details>
               {/if}
               {#if resolvedCapture}
                 <p class="hint">Resolved {resolvedCapture}</p>
