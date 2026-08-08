@@ -4616,15 +4616,6 @@
                           {busyMods[mod.id] === "update" ? "Queueing..." : "Install Update"}
                         </button>
                       {/if}
-                      <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
-                        {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
-                      </button>
-                      <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>
-                        {busyMods[mod.id] === "reconfigure" ? "Opening..." : "Reconfigure"}
-                      </button>
-                      <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
-                        {busyMods[mod.id] === "remove" ? "Removing..." : "Remove"}
-                      </button>
                     </div>
                     <details class="mod-advanced">
                       <summary>Advanced</summary>
@@ -4632,6 +4623,15 @@
                       <div class="mod-advanced-actions">
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
+                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
+                          {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
+                        </button>
+                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>
+                          {busyMods[mod.id] === "reconfigure" ? "Opening..." : "Reconfigure"}
+                        </button>
+                        <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
+                          {busyMods[mod.id] === "remove" ? "Removing..." : "Remove"}
+                        </button>
                       </div>
                       {#if transferProfiles().length > 0}
                         <div class="profile-transfer">
