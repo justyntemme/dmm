@@ -10,6 +10,8 @@ section() {
 cleanup_python_cache() {
   find "${ROOT_DIR}/decky/__pycache__" -type f -delete 2>/dev/null || true
   rmdir "${ROOT_DIR}/decky/__pycache__" 2>/dev/null || true
+  find "${ROOT_DIR}/testing/__pycache__" -type f -delete 2>/dev/null || true
+  rmdir "${ROOT_DIR}/testing/__pycache__" 2>/dev/null || true
 }
 
 section "Go tests"
@@ -34,6 +36,7 @@ section "Decky Python syntax"
 (
   cd "${ROOT_DIR}"
   python3 -m py_compile decky/main.py
+  python3 -m py_compile testing/dmm_test_auth.py
   cleanup_python_cache
 )
 
@@ -57,6 +60,8 @@ section "Testing script syntax"
     testing/live_web_asset_check.sh \
     testing/live_nexus_browser_handoff_check.sh \
     testing/live_ui_preferences_check.sh \
+    testing/live_auth_pairing_check.sh \
+    testing/live_local_archive_security_check.sh \
     testing/live_extension_coverage_check.sh \
     testing/live_extension_targets_check.sh \
     testing/live_provider_resolve_check.sh \
@@ -77,6 +82,8 @@ section "MVP UI product audit"
 section "Deck testing artifact coverage"
 (
   cd "${ROOT_DIR}"
+  rg -q "dmm_test_auth.py" testing/create_deck_transfer_bundle.sh
+  rg -q "dmm_test_auth.py" testing/install_decky_plugin.sh
   for script in \
     install_decky_plugin_from_package.sh \
     install_decky_privileged_wrapper.sh \
@@ -94,6 +101,8 @@ section "Deck testing artifact coverage"
     live_web_asset_check.sh \
     live_nexus_browser_handoff_check.sh \
     live_ui_preferences_check.sh \
+    live_auth_pairing_check.sh \
+    live_local_archive_security_check.sh \
     live_extension_coverage_check.sh \
     live_extension_targets_check.sh \
     live_provider_resolve_check.sh \
