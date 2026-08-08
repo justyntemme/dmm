@@ -66,6 +66,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 - Commit at coherent feature boundaries instead of batching unrelated work into large catch-all commits.
 - Use Conventional Commits-style messages: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `build:`, or `chore:` followed by a concise imperative summary.
+- Do not sign commits or tags during Codex-driven development. This repository is configured with `commit.gpgsign=false` and `tag.gpgSign=false`; if a command still tries to sign, rerun it with `--no-gpg-sign` instead of waiting for user approval.
 - Keep each commit focused on one logical change: backend behavior, Decky integration, web UI, docs, tests, or packaging. Split work when one change grows into multiple reviewable concerns.
 - Run the relevant lightweight verification before committing. For cross-layer changes, prefer `go test ./...`, Decky build, web build, and package smoke checks when the touched files warrant it.
 - Do not commit transient AI planning artifacts, scratch files, local logs, downloaded archives, device-specific secrets, or generated dependency folders.

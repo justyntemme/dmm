@@ -3728,6 +3728,19 @@ function DeckyModManagerRoute() {
     }
   }
 
+  async function refreshStatusOnly(reason = "status-refresh") {
+    try {
+      const nextStatus = await call<[], BackendStatus>("status");
+      applyBackendAuthFromStatus(nextStatus);
+      setStatus(nextStatus);
+      applyDeckyUIPreferences(nextStatus);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      await logFrontendEvent("decky status refresh failed", { reason, error: message });
+    }
+  }
+
   function scheduleDeckyRouteRefresh(options: { status?: boolean; games?: boolean; gameState?: boolean }) {
     routeRefreshNeedsStatus.current = routeRefreshNeedsStatus.current || Boolean(options.status);
     routeRefreshNeedsGames.current = routeRefreshNeedsGames.current || Boolean(options.games);
@@ -5156,6 +5169,11 @@ function DeckyModManagerRoute() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => void refreshStatusOnly("route-heartbeat"), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     if (tab === "games" && status?.running) {
       void refreshDeckyMods();
     }
@@ -5370,6 +5388,9 @@ function DeckyModManagerRoute() {
           <div>URL: {status?.url ?? "Unavailable"}</div>
           {status?.pid && <div>PID: {status.pid}</div>}
           {status?.backend && <div>Games: {status.backend.game_count} · Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
+          <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => void refreshStatusOnly("manual-status-refresh")} onClick={() => void refreshStatusOnly("manual-status-refresh")} style={{ ...deckyCompactActionStyle("neutral"), minHeight: "30px", padding: "6px" }}>
+            Refresh Status
+          </Focusable>
           {launchResult && <div style={{ color: "#72e0a2", marginTop: "4px", overflowWrap: "anywhere" }}>{launchResult}</div>}
           {error && <div style={{ color: "#f87171", marginTop: "4px", overflowWrap: "anywhere" }}>{error}</div>}
           {status?.error && <div style={{ color: "#f87171", marginTop: "4px", overflowWrap: "anywhere" }}>{status.error}</div>}
@@ -6613,8 +6634,12 @@ function QuickAccessContent() {
   useEffect(() => {
     void refreshStatus();
     const listener = () => void refreshStatus();
+    const timer = window.setInterval(() => void refreshStatus(), 5000);
     window.addEventListener(DMM_EVENT_NAME, listener);
-    return () => window.removeEventListener(DMM_EVENT_NAME, listener);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(DMM_EVENT_NAME, listener);
+    };
   }, []);
 
   return (
