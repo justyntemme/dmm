@@ -344,6 +344,14 @@ To verify phone/tablet local archive browsing remains token-protected and limite
 
 The check confirms unauthenticated state APIs are rejected, the default browse root is the Deck Downloads area, and obvious escapes such as `/tmp` and parent traversal are rejected.
 
+To verify phone/tablet API pairing stays token-gated after a deployed package starts:
+
+```sh
+~/.testing/live_auth_pairing_check.sh
+```
+
+The check confirms `/api/health` and static web assets remain public, state APIs reject missing and wrong tokens, REST query-string tokens are rejected, the header token works, `/api/status` does not expose the token, and WebSocket query tokens are accepted only at the upgrade boundary.
+
 After installing and deploying a fresh test mod, run the stricter live acceptance check:
 
 ```sh

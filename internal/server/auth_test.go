@@ -61,4 +61,14 @@ func TestAuthMiddleware(t *testing.T) {
 			t.Fatalf("status = %d", rec.Code)
 		}
 	})
+
+	t.Run("rejects rest query token", func(t *testing.T) {
+		handler := authMiddleware(func() string { return "secret" }, next)
+		req := httptest.NewRequest(http.MethodGet, "/api/status?token=secret", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d", rec.Code)
+		}
+	})
 }

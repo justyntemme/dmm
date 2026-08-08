@@ -37,6 +37,9 @@ func authTokenFromRequest(r *http.Request) string {
 			return strings.TrimSpace(token)
 		}
 	}
+	if r.URL.Path != "/api/events/ws" {
+		return ""
+	}
 	if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
 		return token
 	}
