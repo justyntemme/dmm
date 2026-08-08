@@ -660,6 +660,7 @@
   let selectedGameRefreshReasons = new Set<string>();
   let actionStateRefreshSequence = 0;
   let selectedGameRefreshSequence = 0;
+  let selectedGameLoadSequence = 0;
   let fullRefreshSequence = 0;
 
   function setBusyMod(modID: number, action: ModBusyAction) {
@@ -816,7 +817,7 @@
     if (isJob(event.payload)) {
       detail.job_type = event.payload.type;
       detail.job_status = event.payload.status;
-      detail.job_app_id = event.payload.app_id ?? event.payload.payload?.app_id;
+      detail.job_app_id = jobAppID(event.payload);
       detail.job_game_domain = event.payload.payload?.game_domain;
     }
     return detail;
@@ -836,6 +837,10 @@
         getJSON<Game[]>("/api/games"),
         getJSON<CatalogStatus[]>("/api/catalogs")
       ]);
+      if (sequence !== fullRefreshSequence) {
+        logClientEvent("full refresh discarded stale response", { sequence, latest_sequence: fullRefreshSequence, reason });
+        return;
+      }
       status = nextStatus;
       applyUIPreferences(nextStatus);
       games = nextGames;
@@ -854,8 +859,10 @@
       error = err instanceof Error ? err.message : String(err);
       logClientEvent("full refresh failed", { sequence, reason, error: compactLogValue(error) });
     } finally {
-      loading = false;
-      initialRefreshComplete = true;
+      if (sequence === fullRefreshSequence) {
+        loading = false;
+        initialRefreshComplete = true;
+      }
     }
     try {
       await refreshActionState(`${reason}:action-state`);
@@ -873,6 +880,10 @@
       getJSON<Job[]>("/api/jobs"),
       getJSON<InstallCandidate[]>("/api/install-candidates")
     ]);
+    if (sequence !== actionStateRefreshSequence) {
+      logClientEvent("action state refresh discarded stale response", { sequence, latest_sequence: actionStateRefreshSequence, reason });
+      return;
+    }
     jobs = nextJobs;
     globalInstallCandidates = nextCandidates;
     reconcileBusyState();
@@ -1030,6 +1041,7 @@
       detail.job_type = event.payload.type;
       detail.job_status = event.payload.status;
       detail.job_message = compactLogValue(event.payload.message);
+      detail.job_app_id = jobAppID(event.payload);
     }
     logClientEvent("events received", detail);
   }
@@ -1123,7 +1135,8 @@
   }
 
   function eventMatchesSelectedGame(event: DomainEvent) {
-    return Boolean(selectedGame && (!event.app_id || event.app_id === selectedGame.app_id));
+    const appID = eventAppID(event);
+    return Boolean(selectedGame && (!appID || appID === selectedGame.app_id));
   }
 
   function isJob(value: unknown): value is Job {
@@ -1136,6 +1149,21 @@
 
   function isUISettings(value: unknown): value is UISettings {
     return Boolean(value && typeof value === "object");
+  }
+
+  function eventAppID(event: DomainEvent) {
+    const direct = (event.app_id ?? "").trim();
+    if (direct) return direct;
+    if (isJob(event.payload)) return jobAppID(event.payload);
+    if (event.payload && typeof event.payload === "object") {
+      const payloadAppID = (event.payload as { app_id?: unknown }).app_id;
+      if (typeof payloadAppID === "string" && payloadAppID.trim()) return payloadAppID.trim();
+    }
+    return "";
+  }
+
+  function jobAppID(job: Job) {
+    return (job.app_id || job.payload?.app_id || "").trim();
   }
 
   function scheduleSelectedGameRefresh(refreshPreview = false, refreshJobs = false, reason = "event", event?: DomainEvent) {
@@ -1304,6 +1332,8 @@
   }
 
   async function loadGameState(game: Game) {
+    const sequence = ++selectedGameLoadSequence;
+    const requestAppID = game.app_id;
     const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
@@ -1318,6 +1348,15 @@
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
       getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
     ]);
+    if (!selectedGame || selectedGame.app_id !== requestAppID || sequence !== selectedGameLoadSequence) {
+      logClientEvent("selected game state discarded stale response", {
+        sequence,
+        latest_sequence: selectedGameLoadSequence,
+        request_app_id: requestAppID,
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
+      return;
+    }
     profiles = nextProfiles;
     installedMods = nextMods;
     installCandidates = nextCandidates;
@@ -1376,8 +1415,9 @@
 
   async function refreshSelectedGame(options: { refreshPreview?: boolean; refreshJobs?: boolean; reason?: string } = {}) {
     if (!selectedGame) return;
+    const game = selectedGame;
     const sequence = ++selectedGameRefreshSequence;
-    const appID = selectedGame.app_id;
+    const appID = game.app_id;
     const reason = options.reason ?? "manual";
     logClientEvent("selected game refresh started", {
       sequence,
@@ -1387,7 +1427,16 @@
       refresh_jobs: Boolean(options.refreshJobs)
     });
     if (options.refreshJobs) await refreshActionState(`${reason}:selected-game-jobs`);
-    await loadGameState(selectedGame);
+    if (!selectedGame || selectedGame.app_id !== game.app_id) {
+      logClientEvent("selected game refresh discarded after selection changed", {
+        sequence,
+        reason,
+        request_app_id: appID,
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
+      return;
+    }
+    await loadGameState(game);
     if (options.refreshPreview) await previewDeploy();
     logClientEvent("selected game refresh completed", {
       sequence,
@@ -3050,8 +3099,10 @@
   function reconcileBusyState() {
     const activeJobIDs = new Set(jobs.filter((job) => !["completed", "failed", "canceled"].includes(job.status)).map((job) => job.id));
     busyJobs = Object.fromEntries(Object.entries(busyJobs).filter(([jobID]) => activeJobIDs.has(jobID)));
-    const activeCandidateIDs = new Set(installCandidates.map((candidate) => candidate.id));
+    const activeCandidateIDs = new Set([...installCandidates, ...globalInstallCandidates].map((candidate) => candidate.id));
     busyInstallCandidates = Object.fromEntries(Object.entries(busyInstallCandidates).filter(([candidateID]) => activeCandidateIDs.has(Number(candidateID))));
+    candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([candidateID]) => activeCandidateIDs.has(Number(candidateID))));
+    candidateStepIndices = Object.fromEntries(Object.entries(candidateStepIndices).filter(([candidateID]) => activeCandidateIDs.has(Number(candidateID))));
   }
 
   function setJobBusy(jobID: string, busy: boolean) {
@@ -3200,9 +3251,9 @@
   }
 
   function gameForJob(job: Job) {
-    const payloadAppID = job.payload?.app_id;
-    if (payloadAppID) {
-      const exact = games.find((game) => game.app_id === payloadAppID);
+    const appID = jobAppID(job);
+    if (appID) {
+      const exact = games.find((game) => game.app_id === appID);
       if (exact) return exact;
     }
     return games.find((game) => actionMatchesGame(job, game)) ?? null;
@@ -3279,7 +3330,8 @@
   }
 
   function jobMatchesGame(job: Job, game: Game) {
-    if (job.payload?.app_id && job.payload.app_id === game.app_id) return true;
+    const appID = jobAppID(job);
+    if (appID && appID === game.app_id) return true;
     const domain = job.payload?.game_domain?.toLowerCase();
     if (!domain) return false;
     return nexusDomainsForGame(game).includes(domain);
