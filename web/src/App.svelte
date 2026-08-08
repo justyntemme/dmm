@@ -3926,7 +3926,7 @@
 
   {#if !authRejected}
     <section class="status-strip" aria-label="App status">
-      <button type="button" on:click={openActionCenter}>{globalActionCount} Action{globalActionCount === 1 ? "" : "s"}</button>
+      <button type="button" on:click={openActionCenter}>{globalActionCount > 0 ? `Action Center · ${globalActionCount}` : "Action Center"}</button>
       <button type="button" on:click={() => (drawer = "games")}>{manageableGameCount} Ready</button>
       <button type="button" on:click={() => openSettings("sources")}>{readySourceCatalogCount}/{sourceCatalogCount} Sources</button>
     </section>
