@@ -121,7 +121,15 @@ func TestWillDeploySnakeBitePackagesGeneratesPatchedZeroDat(t *testing.T) {
 	if err := gzs.WriteQAR(filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)), baseZero); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)), "not scanned")
+	if err := gzs.WriteQAR(filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)), gzs.QARFile{
+		Flags:   3150048,
+		Version: 1,
+		Entries: []gzs.QAREntry{
+			{FilePath: "Assets/tpp/demo/one.lua", Data: []byte("one")},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/mod.bin" /></FpkEntries></ModEntry>`)
 	if err := gzs.WriteFPK(filepath.Join(stagingPath, filepath.FromSlash(fpkRel)), gzs.FPKFile{
 		Entries: []gzs.FPKEntry{{FilePath: "/Assets/tpp/demo/mod.bin", Data: []byte("mod")}},
@@ -147,14 +155,18 @@ func TestWillDeploySnakeBitePackagesGeneratesPatchedZeroDat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Mappings) != 1 {
+	if len(result.Mappings) != 2 {
 		t.Fatalf("mappings = %+v", result.Mappings)
 	}
-	mapping := result.Mappings[0]
-	if mapping.TargetRelative != snakeBiteZeroArchiveRel || mapping.TargetPolicy != deploy.TargetPolicyPatchExisting || mapping.Strategy != deploy.StrategyCopy || mapping.RestorePath == "" {
-		t.Fatalf("mapping = %+v", mapping)
+	zeroMapping := requireMapping(t, result.Mappings, snakeBiteZeroArchiveRel)
+	oneMapping := requireMapping(t, result.Mappings, snakeBiteOneArchiveRel)
+	if zeroMapping.TargetPolicy != deploy.TargetPolicyPatchExisting || zeroMapping.Strategy != deploy.StrategyCopy || zeroMapping.RestorePath == "" {
+		t.Fatalf("zero mapping = %+v", zeroMapping)
 	}
-	fpkData, ok, err := gzs.ExtractQAREntryDataByHash(mapping.SourcePath, gzs.HashFileNameWithExtension(fpkRel))
+	if oneMapping.TargetPolicy != deploy.TargetPolicyPatchExisting || oneMapping.Strategy != deploy.StrategyCopy || oneMapping.RestorePath == "" {
+		t.Fatalf("one mapping = %+v", oneMapping)
+	}
+	fpkData, ok, err := gzs.ExtractQAREntryDataByHash(zeroMapping.SourcePath, gzs.HashFileNameWithExtension(fpkRel))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,12 +191,26 @@ func TestWillDeploySnakeBitePackagesGeneratesPatchedZeroDat(t *testing.T) {
 	if !bytes.Equal(got[gzs.FPKPathMD5("/Assets/tpp/demo/mod.bin")], []byte("mod")) {
 		t.Fatalf("mod FPK entry was not merged: %+v", got)
 	}
-	keepData, ok, err := gzs.ExtractQAREntryDataByHash(mapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/keep.lua"))
+	keepData, ok, err := gzs.ExtractQAREntryDataByHash(zeroMapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/keep.lua"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatalf("system QAR entry remained in generated 00.dat: %q", keepData)
+	}
+	keepData, ok, err = gzs.ExtractQAREntryDataByHash(oneMapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/keep.lua"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok || !bytes.Equal(keepData, []byte("keep")) {
-		t.Fatalf("unrelated QAR entry = ok %v data %q", ok, keepData)
+		t.Fatalf("system QAR entry was not moved to generated 01.dat: ok %v data %q", ok, keepData)
+	}
+	oneData, ok, err := gzs.ExtractQAREntryDataByHash(oneMapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/one.lua"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !bytes.Equal(oneData, []byte("one")) {
+		t.Fatalf("original 01.dat entry was not preserved: ok %v data %q", ok, oneData)
 	}
 }
 
@@ -194,6 +220,7 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 	stagingRoot := filepath.Join(root, "staging")
 	stagingPath := filepath.Join(stagingRoot, "mod")
 	restorePath := filepath.Join(stagingRoot, "restore", snakeBiteZeroArchiveRel)
+	restoreOnePath := filepath.Join(stagingRoot, "restore", snakeBiteOneArchiveRel)
 	if err := gzs.WriteQAR(restorePath, gzs.QARFile{
 		Flags:   3150048,
 		Version: 1,
@@ -201,7 +228,15 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := gzs.WriteQAR(restoreOnePath, gzs.QARFile{
+		Flags:   3150048,
+		Version: 1,
+		Entries: []gzs.QAREntry{{FilePath: "Assets/tpp/demo/original-one.lua", Data: []byte("original-one")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)), "patched")
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)), "patched-one")
 	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Loose MGSV File" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/new.lua" /></QarEntries></ModEntry>`)
 	writeFile(t, filepath.Join(stagingPath, "Assets", "tpp", "demo", "new.lua"), "new")
 	result, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
@@ -213,6 +248,9 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 		ManagedFiles: []deploy.AppliedFile{{
 			TargetPath:  filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)),
 			RestorePath: restorePath,
+		}, {
+			TargetPath:  filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)),
+			RestorePath: restoreOnePath,
 		}},
 		Mods: []sdk.DeploymentMod{{
 			ID:          8,
@@ -225,16 +263,36 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Mappings) != 1 || result.Mappings[0].RestorePath != restorePath {
+	zeroMapping := requireMapping(t, result.Mappings, snakeBiteZeroArchiveRel)
+	oneMapping := requireMapping(t, result.Mappings, snakeBiteOneArchiveRel)
+	if zeroMapping.RestorePath != restorePath || oneMapping.RestorePath != restoreOnePath {
 		t.Fatalf("mappings = %+v", result.Mappings)
 	}
-	original, ok, err := gzs.ExtractQAREntryDataByHash(result.Mappings[0].SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/original.lua"))
+	newEntry, ok, err := gzs.ExtractQAREntryDataByHash(zeroMapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/new.lua"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !bytes.Equal(newEntry, []byte("new")) {
+		t.Fatalf("generated archive did not include staged mod entry: ok=%v data=%q", ok, newEntry)
+	}
+	original, ok, err := gzs.ExtractQAREntryDataByHash(oneMapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/original.lua"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok || !bytes.Equal(original, []byte("original")) {
-		t.Fatalf("generated archive did not use managed restore as base: ok=%v data=%q", ok, original)
+		t.Fatalf("generated 01.dat did not use managed 00.dat restore as base for moved system file: ok=%v data=%q", ok, original)
 	}
+}
+
+func requireMapping(t *testing.T, mappings []deploy.FileMapping, targetRelative string) deploy.FileMapping {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.TargetRelative == targetRelative {
+			return mapping
+		}
+	}
+	t.Fatalf("mapping for %s not found in %+v", targetRelative, mappings)
+	return deploy.FileMapping{}
 }
 
 func writeFile(t *testing.T, path string, body string) {

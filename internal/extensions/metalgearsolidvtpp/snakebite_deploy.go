@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	snakeBiteGeneratedModID = "metalgearsolidvtpp-snakebite-00"
-	snakeBiteZeroArchiveRel = "master/0/00.dat"
-	snakeBiteOneArchiveRel  = "master/0/01.dat"
+	snakeBiteGeneratedZeroModID = "metalgearsolidvtpp-snakebite-00"
+	snakeBiteGeneratedOneModID  = "metalgearsolidvtpp-snakebite-01"
+	snakeBiteZeroArchiveRel     = "master/0/00.dat"
+	snakeBiteOneArchiveRel      = "master/0/01.dat"
+	snakeBiteGeneratedQARFlags  = 3150048
 )
 
 type snakeBiteDeployPackage struct {
@@ -44,25 +46,12 @@ func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInpu
 	if len(packages) == 0 {
 		return sdk.EventHandlerResult{Messages: []string{"MGSV SnakeBite packed archive deployment skipped because this profile has no enabled SnakeBite packages."}}, nil
 	}
-	sourcePath, restorePath, messages, err := buildSnakeBiteArchive(ctx, input, packages)
+	mappings, messages, err := buildSnakeBiteArchives(ctx, input, packages)
 	if err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
 	return sdk.EventHandlerResult{
-		Mappings: []deploy.FileMapping{{
-			SourcePath:     sourcePath,
-			RestorePath:    restorePath,
-			TargetRelative: snakeBiteZeroArchiveRel,
-			TargetPolicy:   deploy.TargetPolicyPatchExisting,
-			Strategy:       deploy.StrategyCopy,
-			InstalledModID: 0,
-			ModID:          snakeBiteGeneratedModID,
-			Priority:       -1,
-			ChecksumSHA256: "",
-			SourceRelative: "",
-			TargetRoot:     "",
-			Catalog:        "dmm",
-		}},
+		Mappings: mappings,
 		Messages: messages,
 	}, nil
 }
@@ -91,54 +80,163 @@ func enabledSnakeBitePackages(input sdk.EventHandlerInput) ([]snakeBiteDeployPac
 	return packages, nil
 }
 
-func buildSnakeBiteArchive(ctx context.Context, input sdk.EventHandlerInput, packages []snakeBiteDeployPackage) (string, string, []string, error) {
+func buildSnakeBiteArchives(ctx context.Context, input sdk.EventHandlerInput, packages []snakeBiteDeployPackage) ([]deploy.FileMapping, []string, error) {
 	if err := ctx.Err(); err != nil {
-		return "", "", nil, err
+		return nil, nil, err
 	}
-	totalSteps := len(packages) + 3
-	input.ReportProgress("Resolving MGSV base archive", 1, totalSteps)
-	baseZeroPath, restorePath, err := snakeBiteBaseZeroArchive(input)
+	totalSteps := len(packages) + 6
+	input.ReportProgress("Resolving MGSV base archives", 1, totalSteps)
+	baseZeroPath, restoreZeroPath, err := snakeBiteBaseArchive(input, snakeBiteZeroArchiveRel)
 	if err != nil {
-		return "", "", nil, err
+		return nil, nil, err
+	}
+	baseOnePath, restoreOnePath, err := snakeBiteBaseArchive(input, snakeBiteOneArchiveRel)
+	if err != nil {
+		return nil, nil, err
 	}
 	input.ReportProgress("Reading MGSV base archive "+snakeBiteZeroArchiveRel, 2, totalSteps)
 	zeroArchive, err := gzs.ReadQAR(baseZeroPath)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("read MGSV base 00.dat: %w", err)
+		return nil, nil, fmt.Errorf("read MGSV base 00.dat: %w", err)
 	}
-	entries := make(map[uint64]gzs.QAREntry, len(zeroArchive.Entries))
-	for _, entry := range zeroArchive.Entries {
-		entries[entry.Hash] = entry
+	input.ReportProgress("Reading MGSV base archive "+snakeBiteOneArchiveRel, 3, totalSteps)
+	oneArchive, err := gzs.ReadQAR(baseOnePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read MGSV base 01.dat: %w", err)
 	}
-	sources := snakeBiteArchiveSources(input, baseZeroPath)
+	zeroEntries := snakeBiteQAREntryMap(zeroArchive.Entries)
+	oneEntries := snakeBiteQAREntryMap(oneArchive.Entries)
+	input.ReportProgress("Preparing MGSV SnakeBite base archive split", 4, totalSteps)
+	movedSystemFiles, err := snakeBiteMoveSystemEntries(baseZeroPath, zeroEntries, oneEntries, snakeBiteModQARHashes(packages))
+	if err != nil {
+		return nil, nil, err
+	}
+	sources := snakeBiteArchiveSources(input, baseZeroPath, baseOnePath)
 	mergedFPKs := map[uint64]struct{}{}
 	var messages []string
 	for index, pkg := range packages {
 		if err := ctx.Err(); err != nil {
-			return "", "", nil, err
+			return nil, nil, err
 		}
-		input.ReportProgress("Merging SnakeBite package "+pkg.mod.Name, index+3, totalSteps)
-		pkgMessages, err := applySnakeBitePackage(input, pkg, sources, entries, mergedFPKs)
+		input.ReportProgress("Merging SnakeBite package "+pkg.mod.Name, index+5, totalSteps)
+		pkgMessages, err := applySnakeBitePackage(input, pkg, sources, zeroEntries, mergedFPKs)
 		if err != nil {
-			return "", "", nil, err
+			return nil, nil, err
 		}
 		messages = append(messages, pkgMessages...)
 	}
-	outEntries := make([]gzs.QAREntry, 0, len(entries))
-	for _, entry := range entries {
-		outEntries = append(outEntries, entry)
+	input.ReportProgress("Writing generated MGSV archive "+snakeBiteZeroArchiveRel, totalSteps-1, totalSteps)
+	generatedZeroPath := snakeBiteGeneratedArchivePath(input, snakeBiteZeroArchiveRel)
+	if err := gzs.WriteQAR(generatedZeroPath, gzs.QARFile{
+		Flags:   snakeBiteGeneratedQARFlags,
+		Version: zeroArchive.Version,
+		Entries: snakeBiteQAREntries(zeroEntries),
+	}); err != nil {
+		return nil, nil, fmt.Errorf("write generated MGSV 00.dat: %w", err)
 	}
-	flags := zeroArchive.Flags
-	if flags == 0 {
-		flags = 3150048
+	mappings := []deploy.FileMapping{
+		snakeBiteGeneratedArchiveMapping(generatedZeroPath, restoreZeroPath, snakeBiteZeroArchiveRel, snakeBiteGeneratedZeroModID),
 	}
-	input.ReportProgress("Writing generated MGSV archive "+snakeBiteZeroArchiveRel, totalSteps, totalSteps)
-	generatedPath := filepath.Join(input.WorkDir, "metalgearsolidvtpp-snakebite", snakeBiteZeroArchiveRel)
-	if err := gzs.WriteQAR(generatedPath, gzs.QARFile{Flags: flags, Version: zeroArchive.Version, Entries: outEntries}); err != nil {
-		return "", "", nil, fmt.Errorf("write generated MGSV 00.dat: %w", err)
+	if movedSystemFiles > 0 {
+		input.ReportProgress("Writing generated MGSV archive "+snakeBiteOneArchiveRel, totalSteps, totalSteps)
+		generatedOnePath := snakeBiteGeneratedArchivePath(input, snakeBiteOneArchiveRel)
+		if err := gzs.WriteQAR(generatedOnePath, gzs.QARFile{
+			Flags:   snakeBiteGeneratedQARFlags,
+			Version: oneArchive.Version,
+			Entries: snakeBiteQAREntries(oneEntries),
+		}); err != nil {
+			return nil, nil, fmt.Errorf("write generated MGSV 01.dat: %w", err)
+		}
+		mappings = append(mappings, snakeBiteGeneratedArchiveMapping(generatedOnePath, restoreOnePath, snakeBiteOneArchiveRel, snakeBiteGeneratedOneModID))
+		messages = append(messages, fmt.Sprintf("MGSV SnakeBite moved %d base system file(s) from %s into generated %s.", movedSystemFiles, snakeBiteZeroArchiveRel, snakeBiteOneArchiveRel))
+	} else {
+		input.ReportProgress("Finalizing MGSV SnakeBite archive plan", totalSteps, totalSteps)
 	}
 	messages = append(messages, fmt.Sprintf("MGSV SnakeBite generated %s from %d enabled package(s).", snakeBiteZeroArchiveRel, len(packages)))
-	return generatedPath, restorePath, messages, nil
+	return mappings, messages, nil
+}
+
+func snakeBiteGeneratedArchivePath(input sdk.EventHandlerInput, archiveRel string) string {
+	return filepath.Join(input.WorkDir, "metalgearsolidvtpp-snakebite", filepath.FromSlash(archiveRel))
+}
+
+func snakeBiteGeneratedArchiveMapping(sourcePath, restorePath, targetRel, modID string) deploy.FileMapping {
+	return deploy.FileMapping{
+		SourcePath:     sourcePath,
+		RestorePath:    restorePath,
+		TargetRelative: targetRel,
+		TargetPolicy:   deploy.TargetPolicyPatchExisting,
+		Strategy:       deploy.StrategyCopy,
+		InstalledModID: 0,
+		ModID:          modID,
+		Priority:       -1,
+		ChecksumSHA256: "",
+		SourceRelative: "",
+		TargetRoot:     "",
+		Catalog:        "dmm",
+	}
+}
+
+func snakeBiteQAREntryMap(entries []gzs.QAREntry) map[uint64]gzs.QAREntry {
+	out := make(map[uint64]gzs.QAREntry, len(entries))
+	for _, entry := range entries {
+		out[entry.Hash] = entry
+	}
+	return out
+}
+
+func snakeBiteQAREntries(entries map[uint64]gzs.QAREntry) []gzs.QAREntry {
+	out := make([]gzs.QAREntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Hash < out[j].Hash
+	})
+	return out
+}
+
+func snakeBiteModQARHashes(packages []snakeBiteDeployPackage) map[uint64]struct{} {
+	hashes := map[uint64]struct{}{}
+	for _, pkg := range packages {
+		for _, entry := range pkg.metadata.QarEntries.Entries {
+			qpath := gzs.ToQARPath(entry.FilePath)
+			if qpath == "/" {
+				continue
+			}
+			hashes[gzs.HashFileNameWithExtension(qpath)] = struct{}{}
+		}
+	}
+	return hashes
+}
+
+func snakeBiteMoveSystemEntries(baseZeroPath string, zeroEntries, oneEntries map[uint64]gzs.QAREntry, modQARHashes map[uint64]struct{}) (int, error) {
+	foxpatchHash := gzs.HashFileNameWithExtension("foxpatch.dat")
+	moved := 0
+	for hash, entry := range zeroEntries {
+		if hash == foxpatchHash {
+			continue
+		}
+		if _, ok := modQARHashes[hash]; ok {
+			continue
+		}
+		data, ok, err := gzs.ExtractQAREntryDataByHash(baseZeroPath, hash)
+		if err != nil {
+			return 0, fmt.Errorf("extract MGSV 00.dat system entry %016x: %w", hash, err)
+		}
+		if !ok {
+			return 0, fmt.Errorf("extract MGSV 00.dat system entry %016x: entry disappeared", hash)
+		}
+		oneEntries[hash] = gzs.QAREntry{
+			Hash:       hash,
+			FilePath:   entry.FilePath,
+			Compressed: entry.Compressed,
+			Data:       data,
+		}
+		delete(zeroEntries, hash)
+		moved++
+	}
+	return moved, nil
 }
 
 func applySnakeBitePackage(input sdk.EventHandlerInput, pkg snakeBiteDeployPackage, sources []snakeBiteQARSource, entries map[uint64]gzs.QAREntry, mergedFPKs map[uint64]struct{}) ([]string, error) {
@@ -252,14 +350,14 @@ func readFPKBytes(data []byte) (gzs.FPKFile, error) {
 	return gzs.ReadFPKReader(io.NewSectionReader(reader, 0, int64(len(data))))
 }
 
-func snakeBiteBaseZeroArchive(input sdk.EventHandlerInput) (string, string, error) {
-	targetPath := filepath.Join(input.GamePath, filepath.FromSlash(snakeBiteZeroArchiveRel))
+func snakeBiteBaseArchive(input sdk.EventHandlerInput, archiveRel string) (string, string, error) {
+	targetPath := filepath.Join(input.GamePath, filepath.FromSlash(archiveRel))
 	if managed, ok := snakeBiteManagedFile(input.ManagedFiles, targetPath); ok && strings.TrimSpace(managed.RestorePath) != "" {
 		return managed.RestorePath, managed.RestorePath, nil
 	}
-	restorePath := filepath.Join(input.WorkDir, "metalgearsolidvtpp-snakebite", "restore", snakeBiteZeroArchiveRel)
+	restorePath := filepath.Join(input.WorkDir, "metalgearsolidvtpp-snakebite", "restore", filepath.FromSlash(archiveRel))
 	if err := copyFile(targetPath, restorePath); err != nil {
-		return "", "", fmt.Errorf("prepare MGSV 00.dat restore copy: %w", err)
+		return "", "", fmt.Errorf("prepare MGSV %s restore copy: %w", archiveRel, err)
 	}
 	return targetPath, restorePath, nil
 }
@@ -274,7 +372,7 @@ func snakeBiteManagedFile(files []deploy.AppliedFile, targetPath string) (deploy
 	return deploy.AppliedFile{}, false
 }
 
-func snakeBiteArchiveSources(input sdk.EventHandlerInput, baseZeroPath string) []snakeBiteQARSource {
+func snakeBiteArchiveSources(input sdk.EventHandlerInput, baseZeroPath, baseOnePath string) []snakeBiteQARSource {
 	var sources []snakeBiteQARSource
 	add := func(name, path string) {
 		if strings.TrimSpace(path) == "" {
@@ -285,7 +383,7 @@ func snakeBiteArchiveSources(input sdk.EventHandlerInput, baseZeroPath string) [
 		}
 	}
 	add("00.dat", baseZeroPath)
-	add("01.dat", filepath.Join(input.GamePath, filepath.FromSlash(snakeBiteOneArchiveRel)))
+	add("01.dat", baseOnePath)
 	add("data1.dat", filepath.Join(input.GamePath, "master", "data1.dat"))
 	for i := 0; i <= 4; i++ {
 		add(fmt.Sprintf("chunk%d.dat", i), filepath.Join(input.GamePath, "master", fmt.Sprintf("chunk%d.dat", i)))
