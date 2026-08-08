@@ -410,6 +410,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
 	mux.HandleFunc("GET /api/games/{appID}/local-archives", s.handleListLocalArchives)
+	mux.HandleFunc("GET /api/games/{appID}/local-archives/browse", s.handleBrowseLocalArchives)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives", s.handleUploadLocalArchive)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives/import", s.handleImportLocalArchivePath)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}", s.handleDeleteProfile)
@@ -433,11 +434,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/archives/inspect", s.handleInspectArchive)
 	mux.HandleFunc("GET /debug/nxm-probe", s.handleNXMProbePage)
 	mux.Handle("/", s.staticHandler())
+	secured := authMiddleware(func() string {
+		s.cfgMu.RLock()
+		defer s.cfgMu.RUnlock()
+		return s.cfg.AuthToken
+	}, mux)
 	return lanOnlyMiddleware(func() bool {
 		s.cfgMu.RLock()
 		defer s.cfgMu.RUnlock()
 		return s.cfg.LANOnly
-	}, logMiddleware(s.logger, mux))
+	}, logMiddleware(s.logger, secured))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -1539,6 +1545,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"lan_only":    cfg.LANOnly,
 		"data_dir":    cfg.DataDir,
 		"game_count":  gameCount,
+		"auth": map[string]any{
+			"enabled": strings.TrimSpace(cfg.AuthToken) != "",
+		},
 		"install": map[string]any{
 			"auto_install_captured_downloads": cfg.Install.AutoInstallCapturedDownloads,
 			"auto_enable_installed_mods":      cfg.Install.AutoEnableInstalledMods,
@@ -6552,6 +6561,24 @@ type localArchiveListResponse struct {
 	Files []localArchiveFileResponse `json:"files"`
 }
 
+type localArchiveBrowseEntryResponse struct {
+	Path       string    `json:"path"`
+	Name       string    `json:"name"`
+	Kind       string    `json:"kind"`
+	Extension  string    `json:"extension,omitempty"`
+	Bytes      int64     `json:"bytes,omitempty"`
+	Root       string    `json:"root,omitempty"`
+	ModifiedAt time.Time `json:"modified_at,omitempty"`
+	Supported  bool      `json:"supported,omitempty"`
+}
+
+type localArchiveBrowseResponse struct {
+	Roots       []string                          `json:"roots"`
+	CurrentPath string                            `json:"current_path"`
+	ParentPath  string                            `json:"parent_path,omitempty"`
+	Entries     []localArchiveBrowseEntryResponse `json:"entries"`
+}
+
 type localArchivePathImportRequest struct {
 	Path      string `json:"path"`
 	ProfileID int64  `json:"profile_id,omitempty"`
@@ -6594,6 +6621,44 @@ func (s *Server) handleListLocalArchives(w http.ResponseWriter, r *http.Request)
 	}
 	s.logger.Info("local archive files listed", "app_id", appID, "roots", len(roots), "files", len(files))
 	writeJSON(w, http.StatusOK, localArchiveListResponse{Roots: roots, Files: files})
+}
+
+func (s *Server) handleBrowseLocalArchives(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	roots := s.localArchiveRoots()
+	currentPath, root, err := resolveLocalArchiveBrowsePath(roots, r.URL.Query().Get("path"))
+	if err != nil {
+		s.logger.Warn("local archive browse rejected", "app_id", appID, "path", r.URL.Query().Get("path"), "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	entries, err := listLocalArchiveDirectory(r.Context(), currentPath, root)
+	if err != nil {
+		s.logger.Warn("local archive browse failed", "app_id", appID, "path", currentPath, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	resolvedRoots := resolveLocalArchiveRoots(roots)
+	s.logger.Info("local archive directory listed", "app_id", appID, "path", currentPath, "entries", len(entries))
+	writeJSON(w, http.StatusOK, localArchiveBrowseResponse{
+		Roots:       resolvedRoots,
+		CurrentPath: currentPath,
+		ParentPath:  localArchiveParentPath(root, currentPath),
+		Entries:     entries,
+	})
 }
 
 func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request) {
@@ -6946,6 +7011,172 @@ func (s *Server) validateLocalArchivePath(rawPath string) (string, os.FileInfo, 
 		return "", nil, errors.New("archive exceeds the maximum supported size")
 	}
 	return resolvedPath, info, nil
+}
+
+func resolveLocalArchiveBrowsePath(roots []string, rawPath string) (string, string, error) {
+	resolvedRoots := resolveLocalArchiveRoots(roots)
+	if len(resolvedRoots) == 0 {
+		return "", "", errors.New("no Deck archive folders are available")
+	}
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return resolvedRoots[0], resolvedRoots[0], nil
+	}
+	expanded, err := expandUserPath(rawPath)
+	if err != nil {
+		return "", "", err
+	}
+	abs, err := filepath.Abs(expanded)
+	if err != nil {
+		return "", "", err
+	}
+	resolvedPath, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", "", err
+	}
+	resolvedPath = filepath.Clean(resolvedPath)
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", "", err
+	}
+	if !info.IsDir() {
+		return "", "", errors.New("archive browse path must be a directory")
+	}
+	for _, root := range resolvedRoots {
+		if pathWithinRoot(root, resolvedPath) {
+			return resolvedPath, root, nil
+		}
+	}
+	return "", "", errors.New("archive browse path is outside the allowed Deck download folders")
+}
+
+func expandUserPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", errors.New("home directory is unavailable")
+		}
+		return home, nil
+	}
+	if expanded, ok := strings.CutPrefix(path, "~/"); ok {
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return "", errors.New("home directory is unavailable")
+		}
+		return filepath.Join(home, expanded), nil
+	}
+	return path, nil
+}
+
+func resolveLocalArchiveRoots(roots []string) []string {
+	var resolved []string
+	for _, root := range roots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		expanded, err := expandUserPath(root)
+		if err != nil {
+			continue
+		}
+		abs, err := filepath.Abs(expanded)
+		if err != nil {
+			continue
+		}
+		resolvedRoot, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			continue
+		}
+		resolvedRoot = filepath.Clean(resolvedRoot)
+		info, err := os.Stat(resolvedRoot)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		exists := false
+		for _, existing := range resolved {
+			if existing == resolvedRoot {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			resolved = append(resolved, resolvedRoot)
+		}
+	}
+	return resolved
+}
+
+func localArchiveParentPath(root, currentPath string) string {
+	root = filepath.Clean(root)
+	currentPath = filepath.Clean(currentPath)
+	if root == "" || currentPath == "" || currentPath == root {
+		return ""
+	}
+	parent := filepath.Dir(currentPath)
+	if parent == currentPath || !pathWithinRoot(root, parent) {
+		return ""
+	}
+	return parent
+}
+
+func listLocalArchiveDirectory(ctx context.Context, currentPath, root string) ([]localArchiveBrowseEntryResponse, error) {
+	entries, err := os.ReadDir(currentPath)
+	if err != nil {
+		return nil, err
+	}
+	var response []localArchiveBrowseEntryResponse
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		path := filepath.Join(currentPath, name)
+		resolvedPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			continue
+		}
+		resolvedPath = filepath.Clean(resolvedPath)
+		if !pathWithinRoot(root, resolvedPath) {
+			continue
+		}
+		info, err := os.Stat(resolvedPath)
+		if err != nil {
+			continue
+		}
+		item := localArchiveBrowseEntryResponse{
+			Path:       filepath.Clean(path),
+			Name:       name,
+			Root:       root,
+			ModifiedAt: info.ModTime().UTC(),
+		}
+		if info.IsDir() {
+			item.Kind = "directory"
+			response = append(response, item)
+			continue
+		}
+		if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxLocalArchiveUploadBytes || !localArchiveFileNameSupported(name) {
+			continue
+		}
+		item.Kind = "file"
+		item.Extension = strings.ToLower(filepath.Ext(name))
+		item.Bytes = info.Size()
+		item.Supported = true
+		response = append(response, item)
+	}
+	sort.Slice(response, func(i, j int) bool {
+		if response[i].Kind != response[j].Kind {
+			return response[i].Kind == "directory"
+		}
+		if response[i].Kind == "file" && !response[i].ModifiedAt.Equal(response[j].ModifiedAt) {
+			return response[i].ModifiedAt.After(response[j].ModifiedAt)
+		}
+		return strings.ToLower(response[i].Name) < strings.ToLower(response[j].Name)
+	})
+	return response, nil
 }
 
 func listLocalArchiveFiles(ctx context.Context, roots []string, limit int) ([]localArchiveFileResponse, error) {

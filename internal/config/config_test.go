@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -100,6 +101,28 @@ func TestLoadSparseConfigPreservesDefaults(t *testing.T) {
 	}
 	if cfg.ConfigPath != path {
 		t.Fatalf("ConfigPath = %q, want %q", cfg.ConfigPath, path)
+	}
+}
+
+func TestAuthTokenComesFromEnvironmentOnly(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "data"))
+	t.Setenv("DMM_AUTH_TOKEN", "runtime-token")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.AuthToken != "runtime-token" {
+		t.Fatalf("AuthToken = %q, want runtime-token", cfg.AuthToken)
+	}
+	b, err := os.ReadFile(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "runtime-token") {
+		t.Fatalf("runtime token was persisted in config: %s", b)
 	}
 }
 

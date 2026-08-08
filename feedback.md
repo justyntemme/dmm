@@ -76,6 +76,7 @@
 - Approving a download must immediately update that request state so the user cannot click Approve again for the same in-flight request.
 - Pre-MVP design discussion required: choose the event-driven UI update model for incoming requests, job transitions, install completion, profile changes, deployment status, and runtime/launch-tool actions.
 - Until the event-driven design is finalized, short polling may be used as a temporary safety fallback, but it should not be the primary long-term UX model.
+- Local archive import should be hidden behind an accordion entry such as `Import Mod Archive`, not shown as a permanent file-browser/list inside Add Mod. Opening it should start in Deck Downloads, show clear Up Directory / Enter Path / Refresh actions, and keep phone/tablet browsing limited to DMM-approved Downloads/intake roots.
 
 ## Launch Tool UX
 

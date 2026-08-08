@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -2705,6 +2706,7 @@ func TestClearCapturedInstalls(t *testing.T) {
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
+	t.Setenv("DMM_AUTH_TOKEN", "")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -4249,6 +4251,70 @@ func TestListLocalArchivesIncludesDeckDownloads(t *testing.T) {
 	}
 	if body.Files[0].Name != "Infinite Heaven.mgsv" || body.Files[0].Path != resolvedMGSVPath {
 		t.Fatalf("file = %+v", body.Files[0])
+	}
+}
+
+func TestBrowseLocalArchivesStartsAtDeckDownloadsAndRejectsEscapes(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "287700",
+		Name:        "METAL GEAR SOLID V: THE PHANTOM PAIN",
+		InstallDir:  "MGS_TPP",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "MGS_TPP"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloads := t.TempDir()
+	t.Setenv("DMM_LOCAL_ARCHIVE_ROOTS", downloads)
+	subdir := filepath.Join(downloads, "archives")
+	if err := os.MkdirAll(subdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.CreateTestZip(filepath.Join(subdir, "Infinite Heaven.mgsv"), map[string]string{"metadata.xml": `<ModEntry Name="Infinite Heaven"></ModEntry>`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subdir, "notes.txt"), []byte("ignore"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/287700/local-archives/browse", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var rootBody localArchiveBrowseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &rootBody); err != nil {
+		t.Fatal(err)
+	}
+	if rootBody.CurrentPath == "" || len(rootBody.Entries) != 1 || rootBody.Entries[0].Kind != "directory" || rootBody.Entries[0].Name != "archives" {
+		t.Fatalf("root body = %+v", rootBody)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/games/287700/local-archives/browse?path="+url.QueryEscape(subdir), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var subBody localArchiveBrowseResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &subBody); err != nil {
+		t.Fatal(err)
+	}
+	if subBody.ParentPath == "" || len(subBody.Entries) != 1 || subBody.Entries[0].Name != "Infinite Heaven.mgsv" || !subBody.Entries[0].Supported {
+		t.Fatalf("sub body = %+v", subBody)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/games/287700/local-archives/browse?path="+url.QueryEscape(t.TempDir()), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

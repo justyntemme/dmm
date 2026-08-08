@@ -47,14 +47,27 @@
    - Latest code state: installed-mod update checks are source-specific. Nexus update checks/downloads are implemented; GitHub Releases, Modrinth, Thunderstore, GameBanana, mod.io, and CurseForge implement optional catalog update capabilities; unsupported providers persist an explicit unsupported update status with provider-specific messaging instead of being skipped.
    - Latest live state: `testing/live_provider_resolve_check.sh` passes against the Deck for Direct, GitHub Releases, Thunderstore, Modrinth, and GameBanana. mod.io and CurseForge remain key-gated and skipped unless test URLs/API keys are supplied. ModDB remains deferred.
 
-2. Finish phone/tablet UI refresh validation under the event model.
+2. Finish MVP API auth/pairing.
+   - Decky must generate a process-scoped token on backend launch, pass it to the backend, and include it in every Decky bridge/backend request.
+   - The `nxm://` handler must read the same local token file so browser-generated Nexus captures still reach `/api/captured-installs`.
+   - The phone/tablet URL should pair through a URL fragment token, then send `X-DMM-Token` on API calls and a WebSocket query token for realtime events.
+   - `/api/health` may stay unauthenticated for local liveness checks; every other API/read-model/mutation/event endpoint must reject remote clients without the token when auth is enabled.
+   - Add visible Decky security copy and a token/session reset action before MVP approval.
+
+3. Finish local archive import browser UX.
+   - Hide Deck-side archive browsing behind an accordion button such as `Import Mod Archive`.
+   - Opening the accordion must browse the Deck user's Downloads/DMM Intake folders first, with Up Directory, Enter Path, Refresh, folder rows, and archive import rows.
+   - The phone/tablet app must only see DMM-approved archive roots, not arbitrary Deck filesystem paths. Reject symlink escapes and parent traversal in the backend.
+   - Keep local archive import game-scoped and install-to-profile aware. It should reuse the same captured-install/profile/FOMOD pipeline as other sources.
+
+4. Finish phone/tablet UI refresh validation under the event model.
    - Captured installs should update immediately after capture, local install, cancel, retry, failure, and completion.
    - Action buttons must become disabled/in-flight immediately so the user cannot submit the same action twice.
    - Profile mod lists, deployment status, jobs, runtime requirements, launch actions, and mod update badges should update without manual browser refresh.
    - Latest code state: global Action Center now refreshes jobs and installer candidates from action-related WebSocket events even when no game is selected, while selected-game panes refresh only when the event belongs to the selected game.
    - Latest live state: failed captured-install actions can be dismissed through the normal cancel path; stale failed Fallout actions were canceled on the Deck and no open Action Center jobs remained.
 
-3. Finish MVP FOMOD / installer-choice support.
+5. Finish MVP FOMOD / installer-choice support.
    - Download/cache happens immediately as normal.
    - Installer-choice actions must persist from local cached archive state.
    - Phone/tablet UI must show touch-friendly choices and apply selected files.
@@ -65,7 +78,7 @@
    - Latest code/deployed state: the shared installer-choice schema now supports extension-owned text groups. Ghost Recon Breakpoint `.data` folder and loose `.data` archive classes use a source-verified `.forge` folder text prompt through the same phone/tablet Action Center and Decky modal flow instead of remaining blocked.
    - Latest live state: deployed package was smoke-tested with a synthetic local Fallout FOMOD. The backend created a `needs_choices` candidate, preserved default option `type`, emitted computed `effective_type`, and the candidate was cleared without touching game files. A real Stardew Nexus/browser FOMOD (`Neural Harvest`) opened the Decky modal, proving the no-phone modal display path works, but the archive is malformed because its `ModuleConfig.xml` references missing `Common/...` files. DMM now blocks that archive with a clear review reason and keeps it visible instead of closing the flow as successful. A valid Nexus/browser FOMOD success fixture is still required.
 
-4. Redesign the phone/tablet mod-management UI around the profile-first model.
+6. Redesign the phone/tablet mod-management UI around the profile-first model.
     - The primary surface should be the selected profile's enabled/disabled mod list.
     - Captured-install actions should read as local install choices, not network download approvals.
     - Staging, deploy preview, purge, repair, conflicts, and file-level operations should be advanced/power-user views unless they require immediate action.
@@ -74,11 +87,11 @@
    - Latest live state: after the current package, Deck-side `live_profile_toggle_check.sh` passed and Deck-side `live_stardew_mod_files_check.sh` confirmed six DMM-managed Stardew manifest links plus SMAPI runtime/launch OK.
    - Latest code state: the selected-profile summary tile now labels the zero-count action button as `Action Center` instead of a vague `Open`, so the game-level Action Center remains visible as a command even when there are no open actions.
 
-5. Improve deployment language.
+7. Improve deployment language.
    - Replace file-operation-heavy copy with user-centered state: installed, disabled, enabled, applied, needs restart, blocked, conflicts, failed.
    - Keep exact file operations visible in advanced details and logs.
 
-6. Finish MVP user-facing rollback.
+8. Finish MVP user-facing rollback.
    - Simple users should see a safe primary action such as `Restore last applied state` only when a rollback is available.
    - Power users should get an advanced rollback surface with deployment history, named restore points, preview, retention controls, and rollback job details.
    - Rollback must affect only DMM-owned deployment artifacts tracked by manifests and must not imply unmanaged/manual files can be restored.
@@ -86,7 +99,13 @@
    - Backend restore/history exists and was live API checked; UI review and failure/toast validation remain.
    - Latest live state: `live_rollback_check.sh` passed against Stardew and completed rollback job `job-249` with no repair issues.
 
-7. Finish Decky-side game/mod management polish.
+9. Manage mod updates.
+   - Users should be able to check installed mods for source-specific updates, see clear current/available/unknown/unsupported/error state, and install available updates through the same captured-install/profile pipeline used by normal downloads.
+   - Update installs must preserve source tags, profile targeting, FOMOD/installer-choice pauses, disabled-by-default safety, Action Center visibility, job/toast state, deployment manifests, and rollback behavior.
+   - Nexus, GitHub Releases, Modrinth, Thunderstore, GameBanana, mod.io, and CurseForge should use verified source-specific update resolvers where available. Direct, local archive, Steam Workshop, and unsupported providers should show explicit unsupported update state.
+   - Current implementation note: update checks and update install routes exist, and live Stardew update-check API validation passed with all installed mods reported current. Still needs Gaming Mode Decky visual review and a real available-update validation with a provider/file that has a newer version.
+
+10. Finish Decky-side game/mod management polish.
    - Game selection should support search, filters, favorites synced with the phone/tablet web app, and recent-game sorting.
    - Mod rows must be controller-navigable, readable at Decky sidebar width, and free of clipped action labels.
    - Users should be able to enable, disable, remove from the selected profile, reinstall, and check updates from the Decky plugin after selecting a game.
@@ -94,7 +113,7 @@
    - The Decky route tab is now labeled `Games` because it is the entry point for selecting a game and then managing that game's mods.
    - Latest package must still be validated in Gaming Mode for D-pad behavior, Nexus modal sizing, Manage paste-link spacing, and update-check row display.
 
-8. Validate and polish Nexus browsing/search inside DMM.
+11. Validate and polish Nexus browsing/search inside DMM.
    - Decky and phone/tablet surfaces can search/browse Nexus through the backend adapter.
    - Direct HTTPS file installs now show a clear browser-required error for non-premium accounts.
    - Current Decky flow: select a game, choose `Explore Mods` > `Nexus Mods`, open a result page in DMM's controlled BrowserView, then click Nexus' own Mod Manager Download/Vortex link so DMM receives the browser-generated `nxm://` credential.
@@ -107,7 +126,7 @@
    - Latest live state: package `9a6dca8` was installed on the Deck, package parity passed, `/api/health` returned OK, live web assets were reachable, and three stale pre-fix failed captured-install probe jobs were cleared through the normal API.
    - Remaining validation: visual Gaming Mode modal review, real browser-generated `nxm://` file-install flow, and whether non-Vortex results belong behind an advanced toggle.
 
-9. Continue Vortex-style extension parity.
+12. Continue Vortex-style extension parity.
    - Maintain the rule that every supported game has an explicit first-party Go extension and game-specific behavior lives in that extension. Core packages provide reusable capabilities only; they must not claim support for a game, domain, archive layout, launch tool, runtime dependency, Workshop behavior, or load-order file without an extension declaring it.
    - Keep verifying Vortex source before implementing game-specific installer/load-order/runtime behavior.
    - Completed locally: F4SE/SKSE dirty-state marker detection moved out of generic Steam discovery and into extension-declared unmanaged marker metadata consumed by the generic discovery/diagnostic path.
@@ -125,7 +144,7 @@
    - Latest live state: after deploying `25ecd7d`, the visible unsupported game count dropped from 34 to 17. The remaining unsupported games should not receive placeholder extensions until an exact Nexus/Vortex/Workshop/source signal is verified.
    - Latest live state: after the current package, `/api/games` reports zero unsupported installed games. Fallout 4 remains in review only because its extension detected an existing F4SE loader; that marker is extension-owned.
 
-10. Validate Steam Workshop coexistence/actions.
+13. Validate Steam Workshop coexistence/actions.
    - Workshop content should not make a game undeployable when the extension declares coexistence safe.
    - Backend/Decky queued Workshop actions exist; live mutation behavior still needs a real Workshop-enabled game validation pass.
    - Latest live state: Decky startup sync uses Steam's verified `GetSubscribedWorkshopItemDetails(appID, publishedFileIDs)` method to enrich downloaded/subscribed IDs. Kenshi now shows real Workshop titles from SteamClient details after startup sync.
@@ -134,21 +153,21 @@
    - Latest live gap: real enable/disable, unsubscribe, and load-order mutation still need safe live validation.
    - MVP Workshop scope is manage-installed content only: disable, enable, unsubscribe/remove, and load-order movement through verified Steam/Decky APIs. Do not build a Steam Workshop search/browser UI for MVP.
 
-11. Verify toast coverage.
+14. Verify toast coverage.
    - Re-check capture, downloaded, install waiting, installing, installed, failed, FOMOD-choice-required, deploy success, deploy failure/rollback, and launch-action-required notifications in Gaming Mode.
 
-12. Code-review and remove deprecated UX/code paths.
+15. Code-review and remove deprecated UX/code paths.
    - Look specifically for old "approve download", "auto-accept download", and "auto-deploy staged mods" assumptions.
    - Remove dead backend branches, stale UI labels, stale tests, old helper scripts, and outdated docs that no longer match the immediate-download / approve-install model.
    - Keep the current behavior: Nexus captures download immediately, approval gates local install, newly installed mods default disabled, and Decky owns install/enable automation settings.
    - Latest live state: removed the normal `staged` API status path for healthy installed mods and renamed download recovery response/event counts from `staged` to `installed`. Live `/api/games/413150/mods` now reports installed Nexus mods with `status: "installed"`.
    - Latest review state: route/job scan found no active `/api/imports/*` aliases, `pending-import` job paths, or game-level mod delete route in runtime code. Current runtime route family is `/api/captured-installs/*` plus Action Center/installer-choice handling, and removal from normal UI is profile-scoped.
 
-13. Finish planning-doc cleanup.
+16. Finish planning-doc cleanup.
    - Align README, ROADMAP, TODO, extension framework docs, extension targets, and testing docs with the current route/event/update-check/rollback terminology.
    - Remove claims that scaffolding equals completed product behavior.
 
-14. Final MVP phone/tablet UX overhaul.
+17. Final MVP phone/tablet UX overhaul.
    - Treat the current phone/tablet app as functionally useful but not shippable.
    - Redesign the mobile/tablet web app around the same strong product quality now present in the Decky UI: clear game context, profile-first mod management, readable Action Center, polished installer-choice/FOMOD flow, source pills, update state, rollback/recovery, and advanced deployment tools without overwhelming normal users.
    - iPad/tablet layout must be first-class, not a stretched phone view.
@@ -165,12 +184,11 @@
 
 1. Add Windows/Proton Stardew support through extension metadata.
 2. Use a clean Fallout 4 reinstall as the first Windows/Proton extension test bed.
-3. Add one-click update install/reinstall behavior using captured Nexus files and the existing profile-first flow.
-4. Build extension manifests for installed game targets listed in `extensionTargets.md`.
-5. For each game extension, verify Vortex source behavior first and add missing extension-framework APIs as needed for one-for-one feature parity.
-6. Add saved installer-choice presets for unattended FOMOD reinstalls.
-7. Harden additional upstream/provider support after the MVP provider architecture ships.
-8. Add configurable DMM-owned storage locations, including SD-card-friendly downloads/cache/staging/backups, with safe migration, free-space checks, mount validation, and deployment-manifest repair/verification after moving storage.
+3. Build extension manifests for installed game targets listed in `extensionTargets.md`.
+4. For each game extension, verify Vortex source behavior first and add missing extension-framework APIs as needed for one-for-one feature parity.
+5. Add saved installer-choice presets for unattended FOMOD reinstalls.
+6. Harden additional upstream/provider support after the MVP provider architecture ships.
+7. Add configurable DMM-owned storage locations, including SD-card-friendly downloads/cache/staging/backups, with safe migration, free-space checks, mount validation, and deployment-manifest repair/verification after moving storage.
 
 ## Completed / Removed From Active MVP
 

@@ -189,8 +189,14 @@ type BackendStatus = {
   ip?: string;
   port: number;
   url?: string;
+  plain_url?: string;
   pid?: number;
   build?: BuildInfo;
+  auth?: {
+    enabled?: boolean;
+    token?: string;
+    token_file?: string;
+  };
   backend?: {
     lan_only: boolean;
     game_count: number;
@@ -494,6 +500,24 @@ type LocalArchiveFile = {
   bytes: number;
   root: string;
   modified_at: string;
+};
+
+type LocalArchiveBrowseEntry = {
+  path: string;
+  name: string;
+  kind: "directory" | "file";
+  extension?: string;
+  bytes?: number;
+  root?: string;
+  modified_at?: string;
+  supported?: boolean;
+};
+
+type LocalArchiveBrowseState = {
+  roots: string[];
+  entries: LocalArchiveBrowseEntry[];
+  current_path: string;
+  parent_path?: string;
 };
 
 type FomodInstaller = {
@@ -1092,6 +1116,7 @@ const handledDeckyBrowserOpenEvents = new Set<number>();
 const DMM_TOAST_STORAGE_PREFIX = "decky-mod-manager:job-toast:";
 const DMM_EVENT_NAME = "dmm-domain-event";
 const DMM_BACKEND_WS_URL = "ws://127.0.0.1:17942/api/events/ws";
+let backendAuthToken = "";
 let eventMonitorSocket: WebSocket | null = null;
 let eventMonitorReconnectTimer: number | null = null;
 let eventMonitorReconnectDelay = 1000;
@@ -3312,9 +3337,12 @@ function connectEventMonitor() {
     window.clearTimeout(eventMonitorReconnectTimer);
     eventMonitorReconnectTimer = null;
   }
-  const after = eventMonitorLastID > 0 ? `?after=${eventMonitorLastID}` : "";
+  const params = new URLSearchParams();
+  if (eventMonitorLastID > 0) params.set("after", String(eventMonitorLastID));
+  if (backendAuthToken) params.set("token", backendAuthToken);
+  const query = params.toString();
   try {
-    const socket = new WebSocket(`${DMM_BACKEND_WS_URL}${after}`);
+    const socket = new WebSocket(`${DMM_BACKEND_WS_URL}${query ? `?${query}` : ""}`);
     eventMonitorSocket = socket;
     socket.onopen = () => {
       eventMonitorReconnectDelay = 1000;
@@ -3365,16 +3393,34 @@ function closeEventMonitor() {
   }
 }
 
+function applyBackendAuthFromStatus(nextStatus?: BackendStatus | null) {
+  const token = nextStatus?.auth?.token?.trim() ?? "";
+  if (token === backendAuthToken) return;
+  backendAuthToken = token;
+  if (eventMonitorSocket) {
+    const socket = eventMonitorSocket;
+    eventMonitorSocket = null;
+    socket.close();
+  }
+}
+
 function startBackgroundMonitors() {
   if (backgroundMonitorsStarted) return;
   backgroundMonitorsStarted = true;
   logFrontendEvent("background monitors started");
   logSteamClientCapabilities();
-  seedJobNotifications({ seed: true });
-  syncLaunchActions();
-  syncWorkshopActions();
-  seedWorkshopStateFromGames();
-  connectEventMonitor();
+  void (async () => {
+    try {
+      applyBackendAuthFromStatus(await call<[], BackendStatus>("status"));
+    } catch (err) {
+      await logFrontendEvent("background status refresh failed", { error: err instanceof Error ? err.message : String(err) });
+    }
+    await seedJobNotifications({ seed: true });
+    await syncLaunchActions();
+    await syncWorkshopActions();
+    await seedWorkshopStateFromGames();
+    connectEventMonitor();
+  })();
 }
 
 function stopBackgroundMonitors() {
@@ -3598,6 +3644,11 @@ function DeckyModManagerRoute() {
   const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
   const [deckyLocalArchiveRoots, setDeckyLocalArchiveRoots] = useState<string[]>([]);
   const [deckyLocalArchives, setDeckyLocalArchives] = useState<LocalArchiveFile[]>([]);
+  const [localArchiveBrowserOpen, setLocalArchiveBrowserOpen] = useState<boolean>(false);
+  const [localArchiveBrowserEntries, setLocalArchiveBrowserEntries] = useState<LocalArchiveBrowseEntry[]>([]);
+  const [localArchiveBrowserPath, setLocalArchiveBrowserPath] = useState<string>("");
+  const [localArchiveBrowserParentPath, setLocalArchiveBrowserParentPath] = useState<string>("");
+  const [localArchivePathInput, setLocalArchivePathInput] = useState<string>("");
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
@@ -3644,6 +3695,7 @@ function DeckyModManagerRoute() {
     try {
       setError("");
       const nextStatus = await call<[], BackendStatus>("status");
+      applyBackendAuthFromStatus(nextStatus);
       setStatus(nextStatus);
       applyDeckyUIPreferences(nextStatus);
       setDependencies(await call<[], Dependency[]>("dependencies"));
@@ -3768,6 +3820,11 @@ function DeckyModManagerRoute() {
     setFocusedLocalArchivePath("");
     setDeckyLocalArchiveRoots([]);
     setDeckyLocalArchives([]);
+    setLocalArchiveBrowserOpen(false);
+    setLocalArchiveBrowserEntries([]);
+    setLocalArchiveBrowserPath("");
+    setLocalArchiveBrowserParentPath("");
+    setLocalArchivePathInput("");
     setModSearch("");
     setModOrderMode(false);
   }
@@ -3798,6 +3855,11 @@ function DeckyModManagerRoute() {
       setDeckyInstallCandidates([]);
       setDeckyLocalArchiveRoots([]);
       setDeckyLocalArchives([]);
+      setLocalArchiveBrowserOpen(false);
+      setLocalArchiveBrowserEntries([]);
+      setLocalArchiveBrowserPath("");
+      setLocalArchiveBrowserParentPath("");
+      setLocalArchivePathInput("");
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
       setDeckyLoadOrder(null);
@@ -4906,7 +4968,54 @@ function DeckyModManagerRoute() {
     }
   }
 
-  async function importDeckyLocalArchive(file: LocalArchiveFile) {
+  async function browseDeckyLocalArchives(path = localArchiveBrowserPath, appID = selectedDeckyGameID) {
+    if (!appID) return;
+    try {
+      setError("");
+      setModsResult("");
+      const result = await call<[string, string], { ok: boolean; error?: string; roots: string[]; entries: LocalArchiveBrowseEntry[]; current_path: string; parent_path?: string }>(
+        "browse_local_archives",
+        appID,
+        path
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Unable to browse Deck archive files.");
+        await logFrontendEvent("decky local archive browse failed", { app_id: appID, path, error: result.error || "" });
+        return;
+      }
+      setDeckyLocalArchiveRoots(result.roots ?? []);
+      setLocalArchiveBrowserEntries(result.entries ?? []);
+      setLocalArchiveBrowserPath(result.current_path ?? "");
+      setLocalArchiveBrowserParentPath(result.parent_path ?? "");
+      setLocalArchivePathInput(result.current_path ?? "");
+      setDeckyLocalArchives((result.entries ?? []).filter((entry) => entry.kind === "file").map((entry) => ({
+        path: entry.path,
+        name: entry.name,
+        extension: entry.extension ?? "",
+        bytes: entry.bytes ?? 0,
+        root: entry.root ?? "",
+        modified_at: entry.modified_at ?? ""
+      })));
+      setModsResult((result.entries ?? []).length > 0 ? `Opened ${result.current_path || "Deck Downloads"}.` : "No folders or supported archives found here.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function toggleLocalArchiveBrowser() {
+    if (localArchiveBrowserOpen) {
+      setLocalArchiveBrowserOpen(false);
+      return;
+    }
+    setLocalArchiveBrowserOpen(true);
+    await browseDeckyLocalArchives("");
+  }
+
+  async function submitLocalArchivePath() {
+    await browseDeckyLocalArchives(localArchivePathInput.trim());
+  }
+
+  async function importDeckyLocalArchive(file: { path: string; name: string }) {
     if (!selectedDeckyGameID || !file.path || busyLocalArchivePath) return;
     try {
       setError("");
@@ -5468,69 +5577,89 @@ function DeckyModManagerRoute() {
 		          </PanelSectionRow>
 	          <PanelSectionRow>
 	            <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px" }}>
-	              <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
-	                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Import Archive</div>
-	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{deckyLocalArchives.length} found</div>
-	              </div>
-	              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-	                Imports .zip, .7z, .rar, .fomod, and .mgsv files from Deck Downloads into {selectedDeckyGame?.name ?? "this game"}.
-	              </div>
 	              <Focusable
 	                className="dmm-sidebar-row"
 	                focusClassName="dmm-sidebar-row-focused"
 	                onActivate={(event) => {
 	                  event.preventDefault();
 	                  event.stopPropagation();
-	                  void refreshDeckyLocalArchives();
+	                  void toggleLocalArchiveBrowser();
 	                }}
-	                onClick={() => void refreshDeckyLocalArchives()}
-	                style={{ ...deckyCompositeRowStyle(false), padding: "10px" }}
+	                onClick={() => void toggleLocalArchiveBrowser()}
+	                style={{ ...deckyCompositeRowStyle(false, localArchiveBrowserOpen), padding: "10px" }}
 	              >
-	                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Refresh Deck Downloads</div>
-	                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-	                  {deckyLocalArchiveRoots.length > 0 ? deckyLocalArchiveRoots.join(" · ") : "No download folders are available yet."}
+	                <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+	                  <div style={{ color: "#f8fafc", fontWeight: 900 }}>Import Mod Archive</div>
+	                  <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{localArchiveBrowserOpen ? "Open" : "Closed"}</div>
 	                </div>
-	                <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>A Refresh</div>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                  Browse Deck Downloads for .zip, .7z, .rar, .fomod, and .mgsv archives.
+	                </div>
+	                <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>{localArchiveBrowserOpen ? "A Hide" : "A Browse Downloads"}</div>
 	              </Focusable>
-	              {deckyLocalArchives.length === 0 && (
-	                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No supported archive files found.</div>
+	              {localArchiveBrowserOpen && (
+	                <>
+	                  <TextField label="Archive Folder" value={localArchivePathInput} bShowClearAction onChange={(event) => setLocalArchivePathInput(event.currentTarget.value)} />
+	                  <div style={{ display: "grid", gap: "6px", gridTemplateColumns: "1fr 1fr", minWidth: 0 }}>
+	                    <ButtonItem layout="below" disabled={!localArchiveBrowserParentPath} onClick={() => void browseDeckyLocalArchives(localArchiveBrowserParentPath)}>
+	                      Up Directory
+	                    </ButtonItem>
+	                    <ButtonItem layout="below" onClick={() => void submitLocalArchivePath()}>
+	                      Enter Path
+	                    </ButtonItem>
+	                  </div>
+	                  <ButtonItem layout="below" onClick={() => void browseDeckyLocalArchives()}>
+	                    Refresh Folder
+	                  </ButtonItem>
+	                  <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                    {localArchiveBrowserPath || deckyLocalArchiveRoots[0] || "Deck Downloads"}
+	                  </div>
+	                  {localArchiveBrowserEntries.length === 0 && (
+	                    <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No folders or supported archive files found here.</div>
+	                  )}
+	                  {localArchiveBrowserEntries.slice(0, 12).map((archiveEntry) => {
+	                    const focused = focusedLocalArchivePath === archiveEntry.path;
+	                    const busy = busyLocalArchivePath === archiveEntry.path;
+	                    const isDirectory = archiveEntry.kind === "directory";
+	                    return (
+	                      <Focusable
+	                        key={`${archiveEntry.kind}:${archiveEntry.path}`}
+	                        className="dmm-sidebar-row"
+	                        focusClassName="dmm-sidebar-row-focused"
+	                        onActivate={(event) => {
+	                          event.preventDefault();
+	                          event.stopPropagation();
+	                          if (isDirectory) void browseDeckyLocalArchives(archiveEntry.path);
+	                          else void importDeckyLocalArchive(archiveEntry);
+	                        }}
+	                        onClick={() => {
+	                          if (isDirectory) void browseDeckyLocalArchives(archiveEntry.path);
+	                          else void importDeckyLocalArchive(archiveEntry);
+	                        }}
+	                        onGamepadFocus={() => setFocusedLocalArchivePath(archiveEntry.path)}
+	                        onFocus={() => setFocusedLocalArchivePath(archiveEntry.path)}
+	                        onMouseEnter={() => setFocusedLocalArchivePath(archiveEntry.path)}
+	                        style={{
+	                          ...deckyCompositeRowStyle(focused),
+	                          opacity: busy ? 0.65 : 1,
+	                          padding: "10px"
+	                        }}
+	                      >
+	                        <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+	                          <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{archiveEntry.name}</div>
+	                          <span style={deckySourcePillStyle(isDirectory ? "direct" : "local")}>{isDirectory ? "Folder" : "Manual"}</span>
+	                        </div>
+	                        <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                          {isDirectory ? "Open folder" : `${formatBytes(archiveEntry.bytes ?? 0)} · ${archiveEntry.extension || "archive"}`}
+	                        </div>
+	                        <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
+	                          {isDirectory ? "A Open" : busy ? "Importing..." : "A Import to Profile"}
+	                        </div>
+	                      </Focusable>
+	                    );
+	                  })}
+	                </>
 	              )}
-	              {deckyLocalArchives.slice(0, 6).map((archiveFile) => {
-	                const focused = focusedLocalArchivePath === archiveFile.path;
-	                const busy = busyLocalArchivePath === archiveFile.path;
-	                return (
-	                  <Focusable
-	                    key={archiveFile.path}
-	                    className="dmm-sidebar-row"
-	                    focusClassName="dmm-sidebar-row-focused"
-	                    onActivate={(event) => {
-	                      event.preventDefault();
-	                      event.stopPropagation();
-	                      void importDeckyLocalArchive(archiveFile);
-	                    }}
-	                    onClick={() => void importDeckyLocalArchive(archiveFile)}
-	                    onGamepadFocus={() => setFocusedLocalArchivePath(archiveFile.path)}
-	                    onFocus={() => setFocusedLocalArchivePath(archiveFile.path)}
-	                    onMouseEnter={() => setFocusedLocalArchivePath(archiveFile.path)}
-	                    style={{
-	                      ...deckyCompositeRowStyle(focused),
-	                      opacity: busy ? 0.65 : 1,
-	                      padding: "10px"
-	                    }}
-	                  >
-	                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-	                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{archiveFile.name}</div>
-	                      <span style={deckySourcePillStyle("local")}>Manual</span>
-	                    </div>
-	                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-	                      {formatBytes(archiveFile.bytes)} · {archiveFile.extension || "archive"}
-	                    </div>
-	                    <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
-	                      {busy ? "Importing..." : "A Import to Profile"}
-	                    </div>
-	                  </Focusable>
-	                );
-	              })}
 	            </div>
 	          </PanelSectionRow>
 		          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
@@ -6372,7 +6501,9 @@ function QuickAccessContent() {
   async function refreshStatus() {
     try {
       setError("");
-      setStatus(await call<[], BackendStatus>("status"));
+      const nextStatus = await call<[], BackendStatus>("status");
+      applyBackendAuthFromStatus(nextStatus);
+      setStatus(nextStatus);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -6383,6 +6514,7 @@ function QuickAccessContent() {
       setError("");
       const method = status?.running ? "stop_server" : "start_server";
       const next = await call<[], BackendStatus>(method);
+      applyBackendAuthFromStatus(next);
       setStatus(next);
       if (method === "start_server") {
         await seedJobNotifications({ seed: true });

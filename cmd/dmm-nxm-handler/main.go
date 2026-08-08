@@ -36,7 +36,18 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post("http://127.0.0.1:17942/api/captured-installs", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:17942/api/captured-installs", bytes.NewReader(body))
+	if err != nil {
+		logf(logFile, "backend request build failed error=%s", err)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if token := readAuthToken(logFile); token != "" {
+		req.Header.Set("X-DMM-Token", token)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		logf(logFile, "backend post failed error=%s", err)
 		fmt.Fprintln(os.Stderr, err)
@@ -50,6 +61,37 @@ func main() {
 		os.Exit(1)
 	}
 	logf(logFile, "backend response status=%s", resp.Status)
+}
+
+func readAuthToken(logFile io.Writer) string {
+	if token := strings.TrimSpace(os.Getenv("DMM_AUTH_TOKEN")); token != "" {
+		return token
+	}
+	path := strings.TrimSpace(os.Getenv("DMM_AUTH_TOKEN_FILE"))
+	if path == "" {
+		stateHome := os.Getenv("XDG_STATE_HOME")
+		if stateHome == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				home = "/home/deck"
+			}
+			stateHome = filepath.Join(home, ".local", "state")
+		}
+		path = filepath.Join(stateHome, "decky-mod-manager", "api-token")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logf(logFile, "auth token read failed path=%s error=%s", path, err)
+		}
+		return ""
+	}
+	token := strings.TrimSpace(string(b))
+	if len(token) < 24 {
+		logf(logFile, "auth token ignored path=%s reason=too-short", path)
+		return ""
+	}
+	return token
 }
 
 func openLog() *os.File {

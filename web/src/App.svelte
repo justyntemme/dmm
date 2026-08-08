@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
+  const authStorageKey = "decky-mod-manager:api-token";
+  let apiAuthToken = "";
+
   type UISettings = {
     favorite_game_ids?: string[];
     recent_games?: Record<string, number>;
@@ -9,6 +12,7 @@
 
   type Status = {
     game_count: number;
+    auth?: { enabled: boolean };
     install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
     download?: {
       max_concurrent_captured_downloads: number;
@@ -249,6 +253,24 @@
   type LocalArchiveList = {
     roots: string[];
     files: LocalArchiveFile[];
+  };
+
+  type LocalArchiveBrowseEntry = {
+    path: string;
+    name: string;
+    kind: "directory" | "file";
+    extension?: string;
+    bytes?: number;
+    root?: string;
+    modified_at?: string;
+    supported?: boolean;
+  };
+
+  type LocalArchiveBrowseList = {
+    roots: string[];
+    current_path: string;
+    parent_path?: string;
+    entries: LocalArchiveBrowseEntry[];
   };
 
   type InstallerChoicePreset = {
@@ -564,6 +586,11 @@
   let localArchiveMessage = "";
   let deckLocalArchiveRoots: string[] = [];
   let deckLocalArchives: LocalArchiveFile[] = [];
+  let deckArchiveBrowserOpen = false;
+  let deckArchiveBrowserEntries: LocalArchiveBrowseEntry[] = [];
+  let deckArchiveBrowserPath = "";
+  let deckArchiveBrowserParentPath = "";
+  let deckArchivePathInput = "";
   let deckLocalArchiveBusy = false;
   let deckLocalArchiveMessage = "";
   let busyDeckLocalArchivePath = "";
@@ -714,15 +741,54 @@
   $: visibleValidationWarnings = displayValidationWarnings(gameDiagnostics);
   $: launchSetupAvailable = Boolean(gameLaunchStatus?.required && !gameLaunchStatus.configured && gameLaunchStatus.can_configure && gameLaunchStatus.action);
 
+  function initializeAPIAuth() {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const queryParams = new URLSearchParams(window.location.search);
+    const token = (hashParams.get("token") || hashParams.get("dmm_token") || queryParams.get("token") || queryParams.get("dmm_token") || "").trim();
+    if (token) {
+      apiAuthToken = token;
+      try {
+        window.localStorage.setItem(authStorageKey, token);
+      } catch (_err) {
+        // The in-memory token still carries the current session if browser storage is unavailable.
+      }
+      hashParams.delete("token");
+      hashParams.delete("dmm_token");
+      queryParams.delete("token");
+      queryParams.delete("dmm_token");
+      const search = queryParams.toString();
+      const hash = hashParams.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}${hash ? `#${hash}` : ""}`);
+      return;
+    }
+    try {
+      apiAuthToken = window.localStorage.getItem(authStorageKey) ?? "";
+    } catch (_err) {
+      apiAuthToken = "";
+    }
+  }
+
+  function apiHeaders(headers?: HeadersInit): Headers {
+    const next = new Headers(headers ?? {});
+    if (apiAuthToken && !next.has("X-DMM-Token")) {
+      next.set("X-DMM-Token", apiAuthToken);
+    }
+    return next;
+  }
+
+  async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    return fetch(input, { ...init, headers: apiHeaders(init.headers) });
+  }
+
   async function getJSON<T>(url: string): Promise<T> {
-    const response = await fetch(url);
+    const response = await apiFetch(url);
     if (!response.ok) throw new Error(await response.text());
     return response.json();
   }
 
   function logClientEvent(message: string, detail: ClientEventDetail = {}) {
     const body = JSON.stringify({ message, detail });
-    fetch("/api/client-events", {
+    apiFetch("/api/client-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body
@@ -909,8 +975,11 @@
 
   function eventSocketURL() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const after = lastEventID > 0 ? `?after=${lastEventID}` : "";
-    return `${protocol}//${window.location.host}/api/events/ws${after}`;
+    const params = new URLSearchParams();
+    if (lastEventID > 0) params.set("after", String(lastEventID));
+    if (apiAuthToken) params.set("token", apiAuthToken);
+    const query = params.toString();
+    return `${protocol}//${window.location.host}/api/events/ws${query ? `?${query}` : ""}`;
   }
 
   function connectEvents() {
@@ -1138,6 +1207,11 @@
     busyNexusOpenModID = 0;
     deckLocalArchiveRoots = [];
     deckLocalArchives = [];
+    deckArchiveBrowserOpen = false;
+    deckArchiveBrowserEntries = [];
+    deckArchiveBrowserPath = "";
+    deckArchiveBrowserParentPath = "";
+    deckArchivePathInput = "";
     deckLocalArchiveMessage = "";
     busyDeckLocalArchivePath = "";
     deployPlan = null;
@@ -1170,7 +1244,7 @@
   }
 
   async function patchGamePreferences(patch: Record<string, string | number | boolean>) {
-    const response = await fetch("/api/settings/ui", {
+    const response = await apiFetch("/api/settings/ui", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch)
@@ -1329,7 +1403,7 @@
   async function updateDeploymentStrategy(strategy: string) {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/settings`, {
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ strategy, profile_id: selectedProfile?.id, scope: "profile" })
@@ -1344,7 +1418,7 @@
 
   async function updateDownloadConcurrency(maxDownloads: number) {
     error = "";
-    const response = await fetch("/api/settings/downloads", {
+    const response = await apiFetch("/api/settings/downloads", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ max_concurrent_captured_downloads: maxDownloads })
@@ -1360,7 +1434,7 @@
 
   async function updatePerGameDownloadConcurrency(maxDownloads: number) {
     error = "";
-    const response = await fetch("/api/settings/downloads", {
+    const response = await apiFetch("/api/settings/downloads", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ max_concurrent_captured_downloads_per_game: maxDownloads })
@@ -1382,7 +1456,7 @@
       ? { modio: { api_key: apiKey } }
       : { curseforge: { api_key: apiKey } };
     try {
-      const response = await fetch("/api/settings/catalogs", {
+      const response = await apiFetch("/api/settings/catalogs", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -1406,7 +1480,7 @@
   async function createProfile() {
     if (!selectedGame || !profileName.trim()) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/profiles`, {
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/profiles`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1434,7 +1508,7 @@
     installTargetProfileID = String(profile.id);
     if (profile.is_default) return;
     error = "";
-    const response = await fetch(`/api/profiles/${profile.id}/default`, { method: "PUT" });
+    const response = await apiFetch(`/api/profiles/${profile.id}/default`, { method: "PUT" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -1449,7 +1523,7 @@
   async function deleteProfile(profile: Profile) {
     if (!selectedGame || profiles.length <= 1) return;
     error = "";
-    const response = await fetch(`/api/profiles/${profile.id}`, { method: "DELETE" });
+    const response = await apiFetch(`/api/profiles/${profile.id}`, { method: "DELETE" });
     const raw = await response.text();
     let result: DeleteProfileResult | null = null;
     if (raw.trim()) {
@@ -1490,7 +1564,7 @@
     error = "";
     setBusyMod(mod.id, "toggle");
     try {
-      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled })
@@ -1518,7 +1592,7 @@
     if (from < 0 || to < 0 || to >= current.length) return;
     [current[from], current[to]] = [current[to], current[from]];
     error = "";
-    const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/order`, {
+    const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/order`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mod_ids: current.map((item) => item.id) })
@@ -1538,7 +1612,7 @@
     error = "";
     setBusyMod(mod.id, "remove");
     try {
-      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, { method: "DELETE" });
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, { method: "DELETE" });
       if (!response.ok) {
         error = await response.text();
         return;
@@ -1565,7 +1639,7 @@
     error = "";
     setBusyMod(mod.id, action);
     try {
-      const response = await fetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}/${action}`, {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}/${action}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target_profile_id: targetProfileID, enabled: mod.enabled })
@@ -1592,7 +1666,7 @@
     error = "";
     setBusyMod(mod.id, promptInstallerChoices ? "reconfigure" : "reinstall");
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/reinstall`, {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/reinstall`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt_installer_choices: promptInstallerChoices })
@@ -1623,7 +1697,7 @@
     modUpdateBrowserPrompt = null;
     setBusyMod(mod.id, "update");
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/update`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame("mod-update-error");
@@ -1665,7 +1739,7 @@
     modUpdateMessage = "";
     modUpdateBrowserPrompt = null;
     modUpdateBusy = true;
-    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/check-updates`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/mods/check-updates`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       modUpdateBusy = false;
@@ -1695,7 +1769,7 @@
     error = "";
     modUpdateBrowserOpenBusy = true;
     try {
-      const response = await fetch("/api/decky/browser/open", {
+      const response = await apiFetch("/api/decky/browser/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1720,7 +1794,7 @@
   async function openProviderPageOnDeck(url: string, source: string, title: string) {
     if (!selectedGame) return;
     logClientEvent("deck browser handoff requested", { app_id: selectedGame.app_id, source, url });
-    const response = await fetch("/api/decky/browser/open", {
+    const response = await apiFetch("/api/decky/browser/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1815,7 +1889,7 @@
   async function captureInstallURL(url: string, profileID: number, reason = "captured-install") {
     if (!selectedGame) return null;
     bulkCaptureMessage = "";
-    const response = await fetch("/api/captured-installs", {
+    const response = await apiFetch("/api/captured-installs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, steam_app_id: selectedGame.app_id, profile_id: profileID })
@@ -1836,7 +1910,7 @@
     if (!selectedGame || urls.length === 0) return;
     bulkCaptureMessage = "";
     captureBrowserPrompt = null;
-    const response = await fetch("/api/captured-installs/bulk", {
+    const response = await apiFetch("/api/captured-installs/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1958,7 +2032,7 @@
       const form = new FormData();
       form.append("archive", localArchiveFile);
       form.append("profile_id", String(selectedInstallProfileID()));
-      const response = await fetch(`/api/games/${selectedGame.app_id}/local-archives`, {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/local-archives`, {
         method: "POST",
         body: form
       });
@@ -1998,13 +2072,52 @@
     }
   }
 
-  async function importDeckLocalArchive(file: LocalArchiveFile) {
+  async function browseDeckArchiveFolder(path = deckArchiveBrowserPath) {
+    if (!selectedGame) return;
+    error = "";
+    deckLocalArchiveMessage = "";
+    deckLocalArchiveBusy = true;
+    try {
+      const params = new URLSearchParams();
+      if (path.trim()) params.set("path", path.trim());
+      const result = await getJSON<LocalArchiveBrowseList>(`/api/games/${selectedGame.app_id}/local-archives/browse${params.toString() ? `?${params.toString()}` : ""}`);
+      deckLocalArchiveRoots = result.roots ?? [];
+      deckArchiveBrowserEntries = result.entries ?? [];
+      deckArchiveBrowserPath = result.current_path ?? "";
+      deckArchiveBrowserParentPath = result.parent_path ?? "";
+      deckArchivePathInput = result.current_path ?? "";
+      deckLocalArchives = deckArchiveBrowserEntries.filter((entry) => entry.kind === "file").map((entry) => ({
+        path: entry.path,
+        name: entry.name,
+        extension: entry.extension ?? "",
+        bytes: entry.bytes ?? 0,
+        root: entry.root ?? "",
+        modified_at: entry.modified_at ?? ""
+      }));
+      deckLocalArchiveMessage = deckArchiveBrowserEntries.length > 0
+        ? `Opened ${result.current_path || "Deck Downloads"}.`
+        : "No folders or supported archives found here.";
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      deckLocalArchiveBusy = false;
+    }
+  }
+
+  async function toggleDeckArchiveBrowser() {
+    deckArchiveBrowserOpen = !deckArchiveBrowserOpen;
+    if (deckArchiveBrowserOpen) {
+      await browseDeckArchiveFolder("");
+    }
+  }
+
+  async function importDeckLocalArchive(file: { path: string; name: string }) {
     if (!selectedGame || !file.path || busyDeckLocalArchivePath) return;
     error = "";
     deckLocalArchiveMessage = "";
     busyDeckLocalArchivePath = file.path;
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/local-archives/import`, {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/local-archives/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2219,7 +2332,7 @@
     nexusSearchMessage = "";
     busyNexusOpenModID = mod.mod_id;
     try {
-      const response = await fetch("/api/decky/browser/open", {
+      const response = await apiFetch("/api/decky/browser/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2243,7 +2356,7 @@
 
   async function clearCapturedInstallActions() {
     error = "";
-    const response = await fetch("/api/captured-installs", { method: "DELETE" });
+    const response = await apiFetch("/api/captured-installs", { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2255,7 +2368,7 @@
   async function clearBlockedInstallCandidates() {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates`, { method: "DELETE" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/install-candidates`, { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2269,7 +2382,7 @@
   async function deleteInstallerChoicePreset(preset: InstallerChoicePreset) {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/installer-choice-presets/${preset.id}`, { method: "DELETE" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/installer-choice-presets/${preset.id}`, { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2427,7 +2540,7 @@
   async function saveCandidateSelections(candidate: InstallCandidate, selections: Record<string, string[]>) {
     if (!selectedGame) return;
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/choices`, {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/choices`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selections })
@@ -2458,7 +2571,7 @@
         error = "Installer choices are missing from backend state. Retry this installer item so DMM can rebuild the choices.";
         return;
       }
-      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/apply`, {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selections, profile_id: candidateInstallProfileID(candidate) })
@@ -2495,7 +2608,7 @@
     error = "";
     setInstallCandidateBusy(candidate.id, true);
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/retry`, { method: "POST" });
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/install-candidates/${candidate.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         return;
@@ -2522,7 +2635,7 @@
     setJobBusy(job.id, true);
     markJobProcessing(job, "Canceling job...");
     try {
-      const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
+      const response = await apiFetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame("job-cancel-error");
@@ -2544,7 +2657,7 @@
     setJobBusy(action.id, true);
     markJobProcessing(action, "Installing downloaded archive...");
     try {
-      const response = await fetch(`/api/captured-installs/${action.id}/install`, {
+      const response = await apiFetch(`/api/captured-installs/${action.id}/install`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile_id: actionInstallProfileID(action) })
@@ -2570,7 +2683,7 @@
     setJobBusy(action.id, true);
     markJobProcessing(action, "Retrying captured install...");
     try {
-      const response = await fetch(`/api/captured-installs/${action.id}/retry`, { method: "POST" });
+      const response = await apiFetch(`/api/captured-installs/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame("captured-install-retry-error", true);
@@ -2592,7 +2705,7 @@
     setJobBusy(action.id, true);
     markJobProcessing(action, "Waiting for Decky to retry this Workshop action...");
     try {
-      const response = await fetch(`/api/workshop/actions/${action.id}/retry`, { method: "POST" });
+      const response = await apiFetch(`/api/workshop/actions/${action.id}/retry`, { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         await refreshJobsAndSelectedGame("workshop-action-retry-error");
@@ -2612,7 +2725,7 @@
     if (!selectedGame) return;
     error = "";
     deployPlan = null;
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2624,7 +2737,7 @@
     if (deployPlan) return deployPlan;
     if (!selectedGame) return null;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/preview`);
     if (!response.ok) {
       error = await response.text();
       return null;
@@ -2636,7 +2749,7 @@
   async function applyPendingProfileChanges() {
     if (!selectedGame || !deployPlan || deployPlan.conflicts.length > 0 || deployableActions.length === 0) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2668,7 +2781,7 @@
   async function setFileConflictWinner(target: ConflictChoiceTarget, winnerInstalledModID: number) {
     if (!selectedProfile) return;
     error = "";
-    const response = await fetch(`/api/profiles/${selectedProfile.id}/conflicts/winner`, {
+    const response = await apiFetch(`/api/profiles/${selectedProfile.id}/conflicts/winner`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2689,7 +2802,7 @@
   async function clearFileConflictWinner(target: ConflictChoiceTarget) {
     if (!selectedProfile) return;
     error = "";
-    const response = await fetch(`/api/profiles/${selectedProfile.id}/conflicts/winner?target_path=${encodeURIComponent(target.target_path)}`, {
+    const response = await apiFetch(`/api/profiles/${selectedProfile.id}/conflicts/winner?target_path=${encodeURIComponent(target.target_path)}`, {
       method: "DELETE"
     });
     if (!response.ok) {
@@ -2705,7 +2818,7 @@
   async function purgeDeployment() {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "DELETE" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2719,7 +2832,7 @@
   async function resetManagedMods() {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/reset`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/reset`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2757,7 +2870,7 @@
   async function repairDeployment() {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/repair`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/repair`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2770,7 +2883,7 @@
   async function restoreDeployment() {
     if (!selectedGame || !deploymentStatus?.restore_available) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/deploy/restore`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/restore`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2794,7 +2907,7 @@
   async function applyLaunchSetup() {
     if (!selectedGame || !launchSetupAvailable) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/launch/apply`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/launch/apply`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2808,7 +2921,7 @@
   async function recoverDownloads() {
     if (!selectedGame) return;
     error = "";
-    const response = await fetch(`/api/games/${selectedGame.app_id}/mods/recover-downloads`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/mods/recover-downloads`, { method: "POST" });
     if (!response.ok) {
       error = await response.text();
       return;
@@ -2857,7 +2970,7 @@
     error = "";
     setWorkshopActionBusy(item, kind, true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/games/${encodeURIComponent(selectedGame.app_id)}/workshop/items/${encodeURIComponent(item.published_file_id)}/actions/${kind}`,
         { method: "POST" }
       );
@@ -2885,7 +2998,7 @@
     error = "";
     workshopOrderBusy = true;
     try {
-      const response = await fetch(`/api/games/${encodeURIComponent(selectedGame.app_id)}/workshop/order`, {
+      const response = await apiFetch(`/api/games/${encodeURIComponent(selectedGame.app_id)}/workshop/order`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ item_ids: itemIDs })
@@ -3502,6 +3615,7 @@
   }
 
   onMount(() => {
+    initializeAPIAuth();
     refresh();
     connectEvents();
     const refreshOnFocus = () => {
@@ -4049,39 +4163,52 @@
                 <p class="hint success-copy">{localArchiveMessage}</p>
               {/if}
               <section class="deck-archive-browser" aria-label="Deck archive files">
-                <div class="explore-heading">
-                  <div>
-                    <strong>Import from Deck Downloads</strong>
-                    <small>{deckLocalArchives.length} found</small>
+                <button type="button" class="archive-accordion-trigger" on:click={toggleDeckArchiveBrowser}>
+                  <span>
+                    <strong>Import Mod Archive From Deck</strong>
+                    <small>Browse Downloads for .zip, .7z, .rar, .fomod, and .mgsv files</small>
+                  </span>
+                  <em>{deckArchiveBrowserOpen ? "Hide" : "Open"}</em>
+                </button>
+                {#if deckArchiveBrowserOpen}
+                  <div class="archive-browser-controls">
+                    <label>
+                      <span>Folder Path</span>
+                      <input bind:value={deckArchivePathInput} type="text" placeholder="/home/deck/Downloads" />
+                    </label>
+                    <div>
+                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(deckArchiveBrowserParentPath)} disabled={!deckArchiveBrowserParentPath || deckLocalArchiveBusy}>Up Directory</button>
+                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(deckArchivePathInput)} disabled={deckLocalArchiveBusy}>Enter Path</button>
+                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder()} disabled={deckLocalArchiveBusy}>{deckLocalArchiveBusy ? "Scanning..." : "Refresh"}</button>
+                    </div>
                   </div>
-                  <button type="button" class="secondary-action compact" on:click={refreshDeckLocalArchives} disabled={deckLocalArchiveBusy}>
-                    {deckLocalArchiveBusy ? "Scanning..." : "Refresh"}
-                  </button>
-                </div>
-                <p class="hint">
-                  {deckLocalArchiveRoots.length > 0
-                    ? `Scanning ${deckLocalArchiveRoots.join(" · ")}`
-                    : "DMM scans the Deck Downloads folder and DMM Intake folder."}
-                </p>
-                {#if deckLocalArchives.length === 0}
-                  <p class="hint">No .zip, .7z, .rar, .fomod, or .mgsv files found on the Deck.</p>
-                {:else}
-                  <div class="deck-archive-list">
-                    {#each deckLocalArchives.slice(0, 10) as archiveFile}
-                      <article>
-                        <div>
-                          <strong>{archiveFile.name}</strong>
-                          <small>{formatBytes(archiveFile.bytes)} · {archiveFile.extension || "archive"}</small>
-                        </div>
-                        <button type="button" class="secondary-action compact" on:click={() => importDeckLocalArchive(archiveFile)} disabled={busyDeckLocalArchivePath === archiveFile.path}>
-                          {busyDeckLocalArchivePath === archiveFile.path ? "Importing..." : "Import"}
-                        </button>
-                      </article>
-                    {/each}
-                  </div>
-                {/if}
-                {#if deckLocalArchiveMessage}
-                  <p class="hint success-copy">{deckLocalArchiveMessage}</p>
+                  <p class="hint">
+                    {deckArchiveBrowserPath || deckLocalArchiveRoots[0] || "DMM opens the Deck Downloads folder first."}
+                  </p>
+                  {#if deckArchiveBrowserEntries.length === 0}
+                    <p class="hint">No folders or supported archive files found here.</p>
+                  {:else}
+                    <div class="deck-archive-list">
+                      {#each deckArchiveBrowserEntries.slice(0, 20) as archiveEntry}
+                        <article>
+                          <div>
+                            <strong>{archiveEntry.name}</strong>
+                            <small>{archiveEntry.kind === "directory" ? "Folder" : `${formatBytes(archiveEntry.bytes ?? 0)} · ${archiveEntry.extension || "archive"}`}</small>
+                          </div>
+                          {#if archiveEntry.kind === "directory"}
+                            <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(archiveEntry.path)} disabled={deckLocalArchiveBusy}>Open</button>
+                          {:else}
+                            <button type="button" class="secondary-action compact" on:click={() => importDeckLocalArchive(archiveEntry)} disabled={busyDeckLocalArchivePath === archiveEntry.path}>
+                              {busyDeckLocalArchivePath === archiveEntry.path ? "Importing..." : "Import"}
+                            </button>
+                          {/if}
+                        </article>
+                      {/each}
+                    </div>
+                  {/if}
+                  {#if deckLocalArchiveMessage}
+                    <p class="hint success-copy">{deckLocalArchiveMessage}</p>
+                  {/if}
                 {/if}
               </section>
               <p class="hint">Mods that need choices or review will appear in Action Center. Nexus page links finish on the Deck browser because Nexus generates the download key there.</p>

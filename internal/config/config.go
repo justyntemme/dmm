@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const AppName = "decky-mod-manager"
@@ -14,6 +15,7 @@ type Config struct {
 	LANOnly    bool   `json:"lan_only"`
 	DataDir    string `json:"data_dir"`
 	ConfigPath string `json:"-"`
+	AuthToken  string `json:"-"`
 
 	Nexus    NexusConfig    `json:"nexus"`
 	Catalogs CatalogsConfig `json:"catalogs"`
@@ -122,6 +124,9 @@ const (
 )
 
 func Normalize(cfg Config) Config {
+	if cfg.AuthToken == "" {
+		cfg.AuthToken = strings.TrimSpace(os.Getenv("DMM_AUTH_TOKEN"))
+	}
 	if cfg.Download.MaxConcurrentCapturedDownloads == 0 {
 		cfg.Download.MaxConcurrentCapturedDownloads = DefaultMaxConcurrentCapturedDownloads
 	}
@@ -169,6 +174,7 @@ func Defaults() Config {
 		ListenAddr: ":17942",
 		LANOnly:    true,
 		DataDir:    dataDir,
+		AuthToken:  strings.TrimSpace(os.Getenv("DMM_AUTH_TOKEN")),
 		Install: InstallConfig{
 			AutoInstallCapturedDownloads: true,
 			AutoEnableInstalledMods:      false,

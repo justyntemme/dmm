@@ -197,19 +197,24 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Users may disable LAN-only filtering for VPN/tunnel use cases such as Tailscale.
 - Implement LAN-only filtering in one HTTP middleware using Go `net/netip` checks against `RemoteAddr`.
 - Do not trust proxy forwarding headers for MVP.
-- No auth token, pairing, or HTTPS for MVP.
+- MVP requires a process-scoped API token for all state/read-model API routes except `/api/health`.
+- Decky generates the token when it starts the backend, writes it to a user-only runtime file under `/home/deck/.local/state/decky-mod-manager/api-token`, passes it to the Go backend through `DMM_AUTH_TOKEN`, and uses it for Decky bridge requests, the direct backend WebSocket, and the `nxm://` handler.
+- The phone/tablet URL should include the token as a URL fragment such as `/#token=...`; the web app stores it locally, removes it from the visible URL, sends it as `X-DMM-Token` for API calls, and sends it as a WebSocket query parameter.
+- Do not persist the runtime API token in `config.json`, the database, logs, build artifacts, or documentation examples.
+- Static web assets may remain unauthenticated, but no remote client should be able to read or mutate DMM state without the token.
 - Remote access outside the home network is explicitly out of scope.
-- Because MVP has no auth, the server must be easy to stop from Decky.
-- Add clear warning text in Decky/settings whenever the server is running without auth, especially if LAN-only filtering is disabled.
-- Logs must redact sensitive material. This includes Nexus API keys, future auth tokens, and URLs containing tokens or credentials.
-- Add a token/session reset control only when auth or pairing exists.
+- The server must remain easy to stop from Decky.
+- Add clear warning text in Decky/settings whenever LAN-only filtering is disabled, even with token auth enabled.
+- Logs must redact sensitive material. This includes Nexus API keys, auth tokens, URLs containing tokens, cookies, and credentials.
+- Add a token/session reset control before MVP release so a user can invalidate a leaked pairing URL without restarting the whole Deck if practical.
+- Remote filesystem browsing from the phone/tablet UI must be limited to DMM-approved local archive roots, normally the Deck user's Downloads folder and DMM intake folder. Reject symlink escapes and parent traversal.
 
 ## Logging And Diagnostics Guidelines
 
 - Every feature change must include enough logging to diagnose failures over SSH without requiring the user to manually transcribe UI errors.
 - Log each meaningful external action before and after it runs, including command name, return code, and bounded stdout/stderr where applicable.
 - Log the decision path for platform integration features such as Decky process control, `nxm://` registration, browser launch, deployment, and filesystem writes.
-- Never log Nexus API keys, `nxm://` `key`/`expires` values, future auth tokens, cookies, or credentials.
+- Never log Nexus API keys, `nxm://` `key`/`expires` values, auth tokens, cookies, or credentials.
 - Prefer stable log locations:
   - Decky plugin: `/home/deck/.local/state/decky-mod-manager/plugin.log`
   - Backend: `/home/deck/.local/state/decky-mod-manager/backend.log`

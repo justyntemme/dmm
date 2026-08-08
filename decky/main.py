@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import re
+import secrets
 import signal
 import shutil
 import socket
@@ -20,6 +21,7 @@ class Plugin:
     log_dir = Path(os.environ.get("XDG_STATE_HOME", "/home/deck/.local/state")) / "decky-mod-manager"
     plugin_log = log_dir / "plugin.log"
     backend_log = log_dir / "backend.log"
+    auth_token_file = log_dir / "api-token"
     desktop_id = "decky-mod-manager-nxm.desktop"
     nxm_schemes = ["x-scheme-handler/nxm", "x-scheme-handler/nxm-protocol"]
     sensitive_query_pattern = re.compile(r"(?i)(key|expires|md5)=([^&\"'\s]+)")
@@ -75,6 +77,9 @@ class Plugin:
 
         env = os.environ.copy()
         env.setdefault("DMM_DECKY_PLUGIN_DIR", str(plugin_dir))
+        token = self._ensure_auth_token()
+        env["DMM_AUTH_TOKEN"] = token
+        env["DMM_AUTH_TOKEN_FILE"] = str(self.auth_token_file)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         backend_log = open(self.backend_log, "ab", buffering=0)
         self.backend_process = subprocess.Popen(
@@ -85,7 +90,7 @@ class Plugin:
             stderr=backend_log,
             start_new_session=True,
         )
-        self._log(f"backend started pid={self.backend_process.pid}")
+        self._log(f"backend started pid={self.backend_process.pid} auth_token_file={self.auth_token_file}")
         for _ in range(10):
             if self._backend_responds():
                 break
@@ -117,20 +122,27 @@ class Plugin:
         elif self.backend_process is not None and self.backend_process.returncode is not None:
             error = f"Backend exited with code {self.backend_process.returncode}. See {self.backend_log}."
         backend_status = self._backend_json("GET", "/api/status")
+        auth_token = self._read_auth_token()
         result = {
             "running": running,
             "ip": ip,
             "port": 17942,
-            "url": f"http://{ip}:17942" if ip else None,
+            "url": self._paired_phone_url(ip),
+            "plain_url": f"http://{ip}:17942" if ip else None,
             "pid": pid,
             "backend": backend_status,
+            "auth": {
+                "enabled": bool(auth_token),
+                "token": auth_token,
+                "token_file": str(self.auth_token_file),
+            },
             "logs": {
                 "plugin": str(self.plugin_log),
                 "backend": str(self.backend_log),
             },
             "build": self._build_info(),
             "error": error,
-            "warning": "No app authentication is enabled. Keep LAN-only mode enabled unless using a trusted VPN/tunnel.",
+            "warning": "API authentication is enabled for paired phones. Keep LAN-only mode enabled unless using a trusted VPN/tunnel.",
         }
         return result
 
@@ -264,6 +276,30 @@ class Plugin:
             roots = []
         self._log(f"local archives loaded app_id={app_id} files={len(files)} roots={len(roots)}")
         return {"ok": True, "roots": roots, "files": files}
+
+    async def browse_local_archives(self, app_id, path=""):
+        app_id = str(app_id or "").strip()
+        path = str(path or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "roots": [], "entries": [], "current_path": "", "parent_path": ""}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "roots": [], "entries": [], "current_path": "", "parent_path": ""}
+        query = ""
+        if path:
+            query = "?path=" + urllib.parse.quote(path)
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/local-archives/browse{query}")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to browse Deck archive files.", "roots": [], "entries": [], "current_path": "", "parent_path": ""}
+        entries = result.get("entries")
+        roots = result.get("roots")
+        if not isinstance(entries, list):
+            return {"ok": False, "error": "Unexpected local archive browse response.", "roots": [], "entries": [], "current_path": "", "parent_path": ""}
+        if not isinstance(roots, list):
+            roots = []
+        current_path = str(result.get("current_path") or "")
+        parent_path = str(result.get("parent_path") or "")
+        self._log(f"local archive browser loaded app_id={app_id} path={current_path} entries={len(entries)} roots={len(roots)}")
+        return {"ok": True, "roots": roots, "entries": entries, "current_path": current_path, "parent_path": parent_path}
 
     async def import_local_archive(self, app_id, path, profile_id=0):
         app_id = str(app_id or "").strip()
@@ -1347,6 +1383,44 @@ class Plugin:
                 info["error"] = self._redact_url(str(exc))
         return info
 
+    def _ensure_auth_token(self):
+        token = self._read_auth_token()
+        if token:
+            return token
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        token = secrets.token_urlsafe(32)
+        tmp_path = self.auth_token_file.with_suffix(".tmp")
+        tmp_path.write_text(token + "\n", encoding="utf-8")
+        tmp_path.chmod(0o600)
+        tmp_path.replace(self.auth_token_file)
+        try:
+            self.auth_token_file.chmod(0o600)
+        except Exception:
+            pass
+        self._log(f"generated backend auth token file={self.auth_token_file}")
+        return token
+
+    def _read_auth_token(self):
+        env_token = os.environ.get("DMM_AUTH_TOKEN", "").strip()
+        if env_token:
+            return env_token
+        try:
+            token = self.auth_token_file.read_text(encoding="utf-8").strip()
+            return token if len(token) >= 24 else ""
+        except FileNotFoundError:
+            return ""
+        except Exception as exc:
+            self._log(f"auth token read failed file={self.auth_token_file}: {self._redact_url(str(exc))}")
+            return ""
+
+    def _paired_phone_url(self, ip):
+        if not ip:
+            return None
+        token = self._read_auth_token()
+        if not token:
+            return f"http://{ip}:17942"
+        return f"http://{ip}:17942/#token={urllib.parse.quote(token)}"
+
     def _lan_ip(self):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1377,14 +1451,18 @@ class Plugin:
 
     def _backend_json_result(self, method, path, body=None):
         try:
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+            token = self._read_auth_token()
+            if token:
+                headers["X-DMM-Token"] = token
             request = urllib.request.Request(
                 f"http://127.0.0.1:17942{path}",
                 data=body,
                 method=method,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
             )
             with urllib.request.urlopen(request, timeout=2) as response:
                 return json.loads(response.read().decode("utf-8")), None
