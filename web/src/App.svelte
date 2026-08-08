@@ -3597,6 +3597,10 @@
     return "Review the mod page before updating.";
   }
 
+  function showPrimaryModUpdate(update: ModUpdate | undefined) {
+    return update?.status === "available" || update?.status === "error";
+  }
+
   function deployActionDetail(action: DeployAction) {
     if (action.conflict) return action.conflict_reason || "Conflict";
     const base = `${action.operation || "add"} · ${action.strategy || "managed"}`;
@@ -4600,10 +4604,12 @@
                           {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
                         </div>
                       {/if}
-                      <div class:available-update={mod.update?.status === "available"} class:failed-update={mod.update?.status === "error"} class="mod-update-status">
-                        <span>{modUpdateLabel(mod.update)}</span>
-                        <small>{modUpdateDetail(mod.update)}</small>
-                      </div>
+                      {#if showPrimaryModUpdate(mod.update)}
+                        <div class:available-update={mod.update?.status === "available"} class:failed-update={mod.update?.status === "error"} class="mod-update-status">
+                          <span>{modUpdateLabel(mod.update)}</span>
+                          <small>{modUpdateDetail(mod.update)}</small>
+                        </div>
+                      {/if}
                       <small>{modProfileStateText(mod)}</small>
                     </div>
                     <div class="mod-actions">
@@ -4621,6 +4627,7 @@
                     <details class="mod-advanced">
                       <summary>Advanced</summary>
                       <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id} · Priority {mod.priority}</p>
+                      <p>Updates: {modUpdateLabel(mod.update)}. {modUpdateDetail(mod.update)}</p>
                       <div class="mod-advanced-actions">
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
                         <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
