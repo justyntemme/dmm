@@ -398,6 +398,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/games/{appID}/deploy/settings", s.handleUpdateDeploySettings)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/history", s.handleDeployHistory)
+	mux.HandleFunc("POST /api/games/{appID}/deploy/history/{deploymentID}/restore", s.handleRestoreDeployHistoryPoint)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/preview", s.handleDeployPreview)
 	mux.HandleFunc("POST /api/games/{appID}/deploy", s.handleDeploy)
 	mux.HandleFunc("DELETE /api/games/{appID}/deploy", s.handlePurgeDeploy)
@@ -5692,6 +5693,161 @@ func (s *Server) handleRestoreDeploy(w http.ResponseWriter, r *http.Request) {
 		"restored": len(result.Repaired),
 	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "result": result})
+}
+
+func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	deploymentID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("deploymentID")), 10, 64)
+	if err != nil || deploymentID <= 0 {
+		http.Error(w, "valid deploymentID is required", http.StatusBadRequest)
+		return
+	}
+	targetFiles, err := s.db.DeploymentFilesForSteamAppDeployment(r.Context(), appID, deploymentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if len(targetFiles) == 0 {
+		http.Error(w, "deployment point was not found or has no files", http.StatusNotFound)
+		return
+	}
+	currentFiles, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	payload := gameJobPayload(appID)
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["deployment_id"] = strconv.FormatInt(deploymentID, 10)
+	job := s.jobs.CreateWithPayload("rollback", "Restore selected deployment point", payload)
+	job, _ = s.jobs.Run(job.ID, "Restoring DMM-owned files to deployment point "+strconv.FormatInt(deploymentID, 10))
+	plan := deploymentPointRestorePlan(currentFiles, targetFiles)
+	s.logger.Info("deployment point restore started", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "actions", len(plan.Actions), "target_files", len(targetFiles), "current_files", len(currentFiles))
+	if len(plan.Conflicts) > 0 {
+		message := "Restore blocked by " + strconv.Itoa(len(plan.Conflicts)) + " unmanaged file conflict" + plural(len(plan.Conflicts))
+		s.logger.Warn("deployment point restore blocked", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "conflicts", len(plan.Conflicts))
+		job, _ = s.jobs.Fail(job.ID, message)
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan})
+		return
+	}
+	deployment, err := deploy.ApplyPrepared(plan)
+	if err != nil {
+		s.logger.Warn("deployment point restore apply failed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan})
+		return
+	}
+	newDeploymentID, err := s.db.RecordDeployment(r.Context(), appID, deploymentPointStrategy(targetFiles), deployment.Files)
+	if err != nil {
+		rollbackErr := deployment.Rollback()
+		if rollbackErr != nil {
+			s.logger.Warn("deployment point restore manifest record failed and rollback failed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "error", err, "rollback_error", rollbackErr)
+			job, _ = s.jobs.Fail(job.ID, "Restore applied but manifest recording and rollback failed: "+err.Error()+"; rollback: "+rollbackErr.Error())
+		} else {
+			s.logger.Warn("deployment point restore manifest record failed and changes rolled back", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "error", err)
+			job, _ = s.jobs.Fail(job.ID, "Restore rolled back after manifest recording failed: "+err.Error())
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan})
+		return
+	}
+	deployment.Commit()
+	removed := 0
+	for _, action := range plan.Actions {
+		if action.Operation == "remove" {
+			removed++
+		}
+	}
+	message := "Restored deployment point " + strconv.FormatInt(deploymentID, 10) + " with " + strconv.Itoa(len(deployment.Files)) + " managed file" + plural(len(deployment.Files))
+	if removed > 0 {
+		message += "; removed " + strconv.Itoa(removed) + " newer file" + plural(removed)
+	}
+	s.logger.Info("deployment point restore completed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "new_deployment_id", newDeploymentID, "files", len(deployment.Files), "removed", removed)
+	job, _ = s.jobs.Complete(job.ID, message)
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":            "restored_point",
+		"deployment_id":     deploymentID,
+		"new_deployment_id": newDeploymentID,
+		"files":             len(deployment.Files),
+		"removed":           removed,
+	})
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan, "deployment_id": newDeploymentID})
+}
+
+func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile) deploy.Plan {
+	targetByPath := make(map[string]deploy.AppliedFile, len(targetFiles))
+	for _, file := range targetFiles {
+		target := filepath.Clean(file.TargetPath)
+		if target == "." || target == "" {
+			continue
+		}
+		targetByPath[target] = file
+	}
+	actions := make([]deploy.Action, 0, len(currentFiles)+len(targetFiles))
+	for _, file := range currentFiles {
+		target := filepath.Clean(file.TargetPath)
+		if _, keep := targetByPath[target]; keep {
+			continue
+		}
+		actions = append(actions, deploy.Action{
+			RestorePath:    file.RestorePath,
+			TargetPath:     target,
+			Strategy:       file.Strategy,
+			Operation:      "remove",
+			ChecksumSHA256: file.ChecksumSHA256,
+			InstalledModID: file.InstalledModID,
+			Catalog:        file.Catalog,
+			ModID:          file.ModID,
+		})
+	}
+	for _, file := range targetFiles {
+		target := filepath.Clean(file.TargetPath)
+		if target == "." || target == "" {
+			continue
+		}
+		operation := "add"
+		if _, err := os.Lstat(target); err == nil {
+			operation = "replace"
+		}
+		actions = append(actions, deploy.Action{
+			SourcePath:     filepath.Clean(file.SourcePath),
+			RestorePath:    cleanOptionalPath(file.RestorePath),
+			TargetPath:     target,
+			Strategy:       file.Strategy,
+			Operation:      operation,
+			ChecksumSHA256: file.ChecksumSHA256,
+			InstalledModID: file.InstalledModID,
+			Catalog:        file.Catalog,
+			ModID:          file.ModID,
+		})
+	}
+	return deploy.Plan{
+		Strategy: deploymentPointStrategy(targetFiles),
+		Actions:  actions,
+	}
+}
+
+func cleanOptionalPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Clean(path)
+}
+
+func deploymentPointStrategy(files []deploy.AppliedFile) deploy.Strategy {
+	for _, file := range files {
+		if file.Strategy != "" {
+			return file.Strategy
+		}
+	}
+	return deploy.StrategySymlink
 }
 
 func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {

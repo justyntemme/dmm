@@ -1692,14 +1692,15 @@ func TestDeploymentHistoryForSteamApp(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
+	firstID, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
 		SourcePath:     "/staging/a.txt",
 		TargetPath:     "/game/a.txt",
 		Strategy:       deploy.StrategySymlink,
 		InstalledModID: 1,
 		Catalog:        "nexus",
 		ModID:          "541",
-	}}); err != nil {
+	}})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{
@@ -1716,17 +1717,24 @@ func TestDeploymentHistoryForSteamApp(t *testing.T) {
 	if len(history) != 2 {
 		t.Fatalf("history = %+v", history)
 	}
-	if history[0].Strategy != string(deploy.StrategyCopy) || history[0].FileCount != 2 || history[0].ProfileName != "Default" {
+	if history[0].Strategy != string(deploy.StrategyCopy) || history[0].FileCount != 2 || history[0].ProfileName != "Default" || !history[0].Active {
 		t.Fatalf("latest history item = %+v", history[0])
 	}
 	if sourceCount(history[0].Sources, "github") != 1 || sourceCount(history[0].Sources, "nexus") != 1 {
 		t.Fatalf("latest history sources = %+v", history[0].Sources)
 	}
-	if history[1].Strategy != string(deploy.StrategySymlink) || history[1].FileCount != 1 {
+	if history[1].Strategy != string(deploy.StrategySymlink) || history[1].FileCount != 1 || history[1].Active {
 		t.Fatalf("older history item = %+v", history[1])
 	}
 	if sourceCount(history[1].Sources, "nexus") != 1 {
 		t.Fatalf("older history sources = %+v", history[1].Sources)
+	}
+	firstFiles, err := db.DeploymentFilesForSteamAppDeployment(context.Background(), "413150", firstID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstFiles) != 1 || firstFiles[0].TargetPath != "/game/a.txt" || firstFiles[0].Catalog != "nexus" {
+		t.Fatalf("first deployment files = %+v", firstFiles)
 	}
 }
 

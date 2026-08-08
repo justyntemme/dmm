@@ -103,6 +103,7 @@ type DeploymentSummary struct {
 	ProfileID   int64                     `json:"profile_id"`
 	ProfileName string                    `json:"profile_name"`
 	Status      string                    `json:"status"`
+	Active      bool                      `json:"active"`
 	Strategy    string                    `json:"strategy"`
 	FileCount   int                       `json:"file_count"`
 	Sources     []DeploymentSourceSummary `json:"sources,omitempty"`
@@ -2364,7 +2365,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 }
 
 func (db *DB) LatestDeploymentFilesForSteamApp(ctx context.Context, appID string) ([]deploy.AppliedFile, error) {
-	rows, err := db.conn.QueryContext(ctx, `
+	return db.deploymentFilesForSteamApp(ctx, appID, `
 SELECT df.source_path, df.restore_path, df.target_path, df.link_type, df.checksum_sha256, df.restore_sha256, df.installed_mod_id, df.catalog, df.source_mod_id
 FROM deployed_files df
 JOIN deployments d ON d.id = df.deployment_id
@@ -2380,6 +2381,28 @@ WHERE g.steam_app_id = ?
   )
 ORDER BY df.target_path DESC
 `, appID)
+}
+
+func (db *DB) DeploymentFilesForSteamAppDeployment(ctx context.Context, appID string, deploymentID int64) ([]deploy.AppliedFile, error) {
+	if deploymentID <= 0 {
+		return nil, errors.New("deploymentID must be positive")
+	}
+	return db.deploymentFilesForSteamApp(ctx, appID, `
+SELECT df.source_path, df.restore_path, df.target_path, df.link_type, df.checksum_sha256, df.restore_sha256, df.installed_mod_id, df.catalog, df.source_mod_id
+FROM deployed_files df
+JOIN deployments d ON d.id = df.deployment_id
+JOIN games g ON g.id = d.game_id
+WHERE g.steam_app_id = ?
+  AND d.id = ?
+ORDER BY df.target_path DESC
+	`, deploymentID)
+}
+
+func (db *DB) deploymentFilesForSteamApp(ctx context.Context, appID, query string, args ...any) ([]deploy.AppliedFile, error) {
+	queryArgs := make([]any, 0, 1+len(args))
+	queryArgs = append(queryArgs, appID)
+	queryArgs = append(queryArgs, args...)
+	rows, err := db.conn.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2406,7 +2429,20 @@ func (db *DB) DeploymentHistoryForSteamApp(ctx context.Context, appID string, li
 		limit = 50
 	}
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT d.id, p.id, p.name, d.status, d.strategy, COUNT(df.id), d.created_at, d.updated_at
+SELECT d.id, p.id, p.name, d.status,
+       CASE
+         WHEN d.status = 'deployed'
+          AND d.id = (
+            SELECT d2.id
+            FROM deployments d2
+            WHERE d2.game_id = d.game_id AND d2.status = 'deployed'
+            ORDER BY d2.created_at DESC, d2.id DESC
+            LIMIT 1
+          )
+         THEN 1
+         ELSE 0
+       END AS active,
+       d.strategy, COUNT(df.id), d.created_at, d.updated_at
 FROM deployments d
 JOIN games g ON g.id = d.game_id
 JOIN profiles p ON p.id = d.profile_id
@@ -2424,9 +2460,11 @@ LIMIT ?
 	out := []DeploymentSummary{}
 	for rows.Next() {
 		var item DeploymentSummary
-		if err := rows.Scan(&item.ID, &item.ProfileID, &item.ProfileName, &item.Status, &item.Strategy, &item.FileCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		var active int
+		if err := rows.Scan(&item.ID, &item.ProfileID, &item.ProfileName, &item.Status, &active, &item.Strategy, &item.FileCount, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
+		item.Active = active == 1
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {

@@ -1972,6 +1972,11 @@ h2 {
   background: #10161d;
 }
 
+.deployment-history-list article.active-deployment-point {
+  border-color: #0f766e;
+  background: #10211f;
+}
+
 .deployment-history-list strong,
 .deployment-history-list small {
   display: block;
@@ -1984,6 +1989,28 @@ h2 {
 .deployment-history-list time {
   color: #a1a1aa;
   font-size: 0.78rem;
+}
+
+.deployment-history-actions {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 112px;
+}
+
+.deployment-history-actions span {
+  border: 1px solid #0f766e;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #ccfbf1;
+  background: #134e4a;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.deployment-history-actions button {
+  min-height: 34px;
+  padding: 6px 9px;
 }
 
 .deployment-source-list {
@@ -2808,7 +2835,8 @@ dd {
   }
 
   .mod-list article,
-  .action-list article {
+  .action-list article,
+  .deployment-history-list article {
     grid-template-columns: 1fr;
   }
 
@@ -2821,6 +2849,10 @@ dd {
   }
 
   .action-controls {
+    justify-items: start;
+  }
+
+  .deployment-history-actions {
     justify-items: start;
   }
 

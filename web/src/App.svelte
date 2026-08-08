@@ -373,6 +373,7 @@
     profile_id: number;
     profile_name: string;
     status: string;
+    active: boolean;
     strategy: string;
     file_count: number;
     sources?: DeploymentSourceSummary[];
@@ -2983,6 +2984,30 @@
     };
   }
 
+  async function restoreDeploymentPoint(deployment: DeploymentHistoryItem) {
+    if (!selectedGame || deployment.active) return;
+    error = "";
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/history/${deployment.id}/restore`, { method: "POST" });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result = await response.json();
+    upsertJob(result.job);
+    await refreshSelectedGame({ refreshPreview: deployPlan !== null });
+  }
+
+  function askRestoreDeploymentPoint(deployment: DeploymentHistoryItem) {
+    if (!selectedGame || deployment.active) return;
+    confirmation = {
+      title: "Restore deployment point",
+      message: `DMM will restore ${selectedGame.name} to the selected deployment point.`,
+      detail: `${new Date(deployment.created_at).toLocaleString()} · ${deployment.profile_name} · ${deployment.file_count} file${deployment.file_count === 1 ? "" : "s"} · ${deploymentPointDelta(deployment)}. DMM removes newer managed files that are not part of this point.`,
+      confirmLabel: "Restore Point",
+      run: () => restoreDeploymentPoint(deployment)
+    };
+  }
+
   async function applyLaunchSetup() {
     if (!selectedGame || !launchSetupAvailable) return;
     error = "";
@@ -3672,6 +3697,24 @@
     const from = action.payload?.update_from_file_id || "current";
     const to = action.payload?.update_to_file_id || "latest";
     return `Update ${from} -> ${to}`;
+  }
+
+  function activeDeploymentPoint() {
+    return deploymentHistory.find((deployment) => deployment.active) ?? null;
+  }
+
+  function deploymentPointLabel(deployment: DeploymentHistoryItem) {
+    if (deployment.active) return "Active deployment";
+    if (deployment.status === "purged") return "Purged point";
+    return "Restore point";
+  }
+
+  function deploymentPointDelta(deployment: DeploymentHistoryItem) {
+    const active = activeDeploymentPoint();
+    if (!active || active.id === deployment.id) return "current point";
+    const delta = deployment.file_count - active.file_count;
+    if (delta === 0) return "same file count as current";
+    return `${delta > 0 ? "+" : ""}${delta} file${Math.abs(delta) === 1 ? "" : "s"} versus current`;
   }
 
   function actionSource(action: Job) {
@@ -4789,10 +4832,11 @@
               {#if deploymentHistory.length > 0}
                 <div class="deployment-history-list" aria-label="Deployment history">
                   {#each deploymentHistory as deployment}
-                    <article>
+                    <article class:active-deployment-point={deployment.active}>
                       <div>
-                        <strong>{deployment.status === "deployed" ? "Active deployment" : "Previous deployment"}</strong>
+                        <strong>{deploymentPointLabel(deployment)}</strong>
                         <small>{deployment.profile_name} · {deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy}</small>
+                        <small>{deploymentPointDelta(deployment)}</small>
                         {#if deployment.sources?.length}
                           <div class="deployment-source-list" aria-label="Deployment sources">
                             {#each deployment.sources as source}
@@ -4801,7 +4845,14 @@
                           </div>
                         {/if}
                       </div>
-                      <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
+                      <div class="deployment-history-actions">
+                        <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
+                        {#if deployment.active}
+                          <span>Current</span>
+                        {:else}
+                          <button type="button" class="secondary-action compact" on:click={() => askRestoreDeploymentPoint(deployment)}>Restore Point</button>
+                        {/if}
+                      </div>
                     </article>
                   {/each}
                 </div>

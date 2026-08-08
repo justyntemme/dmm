@@ -7597,6 +7597,85 @@ func TestDeployHistoryEndpointReportsRecentDeployments(t *testing.T) {
 	if body.Deployments[0].Strategy != string(deploy.StrategyCopy) || body.Deployments[0].Status != "deployed" || body.Deployments[0].FileCount != 1 {
 		t.Fatalf("deployment summary = %+v", body.Deployments[0])
 	}
+	if !body.Deployments[0].Active {
+		t.Fatalf("latest deployment should be active: %+v", body.Deployments[0])
+	}
+}
+
+func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	oldSource := filepath.Join(srv.cfg.DataDir, "staging", "old", "manifest.json")
+	newSource := filepath.Join(srv.cfg.DataDir, "staging", "new", "manifest.json")
+	oldTarget := filepath.Join(gamePath, "Mods", "OldMod", "manifest.json")
+	newTarget := filepath.Join(gamePath, "Mods", "NewMod", "manifest.json")
+	for _, dir := range []string{filepath.Dir(oldSource), filepath.Dir(newSource), filepath.Dir(newTarget)} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(oldSource, []byte(`{"Name":"Old Mod"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newSource, []byte(`{"Name":"New Mod"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newTarget, []byte(`{"Name":"New Mod"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldID, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: oldSource,
+		TargetPath: oldTarget,
+		Strategy:   deploy.StrategyCopy,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: newSource,
+		TargetPath: newTarget,
+		Strategy:   deploy.StrategyCopy,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy/history/"+strconv.FormatInt(oldID, 10)+"/restore", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(newTarget); !os.IsNotExist(err) {
+		t.Fatalf("new target still exists or stat failed: %v", err)
+	}
+	oldBytes, err := os.ReadFile(oldTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(oldBytes) != `{"Name":"Old Mod"}` {
+		t.Fatalf("old target = %q", string(oldBytes))
+	}
+	history, err := srv.db.DeploymentHistoryForSteamApp(context.Background(), "413150", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) == 0 || !history[0].Active || history[0].ID == oldID || history[0].FileCount != 1 {
+		t.Fatalf("history after restore = %+v", history)
+	}
 }
 
 func TestGameDiagnosticsSummarizesMVPValidationState(t *testing.T) {
