@@ -36,11 +36,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				InstructionMode:   installplan.InstructionManifestFolders,
 			})
 			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
-				ID:         "sample:fomod",
-				Name:       "FOMOD installer",
-				Kind:       "fomod",
-				ModType:    "mod",
-				TargetRoot: "Mods",
+				ID:                    "sample:fomod",
+				Name:                  "FOMOD installer",
+				Kind:                  "fomod",
+				ModType:               "mod",
+				TargetRoot:            "Mods",
+				DestinationPrefixMode: sdk.InstallerChoiceDestinationPrefixModuleBaseName,
 			})
 			r.RegisterInstallPlatform(sdk.InstallPlatformSpec{
 				ID:      "windows",
@@ -60,6 +61,14 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ExecutableRelative: "loader",
 				Arguments:          []string{"--native"},
 				RequiredFiles:      []string{"loader", "loader.dll"},
+				DynamicInputs: []sdk.LaunchToolDynamicInputSpec{{
+					ID:             "profile-packages",
+					Name:           "Enabled profile packages",
+					Kind:           sdk.LaunchToolDynamicInputEnabledModFileList,
+					SourceModTypes: []string{"mod"},
+					OutputRelative: "DMM/profile-packages.ini",
+					ArgumentToken:  "--package-list={path}",
+				}},
 				Variants: []sdk.LaunchToolVariantSpec{{
 					PlatformID:         "windows",
 					ExecutableRelative: "loader.exe",
@@ -93,11 +102,16 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				AppDataPath:      "Sample Game",
 				PluginsFile:      "plugins.txt",
 				LoadOrderFile:    "loadorder.txt",
-				Format:           "fallout4",
+				Format:           sdk.PluginActivationFormatAsterisked,
 				PluginExtensions: []string{".esm", ".esp", ".esl"},
 				NativePluginManifests: []string{
 					"Sample.ccc",
 				},
+			})
+			r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+				ID:       "sample-unmanaged",
+				Name:     "Sample unmanaged files",
+				Patterns: []string{"loader.exe", "Data/External/*.dll"},
 			})
 			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 				ID:       "sample-ignore",
@@ -187,10 +201,13 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "sample:installer" {
 		t.Fatalf("installer capabilities = %+v", summary.Capabilities.Installers)
 	}
+	if len(summary.Capabilities.ModTypes) != 1 || summary.Capabilities.ModTypes[0].ID != "mod" || summary.Capabilities.ModTypes[0].DeploymentMode != installplan.ModTypeDeploymentDirect {
+		t.Fatalf("mod type capabilities = %+v", summary.Capabilities.ModTypes)
+	}
 	if len(summary.Capabilities.InstallerChoices) != 1 || summary.Capabilities.InstallerChoices[0].ID != "sample:fomod" {
 		t.Fatalf("installer choice capabilities = %+v", summary.Capabilities.InstallerChoices)
 	}
-	if choice, ok := registry.InstallerChoiceForSteamApp("100", "fomod"); !ok || choice.TargetRoot != "Mods" {
+	if choice, ok := registry.InstallerChoiceForSteamApp("100", "fomod"); !ok || choice.TargetRoot != "Mods" || choice.DestinationPrefixMode != sdk.InstallerChoiceDestinationPrefixModuleBaseName {
 		t.Fatalf("installer choice lookup = %+v %v", choice, ok)
 	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
@@ -198,6 +215,10 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if !summary.Capabilities.LaunchTools[0].Shell || !summary.Capabilities.LaunchTools[0].Detach || !summary.Capabilities.LaunchTools[0].Exclusive {
 		t.Fatalf("launch tool flags = %+v", summary.Capabilities.LaunchTools[0])
+	}
+	dynamicInputs := summary.Capabilities.LaunchTools[0].DynamicInputs
+	if len(dynamicInputs) != 1 || dynamicInputs[0].ID != "profile-packages" || dynamicInputs[0].Kind != sdk.LaunchToolDynamicInputEnabledModFileList || dynamicInputs[0].OutputRelative != "DMM/profile-packages.ini" || dynamicInputs[0].ArgumentToken != "--package-list={path}" {
+		t.Fatalf("launch tool dynamic inputs = %+v", dynamicInputs)
 	}
 	if len(summary.Capabilities.InstallPlatforms) != 1 || summary.Capabilities.InstallPlatforms[0].ID != "windows" {
 		t.Fatalf("install platform capabilities = %+v", summary.Capabilities.InstallPlatforms)
@@ -217,6 +238,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
+	}
+	if len(summary.Capabilities.UnmanagedMarkers) != 1 || summary.Capabilities.UnmanagedMarkers[0].ID != "sample-unmanaged" || len(summary.Capabilities.UnmanagedMarkers[0].Patterns) != 2 {
+		t.Fatalf("unmanaged marker capabilities = %+v", summary.Capabilities.UnmanagedMarkers)
 	}
 	if len(summary.Capabilities.ConflictIgnores) != 1 || summary.Capabilities.ConflictIgnores[0].ID != "sample-ignore" {
 		t.Fatalf("conflict ignore capabilities = %+v", summary.Capabilities.ConflictIgnores)
@@ -364,7 +388,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				NexusDomains: []string{"badgame"},
 				VortexGameID: "badgame",
 			})
-			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "../outside"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "../outside", DeploymentMode: "magic"})
 			r.RegisterInstaller(installplan.InstallerSpec{
 				ID:                "bad:installer",
 				VortexInstallerID: "bad-installer",
@@ -376,11 +400,12 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				}},
 			})
 			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
-				ID:          "bad:fomod",
-				Kind:        "fomod",
-				ModType:     "missing-choice-type",
-				TargetRoot:  "../Data",
-				StopFolders: []string{"bad/path"},
+				ID:                    "bad:fomod",
+				Kind:                  "fomod",
+				ModType:               "missing-choice-type",
+				TargetRoot:            "../Data",
+				StopFolders:           []string{"bad/path"},
+				DestinationPrefixMode: "bad-mode",
 			})
 			r.RegisterInstallPlatform(sdk.InstallPlatformSpec{
 				ID:      "bad/platform",
@@ -391,6 +416,13 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				Name:               "Tool",
 				ExecutableRelative: "../tool",
 				Arguments:          []string{"bad\narg"},
+				DynamicInputs: []sdk.LaunchToolDynamicInputSpec{{
+					ID:             "bad/id",
+					Kind:           "texmod",
+					SourceModTypes: []string{""},
+					OutputRelative: "../bad.ini",
+					ArgumentToken:  "bad\narg",
+				}},
 				Variants: []sdk.LaunchToolVariantSpec{{
 					PlatformID:         "bad/platform",
 					ExecutableRelative: "../tool.exe",
@@ -407,6 +439,10 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				NativePluginManifests: []string{
 					"/Bad.ccc",
 				},
+			})
+			r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+				ID:       "bad/marker",
+				Patterns: []string{"/abs", "../bad"},
 			})
 			r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 				ID:       "ignore",
@@ -427,24 +463,36 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"extension version is required",
 		"extension build id is required",
 		"mod type mod target root: path traversal is not allowed",
+		"mod type mod deployment mode must be direct or event-hook",
 		"installer bad:installer custom builder is required",
 		"references undeclared mod type missing-type",
 		"generated source path: absolute path is not allowed",
 		"installer choice bad:fomod references undeclared mod type missing-choice-type",
 		"installer choice bad:fomod target root: path traversal is not allowed",
 		"installer choice bad:fomod stop folder: must be a single relative path segment",
+		"installer choice bad:fomod destination prefix mode: unsupported value bad-mode",
 		"install platform bad/platform id must be a simple identifier",
 		"install platform bad/platform name is required",
 		"install platform bad/platform marker: path traversal is not allowed",
 		"launch tool tool executable path: path traversal is not allowed",
 		"launch tool tool argument: must not contain control line breaks",
+		"launch tool tool dynamic input bad/id id must be a simple identifier",
+		"launch tool tool dynamic input bad/id name is required",
+		"launch tool tool dynamic input bad/id kind must be generated-config or enabled-mod-file-list",
+		"launch tool tool dynamic input bad/id source mod type is required",
+		"launch tool tool dynamic input bad/id output path: path traversal is not allowed",
+		"launch tool tool dynamic input bad/id argument token: must not contain control line breaks",
 		"launch tool tool variant platform id must be a simple identifier",
 		"launch tool tool variant executable path: path traversal is not allowed",
 		"launch tool tool variant argument: must not contain control line breaks",
 		"plugin activation plugins game data root: path traversal is not allowed",
-		"plugin activation plugins format must be original or fallout4",
+		"plugin activation plugins format must be original or asterisked",
 		"plugin activation plugins plugin extension must be a file extension",
 		"plugin activation plugins native plugin manifest: absolute path is not allowed",
+		"unmanaged marker bad/marker id must be a simple identifier",
+		"unmanaged marker bad/marker name is required",
+		"unmanaged marker bad/marker pattern: absolute patterns are not allowed",
+		"unmanaged marker bad/marker pattern: path traversal is not allowed",
 		"conflict ignore ignore pattern: absolute patterns are not allowed",
 		"conflict ignore ignore pattern: path traversal is not allowed",
 		"steam workshop action bad-workshop name is required",

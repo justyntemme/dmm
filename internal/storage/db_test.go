@@ -1563,6 +1563,25 @@ func TestDeleteDuplicateInstallCandidatesForSteamAppKeepsOnlyCurrentFailures(t *
 	}); err != nil {
 		t.Fatal(err)
 	}
+	choiceSource := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "stardewvalley",
+		ModID:      "5098",
+		FileID:     "145908",
+	}
+	if _, err := db.RecordInstallCandidate(context.Background(), RecordInstallCandidateParams{
+		SteamAppID:      "413150",
+		Resolved:        choiceSource,
+		Name:            "Generic Mod Config Menu choice install",
+		ArchivePath:     "/downloads/gmcm-choice.zip",
+		Status:          "needs_choices",
+		Reason:          "installer choices are required",
+		InstallerJSON:   `{"name":"Choice Mod","steps":[]}`,
+		ChoicesJSON:     "{}",
+		TargetProfileID: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
 		SteamAppID:   "413150",
 		Resolved:     installedSource,
@@ -1570,6 +1589,17 @@ func TestDeleteDuplicateInstallCandidatesForSteamAppKeepsOnlyCurrentFailures(t *
 		Version:      "145906",
 		ArchivePath:  "/downloads/gmcm.zip",
 		StagingPath:  "/staging/gmcm",
+		ManifestJSON: "{}",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID:   "413150",
+		Resolved:     choiceSource,
+		Name:         "Generic Mod Config Menu choice install",
+		Version:      "145908",
+		ArchivePath:  "/downloads/gmcm-choice.zip",
+		StagingPath:  "/staging/gmcm-choice",
 		ManifestJSON: "{}",
 	}); err != nil {
 		t.Fatal(err)
@@ -1586,7 +1616,14 @@ func TestDeleteDuplicateInstallCandidatesForSteamAppKeepsOnlyCurrentFailures(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(candidates) != 1 || candidates[0].SourceFileID != "145907" {
+	if len(candidates) != 2 {
+		t.Fatalf("remaining candidates = %+v", candidates)
+	}
+	remaining := map[string]string{}
+	for _, candidate := range candidates {
+		remaining[candidate.SourceFileID] = candidate.Status
+	}
+	if remaining["145907"] != "blocked" || remaining["145908"] != "needs_choices" {
 		t.Fatalf("remaining candidates = %+v", candidates)
 	}
 	deleted, err = db.DeleteDuplicateInstallCandidatesForSteamApp(context.Background(), "413150")

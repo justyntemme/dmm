@@ -135,6 +135,10 @@ func (m *Manager) Run(id, message string) (Job, bool) {
 	return m.update(id, StatusRunning, message)
 }
 
+func (m *Manager) RunWithPayload(id, message string, payload JobPayload) (Job, bool) {
+	return m.updateWithPayload(id, StatusRunning, message, payload)
+}
+
 func (m *Manager) Wait(id, message string) (Job, bool) {
 	return m.update(id, StatusWaiting, message)
 }
@@ -183,6 +187,23 @@ func (m *Manager) update(id string, status Status, message string) (Job, bool) {
 	}
 	job.Status = status
 	job.Message = message
+	job.UpdatedAt = time.Now().UTC()
+	m.jobs[id] = job
+	m.persistLocked(job)
+	return job, true
+}
+
+func (m *Manager) updateWithPayload(id string, status Status, message string, payload JobPayload) (Job, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, ok := m.jobs[id]
+	if !ok {
+		return Job{}, false
+	}
+	job.Status = status
+	job.Message = message
+	job.Payload = clonePayload(payload)
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)

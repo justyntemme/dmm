@@ -11,13 +11,17 @@
 - Nexus API game list verified the `halflife` domain.
 - Steam Deck installed app snapshot: `extensionTargets.md#installed-games-snapshot`
 - Checked bundled Vortex game extension source; no reviewed Half-Life handler was found.
+- Representative Nexus instructions verify copying subtitle/mod folders into the Half-Life root and launching the resulting mod from Steam.
+- Representative Nexus instructions verify loose BSP map files belong under `valve/maps`.
 
 ## Current DMM Capability
 
 - DMM declares the verified Nexus domain for browsing/capture.
-- Archive installs are blocked until GoldSrc mod folder, root replacement, and launch-option behavior are reviewed.
+- DMM supports direct `valve` folder replacement/content archives.
+- DMM supports loose `.bsp` map archives by staging them under `valve/maps`.
+- Standalone GoldSrc mod folders with `liblist.gam`, Steam library entry/restart requirements, launch-option flows, executable tools, and unclassified archives remain blocked.
 
 ## Beta Gaps
 
-- Classify representative GoldSrc mod archives.
-- Add extension-owned launch/mod-folder rules after source review.
+- Live-test one `valve` replacement archive and one loose BSP map archive.
+- Add standalone GoldSrc mod-folder launch support after DMM has a dynamic per-mod launch entry/launch-option contract.

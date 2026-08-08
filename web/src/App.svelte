@@ -193,6 +193,13 @@
     title: string;
   };
 
+  type DeckBrowserPrompt = {
+    url: string;
+    source: string;
+    title: string;
+    message: string;
+  };
+
   type ModDependency = {
     unique_id?: string;
     minimum_version?: string;
@@ -228,6 +235,20 @@
     installer_json?: string;
     choices_json?: string;
     target_profile_id?: number;
+  };
+
+  type LocalArchiveFile = {
+    path: string;
+    name: string;
+    extension: string;
+    bytes: number;
+    root: string;
+    modified_at: string;
+  };
+
+  type LocalArchiveList = {
+    roots: string[];
+    files: LocalArchiveFile[];
   };
 
   type InstallerChoicePreset = {
@@ -523,6 +544,8 @@
   let captureURL = "";
   let resolvedCapture = "";
   let bulkCaptureMessage = "";
+  let captureBrowserPrompt: DeckBrowserPrompt | null = null;
+  let captureBrowserOpenBusy = false;
   let nexusSearchQuery = "";
   let nexusSearchSort: NexusSearchSort = "updated";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
@@ -539,6 +562,11 @@
   let localArchiveInput: HTMLInputElement | null = null;
   let localArchiveBusy = false;
   let localArchiveMessage = "";
+  let deckLocalArchiveRoots: string[] = [];
+  let deckLocalArchives: LocalArchiveFile[] = [];
+  let deckLocalArchiveBusy = false;
+  let deckLocalArchiveMessage = "";
+  let busyDeckLocalArchivePath = "";
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
   let deploymentSettings: DeploymentSettings | null = null;
@@ -569,7 +597,7 @@
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
   let workshopOrderBusy = false;
-  type ModBusyAction = "toggle" | "remove" | "reinstall" | "update" | "copy" | "move";
+  type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move";
 
   let busyMods: Record<number, ModBusyAction> = {};
   let modUpdateBusy = false;
@@ -632,8 +660,13 @@
     installTargetProfileID = String(selectedProfile?.id ?? profiles[0].id);
   }
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
-  $: actionItems = jobs.filter((job) => ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type) && !["completed", "canceled"].includes(job.status));
-  $: actionCenterCandidates = globalInstallCandidates.filter((candidate) => !hasOpenInstallerChoiceJob(candidate));
+  $: actionItems = jobs.filter((job) =>
+    ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type) &&
+    !["completed", "canceled"].includes(job.status) &&
+    !jobHasInstallCandidateReview(job) &&
+    !installerChoiceJobHasCandidateReview(job)
+  );
+  $: actionCenterCandidates = globalInstallCandidates;
   $: actionSourceOptions = sourceOptionsForActions(actionItems, actionCenterCandidates);
   $: visibleActionItems = filterJobsBySource(actionItems, actionSourceFilter);
   $: visibleActionCenterCandidates = filterCandidatesBySource(actionCenterCandidates, actionSourceFilter);
@@ -1095,12 +1128,18 @@
     exploreSourceID = "nexus";
     resolvedCapture = "";
     bulkCaptureMessage = "";
+    captureBrowserPrompt = null;
+    captureBrowserOpenBusy = false;
     nexusSearchResults = [];
     nexusSearchTotal = 0;
     nexusSearchError = "";
     nexusSearchMessage = "";
     nexusBrowseDomain = game.nexus_domains?.[0]?.trim().toLowerCase() ?? "";
     busyNexusOpenModID = 0;
+    deckLocalArchiveRoots = [];
+    deckLocalArchives = [];
+    deckLocalArchiveMessage = "";
+    busyDeckLocalArchivePath = "";
     deployPlan = null;
     deploymentStatus = null;
     deploymentSettings = null;
@@ -1191,11 +1230,12 @@
   }
 
   async function loadGameState(game: Game) {
-    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<InstallerChoicePreset[]>(`/api/games/${game.app_id}/installer-choice-presets`),
+      getJSON<LocalArchiveList>(`/api/games/${game.app_id}/local-archives`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
       getJSON<DeploymentSettings>(`/api/games/${game.app_id}/deploy/settings`),
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
@@ -1208,6 +1248,8 @@
     installedMods = nextMods;
     installCandidates = nextCandidates;
     installerChoicePresets = nextPresets;
+    deckLocalArchiveRoots = nextLocalArchives.roots ?? [];
+    deckLocalArchives = nextLocalArchives.files ?? [];
     deploymentStatus = nextDeploymentStatus;
     deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
@@ -1545,18 +1587,23 @@
     }
   }
 
-  async function reinstallInstalledMod(mod: InstalledMod) {
+  async function reinstallInstalledMod(mod: InstalledMod, promptInstallerChoices = false) {
     if (!selectedGame) return;
     error = "";
-    setBusyMod(mod.id, "reinstall");
+    setBusyMod(mod.id, promptInstallerChoices ? "reconfigure" : "reinstall");
     try {
-      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/reinstall`, { method: "POST" });
+      const response = await fetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}/reinstall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_installer_choices: promptInstallerChoices })
+      });
       if (!response.ok) {
         error = await response.text();
         return;
       }
-      const result: { job?: Job; mod?: InstalledMod } = await response.json();
+      const result: { job?: Job; mod?: InstalledMod; candidate?: InstallCandidate } = await response.json();
       if (result.job) upsertJob(result.job);
+      if (result.candidate) replaceInstallCandidate(result.candidate);
       if (result.mod) {
         installedMods = installedMods.map((item) => (item.id === mod.id ? result.mod as InstalledMod : item));
         if (!installedMods.some((item) => item.id === result.mod?.id)) installedMods = [...installedMods, result.mod];
@@ -1672,6 +1719,7 @@
 
   async function openProviderPageOnDeck(url: string, source: string, title: string) {
     if (!selectedGame) return;
+    logClientEvent("deck browser handoff requested", { app_id: selectedGame.app_id, source, url });
     const response = await fetch("/api/decky/browser/open", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1684,7 +1732,25 @@
       })
     });
     if (!response.ok) {
+      logClientEvent("deck browser handoff failed", { app_id: selectedGame.app_id, source, status: response.status });
       throw new Error(await response.text());
+    }
+    const result = await response.json();
+    logClientEvent("deck browser handoff queued", { app_id: selectedGame.app_id, source });
+    return result;
+  }
+
+  async function openCapturePromptOnDeck(prompt: DeckBrowserPrompt | null) {
+    if (!prompt || captureBrowserOpenBusy) return;
+    error = "";
+    captureBrowserOpenBusy = true;
+    try {
+      await openProviderPageOnDeck(prompt.url, prompt.source, prompt.title);
+      bulkCaptureMessage = prompt.message;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      captureBrowserOpenBusy = false;
     }
   }
 
@@ -1692,6 +1758,16 @@
     try {
       const parsed = new URL(value);
       return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function isNexusHTTPPage(value: string) {
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+      return (parsed.protocol === "http:" || parsed.protocol === "https:") && host === "nexusmods.com" && /^\/[^/]+\/mods\/\d+/.test(parsed.pathname);
     } catch {
       return false;
     }
@@ -1759,6 +1835,7 @@
   async function captureBulkInstallURLs(urls: string[], profileID: number) {
     if (!selectedGame || urls.length === 0) return;
     bulkCaptureMessage = "";
+    captureBrowserPrompt = null;
     const response = await fetch("/api/captured-installs/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1790,7 +1867,18 @@
     } else {
       captureURL = "";
       if (browserRequired > 0) {
-        error = "Some Nexus links require the Deck browser flow. Open those mod pages from DMM, then click Nexus Mod Manager Download on the Nexus page.";
+        const browserItem = (result.items ?? []).find((item) => item.browser_required && isHTTPProviderPage(item.url));
+        if (browserRequired === 1 && browserItem) {
+          captureBrowserPrompt = {
+            url: browserItem.url,
+            source: "web-bulk-browser-required",
+            title: "DMM Nexus Download",
+            message: "This Nexus page needs the Deck browser. Click Nexus Mod Manager Download there to capture the generated link."
+          };
+          error = captureBrowserPrompt.message;
+        } else {
+          error = "Some Nexus links require the Deck browser flow. Open those mod pages from DMM one at a time, then click Nexus Mod Manager Download on each Nexus page.";
+        }
       }
     }
     await refreshJobsAndSelectedGame("captured-install-bulk", true);
@@ -1800,6 +1888,7 @@
     if (!selectedGame || !captureURL.trim()) return;
     error = "";
     bulkCaptureMessage = "";
+    captureBrowserPrompt = null;
     const requestedURLs = captureInputURLs(captureURL);
     if (requestedURLs.length > 1) {
       try {
@@ -1811,6 +1900,16 @@
     }
     const requestedURL = requestedURLs[0] ?? captureURL;
     const targetProfileID = selectedInstallProfileID();
+    if (isNexusHTTPPage(requestedURL)) {
+      captureBrowserPrompt = {
+        url: requestedURL,
+        source: "web-paste-nexus-page",
+        title: "DMM Nexus Download",
+        message: "Opening this Nexus page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM."
+      };
+      await openCapturePromptOnDeck(captureBrowserPrompt);
+      return;
+    }
     try {
       const result = await captureInstallURL(requestedURL, targetProfileID, "captured-install-url");
       if (!result) return;
@@ -1819,12 +1918,24 @@
         return;
       }
       if (result.browser_required && isHTTPProviderPage(requestedURL)) {
-        await openProviderPageOnDeck(requestedURL, "web-paste-browser-required", "DMM Nexus Download");
-        bulkCaptureMessage = "Opening this page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM.";
+        captureBrowserPrompt = {
+          url: result.resolved?.source_url || requestedURL,
+          source: "web-paste-browser-required",
+          title: "DMM Nexus Download",
+          message: "Opening this page on the Steam Deck. Click Nexus Mod Manager Download there to add it to DMM."
+        };
+        await openCapturePromptOnDeck(captureBrowserPrompt);
       } else if (result.resolved?.catalog === "nexus" && !result.resolved?.nxm_key) {
-        error = "Nexus installs require the Deck browser flow. Open this mod from DMM, then click Nexus Mod Manager Download on the Nexus page.";
+        captureBrowserPrompt = {
+          url: result.resolved?.source_url || requestedURL,
+          source: "web-paste-nexus-page",
+          title: "DMM Nexus Download",
+          message: "Nexus page links need the Deck browser. Click Nexus Mod Manager Download there to capture the generated link."
+        };
+        error = captureBrowserPrompt.message;
       } else {
         captureURL = "";
+        captureBrowserPrompt = null;
         bulkCaptureMessage = result.download_started ? "Mod link captured; downloading archive now." : result.job?.message || "Mod link captured.";
       }
     } catch (err) {
@@ -1868,6 +1979,55 @@
     }
   }
 
+  async function refreshDeckLocalArchives() {
+    if (!selectedGame) return;
+    error = "";
+    deckLocalArchiveMessage = "";
+    deckLocalArchiveBusy = true;
+    try {
+      const result = await getJSON<LocalArchiveList>(`/api/games/${selectedGame.app_id}/local-archives`);
+      deckLocalArchiveRoots = result.roots ?? [];
+      deckLocalArchives = result.files ?? [];
+      deckLocalArchiveMessage = deckLocalArchives.length > 0
+        ? `Found ${deckLocalArchives.length} archive file${deckLocalArchives.length === 1 ? "" : "s"} on the Deck.`
+        : "No supported archive files found in Deck Downloads.";
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      deckLocalArchiveBusy = false;
+    }
+  }
+
+  async function importDeckLocalArchive(file: LocalArchiveFile) {
+    if (!selectedGame || !file.path || busyDeckLocalArchivePath) return;
+    error = "";
+    deckLocalArchiveMessage = "";
+    busyDeckLocalArchivePath = file.path;
+    try {
+      const response = await fetch(`/api/games/${selectedGame.app_id}/local-archives/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: file.path,
+          profile_id: selectedInstallProfileID(),
+          source: "web-deck-local-file"
+        })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result = await response.json();
+      if (result.job) upsertJob(result.job);
+      deckLocalArchiveMessage = result.install_started ? "Deck archive imported; installing archive." : "Deck archive imported; install it from Action Center.";
+      await refreshJobsAndSelectedGame("deck-local-archive");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busyDeckLocalArchivePath = "";
+    }
+  }
+
   function selectedNexusDomain() {
     const domains = selectedNexusDomains();
     if (domains.includes(nexusBrowseDomain)) return nexusBrowseDomain;
@@ -1894,7 +2054,9 @@
 
   function exploreSourceOptions() {
     if (selectedGameMetadataOnly()) return [];
-    return catalogs.filter((catalog) => catalog.kind !== "platform");
+    const nexus = catalogs.find((catalog) => catalog.id === "nexus");
+    if (!nexus || !selectedNexusDomain() || nexus.status !== "ready" || (!nexus.search && !nexus.browse)) return [];
+    return [nexus];
   }
 
   function selectedExploreSource() {
@@ -1979,6 +2141,21 @@
     if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
     if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
     return `${value} B`;
+  }
+
+  function jobDownloadProgress(job: Job) {
+    const payload = job.payload ?? {};
+    const written = Number(payload.download_bytes_written ?? 0);
+    const total = Number(payload.download_total_bytes ?? 0);
+    if (!Number.isFinite(written) || written <= 0) return null;
+    const boundedTotal = Number.isFinite(total) && total > 0 ? total : 0;
+    const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (written / boundedTotal) * 100)) : 0;
+    return {
+      written,
+      total: boundedTotal,
+      percent,
+      label: boundedTotal > 0 ? `${formatBytes(written)} / ${formatBytes(boundedTotal)}` : `${formatBytes(written)} downloaded`
+    };
   }
 
   async function searchNexusMods(nextSort = nexusSearchSort, nextWindow = nexusSearchTimeWindow) {
@@ -2292,13 +2469,19 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
+      if (result.candidate) replaceInstallCandidate(result.candidate);
+      if (result.job?.status === "failed") {
+        error = result.job.message || "Unable to apply installer choices.";
+        await refreshJobsAndSelectedGame("installer-choice-apply-failed", true);
+        return;
+      }
       if (result.mod) {
         installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
+        installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
+        globalInstallCandidates = globalInstallCandidates.filter((item) => item.id !== candidate.id);
+        candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
+        candidateStepIndices = Object.fromEntries(Object.entries(candidateStepIndices).filter(([id]) => Number(id) !== candidate.id));
       }
-      installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
-      globalInstallCandidates = globalInstallCandidates.filter((item) => item.id !== candidate.id);
-      candidateSelections = Object.fromEntries(Object.entries(candidateSelections).filter(([id]) => Number(id) !== candidate.id));
-      candidateStepIndices = Object.fromEntries(Object.entries(candidateStepIndices).filter(([id]) => Number(id) !== candidate.id));
       await refreshJobsAndSelectedGame("installer-choice-apply", true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -2319,6 +2502,7 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
+      if (result.candidate) replaceInstallCandidate(result.candidate);
       if (result.mod) {
         installedMods = [result.mod, ...installedMods.filter((mod) => mod.id !== result.mod.id)];
         installCandidates = installCandidates.filter((item) => item.id !== candidate.id);
@@ -2915,9 +3099,29 @@
     return games.find((game) => game.app_id === candidate.steam_app_id) ?? null;
   }
 
-  function hasOpenInstallerChoiceJob(candidate: InstallCandidate) {
-    const candidateID = String(candidate.id);
-    return actionItems.some((job) => job.type === "installer-choice" && job.payload?.candidate_id === candidateID);
+  function jobHasInstallCandidateReview(job: Job) {
+    if (["queued", "waiting", "running"].includes(job.status)) return false;
+    return globalInstallCandidates.some((candidate) => jobMatchesInstallCandidate(job, candidate));
+  }
+
+  function jobMatchesInstallCandidate(job: Job, candidate: InstallCandidate) {
+    const payload = job.payload ?? {};
+    const candidateID = payload.candidate_id;
+    if (candidateID && String(candidate.id) === candidateID) return true;
+    return (
+      (job.app_id || payload.app_id || "") === candidate.steam_app_id &&
+      (job.catalog || payload.catalog || "") === candidate.catalog &&
+      (payload.game_domain || "") === candidate.source_game_domain &&
+      (payload.mod_id || "") === candidate.source_mod_id &&
+      (payload.file_id || "") === candidate.source_file_id
+    );
+  }
+
+  function installerChoiceJobHasCandidateReview(job: Job) {
+    if (job.type !== "installer-choice") return false;
+    const candidateID = job.payload?.candidate_id;
+    if (!candidateID) return false;
+    return globalInstallCandidates.some((candidate) => String(candidate.id) === candidateID);
   }
 
   async function openInstallCandidate(candidate: InstallCandidate) {
@@ -2944,6 +3148,17 @@
   }
 
   async function openActionItem(job: Job) {
+    if (job.type === "installer-choice") {
+      const candidateID = job.payload?.candidate_id;
+      const candidate = candidateID ? globalInstallCandidates.find((item) => String(item.id) === candidateID) : null;
+      if (candidate) {
+        await openInstallCandidate(candidate);
+        return;
+      }
+      error = "This installer-choice action no longer has stored choices. DMM canceled it; download the mod again.";
+      await cancelJob(job);
+      return;
+    }
     const game = gameForJob(job);
     if (!game) return;
     await selectGame(game);
@@ -3399,9 +3614,9 @@
   {/if}
 
   <section class="status-strip" aria-label="App status">
-    <span>{status?.nexus.api_key_configured ? "Nexus ready" : "Nexus missing"}</span>
-    <span>{cleanCount} clean</span>
-    <span>{reviewCount} review</span>
+    <button type="button" on:click={openActionCenter}>{globalActionCount} Action{globalActionCount === 1 ? "" : "s"}</button>
+    <button type="button" on:click={() => (drawer = "games")}>{manageableGameCount} Ready</button>
+    <button type="button" on:click={() => openSettings("sources")}>{readySourceCatalogCount}/{sourceCatalogCount} Sources</button>
   </section>
 
   {#if error}
@@ -3471,6 +3686,7 @@
         {#if visibleActionItems.length > 0}
           <div class="action-list">
             {#each visibleActionItems as action}
+              {@const progress = jobDownloadProgress(action)}
               <article class:failed-action={action.status === "failed"}>
                 <div>
                   <div class="mod-title-line">
@@ -3478,6 +3694,12 @@
                     <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
                   </div>
 	                    {#if action.message}<p>{action.message}</p>{/if}
+	                    {#if progress}
+	                      <div class="job-progress" aria-label="Download progress">
+	                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+	                        <small>{progress.label}</small>
+	                      </div>
+	                    {/if}
 	                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
 	                      <small>Tool: {extensionNoticeTool(action)}</small>
 	                    {/if}
@@ -3583,6 +3805,7 @@
           {:else}
             <div class="jobs">
               {#each visibleJobs as job}
+                {@const progress = jobDownloadProgress(job)}
                 <article class="job">
 	                  <div>
 	                    <div class="mod-title-line">
@@ -3592,6 +3815,12 @@
 	                      {/if}
 	                    </div>
 	                    {#if job.message}<p>{job.message}</p>{/if}
+	                    {#if progress}
+	                      <div class="job-progress" aria-label="Download progress">
+	                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+	                        <small>{progress.label}</small>
+	                      </div>
+	                    {/if}
 	                  </div>
 	                  <div class="job-actions">
 	                    <span>{job.status}</span>
@@ -3720,6 +3949,7 @@
           {#if selectedGameActivity.length > 0}
             <section class="activity-strip" aria-label="Game activity">
               {#each selectedGameActivity.slice(0, 3) as job}
+                {@const progress = jobDownloadProgress(job)}
                 <article class:failed-action={job.status === "failed"}>
                   <div class="mod-title-line">
                     <strong>{job.title}</strong>
@@ -3729,6 +3959,12 @@
                   </div>
                   <span>{job.status}</span>
                   {#if job.message}<small>{job.message}</small>{/if}
+                  {#if progress}
+                    <div class="job-progress compact-progress" aria-label="Download progress">
+                      <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+                      <small>{progress.label}</small>
+                    </div>
+                  {/if}
                 </article>
               {/each}
             </section>
@@ -3764,7 +4000,7 @@
                 <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label={`Open Action Center for this game; ${selectedGameActionCount} open`}>
                   <strong>{selectedGameActionCount}</strong>
                   <span>{selectedGameActionCount === 1 ? "Action" : "Actions"}</span>
-                  <em>Open Action Center</em>
+                  <em>{selectedGameActionCount === 0 ? "Open" : "Review"}</em>
                 </button>
               </div>
               {#if hasDeployConflicts}
@@ -3796,13 +4032,13 @@
                 </label>
               {/if}
               <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Paste one link, or one link per line for bulk import. Supports Nexus, nxm://, Thunderstore, GitHub, Modrinth, GameBanana, mod.io, CurseForge, or direct archive URLs."></textarea>
+                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Paste one link, or one link per line. Nexus pages open on the Deck for Mod Manager Download; nxm:// and other supported provider links can be captured directly."></textarea>
                 <button type="submit">Add URL(s)</button>
               </form>
               <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
                 <label class="local-archive-picker">
-                  <span>Local Archive</span>
-                  <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar" on:change={handleLocalArchiveChange} />
+                  <span>Upload from This Device</span>
+                  <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar,.fomod,.mgsv" on:change={handleLocalArchiveChange} />
                 </label>
                 {#if localArchiveFile}
                   <p class="hint">{localArchiveFile.name} · {formatBytes(localArchiveFile.size)}</p>
@@ -3812,19 +4048,55 @@
               {#if localArchiveMessage}
                 <p class="hint success-copy">{localArchiveMessage}</p>
               {/if}
-              <p class="hint">Mods that need choices or review will appear in Action Center. Installed mods remain disabled until you enable them in the selected profile.</p>
-              {#if exploreSourceOptions().length > 0 || selectedExtensionSources().length > 0}
+              <section class="deck-archive-browser" aria-label="Deck archive files">
+                <div class="explore-heading">
+                  <div>
+                    <strong>Import from Deck Downloads</strong>
+                    <small>{deckLocalArchives.length} found</small>
+                  </div>
+                  <button type="button" class="secondary-action compact" on:click={refreshDeckLocalArchives} disabled={deckLocalArchiveBusy}>
+                    {deckLocalArchiveBusy ? "Scanning..." : "Refresh"}
+                  </button>
+                </div>
+                <p class="hint">
+                  {deckLocalArchiveRoots.length > 0
+                    ? `Scanning ${deckLocalArchiveRoots.join(" · ")}`
+                    : "DMM scans the Deck Downloads folder and DMM Intake folder."}
+                </p>
+                {#if deckLocalArchives.length === 0}
+                  <p class="hint">No .zip, .7z, .rar, .fomod, or .mgsv files found on the Deck.</p>
+                {:else}
+                  <div class="deck-archive-list">
+                    {#each deckLocalArchives.slice(0, 10) as archiveFile}
+                      <article>
+                        <div>
+                          <strong>{archiveFile.name}</strong>
+                          <small>{formatBytes(archiveFile.bytes)} · {archiveFile.extension || "archive"}</small>
+                        </div>
+                        <button type="button" class="secondary-action compact" on:click={() => importDeckLocalArchive(archiveFile)} disabled={busyDeckLocalArchivePath === archiveFile.path}>
+                          {busyDeckLocalArchivePath === archiveFile.path ? "Importing..." : "Import"}
+                        </button>
+                      </article>
+                    {/each}
+                  </div>
+                {/if}
+                {#if deckLocalArchiveMessage}
+                  <p class="hint success-copy">{deckLocalArchiveMessage}</p>
+                {/if}
+              </section>
+              <p class="hint">Mods that need choices or review will appear in Action Center. Nexus page links finish on the Deck browser because Nexus generates the download key there.</p>
+              {#if exploreSourceOptions().length > 0}
                 <section class="nexus-browser" aria-label="Explore mods">
                   <div class="explore-heading">
                     <div>
-                      <strong>{exploreSourceOptions().length > 0 ? "Explore Mod Sources" : "Known Sources"}</strong>
-                      <small>{selectedExploreSource()?.name ?? (selectedGameMetadataOnly() ? "Verified references" : "Select source")}</small>
+                      <strong>Explore Mods</strong>
+                      <small>Nexus Mods</small>
                     </div>
                     {#if selectedExploreSource()}
                       <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
                     {/if}
                   </div>
-                  {#if exploreSourceOptions().length > 0}
+                  {#if exploreSourceOptions().length > 1}
                     <label class="target-profile-select">
                       <span>Source</span>
                       <select bind:value={exploreSourceID}>
@@ -3833,17 +4105,6 @@
                         {/each}
                       </select>
                     </label>
-                  {/if}
-                  {#if selectedExtensionSources().length > 0}
-                    <div class="known-source-list" aria-label="Known source references">
-                      <strong>Known Sources</strong>
-                      {#each selectedExtensionSources() as source}
-                        <p>
-                          <span>{source.name || "Source reference"}</span>
-                          {#if source.url}<small>{source.url}</small>{/if}
-                        </p>
-                      {/each}
-                    </div>
                   {/if}
                   {#if selectedGameMetadataOnly()}
                     <p class="hint">DMM has verified source references for this game, but no safe automated import or installer path yet. Paste URLs only when you are testing a source-specific extension path.</p>
@@ -3917,6 +4178,17 @@
               {/if}
               {#if bulkCaptureMessage}
                 <p class="hint success-copy">{bulkCaptureMessage}</p>
+              {/if}
+              {#if captureBrowserPrompt}
+                <div class="browser-handoff">
+                  <div>
+                    <strong>Finish on Steam Deck</strong>
+                    <p>{captureBrowserPrompt.message}</p>
+                  </div>
+                  <button type="button" class="secondary-action compact" on:click={() => openCapturePromptOnDeck(captureBrowserPrompt)} disabled={captureBrowserOpenBusy}>
+                    {captureBrowserOpenBusy ? "Opening..." : "Open on Deck"}
+                  </button>
+                </div>
               {/if}
             </div>
           </section>
@@ -4007,6 +4279,9 @@
                       {/if}
                       <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
                         {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
+                      </button>
+                      <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>
+                        {busyMods[mod.id] === "reconfigure" ? "Opening..." : "Reconfigure"}
                       </button>
                       <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
                         {busyMods[mod.id] === "remove" ? "Removing..." : "Remove"}
@@ -4321,9 +4596,12 @@
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <div class="empty-action-panel">
-              <p class="hint">No install actions need attention for this game. Add a mod or return to the profile mod list.</p>
+              <div>
+                <h3>No Actions Needed</h3>
+                <p class="hint">Downloads, installer choices, Workshop tasks, and extension notices for this game will appear here.</p>
+              </div>
               <div class="empty-action-buttons">
-                <button type="button" on:click={() => openGameModule("plugins")}>Add Mod</button>
+                <button type="button" on:click={() => openGameModule("plugins")}>Add a Mod</button>
                 <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Profile Mods</button>
               </div>
             </div>
@@ -4331,6 +4609,7 @@
           {#if selectedGameActionItems.length > 0}
             <div class="action-list">
               {#each selectedGameActionItems as action}
+                {@const progress = jobDownloadProgress(action)}
                 <article class:failed-action={action.status === "failed"}>
                   <div>
                     <div class="mod-title-line">
@@ -4338,6 +4617,12 @@
                       <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
                     </div>
                     {#if action.message}<p>{action.message}</p>{/if}
+                    {#if progress}
+                      <div class="job-progress" aria-label="Download progress">
+                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+                        <small>{progress.label}</small>
+                      </div>
+                    {/if}
                     {#if action.type === "extension-notice" && extensionNoticeTool(action)}
                       <small>Tool: {extensionNoticeTool(action)}</small>
                     {/if}
@@ -4401,7 +4686,10 @@
                       </div>
                       <p>{candidate.reason}</p>
                       <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
-                      {#if profiles.length > 0}
+                      {#if candidate.status === "blocked"}
+                        <p class="hint">DMM kept this archive cached, but it cannot be installed until the issue above is resolved.</p>
+                      {/if}
+                      {#if candidate.status !== "blocked" && profiles.length > 0}
                         <label class="target-profile-select compact-target">
                           <span>Install to</span>
                           <select
@@ -4414,10 +4702,10 @@
                           </select>
                         </label>
                       {/if}
-                      {#if selectedChoiceCount > 0}
+                      {#if candidate.status !== "blocked" && selectedChoiceCount > 0}
                         <p class="preset-selection-note">{selectedChoiceCount} choice{selectedChoiceCount === 1 ? "" : "s"} preselected from DMM's saved/default installer state.</p>
                       {/if}
-                      {#if installer}
+                      {#if installer && candidate.status !== "blocked"}
                         {@const steps = visibleFomodSteps(installer)}
                         {@const stepIndex = candidateStepIndex(candidate, steps)}
                         {@const step = steps[stepIndex]}
@@ -4499,13 +4787,13 @@
                     </div>
                     <div class="action-controls">
                       <span>{candidateStatusLabel(candidate)}</span>
-                      {#if installer}
-                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate) || !candidateInstallerValid(candidate, installer)}>
-                          {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
-                        </button>
-                      {:else if candidate.status === "blocked"}
+                      {#if candidate.status === "blocked"}
                         <button type="button" on:click={() => retryInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
                           {isInstallCandidateBusy(candidate) ? "Retrying..." : "Retry Install"}
+                        </button>
+                      {:else if installer}
+                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate) || !candidateInstallerValid(candidate, installer)}>
+                          {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
                         </button>
                       {/if}
                     </div>

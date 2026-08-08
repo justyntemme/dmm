@@ -318,7 +318,7 @@ To verify that installed games and extension manifests report honest capability 
 ~/.testing/live_extension_coverage_check.sh
 ```
 
-The check reports counts for `installer`, `research_blocked`, `browse_only`, `workshop_only`, and unsupported visible games. It fails only on invalid extension metadata by default. Set `REQUIRE_NO_UNSUPPORTED=1` when validating a release candidate that should cover every visible game.
+The check reports counts for `installer`, `research_blocked`, `browse_only`, `workshop_only`, and unsupported visible games. It fails only on invalid extension metadata by default. Set `REQUIRE_NO_UNSUPPORTED=1 REQUIRE_NO_RESEARCH_BLOCKED=1 REQUIRE_NO_BROWSE_ONLY=1` when validating an MVP release candidate that should have complete extension coverage for every visible game.
 
 To verify the currently prioritized extension targets expose the expected first-party capabilities, run:
 

@@ -248,6 +248,7 @@ func buildFromContentRoot(input installplan.BuildInput, contentRel, targetRoot, 
 			StagingRelative: targetRel,
 			TargetRoot:      input.TargetRootID,
 			TargetRelative:  targetRel,
+			FileMode:        bepinexFileMode(targetRel),
 		})
 	}
 	if len(plan.Instructions) == 0 {
@@ -260,6 +261,13 @@ func buildFromContentRoot(input installplan.BuildInput, contentRel, targetRoot, 
 		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func bepinexFileMode(targetRel string) string {
+	if strings.EqualFold(filepath.Base(filepath.ToSlash(targetRel)), "run_bepinex.sh") {
+		return "0755"
+	}
+	return ""
 }
 
 func canonicalPath(rel string) string {

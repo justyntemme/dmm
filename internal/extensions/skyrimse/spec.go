@@ -74,6 +74,16 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{"skyrimse-script-extender"},
 		ProviderModTypes:   []string{"skyrimse-script-extender"},
 	})
+	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+		ID:       "skyrimse-skse64-loader",
+		Name:     "Existing Skyrim Script Extender 64 loader",
+		Patterns: []string{"skse64_loader.exe"},
+	})
+	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+		ID:       "skyrimse-plugin-list",
+		Name:     "Existing Skyrim Special Edition plugin list",
+		Patterns: []string{"plugins.txt", "loadorder.txt"},
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "SSEEdit",
 		Name:               "SSEEdit",
@@ -108,7 +118,7 @@ func Register(r sdk.Registrar) {
 		ID:            "skyrimse-gamebryo-plugins",
 		Name:          "Skyrim Special Edition plugins.txt activation",
 		AppDataPath:   "Skyrim Special Edition",
-		Format:        gamebryo.FormatFallout4,
+		Format:        gamebryo.FormatAsterisked,
 		NativePlugins: nativePlugins(),
 		NativePluginManifests: []string{
 			"Skyrim.ccc",

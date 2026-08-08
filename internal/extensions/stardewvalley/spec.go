@@ -59,6 +59,14 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+		ID:                    "vortex:stardewvalley:fomod",
+		Name:                  "FOMOD installer",
+		Kind:                  "fomod",
+		ModType:               "stardew-smapi-mod",
+		TargetRoot:            ModsRelativePath,
+		DestinationPrefixMode: sdk.InstallerChoiceDestinationPrefixModuleBaseName,
+	})
 	for _, requirement := range runtimeRequirements() {
 		r.RegisterRuntimeRequirement(requirement)
 	}
@@ -164,9 +172,138 @@ func installers() []installplan.InstallerSpec {
 			MetadataExtractors: []installplan.MetadataExtractorSpec{
 				smapiManifestExtractor(),
 			},
+			ComponentChoices: &installplan.ComponentChoiceSpec{
+				Kind:       "component-choice",
+				Name:       "Stardew Valley Component Selection",
+				Reason:     "This Stardew Valley archive contains multiple SMAPI components; choose which components DMM should install.",
+				StepID:     "stardew-component-selection",
+				StepName:   "Choose Components",
+				GroupID:    "stardew-smapi-components",
+				GroupName:  "SMAPI components",
+				GroupType:  "SelectAtLeastOne",
+				DefaultAll: true,
+			},
 			InstructionMode: installplan.InstructionManifestFolders,
 		},
+		{
+			ID:                "vortex:stardewvalley:generic-mods-folder",
+			VortexInstallerID: "generic-stardew-mods-folder",
+			Priority:          90,
+			ModType:           "stardew-smapi-mod",
+			NameSource:        installplan.NameSourceArchive,
+			TargetRoot:        ModsRelativePath,
+			StripCommonRoot:   true,
+			CustomMatch:       stardewGenericModsFolderMatch,
+			InstructionMode:   installplan.InstructionArchiveRoot,
+		},
+		{
+			ID:                "vortex:stardewvalley:generic-mods-root",
+			VortexInstallerID: "generic-stardew-mods-root",
+			Priority:          100,
+			ModType:           "stardew-smapi-mod",
+			NameSource:        installplan.NameSourceArchive,
+			TargetRoot:        ModsRelativePath,
+			CustomMatch:       stardewGenericModsRootMatch,
+			InstructionMode:   installplan.InstructionArchiveRoot,
+		},
 	}
+}
+
+func stardewGenericModsFolderMatch(extractedRoot string) bool {
+	if !stardewArchiveHasDeployableFile(extractedRoot) {
+		return false
+	}
+	if stardewArchiveHasInstallerToolScript(extractedRoot) || stardewArchiveHasFileBasename(extractedRoot, "smapi.installer.dll") {
+		return false
+	}
+	return stardewArchiveHasTopLevelDir(extractedRoot, ModsRelativePath) && !stardewArchiveHasTopLevelDir(extractedRoot, "Content")
+}
+
+func stardewGenericModsRootMatch(extractedRoot string) bool {
+	if !stardewArchiveHasDeployableFile(extractedRoot) {
+		return false
+	}
+	if stardewArchiveHasInstallerToolScript(extractedRoot) || stardewArchiveHasFileBasename(extractedRoot, "smapi.installer.dll") {
+		return false
+	}
+	if stardewArchiveHasTopLevelDir(extractedRoot, ModsRelativePath) || stardewArchiveHasTopLevelDir(extractedRoot, "Content") {
+		return false
+	}
+	return true
+}
+
+func stardewArchiveHasDeployableFile(root string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found || d.IsDir() {
+			return nil
+		}
+		found = true
+		return nil
+	})
+	return found
+}
+
+func stardewArchiveHasTopLevelDir(root, name string) bool {
+	name = strings.ToLower(strings.TrimSpace(filepath.ToSlash(name)))
+	if name == "" {
+		return false
+	}
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil || rel == "." {
+			return nil
+		}
+		first := strings.Split(filepath.ToSlash(rel), "/")[0]
+		if strings.EqualFold(first, name) {
+			found = true
+		}
+		if d.IsDir() && strings.Count(filepath.ToSlash(rel), "/") >= 1 {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return found
+}
+
+func stardewArchiveHasFileBasename(root, basename string) bool {
+	basename = strings.ToLower(strings.TrimSpace(basename))
+	if basename == "" {
+		return false
+	}
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found || d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Base(path), basename) {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
+func stardewArchiveHasInstallerToolScript(root string) bool {
+	installerNames := map[string]struct{}{
+		"install on linux.sh":      {},
+		"install on mac.command":   {},
+		"install on macos.command": {},
+		"install on windows.bat":   {},
+	}
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found || d.IsDir() {
+			return nil
+		}
+		_, found = installerNames[strings.ToLower(filepath.Base(path))]
+		return nil
+	})
+	return found
 }
 
 func smapiInstaller(platformID string, payloadFiles, payloadSegments, platformCopyTargets []string) installplan.InstallerSpec {

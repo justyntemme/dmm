@@ -16,7 +16,8 @@ const (
 	VortexGameID = "prototype"
 	Name         = "Prototype"
 
-	researchModType = "prototype-research-blocked"
+	asiModType     = "prototype-asi"
+	blockedModType = "prototype-unclassified-blocked"
 )
 
 var requiredGameFiles = []string{
@@ -25,7 +26,7 @@ var requiredGameFiles = []string{
 	"scripts.rcf",
 }
 
-const unsupportedReason = "Prototype has no verified Vortex extension in the checked Nexus/Vortex sources, and current Nexus mods use multiple manual patterns including root ASI drops, TexMod packages, and extracted RCF folders. DMM needs pattern-specific extension rules before installing Prototype archives safely."
+const unsupportedReason = "Prototype archive layout is not classified by the verified extension rules. DMM currently supports root ASI plugin packages only; TexMod packages, extracted RCF folders, standalone patchers, and broad root-copy archives stay blocked until their activation and rollback behavior are source-reviewed."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -46,14 +47,25 @@ func Register(r sdk.Registrar) {
 			DefaultStrategy: installplan.DeployStrategyCopy,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: researchModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: asiModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "source:prototype:asi",
+		VortexInstallerID: "prototype-asi",
+		Priority:          30,
+		ModType:           asiModType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchASIArchive,
+		CustomBuild:       buildASIArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "research:prototype:blocked",
-		VortexInstallerID: "prototype-research-blocked",
+		VortexInstallerID: "prototype-unclassified-blocked",
 		Priority:          10000,
-		ModType:           researchModType,
+		ModType:           blockedModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       func(string) bool { return true },
+		CustomMatch:       matchAnyArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
 		UnsupportedReason: unsupportedReason,
 	})
@@ -62,7 +74,7 @@ func Register(r sdk.Registrar) {
 		Name:        "Prototype install files",
 		Kind:        "game-files",
 		Required:    true,
-		ModTypes:    []string{researchModType},
+		ModTypes:    []string{asiModType},
 		Message:     "The Prototype game folder is missing files needed for future extension support.",
 		OKMessage:   "The Prototype game folder contains the expected executable and RCF archives.",
 		InstallHint: "Verify the game files in Steam before testing Prototype mods.",
@@ -107,6 +119,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Representative Nexus root ASI fix",
 			URL:  "https://www.nexusmods.com/prototype/mods/52",
+		},
+		{
+			Name: "Ultimate ASI Loader installation and usage documentation",
+			URL:  "https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases",
 		},
 		{
 			Name: "Representative Nexus RCF/extractor discussion",

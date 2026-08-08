@@ -11,14 +11,20 @@
 - Nexus API game list verified the `rometotalwar` domain.
 - Steam Deck installed app snapshot: `extensionTargets.md#installed-games-snapshot`
 - Checked bundled Vortex game extension source; no reviewed Rome: Total War handler was found.
+- Representative Nexus pages verify direct data-folder replacement layouts:
+  - Vanilla Rome archives can drop files such as `export_descr_buildings.txt` into `Rome Total War Gold/data`.
+  - Alexander archives can extract an entire `data` folder into `Rome Total War Alexander/alexander`.
 
 ## Current DMM Capability
 
-- DMM declares the verified Nexus domain for browsing/capture.
-- DMM maps the Alexander expansion AppID to the same research-blocked extension because Nexus exposes a shared Rome: Total War domain and the installed games share the same family.
-- Archive installs are blocked until data packs, mod-folder launches, and expansion behavior are reviewed.
+- DMM maps both Rome (`4760`) and Alexander (`4770`) to the shared Nexus domain.
+- DMM supports narrow data-folder replacement archives.
+- For Rome, supported files deploy under `data/`.
+- For Alexander, the same archive shape deploys under `alexander/data/`.
+- Unclassified launcher, executable, full-conversion, and mod-folder layouts remain blocked until source-reviewed.
 
 ## Beta Gaps
 
-- Review representative Rome and Alexander archive behavior before sharing support.
-- Add extension-owned installer and launch rules only after verification.
+- Live-test one vanilla Rome data replacement and one Alexander data replacement.
+- Add full-conversion launcher/mod-folder support only after the launch and profile semantics are verified.
+- Confirm unmanaged data-file replacement conflicts are presented through DMM's normal conflict/advanced deployment flow.

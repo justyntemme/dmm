@@ -1,7 +1,7 @@
 package blasphemous
 
 import (
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/manifestblocked"
+	bepinexext "github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 )
 
@@ -12,13 +12,37 @@ const (
 )
 
 func Extension() sdk.Extension {
-	return manifestblocked.Extension(manifestblocked.Spec{
-		ID:                VortexGameID,
-		Name:              Name,
-		SteamAppIDs:       []string{SteamAppID},
-		NexusDomains:      []string{VortexGameID},
-		VortexGameID:      VortexGameID,
-		UnsupportedReason: "Blasphemous has a Nexus API-verified game domain, but no Vortex extension source has been verified for its archive layouts yet. DMM blocks installs until Blasphemous-specific mod roots, Unity/asset replacement rules, and rollback behavior are encoded in this extension.",
-		Sources:           manifestblocked.NexusResearchSources(SteamAppID, Name, VortexGameID),
+	return bepinexext.UnityExtension(bepinexext.UnityGameSpec{
+		ID:           VortexGameID,
+		Name:         Name,
+		Version:      "1.0.0-dmm.2",
+		SteamAppIDs:  []string{SteamAppID},
+		NexusDomains: []string{VortexGameID},
+		VortexGameID: VortexGameID,
+		WindowsExecutableMarkers: []string{
+			"Blasphemous.exe",
+			"Blasphemous_Data/globalgamemanagers",
+		},
+		NativeExecutableMarkers: []string{
+			"Blasphemous.x86_64",
+			"Blasphemous_Data/globalgamemanagers",
+		},
+		RuntimeMarkers: []string{
+			"BepInEx/core/BepInEx.dll",
+			"BepInEx/core/BepInEx.Core.dll",
+			"BepInEx/core/BepInEx.Preloader.dll",
+			"BepInEx/core/BepInEx.Preloader.Core.dll",
+			"run_bepinex.sh",
+			"winhttp.dll",
+		},
+		NativeLinuxLaunchTool: true,
+		RuntimeInstallHint:    "Install the BepInEx Unity runtime for the detected Blasphemous platform, then enable and deploy it from DMM before enabling Blasphemous BepInEx plugin mods. Native Linux installs require run_bepinex.sh to be executable and configured as the Steam launch target.",
+		UnclassifiedReason:    "Blasphemous archive layout is not classified by the verified Unity/BepInEx extension rules. DMM supports BepInEx runtime, BepInEx root/config packages, and BepInEx plugin DLL archives; other layouts stay blocked until source-reviewed.",
+		Sources: []sdk.SourceRef{
+			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
+			{Name: "Blasphemous Nexus BepInEx plugin install instructions", URL: "https://www.nexusmods.com/blasphemous/mods/1"},
+			{Name: "BepInEx native Unix Steam launch documentation", URL: "https://docs.bepinex.dev/articles/advanced/steam_interop.html"},
+			{Name: "Live Steam Deck native executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
+		},
 	})
 }

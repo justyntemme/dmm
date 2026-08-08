@@ -93,7 +93,7 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	if !ok {
 		t.Fatal("missing plugin activation")
 	}
-	if activation.AppDataPath != "Fallout4" || activation.Format != "fallout4" {
+	if activation.AppDataPath != "Fallout4" || activation.Format != gameext.PluginActivationFormatAsterisked {
 		t.Fatalf("activation = %+v", activation)
 	}
 	if !contains(activation.NativePluginManifests, "Fallout4.ccc") {

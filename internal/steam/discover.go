@@ -237,10 +237,6 @@ func detectExternalMarkers(gamePath string) []string {
 		pattern string
 	}{
 		{label: "vortex deployment", pattern: "vortex.deployment*.json"},
-		{label: "bethesda plugin list", pattern: "plugins.txt"},
-		{label: "bethesda load order", pattern: "loadorder.txt"},
-		{label: "fallout script extender", pattern: "f4se_loader.exe"},
-		{label: "skyrim script extender", pattern: "skse64_loader.exe"},
 	}
 	var markers []string
 	seen := map[string]struct{}{}

@@ -1,153 +1,185 @@
-# Decky Mod Manager Plane Test Checklist
+# MVP Manual Testing
 
-Use this checklist for manual Steam Deck, phone, and iPad testing. Capture exact error text when convenient, but logs live on the Deck so short notes are enough.
+Use this file as the manual validation checklist for DMM `0.1.0`. Automated checks should prove API shape and basic planner behavior; this checklist covers the parts that need a real Steam Deck, Gaming Mode, Nexus browser credentials, Steam APIs, or game launch.
 
-## Setup
+## Required Setup
 
-- Install the latest package from `/home/deck/.testing/decky-mod-manager.tar.gz`.
-- Reboot if Decky does not reload the plugin cleanly after install.
-- Open Decky Mod Manager in Gaming Mode and confirm the backend starts automatically.
-- Phone/tablet URL: `http://192.168.8.102:17942` when the Deck is on the same LAN/hotspot.
-- Confirm Nexus API key is configured in the phone/tablet Settings page.
-- Open Settings > Sources on phone/iPad and confirm Nexus, Thunderstore, GitHub Releases, Modrinth, GameBanana, Direct Archive URL, Local Archive, planned credential-gated sources, and Steam Workshop status are listed correctly.
-- Confirm Local Archive reports `Archive upload` instead of appearing as an inactive ready source.
-- If you have mod.io or CurseForge API keys, paste them in Settings > Sources and confirm those sources switch from `Needs Key` to `Ready`.
+- Install the newest package on the Steam Deck.
+- Reboot if Decky does not reload the plugin cleanly.
+- In Gaming Mode, open Decky Mod Manager and confirm the backend starts automatically.
+- Phone/tablet URL: `http://192.168.8.102:17942` on the same LAN/hotspot.
+- Confirm Settings > Sources shows:
+  - `Nexus Mods` ready.
+  - `Thunderstore`, `GitHub Releases`, `Modrinth`, `GameBanana`, `Direct Archive URL`, and `Local Archive` ready.
+  - `mod.io` and `CurseForge` as ready only when keys are configured.
+  - `ModDB` and `itch.io` deferred until a supported automated API/client path is verified.
+  - `Steam Workshop` ready for installed-content management only.
 
-## Plane / iPad Notes
+## Release Blockers
 
-- Before leaving Wi-Fi, open the phone/iPad UI once and confirm it loads on the same hotspot/LAN as the Deck.
-- Provider tests that require fresh downloads need internet access. If the plane connection is unreliable, focus on cached mods, profiles, Decky navigation, source tags, rollback, and already-installed Workshop state.
-- Test both portrait and landscape on iPad. The main content should not require horizontal scrolling, clipped action buttons, or hidden status text.
-- When a view has no pending actions, its button/tab should still be clearly clickable and should open a useful empty state.
-- Take short notes with game, provider/source, UI surface, expected result, and actual result.
+- No visible installed game should be `unsupported`.
+- Every MVP target must have an explicit extension profile with one of these states:
+  - Full installer support from verified Vortex/source behavior.
+  - Workshop-only management from verified Steam Workshop state/API behavior.
+  - Metadata/source-only support with no false install claims when no safe automated handler exists.
+- Stardew Valley must remain the reference complete vertical slice.
+- Nexus capture must use the controlled browser flow and Nexus' own Mod Manager Download link, not a direct API-download shortcut for non-premium/browser-required files.
+- Newly installed mods should be disabled by default unless auto-enable is explicitly enabled.
+- Enable/disable should apply the selected profile without exposing staging as the normal workflow.
+- FOMOD and other installer-choice flows must persist, resume, and update without manual refresh.
+
+## Smoke Commands
+
+Run these from the repo when the Deck server is online:
+
+```bash
+BASE_URL=http://192.168.8.102:17942 ./testing/live_web_asset_check.sh
+BASE_URL=http://192.168.8.102:17942 ./testing/live_extension_coverage_check.sh
+BASE_URL=http://192.168.8.102:17942 APP_ID=413150 ./testing/live_provider_resolve_check.sh
+```
+
+The provider resolve check should verify source tags without downloading archives. `mod.io` and `CurseForge` run only when API keys and test URLs are provided through environment variables.
 
 ## Decky Plugin
 
-- Open DMM and verify the Quick Access panel shows the compact status launcher.
-- Open full DMM and verify route tabs are visible: `Manage`, `Games`, `Settings`, `Debug`.
-- In `Games`, use D-pad only:
+- Open DMM and verify route tabs are visible and responsive: `Manage`, `Games`, `Settings`, `Debug`.
+- Verify the backend status, build fingerprint, and log terminal are visible from Debug.
+- In Games, use D-pad only:
   - Search for Stardew Valley.
   - Change sort order.
   - Favorite/unfavorite a game.
   - Select Stardew Valley.
-  - Confirm the selected row is visibly highlighted and text does not clip.
-- Inside Stardew Valley:
-  - Verify mod rows fit horizontally.
-  - Verify focused rows are visibly highlighted.
-  - Press `A` on a mod to enable/disable it.
-  - Confirm DMM applies the profile automatically and says the game may need restart.
-  - Confirm `Y` reinstall and menu/remove actions are visible and not clipped.
-- Press `B` inside the selected game view and note whether it returns to the game list or exits DMM.
+  - Confirm focused rows are visibly highlighted and text does not clip.
+- Inside a selected game:
+  - Mod rows fit horizontally.
+  - Focused rows are visibly highlighted.
+  - `A` toggles enable/disable.
+  - Profile changes apply automatically.
+  - Reinstall/remove controls are visible and not clipped.
+- Confirm Decky source tags show on installed mods, Workshop rows, jobs, and Action Center rows.
 
-## Nexus Capture Flow
+## Phone And Tablet UI
 
-- Preferred path: in Decky `Games`, select Stardew Valley, choose `Explore Mods`, open `Nexus Mods`, select a result, and use the controlled DMM browser to view the real Nexus page.
-- Fallback path: from Gaming Mode Firefox, open a Stardew Valley Nexus mod page.
-- Click `Mod Manager Download`.
-- Confirm a Decky toast appears when DMM captures/downloads the archive.
-- Open phone/iPad Action Center:
-  - The action should appear without manual refresh.
-  - The action should show a source tag such as `Nexus`, `Steam Workshop`, `Direct`, or `Local`.
-  - If auto-install is enabled, the action may complete automatically.
-  - If installer choices or manual install are needed, controls should disable immediately after tapping.
-- After install, open Stardew Valley in DMM:
-  - The new mod should appear disabled by default unless auto-enable is on.
-  - Enable it and confirm profile changes apply automatically.
+- Test phone portrait.
+- Test iPad/tablet portrait and landscape.
+- Confirm no primary page requires horizontal scrolling.
+- Confirm the top status strip buttons navigate to Action Center, the game picker, and Sources.
+- Open Action Center with zero actions and confirm it is still a useful clickable tab with an empty state.
+- Confirm blocked installer candidates show as review-only items without an `Install to` profile selector or installer choices.
+- Select a game, switch between Mods, Actions, Profiles, Review, and Paths.
+- Confirm source filters and source pills are visible where mod/job/action rows appear.
+- Confirm web UI updates after actions without manual refresh.
 
-## Nexus Browse Inside DMM
+## Nexus Browser Capture
 
-- In Decky `Games`, select Stardew Valley and open `Explore Mods` > `Nexus Mods`.
-- Search a term such as `config`, `content`, or `tractor`.
-- Test sort/time controls.
-- Open a result with `View Mod Page`.
-- Confirm DMM opens the real Nexus page in its controlled browser.
-- Click Nexus' own `Mod Manager Download` / Vortex link on that page.
-- Confirm DMM captures the generated `nxm://` credential, closes the browser after capture, and returns to the selected game's DMM page.
-- Repeat on iPad web UI from the selected Stardew game page.
+- In Decky, select Stardew Valley.
+- Open Explore Mods > Nexus Mods.
+- Search a known term such as `config`, `content`, or `tractor`.
+- Change sort/time filters.
+- Open a result's real Nexus page in the controlled browser.
+- Click Nexus' `Mod Manager Download` / Vortex link.
+- Confirm DMM captures the browser-generated `nxm://` credential.
+- Confirm a Decky toast appears when capture/download starts.
+- Confirm the browser closes after successful capture and returns to the selected game page.
+- Confirm the phone/tablet Action Center updates without refresh.
+- Trigger one enable/disable apply and confirm Decky shows at most one deploy completion toast, not repeated deploy-running toasts.
 
-## Stardew Runtime Verification
+## Stardew Valley Reference Slice
 
-- Ensure SMAPI diagnostics show green/ok.
-- Enable at least one SMAPI mod.
-- Launch Stardew Valley from Steam.
-- Confirm the SMAPI console appears and the enabled mod is listed/loaded.
-- Disable the same mod in DMM, relaunch Stardew, and confirm it no longer loads.
-
-## Profiles
-
-- Create or select a second profile.
-- Enable a different mod set.
-- Switch back to the default profile.
-- Confirm DMM reconciles enabled mods without requiring staging knowledge.
-- Check that profile actions do not show stale pending changes after apply.
+- Install SMAPI through Nexus capture.
+- Install at least one SMAPI mod through Nexus capture.
+- Confirm SMAPI diagnostics are green.
+- Confirm Steam launch options point at SMAPI through the Decky/Steam API path.
+- Launch Stardew from Steam.
+- Confirm SMAPI starts and the enabled mod loads.
+- Disable the mod in DMM, relaunch, and confirm it no longer loads.
+- Create a second profile, enable a different mod set, switch profiles, and confirm deployed files change correctly.
 
 ## FOMOD / Installer Choices
 
-- Test with a known Vortex-compatible FOMOD from a supported game such as Fallout 4 or Skyrim.
-- Capture through the controlled DMM browser's `Mod Manager Download` flow, not direct HTTPS file add, unless DMM explicitly says direct install is supported.
-- Confirm Action Center shows installer choices on phone/iPad.
-- In Gaming Mode, confirm the Decky modal appears automatically when auto-install and auto-display FOMOD are enabled.
-- Change a choice and confirm dependent/conditional choices update without refreshing.
-- Finish install and verify the mod appears disabled by default.
+- Stardew Valley negative fixture: `Neural Harvest` (`https://www.nexusmods.com/stardewvalley/mods/32817`, file `128820`).
+  - Do not use it as a success fixture: the downloaded archive does not contain the files referenced by its own `fomod/ModuleConfig.xml` (`Common/NeuralHarvest.dll`, etc.).
+  - The archive contains `build.sh` and `build_vortex.sh`, but Vortex FOMOD support does not auto-run arbitrary build scripts. The uploaded file is source/package-prep input, not the built FOMOD output.
+  - Current expected behavior: DMM should block it before showing installer choices and keep it as a review-only Action Center item with a clear malformed-installer reason.
+- Preferred real success fixture: Fallout 4 `FOMOD for Achievements Mods Enabler` (`https://www.nexusmods.com/fallout4/mods/90384`), found through Decky Nexus search query `fomod`.
+- Secondary success fixtures: Fallout 4 search query `fomod` or Skyrim SE search query `fomod`; prefer small patch/option packs instead of large all-in-one compendiums.
+- Capture through the controlled Nexus browser, not a direct HTTPS file URL.
+- Confirm Action Center shows installer choices on phone/tablet.
+- If auto-display FOMOD is enabled, confirm Decky opens a modal or gives a clear toast telling the user to open DMM.
+- Change a choice and confirm conditional choices update without refresh.
+- Finish install and confirm the mod is installed disabled unless auto-enable is on.
+- Reinstall the same exact file and confirm saved exact-file choices are reused or can be forgotten.
 
-## Updates
+## Game Extension Manual Matrix
 
-- Use `Check Updates` on Stardew mods from phone/iPad and Decky.
-- If an update exists, install it.
-- Confirm the old installed row is replaced rather than duplicated.
-- Confirm enabled/disabled state is preserved through the update.
-- If the provider blocks direct update download, confirm DMM offers `Open Provider File Page` or opens the provider file page from Decky.
+These targets need real archive/deploy validation before they can be called complete, even when planner tests pass:
 
-## Rollback / Recovery
+- Stardew Valley: already live-verified; repeat after major pipeline changes.
+- Fallout 4: Nexus capture, FOMOD, F4SE archive, plugin activation, archive invalidation, load-order preview.
+- Skyrim SE: Nexus capture, FOMOD, SKSE archive, plugin activation, archive invalidation, load-order preview.
+- The Witcher 3: mod/DLC archive, generated `mods.settings`, Script Merger notice, menu-fragment notice.
+- Final Fantasy VII Rebirth: pak/ucas/utoc, UE4SS, FF7RML, copy deployment, sortable pak prefixes.
+- RimWorld: one-`About.xml` archive, Workshop coexistence.
+- Kenshi: `.mod` folder archive, Workshop order/disable/enable.
+- X4: `content.xml` archive, Proton Documents extension root.
+- Halo MCC: plug-and-play `modinfo.json`, generated Proton `ModManifest.txt`.
+- Spyro Reignited Trilogy: `.pak` archive and sortable pak prefixes.
+- Spider-Man Miles Morales: `.mmpcmod` archive and generated load-order file.
+- Bastion: native Linux `Content/Game` config replacement archive to `Linux/Content/Game`; executable patch archive remains blocked.
+- Mirror's Edge: `TdGame/CookedPC` Unreal package replacement archive; user-Documents `Published/CookedPC` mod-menu flow remains blocked.
+- Portal 2: VPK/archive deployment to `portal2_dlc3`.
+- Half-Life 2 and episodes: VPK deployment to verified `custom` roots.
+- Half-Life: `valve/` content replacement archive and loose `.bsp` map archive to `valve/maps`; standalone GoldSrc mod folders stay blocked.
+- Quake 4: q4base `.pk4`/DLL/config replacement archive, conflict warning if replacing base files, blocked `fs_game` folder archive until dynamic launch action exists.
+- Rome: Total War: vanilla `data/` replacement archive and Alexander `alexander/data/` replacement archive; full conversion launchers stay blocked.
+- Spelunky: `Data/` replacement archive, loose `Localization`/`Music`/`Textures` archive, and blocked Patchlunky/Spelunktool/raw texture-source archive.
+- STEINS;GATE: `USRDIR/` replacement archive and blocked executable/tool archive.
+- Civilization VII: `.modinfo` package into Proton LocalAppData Mods.
+- The Binding of Isaac: archive-root deployment into `mods`.
+- Potion Craft: BepInEx runtime package, BepInEx plugin DLL archive, runtime diagnostic, enable/disable/deploy.
+- Dave the Diver: BepInEx IL2CPP runtime package, BepInEx plugin DLL archive, runtime diagnostic, enable/disable/deploy.
+- Mr. Prepper: BepInEx runtime package, BepInEx plugin DLL archive, runtime diagnostic, enable/disable/deploy.
+- Blasphemous: native Linux BepInEx runtime package, executable `run_bepinex.sh`, Steam launch-tool action, plugin DLL archive, runtime diagnostic, enable/disable/deploy.
 
-- Open the advanced recovery/deployment panel.
-- Confirm deployment history is visible.
-- Use `Restore last applied state` only after noting the current mod state.
-- Confirm it creates a rollback job and only touches DMM-owned files.
+Targets that currently must not claim automated install support until source or representative archive behavior is verified:
+
+- Brawlhalla
+- Command & Conquer: Generals
+- Final Fantasy X/X-2 HD Remaster
+- Metal Gear Solid V: The Phantom Pain
+- Persona 5 Royal
+- Prototype
+- Prototype 2
+- Riders Republic
+- The Division 2
+- The King is Watching
+- Total War: ROME II
 
 ## Steam Workshop
 
-- Open a game with installed Steam Workshop content.
-- Confirm DMM labels Workshop mods as Steam-managed/source-tagged.
-- Move Workshop entries up/down only on a safe test game and confirm DMM queues a `Steam Workshop` order action instead of treating Workshop content like a downloaded archive.
-- Test enable/disable/unsubscribe only if the game is safe to modify during travel.
-- Confirm DMM still allows Nexus/DMM-managed mods for the same game when the extension declares coexistence safe.
-- Do not look for a Steam Workshop search/browse UI; MVP scope is managing already-installed/subscribed Workshop items alongside DMM-managed mods.
+- Open a game with Workshop items, such as Kenshi, RimWorld, Project Zomboid, or Stellaris.
+- Confirm Workshop items are labeled Steam-managed/source-tagged.
+- Confirm DMM-managed mods can coexist where the extension says it is safe.
+- Queue a safe order change and confirm it executes through Decky/Steam APIs.
+- Test enable/disable only on a safe item.
+- Test unsubscribe only when intentionally okay with changing Steam subscription state.
 
-## Source Tags
+## Rollback And Recovery
 
-- Confirm every mod row shows a small source pill such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, or `Native`.
-- Confirm source tags appear on both phone/iPad and Decky surfaces where mod rows are visible.
-- Confirm Action Center and Jobs rows also show source tags when the job belongs to a provider or Steam Workshop action.
-- In advanced load-order views, confirm native game plugins are tagged `Native` and DMM-managed plugin rows use the installed mod's source tag.
-- In the phone/iPad Mods view, filter by source and sort by source.
-- In the Decky Mods view, cycle mod sorting until `Source` appears and confirm the list remains navigable.
-- In a selected game, paste a direct HTTPS archive URL only when it is safe to test that archive.
-- Confirm direct/provider imports are tied to the selected game and show a non-Nexus source tag.
-- In a selected game on phone/iPad, upload a safe `.zip`, `.7z`, or `.rar` through `Local Archive`.
-- Confirm local archive uploads install through the same Action Center/installer-choice path and show a `Local` source tag.
-- In a selected game, paste a safe `https://modrinth.com/mod/{slug}` or `https://modrinth.com/mod/{slug}/version/{version}` URL and confirm it enters the captured-install flow and is tagged `Modrinth`.
-- In a selected game, paste a safe `https://gamebanana.com/mods/{id}` URL and confirm it enters the captured-install flow and is tagged `GameBanana`.
-- Bare `https://gamebanana.com/dl/{file}` links should import as `Direct` only when added from a selected game, because GameBanana's file API does not expose reliable parent mod/game metadata.
-- With a mod.io key configured, select a safe game and paste a `https://mod.io/g/{game}/m/{mod}` URL. Confirm it enters the captured-install flow and is tagged `mod.io`.
-- With a CurseForge key configured, select a safe game and paste a `https://www.curseforge.com/{game}/{section}/{mod}` URL. Confirm it enters the captured-install flow and is tagged `CurseForge`.
-- Confirm Steam Workshop entries remain tagged as Steam-managed and are not confused with DMM-downloaded catalog mods.
+- Open Advanced Profile Tools.
+- Confirm deployment history is visible.
+- Run Restore Last Applied State after noting the current mod state.
+- Confirm a rollback job appears and only DMM-owned files are touched.
+- Confirm failed apply jobs show a clear failure toast and recovery path.
 
-## Provider Resolve Smoke
+## Notes To Report
 
-Run this from the repo when the Deck server is online:
+For every failed manual test, capture:
 
-```bash
-BASE_URL=http://192.168.8.102:17942 APP_ID=413150 ./testing/live_provider_resolve_check.sh
-```
-
-This verifies catalog readiness and provider URL resolution/source tags without downloading or installing archives. `mod.io` and `CurseForge` cases run only when their API keys and test URLs are provided through environment variables.
-
-## Notes To Send Back
-
-- Game/app ID tested.
-- Mod name and Nexus/Workshop ID if visible.
-- Which UI was used: Decky, phone, or iPad.
+- Game/app ID.
+- Provider/source.
+- Mod name and URL or ID.
+- UI surface: Decky, phone, or tablet.
 - Expected result.
 - Actual result.
 - Whether the UI updated without refresh.

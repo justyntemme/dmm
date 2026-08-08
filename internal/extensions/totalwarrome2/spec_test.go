@@ -8,11 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-func TestExtensionRegistersResearchBlockedRomeII(t *testing.T) {
+func TestExtensionRegistersPackInstaller(t *testing.T) {
 	ext := gameext.MustCompileExtension(Extension())
 	if ext.ID != VortexGameID {
 		t.Fatalf("extension id = %q", ext.ID)
@@ -23,21 +25,51 @@ func TestExtensionRegistersResearchBlockedRomeII(t *testing.T) {
 	if ext.SteamWorkshop.AllowCoexistence {
 		t.Fatalf("Rome II should not advertise Workshop support without verified Steam Workshop category")
 	}
-	if len(ext.InstallPlan.Installers) != 1 {
+	if len(ext.InstallPlan.Installers) != 2 {
 		t.Fatalf("installers = %+v", ext.InstallPlan.Installers)
 	}
-	installer := ext.InstallPlan.Installers[0]
-	if installer.InstructionMode != installplan.InstructionUnsupported || !strings.Contains(installer.UnsupportedReason, "representative Nexus archives") {
-		t.Fatalf("installer = %+v", installer)
+	if ext.InstallPlan.Installers[0].InstructionMode != installplan.InstructionCustom {
+		t.Fatalf("pack installer = %+v", ext.InstallPlan.Installers[0])
 	}
 	if len(ext.RuntimeRequirements.RuntimeRequirements) != 1 || ext.RuntimeRequirements.RuntimeRequirements[0].ID != "totalwarrome2-required-files" {
 		t.Fatalf("runtime requirements = %+v", ext.RuntimeRequirements.RuntimeRequirements)
 	}
+	if len(ext.EventHandlers) != 1 || ext.EventHandlers[0].Event != "did-deploy" {
+		t.Fatalf("event handlers = %+v", ext.EventHandlers)
+	}
 }
 
-func TestRomeIIArchivesAreBlockedUntilClassified(t *testing.T) {
+func TestRomeIIPackArchivePlansToData(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "some-mod.pack"), "pack")
+	writeFile(t, filepath.Join(root, "Radious", "radious.pack"), "pack")
+	writeFile(t, filepath.Join(root, "Radious", "radious.png"), "png")
+	writeFile(t, filepath.Join(root, "Radious", "readme.md"), "readme")
+
+	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
+	plan, err := registry.Build(SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != packModType {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	targets := map[string]bool{}
+	for _, instruction := range plan.Instructions {
+		targets[instruction.TargetRelative] = true
+	}
+	for _, want := range []string{"data/radious.pack", "data/radious.png"} {
+		if !targets[want] {
+			t.Fatalf("targets = %+v, missing %s", targets, want)
+		}
+	}
+	if targets["data/readme.md"] {
+		t.Fatalf("readme should not be deployed: %+v", targets)
+	}
+}
+
+func TestRomeIIUnclassifiedArchivesAreBlocked(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "launcher", "setup.exe"), "tool")
 
 	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
 	_, err := registry.Build(SteamAppID, root)
@@ -47,6 +79,18 @@ func TestRomeIIArchivesAreBlockedUntilClassified(t *testing.T) {
 	var unsupported installplan.UnsupportedError
 	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Total War: ROME II") {
 		t.Fatalf("unsupported error = %v", err)
+	}
+}
+
+func TestRomeIIDidDeployNoticeForPack(t *testing.T) {
+	result, err := gameext.MustCompileExtension(Extension()).EventHandlers[0].Handler(context.Background(), sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{TargetRelative: "data/example.pack"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "pack files") {
+		t.Fatalf("result = %+v", result)
 	}
 }
 

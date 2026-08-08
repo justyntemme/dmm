@@ -80,7 +80,7 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	if !ok {
 		t.Fatal("missing plugin activation")
 	}
-	if activation.AppDataPath != "Skyrim Special Edition" || activation.Format != "fallout4" {
+	if activation.AppDataPath != "Skyrim Special Edition" || activation.Format != gameext.PluginActivationFormatAsterisked {
 		t.Fatalf("activation = %+v", activation)
 	}
 	if !contains(activation.NativePluginManifests, "Skyrim.ccc") {

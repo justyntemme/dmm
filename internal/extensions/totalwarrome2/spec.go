@@ -16,7 +16,10 @@ const (
 	VortexGameID = "totalwarrome2"
 	Name         = "Total War: ROME II - Emperor Edition"
 
-	researchModType = "totalwarrome2-research-blocked"
+	packModType     = "totalwarrome2-pack"
+	blockedModType  = "totalwarrome2-unclassified-blocked"
+	dataRoot        = "data"
+	packNoticeEvent = "did-deploy"
 )
 
 var requiredGameFiles = []string{
@@ -25,7 +28,7 @@ var requiredGameFiles = []string{
 	"data/data_rome2.pack",
 }
 
-const unsupportedReason = "Total War: ROME II has a verified Nexus domain but no verified Vortex extension in the checked Vortex source. Steam appdetails do not declare Steam Workshop support, and current support is blocked until representative Nexus archives are reviewed for pack-file, launcher, data-folder, or external-manager install semantics."
+const unsupportedReason = "Total War: ROME II archive layout is not classified by the verified extension rules. DMM currently supports pack-file archives intended for the game data folder; launcher tools, loose data replacement folders, and external Total War mod-manager flows stay blocked until their activation and rollback behavior are source-reviewed."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -46,14 +49,25 @@ func Register(r sdk.Registrar) {
 			DefaultStrategy: installplan.DeployStrategyCopy,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: researchModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "source:totalwarrome2:pack",
+		VortexInstallerID: "totalwarrome2-pack",
+		Priority:          25,
+		ModType:           packModType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchPackArchive,
+		CustomBuild:       buildPackArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "research:totalwarrome2:blocked",
-		VortexInstallerID: "totalwarrome2-research-blocked",
+		VortexInstallerID: "totalwarrome2-unclassified-blocked",
 		Priority:          10000,
-		ModType:           researchModType,
+		ModType:           blockedModType,
 		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       func(string) bool { return true },
+		CustomMatch:       matchAnyArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
 		UnsupportedReason: unsupportedReason,
 	})
@@ -62,11 +76,16 @@ func Register(r sdk.Registrar) {
 		Name:        "Total War: ROME II install files",
 		Kind:        "game-files",
 		Required:    true,
-		ModTypes:    []string{researchModType},
+		ModTypes:    []string{packModType},
 		Message:     "The Total War: ROME II game folder is missing files needed for future extension support.",
 		OKMessage:   "The Total War: ROME II game folder contains the expected executable and pack-file layout.",
 		InstallHint: "Verify the game files in Steam before testing Total War: ROME II mods.",
 		Check:       checkRequiredGameFiles,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   packNoticeEvent,
+		Name:    "Total War: ROME II pack activation reminder",
+		Handler: didDeployPackNotice,
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -101,12 +120,16 @@ func sources() []sdk.SourceRef {
 			URL:  "https://www.nexusmods.com/totalwarrome2",
 		},
 		{
-			Name: "Checked Vortex bundled game extensions; no Total War: ROME II extension found",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
+			Name: "Vortex Total War: Three Kingdoms pack installer source",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games/game-totalwarthreekingdoms/src/index.js",
 		},
 		{
-			Name: "Steam appdetails categories; no Steam Workshop category declared",
-			URL:  "https://store.steampowered.com/api/appdetails?appids=214950&filters=categories",
+			Name: "Total War official Workshop pack-location note",
+			URL:  "https://wiki.totalwar.com/w/Steam_Workshop_and_How_to_Make_Mods.html",
+		},
+		{
+			Name: "Total War ROME II user.script loading note",
+			URL:  "https://www.totalwar.com/news/improving-game-and-mod-interaction-with-desert-kingdoms",
 		},
 		{
 			Name: "Live Steam Deck executable/path verification",

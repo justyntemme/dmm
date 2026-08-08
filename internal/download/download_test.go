@@ -93,6 +93,7 @@ func TestFetchResumesPartialDownload(t *testing.T) {
 			http.Error(w, "range required", http.StatusRequestedRangeNotSatisfiable)
 			return
 		}
+		w.Header().Set("Content-Range", "bytes 4-6/7")
 		w.WriteHeader(http.StatusPartialContent)
 		_, _ = w.Write([]byte("ive"))
 	}))
@@ -103,11 +104,13 @@ func TestFetchResumesPartialDownload(t *testing.T) {
 	if err := os.WriteFile(partPath, []byte("arch"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	var progress []Progress
 	got, err := Fetch(context.Background(), Options{
-		URL:      server.URL + "/mod.zip",
-		DestDir:  dir,
-		FileName: "mod.zip",
-		Resume:   true,
+		URL:        server.URL + "/mod.zip",
+		DestDir:    dir,
+		FileName:   "mod.zip",
+		Resume:     true,
+		OnProgress: func(next Progress) { progress = append(progress, next) },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +127,13 @@ func TestFetchResumesPartialDownload(t *testing.T) {
 	}
 	if _, err := os.Stat(partPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("partial still exists: %v", err)
+	}
+	if len(progress) == 0 {
+		t.Fatal("expected progress callbacks")
+	}
+	last := progress[len(progress)-1]
+	if last.BytesWritten != 7 || last.TotalBytes != 7 {
+		t.Fatalf("last progress = %+v", last)
 	}
 }
 

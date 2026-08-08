@@ -78,16 +78,17 @@ type Server struct {
 }
 
 type capturedInstall struct {
-	Resolved              catalog.ResolvedDownload
-	DownloadLinks         []nexus.DownloadLink
-	Source                string
-	ArchiveFileName       string
-	ArchivePath           string
-	ArchiveSHA256         string
-	ArchiveBytes          int64
-	ReplaceInstalledModID int64
-	ReplaceStagingPath    string
-	TargetProfileID       int64
+	Resolved               catalog.ResolvedDownload
+	DownloadLinks          []nexus.DownloadLink
+	Source                 string
+	ArchiveFileName        string
+	ArchivePath            string
+	ArchiveSHA256          string
+	ArchiveBytes           int64
+	ReplaceInstalledModID  int64
+	ReplaceStagingPath     string
+	TargetProfileID        int64
+	PromptInstallerChoices bool
 }
 
 type nexusClient interface {
@@ -106,6 +107,8 @@ const (
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
+	downloadProgressInterval   = 2 * time.Second
+	downloadProgressByteStep   = int64(8 << 20)
 )
 
 type installerChoiceRequiredError struct {
@@ -114,6 +117,26 @@ type installerChoiceRequiredError struct {
 	Installer     fomod.Installer
 	InstallerJSON string
 	ChoicesJSON   string
+}
+
+type installCandidateReviewError struct {
+	Status    string
+	Candidate storage.InstallCandidate
+	Err       error
+}
+
+func (e *installCandidateReviewError) Error() string {
+	if e == nil || e.Err == nil {
+		return "install candidate still needs review"
+	}
+	return e.Err.Error()
+}
+
+func (e *installCandidateReviewError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 func (e installerChoiceRequiredError) Error() string {
@@ -234,6 +257,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		}
 		srv.publishJobEvent(job)
 	})
+	srv.cleanupOrphanedInstallerChoiceJobs(context.Background(), "state-restore")
 	logger.Info("state restored", "jobs", len(storedJobs), "captured_installs", len(storedPending))
 	return srv, nil
 }
@@ -385,7 +409,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/launch/configure", s.handleConfigureGameLaunch)
 	mux.HandleFunc("GET /api/games/{appID}/profiles", s.handleGameProfiles)
 	mux.HandleFunc("POST /api/games/{appID}/profiles", s.handleCreateGameProfile)
+	mux.HandleFunc("GET /api/games/{appID}/local-archives", s.handleListLocalArchives)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives", s.handleUploadLocalArchive)
+	mux.HandleFunc("POST /api/games/{appID}/local-archives/import", s.handleImportLocalArchivePath)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}", s.handleDeleteProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
@@ -618,16 +644,17 @@ type gameLaunchStatusResponse struct {
 }
 
 type launchToolResponse struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name"`
-	ExecutableRelative string   `json:"executable_relative"`
-	ExecutablePath     string   `json:"executable_path"`
-	Arguments          []string `json:"arguments,omitempty"`
-	RequiredFiles      []string `json:"required_files,omitempty"`
-	Shell              bool     `json:"shell,omitempty"`
-	Detach             bool     `json:"detach,omitempty"`
-	Exclusive          bool     `json:"exclusive,omitempty"`
-	SourceExtension    string   `json:"source_extension"`
+	ID                 string                           `json:"id"`
+	Name               string                           `json:"name"`
+	ExecutableRelative string                           `json:"executable_relative"`
+	ExecutablePath     string                           `json:"executable_path"`
+	Arguments          []string                         `json:"arguments,omitempty"`
+	RequiredFiles      []string                         `json:"required_files,omitempty"`
+	DynamicInputs      []gameext.LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
+	Shell              bool                             `json:"shell,omitempty"`
+	Detach             bool                             `json:"detach,omitempty"`
+	Exclusive          bool                             `json:"exclusive,omitempty"`
+	SourceExtension    string                           `json:"source_extension"`
 }
 
 type launchActionResponse struct {
@@ -655,6 +682,10 @@ type applyInstallCandidateRequest struct {
 
 type saveInstallCandidateChoicesRequest struct {
 	Selections map[string][]string `json:"selections"`
+}
+
+type reinstallGameModRequest struct {
+	PromptInstallerChoices bool `json:"prompt_installer_choices,omitempty"`
 }
 
 type applyGameLaunchResponse struct {
@@ -1033,15 +1064,17 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
 
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
-	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, tool.Arguments...)
+	arguments := launchToolArguments(game.GamePath, tool)
+	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
 	resp.DesiredOptions = desired
 	resp.Tool = &launchToolResponse{
 		ID:                 tool.ID,
 		Name:               tool.Name,
 		ExecutableRelative: tool.ExecutableRelative,
 		ExecutablePath:     executablePath,
-		Arguments:          append([]string(nil), tool.Arguments...),
+		Arguments:          arguments,
 		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+		DynamicInputs:      launchToolDynamicInputsForResponse(tool.DynamicInputs),
 		Shell:              tool.Shell,
 		Detach:             tool.Detach,
 		Exclusive:          tool.Exclusive,
@@ -1050,6 +1083,11 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	resp.MissingFiles = gameext.MissingLaunchToolFiles(game.GamePath, tool)
 	if len(resp.MissingFiles) > 0 {
 		resp.Details = append(resp.Details, "Required launch-tool files are missing; deploy the required mod loader first.")
+		return resp, nil
+	}
+	if missing := missingLaunchToolDynamicInputFiles(game.GamePath, tool); len(missing) > 0 {
+		resp.MissingFiles = append(resp.MissingFiles, missing...)
+		resp.Details = append(resp.Details, "Dynamic launch input files are missing; apply the current profile before configuring this launch tool.")
 		return resp, nil
 	}
 	if unsupported, reason := unsupportedSteamLaunchToolBridge(tool); unsupported {
@@ -1092,6 +1130,55 @@ func launchOptionsConfigured(currentOptions, desiredOptions, executablePath stri
 		return true
 	}
 	return strings.Contains(currentOptions, strings.TrimSpace(executablePath))
+}
+
+func launchToolArguments(gamePath string, tool games.LaunchToolSpec) []string {
+	args := append([]string(nil), tool.Arguments...)
+	for _, input := range tool.DynamicInputs {
+		token := strings.TrimSpace(input.ArgumentToken)
+		if token == "" {
+			continue
+		}
+		path := filepath.ToSlash(filepath.Join(gamePath, filepath.FromSlash(input.OutputRelative)))
+		args = append(args, strings.ReplaceAll(token, "{path}", path))
+	}
+	return args
+}
+
+func missingLaunchToolDynamicInputFiles(gamePath string, tool games.LaunchToolSpec) []string {
+	if strings.TrimSpace(gamePath) == "" {
+		return nil
+	}
+	var missing []string
+	for _, input := range tool.DynamicInputs {
+		output := strings.TrimSpace(input.OutputRelative)
+		if output == "" {
+			continue
+		}
+		path := filepath.Join(gamePath, filepath.FromSlash(output))
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			missing = append(missing, filepath.ToSlash(path))
+		}
+	}
+	return missing
+}
+
+func launchToolDynamicInputsForResponse(inputs []gameext.LaunchToolDynamicInputSpec) []gameext.LaunchToolDynamicInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]gameext.LaunchToolDynamicInput, 0, len(inputs))
+	for _, input := range inputs {
+		out = append(out, gameext.LaunchToolDynamicInput{
+			ID:             input.ID,
+			Name:           input.Name,
+			Kind:           input.Kind,
+			SourceModTypes: append([]string(nil), input.SourceModTypes...),
+			OutputRelative: input.OutputRelative,
+			ArgumentToken:  input.ArgumentToken,
+		})
+	}
+	return out
 }
 
 func unsupportedSteamLaunchToolBridge(tool games.LaunchToolSpec) (bool, string) {
@@ -1384,6 +1471,44 @@ func (s *Server) cleanupDuplicateInstallCandidates(ctx context.Context, appID, s
 	s.logger.Info("duplicate install candidates removed", "app_id", appID, "source", source, "deleted", deleted)
 	s.publishInstallCandidatesChanged(appID, "deduplicated", int(deleted))
 	return deleted, nil
+}
+
+func (s *Server) cleanupOrphanedInstallerChoiceJobs(ctx context.Context, source string) int {
+	if s.db == nil || s.jobs == nil {
+		return 0
+	}
+	candidates, err := s.db.InstallCandidates(ctx)
+	if err != nil {
+		s.logger.Warn("installer choice orphan cleanup failed", "source", source, "error", err)
+		return 0
+	}
+	activeCandidates := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		activeCandidates[strconv.FormatInt(candidate.ID, 10)] = struct{}{}
+	}
+	canceled := 0
+	for _, job := range s.jobs.List() {
+		if job.Type != "installer-choice" {
+			continue
+		}
+		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
+			continue
+		}
+		candidateID := strings.TrimSpace(job.Payload["candidate_id"])
+		if candidateID != "" {
+			if _, ok := activeCandidates[candidateID]; ok {
+				continue
+			}
+		}
+		if _, ok := s.jobs.Cancel(job.ID, "Installer choice item is no longer available; download the mod again."); ok {
+			canceled++
+			s.logger.Warn("orphaned installer choice job canceled", "source", source, "job_id", job.ID, "candidate_id", candidateID)
+		}
+	}
+	if canceled > 0 {
+		s.logger.Info("orphaned installer choice jobs cleaned up", "source", source, "canceled", canceled)
+	}
+	return canceled
 }
 
 func (s *Server) autoEnableInstalledMods() bool {
@@ -2042,7 +2167,7 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	expiresAt := time.Now().UTC().Add(45 * time.Second)
+	expiresAt := time.Now().UTC().Add(deckyBrowserOpenTTL)
 	payload := map[string]any{
 		"url":        req.URL,
 		"profile_id": req.ProfileID,
@@ -2067,8 +2192,11 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 		"ok":         true,
 		"app_id":     req.SteamAppID,
 		"expires_at": expiresAt,
+		"message":    "Deck browser handoff queued. Keep the Steam Deck awake and click Nexus Mod Manager Download in the Deck browser.",
 	})
 }
+
+const deckyBrowserOpenTTL = 10 * time.Minute
 
 func (s *Server) validateDeckyBrowserOpenTarget(ctx context.Context, req deckyBrowserOpenRequest) error {
 	resolved, err := nexus.ParseURL(req.URL)
@@ -2332,6 +2460,7 @@ func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.
 	}
 	s.detectGameVersions(ctx, games)
 	s.annotateExtensionKnownExternalMarkers(games)
+	s.annotateExtensionUnmanagedMarkers(games)
 	s.annotateSteamWorkshopSupport(games)
 	if err := s.db.SyncGames(ctx, games); err != nil {
 		return nil, false, err
@@ -2456,6 +2585,76 @@ func extensionKnownLaunchToolMarkerBasenames(registry games.Registry, game steam
 		return nil
 	}
 	return known
+}
+
+func (s *Server) annotateExtensionUnmanagedMarkers(games []steam.Game) {
+	for i := range games {
+		game := &games[i]
+		extension, ok := s.games.ExtensionForSteamApp(game.AppID)
+		if !ok || len(extension.UnmanagedMarkers) == 0 {
+			continue
+		}
+		added := 0
+		for _, marker := range extension.UnmanagedMarkers {
+			matches := unmanagedMarkerMatches(game.Path, marker)
+			for _, match := range matches {
+				before := len(game.Markers)
+				game.Markers = appendMarker(game.Markers, strings.TrimSpace(marker.Name)+": "+match)
+				if len(game.Markers) > before {
+					added++
+				}
+			}
+		}
+		if added == 0 {
+			continue
+		}
+		game.State = "needs_review"
+		s.logger.Info("extension unmanaged markers detected", "app_id", game.AppID, "markers", added)
+	}
+}
+
+func unmanagedMarkerMatches(gamePath string, marker gameext.UnmanagedMarkerSpec) []string {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return nil
+	}
+	var matches []string
+	seen := map[string]struct{}{}
+	for _, pattern := range marker.Patterns {
+		pattern = filepath.ToSlash(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		for _, match := range safeUnmanagedMarkerGlob(gamePath, pattern) {
+			key := strings.ToLower(match)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			matches = append(matches, filepath.ToSlash(match))
+		}
+	}
+	sort.Strings(matches)
+	return matches
+}
+
+func safeUnmanagedMarkerGlob(gamePath, pattern string) []string {
+	matches, err := filepath.Glob(filepath.Join(gamePath, filepath.FromSlash(pattern)))
+	if err != nil || len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	root := filepath.Clean(gamePath)
+	for _, match := range matches {
+		if !pathContains(root, match) {
+			continue
+		}
+		if _, err := os.Lstat(match); err != nil {
+			continue
+		}
+		out = append(out, match)
+	}
+	return out
 }
 
 func externalMarkerBase(marker string) string {
@@ -3538,6 +3737,13 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
 		return
 	}
+	var req reinstallGameModRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	mod, err := s.db.InstalledModForSteamApp(r.Context(), appID, installedModID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -3787,6 +3993,13 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
 		return
 	}
+	var req reinstallGameModRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	mod, err := s.db.InstalledModForSteamApp(r.Context(), appID, installedModID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -3805,9 +4018,15 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	job := s.jobs.CreateWithPayload("reinstall", "Reinstall: "+mod.Name, gameJobPayload(appID))
-	job, _ = s.jobs.Run(job.ID, "Reinstalling "+mod.Name+" from cached archive")
-	s.logger.Info("installed mod reinstall started", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "archive_path", mod.ArchivePath)
+	title := "Reinstall: " + mod.Name
+	message := "Reinstalling " + mod.Name + " from cached archive"
+	if req.PromptInstallerChoices {
+		title = "Reconfigure: " + mod.Name
+		message = "Opening installer choices for " + mod.Name
+	}
+	job := s.jobs.CreateWithPayload("reinstall", title, gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, message)
+	s.logger.Info("installed mod reinstall started", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "archive_path", mod.ArchivePath, "prompt_installer_choices", req.PromptInstallerChoices)
 	pending := capturedInstall{
 		Resolved: catalog.ResolvedDownload{
 			Catalog:    mod.Catalog,
@@ -3816,11 +4035,12 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 			ModID:      mod.SourceModID,
 			FileID:     mod.SourceFileID,
 		},
-		Source:          "installed-mod-reinstall",
-		ArchivePath:     mod.ArchivePath,
-		ArchiveBytes:    info.Size(),
-		ArchiveSHA256:   "",
-		TargetProfileID: mod.ProfileID,
+		Source:                 "installed-mod-reinstall",
+		ArchivePath:            mod.ArchivePath,
+		ArchiveBytes:           info.Size(),
+		ArchiveSHA256:          "",
+		TargetProfileID:        mod.ProfileID,
+		PromptInstallerChoices: req.PromptInstallerChoices,
 	}
 	staged, err := s.stageCapturedInstall(r.Context(), job.ID, pending, pending.downloadResult())
 	if err != nil {
@@ -3828,6 +4048,9 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 		var choice installerChoiceRequiredError
 		if errors.As(err, &choice) {
 			installerJSON, choicesJSON := s.installerChoiceStateForRequired(context.Background(), appID, job.ID, pending.Resolved, choice)
+			if req.PromptInstallerChoices {
+				installerJSON, choicesJSON = s.installerChoiceStateForRequiredWithoutPreset(context.Background(), appID, job.ID, choice)
+			}
 			candidate, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 				SteamAppID:      appID,
 				Resolved:        pending.Resolved,
@@ -3839,10 +4062,17 @@ func (s *Server) handleReinstallGameMod(w http.ResponseWriter, r *http.Request) 
 				ChoicesJSON:     choicesJSON,
 				TargetProfileID: mod.ProfileID,
 			})
-			if recordErr == nil {
-				s.ensureInstallerChoiceJob(appID, candidate)
-				s.publishInstallCandidatesChanged(appID, "choices_required", 1)
+			if recordErr != nil {
+				s.logger.Warn("record reinstall installer choice candidate failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "error", recordErr)
+				job, _ = s.jobs.Fail(job.ID, recordErr.Error())
+				writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+				return
 			}
+			s.ensureInstallerChoiceJob(appID, candidate)
+			s.publishInstallCandidatesChanged(appID, "choices_required", 1)
+			job, _ = s.jobs.Complete(job.ID, "Installer choices are ready for "+mod.Name)
+			writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "candidate": installCandidateResponseFor(candidate)})
+			return
 		}
 		var unsupported installplan.UnsupportedError
 		if errors.As(err, &unsupported) {
@@ -4134,26 +4364,69 @@ func (s *Server) handleApplyInstallCandidate(w http.ResponseWriter, r *http.Requ
 	job, _ = s.jobs.Run(job.ID, "Applying installer choices for "+candidate.Name)
 	s.logger.Info("installer candidate apply started", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "status", candidate.Status, "target_profile_id", targetProfileID)
 
-	mod, err := s.applyInstallerCandidate(r.Context(), job.ID, candidate, selections, targetProfileID)
+	go s.runApplyInstallerCandidate(context.Background(), job.ID, appID, candidate, cloneSelectionMap(selections), targetProfileID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func cloneSelectionMap(in map[string][]string) map[string][]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(in))
+	for key, values := range in {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
+}
+
+func (s *Server) runApplyInstallerCandidate(ctx context.Context, jobID, appID string, candidate storage.InstallCandidate, selections map[string][]string, targetProfileID int64) {
+	mod, err := s.applyInstallerCandidate(ctx, jobID, candidate, selections, targetProfileID)
 	if err != nil {
-		s.logger.Warn("installer candidate apply failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
-		job, _ = s.jobs.Fail(job.ID, err.Error())
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+		s.logger.Warn("installer candidate apply failed", "job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+		var unsupported installplan.UnsupportedError
+		if errors.As(err, &unsupported) {
+			if updated, recordErr := s.recordBlockedInstallCandidate(ctx, candidate, unsupported.Error()); recordErr != nil {
+				s.logger.Warn("installer candidate blocked state update failed", "job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "error", recordErr)
+			} else {
+				candidate = updated
+				s.publishInstallCandidatesChanged(appID, "blocked", 1)
+			}
+		}
+		s.jobs.Fail(jobID, err.Error())
 		return
 	}
-	if err := s.db.DeleteInstallCandidate(r.Context(), candidate.ID); err != nil {
-		s.logger.Warn("installer candidate cleanup failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
+	if err := s.db.DeleteInstallCandidate(ctx, candidate.ID); err != nil {
+		s.logger.Warn("installer candidate cleanup failed", "job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "error", err)
 	} else {
 		s.publishInstallCandidatesChanged(appID, "applied", 1)
 	}
-	s.completeInstalledModJob(r.Context(), job.ID, mod, func() {
-		s.cleanupReplacedStaging(r.Context(), job.ID, appID, candidate.ReplaceInstalledModID, candidate.ReplaceStagingPath)
+	s.completeInstalledModJob(ctx, jobID, mod, func() {
+		s.cleanupReplacedStaging(ctx, jobID, appID, candidate.ReplaceInstalledModID, candidate.ReplaceStagingPath)
 	})
-	if finalJob, ok := s.jobs.Get(job.ID); ok {
-		job = finalJob
-	}
-	s.logger.Info("installer candidate apply completed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "mod": gameModResponseFor(mod, nil)})
+	s.logger.Info("installer candidate apply completed", "job_id", jobID, "app_id", appID, "candidate_id", candidate.ID, "installed_mod_id", mod.ID)
+}
+
+func (s *Server) recordBlockedInstallCandidate(ctx context.Context, candidate storage.InstallCandidate, reason string) (storage.InstallCandidate, error) {
+	return s.db.RecordInstallCandidate(ctx, storage.RecordInstallCandidateParams{
+		SteamAppID: candidate.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    candidate.Catalog,
+			SourceURL:  candidate.ArchivePath,
+			GameDomain: candidate.SourceGameDomain,
+			ModID:      candidate.SourceModID,
+			FileID:     candidate.SourceFileID,
+		},
+		Name:                  candidate.Name,
+		ArchivePath:           candidate.ArchivePath,
+		ArchiveSHA256:         candidate.ChecksumSHA256,
+		Status:                "blocked",
+		Reason:                reason,
+		InstallerJSON:         candidate.InstallerJSON,
+		ChoicesJSON:           candidate.ChoicesJSON,
+		ReplaceInstalledModID: candidate.ReplaceInstalledModID,
+		ReplaceStagingPath:    candidate.ReplaceStagingPath,
+		TargetProfileID:       candidate.TargetProfileID,
+	})
 }
 
 func installCandidateSelections(candidate storage.InstallCandidate, submittedSelections map[string][]string) (map[string][]string, error) {
@@ -4223,6 +4496,17 @@ func (s *Server) installerChoiceStateForRequired(ctx context.Context, appID, job
 	return s.installerChoiceStateForResolved(ctx, appID, jobID, resolved, choice.Kind, choice.Installer)
 }
 
+func (s *Server) installerChoiceStateForRequiredWithoutPreset(ctx context.Context, appID, jobID string, choice installerChoiceRequiredError) (string, string) {
+	if strings.TrimSpace(choice.InstallerJSON) != "" {
+		choicesJSON := strings.TrimSpace(choice.ChoicesJSON)
+		if choicesJSON == "" {
+			choicesJSON = "{}"
+		}
+		return choice.InstallerJSON, choicesJSON
+	}
+	return s.installerChoiceStateJSON(ctx, appID, jobID, choice.Installer, nil)
+}
+
 func (s *Server) installerChoicePresetSelections(ctx context.Context, appID, jobID string, resolved catalog.ResolvedDownload, installerKind string) (map[string][]string, string, bool) {
 	preset, ok, err := s.db.InstallerChoicePreset(ctx, storage.InstallerChoicePresetParams{
 		SteamAppID:    appID,
@@ -4243,6 +4527,14 @@ func (s *Server) installerChoicePresetSelections(ctx context.Context, appID, job
 	}
 	s.logger.Info("installer choice preset reused", "job_id", jobID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID, "installer_kind", installerKind)
 	return selections, preset, true
+}
+
+func (s *Server) installerChoicePresetSelectionsForPending(ctx context.Context, appID, jobID string, pending capturedInstall, installerKind string) (map[string][]string, string, bool) {
+	if pending.PromptInstallerChoices {
+		s.logger.Info("installer choice preset skipped for reconfigure", "job_id", jobID, "app_id", appID, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", installerKind)
+		return nil, "", false
+	}
+	return s.installerChoicePresetSelections(ctx, appID, jobID, pending.Resolved, installerKind)
 }
 
 func (s *Server) installerChoiceStateJSON(ctx context.Context, appID, jobID string, installer fomod.Installer, selections map[string][]string) (string, string) {
@@ -4300,14 +4592,15 @@ func (s *Server) fomodPlanOptions(ctx context.Context, appID string) (fomod.Plan
 		return fomod.PlanOptions{}, err
 	}
 	return fomod.PlanOptions{
-		ModType:           choiceSpec.ModType,
-		PlannerID:         choiceSpec.ID,
-		TargetRoot:        choiceSpec.TargetRoot,
-		TargetRootID:      choiceSpec.TargetRootID,
-		StopFolders:       choiceSpec.StopFolders,
-		GameVersion:       game.Version,
-		HostVersion:       fomodHostVersion,
-		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
+		ModType:               choiceSpec.ModType,
+		PlannerID:             choiceSpec.ID,
+		TargetRoot:            choiceSpec.TargetRoot,
+		TargetRootID:          choiceSpec.TargetRootID,
+		StopFolders:           choiceSpec.StopFolders,
+		DestinationPrefixMode: choiceSpec.DestinationPrefixMode,
+		GameVersion:           game.Version,
+		HostVersion:           fomodHostVersion,
+		FileStateResolver:     s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	}, nil
 }
 
@@ -4337,6 +4630,20 @@ func (s *Server) handleRetryInstallCandidate(w http.ResponseWriter, r *http.Requ
 	mod, retryErr := s.retryInstallCandidate(r.Context(), job.ID, candidate)
 	if retryErr != nil {
 		s.logger.Warn("install candidate retry failed", "job_id", job.ID, "app_id", appID, "candidate_id", candidate.ID, "error", retryErr)
+		var review *installCandidateReviewError
+		if errors.As(retryErr, &review) {
+			message := "Install still needs review: " + retryErr.Error()
+			if review.Status == "needs_choices" {
+				message = "Installer choices are required for " + candidate.Name
+			}
+			job, _ = s.jobs.Complete(job.ID, message)
+			response := map[string]any{"job": jobAPIResponse(job)}
+			if review.Candidate.ID > 0 {
+				response["candidate"] = installCandidateResponseFor(review.Candidate)
+			}
+			writeJSON(w, http.StatusAccepted, response)
+			return
+		}
 		job, _ = s.jobs.Fail(job.ID, retryErr.Error())
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
@@ -4419,11 +4726,15 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 		choiceJob := s.ensureInstallerChoiceJob(candidate.SteamAppID, updated)
 		s.logger.Info("install candidate retry now requires choices", "job_id", jobID, "choice_job_id", choiceJob.ID, "app_id", candidate.SteamAppID, "candidate_id", updated.ID)
 		s.publishInstallCandidatesChanged(candidate.SteamAppID, "choices_required", 1)
-		return storage.InstalledMod{}, choice
+		return storage.InstalledMod{}, &installCandidateReviewError{
+			Status:    "needs_choices",
+			Candidate: updated,
+			Err:       choice,
+		}
 	}
 	var unsupported installplan.UnsupportedError
 	if errors.As(err, &unsupported) {
-		_, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		updated, recordErr := s.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
 			SteamAppID:            candidate.SteamAppID,
 			Resolved:              pending.Resolved,
 			Name:                  candidate.Name,
@@ -4441,6 +4752,11 @@ func (s *Server) retryInstallCandidate(ctx context.Context, jobID string, candid
 			return storage.InstalledMod{}, recordErr
 		}
 		s.publishInstallCandidatesChanged(candidate.SteamAppID, "blocked", 1)
+		return storage.InstalledMod{}, &installCandidateReviewError{
+			Status:    "blocked",
+			Candidate: updated,
+			Err:       unsupported,
+		}
 	}
 	return storage.InstalledMod{}, err
 }
@@ -4735,17 +5051,21 @@ func (s *Server) stageFOMODInstaller(ctx context.Context, req fomodStageRequest)
 		return storage.InstalledMod{}, err
 	}
 	plan, err := fomod.BuildPlan(req.SteamAppID, req.ExtractPath, req.Installer, req.Selections, fomod.PlanOptions{
-		ModType:           choiceSpec.ModType,
-		PlannerID:         choiceSpec.ID,
-		TargetRoot:        choiceSpec.TargetRoot,
-		TargetRootID:      choiceSpec.TargetRootID,
-		StopFolders:       choiceSpec.StopFolders,
-		GameVersion:       game.Version,
-		HostVersion:       fomodHostVersion,
-		FileStateResolver: s.fomodFileDependencyResolver(ctx, game, choiceSpec),
+		ModType:               choiceSpec.ModType,
+		PlannerID:             choiceSpec.ID,
+		TargetRoot:            choiceSpec.TargetRoot,
+		TargetRootID:          choiceSpec.TargetRootID,
+		StopFolders:           choiceSpec.StopFolders,
+		DestinationPrefixMode: choiceSpec.DestinationPrefixMode,
+		GameVersion:           game.Version,
+		HostVersion:           fomodHostVersion,
+		FileStateResolver:     s.fomodFileDependencyResolver(ctx, game, choiceSpec),
 	})
 	if err != nil {
 		return storage.InstalledMod{}, err
+	}
+	if len(plan.Warnings) > 0 {
+		s.logger.Warn("fomod installer plan completed with warnings", "job_id", req.JobID, "app_id", req.SteamAppID, "candidate_id", req.CandidateID, "warnings", strings.Join(plan.Warnings, " | "))
 	}
 	if err := applyInstallPlan(plan, req.StagingPath, ""); err != nil {
 		if cleanupErr := os.RemoveAll(req.StagingPath); cleanupErr != nil {
@@ -4922,11 +5242,15 @@ func parseActivePluginNames(body, format string) map[string]struct{} {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if strings.TrimSpace(format) != "original" {
+		switch strings.TrimSpace(format) {
+		case gameext.PluginActivationFormatOriginal:
+		case gameext.PluginActivationFormatAsterisked:
 			if !strings.HasPrefix(line, "*") {
 				continue
 			}
 			line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		default:
+			continue
 		}
 		if line != "" {
 			out[strings.ToLower(line)] = struct{}{}
@@ -5908,6 +6232,7 @@ func conflictWinnerCandidates(plan deploy.Plan, targetPath string) map[int64]str
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
+	s.cleanupOrphanedInstallerChoiceJobs(r.Context(), "jobs-list")
 	writeJSON(w, http.StatusOK, jobAPIResponses(s.jobs.List()))
 }
 
@@ -6213,6 +6538,64 @@ type inspectArchiveRequest struct {
 	Path string `json:"path"`
 }
 
+type localArchiveFileResponse struct {
+	Path       string    `json:"path"`
+	Name       string    `json:"name"`
+	Extension  string    `json:"extension"`
+	Bytes      int64     `json:"bytes"`
+	Root       string    `json:"root"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+type localArchiveListResponse struct {
+	Roots []string                   `json:"roots"`
+	Files []localArchiveFileResponse `json:"files"`
+}
+
+type localArchivePathImportRequest struct {
+	Path      string `json:"path"`
+	ProfileID int64  `json:"profile_id,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+var localArchiveImportExtensions = map[string]struct{}{
+	".7z":    {},
+	".fomod": {},
+	".mgsv":  {},
+	".rar":   {},
+	".zip":   {},
+}
+
+func (s *Server) handleListLocalArchives(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	limit := 80
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = max(1, min(parsed, 250))
+		}
+	}
+	roots := s.localArchiveRoots()
+	files, err := listLocalArchiveFiles(r.Context(), roots, limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("local archive files listed", "app_id", appID, "roots", len(roots), "files", len(files))
+	writeJSON(w, http.StatusOK, localArchiveListResponse{Roots: roots, Files: files})
+}
+
 func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
@@ -6242,12 +6625,6 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer upload.Close()
-
-	resolved, result, err := s.saveLocalArchiveUpload(r.Context(), appID, upload, header)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
 	source := strings.TrimSpace(r.FormValue("source"))
 	if source == "" {
 		source = "local-upload"
@@ -6262,6 +6639,12 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+
+	resolved, result, err := s.saveLocalArchiveUpload(r.Context(), appID, upload, header)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	s.logger.Info(
 		"local archive upload captured",
 		"source", source,
@@ -6275,6 +6658,75 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		"archive_bytes", result.BytesWritten,
 		"target_profile_id", targetProfileID,
 	)
+	payload := s.createLocalArchiveInstall(r.Context(), appID, resolved, result, source, targetProfileID, "Uploaded", "local archive upload")
+	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) handleImportLocalArchivePath(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var req localArchivePathImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.ProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	archivePath, info, err := s.validateLocalArchivePath(req.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	defer file.Close()
+	resolved, result, err := s.saveLocalArchiveReader(r.Context(), appID, filepath.Base(archivePath), file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = "deck-local-file"
+	}
+	s.logger.Info(
+		"local archive path imported",
+		"source", source,
+		"catalog", resolved.Catalog,
+		"app_id", appID,
+		"game_domain", resolved.GameDomain,
+		"mod_id", resolved.ModID,
+		"file_id", resolved.FileID,
+		"source_path", archivePath,
+		"source_bytes", info.Size(),
+		"archive_path", result.Path,
+		"archive_sha256", result.SHA256,
+		"archive_bytes", result.BytesWritten,
+		"target_profile_id", req.ProfileID,
+	)
+	payload := s.createLocalArchiveInstall(r.Context(), appID, resolved, result, source, req.ProfileID, "Imported", "local archive file import")
+	writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (s *Server) createLocalArchiveInstall(ctx context.Context, appID string, resolved catalog.ResolvedDownload, result download.Result, source string, targetProfileID int64, verb string, actionSource string) map[string]any {
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		if targetProfileID > 0 && pending.TargetProfileID != targetProfileID {
 			pending.TargetProfileID = targetProfileID
@@ -6282,7 +6734,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 			s.logger.Info("local archive duplicate target profile updated", "job_id", job.ID, "target_profile_id", targetProfileID)
 		}
 		s.logger.Info("local archive duplicate reused", "job_id", job.ID, "app_id", appID, "mod_id", resolved.ModID, "file_id", resolved.FileID)
-		writeJSON(w, http.StatusAccepted, map[string]any{
+		return map[string]any{
 			"job":               jobAPIResponse(job),
 			"resolved":          pending.Resolved,
 			"source":            pending.Source,
@@ -6291,12 +6743,11 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 			"archive_bytes":     pending.ArchiveBytes,
 			"target_profile_id": pending.TargetProfileID,
 			"duplicate":         true,
-		})
-		return
+		}
 	}
 
 	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayloadForTarget(s.games, resolved, targetProfileID))
-	job, _ = s.jobs.Wait(job.ID, "Uploaded "+resolved.FileName+"; install it to add it disabled")
+	job, _ = s.jobs.Wait(job.ID, verb+" "+resolved.FileName+"; install it to add it disabled")
 	pending := capturedInstall{
 		Resolved:        resolved,
 		Source:          source,
@@ -6315,13 +6766,14 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 		"archive_file_name": resolved.FileName,
 		"archive_sha256":    result.SHA256,
 		"archive_bytes":     result.BytesWritten,
+		"target_profile_id": targetProfileID,
 	}
 	s.cfgMu.RLock()
 	autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
 	s.cfgMu.RUnlock()
 	payload["auto_install"] = autoInstall
 	if autoInstall {
-		started, err := s.startCapturedInstallInstall(job.ID, "local archive upload")
+		started, err := s.startCapturedInstallInstall(job.ID, actionSource)
 		if err != nil {
 			s.logger.Warn("local archive auto-install failed", "job_id", job.ID, "app_id", appID, "error", err)
 			job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -6331,7 +6783,7 @@ func (s *Server) handleUploadLocalArchive(w http.ResponseWriter, r *http.Request
 			payload["install_started"] = true
 		}
 	}
-	writeJSON(w, http.StatusAccepted, payload)
+	return payload
 }
 
 func (s *Server) saveLocalArchiveUpload(ctx context.Context, appID string, upload multipart.File, header *multipart.FileHeader) (catalog.ResolvedDownload, download.Result, error) {
@@ -6339,6 +6791,14 @@ func (s *Server) saveLocalArchiveUpload(ctx context.Context, appID string, uploa
 	if header != nil {
 		fileName = cleanLocalArchiveFileName(header.Filename)
 	}
+	if fileName == "" {
+		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive filename is required")
+	}
+	return s.saveLocalArchiveReader(ctx, appID, fileName, upload)
+}
+
+func (s *Server) saveLocalArchiveReader(ctx context.Context, appID string, fileName string, reader io.Reader) (catalog.ResolvedDownload, download.Result, error) {
+	fileName = cleanLocalArchiveFileName(fileName)
 	if fileName == "" {
 		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive filename is required")
 	}
@@ -6354,13 +6814,16 @@ func (s *Server) saveLocalArchiveUpload(ctx context.Context, appID string, uploa
 	defer os.Remove(tmpPath)
 
 	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(tmp, hash), upload)
+	written, err := io.Copy(io.MultiWriter(tmp, hash), io.LimitReader(reader, maxLocalArchiveUploadBytes+1))
 	closeErr := tmp.Close()
 	if err != nil {
 		return catalog.ResolvedDownload{}, download.Result{}, err
 	}
 	if closeErr != nil {
 		return catalog.ResolvedDownload{}, download.Result{}, closeErr
+	}
+	if written > maxLocalArchiveUploadBytes {
+		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive exceeds the maximum supported size")
 	}
 	if written <= 0 {
 		return catalog.ResolvedDownload{}, download.Result{}, errors.New("archive upload was empty")
@@ -6397,6 +6860,183 @@ func (s *Server) saveLocalArchiveUpload(ctx context.Context, appID string, uploa
 		BytesWritten: written,
 		SHA256:       sum,
 	}, nil
+}
+
+func (s *Server) localArchiveRoots() []string {
+	var roots []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		if expanded, ok := strings.CutPrefix(path, "~/"); ok {
+			if home, err := os.UserHomeDir(); err == nil && home != "" {
+				path = filepath.Join(home, expanded)
+			}
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return
+		}
+		abs = filepath.Clean(abs)
+		for _, existing := range roots {
+			if existing == abs {
+				return
+			}
+		}
+		roots = append(roots, abs)
+	}
+	for _, raw := range strings.Split(os.Getenv("DMM_LOCAL_ARCHIVE_ROOTS"), string(filepath.ListSeparator)) {
+		add(raw)
+	}
+	add(os.Getenv("XDG_DOWNLOAD_DIR"))
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		downloads := filepath.Join(home, "Downloads")
+		add(downloads)
+		add(filepath.Join(downloads, "DMM Intake"))
+	}
+	return roots
+}
+
+func (s *Server) validateLocalArchivePath(rawPath string) (string, os.FileInfo, error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return "", nil, errors.New("archive path is required")
+	}
+	if !localArchiveFileNameSupported(rawPath) {
+		return "", nil, errors.New("archive path must point to a .zip, .7z, .rar, .fomod, or .mgsv file")
+	}
+	abs, err := filepath.Abs(rawPath)
+	if err != nil {
+		return "", nil, err
+	}
+	resolvedPath, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", nil, err
+	}
+	resolvedPath = filepath.Clean(resolvedPath)
+	allowed := false
+	for _, root := range s.localArchiveRoots() {
+		resolvedRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		if pathWithinRoot(filepath.Clean(resolvedRoot), resolvedPath) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return "", nil, errors.New("archive path is outside the allowed Deck download folders")
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", nil, err
+	}
+	if info.IsDir() {
+		return "", nil, errors.New("archive path is a directory")
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, errors.New("archive path is not a regular file")
+	}
+	if info.Size() <= 0 {
+		return "", nil, errors.New("archive file is empty")
+	}
+	if info.Size() > maxLocalArchiveUploadBytes {
+		return "", nil, errors.New("archive exceeds the maximum supported size")
+	}
+	return resolvedPath, info, nil
+}
+
+func listLocalArchiveFiles(ctx context.Context, roots []string, limit int) ([]localArchiveFileResponse, error) {
+	if limit <= 0 {
+		limit = 80
+	}
+	var files []localArchiveFileResponse
+	for _, root := range roots {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		resolvedRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		rootInfo, err := os.Stat(resolvedRoot)
+		if err != nil || !rootInfo.IsDir() {
+			continue
+		}
+		err = filepath.WalkDir(resolvedRoot, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if path != resolvedRoot && entry.IsDir() {
+				name := entry.Name()
+				if strings.HasPrefix(name, ".") {
+					return filepath.SkipDir
+				}
+				if localArchivePathDepth(resolvedRoot, path) > 4 {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.IsDir() || !localArchiveFileNameSupported(path) {
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxLocalArchiveUploadBytes {
+				return nil
+			}
+			files = append(files, localArchiveFileResponse{
+				Path:       filepath.Clean(path),
+				Name:       filepath.Base(path),
+				Extension:  strings.ToLower(filepath.Ext(path)),
+				Bytes:      info.Size(),
+				Root:       filepath.Clean(resolvedRoot),
+				ModifiedAt: info.ModTime().UTC(),
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if !files[i].ModifiedAt.Equal(files[j].ModifiedAt) {
+			return files[i].ModifiedAt.After(files[j].ModifiedAt)
+		}
+		return files[i].Name < files[j].Name
+	})
+	if len(files) > limit {
+		files = files[:limit]
+	}
+	return files, nil
+}
+
+func localArchiveFileNameSupported(name string) bool {
+	_, ok := localArchiveImportExtensions[strings.ToLower(filepath.Ext(strings.TrimSpace(name)))]
+	return ok
+}
+
+func localArchivePathDepth(root, path string) int {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." {
+		return 0
+	}
+	return strings.Count(rel, string(filepath.Separator)) + 1
+}
+
+func pathWithinRoot(root, candidate string) bool {
+	if root == "" || candidate == "" {
+		return false
+	}
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
 func localArchiveResolved(appID, gameDomain, modID, fileID, fileName string) catalog.ResolvedDownload {
@@ -7016,7 +7656,7 @@ func (s *Server) startCapturedInstallDownload(jobID, actionSource string) (jobs.
 		return jobs.Job{}, errCapturedInstallEmptyLink
 	}
 
-	job, ok := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusWaiting}, jobs.StatusQueued, "Queued for archive download from "+pending.Resolved.GameDomain)
+	job, ok := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusWaiting}, jobs.StatusQueued, "Queued for archive download from "+pending.Resolved.GameDomain+"; waiting for an available download slot")
 	if !ok {
 		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
@@ -7280,10 +7920,11 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 			message := fmt.Sprintf("Downloading archive from %s (%d/%d, try %d/%d)", pending.Resolved.GameDomain, index+1, total, linkAttempt, capturedDownloadMaxAttemptsPerLink)
 			s.jobs.Run(jobID, message)
 			result, err := download.Fetch(ctx, download.Options{
-				URL:      uri,
-				DestDir:  destDir,
-				FileName: pending.ArchiveFileName,
-				Resume:   true,
+				URL:        uri,
+				DestDir:    destDir,
+				FileName:   pending.ArchiveFileName,
+				Resume:     true,
+				OnProgress: s.capturedDownloadProgressReporter(jobID, pending, index+1, total),
 			})
 			if err == nil {
 				if attempts > 1 {
@@ -7313,6 +7954,96 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 		return download.Result{}, errCapturedInstallNoLinks
 	}
 	return download.Result{}, lastErr
+}
+
+func (s *Server) capturedDownloadProgressReporter(jobID string, pending capturedInstall, linkIndex, linkTotal int) func(download.Progress) {
+	var lastAt time.Time
+	var lastBytes int64
+	return func(progress download.Progress) {
+		now := time.Now()
+		done := progress.TotalBytes > 0 && progress.BytesWritten >= progress.TotalBytes
+		if !done && !lastAt.IsZero() && now.Sub(lastAt) < downloadProgressInterval && progress.BytesWritten-lastBytes < downloadProgressByteStep {
+			return
+		}
+		payload := s.capturedDownloadProgressPayload(jobID, pending, progress, now)
+		message := capturedDownloadProgressMessage(pending.Resolved.GameDomain, linkIndex, linkTotal, progress)
+		if _, ok := s.jobs.RunWithPayload(jobID, message, payload); ok {
+			lastAt = now
+			lastBytes = progress.BytesWritten
+		}
+	}
+}
+
+func (s *Server) capturedDownloadProgressPayload(jobID string, pending capturedInstall, progress download.Progress, updatedAt time.Time) jobs.JobPayload {
+	job, ok := s.jobs.Get(jobID)
+	var payload jobs.JobPayload
+	if ok {
+		payload = cloneJobPayload(job.Payload)
+	} else {
+		payload = capturedInstallJobPayload(s.games, pending.Resolved)
+	}
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["download_bytes_written"] = strconv.FormatInt(max(progress.BytesWritten, 0), 10)
+	payload["download_updated_at"] = updatedAt.UTC().Format(time.RFC3339)
+	if progress.TotalBytes > 0 {
+		payload["download_total_bytes"] = strconv.FormatInt(progress.TotalBytes, 10)
+		payload["download_percent"] = downloadProgressPercent(progress.BytesWritten, progress.TotalBytes)
+	} else {
+		delete(payload, "download_total_bytes")
+		delete(payload, "download_percent")
+	}
+	return payload
+}
+
+func capturedDownloadProgressMessage(gameDomain string, linkIndex, linkTotal int, progress download.Progress) string {
+	domain := strings.TrimSpace(gameDomain)
+	if domain == "" {
+		domain = "catalog"
+	}
+	linkLabel := ""
+	if linkTotal > 1 {
+		linkLabel = fmt.Sprintf(" (%d/%d)", linkIndex, linkTotal)
+	}
+	written := formatDownloadSize(progress.BytesWritten)
+	if progress.TotalBytes > 0 {
+		return fmt.Sprintf("Downloading archive from %s%s: %s / %s (%s%%)", domain, linkLabel, written, formatDownloadSize(progress.TotalBytes), downloadProgressPercent(progress.BytesWritten, progress.TotalBytes))
+	}
+	return fmt.Sprintf("Downloading archive from %s%s: %s downloaded", domain, linkLabel, written)
+}
+
+func downloadProgressPercent(written, total int64) string {
+	if total <= 0 {
+		return ""
+	}
+	if written < 0 {
+		written = 0
+	}
+	if written > total {
+		written = total
+	}
+	percent := float64(written) / float64(total) * 100
+	value := strconv.FormatFloat(percent, 'f', 1, 64)
+	return strings.TrimSuffix(strings.TrimSuffix(value, "0"), ".")
+}
+
+func formatDownloadSize(bytes int64) string {
+	if bytes <= 0 {
+		return "0 B"
+	}
+	units := []string{"B", "KB", "MB", "GB"}
+	size := float64(bytes)
+	unit := 0
+	for size >= 1024 && unit < len(units)-1 {
+		size /= 1024
+		unit++
+	}
+	precision := 1
+	if size >= 10 || unit == 0 {
+		precision = 0
+	}
+	return strconv.FormatFloat(size, 'f', precision, 64) + " " + units[unit]
 }
 
 func capturedDownloadRetryDelay(attempt int, err error) time.Duration {
@@ -7430,7 +8161,7 @@ func (s *Server) installCapturedInstall(ctx context.Context, jobID string, pendi
 			} else {
 				s.publishInstallCandidatesChanged(s.appIDForPending(pending), "created", 1)
 			}
-			s.jobs.Fail(jobID, err.Error())
+			s.jobs.Complete(jobID, "Downloaded "+modNameFromArchive(result.Path, pending.Resolved)+"; install needs review")
 			s.forgetCapturedInstall(jobID)
 			return
 		}
@@ -7747,7 +8478,11 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 			if err != nil {
 				return storage.InstalledMod{}, installplan.Unsupported("fomod installer could not be parsed: " + err.Error())
 			}
-			if selections, choicesJSON, ok := s.installerChoicePresetSelections(ctx, appID, jobID, pending.Resolved, "fomod"); ok {
+			if err := fomod.ValidateRequiredSources(extractPath, installer); err != nil {
+				s.logger.Warn("captured install FOMOD required source validation failed", "job_id", jobID, "app_id", appID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
+				return storage.InstalledMod{}, err
+			}
+			if selections, choicesJSON, ok := s.installerChoicePresetSelectionsForPending(ctx, appID, jobID, pending, "fomod"); ok {
 				name := modNameFromArchive(archivePath, pending.Resolved)
 				if strings.TrimSpace(installer.Name) != "" {
 					name = strings.TrimSpace(installer.Name)
@@ -7787,11 +8522,25 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	installPlan, err := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(appID, extractPath, game.GamePath, filepath.Base(archivePath), nil)
 	if err != nil {
 		if choice, ok := installerChoiceFromPlanError(err); ok {
-			s.logger.Info("captured install requires extension installer choices", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind)
-			return storage.InstalledMod{}, choice
+			if selections, _, presetOK := s.installerChoicePresetSelectionsForPending(ctx, appID, jobID, pending, choice.Kind); presetOK {
+				presetPlan, presetErr := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(appID, extractPath, game.GamePath, filepath.Base(archivePath), selections)
+				if presetErr == nil {
+					installPlan = presetPlan
+					err = nil
+					s.logger.Info("captured install reused extension installer choice preset without prompting", "job_id", jobID, "app_id", appID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind)
+				} else {
+					s.logger.Warn("captured install extension installer choice preset auto-apply failed; requesting choices", "job_id", jobID, "app_id", appID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind, "error", presetErr)
+				}
+			}
+			if err != nil {
+				s.logger.Info("captured install requires extension installer choices", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "installer_kind", choice.Kind)
+				return storage.InstalledMod{}, choice
+			}
 		}
-		s.logger.Info("captured install has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
-		return storage.InstalledMod{}, err
+		if err != nil {
+			s.logger.Info("captured install has no supported install plan", "job_id", jobID, "game_domain", pending.Resolved.GameDomain, "mod_id", pending.Resolved.ModID, "file_id", pending.Resolved.FileID, "error", err)
+			return storage.InstalledMod{}, err
+		}
 	}
 	s.logger.Info(
 		"captured install install plan accepted",
@@ -7923,8 +8672,27 @@ func applyInstallPlan(plan installplan.Plan, stagingPath string, gamePath string
 		default:
 			return errors.New("install plan contains unsupported instruction kind " + instruction.Kind)
 		}
+		if err := applyInstructionFileMode(target, instruction.FileMode); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func applyInstructionFileMode(path, modeText string) error {
+	modeText = strings.TrimSpace(modeText)
+	if modeText == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseUint(strings.TrimPrefix(modeText, "0o"), 8, 32)
+	if err != nil {
+		return errors.New("install plan contains invalid file mode " + modeText)
+	}
+	mode := os.FileMode(parsed) & os.ModePerm
+	if mode == 0 {
+		return errors.New("install plan contains empty file mode " + modeText)
+	}
+	return os.Chmod(path, mode)
 }
 
 func generateFileFromGamePath(gamePath string, instruction installplan.Instruction, target string) error {
@@ -8078,6 +8846,7 @@ type stagedManifestFile struct {
 	TargetRelative string `json:"target_relative,omitempty"`
 	TargetPolicy   string `json:"target_policy,omitempty"`
 	DeployStrategy string `json:"deploy_strategy,omitempty"`
+	FileMode       string `json:"file_mode,omitempty"`
 	Size           int64  `json:"size"`
 	SHA256         string `json:"sha256"`
 }
@@ -8120,6 +8889,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 	targetRoots := make(map[string]string, len(plan.Instructions))
 	targetPolicies := make(map[string]string, len(plan.Instructions))
 	deployStrategies := make(map[string]string, len(plan.Instructions))
+	fileModes := make(map[string]string, len(plan.Instructions))
 	for _, instruction := range plan.Instructions {
 		if instruction.StagingRelative == "" || instruction.TargetRelative == "" {
 			continue
@@ -8129,6 +8899,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 		targetRoots[stagingRel] = strings.TrimSpace(instruction.TargetRoot)
 		targetPolicies[stagingRel] = strings.TrimSpace(instruction.TargetPolicy)
 		deployStrategies[stagingRel] = strings.TrimSpace(instruction.DeployStrategy)
+		fileModes[stagingRel] = strings.TrimSpace(instruction.FileMode)
 	}
 	files := []stagedManifestFile{}
 	if err := filepath.WalkDir(stagingPath, func(path string, d os.DirEntry, err error) error {
@@ -8157,6 +8928,7 @@ func stagedManifestJSONWithPlan(stagingPath string, plan installplan.Plan) (stri
 			TargetRelative: targets[rel],
 			TargetPolicy:   targetPolicies[rel],
 			DeployStrategy: deployStrategies[rel],
+			FileMode:       fileModes[rel],
 			Size:           info.Size(),
 			SHA256:         sum,
 		})
@@ -8302,6 +9074,11 @@ func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.
 		return deploy.Plan{}, err
 	}
 	mappings := active.Mappings
+	launchInputMappings, err := s.launchToolDynamicInputMappings(ctx, game, mods, mappings, stagingRoot)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	mappings = append(mappings, launchInputMappings...)
 	activationMappings, err := s.pluginActivationMappings(ctx, game, mods, mappings, managedFiles, stagingRoot)
 	if err != nil {
 		return deploy.Plan{}, err
@@ -8365,6 +9142,116 @@ func (s *Server) activeDeploymentMappings(ctx context.Context, game storage.Game
 		result.Mappings = append(result.Mappings, next...)
 	}
 	return result, nil
+}
+
+func (s *Server) launchToolDynamicInputMappings(ctx context.Context, game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, stagingRoot string) ([]deploy.FileMapping, error) {
+	appID := strings.TrimSpace(game.SteamAppID)
+	_, tool, required := s.games.RequiredPrimaryLaunchToolForSteamApp(appID, runtimeModsForRequirements(mods))
+	if !required || len(tool.DynamicInputs) == 0 {
+		return nil, nil
+	}
+	profileID, err := s.activeProfileID(ctx, appID, mods)
+	if err != nil {
+		return nil, err
+	}
+	generatedRoot := filepath.Join(stagingRoot, "_generated", "launch-tools", appID, strconv.FormatInt(profileID, 10), strings.TrimSpace(tool.ID))
+	if err := os.RemoveAll(generatedRoot); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(generatedRoot, 0o700); err != nil {
+		return nil, err
+	}
+	var out []deploy.FileMapping
+	for _, input := range tool.DynamicInputs {
+		switch strings.TrimSpace(input.Kind) {
+		case gameext.LaunchToolDynamicInputEnabledModFileList:
+			mapping, err := s.enabledModFileListLaunchInput(game, mods, mappings, generatedRoot, tool, input)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, mapping)
+		case gameext.LaunchToolDynamicInputGeneratedConfig:
+			return nil, fmt.Errorf("launch tool %q dynamic input %q uses generated-config, which is not implemented yet", tool.ID, input.ID)
+		default:
+			return nil, fmt.Errorf("launch tool %q dynamic input %q uses unsupported kind %q", tool.ID, input.ID, input.Kind)
+		}
+	}
+	if len(out) > 0 {
+		s.logger.Info("launch tool dynamic inputs generated", "app_id", appID, "tool_id", tool.ID, "profile_id", profileID, "inputs", len(out))
+	}
+	return out, nil
+}
+
+func (s *Server) enabledModFileListLaunchInput(game storage.Game, mods []storage.InstalledMod, mappings []deploy.FileMapping, generatedRoot string, tool gameext.LaunchToolSpec, input gameext.LaunchToolDynamicInputSpec) (deploy.FileMapping, error) {
+	sourceModTypes := canonicalSet(input.SourceModTypes)
+	eligibleMods := map[int64]struct{}{}
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		if _, ok := sourceModTypes[canonicalModType(installedModType(mod))]; ok {
+			eligibleMods[mod.ID] = struct{}{}
+		}
+	}
+	var paths []string
+	for _, mapping := range mappings {
+		if _, ok := eligibleMods[mapping.InstalledModID]; !ok {
+			continue
+		}
+		targetRelative := strings.TrimSpace(mapping.TargetRelative)
+		if targetRelative == "" {
+			continue
+		}
+		targetRoot := strings.TrimSpace(mapping.TargetRoot)
+		if targetRoot == "" {
+			targetRoot = game.GamePath
+		}
+		paths = append(paths, filepath.ToSlash(filepath.Join(targetRoot, filepath.FromSlash(targetRelative))))
+	}
+	sort.Strings(paths)
+	body := launchToolEnabledModFileListBody(game, tool, input, paths)
+	outputRel := filepath.ToSlash(strings.TrimSpace(input.OutputRelative))
+	sourcePath := filepath.Join(generatedRoot, filepath.FromSlash(outputRel))
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		return deploy.FileMapping{}, err
+	}
+	if err := os.WriteFile(sourcePath, []byte(body), 0o600); err != nil {
+		return deploy.FileMapping{}, err
+	}
+	sum, err := fileSHA256(sourcePath)
+	if err != nil {
+		return deploy.FileMapping{}, err
+	}
+	return deploy.FileMapping{
+		SourcePath:     sourcePath,
+		TargetRelative: outputRel,
+		Strategy:       deploy.StrategyCopy,
+		ChecksumSHA256: sum,
+	}, nil
+}
+
+func launchToolEnabledModFileListBody(game storage.Game, tool gameext.LaunchToolSpec, input gameext.LaunchToolDynamicInputSpec, paths []string) string {
+	var body strings.Builder
+	body.WriteString("# Automatically generated by Decky Mod Manager\n")
+	body.WriteString("# app_id=" + strings.TrimSpace(game.SteamAppID) + "\n")
+	body.WriteString("# launch_tool=" + strings.TrimSpace(tool.ID) + "\n")
+	body.WriteString("# input=" + strings.TrimSpace(input.ID) + "\n")
+	for _, path := range paths {
+		body.WriteString(path)
+		body.WriteByte('\n')
+	}
+	return body.String()
+}
+
+func canonicalSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = canonicalModType(value)
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
 }
 
 func (s *Server) defaultDeploymentStrategy(appID string) deploy.Strategy {
@@ -9043,18 +9930,20 @@ func pluginActivationFiles(spec gameext.PluginActivationSpec, native []string, d
 
 func pluginListLines(spec gameext.PluginActivationSpec, native []string, dynamic []pluginActivationEntry) []string {
 	switch strings.TrimSpace(spec.Format) {
-	case "original":
+	case gameext.PluginActivationFormatOriginal:
 		out := append([]string(nil), native...)
 		for _, entry := range dynamic {
 			out = append(out, entry.Name)
 		}
 		return out
-	default:
+	case gameext.PluginActivationFormatAsterisked:
 		out := make([]string, 0, len(dynamic))
 		for _, entry := range dynamic {
 			out = append(out, "*"+entry.Name)
 		}
 		return out
+	default:
+		return nil
 	}
 }
 
@@ -9118,10 +10007,17 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 	if info, err := os.Stat(stagingPath); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("installed mod %q staging path is missing; remove or reinstall this mod", mod.Name)
 	}
-	manifestFiles, err := stagedManifestFiles(mod.ManifestJSON)
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
 	if err != nil {
 		return nil, err
 	}
+	modType := strings.TrimSpace(manifest.ModType)
+	deploymentMode := s.games.ModTypeDeploymentModeForSteamApp(game.SteamAppID, modType)
+	eventHookOnly := deploymentMode == installplan.ModTypeDeploymentEventHook
+	if eventHookOnly && !s.games.HasEventHandlerForSteamApp(game.SteamAppID, "will-deploy") {
+		return nil, fmt.Errorf("installed mod %q uses event-hook deployment but the %s extension has no will-deploy handler", mod.Name, game.SteamAppID)
+	}
+	manifestFiles := manifest.Files
 	if len(manifestFiles) > 0 {
 		mappings := make([]deploy.FileMapping, 0, len(manifestFiles))
 		for _, file := range manifestFiles {
@@ -9130,6 +10026,9 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 			}
 			targetRelative := strings.TrimSpace(file.TargetRelative)
 			if targetRelative == "" {
+				if eventHookOnly {
+					continue
+				}
 				return nil, fmt.Errorf("installed mod %q has no target mapping; remove or reinstall this mod", mod.Name)
 			}
 			targetRoot, err := s.resolveManifestTargetRoot(ctx, game, file.TargetRoot)
@@ -9149,7 +10048,13 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 				ChecksumSHA256: file.SHA256,
 			})
 		}
+		if len(mappings) == 0 && eventHookOnly {
+			return nil, nil
+		}
 		return mappings, nil
+	}
+	if eventHookOnly {
+		return nil, nil
 	}
 	return nil, fmt.Errorf("installed mod %q does not have a deployable manifest; remove or reinstall this mod", mod.Name)
 }

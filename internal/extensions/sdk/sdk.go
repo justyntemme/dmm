@@ -31,8 +31,10 @@ type Registrar interface {
 	RegisterLaunchTool(LaunchToolSpec)
 	RegisterGameVersionProvider(GameVersionProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
+	RegisterUnmanagedMarker(UnmanagedMarkerSpec)
 	RegisterConflictIgnore(ConflictIgnoreSpec)
 	RegisterDeployIgnore(DeployIgnoreSpec)
+	RegisterPackedArchiveMutation(PackedArchiveMutationSpec)
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
 	RegisterLoadOrder(LoadOrderSpec)
@@ -114,13 +116,14 @@ type SourceRef struct {
 }
 
 type InstallerChoiceSpec struct {
-	ID           string
-	Name         string
-	Kind         string
-	ModType      string
-	TargetRoot   string
-	TargetRootID string
-	StopFolders  []string
+	ID                    string
+	Name                  string
+	Kind                  string
+	ModType               string
+	TargetRoot            string
+	TargetRootID          string
+	StopFolders           []string
+	DestinationPrefixMode string
 }
 
 type LaunchToolSpec struct {
@@ -130,12 +133,31 @@ type LaunchToolSpec struct {
 	Arguments          []string
 	RequiredFiles      []string
 	Variants           []LaunchToolVariantSpec
+	DynamicInputs      []LaunchToolDynamicInputSpec
 	Shell              bool
 	Detach             bool
 	Exclusive          bool
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
+}
+
+const (
+	InstallerChoiceDestinationPrefixModuleBaseName = "module-base-name"
+)
+
+const (
+	LaunchToolDynamicInputGeneratedConfig    = "generated-config"
+	LaunchToolDynamicInputEnabledModFileList = "enabled-mod-file-list"
+)
+
+type LaunchToolDynamicInputSpec struct {
+	ID             string
+	Name           string
+	Kind           string
+	SourceModTypes []string
+	OutputRelative string
+	ArgumentToken  string
 }
 
 type LaunchToolVariantSpec struct {
@@ -168,6 +190,11 @@ type GameVersionResult struct {
 	Source  string
 }
 
+const (
+	PluginActivationFormatOriginal   = "original"
+	PluginActivationFormatAsterisked = "asterisked"
+)
+
 type PluginActivationSpec struct {
 	ID                     string
 	Name                   string
@@ -185,6 +212,12 @@ type PluginActivationSpec struct {
 	SupportsBlueprintFiles bool
 }
 
+type UnmanagedMarkerSpec struct {
+	ID       string
+	Name     string
+	Patterns []string
+}
+
 type ConflictIgnoreSpec struct {
 	ID       string
 	Name     string
@@ -195,6 +228,16 @@ type DeployIgnoreSpec struct {
 	ID       string
 	Name     string
 	Patterns []string
+}
+
+type PackedArchiveMutationSpec struct {
+	ID                string
+	Name              string
+	PackageFormat     string
+	StateFileRelative string
+	TargetArchives    []string
+	RequiresEngine    string
+	ModTypes          []string
 }
 
 type MergeSpec struct {

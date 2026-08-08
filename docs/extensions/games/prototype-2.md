@@ -17,13 +17,14 @@
 ## Current DMM Capability
 
 - DMM registers the Nexus domain so Prototype 2 can be browsed through the existing browser-first Nexus flow.
-- All archives are blocked with a clear research message because no Vortex extension was found in the checked sources and observed mods use conflicting manual install models.
+- DMM supports narrow root ASI plugin archives, including `.asi`, matching `.ini`, and optional `dinput8.dll` sidecars.
+- TexMod packages, extracted RCF folders, standalone patchers, and broad root-copy archives remain blocked with a clear extension-owned message.
 - Required-file diagnostics verify `prototype2.exe`, `art.rcf`, and `scripts.rcf`.
 
 ## Beta Gaps
 
+- Live-test Prototype2Fix or another safe ASI plugin archive.
 - Add pattern-specific installers only after source/archive validation:
-  - root ASI/fix drops beside `prototype2.exe`
   - extracted `art`/RCF folder replacements
   - TexMod package handling and launch flow
   - standalone tools or patchers

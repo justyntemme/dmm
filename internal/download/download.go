@@ -25,6 +25,11 @@ type Result struct {
 	SHA256       string `json:"sha256,omitempty"`
 }
 
+type Progress struct {
+	BytesWritten int64
+	TotalBytes   int64
+}
+
 type StatusError struct {
 	StatusCode int
 	Status     string
@@ -39,12 +44,13 @@ func (err *StatusError) Error() string {
 }
 
 type Options struct {
-	URL      string
-	DestDir  string
-	FileName string
-	MaxBytes int64
-	Client   *http.Client
-	Resume   bool
+	URL        string
+	DestDir    string
+	FileName   string
+	MaxBytes   int64
+	Client     *http.Client
+	Resume     bool
+	OnProgress func(Progress)
 }
 
 func IsRetryable(err error) bool {
@@ -139,7 +145,9 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 
 	limited := io.LimitReader(resp.Body, opts.MaxBytes+1)
 	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(tmp, hash), limited)
+	progress := downloadProgressReporter(opts.OnProgress, 0, responseTotalBytes(resp, 0))
+	progress(0)
+	written, err := copyWithProgress(io.MultiWriter(tmp, hash), limited, progress)
 	closeErr := tmp.Close()
 	if err != nil {
 		return Result{}, err
@@ -219,7 +227,9 @@ func fetchResumable(ctx context.Context, opts Options, u *url.URL) (Result, erro
 	}
 	remaining := opts.MaxBytes - existing
 	limited := io.LimitReader(resp.Body, remaining+1)
-	written, copyErr := io.Copy(io.MultiWriter(out, hash), limited)
+	progress := downloadProgressReporter(opts.OnProgress, existing, responseTotalBytes(resp, existing))
+	progress(0)
+	written, copyErr := copyWithProgress(io.MultiWriter(out, hash), limited, progress)
 	closeErr := out.Close()
 	total := existing + written
 	if total > opts.MaxBytes {
@@ -241,6 +251,84 @@ func fetchResumable(ctx context.Context, opts Options, u *url.URL) (Result, erro
 		ContentType:  resp.Header.Get("Content-Type"),
 		SHA256:       hex.EncodeToString(hash.Sum(nil)),
 	}, nil
+}
+
+func copyWithProgress(dst io.Writer, src io.Reader, progress func(int64)) (int64, error) {
+	if progress == nil {
+		return io.Copy(dst, src)
+	}
+	writer := &progressWriter{dst: dst, progress: progress}
+	written, err := io.Copy(writer, src)
+	return written, err
+}
+
+type progressWriter struct {
+	dst      io.Writer
+	written  int64
+	progress func(int64)
+}
+
+func (writer *progressWriter) Write(p []byte) (int, error) {
+	n, err := writer.dst.Write(p)
+	if n > 0 {
+		writer.written += int64(n)
+		writer.progress(writer.written)
+	}
+	return n, err
+}
+
+func downloadProgressReporter(callback func(Progress), existing, total int64) func(int64) {
+	if callback == nil {
+		return func(int64) {}
+	}
+	if existing < 0 {
+		existing = 0
+	}
+	if total < 0 {
+		total = 0
+	}
+	return func(written int64) {
+		if written < 0 {
+			written = 0
+		}
+		callback(Progress{
+			BytesWritten: existing + written,
+			TotalBytes:   total,
+		})
+	}
+}
+
+func responseTotalBytes(resp *http.Response, existing int64) int64 {
+	if resp == nil {
+		return 0
+	}
+	if total := contentRangeTotal(resp.Header.Get("Content-Range")); total > 0 {
+		return total
+	}
+	if resp.ContentLength > 0 {
+		return existing + resp.ContentLength
+	}
+	return 0
+}
+
+func contentRangeTotal(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	slash := strings.LastIndex(value, "/")
+	if slash < 0 || slash == len(value)-1 {
+		return 0
+	}
+	total := strings.TrimSpace(value[slash+1:])
+	if total == "*" || total == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseInt(total, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return parsed
 }
 
 func partialSize(path string, maxBytes int64) (int64, error) {

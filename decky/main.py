@@ -247,6 +247,49 @@ class Plugin:
         self._log(f"add captured install accepted job={job}")
         return {"ok": True, "result": result}
 
+    async def local_archives(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "roots": [], "files": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "roots": [], "files": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/local-archives")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load Deck archive files.", "roots": [], "files": []}
+        files = result.get("files")
+        roots = result.get("roots")
+        if not isinstance(files, list):
+            return {"ok": False, "error": "Unexpected local archive response.", "roots": [], "files": []}
+        if not isinstance(roots, list):
+            roots = []
+        self._log(f"local archives loaded app_id={app_id} files={len(files)} roots={len(roots)}")
+        return {"ok": True, "roots": roots, "files": files}
+
+    async def import_local_archive(self, app_id, path, profile_id=0):
+        app_id = str(app_id or "").strip()
+        path = str(path or "").strip()
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        if not app_id or not path:
+            return {"ok": False, "error": "app_id and path are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = {"path": path, "source": "decky-plugin-local-archive"}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        result, error = self._backend_json_result(
+            "POST",
+            f"/api/games/{urllib.parse.quote(app_id)}/local-archives/import",
+            json.dumps(payload).encode("utf-8"),
+        )
+        if result is None:
+            return {"ok": False, "error": error or "Unable to import Deck archive file."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"local archive import requested app_id={app_id} profile_id={profile_id} path={path} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def jobs(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "jobs": []}
@@ -583,6 +626,28 @@ class Plugin:
         self._log(f"install candidates cleared app_id={app_id} result={result}")
         return {"ok": True, "result": result}
 
+    async def retry_install_candidate(self, app_id, candidate_id):
+        app_id = str(app_id or "").strip()
+        candidate_id = str(candidate_id or "").strip()
+        if not app_id or not candidate_id:
+            return {"ok": False, "error": "app_id and candidate_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        path = f"/api/games/{urllib.parse.quote(app_id)}/install-candidates/{urllib.parse.quote(candidate_id)}/retry"
+        result, error = self._backend_json_result("POST", path)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to retry installer item."}
+        job = result.get("job") if isinstance(result, dict) else None
+        candidate = result.get("candidate") if isinstance(result, dict) else None
+        mod = result.get("mod") if isinstance(result, dict) else None
+        self._log(
+            "install candidate retry requested "
+            f"app_id={app_id} candidate_id={candidate_id} "
+            f"job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''} "
+            f"candidate_status={(candidate or {}).get('status', '') if isinstance(candidate, dict) else ''}"
+        )
+        return {"ok": True, "result": result, "job": job, "candidate": candidate, "mod": mod}
+
     async def apply_install_candidate(self, app_id, candidate_id, selections, profile_id=0):
         app_id = str(app_id or "").strip()
         candidate_id = str(candidate_id or "").strip()
@@ -603,6 +668,9 @@ class Plugin:
         result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/install-candidates/{urllib.parse.quote(candidate_id)}/apply", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to apply installer choices."}
+        job = result.get("job") if isinstance(result, dict) else None
+        if isinstance(job, dict) and str(job.get("status") or "").lower() == "failed":
+            return {"ok": False, "error": job.get("message") or "Unable to apply installer choices.", "result": result}
         self._log(f"installer choices applied app_id={app_id} candidate_id={candidate_id} profile_id={profile_id}")
         return {"ok": True, "result": result}
 
@@ -679,17 +747,18 @@ class Plugin:
         self._log(f"profile mod removed app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id}")
         return {"ok": True, "result": result}
 
-    async def reinstall_game_mod(self, app_id, installed_mod_id):
+    async def reinstall_game_mod(self, app_id, installed_mod_id, prompt_installer_choices=False):
         app_id = str(app_id or "").strip()
         installed_mod_id = str(installed_mod_id or "").strip()
         if not app_id or not installed_mod_id:
             return {"ok": False, "error": "app_id and installed_mod_id are required."}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
-        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}/reinstall", b"{}")
+        payload = json.dumps({"prompt_installer_choices": bool(prompt_installer_choices)}).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/mods/{urllib.parse.quote(installed_mod_id)}/reinstall", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to reinstall mod."}
-        self._log(f"mod reinstalled app_id={app_id} installed_mod_id={installed_mod_id}")
+        self._log(f"mod reinstall requested app_id={app_id} installed_mod_id={installed_mod_id} prompt_installer_choices={bool(prompt_installer_choices)}")
         return {"ok": True, "result": result}
 
     async def update_game_mod(self, app_id, installed_mod_id):

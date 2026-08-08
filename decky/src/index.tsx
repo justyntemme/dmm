@@ -366,6 +366,8 @@ type ManagedMod = {
   source_game_domain: string;
   source_mod_id: string;
   source_file_id: string;
+  mod_type?: string;
+  planner_id?: string;
   update?: ModUpdate;
 };
 
@@ -483,6 +485,15 @@ type InstallCandidate = {
   source_mod_id: string;
   source_file_id: string;
   target_profile_id?: number;
+};
+
+type LocalArchiveFile = {
+  path: string;
+  name: string;
+  extension: string;
+  bytes: number;
+  root: string;
+  modified_at: string;
 };
 
 type FomodInstaller = {
@@ -759,6 +770,28 @@ const deckyRuntimeStyles = `
   background: #27364a !important;
   border-color: #7dd3fc !important;
   box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
+}
+.dmm-installer-choice-scroll {
+  border-right: 1px solid rgba(125, 211, 252, 0.32);
+  scrollbar-color: #7dd3fc rgba(15, 23, 42, 0.92);
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+}
+.dmm-installer-choice-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.dmm-installer-choice-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 999px;
+}
+.dmm-installer-choice-scroll::-webkit-scrollbar-thumb {
+  background: #7dd3fc;
+  border: 2px solid rgba(15, 23, 42, 0.92);
+  border-radius: 999px;
+}
+.dmm-installer-choice-scroll::-webkit-scrollbar-thumb:hover {
+  background: #99f6e4;
 }
 `;
 
@@ -1049,6 +1082,7 @@ function showLaunchToast(title: string, body: string, failed = false) {
 const notifiedJobStates = new Map<string, string>();
 const shownInstallerChoiceModals = new Set<string>();
 const dismissedInstallerChoiceModals = new Set<string>();
+const applyingInstallerChoiceCandidates = new Set<string>();
 const completedLaunchActions = new Set<string>();
 const launchActionAttempts = new Map<string, number>();
 const completedWorkshopActions = new Set<string>();
@@ -1106,13 +1140,31 @@ function deckyJobBelongsToAppID(job: Job, appID: string) {
 }
 
 function deckyActionJobsForGame(jobs: Job[], appID: string) {
-  if (!appID) return [];
-  return jobs.filter((job) => isDeckyActionCenterJob(job) && deckyJobBelongsToAppID(job, appID));
+	if (!appID) return [];
+	return jobs.filter((job) => isDeckyActionCenterJob(job) && deckyJobBelongsToAppID(job, appID));
+}
+
+function deckyJobHasInstallCandidateReview(job: Job, candidates: InstallCandidate[]) {
+  if (job.status === "queued" || job.status === "waiting" || job.status === "running") return false;
+  return candidates.some((candidate) => deckyJobMatchesInstallCandidate(job, candidate));
+}
+
+function deckyJobMatchesInstallCandidate(job: Job, candidate: InstallCandidate) {
+  const payload = job.payload ?? {};
+  const candidateID = String(payload.candidate_id ?? "").trim();
+  if (candidateID && candidateID === String(candidate.id)) return true;
+  return (
+    String(job.app_id || payload.app_id || "").trim() === candidate.steam_app_id &&
+    String(job.catalog || payload.catalog || "").trim() === candidate.catalog &&
+    String(payload.game_domain || "").trim() === candidate.source_game_domain &&
+    String(payload.mod_id || "").trim() === candidate.source_mod_id &&
+    String(payload.file_id || "").trim() === candidate.source_file_id
+  );
 }
 
 function deckyJobStatusLabel(job: Job) {
-  const status = job.status.replace(/[_-]+/g, " ");
-  return status.charAt(0).toUpperCase() + status.slice(1);
+	const status = job.status.replace(/[_-]+/g, " ");
+	return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function extensionNoticeToolName(job: Job) {
@@ -1396,6 +1448,63 @@ function compactNumber(value: number | undefined) {
   return normalized.toLocaleString(undefined, { maximumFractionDigits: 0, notation: normalized >= 10_000 ? "compact" : "standard" });
 }
 
+function formatBytes(value: number | undefined) {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toLocaleString(undefined, { maximumFractionDigits: size >= 10 || unitIndex === 0 ? 0 : 1 })} ${units[unitIndex]}`;
+}
+
+function jobDownloadProgress(job: Job) {
+  const payload = job.payload ?? {};
+  const written = Number(payload.download_bytes_written ?? 0);
+  const total = Number(payload.download_total_bytes ?? 0);
+  if (!Number.isFinite(written) || written <= 0) return null;
+  const boundedTotal = Number.isFinite(total) && total > 0 ? total : 0;
+  const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (written / boundedTotal) * 100)) : 0;
+  return {
+    percent,
+    label: boundedTotal > 0 ? `${formatBytes(written)} / ${formatBytes(boundedTotal)}` : `${formatBytes(written)} downloaded`
+  };
+}
+
+function DeckyJobProgress({ job }: { job: Job }) {
+  const progress = jobDownloadProgress(job);
+  if (!progress) return null;
+  return (
+    <div style={{ display: "grid", gap: "5px", marginTop: "2px", minWidth: 0, width: "100%" }}>
+      <div
+        style={{
+          background: "#111827",
+          border: "1px solid #303741",
+          borderRadius: "999px",
+          height: "7px",
+          overflow: "hidden",
+          width: "100%"
+        }}
+      >
+        <div
+          style={{
+            background: "#7dd3fc",
+            height: "100%",
+            minWidth: "7px",
+            width: `${progress.percent > 0 ? progress.percent : 100}%`
+          }}
+        />
+      </div>
+      <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 700, lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
+        {progress.label}
+      </div>
+    </div>
+  );
+}
+
 function focusDeckyRef(ref: { current: HTMLElement | null }, label: string, logDetail: Record<string, string | number | boolean> = {}) {
   window.setTimeout(() => {
     const target = ref.current;
@@ -1554,6 +1663,16 @@ function isHTTPProviderPage(value: string) {
   }
 }
 
+function isNexusHTTPPage(value: string) {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") && host === "nexusmods.com" && /^\/[^/]+\/mods\/\d+/.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function captureNXMFromDMMBrowser(rawURL: string, appID: string, profileID: number, source: string) {
   const url = rawURL.trim();
   await logFrontendEvent("dmm browser nxm capture requested", {
@@ -1581,7 +1700,7 @@ async function captureNXMFromDMMBrowser(rawURL: string, appID: string, profileID
     return;
   }
   const job = result.result?.job;
-  if (job) showJobToast(job);
+  if (job) markJobToastShown(job);
   await logFrontendEvent("dmm browser nxm captured", {
     app_id: appID,
     profile_id: profileID,
@@ -1835,6 +1954,19 @@ function isJob(value: unknown): value is Job {
   return Boolean(value && typeof value === "object" && typeof (value as Job).id === "string" && typeof (value as Job).type === "string");
 }
 
+function jobStatusShouldToast(job: Job) {
+  if (job.type === "captured-install") {
+    return ["queued", "waiting", "running", "completed", "failed"].includes(job.status);
+  }
+  if (job.type === "installer-choice" || job.type === "extension-notice") {
+    return ["waiting", "completed", "failed"].includes(job.status);
+  }
+  if (["deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type)) {
+    return ["completed", "failed"].includes(job.status);
+  }
+  return ["completed", "failed"].includes(job.status);
+}
+
 function isUISettings(value: unknown): value is UISettings {
   return Boolean(value && typeof value === "object");
 }
@@ -1883,6 +2015,12 @@ function rememberJobToastState(jobID: string, stateKey: string) {
   } catch (_err) {
     // Decky can deny localStorage in development contexts; in-memory de-dupe still protects the active instance.
   }
+}
+
+function markJobToastShown(job: Job) {
+  const stateKey = `${job.status}:${job.message || ""}`;
+  notifiedJobStates.set(job.id, stateKey);
+  rememberJobToastState(job.id, stateKey);
 }
 
 function installerForCandidate(candidate: InstallCandidate): FomodInstaller | null {
@@ -1979,17 +2117,23 @@ function selectionCount(selections: Record<string, string[]> | null | undefined)
 
 async function maybeShowJobToast(job: Job, { seed = false, source = "event" } = {}) {
   if (!isNotifiableJob(job)) return;
+  if (!jobStatusShouldToast(job)) return;
   const stateKey = `${job.status}:${job.message || ""}`;
   const previous = notifiedJobStates.get(job.id) ?? storedJobToastState(job.id);
   notifiedJobStates.set(job.id, stateKey);
   const updatedAt = Date.parse(job.updated_at || "");
   const recent = Number.isFinite(updatedAt) && Date.now() - updatedAt < 120_000;
   const requireRecent = seed || source === "event" || source === "event-snapshot";
-  if (previous !== stateKey && (!requireRecent || recent) && ["waiting", "running", "completed", "failed"].includes(job.status)) {
+  if (previous !== stateKey && (!requireRecent || recent)) {
     rememberJobToastState(job.id, stateKey);
     await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, seed, recent, type: job.type, source });
     showJobToast(job);
   }
+}
+
+async function maybeShowDeckyActionToast(job: Job | null | undefined, source = "decky-action") {
+  if (!job) return;
+  await maybeShowJobToast(job, { source });
 }
 
 async function seedJobNotifications({ seed = false } = {}) {
@@ -2410,6 +2554,8 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
   const currentStepReady = fomodStepValid(currentStep, selections);
   const installerReady = fomodInstallerValid(installer, selections);
   const lastStep = currentStepIndex >= steps.length - 1;
+  const primaryActionDisabled = !installer || !currentStepReady || (lastStep && !installerReady) || busy;
+  const primaryActionLabel = busy ? "Applying" : lastStep ? "Apply Choices" : "Next";
 
   useEffect(() => {
     setCandidate(props.candidate);
@@ -2461,6 +2607,21 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
     });
   }
 
+  function togglePluginSelection(group: FomodGroup, plugin: FomodPlugin) {
+    if (busy || fomodPluginLocked(group, plugin)) return;
+    const type = fomodGroupType(group);
+    const selected = pluginSelected(group, plugin);
+    if (type === "selectexactlyone") {
+      setPluginSelection(group, plugin, true);
+      return;
+    }
+    if (type === "selectatmostone") {
+      setPluginSelection(group, plugin, !selected);
+      return;
+    }
+    setPluginSelection(group, plugin, !selected);
+  }
+
   async function saveChoices(nextSelections: Record<string, string[]>) {
     try {
       const result = await call<[string, number, Record<string, string[]>], { ok: boolean; error?: string; candidate?: InstallCandidate }>(
@@ -2491,6 +2652,8 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
     }
     setBusy(true);
     setMessage("");
+    const candidateKey = String(candidate.id);
+    applyingInstallerChoiceCandidates.add(candidateKey);
     try {
       const targetProfileID = props.profileID || candidate.target_profile_id || 0;
       const result = await call<[string, number, Record<string, string[]>, number], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>(
@@ -2501,15 +2664,29 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
         targetProfileID
       );
       if (!result.ok) {
+        applyingInstallerChoiceCandidates.delete(candidateKey);
         setMessage(result.error || "Unable to apply installer choices.");
         await logFrontendEvent("installer choice modal apply failed", { app_id: props.appID, candidate_id: candidate.id, profile_id: targetProfileID, error: result.error || "" });
         return;
       }
-      if (result.result?.job) showJobToast(result.result.job);
+      const applyJob = result.result?.job;
+      await maybeShowDeckyActionToast(applyJob, "decky-installer-choice");
+      if (applyJob?.status === "failed") {
+        applyingInstallerChoiceCandidates.delete(candidateKey);
+        setMessage(applyJob.message || "Unable to apply installer choices.");
+        await logFrontendEvent("installer choice modal apply job failed", {
+          app_id: props.appID,
+          candidate_id: candidate.id,
+          job_id: applyJob.id,
+          message: applyJob.message || ""
+        });
+        return;
+      }
       await logFrontendEvent("installer choice modal applied", { app_id: props.appID, candidate_id: candidate.id, profile_id: targetProfileID });
       props.onApplied();
       props.closeModal();
     } catch (err) {
+      applyingInstallerChoiceCandidates.delete(candidateKey);
       const error = err instanceof Error ? err.message : String(err);
       setMessage(error);
       await logFrontendEvent("installer choice modal apply threw", { app_id: props.appID, candidate_id: candidate.id, error });
@@ -2528,109 +2705,168 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
   }
 
   return (
-    <ConfirmModal
-      strTitle={candidate.name}
-      strDescription={
-        <div style={{ display: "grid", gap: "12px", maxHeight: "62vh", overflowY: "auto", paddingRight: "4px" }}>
-          <div style={{ color: "#a1a1aa" }}>{candidate.reason || "Choose installer options before DMM adds this mod to the profile."}</div>
+    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable
+        flow-children="down"
+        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+        style={{
+          boxSizing: "border-box",
+          color: "#f8fafc",
+          display: "grid",
+          gap: "10px",
+          gridTemplateRows: "auto minmax(0, 1fr)",
+          height: "min(720px, calc(100vh - 96px))",
+          maxHeight: "calc(100vh - 96px)",
+          minHeight: "420px",
+          overflow: "hidden",
+          padding: "4px",
+          width: "100%"
+        }}
+      >
+        <div style={{ display: "grid", gap: "4px", minWidth: 0, width: "100%" }}>
+          <div style={{ color: "#f8fafc", fontSize: "16px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{candidate.name}</div>
+          <div style={{ color: currentStepReady ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800 }}>
+            {steps.length > 0 ? `Step ${currentStepIndex + 1} of ${steps.length}` : "No visible choices"} · {currentStepReady ? "Ready" : "Needs selection"}
+          </div>
+        </div>
+
+        <Focusable
+          className="dmm-installer-choice-scroll"
+          flow-children="down"
+          navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+          style={{
+            alignContent: "start",
+            boxSizing: "border-box",
+            display: "grid",
+            gridAutoRows: "max-content",
+            gap: "10px",
+            minHeight: 0,
+            overflowX: "hidden",
+            overflowY: "auto",
+            paddingLeft: "10px",
+            paddingBottom: "36px",
+            paddingRight: "4px",
+            scrollPaddingBlock: "14px",
+            width: "100%"
+          }}
+        >
+          <div style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", color: "#a1a1aa", fontSize: "12px", lineHeight: 1.35, padding: "10px", overflowWrap: "anywhere" }}>
+            {candidate.reason || "Choose installer options before DMM adds this mod to the profile."}
+          </div>
           {selectedChoices > 0 && (
-            <div style={{ border: "1px solid #365244", borderRadius: "6px", color: "#99f6e4", padding: "8px" }}>
+            <div style={{ border: "1px solid #365244", borderRadius: "6px", color: "#99f6e4", fontSize: "12px", lineHeight: 1.3, padding: "8px", overflowWrap: "anywhere" }}>
               {selectedChoices} choice{selectedChoices === 1 ? "" : "s"} preselected from DMM's saved/default installer state.
             </div>
           )}
-          {!installer && <div style={{ color: "#f87171" }}>Installer choices are not available for this action.</div>}
-          {installer && (
-            <div style={{ border: "1px solid rgba(125, 211, 252, 0.28)", borderRadius: "6px", display: "grid", gap: "10px", padding: "10px" }}>
-              <div style={{ alignItems: "center", display: "flex", gap: "8px", justifyContent: "space-between" }}>
-                <div style={{ display: "grid", gap: "2px", minWidth: 0 }}>
-                  <strong>{installer.name || "Installer Choices"}</strong>
-                  <small style={{ color: "#a1a1aa" }}>{steps.length > 0 ? `Step ${currentStepIndex + 1} of ${steps.length}` : "No visible choices"}</small>
-                </div>
-                <span style={{ color: currentStepReady ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800 }}>{currentStepReady ? "Ready" : "Needs selection"}</span>
+          {!installer && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>Installer choices are not available for this action.</div>}
+          {installer && currentStep ? (
+            <section style={{ display: "grid", gap: "10px" }}>
+              <div style={{ background: "#111827", border: "1px solid rgba(125, 211, 252, 0.28)", borderRadius: "6px", display: "grid", gap: "4px", padding: "10px" }}>
+                <strong>{installer.name || "Installer Choices"}</strong>
+                <small style={{ color: "#a1a1aa" }}>{currentStep.name}</small>
               </div>
-              {currentStep ? (
-                <section style={{ display: "grid", gap: "8px" }}>
-                  <div style={{ fontWeight: 800 }}>{currentStep.name}</div>
-                  {currentStep.groups?.map((group) => (
-                    <fieldset key={group.id} style={{ border: `1px solid ${fomodGroupValid(group, selections) ? "#303741" : "#fbbf24"}`, borderRadius: "6px", display: "grid", gap: "8px", margin: 0, padding: "10px" }}>
-                      <legend style={{ color: "#7dd3fc", fontWeight: 800, padding: "0 4px" }}>{group.name}</legend>
-                      {group.description && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35, overflowWrap: "anywhere" }}>{group.description}</div>}
-                      {fomodGroupIsText(group) ? (
-                        <div style={{ display: "grid", gap: "6px" }}>
-                          <TextField
-                            label=""
-                            value={groupTextValue(group)}
-                            disabled={busy}
-                            onChange={(event) => setGroupTextSelection(group, event.currentTarget.value, false)}
-                            onBlur={(event) => setGroupTextSelection(group, event.currentTarget.value, true)}
-                          />
-                          {group.placeholder && <small style={{ color: "#a1a1aa" }}>Example: {group.placeholder}</small>}
-                        </div>
-                      ) : (
-                        <>
-                          {fomodGroupType(group) === "selectatmostone" && (
-                            <label style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
-                              <input
-                                type="radio"
-                                name={`candidate-${candidate.id}-${group.id}`}
-                                checked={(selections[group.id] ?? []).length === 0}
-                                disabled={busy}
-                                onChange={() => clearGroupSelection(group)}
-                              />
-                              <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
-                                <strong>None</strong>
-                                <small style={{ color: "#a1a1aa" }}>Do not install an option from this group.</small>
-                              </span>
-                            </label>
-                          )}
-                          {group.plugins?.map((plugin) => (
-                            <label key={plugin.id} style={{ alignItems: "flex-start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)", opacity: fomodPluginSelectable(plugin) ? 1 : 0.58 }}>
+              {currentStep.groups?.map((group) => (
+                <div key={group.id} style={{ border: `1px solid ${fomodGroupValid(group, selections) ? "#303741" : "#fbbf24"}`, borderRadius: "6px", display: "grid", gap: "8px", padding: "10px" }}>
+                  <div style={{ color: "#7dd3fc", fontWeight: 900 }}>{group.name}</div>
+                  {group.description && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35, overflowWrap: "anywhere" }}>{group.description}</div>}
+                  {fomodGroupIsText(group) ? (
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      <TextField
+                        label=""
+                        value={groupTextValue(group)}
+                        disabled={busy}
+                        onChange={(event) => setGroupTextSelection(group, event.currentTarget.value, false)}
+                        onBlur={(event) => setGroupTextSelection(group, event.currentTarget.value, true)}
+                      />
+                      {group.placeholder && <small style={{ color: "#a1a1aa" }}>Example: {group.placeholder}</small>}
+                    </div>
+                  ) : (
+                    <Focusable flow-children="down" style={{ display: "grid", gap: "8px" }}>
+                      {fomodGroupType(group) === "selectatmostone" && (
+                        <Focusable
+                          className="dmm-sidebar-row"
+                          focusClassName="dmm-sidebar-row-focused"
+                          onActivate={() => {
+                            if (!busy) clearGroupSelection(group);
+                          }}
+                          onClick={() => {
+                            if (!busy) clearGroupSelection(group);
+                          }}
+                          style={{ ...deckyCompositeRowStyle(false, (selections[group.id] ?? []).length === 0), opacity: busy ? 0.62 : 1, padding: "10px" }}
+                        >
+                          <div style={{ alignItems: "start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
+                            <input type="radio" readOnly tabIndex={-1} checked={(selections[group.id] ?? []).length === 0} style={{ marginTop: "2px", pointerEvents: "none" }} />
+                            <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+                              <strong>None</strong>
+                              <small style={{ color: "#a1a1aa" }}>Do not install an option from this group.</small>
+                            </span>
+                          </div>
+                        </Focusable>
+                      )}
+                      {group.plugins?.map((plugin) => {
+                        const selected = pluginSelected(group, plugin);
+                        const locked = fomodPluginLocked(group, plugin);
+                        const selectable = fomodPluginSelectable(plugin);
+                        return (
+                          <Focusable
+                            key={plugin.id}
+                            className="dmm-sidebar-row"
+                            focusClassName="dmm-sidebar-row-focused"
+                            onActivate={() => togglePluginSelection(group, plugin)}
+                            onClick={() => togglePluginSelection(group, plugin)}
+                            style={{ ...deckyCompositeRowStyle(false, selected), opacity: busy || !selectable ? 0.58 : locked ? 0.78 : 1, padding: "10px" }}
+                          >
+                            <div style={{ alignItems: "start", display: "grid", gap: "8px", gridTemplateColumns: "22px minmax(0, 1fr)" }}>
                               <input
                                 type={fomodGroupInputType(group)}
-                                name={`candidate-${candidate.id}-${group.id}`}
-                                checked={pluginSelected(group, plugin)}
-                                disabled={busy || fomodPluginLocked(group, plugin)}
-                                onChange={(event) => setPluginSelection(group, plugin, event.currentTarget.checked)}
+                                readOnly
+                                tabIndex={-1}
+                                checked={selected}
+                                style={{ marginTop: "2px", pointerEvents: "none" }}
                               />
                               <span style={{ display: "grid", gap: "3px", minWidth: 0 }}>
                                 <strong>{plugin.name}</strong>
                                 {fomodPluginType(plugin) && <small style={{ color: "#a1a1aa" }}>{fomodPluginType(plugin)}</small>}
-                                {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", overflowWrap: "anywhere" }}>{plugin.description}</em>}
+                                {plugin.description && <em style={{ color: "#d4d4d8", fontStyle: "normal", lineHeight: 1.3, overflowWrap: "anywhere" }}>{plugin.description}</em>}
                               </span>
-                            </label>
-                          ))}
-                        </>
-                      )}
-                      {!fomodGroupValid(group, selections) && <div style={{ color: "#fbbf24", fontSize: "11px" }}>This group needs a valid selection before continuing.</div>}
-                    </fieldset>
-                  ))}
-                </section>
-              ) : (
-                <div style={{ color: "#a1a1aa" }}>This installer has no visible choices. Apply it to add the mod to the profile.</div>
-              )}
-              <div style={{ alignItems: "center", display: "flex", gap: "8px", justifyContent: "space-between" }}>
-                <button
-                  type="button"
-                  disabled={busy || currentStepIndex === 0}
-                  onClick={() => setStepIndex(Math.max(0, currentStepIndex - 1))}
-                  style={{ minHeight: "34px", padding: "6px 10px" }}
-                >
-                  Back
-                </button>
-                <span style={{ color: "#a1a1aa", fontSize: "11px" }}>{lastStep ? "Ready to apply" : "Continue through the installer"}</span>
-              </div>
-            </div>
-          )}
+                            </div>
+                          </Focusable>
+                        );
+                      })}
+                    </Focusable>
+                  )}
+                  {!fomodGroupValid(group, selections) && <div style={{ color: "#fbbf24", fontSize: "11px" }}>This group needs a valid selection before continuing.</div>}
+                </div>
+              ))}
+            </section>
+          ) : installer ? (
+            <div style={{ color: "#a1a1aa" }}>This installer has no visible choices. Apply it to add the mod to the profile.</div>
+          ) : null}
           {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
-        </div>
-      }
-      strOKButtonText={busy ? "Applying..." : lastStep ? "Apply Choices" : "Next"}
-      strCancelButtonText="Later"
-      bOKDisabled={busy || !installer || !currentStepReady || (lastStep && !installerReady)}
-      onOK={continueOrApply}
-      onCancel={props.closeModal}
-      closeModal={props.closeModal}
-    />
+
+          <Focusable className="dmm-action-grid" flow-children="right" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={deckyActionGridStyle(currentStepIndex > 0 ? 3 : 2)}>
+            {currentStepIndex > 0 && (
+              <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => setStepIndex(Math.max(0, currentStepIndex - 1))} onClick={() => setStepIndex(Math.max(0, currentStepIndex - 1))} style={deckyCompactActionStyle("neutral", busy)}>
+                Back
+              </Focusable>
+            )}
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={props.closeModal} onClick={props.closeModal} style={deckyCompactActionStyle("neutral")}>
+              Later
+            </Focusable>
+            <Focusable
+              className="dmm-focus-card"
+              focusClassName="dmm-focus-card-focused"
+              onActivate={continueOrApply}
+              onClick={continueOrApply}
+              style={{ ...deckyCompactActionStyle("neutral", primaryActionDisabled), opacity: primaryActionDisabled ? 0.56 : 1 }}
+            >
+              {primaryActionLabel}
+            </Focusable>
+          </Focusable>
+        </Focusable>
+      </Focusable>
+    </ModalRoot>
   );
 }
 
@@ -2651,6 +2887,10 @@ async function maybeShowInstallerChoiceModal(job: Job) {
   const candidateID = Number.parseInt(String(job.payload?.candidate_id ?? ""), 10);
   if (!appID || !Number.isFinite(candidateID)) return;
   const key = String(candidateID);
+  if (applyingInstallerChoiceCandidates.has(key)) {
+    await logFrontendEvent("installer choice modal skipped while apply is in progress", { app_id: appID, candidate_id: candidateID, job_id: job.id });
+    return;
+  }
   if (shownInstallerChoiceModals.has(key)) return;
   if (dismissedInstallerChoiceModals.has(key)) {
     await logFrontendEvent("installer choice modal skipped after user dismissed auto display", { app_id: appID, candidate_id: candidateID });
@@ -2680,6 +2920,11 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
   const key = String(candidate.id);
   if (shownInstallerChoiceModals.has(key)) return;
   if (source !== "event") dismissedInstallerChoiceModals.delete(key);
+  if (candidate.status === "blocked") {
+    await logFrontendEvent("installer choice modal skipped for blocked candidate", { app_id: appID, candidate_id: candidate.id, source });
+    showLaunchToast("DMM installer needs review", candidate.reason || "Open the phone UI to review this installer item.", true);
+    return;
+  }
   if (!installerForCandidate(candidate)) {
     await logFrontendEvent("installer choice modal skipped for candidate without installer", { app_id: appID, candidate_id: candidate.id, source });
     showLaunchToast("DMM installer choices unavailable", "Open the phone UI to review this installer item.", false);
@@ -2702,8 +2947,8 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
         closeModal={closeModal}
         onApplied={() => {
           applied = true;
+          applyingInstallerChoiceCandidates.add(key);
           shownInstallerChoiceModals.delete(key);
-          dismissedInstallerChoiceModals.delete(key);
           void seedJobNotifications({ seed: true });
           void syncLaunchActions();
           onApplied?.();
@@ -2840,15 +3085,61 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     void searchMods(sort, timeWindow, offset, true);
   }
 
+  function consumeNexusBrowserGamepadEvent(event?: GamepadEvent | { preventDefault?: () => void; stopPropagation?: () => void; stopImmediatePropagation?: () => void }) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+  }
+
+  function searchFromGamepad(source: string, event?: GamepadEvent) {
+    consumeNexusBrowserGamepadEvent(event);
+    void logFrontendEvent("nexus browser modal gamepad search requested", {
+      app_id: props.appID,
+      game_domain: props.gameDomain,
+      source,
+      button: event?.detail?.button ?? 0,
+      repeat: Boolean(event?.detail?.is_repeat)
+    });
+    if (event?.detail?.is_repeat) return;
+    submitSearch();
+  }
+
+  function handleNexusBrowserButtonDown(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.TRIGGER_RIGHT) {
+      searchFromGamepad("trigger-right-down", event);
+    }
+  }
+
+  function handleNexusBrowserButtonUp(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.TRIGGER_RIGHT) {
+      consumeNexusBrowserGamepadEvent(event);
+      void logFrontendEvent("nexus browser modal trigger release consumed", {
+        app_id: props.appID,
+        game_domain: props.gameDomain,
+        button: event.detail.button
+      });
+    }
+  }
+
+  function absorbNexusBrowserModalCancel() {
+    void logFrontendEvent("nexus browser modal cancel absorbed", {
+      app_id: props.appID,
+      game_domain: props.gameDomain
+    });
+  }
+
   useEffect(() => {
     void searchMods("updated", "all", 0, false);
   }, []);
 
   return (
-    <ModalRoot closeModal={props.closeModal} onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+    <ModalRoot onCancel={absorbNexusBrowserModalCancel} bCancelDisabled bAllowFullSize bHideCloseIcon>
       <style>{deckyRuntimeStyles}</style>
       <Focusable
+        actionDescriptionMap={{ [GamepadButton.TRIGGER_RIGHT]: "Search" }}
         flow-children="down"
+        onButtonDown={handleNexusBrowserButtonDown}
+        onButtonUp={handleNexusBrowserButtonUp}
         navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
         style={{
           boxSizing: "border-box",
@@ -2894,12 +3185,16 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           }}
         >
           <div style={{ background: "#0b1220", border: "1px solid #303741", borderRadius: "6px", boxSizing: "border-box", display: "grid", gap: "8px", padding: "8px", width: "100%" }}>
-            <input
+            <TextField
               aria-label="Search Nexus Mods"
-              placeholder="Search Nexus Mods"
-              style={deckyCompactInputStyle}
+              label="Search Nexus Mods"
               value={query}
+              bShowClearAction
+              focusOnMount
               onChange={(event) => setQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitSearch();
+              }}
             />
             <Focusable flow-children="right" style={{ ...deckyActionGridStyle(3), gap: "8px" }}>
               <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={cycleSort} onClick={cycleSort} style={deckyCompactActionStyle("neutral")}>
@@ -2912,7 +3207,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
                 {vortexOnly ? "Vortex Only" : "All Mods"}
               </Focusable>
             </Focusable>
-            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" preferredFocus onActivate={submitSearch} onClick={submitSearch} style={deckyCompactActionStyle("neutral", busy)}>
+            <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={submitSearch} onClick={submitSearch} style={deckyCompactActionStyle("neutral", busy)}>
               {busy ? "Searching" : "Search"}
             </Focusable>
           </div>
@@ -2996,6 +3291,7 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
     await maybeShowJobToast(event.payload, { source: "event" });
     if (event.payload.type === "installer-choice" && event.payload.status !== "waiting" && event.payload.payload?.candidate_id) {
       const candidateKey = String(event.payload.payload.candidate_id);
+      applyingInstallerChoiceCandidates.delete(candidateKey);
       shownInstallerChoiceModals.delete(candidateKey);
       dismissedInstallerChoiceModals.delete(candidateKey);
     }
@@ -3300,6 +3596,8 @@ function DeckyModManagerRoute() {
   const [deckyMods, setDeckyMods] = useState<ManagedMod[]>([]);
   const [deckyJobs, setDeckyJobs] = useState<Job[]>([]);
   const [deckyInstallCandidates, setDeckyInstallCandidates] = useState<InstallCandidate[]>([]);
+  const [deckyLocalArchiveRoots, setDeckyLocalArchiveRoots] = useState<string[]>([]);
+  const [deckyLocalArchives, setDeckyLocalArchives] = useState<LocalArchiveFile[]>([]);
   const [deckyWorkshopItems, setDeckyWorkshopItems] = useState<WorkshopItem[]>([]);
   const [deckyWorkshopSupported, setDeckyWorkshopSupported] = useState<boolean>(false);
   const [deckyLoadOrder, setDeckyLoadOrder] = useState<PluginLoadOrder | null>(null);
@@ -3317,6 +3615,8 @@ function DeckyModManagerRoute() {
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
   const [busyJobID, setBusyJobID] = useState<string>("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [busyCandidateID, setBusyCandidateID] = useState<number | null>(null);
+  const [busyLocalArchivePath, setBusyLocalArchivePath] = useState<string>("");
   const [modUpdateBusy, setModUpdateBusy] = useState<boolean>(false);
   const [busyWorkshopKey, setBusyWorkshopKey] = useState<string>("");
   const [focusedModID, setFocusedModID] = useState<number | null>(null);
@@ -3324,6 +3624,7 @@ function DeckyModManagerRoute() {
   const [focusedJobID, setFocusedJobID] = useState<string>("");
   const [focusedProfileID, setFocusedProfileID] = useState<number | null>(null);
   const [focusedCandidateID, setFocusedCandidateID] = useState<number | null>(null);
+  const [focusedLocalArchivePath, setFocusedLocalArchivePath] = useState<string>("");
   const [focusedConflictTarget, setFocusedConflictTarget] = useState<string>("");
   const [busyConflictTarget, setBusyConflictTarget] = useState<string>("");
   const routeRefreshTimer = useRef<number | null>(null);
@@ -3464,6 +3765,9 @@ function DeckyModManagerRoute() {
     setFocusedModID(null);
     setFocusedJobID("");
     setFocusedCandidateID(null);
+    setFocusedLocalArchivePath("");
+    setDeckyLocalArchiveRoots([]);
+    setDeckyLocalArchives([]);
     setModSearch("");
     setModOrderMode(false);
   }
@@ -3492,6 +3796,8 @@ function DeckyModManagerRoute() {
       setDeckyMods([]);
       setDeckyJobs([]);
       setDeckyInstallCandidates([]);
+      setDeckyLocalArchiveRoots([]);
+      setDeckyLocalArchives([]);
       setDeckyWorkshopItems([]);
       setDeckyWorkshopSupported(false);
       setDeckyLoadOrder(null);
@@ -3500,11 +3806,12 @@ function DeckyModManagerRoute() {
       setDeckyDiagnostics(null);
       return null;
     }
-    const [profilesResult, modsResult, jobsResult, candidatesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult, diagnosticsResult] = await Promise.all([
+    const [profilesResult, modsResult, jobsResult, candidatesResult, localArchivesResult, workshopResult, loadOrderResult, deployStatusResult, deployPreviewResult, diagnosticsResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
       call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
       call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs"),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
+      call<[string], { ok: boolean; error?: string; roots: string[]; files: LocalArchiveFile[] }>("local_archives", appID),
       call<[string], { ok: boolean; error?: string; state?: WorkshopState; items: WorkshopItem[] }>("game_workshop", appID),
       call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID),
       call<[string], { ok: boolean; error?: string; status?: DeploymentStatus }>("game_deploy_status", appID),
@@ -3532,6 +3839,14 @@ function DeckyModManagerRoute() {
     } else {
       setDeckyInstallCandidates([]);
       setError(candidatesResult.error ?? "Unable to load installer items.");
+    }
+    if (localArchivesResult.ok) {
+      setDeckyLocalArchiveRoots(localArchivesResult.roots ?? []);
+      setDeckyLocalArchives(localArchivesResult.files ?? []);
+    } else {
+      setDeckyLocalArchiveRoots([]);
+      setDeckyLocalArchives([]);
+      await logFrontendEvent("decky local archives load failed", { app_id: appID, error: localArchivesResult.error || "" });
     }
     if (workshopResult.ok) {
       setDeckyWorkshopItems(workshopResult.items);
@@ -3574,6 +3889,7 @@ function DeckyModManagerRoute() {
       mods: modsResult.mods,
       jobs: jobsResult.ok ? deckyActionJobsForGame(jobsResult.jobs, appID) : [],
       candidates: candidatesResult.ok ? candidatesResult.candidates : [],
+      localArchives: localArchivesResult.ok ? localArchivesResult.files : [],
       workshopItems: workshopResult.ok ? workshopResult.items : [],
       loadOrder: loadOrderResult.ok ? loadOrderResult.load_order : null,
       deploymentStatus: deployStatusResult.ok ? deployStatusResult.status : null,
@@ -3663,7 +3979,7 @@ function DeckyModManagerRoute() {
       } else {
         setModsResult(applyMessage);
       }
-      if (result.apply?.job) showJobToast(result.apply.job);
+      await maybeShowDeckyActionToast(result.apply?.job, "decky-mod-toggle");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3716,7 +4032,7 @@ function DeckyModManagerRoute() {
       } else {
         setModsResult(applyMessage);
       }
-      if (result.apply?.job) showJobToast(result.apply.job);
+      await maybeShowDeckyActionToast(result.apply?.job, "decky-mod-order");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3751,7 +4067,7 @@ function DeckyModManagerRoute() {
       } else {
         setModsResult(applyMessage);
       }
-      if (result.apply?.job) showJobToast(result.apply.job);
+      await maybeShowDeckyActionToast(result.apply?.job, "decky-file-winner");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3785,7 +4101,7 @@ function DeckyModManagerRoute() {
       } else {
         setModsResult(applyMessage);
       }
-      if (result.apply?.job) showJobToast(result.apply.job);
+      await maybeShowDeckyActionToast(result.apply?.job, "decky-file-winner-reset");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3869,7 +4185,7 @@ function DeckyModManagerRoute() {
         await loadDeckyGameState(selectedDeckyGameID);
         return;
       }
-      if (result.job) showJobToast(result.job);
+      await maybeShowDeckyActionToast(result.job, "decky-restore");
       setModsResult(result.job?.message || "Restore completed.");
       await loadDeckyGameState(selectedDeckyGameID);
     } catch (err) {
@@ -3899,6 +4215,37 @@ function DeckyModManagerRoute() {
     void openInstallerChoiceModalForCandidate(selectedDeckyGameID, candidate, "decky-sidebar", () => {
       void loadDeckyGameState(selectedDeckyGameID);
     }, selectedProfile?.id ?? 0);
+  }
+
+  async function retryDeckyInstallCandidate(candidate: InstallCandidate) {
+    if (!selectedDeckyGameID) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyCandidateID(candidate.id);
+      const result = await call<[string, number], { ok: boolean; error?: string; job?: Job; candidate?: InstallCandidate; mod?: ManagedMod; result?: { job?: Job; candidate?: InstallCandidate; mod?: ManagedMod } }>(
+        "retry_install_candidate",
+        selectedDeckyGameID,
+        candidate.id
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Unable to retry installer item.");
+        await loadDeckyGameState(selectedDeckyGameID);
+        return;
+      }
+      const retryJob = result.job ?? result.result?.job;
+      const retryCandidate = result.candidate ?? result.result?.candidate;
+      await maybeShowDeckyActionToast(retryJob, "decky-installer-candidate-retry");
+      await loadDeckyGameState(selectedDeckyGameID);
+      if (retryCandidate && retryCandidate.status !== "blocked" && installerForCandidate(retryCandidate)) {
+        openDeckyInstallerChoice(retryCandidate);
+      }
+      setModsResult(retryJob?.message || "Installer item retried.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyCandidateID(null);
+    }
   }
 
   async function activateDeckyActionJob(job: Job) {
@@ -3943,7 +4290,7 @@ function DeckyModManagerRoute() {
         return;
       }
       const nextJob = result.job ?? result.result?.job;
-      if (nextJob) showJobToast(nextJob);
+      await maybeShowDeckyActionToast(nextJob, "decky-action-job");
       if (job.type === "steam-workshop-action") await syncWorkshopActions();
       await loadDeckyGameState(selectedDeckyGameID);
       setModsResult(nextJob?.message || "Action updated.");
@@ -3966,7 +4313,7 @@ function DeckyModManagerRoute() {
         return;
       }
       const nextJob = result.job ?? result.result?.job;
-      if (nextJob) showJobToast(nextJob);
+      await maybeShowDeckyActionToast(nextJob, "decky-cancel-job");
       await loadDeckyGameState(selectedDeckyGameID);
       setModsResult(nextJob?.message || "Action canceled.");
     } catch (err) {
@@ -3995,7 +4342,7 @@ function DeckyModManagerRoute() {
       const applyMessage = result.result?.apply?.message || "Mod removed. Restart the game if it is already running.";
       if (result.result?.apply?.status === "blocked" || result.result?.apply?.status === "failed") setError(applyMessage);
       else setModsResult(applyMessage);
-      if (result.result?.apply?.job) showJobToast(result.result.apply.job);
+      await maybeShowDeckyActionToast(result.result?.apply?.job, "decky-remove-mod");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -4003,24 +4350,35 @@ function DeckyModManagerRoute() {
     }
   }
 
-  async function reinstallDeckyMod(mod: ManagedMod) {
+  async function reinstallDeckyMod(mod: ManagedMod, promptInstallerChoices = false) {
     if (!selectedDeckyGameID) return;
     try {
       setError("");
       setModsResult("");
       setBusyModID(mod.id);
-      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod } }>("reinstall_game_mod", selectedDeckyGameID, mod.id);
+      const result = await call<[string, number, boolean], { ok: boolean; error?: string; result?: { job?: Job; mod?: ManagedMod; candidate?: InstallCandidate } }>(
+        "reinstall_game_mod",
+        selectedDeckyGameID,
+        mod.id,
+        promptInstallerChoices
+      );
       if (!result.ok) {
-        setError(result.error ?? "Unable to reinstall mod.");
+        setError(result.error ?? (promptInstallerChoices ? "Unable to reconfigure mod." : "Unable to reinstall mod."));
         return;
       }
       await loadDeckyGameState(selectedDeckyGameID);
       const job = result.result?.job;
+      const candidate = result.result?.candidate;
+      if (candidate && installerForCandidate(candidate)) {
+        await openInstallerChoiceModalForCandidate(selectedDeckyGameID, candidate, "decky-reconfigure", () => {
+          void loadDeckyGameState(selectedDeckyGameID);
+        }, selectedProfile?.id ?? 0);
+      }
       if (job) {
-        setModsResult(job.message || "Reinstall complete.");
-        showJobToast(job);
+        setModsResult(job.message || (promptInstallerChoices ? "Installer choices ready." : "Reinstall complete."));
+        await maybeShowDeckyActionToast(job, "decky-reinstall-mod");
       } else {
-        setModsResult("Reinstall complete.");
+        setModsResult(promptInstallerChoices ? "Installer choices ready." : "Reinstall complete.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -4045,7 +4403,7 @@ function DeckyModManagerRoute() {
       const job = result.job ?? result.result?.job;
       if (job) {
         setModsResult(job.message || "Update queued.");
-        showJobToast(job);
+        await maybeShowDeckyActionToast(job, "decky-update-mod");
         if (job.status === "failed" && !result.result?.browser_required) setError(job.message || "Unable to install update.");
       } else {
         setModsResult("Update queued.");
@@ -4144,7 +4502,7 @@ function DeckyModManagerRoute() {
       }
       const job = result.job ?? result.result?.job;
       setModsResult(`${kind === "unsubscribe" ? "Unsubscribe" : kind === "disable" ? "Disable" : "Enable"} queued for ${workshopItemName(item)}.`);
-      if (job) showJobToast(job);
+      await maybeShowDeckyActionToast(job, "decky-workshop-action");
       await syncWorkshopActions();
       await loadDeckyGameState(selectedDeckyGameID);
     } catch (err) {
@@ -4182,7 +4540,7 @@ function DeckyModManagerRoute() {
       const job = result.job ?? result.result?.job;
       setDeckyWorkshopItems(ordered.map((entry, position) => ({ ...entry, position })));
       setModsResult("Workshop load order queued through Steam.");
-      if (job) showJobToast(job);
+      await maybeShowDeckyActionToast(job, "decky-workshop-order");
       await syncWorkshopActions();
       await loadDeckyGameState(selectedDeckyGameID);
     } catch (err) {
@@ -4477,6 +4835,21 @@ function DeckyModManagerRoute() {
       setError("");
       setImportResult("");
       const requestedURL = importUrl.trim();
+      if (isNexusHTTPPage(requestedURL)) {
+        const opened = await openDMMBrowserViewCapture(requestedURL, {
+          appID: selectedDeckyGameID ?? "",
+          profileID: selectedProfile?.id ?? 0,
+          source: "decky-paste-nexus-page",
+          title: `${selectedDeckyGame?.name ?? "DMM"} - Nexus Mods`
+        });
+        if (!opened) {
+          setError("DMM could not open the controlled Nexus browser. Check Debug Live Logs.");
+          return;
+        }
+        setImportUrl("");
+        setImportResult("Opened the Nexus page. Click Mod Manager Download there to add it to DMM.");
+        return;
+      }
       const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean; resolved?: { source_url?: string } } }>(
         "add_captured_install",
         requestedURL,
@@ -4501,20 +4874,63 @@ function DeckyModManagerRoute() {
         }
         setImportUrl("");
         setImportResult("Opened the Nexus page. Click Mod Manager Download there to add it to DMM.");
-        if (job) showJobToast(job as Job);
+        if (job) markJobToastShown(job as Job);
         return;
       }
       setImportUrl("");
       setImportResult(job?.message || job?.title || "Mod link captured.");
       if (job) {
-        const stateKey = `${job.status}:${job.message || ""}`;
-        notifiedJobStates.set(job.id, stateKey);
-        await logFrontendEvent("job toast shown", { job_id: job.id, status: job.status, source: "decky-add-import" });
-        showJobToast(job as Job);
+        await maybeShowDeckyActionToast(job as Job, "decky-add-import");
       }
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function refreshDeckyLocalArchives(appID = selectedDeckyGameID) {
+    if (!appID) return;
+    try {
+      setError("");
+      setModsResult("");
+      const result = await call<[string], { ok: boolean; error?: string; roots: string[]; files: LocalArchiveFile[] }>("local_archives", appID);
+      if (!result.ok) {
+        setError(result.error ?? "Unable to load Deck archive files.");
+        return;
+      }
+      setDeckyLocalArchiveRoots(result.roots ?? []);
+      setDeckyLocalArchives(result.files ?? []);
+      setModsResult(result.files.length > 0 ? `Found ${result.files.length} archive file${result.files.length === 1 ? "" : "s"} in Deck Downloads.` : "No supported archives found in Deck Downloads.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function importDeckyLocalArchive(file: LocalArchiveFile) {
+    if (!selectedDeckyGameID || !file.path || busyLocalArchivePath) return;
+    try {
+      setError("");
+      setModsResult("");
+      setBusyLocalArchivePath(file.path);
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job; install_started?: boolean }; job?: Job }>(
+        "import_local_archive",
+        selectedDeckyGameID,
+        file.path,
+        selectedProfile?.id ?? 0
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Unable to import Deck archive file.");
+        await logFrontendEvent("decky local archive import failed", { app_id: selectedDeckyGameID, archive: file.name, error: result.error || "" });
+        return;
+      }
+      const job = result.job ?? result.result?.job;
+      setModsResult(job?.message || `Imported ${file.name}.`);
+      if (job) await maybeShowDeckyActionToast(job as Job, "decky-local-archive-import");
+      await loadDeckyGameState(selectedDeckyGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyLocalArchivePath("");
     }
   }
 
@@ -4633,24 +5049,8 @@ function DeckyModManagerRoute() {
     if (!selectedDeckyGame) return [] as DeckyExploreSource[];
     const sources: DeckyExploreSource[] = [];
     const catalogSourceTag = (catalog: CatalogStatus) => catalog.source_tag || catalog.id;
-    const firstNote = (catalog: CatalogStatus) => catalog.notes?.find((note) => note.trim() !== "") ?? "";
     const nexusCatalog = catalogs.find((catalog) => catalog.id === "nexus");
-    if (selectedDeckyGame.extension?.coverage === "metadata_only") {
-      selectedDeckyGame.extension.sources?.filter((source) => source.name || source.url).forEach((source, index) => {
-        const catalog = sourceTagForExtensionURL(source.url);
-        sources.push({
-          id: `known:${index}`,
-          catalog,
-          title: source.name || "Known Source",
-          detail: source.url || "Verified source reference. DMM has no safe automated import path for this game yet.",
-          action: "Not Automated",
-          enabled: false,
-          behavior: "info",
-          informational: true
-        });
-      });
-      return sources;
-    }
+    if (selectedDeckyGame.extension?.coverage === "metadata_only") return sources;
     if (nexusCatalog) {
       const nexusReady = nexusCatalog.status === "ready" && (nexusCatalog.search || nexusCatalog.browse);
       if (selectedNexusDomains.length > 0) {
@@ -4680,81 +5080,6 @@ function DeckyModManagerRoute() {
           behavior: "info"
         });
       }
-    } else if (selectedDeckyGame.extension?.supported && !selectedNexusDomain) {
-      sources.push({
-        id: "nexus",
-        catalog: "nexus",
-        title: "Explore Nexus Mods",
-        detail: firstExtensionSourceNote(selectedDeckyGame) || "This extension does not declare a Nexus domain yet.",
-        action: "Unavailable",
-        enabled: false,
-        behavior: "info"
-      });
-    }
-    for (const catalog of catalogs) {
-      if (catalog.kind === "platform" || catalog.id === "nexus" || catalog.id === "local") continue;
-      const sourceTag = catalogSourceTag(catalog);
-      const readyURLImport = catalog.status === "ready" && Boolean(catalog.url_import && catalog.download);
-      if (readyURLImport) {
-        sources.push({
-          id: catalog.id,
-          catalog: sourceTag,
-          title: catalog.name,
-          detail: `Paste a ${catalog.name} URL in Mod Link while ${selectedDeckyGame.name} is selected. DMM will use the normal captured-install pipeline.`,
-          action: "Paste URL",
-          enabled: true,
-          behavior: "paste"
-        });
-        continue;
-      }
-      if (catalog.status === "needs_credentials" || catalog.credentials_required) {
-        sources.push({
-          id: catalog.id,
-          catalog: sourceTag,
-          title: catalog.name,
-          detail: firstNote(catalog) || "This source needs an API key before DMM can import URLs.",
-          action: "Needs Key",
-          enabled: false,
-          behavior: "info"
-        });
-        continue;
-      }
-      if (catalog.status === "deferred") {
-        sources.push({
-          id: catalog.id,
-          catalog: sourceTag,
-          title: catalog.name,
-          detail: firstNote(catalog) || "This source is deferred until a supported official automated API or client path is verified.",
-          action: "Deferred",
-          enabled: false,
-          behavior: "info"
-        });
-        continue;
-      }
-    }
-    const localCatalog = catalogs.find((catalog) => catalog.id === "local");
-    if (localCatalog?.archive_upload) {
-      sources.push({
-        id: "local",
-        catalog: catalogSourceTag(localCatalog),
-        title: "Local Archive",
-        detail: "Archive upload is available from the phone/tablet UI for this selected game.",
-        action: "Use Phone",
-        enabled: false,
-        behavior: "info"
-      });
-    }
-    const workshopCatalog = catalogs.find((catalog) => catalog.id === "steam_workshop");
-    if (selectedDeckyGame.extension?.steam_workshop) {
-      sources.push({
-        id: "steam-workshop",
-        catalog: workshopCatalog?.source_tag || "steam_workshop",
-        title: workshopCatalog?.name || "Steam Workshop",
-        detail: "Installed Workshop items are managed below. DMM browsing is not enabled for Workshop.",
-        action: "Managed Below",
-        enabled: false,
-        behavior: "info"
-      });
     }
     return sources;
   }, [selectedDeckyGame, selectedNexusDomains.join("|"), selectedNexusDomain, catalogs]);
@@ -4763,7 +5088,10 @@ function DeckyModManagerRoute() {
     () => (deckyDiagnostics?.runtime_requirements ?? []).filter((requirement) => requirement.status !== "ok"),
     [deckyDiagnostics]
   );
-  const deckyActionJobs = useMemo(() => deckyActionJobsForGame(deckyJobs, selectedDeckyGameID), [deckyJobs, selectedDeckyGameID]);
+  const deckyActionJobs = useMemo(
+    () => deckyActionJobsForGame(deckyJobs, selectedDeckyGameID).filter((job) => !deckyJobHasInstallCandidateReview(job, deckyInstallCandidates)),
+    [deckyJobs, selectedDeckyGameID, deckyInstallCandidates]
+  );
   const manageableGameCount = managedGames.filter(gameManageReady).length;
   const extensionGameCount = managedGames.filter(gameHasExtension).length;
   const runningSupported = Boolean(runningGame && gameManageReady(managedGames.find((game) => game.app_id === runningGame.app_id)));
@@ -4892,7 +5220,7 @@ function DeckyModManagerRoute() {
           <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={addCapturedInstall} onClick={addCapturedInstall} style={{ ...deckyCompactActionStyle("neutral"), minHeight: "34px", padding: "7px 6px" }}>
             Add Mod Link
           </Focusable>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>Downloads immediately; install choices appear in Action Center.</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2, overflowWrap: "anywhere" }}>NXM links download immediately. Nexus pages open DMM's browser so you can click Mod Manager Download.</div>
           {importResult && <div style={{ color: "#72e0a2", overflowWrap: "anywhere" }}>{importResult}</div>}
         </div>
       </div>
@@ -5086,7 +5414,7 @@ function DeckyModManagerRoute() {
 	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{selectedExploreSources.filter((source) => source.enabled).length} ready</div>
 	              </div>
 	              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-	                Choose a source for {selectedDeckyGame?.name ?? "this game"}. Nexus opens the real mod page for Mod Manager Download; URL-only sources use Mod Link.
+	                Nexus opens the real mod page for Mod Manager Download. Other sources can still be pasted into Mod Link when supported.
 	              </div>
 	              {selectedExploreSources.length === 0 && (
 	                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>
@@ -5136,9 +5464,76 @@ function DeckyModManagerRoute() {
 	                  </div>
 	                </Focusable>
 	              ))}
+		            </div>
+		          </PanelSectionRow>
+	          <PanelSectionRow>
+	            <div className="dmm-sidebar-surface" style={{ ...deckySidebarSurfaceStyle, gap: "8px" }}>
+	              <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", minWidth: 0 }}>
+	                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Import Archive</div>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{deckyLocalArchives.length} found</div>
+	              </div>
+	              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                Imports .zip, .7z, .rar, .fomod, and .mgsv files from Deck Downloads into {selectedDeckyGame?.name ?? "this game"}.
+	              </div>
+	              <Focusable
+	                className="dmm-sidebar-row"
+	                focusClassName="dmm-sidebar-row-focused"
+	                onActivate={(event) => {
+	                  event.preventDefault();
+	                  event.stopPropagation();
+	                  void refreshDeckyLocalArchives();
+	                }}
+	                onClick={() => void refreshDeckyLocalArchives()}
+	                style={{ ...deckyCompositeRowStyle(false), padding: "10px" }}
+	              >
+	                <div style={{ color: "#f8fafc", fontWeight: 900 }}>Refresh Deck Downloads</div>
+	                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                  {deckyLocalArchiveRoots.length > 0 ? deckyLocalArchiveRoots.join(" · ") : "No download folders are available yet."}
+	                </div>
+	                <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>A Refresh</div>
+	              </Focusable>
+	              {deckyLocalArchives.length === 0 && (
+	                <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>No supported archive files found.</div>
+	              )}
+	              {deckyLocalArchives.slice(0, 6).map((archiveFile) => {
+	                const focused = focusedLocalArchivePath === archiveFile.path;
+	                const busy = busyLocalArchivePath === archiveFile.path;
+	                return (
+	                  <Focusable
+	                    key={archiveFile.path}
+	                    className="dmm-sidebar-row"
+	                    focusClassName="dmm-sidebar-row-focused"
+	                    onActivate={(event) => {
+	                      event.preventDefault();
+	                      event.stopPropagation();
+	                      void importDeckyLocalArchive(archiveFile);
+	                    }}
+	                    onClick={() => void importDeckyLocalArchive(archiveFile)}
+	                    onGamepadFocus={() => setFocusedLocalArchivePath(archiveFile.path)}
+	                    onFocus={() => setFocusedLocalArchivePath(archiveFile.path)}
+	                    onMouseEnter={() => setFocusedLocalArchivePath(archiveFile.path)}
+	                    style={{
+	                      ...deckyCompositeRowStyle(focused),
+	                      opacity: busy ? 0.65 : 1,
+	                      padding: "10px"
+	                    }}
+	                  >
+	                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+	                      <div style={{ ...deckyTwoLineTextStyle, color: "#f8fafc", flex: "1 1 120px", fontWeight: 900 }}>{archiveFile.name}</div>
+	                      <span style={deckySourcePillStyle("local")}>Manual</span>
+	                    </div>
+	                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+	                      {formatBytes(archiveFile.bytes)} · {archiveFile.extension || "archive"}
+	                    </div>
+	                    <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
+	                      {busy ? "Importing..." : "A Import to Profile"}
+	                    </div>
+	                  </Focusable>
+	                );
+	              })}
 	            </div>
 	          </PanelSectionRow>
-	          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
+		          {(deckyMods.length > 0 || deckyWorkshopItems.length > 0) && (
 	            <PanelSectionRow>
 	              <div className="dmm-sidebar-surface" style={deckySidebarSurfaceStyle}>
                 <TextField label="Search Mods" value={modSearch} bShowClearAction onChange={(event) => setModSearch(event.currentTarget.value)} />
@@ -5255,6 +5650,7 @@ function DeckyModManagerRoute() {
                       <div style={{ color: job.status === "failed" ? "#fca5a5" : "#d4d4d8", fontSize: "11px", lineHeight: 1.2, minWidth: 0, overflowWrap: "anywhere" }}>
                         {deckyJobStatusLabel(job)} · {job.message || jobToastBody(job)}
                       </div>
+                      <DeckyJobProgress job={job} />
                       {extensionTool && (
                         <div style={{ color: "#bae6fd", fontSize: "11px", fontWeight: 700, lineHeight: 1.25, minWidth: 0, overflowWrap: "anywhere" }}>
                           Tool: {extensionTool}
@@ -5287,6 +5683,17 @@ function DeckyModManagerRoute() {
                 {deckyInstallCandidates.map((candidate) => {
                   const focused = focusedCandidateID === candidate.id;
                   const installer = installerForCandidate(candidate);
+                  const busyCandidate = busyCandidateID === candidate.id;
+                  const canOpenChoices = candidate.status !== "blocked" && installer;
+                  const canRetryCandidate = candidate.status === "blocked";
+                  const runCandidateAction = () => {
+                    if (busyCandidate) return;
+                    if (canOpenChoices) {
+                      openDeckyInstallerChoice(candidate);
+                    } else if (canRetryCandidate) {
+                      void retryDeckyInstallCandidate(candidate);
+                    }
+                  };
                   return (
                     <Focusable
                       key={candidate.id}
@@ -5295,10 +5702,10 @@ function DeckyModManagerRoute() {
                       onActivate={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        if (installer) openDeckyInstallerChoice(candidate);
+                        runCandidateAction();
                       }}
                       onClick={() => {
-                        if (installer) openDeckyInstallerChoice(candidate);
+                        runCandidateAction();
                       }}
                       onSecondaryActionDescription="Clear Items"
                       onSecondaryButton={(event) => {
@@ -5327,8 +5734,8 @@ function DeckyModManagerRoute() {
                           {candidate.reason}
                         </div>
                       )}
-                      <div style={{ color: installer ? "#99f6e4" : "#fca5a5", fontSize: "11px", fontWeight: 800, lineHeight: 1.25 }}>
-                        {installer ? "A Open Choices" : "Review on phone/tablet"} · Y Clear Items
+                      <div style={{ color: canOpenChoices || canRetryCandidate ? "#99f6e4" : "#fca5a5", fontSize: "11px", fontWeight: 800, lineHeight: 1.25 }}>
+                        {busyCandidate ? "Retrying..." : canOpenChoices ? "A Open Choices" : canRetryCandidate ? "A Retry Install" : "Review on phone/tablet"} · Y Clear Items
                       </div>
                     </Focusable>
                   );
@@ -5419,13 +5826,12 @@ function DeckyModManagerRoute() {
                         if (modOrderMode) setModOrderMode(false);
                         else askRemoveDeckyMod(mod);
                       }}
-                      onMenuActionDescription={modOrderMode ? "Done Ordering" : updateAvailable ? "Reinstall" : "Remove"}
+                      onMenuActionDescription={modOrderMode ? "Done Ordering" : "Reconfigure"}
                       onMenuButton={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         if (modOrderMode) setModOrderMode(false);
-                        else if (updateAvailable) void reinstallDeckyMod(mod);
-                        else askRemoveDeckyMod(mod);
+                        else void reinstallDeckyMod(mod, true);
                       }}
                       onGamepadFocus={() => {
                         setFocusedModID(mod.id);
@@ -5474,7 +5880,7 @@ function DeckyModManagerRoute() {
                         {deckyModUpdateLabel(mod.update)} · {deckyModUpdateDetail(mod.update)}
                       </div>
                       <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                        {modOrderMode ? "A Move Up · Y Move Down · Options Done" : updateAvailable ? `A ${mod.enabled ? "Disable" : "Enable"} · Y Update · Options Remove · Menu Reinstall` : `A ${mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove`}
+                        {modOrderMode ? "A Move Up · Y Move Down · Options Done" : updateAvailable ? `A ${mod.enabled ? "Disable" : "Enable"} · Y Update · Options Remove · Menu Reconfigure` : `A ${mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove · Menu Reconfigure`}
                       </div>
                     </Focusable>
                   );

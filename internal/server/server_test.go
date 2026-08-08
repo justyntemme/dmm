@@ -395,7 +395,7 @@ func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	}
 }
 
-func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
+func TestDeckyBrowserOpenPublishesBoundedHandoffEvent(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID: "413150",
@@ -446,7 +446,8 @@ func TestDeckyBrowserOpenPublishesShortLivedEvent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expires_at parse = %v", err)
 		}
-		if time.Until(expiresAt) <= 0 || time.Until(expiresAt) > time.Minute {
+		remaining := time.Until(expiresAt)
+		if remaining <= 9*time.Minute || remaining > deckyBrowserOpenTTL {
 			t.Fatalf("expires_at = %s", payload.ExpiresAt)
 		}
 	case <-time.After(time.Second):
@@ -630,7 +631,7 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	}
 
 	bastion := gameExtensionInfoForSteamApp(games.DefaultRegistry, "107100")
-	if bastion == nil || !bastion.Supported || bastion.Coverage != gameext.CoverageResearchBlocked || !bastion.Nexus || !bastion.Installers {
+	if bastion == nil || !bastion.Supported || bastion.Coverage != gameext.CoverageInstaller || !bastion.Nexus || !bastion.Installers {
 		t.Fatalf("bastion extension info = %+v", bastion)
 	}
 
@@ -3214,6 +3215,9 @@ func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 	if completed.Message != "Installed Lookup Anything disabled; enable it to deploy" {
 		t.Fatalf("completed job = %+v", completed)
 	}
+	if completed.Payload["download_bytes_written"] == "" {
+		t.Fatalf("completed job did not include download progress payload: %+v", completed.Payload)
+	}
 	if attempts != 2 {
 		t.Fatalf("download attempts = %d", attempts)
 	}
@@ -3289,7 +3293,7 @@ func TestCapturedDownloadRetryDelayUsesRetryAfter(t *testing.T) {
 	}
 }
 
-func TestUnsupportedCapturedInstallFailureIsNotRetryable(t *testing.T) {
+func TestUnsupportedCapturedInstallCreatesBlockedReviewCandidate(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       "413150",
@@ -3329,12 +3333,12 @@ func TestUnsupportedCapturedInstallFailureIsNotRetryable(t *testing.T) {
 	if installRec.Code != http.StatusAccepted {
 		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
 	}
-	failed := waitForJobStatus(t, srv, job.ID, jobs.StatusFailed)
-	if !strings.Contains(failed.Message, "no Vortex installer metadata matched this archive") {
-		t.Fatalf("failed job = %+v", failed)
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "install needs review") {
+		t.Fatalf("completed job = %+v", completed)
 	}
 	if _, ok := srv.capturedInstalls[job.ID]; ok {
-		t.Fatalf("unsupported captured install %s was retained for retry", job.ID)
+		t.Fatalf("unsupported captured install %s was retained after review candidate handoff", job.ID)
 	}
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
 	if err != nil {
@@ -3348,7 +3352,7 @@ func TestUnsupportedCapturedInstallFailureIsNotRetryable(t *testing.T) {
 	retry.RemoteAddr = "127.0.0.1:1"
 	retryRec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(retryRec, retry)
-	if retryRec.Code != http.StatusNotFound {
+	if retryRec.Code != http.StatusConflict {
 		t.Fatalf("retry status = %d, body = %s", retryRec.Code, retryRec.Body.String())
 	}
 }
@@ -3475,6 +3479,263 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	}
 }
 
+func TestStardewMultiManifestCapturedInstallCreatesComponentChoice(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       stardewvalley.SteamAppID,
+		Name:        stardewvalley.Name,
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "multi-stardew.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"ModA/manifest.json": `{"Name":"Mod A","UniqueID":"author.ModA"}`,
+		"ModA/ModA.dll":      "a",
+		"ModB/manifest.json": `{"Name":"Mod B","UniqueID":"author.ModB"}`,
+		"ModB/ModB.dll":      "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/500")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded multi-component mod; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: stardewvalley.VortexGameID,
+			ModID:      "500",
+			FileID:     "600",
+		},
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "installer choices required") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), stardewvalley.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "needs_choices" || !strings.Contains(candidates[0].InstallerJSON, "Stardew Valley Component Selection") {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	var defaults map[string][]string
+	if err := json.Unmarshal([]byte(candidates[0].ChoicesJSON), &defaults); err != nil {
+		t.Fatal(err)
+	}
+	if got := defaults["stardew-smapi-components"]; len(got) != 2 {
+		t.Fatalf("default component choices = %+v", defaults)
+	}
+	choiceJob, ok := srv.findInstallerChoiceJob(candidates[0].ID)
+	if !ok || choiceJob.Status != jobs.StatusWaiting {
+		t.Fatalf("installer choice job = %+v, found = %v", choiceJob, ok)
+	}
+
+	applyCtx, cancelApply := context.WithCancel(context.Background())
+	applyReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/games/"+stardewvalley.SteamAppID+"/install-candidates/"+strconv.FormatInt(candidates[0].ID, 10)+"/apply",
+		bytes.NewBufferString(`{"selections":{"stardew-smapi-components":["component:ModB"]}}`),
+	).WithContext(applyCtx)
+	applyReq.Header.Set("Content-Type", "application/json")
+	applyReq.RemoteAddr = "127.0.0.1:1"
+	applyRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(applyRec, applyReq)
+	cancelApply()
+	if applyRec.Code != http.StatusAccepted {
+		t.Fatalf("apply status = %d, body = %s", applyRec.Code, applyRec.Body.String())
+	}
+	applied := waitForJobStatus(t, srv, choiceJob.ID, jobs.StatusCompleted)
+	if !strings.Contains(applied.Message, "Installed") {
+		t.Fatalf("applied job = %+v", applied)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), stardewvalley.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "ModB", "ModB.dll")); err != nil {
+		t.Fatalf("selected component was not staged: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "ModA", "ModA.dll")); !os.IsNotExist(err) {
+		t.Fatalf("unselected component was staged: %v", err)
+	}
+}
+
+func TestStardewMultiManifestCapturedInstallReusesComponentChoicePreset(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       stardewvalley.SteamAppID,
+		Name:        stardewvalley.Name,
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: stardewvalley.VortexGameID,
+		ModID:      "500",
+		FileID:     "600",
+	}
+	if err := srv.db.SaveInstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    stardewvalley.SteamAppID,
+		Resolved:      resolved,
+		InstallerKind: "component-choice",
+		ChoicesJSON:   `{"stardew-smapi-components":["component:ModB"]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "multi-stardew.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"ModA/manifest.json": `{"Name":"Mod A","UniqueID":"author.ModA"}`,
+		"ModA/ModA.dll":      "a",
+		"ModB/manifest.json": `{"Name":"Mod B","UniqueID":"author.ModB"}`,
+		"ModB/ModB.dll":      "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/500")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded multi-component mod; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved:    resolved,
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if strings.Contains(completed.Message, "installer choices required") {
+		t.Fatalf("preset was not reused: %+v", completed)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), stardewvalley.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 0 {
+		t.Fatalf("unexpected installer choice candidate = %+v", candidates)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), stardewvalley.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "ModB", "ModB.dll")); err != nil {
+		t.Fatalf("selected preset component was not staged: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(mods[0].StagingPath, "ModA", "ModA.dll")); !os.IsNotExist(err) {
+		t.Fatalf("unselected preset component was staged: %v", err)
+	}
+}
+
+func TestMalformedFOMODCapturedInstallBlocksBeforeChoices(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "malformed-fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"Wrapper/NeuralHarvest/fomod/ModuleConfig.xml": `<config>
+  <moduleName>Broken Choice Mod</moduleName>
+  <requiredInstallFiles>
+    <file source="Common\NeuralHarvest.dll" destination="NeuralHarvest.dll" />
+  </requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="Default">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><file source="Config\config.json" destination="config.json" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"Wrapper/NeuralHarvest/Config/config.json": "{}",
+		"Wrapper/NeuralHarvest/fomod/info.xml":     "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	job := srv.jobs.Create("captured-install", "Captured mod: stardewvalley/mods/32817")
+	job, _ = srv.jobs.Wait(job.ID, "Downloaded FOMOD; ready to install")
+	srv.rememberCapturedInstall(job.ID, capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "32817",
+			FileID:     "128820",
+		},
+		Source:      "test",
+		ArchivePath: archivePath,
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/captured-installs/"+job.ID+"/install", nil)
+	installReq.RemoteAddr = "127.0.0.1:1"
+	installRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(installRec, installReq)
+	if installRec.Code != http.StatusAccepted {
+		t.Fatalf("install status = %d, body = %s", installRec.Code, installRec.Body.String())
+	}
+
+	completed := waitForJobStatus(t, srv, job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "install needs review") {
+		t.Fatalf("completed job = %+v", completed)
+	}
+	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Status != "blocked" {
+		t.Fatalf("candidates = %+v", candidates)
+	}
+	if !strings.Contains(candidates[0].Reason, `missing source "Common/NeuralHarvest.dll"`) {
+		t.Fatalf("candidate reason = %q", candidates[0].Reason)
+	}
+	if _, ok := srv.findInstallerChoiceJob(candidates[0].ID); ok {
+		t.Fatalf("malformed FOMOD should not create an installer-choice job")
+	}
+}
+
 func TestGenericInstallerChoiceCapturedInstallAppliesSelectedPak(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Jedi Survivor")
@@ -3547,6 +3808,13 @@ func TestGenericInstallerChoiceCapturedInstallAppliesSelectedPak(t *testing.T) {
 	if applyRec.Code != http.StatusAccepted {
 		t.Fatalf("apply status = %d, body = %s", applyRec.Code, applyRec.Body.String())
 	}
+	var applyBody struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(applyRec.Body.Bytes(), &applyBody); err != nil {
+		t.Fatal(err)
+	}
+	waitForJobStatus(t, srv, applyBody.Job.ID, jobs.StatusCompleted)
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), starwarsjedisurvivor.SteamAppID)
 	if err != nil {
 		t.Fatal(err)
@@ -3936,6 +4204,154 @@ func TestUploadLocalArchiveAutoInstallsArchive(t *testing.T) {
 	}
 	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || mods[0].Catalog != "local" || mods[0].Enabled {
 		t.Fatalf("mods = %+v", mods)
+	}
+}
+
+func TestListLocalArchivesIncludesDeckDownloads(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "287700",
+		Name:        "METAL GEAR SOLID V: THE PHANTOM PAIN",
+		InstallDir:  "MGS_TPP",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "MGS_TPP"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloads := t.TempDir()
+	t.Setenv("DMM_LOCAL_ARCHIVE_ROOTS", downloads)
+	mgsvPath := filepath.Join(downloads, "Infinite Heaven.mgsv")
+	if err := archive.CreateTestZip(mgsvPath, map[string]string{"metadata.xml": `<ModEntry Name="Infinite Heaven"></ModEntry>`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(downloads, "notes.txt"), []byte("ignore"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/287700/local-archives", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body localArchiveListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Files) != 1 {
+		t.Fatalf("files = %+v", body.Files)
+	}
+	resolvedMGSVPath, err := filepath.EvalSymlinks(mgsvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body.Files[0].Name != "Infinite Heaven.mgsv" || body.Files[0].Path != resolvedMGSVPath {
+		t.Fatalf("file = %+v", body.Files[0])
+	}
+}
+
+func TestImportLocalArchivePathAutoInstallsArchive(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "StardewModdingAPI"), []byte("smapi"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	srv.cfgMu.Lock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = true
+	srv.cfgMu.Unlock()
+
+	downloads := t.TempDir()
+	t.Setenv("DMM_LOCAL_ARCHIVE_ROOTS", downloads)
+	archivePath := filepath.Join(downloads, "Lookup Anything.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"LookupAnything/manifest.json":      `{"Name":"Lookup Anything"}`,
+		"LookupAnything/LookupAnything.dll": "dll",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := bytes.NewBufferString(`{"path":` + strconv.Quote(archivePath) + `,"source":"deck-local-file"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/local-archives/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		InstallStarted bool     `json:"install_started"`
+		Job            jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.InstallStarted || resp.Job.Status != jobs.StatusRunning {
+		t.Fatalf("import response = %+v", resp)
+	}
+	completed := waitForJobStatus(t, srv, resp.Job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "Installed Lookup Anything disabled") {
+		t.Fatalf("job message = %q", completed.Message)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Name != "Lookup Anything" || mods[0].Catalog != "local" {
+		t.Fatalf("mods = %+v", mods)
+	}
+}
+
+func TestImportLocalArchivePathRejectsSymlinkEscape(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloads := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("DMM_LOCAL_ARCHIVE_ROOTS", downloads)
+	outsideArchive := filepath.Join(outside, "Escape.zip")
+	if err := archive.CreateTestZip(outsideArchive, map[string]string{"mod/file.txt": "payload"}); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(downloads, "Escape.zip")
+	if err := os.Symlink(outsideArchive, linkPath); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"path":` + strconv.Quote(linkPath) + `}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/local-archives/import", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "outside the allowed Deck download folders") {
+		t.Fatalf("body = %s", rec.Body.String())
 	}
 }
 
@@ -4563,6 +4979,56 @@ func TestGameInstallCandidatesEndpointRemovesInstalledDuplicates(t *testing.T) {
 	}
 }
 
+func TestJobsEndpointCancelsOrphanedInstallerChoiceJobs(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "3753",
+			FileID:     "135998",
+		},
+		Name:          "Stardew Valley Expanded",
+		ArchivePath:   "/downloads/sve.zip",
+		Status:        "needs_choices",
+		Reason:        "installer choices are required",
+		InstallerJSON: `{"name":"Component Selection","steps":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	choiceJob := srv.ensureInstallerChoiceJob("413150", candidate)
+	if err := srv.db.DeleteInstallCandidate(context.Background(), candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	canceled, ok := srv.jobs.Get(choiceJob.ID)
+	if !ok || canceled.Status != jobs.StatusCanceled {
+		t.Fatalf("choice job after orphan cleanup = %+v ok=%v", canceled, ok)
+	}
+	if !strings.Contains(canceled.Message, "no longer available") {
+		t.Fatalf("cancel message = %q", canceled.Message)
+	}
+}
+
 func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
@@ -4661,8 +5127,12 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Job.ID != choiceJob.ID || body.Job.Status != jobs.StatusCompleted {
+	if body.Job.ID != choiceJob.ID {
 		t.Fatalf("apply job = %+v, existing choice job = %+v", body.Job, choiceJob)
+	}
+	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "Installed") {
+		t.Fatalf("completed job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
 	if err != nil {
@@ -5124,6 +5594,13 @@ func TestApplyFOMODInstallCandidateMatchesInactivePluginDependency(t *testing.T)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
+	var body struct {
+		Job jobs.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
 
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), fallout4.SteamAppID)
 	if err != nil {
@@ -5224,8 +5701,9 @@ func TestApplyFOMODInstallCandidateHonorsAutoEnable(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Job.Status != jobs.StatusCompleted || !strings.Contains(body.Job.Message, "enabled, and deployed") {
-		t.Fatalf("job = %+v", body.Job)
+	completed := waitForJobStatus(t, srv, body.Job.ID, jobs.StatusCompleted)
+	if !strings.Contains(completed.Message, "enabled, and deployed") {
+		t.Fatalf("job = %+v", completed)
 	}
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "377160")
 	if err != nil {
@@ -6646,7 +7124,7 @@ func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.
 			Path:  filepath.Join(t.TempDir(), "Fallout 4"),
 			State: "needs_review",
 			Markers: []string{
-				"fallout script extender: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
+				"extension launch tool: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
 			},
 		},
 		{
@@ -6655,7 +7133,7 @@ func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.
 			Path:  filepath.Join(t.TempDir(), "Fallout 4"),
 			State: "needs_review",
 			Markers: []string{
-				"fallout script extender: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
+				"extension launch tool: /steam/steamapps/common/Fallout 4/f4se_loader.exe",
 				"vortex deployment: /steam/steamapps/common/Fallout 4/vortex.deployment.json",
 			},
 		},
@@ -6665,7 +7143,7 @@ func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.
 			Path:  filepath.Join(t.TempDir(), "Unknown"),
 			State: "needs_review",
 			Markers: []string{
-				"fallout script extender: /steam/steamapps/common/Unknown/f4se_loader.exe",
+				"extension launch tool: /steam/steamapps/common/Unknown/f4se_loader.exe",
 			},
 		},
 	}
@@ -6681,6 +7159,63 @@ func TestAnnotateExtensionKnownExternalMarkersUsesLaunchToolMetadata(t *testing.
 	if games[2].State != "needs_review" || len(games[2].Markers) != 1 {
 		t.Fatalf("unknown app marker should remain blocking = %+v", games[2])
 	}
+}
+
+func TestAnnotateExtensionUnmanagedMarkersUsesExtensionMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	falloutPath := filepath.Join(t.TempDir(), "Fallout 4")
+	unknownPath := filepath.Join(t.TempDir(), "Unknown")
+	if err := os.MkdirAll(falloutPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(unknownPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(falloutPath, "f4se_loader.exe"), []byte("loader"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(falloutPath, "plugins.txt"), []byte("*Example.esp"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unknownPath, "f4se_loader.exe"), []byte("loader"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(unknownPath, "plugins.txt"), []byte("*Example.esp"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	games := []steam.Game{
+		{
+			AppID: fallout4.SteamAppID,
+			Name:  "Fallout 4",
+			Path:  falloutPath,
+			State: "clean_candidate",
+		},
+		{
+			AppID: "999999",
+			Name:  "Unknown F4SE-shaped game",
+			Path:  unknownPath,
+			State: "clean_candidate",
+		},
+	}
+
+	srv.annotateExtensionUnmanagedMarkers(games)
+
+	if games[0].State != "needs_review" || len(games[0].Markers) != 2 || !markerContains(games[0].Markers, "Existing Fallout 4 Script Extender loader") || !markerContains(games[0].Markers, "Existing Fallout 4 plugin list") {
+		t.Fatalf("fallout unmanaged marker was not extension-driven = %+v", games[0])
+	}
+	if games[1].State != "clean_candidate" || len(games[1].Markers) != 0 {
+		t.Fatalf("unknown app should not inherit Fallout unmanaged marker = %+v", games[1])
+	}
+}
+
+func markerContains(markers []string, needle string) bool {
+	for _, marker := range markers {
+		if strings.Contains(marker, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGameDiscoveryCacheHelpers(t *testing.T) {
@@ -7843,7 +8378,7 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 				NexusDomains: []string{"hookgame"},
 				VortexGameID: "hookgame",
 			})
-			r.RegisterModType(installplan.ModTypeSpec{ID: "hook-root", TargetRoot: ""})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "hook-root", TargetRoot: "", DeploymentMode: installplan.ModTypeDeploymentEventHook})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: "will-deploy",
 				Name:  "Generate hook file",
@@ -7851,6 +8386,9 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 					willDeployCalls++
 					if input.AppID != appID || input.ProfileID == 0 || input.WorkDir == "" {
 						t.Fatalf("will-deploy input = %+v", input)
+					}
+					if len(input.Mods) != 1 || input.Mods[0].ModType != "hook-root" || input.Mods[0].StagingPath == "" {
+						t.Fatalf("will-deploy mods = %+v", input.Mods)
 					}
 					sourcePath := filepath.Join(input.WorkDir, "generated", "hook.ini")
 					if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
@@ -7897,6 +8435,41 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 		Path:        gamePath,
 		State:       "clean_candidate",
 	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(t.TempDir(), "staging", "hookgame")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "payload"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "payload", "metadata.xml"), []byte("<metadata />\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "hook-root",
+		PlannerID: "hookgame:event-hook-payload",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "payload/metadata.xml",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "hookgame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Hook Payload",
+		ArchivePath:    filepath.Join(t.TempDir(), "hook.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -7949,6 +8522,80 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	}
 	if noticeCount != 1 {
 		t.Fatalf("extension notice count after duplicate deploy = %d", noticeCount)
+	}
+}
+
+func TestDeployRejectsTargetlessManifestForDirectModType(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Direct Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999002"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "directgame",
+		Name:    "Direct Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"directgame"},
+				VortexGameID: "directgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "direct-root", TargetRoot: ""})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Direct Game",
+		InstallDir:  "Direct Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(t.TempDir(), "staging", "directgame")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "payload"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "payload", "metadata.xml"), []byte("<metadata />\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "direct-root",
+		PlannerID: "directgame:targetless",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "payload/metadata.xml",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "directgame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Targetless Payload",
+		ArchivePath:    filepath.Join(t.TempDir(), "targetless.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = srv.buildGameDeployPlan(context.Background(), appID)
+	if err == nil || !strings.Contains(err.Error(), "has no target mapping") {
+		t.Fatalf("buildGameDeployPlan error = %v", err)
 	}
 }
 
@@ -8446,6 +9093,7 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 			TargetRelative:  "Mods/LookupAnything/manifest.json",
 			TargetPolicy:    installplan.TargetPolicyKeepExisting,
 			DeployStrategy:  installplan.DeployStrategyCopy,
+			FileMode:        "0644",
 		}},
 	})
 	if err != nil {
@@ -8461,8 +9109,103 @@ func TestStagedManifestEnvelopeKeepsPlanMetadataAndFiles(t *testing.T) {
 	if len(manifest.Metadata) != 1 || manifest.Metadata[0].UniqueID != "Pathoschild.LookupAnything" || len(manifest.Metadata[0].Dependencies) != 1 {
 		t.Fatalf("manifest metadata = %+v", manifest.Metadata)
 	}
-	if len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Mods/LookupAnything/manifest.json" || manifest.Files[0].TargetPolicy != installplan.TargetPolicyKeepExisting || manifest.Files[0].DeployStrategy != installplan.DeployStrategyCopy {
+	if len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Mods/LookupAnything/manifest.json" || manifest.Files[0].TargetPolicy != installplan.TargetPolicyKeepExisting || manifest.Files[0].DeployStrategy != installplan.DeployStrategyCopy || manifest.Files[0].FileMode != "0644" {
 		t.Fatalf("manifest files = %+v", manifest.Files)
+	}
+}
+
+func TestApplyInstallPlanHonorsInstructionFileMode(t *testing.T) {
+	extracted := t.TempDir()
+	source := filepath.Join(extracted, "run_bepinex.sh")
+	if err := os.WriteFile(source, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := t.TempDir()
+	if err := applyInstallPlan(installplan.Plan{
+		Instructions: []installplan.Instruction{{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      source,
+			StagingRelative: "run_bepinex.sh",
+			TargetRelative:  "run_bepinex.sh",
+			FileMode:        "0755",
+		}},
+	}, stagingPath, ""); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(stagingPath, "run_bepinex.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("mode = %o, want 755", got)
+	}
+}
+
+func TestLaunchToolDynamicInputGeneratesEnabledModFileList(t *testing.T) {
+	game := storage.Game{
+		SteamAppID: "100",
+		GamePath:   t.TempDir(),
+	}
+	manifest := stagedManifest{
+		ModType: "texmod-package",
+		Files: []stagedManifestFile{{
+			Path:           "package.tpf",
+			TargetRelative: "DMM/TexMod/package.tpf",
+		}},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := []storage.InstalledMod{{
+		ID:           42,
+		Name:         "Texture Pack",
+		ManifestJSON: string(manifestJSON),
+		Enabled:      true,
+	}}
+	mappings := []deploy.FileMapping{{
+		InstalledModID: 42,
+		TargetRelative: "DMM/TexMod/package.tpf",
+	}}
+	tool := gameext.LaunchToolSpec{ID: "texmod"}
+	input := gameext.LaunchToolDynamicInputSpec{
+		ID:             "packages",
+		Name:           "Packages",
+		Kind:           gameext.LaunchToolDynamicInputEnabledModFileList,
+		SourceModTypes: []string{"texmod-package"},
+		OutputRelative: "DMM/TexMod/packages.txt",
+	}
+	mapping, err := (&Server{}).enabledModFileListLaunchInput(game, mods, mappings, t.TempDir(), tool, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapping.TargetRelative != "DMM/TexMod/packages.txt" || mapping.Strategy != deploy.StrategyCopy || mapping.ChecksumSHA256 == "" {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	body, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath := filepath.ToSlash(filepath.Join(game.GamePath, "DMM/TexMod/package.tpf"))
+	if !strings.Contains(string(body), wantPath) {
+		t.Fatalf("generated file list %q did not contain %q", string(body), wantPath)
+	}
+}
+
+func TestLaunchToolArgumentsIncludeDynamicInputPath(t *testing.T) {
+	gamePath := filepath.ToSlash(t.TempDir())
+	tool := gameext.LaunchToolSpec{
+		Arguments: []string{"--native"},
+		DynamicInputs: []gameext.LaunchToolDynamicInputSpec{{
+			ID:             "packages",
+			OutputRelative: "DMM/TexMod/packages.txt",
+			ArgumentToken:  "--package-list={path}",
+		}},
+	}
+	args := launchToolArguments(gamePath, tool)
+	want := "--package-list=" + filepath.ToSlash(filepath.Join(gamePath, "DMM/TexMod/packages.txt"))
+	if len(args) != 2 || args[0] != "--native" || args[1] != want {
+		t.Fatalf("args = %#v, want dynamic arg %q", args, want)
 	}
 }
 

@@ -74,6 +74,16 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{"fallout4-script-extender"},
 		ProviderModTypes:   []string{"fallout4-script-extender"},
 	})
+	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+		ID:       "fallout4-f4se-loader",
+		Name:     "Existing Fallout 4 Script Extender loader",
+		Patterns: []string{"f4se_loader.exe"},
+	})
+	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
+		ID:       "fallout4-plugin-list",
+		Name:     "Existing Fallout 4 plugin list",
+		Patterns: []string{"plugins.txt", "loadorder.txt"},
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "FO4Edit",
 		Name:               "FO4Edit",
@@ -96,7 +106,7 @@ func Register(r sdk.Registrar) {
 		ID:            "fallout4-gamebryo-plugins",
 		Name:          "Fallout 4 plugins.txt activation",
 		AppDataPath:   "Fallout4",
-		Format:        gamebryo.FormatFallout4,
+		Format:        gamebryo.FormatAsterisked,
 		NativePlugins: nativePlugins(),
 		NativePluginManifests: []string{
 			"Fallout4.ccc",

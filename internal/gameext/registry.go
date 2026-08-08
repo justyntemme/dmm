@@ -22,34 +22,39 @@ type Extension struct {
 	SteamAppIDs  []string
 	NexusDomains []string
 
-	InstallPlan          installplan.GameSpec
-	RuntimeRequirements  gamehandler.GameSpec
-	InstallerChoices     []sdk.InstallerChoiceSpec
-	LaunchTools          []sdk.LaunchToolSpec
-	InstallPlatforms     []sdk.InstallPlatformSpec
-	GameVersionProviders []sdk.GameVersionProviderSpec
-	PluginActivations    []sdk.PluginActivationSpec
-	ConflictIgnores      []sdk.ConflictIgnoreSpec
-	DeployIgnores        []sdk.DeployIgnoreSpec
-	TargetRoots          []sdk.TargetRootSpec
-	SteamWorkshop        sdk.SteamWorkshopSpec
-	Sources              []sdk.SourceRef
-	Merges               []sdk.MergeSpec
-	LoadOrders           []sdk.LoadOrderSpec
-	EventHandlers        []sdk.EventHandlerSpec
+	InstallPlan            installplan.GameSpec
+	RuntimeRequirements    gamehandler.GameSpec
+	InstallerChoices       []sdk.InstallerChoiceSpec
+	LaunchTools            []sdk.LaunchToolSpec
+	InstallPlatforms       []sdk.InstallPlatformSpec
+	GameVersionProviders   []sdk.GameVersionProviderSpec
+	PluginActivations      []sdk.PluginActivationSpec
+	UnmanagedMarkers       []sdk.UnmanagedMarkerSpec
+	ConflictIgnores        []sdk.ConflictIgnoreSpec
+	DeployIgnores          []sdk.DeployIgnoreSpec
+	PackedArchiveMutations []sdk.PackedArchiveMutationSpec
+	TargetRoots            []sdk.TargetRootSpec
+	SteamWorkshop          sdk.SteamWorkshopSpec
+	Sources                []sdk.SourceRef
+	Merges                 []sdk.MergeSpec
+	LoadOrders             []sdk.LoadOrderSpec
+	EventHandlers          []sdk.EventHandlerSpec
 }
 
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
+type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
 type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
 type DeployIgnoreSpec = sdk.DeployIgnoreSpec
+type PackedArchiveMutationSpec = sdk.PackedArchiveMutationSpec
 type TargetRootSpec = sdk.TargetRootSpec
 type TargetRootInput = sdk.TargetRootInput
 type TargetRootResult = sdk.TargetRootResult
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
+type UnmanagedMarkerSpec = sdk.UnmanagedMarkerSpec
 type SteamWorkshopSpec = sdk.SteamWorkshopSpec
 type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
 type GameVersionInput = sdk.GameVersionInput
@@ -67,6 +72,11 @@ const (
 	SteamWorkshopActionEnable      = sdk.SteamWorkshopActionEnable
 	SteamWorkshopActionDisable     = sdk.SteamWorkshopActionDisable
 	SteamWorkshopActionOrder       = sdk.SteamWorkshopActionOrder
+
+	LaunchToolDynamicInputGeneratedConfig    = sdk.LaunchToolDynamicInputGeneratedConfig
+	LaunchToolDynamicInputEnabledModFileList = sdk.LaunchToolDynamicInputEnabledModFileList
+	PluginActivationFormatOriginal           = sdk.PluginActivationFormatOriginal
+	PluginActivationFormatAsterisked         = sdk.PluginActivationFormatAsterisked
 )
 
 type DeploymentMod = sdk.DeploymentMod
@@ -86,35 +96,53 @@ type ExtensionSummary struct {
 }
 
 type ExtensionCapabilities struct {
-	ModTypes            []FeatureSummary `json:"mod_types,omitempty"`
-	Installers          []FeatureSummary `json:"installers,omitempty"`
-	InstallerChoices    []FeatureSummary `json:"installer_choices,omitempty"`
-	RuntimeRequirements []FeatureSummary `json:"runtime_requirements,omitempty"`
-	LaunchTools         []FeatureSummary `json:"launch_tools,omitempty"`
-	InstallPlatforms    []FeatureSummary `json:"install_platforms,omitempty"`
-	GameVersions        []FeatureSummary `json:"game_versions,omitempty"`
-	PluginActivations   []FeatureSummary `json:"plugin_activations,omitempty"`
-	ConflictIgnores     []FeatureSummary `json:"conflict_ignores,omitempty"`
-	DeployIgnores       []FeatureSummary `json:"deploy_ignores,omitempty"`
-	TargetRoots         []FeatureSummary `json:"target_roots,omitempty"`
-	SteamWorkshop       *WorkshopSummary `json:"steam_workshop,omitempty"`
-	Merges              []FeatureSummary `json:"merges,omitempty"`
-	LoadOrders          []FeatureSummary `json:"load_orders,omitempty"`
-	EventHandlers       []FeatureSummary `json:"event_handlers,omitempty"`
+	ModTypes               []FeatureSummary `json:"mod_types,omitempty"`
+	Installers             []FeatureSummary `json:"installers,omitempty"`
+	InstallerChoices       []FeatureSummary `json:"installer_choices,omitempty"`
+	RuntimeRequirements    []FeatureSummary `json:"runtime_requirements,omitempty"`
+	LaunchTools            []FeatureSummary `json:"launch_tools,omitempty"`
+	InstallPlatforms       []FeatureSummary `json:"install_platforms,omitempty"`
+	GameVersions           []FeatureSummary `json:"game_versions,omitempty"`
+	PluginActivations      []FeatureSummary `json:"plugin_activations,omitempty"`
+	UnmanagedMarkers       []FeatureSummary `json:"unmanaged_markers,omitempty"`
+	ConflictIgnores        []FeatureSummary `json:"conflict_ignores,omitempty"`
+	DeployIgnores          []FeatureSummary `json:"deploy_ignores,omitempty"`
+	PackedArchiveMutations []FeatureSummary `json:"packed_archive_mutations,omitempty"`
+	TargetRoots            []FeatureSummary `json:"target_roots,omitempty"`
+	SteamWorkshop          *WorkshopSummary `json:"steam_workshop,omitempty"`
+	Merges                 []FeatureSummary `json:"merges,omitempty"`
+	LoadOrders             []FeatureSummary `json:"load_orders,omitempty"`
+	EventHandlers          []FeatureSummary `json:"event_handlers,omitempty"`
 }
 
 type FeatureSummary struct {
-	ID                 string   `json:"id"`
-	Name               string   `json:"name,omitempty"`
-	ExecutableRelative string   `json:"executable_relative,omitempty"`
-	Arguments          []string `json:"arguments,omitempty"`
-	RequiredFiles      []string `json:"required_files,omitempty"`
-	Shell              bool     `json:"shell,omitempty"`
-	Detach             bool     `json:"detach,omitempty"`
-	Exclusive          bool     `json:"exclusive,omitempty"`
-	DefaultPrimary     bool     `json:"default_primary,omitempty"`
-	ModTypes           []string `json:"mod_types,omitempty"`
-	ProviderModTypes   []string `json:"provider_mod_types,omitempty"`
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name,omitempty"`
+	DeploymentMode     string                   `json:"deployment_mode,omitempty"`
+	ExecutableRelative string                   `json:"executable_relative,omitempty"`
+	Arguments          []string                 `json:"arguments,omitempty"`
+	RequiredFiles      []string                 `json:"required_files,omitempty"`
+	DynamicInputs      []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
+	Shell              bool                     `json:"shell,omitempty"`
+	Detach             bool                     `json:"detach,omitempty"`
+	Exclusive          bool                     `json:"exclusive,omitempty"`
+	DefaultPrimary     bool                     `json:"default_primary,omitempty"`
+	ModTypes           []string                 `json:"mod_types,omitempty"`
+	ProviderModTypes   []string                 `json:"provider_mod_types,omitempty"`
+	Patterns           []string                 `json:"patterns,omitempty"`
+	PackageFormat      string                   `json:"package_format,omitempty"`
+	StateFileRelative  string                   `json:"state_file_relative,omitempty"`
+	TargetArchives     []string                 `json:"target_archives,omitempty"`
+	RequiresEngine     string                   `json:"requires_engine,omitempty"`
+}
+
+type LaunchToolDynamicInput struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name,omitempty"`
+	Kind           string   `json:"kind"`
+	SourceModTypes []string `json:"source_mod_types,omitempty"`
+	OutputRelative string   `json:"output_relative,omitempty"`
+	ArgumentToken  string   `json:"argument_token,omitempty"`
 }
 
 type WorkshopSummary struct {
@@ -351,6 +379,29 @@ func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSp
 	return LaunchToolSpec{}, false
 }
 
+func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return installplan.ModTypeDeploymentDirect
+	}
+	modType = canonical(modType)
+	if modType == "" {
+		return installplan.ModTypeDeploymentDirect
+	}
+	for _, registered := range extension.InstallPlan.ModTypes {
+		if canonical(registered.ID) != modType {
+			continue
+		}
+		switch strings.TrimSpace(registered.DeploymentMode) {
+		case installplan.ModTypeDeploymentEventHook:
+			return installplan.ModTypeDeploymentEventHook
+		default:
+			return installplan.ModTypeDeploymentDirect
+		}
+	}
+	return installplan.ModTypeDeploymentDirect
+}
+
 func (r Registry) ResolveLaunchToolForSteamApp(appID, gamePath string, tool LaunchToolSpec) LaunchToolSpec {
 	platform, ok := r.InstallPlatformForSteamApp(appID, gamePath)
 	if !ok {
@@ -553,17 +604,19 @@ func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, inp
 }
 
 func installPlatformMatches(gamePath string, platform InstallPlatformSpec) bool {
+	checked := false
 	for _, marker := range platform.Markers {
 		marker = strings.TrimSpace(marker)
 		if marker == "" {
 			continue
 		}
+		checked = true
 		path := filepath.Join(gamePath, filepath.FromSlash(marker))
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return true
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return false
 		}
 	}
-	return false
+	return checked
 }
 
 func MissingLaunchToolFiles(gamePath string, tool LaunchToolSpec) []string {
@@ -649,13 +702,21 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		Sources:       append([]SourceRef(nil), extension.Sources...),
 	}
 	for _, modType := range extension.InstallPlan.ModTypes {
-		summary.Capabilities.ModTypes = append(summary.Capabilities.ModTypes, FeatureSummary{ID: modType.ID, Name: modType.TargetRoot})
+		mode := strings.TrimSpace(modType.DeploymentMode)
+		if mode == "" {
+			mode = installplan.ModTypeDeploymentDirect
+		}
+		summary.Capabilities.ModTypes = append(summary.Capabilities.ModTypes, FeatureSummary{
+			ID:             modType.ID,
+			Name:           modType.TargetRoot,
+			DeploymentMode: mode,
+		})
 	}
 	for _, installer := range extension.InstallPlan.Installers {
 		summary.Capabilities.Installers = append(summary.Capabilities.Installers, FeatureSummary{ID: installer.ID, Name: installer.VortexInstallerID})
 	}
 	for _, choice := range extension.InstallerChoices {
-		summary.Capabilities.InstallerChoices = append(summary.Capabilities.InstallerChoices, FeatureSummary{ID: choice.ID, Name: choice.Kind})
+		summary.Capabilities.InstallerChoices = append(summary.Capabilities.InstallerChoices, FeatureSummary{ID: choice.ID, Name: defaultString(choice.Name, choice.Kind)})
 	}
 	for _, requirement := range extension.RuntimeRequirements.RuntimeRequirements {
 		summary.Capabilities.RuntimeRequirements = append(summary.Capabilities.RuntimeRequirements, FeatureSummary{ID: requirement.ID, Name: requirement.Name})
@@ -667,6 +728,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ExecutableRelative: tool.ExecutableRelative,
 			Arguments:          append([]string(nil), tool.Arguments...),
 			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+			DynamicInputs:      launchToolDynamicInputs(tool.DynamicInputs),
 			Shell:              tool.Shell,
 			Detach:             tool.Detach,
 			Exclusive:          tool.Exclusive,
@@ -684,11 +746,29 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
 	}
+	for _, marker := range extension.UnmanagedMarkers {
+		summary.Capabilities.UnmanagedMarkers = append(summary.Capabilities.UnmanagedMarkers, FeatureSummary{
+			ID:       marker.ID,
+			Name:     marker.Name,
+			Patterns: appendClean([]string{}, marker.Patterns...),
+		})
+	}
 	for _, ignore := range extension.ConflictIgnores {
 		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
 	}
 	for _, ignore := range extension.DeployIgnores {
 		summary.Capabilities.DeployIgnores = append(summary.Capabilities.DeployIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
+	}
+	for _, mutation := range extension.PackedArchiveMutations {
+		summary.Capabilities.PackedArchiveMutations = append(summary.Capabilities.PackedArchiveMutations, FeatureSummary{
+			ID:                mutation.ID,
+			Name:              mutation.Name,
+			PackageFormat:     mutation.PackageFormat,
+			StateFileRelative: mutation.StateFileRelative,
+			TargetArchives:    appendClean([]string{}, mutation.TargetArchives...),
+			RequiresEngine:    mutation.RequiresEngine,
+			ModTypes:          appendClean([]string{}, mutation.ModTypes...),
+		})
 	}
 	for _, root := range extension.TargetRoots {
 		summary.Capabilities.TargetRoots = append(summary.Capabilities.TargetRoots, FeatureSummary{ID: root.ID, Name: root.Name})
@@ -718,8 +798,10 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.InstallPlatforms)
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
+	sortFeatureSummaries(summary.Capabilities.UnmanagedMarkers)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
 	sortFeatureSummaries(summary.Capabilities.DeployIgnores)
+	sortFeatureSummaries(summary.Capabilities.PackedArchiveMutations)
 	sortFeatureSummaries(summary.Capabilities.TargetRoots)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
@@ -750,6 +832,24 @@ func ExtensionCoverage(extension Extension) (string, string) {
 		return CoverageBrowseOnly, "Browse only"
 	}
 	return CoverageMetadataOnly, "Metadata only"
+}
+
+func launchToolDynamicInputs(inputs []sdk.LaunchToolDynamicInputSpec) []LaunchToolDynamicInput {
+	if len(inputs) == 0 {
+		return nil
+	}
+	out := make([]LaunchToolDynamicInput, 0, len(inputs))
+	for _, input := range inputs {
+		out = append(out, LaunchToolDynamicInput{
+			ID:             input.ID,
+			Name:           input.Name,
+			Kind:           input.Kind,
+			SourceModTypes: appendClean([]string{}, input.SourceModTypes...),
+			OutputRelative: input.OutputRelative,
+			ArgumentToken:  input.ArgumentToken,
+		})
+	}
+	return out
 }
 
 func sortFeatureSummaries(features []FeatureSummary) {

@@ -116,6 +116,13 @@ func (r *Registrar) RegisterPluginActivation(spec sdk.PluginActivationSpec) {
 	r.extension.PluginActivations = append(r.extension.PluginActivations, spec)
 }
 
+func (r *Registrar) RegisterUnmanagedMarker(spec sdk.UnmanagedMarkerSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.UnmanagedMarkers = append(r.extension.UnmanagedMarkers, spec)
+}
+
 func (r *Registrar) RegisterConflictIgnore(spec sdk.ConflictIgnoreSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -128,6 +135,13 @@ func (r *Registrar) RegisterDeployIgnore(spec sdk.DeployIgnoreSpec) {
 		return
 	}
 	r.extension.DeployIgnores = append(r.extension.DeployIgnores, spec)
+}
+
+func (r *Registrar) RegisterPackedArchiveMutation(spec sdk.PackedArchiveMutationSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.PackedArchiveMutations = append(r.extension.PackedArchiveMutations, spec)
 }
 
 func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
@@ -188,8 +202,10 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
+	errs = append(errs, validateUnmanagedMarkers(extension.UnmanagedMarkers)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
 	errs = append(errs, validateDeployIgnores(extension.DeployIgnores)...)
+	errs = append(errs, validatePackedArchiveMutations(extension.PackedArchiveMutations, extension.InstallPlan.ModTypes)...)
 	errs = append(errs, validateTargetRoots(extension.TargetRoots)...)
 	errs = append(errs, validateInstallPlanTargetRoots(extension.InstallPlan, extension.TargetRoots)...)
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
@@ -305,6 +321,11 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		declaredModTypes[id] = struct{}{}
 		if err := validateRelativeOrRoot(modType.TargetRoot); err != nil {
 			errs = append(errs, errors.New("mod type "+id+" target root: "+err.Error()))
+		}
+		switch strings.TrimSpace(modType.DeploymentMode) {
+		case "", installplan.ModTypeDeploymentDirect, installplan.ModTypeDeploymentEventHook:
+		default:
+			errs = append(errs, errors.New("mod type "+id+" deployment mode must be direct or event-hook"))
 		}
 	}
 	for _, installer := range spec.Installers {
@@ -422,8 +443,20 @@ func validateInstallerChoices(specs []sdk.InstallerChoiceSpec, modTypes []instal
 				errs = append(errs, errors.New("installer choice "+id+" stop folder: "+err.Error()))
 			}
 		}
+		if err := validateInstallerChoiceDestinationPrefixMode(spec.DestinationPrefixMode); err != nil {
+			errs = append(errs, errors.New("installer choice "+id+" destination prefix mode: "+err.Error()))
+		}
 	}
 	return errs
+}
+
+func validateInstallerChoiceDestinationPrefixMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", sdk.InstallerChoiceDestinationPrefixModuleBaseName:
+		return nil
+	default:
+		return errors.New("unsupported value " + mode)
+	}
 }
 
 func validateRuntimeSpec(spec gamehandler.GameSpec) []error {
@@ -463,9 +496,9 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 			errs = append(errs, errors.New("plugin activation "+id+" load order file: "+err.Error()))
 		}
 		switch strings.TrimSpace(spec.Format) {
-		case "original", "fallout4":
+		case sdk.PluginActivationFormatOriginal, sdk.PluginActivationFormatAsterisked:
 		default:
-			errs = append(errs, errors.New("plugin activation "+id+" format must be original or fallout4"))
+			errs = append(errs, errors.New("plugin activation "+id+" format must be original or asterisked"))
 		}
 		if len(spec.PluginExtensions) == 0 {
 			errs = append(errs, errors.New("plugin activation "+id+" must declare plugin extensions"))
@@ -479,6 +512,38 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 		for _, manifest := range spec.NativePluginManifests {
 			if err := validateRelativePath(manifest); err != nil {
 				errs = append(errs, errors.New("plugin activation "+id+" native plugin manifest: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateUnmanagedMarkers(specs []sdk.UnmanagedMarkerSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("unmanaged marker id is required"))
+			continue
+		}
+		key := strings.ToLower(id)
+		if _, exists := seen[key]; exists {
+			errs = append(errs, errors.New("unmanaged marker "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.ContainsAny(id, "/\\") {
+			errs = append(errs, errors.New("unmanaged marker "+id+" id must be a simple identifier"))
+		}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("unmanaged marker "+id+" name is required"))
+		}
+		if len(spec.Patterns) == 0 {
+			errs = append(errs, errors.New("unmanaged marker "+id+" must declare at least one pattern"))
+		}
+		for _, pattern := range spec.Patterns {
+			if err := validateConflictPattern(pattern); err != nil {
+				errs = append(errs, errors.New("unmanaged marker "+id+" pattern: "+err.Error()))
 			}
 		}
 	}
@@ -555,6 +620,7 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 				errs = append(errs, errors.New("launch tool "+id+" required file: "+err.Error()))
 			}
 		}
+		errs = append(errs, validateLaunchToolDynamicInputs(id, tool.DynamicInputs)...)
 		for _, variant := range tool.Variants {
 			platformID := strings.TrimSpace(variant.PlatformID)
 			if platformID == "" {
@@ -586,6 +652,45 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 	return errs
 }
 
+func validateLaunchToolDynamicInputs(toolID string, inputs []sdk.LaunchToolDynamicInputSpec) []error {
+	var errs []error
+	for _, input := range inputs {
+		id := strings.TrimSpace(input.ID)
+		if id == "" {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input id is required"))
+			continue
+		}
+		if strings.ContainsAny(id, "/\\") {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" id must be a simple identifier"))
+		}
+		if strings.TrimSpace(input.Name) == "" {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" name is required"))
+		}
+		switch strings.TrimSpace(input.Kind) {
+		case sdk.LaunchToolDynamicInputGeneratedConfig, sdk.LaunchToolDynamicInputEnabledModFileList:
+		default:
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" kind must be generated-config or enabled-mod-file-list"))
+		}
+		if len(input.SourceModTypes) == 0 {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" must declare source mod types"))
+		}
+		for _, modType := range input.SourceModTypes {
+			if strings.TrimSpace(modType) == "" {
+				errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" source mod type is required"))
+			}
+		}
+		if err := validateRelativePath(input.OutputRelative); err != nil {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" output path: "+err.Error()))
+		}
+		if strings.TrimSpace(input.ArgumentToken) != "" {
+			if err := validateLaunchArgument(input.ArgumentToken); err != nil {
+				errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" argument token: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
 func validateLaunchArgument(argument string) error {
 	if strings.ContainsAny(argument, "\x00\r\n") {
 		return errors.New("must not contain control line breaks")
@@ -607,6 +712,62 @@ func validateConflictPattern(pattern string) error {
 		}
 	}
 	return nil
+}
+
+func validatePackedArchiveMutations(specs []sdk.PackedArchiveMutationSpec, modTypes []installplan.ModTypeSpec) []error {
+	declaredModTypes := map[string]struct{}{}
+	for _, modType := range modTypes {
+		if id := strings.TrimSpace(modType.ID); id != "" {
+			declaredModTypes[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("packed archive mutation id is required"))
+			continue
+		}
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("packed archive mutation "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("packed archive mutation "+id+" name is required"))
+		}
+		if strings.TrimSpace(spec.PackageFormat) == "" {
+			errs = append(errs, errors.New("packed archive mutation "+id+" package format is required"))
+		}
+		if len(spec.TargetArchives) == 0 {
+			errs = append(errs, errors.New("packed archive mutation "+id+" must declare target archives"))
+		}
+		for _, target := range spec.TargetArchives {
+			if err := validateRelativePath(target); err != nil {
+				errs = append(errs, errors.New("packed archive mutation "+id+" target archive: "+err.Error()))
+			}
+		}
+		if strings.TrimSpace(spec.StateFileRelative) != "" {
+			if err := validateRelativePath(spec.StateFileRelative); err != nil {
+				errs = append(errs, errors.New("packed archive mutation "+id+" state file: "+err.Error()))
+			}
+		}
+		if len(spec.ModTypes) == 0 {
+			errs = append(errs, errors.New("packed archive mutation "+id+" must declare mod types"))
+		}
+		for _, modType := range spec.ModTypes {
+			modType = strings.TrimSpace(modType)
+			if modType == "" {
+				errs = append(errs, errors.New("packed archive mutation "+id+" mod type is required"))
+				continue
+			}
+			if _, ok := declaredModTypes[strings.ToLower(modType)]; !ok {
+				errs = append(errs, errors.New("packed archive mutation "+id+" references unknown mod type "+modType))
+			}
+		}
+	}
+	return errs
 }
 
 func defaultString(value, defaultValue string) string {

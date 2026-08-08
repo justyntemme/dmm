@@ -66,7 +66,7 @@ for target in "${tmp_dir}"/*.js; do
       "Add Mod" \
       "Install to Profile" \
       "mods in the same on/off state" \
-      "Explore Mod Sources" \
+      "Explore Mods" \
       "Quick Games" \
       "Open on Deck" \
       "Advanced Profile Tools" \

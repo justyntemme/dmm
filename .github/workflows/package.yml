@@ -2,10 +2,9 @@ name: Package
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - "v*.*.*"
+      - "[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: write
@@ -45,24 +44,18 @@ jobs:
             dist/decky-mod-manager.zip
           if-no-files-found: error
 
-      - name: Publish development release assets
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_tag="dev-latest"
+          release_tag="${GITHUB_REF_NAME}"
           short_sha="$(git rev-parse --short HEAD)"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${release_tag}" "${GITHUB_SHA}"
-          git push origin "refs/tags/${release_tag}" --force
-
-          notes="Automated Decky Mod Manager development build from main at ${GITHUB_SHA}."
+          notes="Decky Mod Manager ${release_tag} built from ${GITHUB_SHA}."
           if gh release view "${release_tag}" >/dev/null 2>&1; then
-            gh release edit "${release_tag}" --title "Latest main build (${short_sha})" --notes "${notes}"
+            gh release edit "${release_tag}" --title "Decky Mod Manager ${release_tag} (${short_sha})" --notes "${notes}"
           else
-            gh release create "${release_tag}" --verify-tag --title "Latest main build (${short_sha})" --notes "${notes}"
+            gh release create "${release_tag}" --verify-tag --title "Decky Mod Manager ${release_tag} (${short_sha})" --notes "${notes}"
           fi
           gh release upload "${release_tag}" \
             dist/decky-mod-manager.tar.gz \

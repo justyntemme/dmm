@@ -106,16 +106,19 @@ type FOMMDependency struct {
 type FileStateResolver func(relative string) string
 
 type PlanOptions struct {
-	ModType           string
-	PlannerID         string
-	TargetRoot        string
-	TargetRootID      string
-	StopFolders       []string
-	GameVersion       string
-	HostVersion       string
-	FileStates        map[string]string
-	FileStateResolver FileStateResolver
+	ModType               string
+	PlannerID             string
+	TargetRoot            string
+	TargetRootID          string
+	StopFolders           []string
+	DestinationPrefixMode string
+	GameVersion           string
+	HostVersion           string
+	FileStates            map[string]string
+	FileStateResolver     FileStateResolver
 }
+
+const DestinationPrefixModuleBaseName = "module-base-name"
 
 type configXML struct {
 	ModuleName              string                     `xml:"moduleName"`
@@ -426,6 +429,14 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 	if err != nil {
 		return installplan.Plan{}, err
 	}
+	sourceRoot, moduleBaseRel, err := sourceRootForInstaller(root, installer)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	destinationPrefix, err := destinationPrefixRelative(options.DestinationPrefixMode, moduleBaseRel)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
 	if selections == nil {
 		selections = DefaultSelectionsWithOptions(installer, options)
 	}
@@ -442,7 +453,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		return installplan.Plan{}, installplan.Unsupported("FOMOD module dependencies are not satisfied")
 	}
 	for _, entry := range installer.RequiredFiles {
-		if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
+		if err := appendEntryInstructions(&plan, sourceRoot, targetRoot, options.TargetRootID, stopFolders, destinationPrefix, entry); err != nil {
 			return installplan.Plan{}, err
 		}
 	}
@@ -468,7 +479,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 					if !includePlugin && !entry.AlwaysInstall && !(entry.InstallIfUsable && isSelectablePluginType(types[plugin.ID])) {
 						continue
 					}
-					if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
+					if err := appendChoiceEntryInstructions(&plan, sourceRoot, targetRoot, options.TargetRootID, stopFolders, destinationPrefix, entry); err != nil {
 						return installplan.Plan{}, err
 					}
 				}
@@ -483,7 +494,7 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 			continue
 		}
 		for _, entry := range pattern.Files {
-			if err := appendEntryInstructions(&plan, root, targetRoot, options.TargetRootID, stopFolders, entry); err != nil {
+			if err := appendChoiceEntryInstructions(&plan, sourceRoot, targetRoot, options.TargetRootID, stopFolders, destinationPrefix, entry); err != nil {
 				return installplan.Plan{}, err
 			}
 		}
@@ -495,6 +506,21 @@ func BuildPlan(gameID, root string, installer Installer, selections map[string][
 		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
 	})
 	return plan, nil
+}
+
+// ValidateRequiredSources verifies files the FOMOD says must always be installed.
+// Choice-dependent entries are still validated by BuildPlan after selections are known.
+func ValidateRequiredSources(root string, installer Installer) error {
+	sourceRoot, _, err := sourceRootForInstaller(root, installer)
+	if err != nil {
+		return err
+	}
+	for _, entry := range installer.RequiredFiles {
+		if err := validateEntrySource(sourceRoot, entry); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func selectedPlugins(group Group, ids []string, flags map[string]string, options PlanOptions) ([]Plugin, error) {
@@ -546,7 +572,25 @@ func selectablePluginCount(plugins []Plugin, types map[string]string) int {
 	return count
 }
 
-func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, targetRootID string, stopFolders []string, entry FileEntry) error {
+func appendChoiceEntryInstructions(plan *installplan.Plan, root string, targetRoot string, targetRootID string, stopFolders []string, destinationPrefix string, entry FileEntry) error {
+	if err := appendEntryInstructions(plan, root, targetRoot, targetRootID, stopFolders, destinationPrefix, entry); err != nil {
+		var missing MissingSourceError
+		if errors.As(err, &missing) {
+			reason := "FOMOD choice entry source was missing; skipped to match Vortex native FOMOD behavior"
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s: %s", reason, missing.SourceRel))
+			plan.DetectedFrom = append(plan.DetectedFrom, installplan.Detection{
+				Kind:   "fomod-missing-choice-source",
+				Path:   missing.SourceRel,
+				Reason: reason,
+			})
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot string, targetRootID string, stopFolders []string, destinationPrefix string, entry FileEntry) error {
 	sourceRel, err := cleanRel(entry.Source)
 	if err != nil {
 		return err
@@ -554,7 +598,10 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 	sourcePath := filepath.Join(root, filepath.FromSlash(sourceRel))
 	info, err := os.Stat(sourcePath)
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return missingSourceError(sourceRel)
+		}
+		return fmt.Errorf("inspect FOMOD source %q: %w", sourceRel, err)
 	}
 	destRel := strings.TrimSpace(filepath.ToSlash(entry.Destination))
 	if destRel == "" {
@@ -562,6 +609,10 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 	}
 	destRel = stripBeforeStopFolder(destRel, stopFolders)
 	destRel, err = cleanRel(destRel)
+	if err != nil {
+		return err
+	}
+	destRel, err = prefixRelative(destinationPrefix, destRel)
 	if err != nil {
 		return err
 	}
@@ -600,11 +651,101 @@ func appendEntryInstructions(plan *installplan.Plan, root string, targetRoot str
 	return nil
 }
 
+func validateEntrySource(root string, entry FileEntry) error {
+	sourceRel, err := cleanRel(entry.Source)
+	if err != nil {
+		return err
+	}
+	sourcePath := filepath.Join(root, filepath.FromSlash(sourceRel))
+	if _, err := os.Stat(sourcePath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return missingSourceError(sourceRel)
+		}
+		return fmt.Errorf("inspect FOMOD source %q: %w", sourceRel, err)
+	}
+	return nil
+}
+
+type MissingSourceError struct {
+	SourceRel string
+}
+
+func (e MissingSourceError) Error() string {
+	return missingSourceMessage(e.SourceRel)
+}
+
+func (e MissingSourceError) Unwrap() error {
+	return installplan.Unsupported(e.Error())
+}
+
+func missingSourceError(sourceRel string) error {
+	return MissingSourceError{SourceRel: sourceRel}
+}
+
+func missingSourceMessage(sourceRel string) string {
+	return fmt.Sprintf("FOMOD installer metadata references missing source %q; the downloaded archive does not contain that file or folder", sourceRel)
+}
+
+func sourceRootForInstaller(root string, installer Installer) (string, string, error) {
+	moduleBaseRel, err := moduleConfigBaseRelative(installer.ModuleConfig)
+	if err != nil {
+		return "", "", err
+	}
+	sourceRoot := root
+	if moduleBaseRel != "" {
+		sourceRoot = filepath.Join(root, filepath.FromSlash(moduleBaseRel))
+	}
+	return sourceRoot, moduleBaseRel, nil
+}
+
+func moduleConfigBaseRelative(moduleConfig string) (string, error) {
+	moduleConfig, err := cleanRel(moduleConfig)
+	if err != nil {
+		return "", err
+	}
+	moduleDir := filepath.Dir(filepath.FromSlash(moduleConfig))
+	if moduleDir == "." {
+		return "", nil
+	}
+	baseDir := filepath.Dir(moduleDir)
+	if baseDir == "." {
+		return "", nil
+	}
+	return cleanRel(filepath.ToSlash(baseDir))
+}
+
+func destinationPrefixRelative(mode string, moduleBaseRel string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "":
+		return "", nil
+	case DestinationPrefixModuleBaseName:
+		if strings.TrimSpace(moduleBaseRel) == "" {
+			return "", nil
+		}
+		base := filepath.Base(filepath.FromSlash(moduleBaseRel))
+		return cleanRel(base)
+	default:
+		return "", fmt.Errorf("unsupported FOMOD destination prefix mode %q", mode)
+	}
+}
+
+func prefixRelative(prefix string, rel string) (string, error) {
+	prefix = strings.TrimSpace(slashPath(prefix))
+	if prefix == "" {
+		return rel, nil
+	}
+	prefix, err := cleanRel(prefix)
+	if err != nil {
+		return "", err
+	}
+	return cleanRel(filepath.ToSlash(filepath.Join(prefix, rel)))
+}
+
 func normalizedStopFolders(values []string) []string {
 	var out []string
 	seen := map[string]struct{}{}
 	for _, value := range values {
-		value = strings.TrimSpace(filepath.ToSlash(value))
+		value = strings.TrimSpace(slashPath(value))
 		if value == "" || strings.Contains(value, "/") {
 			continue
 		}
@@ -636,7 +777,7 @@ func orderedByName[T any](values []T, order string, name func(T) string) []T {
 }
 
 func stripBeforeStopFolder(rel string, stopFolders []string) string {
-	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	rel = slashPath(strings.TrimSpace(rel))
 	if rel == "" || len(stopFolders) == 0 {
 		return rel
 	}
@@ -655,8 +796,8 @@ func stripBeforeStopFolder(rel string, stopFolders []string) string {
 }
 
 func targetRelative(targetRoot, destRel string) string {
-	targetRoot = strings.TrimSpace(filepath.ToSlash(targetRoot))
-	destRel = strings.TrimSpace(filepath.ToSlash(destRel))
+	targetRoot = strings.TrimSpace(slashPath(targetRoot))
+	destRel = strings.TrimSpace(slashPath(destRel))
 	if targetRoot == "" || pathHasRoot(destRel, targetRoot) {
 		return destRel
 	}
@@ -664,8 +805,8 @@ func targetRelative(targetRoot, destRel string) string {
 }
 
 func pathHasRoot(rel, root string) bool {
-	rel = strings.Trim(filepath.ToSlash(rel), "/")
-	root = strings.Trim(filepath.ToSlash(root), "/")
+	rel = strings.Trim(slashPath(rel), "/")
+	root = strings.Trim(slashPath(root), "/")
 	if root == "" {
 		return false
 	}
@@ -1142,7 +1283,7 @@ func normalizeGroupType(value string) string {
 }
 
 func cleanRel(value string) (string, error) {
-	value = strings.TrimSpace(filepath.ToSlash(value))
+	value = strings.TrimSpace(slashPath(value))
 	if value == "" {
 		return "", errors.New("relative path is required")
 	}
@@ -1157,11 +1298,15 @@ func cleanRel(value string) (string, error) {
 }
 
 func cleanOptionalRoot(value string) (string, error) {
-	value = strings.TrimSpace(filepath.ToSlash(value))
+	value = strings.TrimSpace(slashPath(value))
 	if value == "" {
 		return "", nil
 	}
 	return cleanRel(value)
+}
+
+func slashPath(value string) string {
+	return filepath.ToSlash(strings.ReplaceAll(value, "\\", "/"))
 }
 
 func decodeXML(data []byte) (string, error) {

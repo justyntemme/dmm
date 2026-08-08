@@ -1717,6 +1717,7 @@ DELETE FROM install_candidates
 WHERE game_id IN (
 	SELECT id FROM games WHERE steam_app_id = ?
 )
+AND status != 'needs_choices'
 AND EXISTS (
 	SELECT 1
 	FROM installed_mods im

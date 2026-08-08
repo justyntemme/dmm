@@ -2,6 +2,7 @@ package metalgearsolidvtpp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +26,7 @@ var requiredGameFiles = []string{
 	"master/0/01.dat",
 }
 
-const snakeBiteUnsupportedReason = "MGSV SnakeBite packages patch the game's packed QAR/FPK archives under master/0/00.dat and master/0/01.dat. DMM has verified this upstream behavior from SnakeBite source, but QAR/FPK rebuild support is not implemented yet, so this install is blocked to avoid corrupting game data."
+const snakeBiteDeployBlockedReason = "MGSV SnakeBite packages patch packed QAR/FPK game archives. DMM has staged this package safely, but enabling it requires the generic packed-archive mutation engine before DMM can rebuild master/0/00.dat without corrupting game data."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -46,16 +47,34 @@ func Register(r sdk.Registrar) {
 			DefaultStrategy: installplan.DeployStrategyCopy,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: snakeBiteModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{
+		ID:             snakeBiteModType,
+		DeploymentMode: installplan.ModTypeDeploymentEventHook,
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "snakebite:metalgearsolidvtpp:mgsv-package",
 		VortexInstallerID: "metalgearsolidvtpp-snakebite-mgsv",
 		Priority:          10,
 		ModType:           snakeBiteModType,
-		NameSource:        installplan.NameSourceArchive,
+		NameSource:        installplan.NameSourceManifestDisplay,
 		CustomMatch:       matchSnakeBitePackage,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: snakeBiteUnsupportedReason,
+		CustomBuild:       buildSnakeBitePackagePlan,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterPackedArchiveMutation(sdk.PackedArchiveMutationSpec{
+		ID:                "snakebite:metalgearsolidvtpp:qar-fpk",
+		Name:              "SnakeBite QAR/FPK package deployment",
+		PackageFormat:     "snakebite-mgsv",
+		StateFileRelative: "snakebite.xml",
+		TargetArchives:    []string{"master/0/00.dat", "master/0/01.dat"},
+		RequiresEngine:    "gzs-qar-fpk",
+		ModTypes:          []string{snakeBiteModType},
+	})
+	r.RegisterMerge(sdk.MergeSpec{ID: "snakebite:metalgearsolidvtpp:qar-fpk", Name: "SnakeBite QAR/FPK merge"})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Apply SnakeBite packed archive mutations",
+		Handler: willDeploySnakeBitePackages,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "metalgearsolidvtpp-required-files",
@@ -71,6 +90,37 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	for _, mod := range input.Mods {
+		if !mod.Enabled || !strings.EqualFold(strings.TrimSpace(mod.ModType), snakeBiteModType) {
+			continue
+		}
+		if missing := missingSnakeBiteStagedPackageFiles(mod.StagingPath); len(missing) > 0 {
+			return sdk.EventHandlerResult{}, errors.New("MGSV SnakeBite package " + mod.Name + " is missing staged package files: " + strings.Join(missing, ", "))
+		}
+		return sdk.EventHandlerResult{}, installplan.Unsupported(snakeBiteDeployBlockedReason)
+	}
+	return sdk.EventHandlerResult{Messages: []string{"MGSV SnakeBite packed archive deployment skipped because no SnakeBite package is enabled in this profile."}}, nil
+}
+
+func missingSnakeBiteStagedPackageFiles(stagingPath string) []string {
+	stagingPath = strings.TrimSpace(stagingPath)
+	if stagingPath == "" {
+		return []string{"staging path"}
+	}
+	var missing []string
+	for _, rel := range []string{"metadata.xml"} {
+		path := filepath.Join(stagingPath, filepath.FromSlash(rel))
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			missing = append(missing, filepath.ToSlash(rel))
+		}
+	}
+	return missing
 }
 
 func checkRequiredGameFiles(ctx context.Context, gamePath string) []string {

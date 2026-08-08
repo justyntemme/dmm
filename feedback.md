@@ -45,6 +45,9 @@
 - Keep the Decky Mods view oriented around the current/running game so Deck-only users can enable/disable installed mods without opening the phone/tablet UI.
 - Prefer tabs over dropdown-heavy Decky navigation where tabs create more usable sidebar space.
 - The Decky `Mods` tab should show profile, installed mod rows, enable/disable toggles, compact status, and restart-required messaging without staging terminology.
+- MVP blocker: the Decky Nexus search text field must be controller-focusable and must bring up the Steam virtual keyboard. Current manual feedback: the normal keyboard shortcut does not open the keyboard in the Nexus search modal, and the search box cannot be selected with arrow keys, blocking FOMOD test discovery.
+- MVP controller blocker: D-pad navigation must be flawless, not merely touch-friendly. Current manual feedback: pressing up/down can jump several focusable controls instead of moving to the next visible element, and B cannot reliably back out of nested Nexus mod explorer/list-more states. Audit focus order, modal cancel handling, scroll ownership, and selected-row styling before MVP approval.
+
 ## MVP UI/UX Review: Mod Management
 
 - Deployment UI is not acceptable for MVP as-is. We need to rethink the mod-management experience before calling the app usable.
@@ -67,6 +70,7 @@
 - Deployment should not feel like a raw file-operation debug page. It should show profile state and "Apply profile changes" first, with file-level detail available as an advanced drill-down.
 - The UI should explain whether changes are already applied to the game or pending, without forcing the user to understand how symlinks/staging work.
 - Overall mod management should prioritize user confidence: clear state labels, obvious next actions, safe defaults, and no ambiguous buttons that can mutate the game folder without context.
+- The current Nexus `Vortex Only` toggle is a good Decky UX pattern for the single supported browse provider. Keep it while Nexus is the only browse source, and redesign it later into a broader provider/source compatibility filter when additional browse backends are supported.
 - A larger mobile/deck UI redesign is required before MVP approval, but the immediate work should focus first on realtime events, install approval/hiding staging, Decky Mods controller navigation, Decky tabs/running-game selection, and mobile favorites/sort.
 - MVP blocker: the phone/tablet UI must update after clicks, job changes, and backend events without requiring a manual browser refresh.
 - Approving a download must immediately update that request state so the user cannot click Approve again for the same in-flight request.
@@ -79,3 +83,11 @@
 - The Decky plugin may apply Steam launch options because it has access to Steam frontend APIs, but the Go backend should own the desired state and verification.
 - The UI should explain that DMM will configure Steam to launch SMAPI for Stardew profiles that need it.
 - Windows/Proton Stardew support is post-MVP, but launch setup should eventually show which runtime was detected and which SMAPI executable will be used.
+
+- MVP non-critical UI bug: in the phone/tablet web app, when a game has no open Action Center items, the game module Action button/tab can become non-clickable. The Actions tab must remain reachable even when the count is zero so users can see empty state, saved installer choices, and recovery context. Current implementation note: all game-module switches now route through one helper, opening Actions refreshes action/install-candidate state, and the profile summary Action count includes installer candidates instead of only open jobs. Needs visual validation.
+
+## Post-MVP Storage
+
+- Support configurable DMM-owned storage locations after MVP, especially SD-card locations on Steam Deck.
+- Scope should include downloads, cached archives, staging, backups, cleanup policy, free-space checks, mount/path validation, and safe migration from the default internal location.
+- Migration must verify existing profiles and deployment manifests so game-facing symlinks or copied artifacts do not point at stale paths after storage moves.

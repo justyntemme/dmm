@@ -21,6 +21,7 @@ type Plan struct {
 	NameSource   string        `json:"name_source,omitempty"`
 	DetectedFrom []Detection   `json:"detected_from,omitempty"`
 	Metadata     []ModMetadata `json:"metadata,omitempty"`
+	Warnings     []string      `json:"warnings,omitempty"`
 	Instructions []Instruction `json:"instructions"`
 }
 
@@ -40,6 +41,7 @@ type Instruction struct {
 	TargetRelative           string `json:"target_relative"`
 	TargetPolicy             string `json:"target_policy,omitempty"`
 	DeployStrategy           string `json:"deploy_strategy,omitempty"`
+	FileMode                 string `json:"file_mode,omitempty"`
 	Priority                 int    `json:"priority,omitempty"`
 }
 
@@ -101,10 +103,16 @@ type DeploymentSpec struct {
 }
 
 type ModTypeSpec struct {
-	ID           string
-	TargetRoot   string
-	TargetRootID string
+	ID             string
+	TargetRoot     string
+	TargetRootID   string
+	DeploymentMode string
 }
+
+const (
+	ModTypeDeploymentDirect    = "direct"
+	ModTypeDeploymentEventHook = "event-hook"
+)
 
 type InstallerSpec struct {
 	ID                 string
@@ -121,6 +129,7 @@ type InstallerSpec struct {
 	GeneratedFiles     []GeneratedFileSpec
 	TargetPolicies     []TargetPolicySpec
 	MetadataExtractors []MetadataExtractorSpec
+	ComponentChoices   *ComponentChoiceSpec
 	InstructionMode    InstructionMode
 	UnsupportedReason  string
 	CustomMatch        CustomMatchFunc
@@ -128,6 +137,19 @@ type InstallerSpec struct {
 }
 
 type CustomMatchFunc func(extractedRoot string) bool
+
+type ComponentChoiceSpec struct {
+	Kind        string
+	Name        string
+	Reason      string
+	StepID      string
+	StepName    string
+	GroupID     string
+	GroupName   string
+	GroupType   string
+	DefaultAll  bool
+	Description string
+}
 
 type BuildInput struct {
 	GameID        string
@@ -312,7 +334,7 @@ func (r Registry) BuildWithOptions(gameID, extractedRoot string, options BuildOp
 	if !ok {
 		return Plan{}, Unsupported("no Vortex metadata spec exists for game " + gameID)
 	}
-	return buildFromSpec(spec, extractedRoot, options)
+	return buildFromSpec(spec, gameID, extractedRoot, options)
 }
 
 func (r Registry) SupportsGame(gameID string) bool {
@@ -362,7 +384,7 @@ func (r Registry) DeploymentAllowedForSteamAppState(appID, state string) (bool, 
 	return true, ""
 }
 
-func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (Plan, error) {
+func buildFromSpec(spec GameSpec, requestedGameID, extractedRoot string, options BuildOptions) (Plan, error) {
 	installers := append([]InstallerSpec(nil), spec.Installers...)
 	sort.SliceStable(installers, func(i, j int) bool {
 		return installers[i].Priority < installers[j].Priority
@@ -377,7 +399,7 @@ func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (P
 		if !matchesInstaller(extractedRoot, installer) {
 			continue
 		}
-		plan, err := buildWithInstaller(spec, installer, extractedRoot, options)
+		plan, err := buildWithInstaller(spec, installer, requestedGameID, extractedRoot, options)
 		if err == nil {
 			return plan, nil
 		}
@@ -398,14 +420,14 @@ func buildFromSpec(spec GameSpec, extractedRoot string, options BuildOptions) (P
 	return Plan{}, Unsupported("no Vortex installer metadata matched this archive")
 }
 
-func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot string, options BuildOptions) (Plan, error) {
+func buildWithInstaller(spec GameSpec, installer InstallerSpec, requestedGameID, extractedRoot string, options BuildOptions) (Plan, error) {
 	if installer.InstructionMode == InstructionUnsupported {
 		return Plan{}, Unsupported(installer.UnsupportedReason)
 	}
 	installer.TargetRoot = targetRootForInstaller(spec, installer)
 	installer.TargetRootID = targetRootIDForInstaller(spec, installer)
 	plan := Plan{
-		GameID:       firstNonEmpty(spec.SteamAppIDs, spec.VortexGameID),
+		GameID:       planGameID(spec, requestedGameID),
 		ModType:      installer.ModType,
 		PlannerID:    installer.ID,
 		NameSource:   installer.NameSource,
@@ -414,7 +436,7 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 	}
 	switch installer.InstructionMode {
 	case InstructionManifestFolders:
-		return buildManifestFolderPlan(plan, installer, extractedRoot)
+		return buildManifestFolderPlan(plan, installer, extractedRoot, options.Selections)
 	case InstructionRootFolder:
 		return buildRootFolderPlan(plan, installer, extractedRoot)
 	case InstructionArchiveRoot:
@@ -439,6 +461,19 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, extractedRoot st
 	}
 }
 
+func planGameID(spec GameSpec, requestedGameID string) string {
+	requestedGameID = strings.TrimSpace(requestedGameID)
+	if requestedGameID == "" || strings.EqualFold(canonicalGameID(requestedGameID), canonicalGameID(spec.VortexGameID)) {
+		return firstNonEmpty(spec.SteamAppIDs, spec.VortexGameID)
+	}
+	for _, appID := range spec.SteamAppIDs {
+		if strings.EqualFold(canonicalGameID(appID), canonicalGameID(requestedGameID)) {
+			return strings.TrimSpace(appID)
+		}
+	}
+	return firstNonEmpty(spec.SteamAppIDs, spec.VortexGameID)
+}
+
 func targetRootForInstaller(spec GameSpec, installer InstallerSpec) string {
 	modType := strings.TrimSpace(installer.ModType)
 	for _, modTypeSpec := range spec.ModTypes {
@@ -459,13 +494,20 @@ func targetRootIDForInstaller(spec GameSpec, installer InstallerSpec) string {
 	return strings.TrimSpace(installer.TargetRootID)
 }
 
-func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {
+func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot string, selections map[string][]string) (Plan, error) {
 	roots, err := manifestModRoots(extractedRoot, installer.Match, installer.MetadataExtractors)
 	if err != nil {
 		return Plan{}, err
 	}
 	if len(roots) == 0 {
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " matched but no deployable manifest folders were found")
+	}
+	if installer.ComponentChoices != nil && len(roots) > 1 {
+		selectedRoots, ok := selectedManifestComponentRoots(extractedRoot, roots, installer.ComponentChoices, selections)
+		if !ok {
+			return Plan{}, manifestComponentChoiceRequired(extractedRoot, roots, installer)
+		}
+		roots = selectedRoots
 	}
 	for _, root := range roots {
 		manifestPath := filepath.Join(root, installer.Match.ManifestFileName)
@@ -514,6 +556,263 @@ func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot s
 		return plan.Metadata[i].TargetRelative < plan.Metadata[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func selectedManifestComponentRoots(extractedRoot string, roots []string, choice *ComponentChoiceSpec, selections map[string][]string) ([]string, bool) {
+	if choice == nil || len(roots) <= 1 {
+		return roots, true
+	}
+	groupID := manifestComponentChoiceGroupID(choice)
+	selected := selections[groupID]
+	if len(selected) == 0 {
+		return nil, false
+	}
+	allowed := map[string]string{}
+	for _, root := range roots {
+		allowed[manifestComponentChoiceID(extractedRoot, root)] = root
+	}
+	out := make([]string, 0, len(selected))
+	seen := map[string]struct{}{}
+	for _, id := range selected {
+		root, ok := allowed[id]
+		if !ok {
+			return nil, false
+		}
+		if _, exists := seen[root]; exists {
+			continue
+		}
+		seen[root] = struct{}{}
+		out = append(out, root)
+	}
+	sort.Strings(out)
+	return out, manifestComponentChoiceSelectionValid(choice, len(out), len(roots))
+}
+
+func manifestComponentChoiceSelectionValid(choice *ComponentChoiceSpec, selected, available int) bool {
+	groupType := "selectatleastone"
+	if choice != nil && strings.TrimSpace(choice.GroupType) != "" {
+		groupType = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(choice.GroupType), "-", ""))
+	}
+	switch groupType {
+	case "selectall":
+		return selected == available && available > 0
+	case "selectexactlyone":
+		return selected == 1
+	case "selectatmostone":
+		return selected <= 1 && selected > 0
+	case "selectatleastone":
+		return selected >= 1
+	default:
+		return selected >= 1
+	}
+}
+
+func manifestComponentChoiceRequired(extractedRoot string, roots []string, installer InstallerSpec) error {
+	choice := installer.ComponentChoices
+	if choice == nil {
+		return ChoiceRequired("", "installer component choices are required", ChoiceInstaller{}, nil)
+	}
+	groupID := manifestComponentChoiceGroupID(choice)
+	options := make([]ChoiceOption, 0, len(roots))
+	defaults := map[string][]string{}
+	for _, root := range roots {
+		id := manifestComponentChoiceID(extractedRoot, root)
+		if choice.DefaultAll {
+			defaults[groupID] = append(defaults[groupID], id)
+		} else if len(defaults[groupID]) == 0 {
+			defaults[groupID] = []string{id}
+		}
+		name, description := manifestComponentChoiceLabel(extractedRoot, root, installer.Match.ManifestFileName)
+		if strings.TrimSpace(choice.Description) != "" {
+			if strings.TrimSpace(description) != "" {
+				description += " - "
+			}
+			description += strings.TrimSpace(choice.Description)
+		}
+		options = append(options, ChoiceOption{
+			ID:            id,
+			Name:          name,
+			Description:   description,
+			Type:          "Optional",
+			EffectiveType: "Optional",
+		})
+	}
+	sort.SliceStable(options, func(i, j int) bool {
+		return strings.ToLower(options[i].Name) < strings.ToLower(options[j].Name)
+	})
+	if choice.DefaultAll {
+		sort.Strings(defaults[groupID])
+	}
+	kind := firstNonEmptyString(choice.Kind, "component-choice")
+	reason := firstNonEmptyString(choice.Reason, "This archive contains multiple installable components; choose which components DMM should install.")
+	return ChoiceRequired(
+		kind,
+		reason,
+		ChoiceInstaller{
+			Name: firstNonEmptyString(choice.Name, "Installer Choices"),
+			Steps: []ChoiceStep{{
+				ID:   firstNonEmptyString(choice.StepID, "component-selection"),
+				Name: firstNonEmptyString(choice.StepName, "Choose Components"),
+				Groups: []ChoiceGroup{{
+					ID:      groupID,
+					Name:    firstNonEmptyString(choice.GroupName, "Components"),
+					Type:    firstNonEmptyString(choice.GroupType, "SelectAtLeastOne"),
+					Plugins: options,
+				}},
+			}},
+		},
+		defaults,
+	)
+}
+
+func manifestComponentChoiceGroupID(choice *ComponentChoiceSpec) string {
+	if choice == nil {
+		return "component-choice"
+	}
+	return firstNonEmptyString(choice.GroupID, "component-choice")
+}
+
+func manifestComponentChoiceID(extractedRoot, root string) string {
+	rel := filepath.ToSlash(mustRel(extractedRoot, root))
+	if rel == "." || strings.TrimSpace(rel) == "" {
+		rel = "archive-root"
+	}
+	return "component:" + rel
+}
+
+func manifestComponentChoiceLabel(extractedRoot, root, manifestFileName string) (string, string) {
+	manifestPath := filepath.Join(root, manifestFileName)
+	name := ManifestDisplayName(manifestPath)
+	if strings.TrimSpace(name) == "" {
+		name = filepath.Base(root)
+	}
+	if clean := strings.TrimSpace(name); clean != "" {
+		name = clean
+	} else {
+		name = "Component"
+	}
+	rel := filepath.ToSlash(mustRel(extractedRoot, root))
+	if rel == "." {
+		return name, "Archive root"
+	}
+	description := manifestComponentChoiceDescription(manifestPath, rel)
+	if strings.TrimSpace(description) == "" {
+		description = rel
+	}
+	return name, description
+}
+
+func manifestComponentChoiceDescription(manifestPath, rel string) string {
+	var manifest map[string]any
+	if !readManifestJSON(manifestPath, &manifest) {
+		return ""
+	}
+	var parts []string
+	if description := jsonStringField(manifest, "Description"); description != "" {
+		parts = append(parts, description)
+	}
+	if uniqueID := jsonStringField(manifest, "UniqueID"); uniqueID != "" {
+		parts = append(parts, "ID: "+uniqueID)
+	}
+	if version := jsonStringField(manifest, "Version"); version != "" {
+		parts = append(parts, "Version: "+version)
+	}
+	if entryDLL := jsonStringField(manifest, "EntryDll"); entryDLL != "" {
+		parts = append(parts, "Entry: "+entryDLL)
+	}
+	if minAPI := jsonStringField(manifest, "MinimumApiVersion"); minAPI != "" {
+		parts = append(parts, "Requires SMAPI: "+minAPI)
+	}
+	parts = append(parts, manifestComponentChoiceDependencyDescriptions(manifest)...)
+	if strings.TrimSpace(rel) != "" && rel != "." {
+		parts = append(parts, "Path: "+rel)
+	}
+	return strings.Join(compactStrings(parts), " | ")
+}
+
+func manifestComponentChoiceDependencyDescriptions(manifest map[string]any) []string {
+	var out []string
+	if contentPackFor, ok := manifestObjectField(manifest, "ContentPackFor"); ok {
+		if uniqueID := jsonStringField(contentPackFor, "UniqueID"); uniqueID != "" {
+			label := "Content pack for " + uniqueID
+			if minVersion := jsonStringField(contentPackFor, "MinimumVersion"); minVersion != "" {
+				label += " " + minVersion + "+"
+			}
+			out = append(out, label)
+		}
+	}
+	dependencies, ok := manifestArrayField(manifest, "Dependencies")
+	if !ok {
+		return out
+	}
+	for _, item := range dependencies {
+		dependency, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		uniqueID := jsonStringField(dependency, "UniqueID")
+		if uniqueID == "" {
+			continue
+		}
+		label := "Requires " + uniqueID
+		if required, ok := jsonBoolField(dependency, "IsRequired"); ok && !required {
+			label = "Optional dependency " + uniqueID
+		}
+		if minVersion := jsonStringField(dependency, "MinimumVersion"); minVersion != "" {
+			label += " " + minVersion + "+"
+		}
+		out = append(out, label)
+	}
+	return out
+}
+
+func manifestObjectField(manifest map[string]any, field string) (map[string]any, bool) {
+	for key, value := range manifest {
+		if !strings.EqualFold(key, field) {
+			continue
+		}
+		typed, ok := value.(map[string]any)
+		return typed, ok
+	}
+	return nil, false
+}
+
+func manifestArrayField(manifest map[string]any, field string) ([]any, bool) {
+	for key, value := range manifest {
+		if !strings.EqualFold(key, field) {
+			continue
+		}
+		typed, ok := value.([]any)
+		return typed, ok
+	}
+	return nil, false
+}
+
+func jsonBoolField(manifest map[string]any, field string) (bool, bool) {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return false, false
+	}
+	for key, value := range manifest {
+		if !strings.EqualFold(key, field) {
+			continue
+		}
+		typed, ok := value.(bool)
+		return typed, ok
+	}
+	return false, false
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
 }
 
 func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot string) (Plan, error) {

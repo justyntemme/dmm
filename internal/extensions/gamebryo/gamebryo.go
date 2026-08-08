@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	FormatOriginal = "original"
-	FormatFallout4 = "fallout4"
+	FormatOriginal   = sdk.PluginActivationFormatOriginal
+	FormatAsterisked = sdk.PluginActivationFormatAsterisked
 )
 
 type PluginActivationOptions struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unicode/utf16"
 
@@ -116,6 +117,185 @@ func TestBuildPlanAppliesExtensionTargetRoot(t *testing.T) {
 	}
 	if targets["Data/already-data.esp"] != "Data/already-data.esp" {
 		t.Fatalf("prefixed target = %q, plan = %+v", targets["Data/already-data.esp"], plan.Instructions)
+	}
+}
+
+func TestBuildPlanUsesNestedModuleConfigBaseAndDestinationPrefix(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "NeuralHarvest", "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="Common\manifest.json" destination="manifest.json" />
+    <folder source="Common\server" destination="server" />
+  </requiredInstallFiles>
+</config>`)
+	writeFile(t, filepath.Join(root, "Wrapper", "NeuralHarvest", "Common", "manifest.json"), `{"Name":"Neural Harvest"}`)
+	writeFile(t, filepath.Join(root, "Wrapper", "NeuralHarvest", "Common", "server", "server.dll"), "server")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installer.ModuleConfig != "Wrapper/NeuralHarvest/fomod/ModuleConfig.xml" {
+		t.Fatalf("module config = %q", installer.ModuleConfig)
+	}
+
+	plan, err := BuildPlan("stardewvalley", root, installer, nil, PlanOptions{
+		ModType:               "stardew-smapi-mod",
+		PlannerID:             "vortex:stardewvalley:fomod",
+		TargetRoot:            "Mods",
+		DestinationPrefixMode: DestinationPrefixModuleBaseName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions := map[string]installplan.Instruction{}
+	for _, instruction := range plan.Instructions {
+		instructions[instruction.StagingRelative] = instruction
+	}
+	manifest, ok := instructions["NeuralHarvest/manifest.json"]
+	if !ok {
+		t.Fatalf("missing prefixed manifest in %+v", plan.Instructions)
+	}
+	if manifest.SourcePath != filepath.Join(root, "Wrapper", "NeuralHarvest", "Common", "manifest.json") {
+		t.Fatalf("manifest source = %q", manifest.SourcePath)
+	}
+	if manifest.TargetRelative != "Mods/NeuralHarvest/manifest.json" {
+		t.Fatalf("manifest target = %q", manifest.TargetRelative)
+	}
+	server, ok := instructions["NeuralHarvest/server/server.dll"]
+	if !ok {
+		t.Fatalf("missing prefixed folder file in %+v", plan.Instructions)
+	}
+	if server.TargetRelative != "Mods/NeuralHarvest/server/server.dll" {
+		t.Fatalf("server target = %q", server.TargetRelative)
+	}
+}
+
+func TestBuildPlanReportsMissingFOMODSource(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="Common\missing.dll" destination="missing.dll" />
+  </requiredInstallFiles>
+</config>`)
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = BuildPlan("example", root, installer, nil, PlanOptions{
+		ModType:   "example-mod",
+		PlannerID: "example:fomod",
+	})
+	if err == nil {
+		t.Fatal("expected missing source error")
+	}
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("error = %T %v, want UnsupportedError", err, err)
+	}
+	if !strings.Contains(err.Error(), `missing source "Common/missing.dll"`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestBuildPlanSkipsMissingSelectedChoiceSource(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "fomod", "ModuleConfig.xml"), `<config>
+  <installSteps>
+    <installStep name="Profile">
+      <optionalFileGroups>
+        <group name="Info" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="Information">
+              <typeDescriptor><type name="Required" /></typeDescriptor>
+              <files><folder source="README" destination="" /></files>
+            </plugin>
+          </plugins>
+        </group>
+        <group name="Core" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="Core">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><folder source="00-Core" destination="" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	writeFile(t, filepath.Join(root, "00-Core", "Data", "Pip-Boy Flashlight.esp"), "plugin")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := BuildPlan("fallout4", root, installer, map[string][]string{
+		"step-1-group-1": {"step-1-group-1-plugin-1"},
+		"step-1-group-2": {"step-1-group-2-plugin-1"},
+	}, PlanOptions{
+		ModType:     "fallout4-data-root",
+		PlannerID:   "vortex:fallout4:fomod",
+		TargetRoot:  "Data",
+		StopFolders: []string{"Data"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "README") {
+		t.Fatalf("warnings = %+v", plan.Warnings)
+	}
+	if len(plan.Instructions) != 1 || !strings.Contains(plan.Instructions[0].TargetRelative, "Pip-Boy Flashlight.esp") {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
+	found := false
+	for _, detection := range plan.DetectedFrom {
+		if detection.Kind == "fomod-missing-choice-source" && detection.Path == "README" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing skipped-source detection in %+v", plan.DetectedFrom)
+	}
+}
+
+func TestValidateRequiredSourcesReportsMissingFOMODSourceBeforeChoices(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Wrapper", "NeuralHarvest", "fomod", "ModuleConfig.xml"), `<config>
+  <requiredInstallFiles>
+    <file source="Common\NeuralHarvest.dll" destination="NeuralHarvest.dll" />
+  </requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="Default">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><file source="Config\config.json" destination="config.json" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`)
+	writeFile(t, filepath.Join(root, "Wrapper", "NeuralHarvest", "Config", "config.json"), "{}")
+	installer, err := Parse(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ValidateRequiredSources(root, installer)
+	if err == nil {
+		t.Fatal("expected missing required source error")
+	}
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("error = %T %v, want UnsupportedError", err, err)
+	}
+	if !strings.Contains(err.Error(), `missing source "Common/NeuralHarvest.dll"`) {
+		t.Fatalf("error = %v", err)
 	}
 }
 

@@ -12,45 +12,104 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-func TestExtensionRegistersResearchBlockedNexusDomain(t *testing.T) {
-	extension := gameext.MustCompileExtension(Extension())
-	if extension.ID != VortexGameID {
-		t.Fatalf("extension id = %q", extension.ID)
+func TestExtensionRegistersExternalFileInstallers(t *testing.T) {
+	ext := gameext.MustCompileExtension(Extension())
+	coverage, _ := gameext.ExtensionCoverage(ext)
+	if coverage != gameext.CoverageInstaller {
+		t.Fatalf("coverage = %q", coverage)
 	}
-	if len(extension.NexusDomains) != 1 || extension.NexusDomains[0] != VortexGameID {
-		t.Fatalf("nexus domains = %+v", extension.NexusDomains)
+	if len(ext.InstallPlan.Installers) != 3 {
+		t.Fatalf("installers = %+v", ext.InstallPlan.Installers)
 	}
-	if len(extension.InstallPlan.Installers) != 1 {
-		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
-	}
-	installer := extension.InstallPlan.Installers[0]
-	if installer.InstructionMode != installplan.InstructionUnsupported || installer.ModType != researchModType {
-		t.Fatalf("installer = %+v", installer)
-	}
-	if !strings.Contains(installer.UnsupportedReason, "no verified Vortex extension") {
-		t.Fatalf("unsupported reason = %q", installer.UnsupportedReason)
+	if len(ext.RuntimeRequirements.RuntimeRequirements) != 2 {
+		t.Fatalf("runtime requirements = %+v", ext.RuntimeRequirements.RuntimeRequirements)
 	}
 }
 
-func TestArchiveInstallIsBlockedUntilPatternsAreVerified(t *testing.T) {
+func TestExternalFileLoaderPlansToGameRoot(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "payload.bin"), "payload")
-	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
-	_, err := registry.Build(SteamAppID, root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "representative archives") {
-		t.Fatalf("error = %T %v", err, err)
+	writeFile(t, filepath.Join(root, "loader", "dinput8.dll"), "dll")
+	writeFile(t, filepath.Join(root, "loader", "hook.ini"), "ini")
+	writeFile(t, filepath.Join(root, "loader", "modules", "ff10-file-loader.dll"), "dll")
+	writeFile(t, filepath.Join(root, "loader", "readme.txt"), "readme")
+
+	plan, err := buildPlan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != loaderModType {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	targets := instructionTargets(plan)
+	for _, want := range []string{"dinput8.dll", "hook.ini", "modules/ff10-file-loader.dll"} {
+		if !targets[want] {
+			t.Fatalf("targets = %+v, missing %s", targets, want)
+		}
+	}
+	if targets["readme.txt"] {
+		t.Fatalf("readme should not be deployed: %+v", targets)
 	}
 }
 
-func TestRequiredFilesChecks(t *testing.T) {
+func TestExternalFileModPlansToDataMods(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "ReRemaster", "ffx_data", "gamedata", "ps3data", "fonts", "d3d11", "tuffy.fgen.phyre"), "font")
+	writeFile(t, filepath.Join(root, "ReRemaster", "readme.txt"), "readme")
+
+	plan, err := buildPlan(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != externalFileModType {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	targets := instructionTargets(plan)
+	want := "data/mods/ffx_data/gamedata/ps3data/fonts/d3d11/tuffy.fgen.phyre"
+	if !targets[want] {
+		t.Fatalf("targets = %+v, missing %s", targets, want)
+	}
+}
+
+func TestUnclassifiedFFXArchiveIsBlocked(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "UnX.exe"), "tool")
+
+	_, err := buildPlan(root)
+	if err == nil {
+		t.Fatal("expected unsupported archive")
+	}
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Final Fantasy X/X-2") {
+		t.Fatalf("unsupported error = %v", err)
+	}
+}
+
+func TestRequiredFilesAndLoaderChecks(t *testing.T) {
 	root := t.TempDir()
 	for _, rel := range requiredGameFiles {
-		writeFile(t, filepath.Join(root, filepath.FromSlash(rel)), "payload")
+		writeFile(t, filepath.Join(root, filepath.FromSlash(rel)), "game")
 	}
+	writeFile(t, filepath.Join(root, "dinput8.dll"), "dll")
+	writeFile(t, filepath.Join(root, "modules", "ff10-file-loader.dll"), "dll")
 	if got := checkRequiredGameFiles(context.Background(), root); len(got) != len(requiredGameFiles) {
-		t.Fatalf("required files = %+v", got)
+		t.Fatalf("required details = %+v", got)
 	}
+	if got := checkExternalFileLoader(context.Background(), root); len(got) != 2 {
+		t.Fatalf("loader details = %+v", got)
+	}
+}
+
+func buildPlan(root string) (installplan.Plan, error) {
+	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
+	return registry.Build(SteamAppID, root)
+}
+
+func instructionTargets(plan installplan.Plan) map[string]bool {
+	out := map[string]bool{}
+	for _, instruction := range plan.Instructions {
+		out[instruction.TargetRelative] = true
+	}
+	return out
 }
 
 func writeFile(t *testing.T, path string, body string) {

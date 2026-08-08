@@ -268,3 +268,32 @@ func TestArchiveHelperMessagesAreActionable(t *testing.T) {
 		t.Fatalf("helper error = %v", err)
 	}
 }
+
+func TestArchiveHelperEnvDropsSteamRuntimeLoaderVariables(t *testing.T) {
+	got := archiveHelperEnv([]string{
+		"PATH=/usr/bin",
+		"HOME=/home/deck",
+		"LD_LIBRARY_PATH=/steam/runtime/lib",
+		"LD_PRELOAD=/steam/runtime/hook.so",
+		"STEAM_RUNTIME=1",
+		"STEAM_COMPAT_DATA_PATH=/compatdata",
+		"PRESSURE_VESSEL_FILESYSTEMS_RW=/tmp",
+		"SYSTEM_LD_LIBRARY_PATH=/steam/runtime/lib",
+	})
+	joined := "\n" + strings.Join(got, "\n") + "\n"
+	for _, key := range []string{
+		"LD_LIBRARY_PATH=",
+		"LD_PRELOAD=",
+		"STEAM_RUNTIME=",
+		"STEAM_COMPAT_DATA_PATH=",
+		"PRESSURE_VESSEL_FILESYSTEMS_RW=",
+		"SYSTEM_LD_LIBRARY_PATH=",
+	} {
+		if strings.Contains(joined, "\n"+key) {
+			t.Fatalf("helper env retained %s in %q", key, joined)
+		}
+	}
+	if !strings.Contains(joined, "\nPATH=/usr/bin\n") || !strings.Contains(joined, "\nHOME=/home/deck\n") {
+		t.Fatalf("helper env dropped normal variables: %q", joined)
+	}
+}

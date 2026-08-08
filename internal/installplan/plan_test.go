@@ -2,6 +2,7 @@ package installplan_test
 
 import (
 	"archive/zip"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,20 +109,81 @@ func TestDefaultRegistryControlsDeploymentEligibility(t *testing.T) {
 
 func TestStardewPlannerSupportsMultipleSMAPIModFolders(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "ModA", "manifest.json"), `{"Name":"Mod A","UniqueID":"author.ModA"}`)
+	writeFile(t, filepath.Join(root, "ModA", "manifest.json"), `{
+  "Name":"Mod A",
+  "UniqueID":"author.ModA",
+  "Version":"1.2.3",
+  "Description":"Adds the A component.",
+  "EntryDll":"ModA.dll",
+  "MinimumApiVersion":"4.0.0",
+  "Dependencies":[{"UniqueID":"spacechase0.JsonAssets","MinimumVersion":"1.11.0","IsRequired":true}]
+}`)
 	writeFile(t, filepath.Join(root, "ModA", "ModA.dll"), "a")
-	writeFile(t, filepath.Join(root, "ModB", "manifest.json"), `{"Name":"Mod B","UniqueID":"author.ModB"}`)
+	writeFile(t, filepath.Join(root, "ModB", "manifest.json"), `{
+  "Name":"Mod B",
+  "UniqueID":"author.ModB",
+  "Description":"Adds the B content pack.",
+  "ContentPackFor":{"UniqueID":"Pathoschild.ContentPatcher","MinimumVersion":"2.0.0"}
+}`)
 	writeFile(t, filepath.Join(root, "ModB", "ModB.dll"), "b")
 
-	plan, err := Build("413150", root)
+	_, err := Build("413150", root)
+	var choice ChoiceRequiredError
+	if !errors.As(err, &choice) {
+		t.Fatalf("expected component choice error, got %v", err)
+	}
+	if choice.Kind != "component-choice" {
+		t.Fatalf("choice kind = %q", choice.Kind)
+	}
+	if len(choice.Installer.Steps) != 1 || len(choice.Installer.Steps[0].Groups) != 1 {
+		t.Fatalf("choice installer = %+v", choice.Installer)
+	}
+	group := choice.Installer.Steps[0].Groups[0]
+	if group.ID != "stardew-smapi-components" || group.Type != "SelectAtLeastOne" || len(group.Plugins) != 2 {
+		t.Fatalf("choice group = %+v", group)
+	}
+	if got := choice.DefaultSelections["stardew-smapi-components"]; len(got) != 2 {
+		t.Fatalf("default selections = %+v", choice.DefaultSelections)
+	}
+	var modADescription string
+	for _, option := range group.Plugins {
+		if option.Name == "Mod A" {
+			modADescription = option.Description
+			break
+		}
+	}
+	for _, want := range []string{
+		"Adds the A component.",
+		"ID: author.ModA",
+		"Version: 1.2.3",
+		"Entry: ModA.dll",
+		"Requires SMAPI: 4.0.0",
+		"Requires spacechase0.JsonAssets 1.11.0+",
+		"Path: ModA",
+	} {
+		if !strings.Contains(modADescription, want) {
+			t.Fatalf("component description missing %q: %q", want, modADescription)
+		}
+	}
+
+	plan, err := stardewPlanner.BuildWithOptions("413150", root, BuildOptions{
+		Selections: map[string][]string{
+			"stardew-smapi-components": []string{"component:ModB"},
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Instructions) != 4 {
+	if len(plan.Instructions) != 2 {
 		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
-	if len(plan.DetectedFrom) != 2 {
+	if len(plan.DetectedFrom) != 1 || plan.DetectedFrom[0].Path != "ModB/manifest.json" {
 		t.Fatalf("detected from = %+v", plan.DetectedFrom)
+	}
+	for _, instruction := range plan.Instructions {
+		if strings.Contains(instruction.TargetRelative, "ModA") {
+			t.Fatalf("unselected component was staged: %+v", plan.Instructions)
+		}
 	}
 }
 
@@ -246,6 +308,50 @@ func TestStardewPlannerRejectsInstallerToolArchiveLayout(t *testing.T) {
 	_, err := Build("413150", root)
 	if err == nil {
 		t.Fatal("expected unsupported layout")
+	}
+}
+
+func TestStardewPlannerBuildsGenericModsRootConfigBundle(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Automate", "config.json"), `{}`)
+	writeFile(t, filepath.Join(root, "ChestsAnywhere", "config.json"), `{}`)
+
+	plan, err := Build("413150", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:stardewvalley:generic-mods-root" || plan.ModType != "stardew-smapi-mod" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	wantTargets := map[string]bool{
+		"Mods/Automate/config.json":       false,
+		"Mods/ChestsAnywhere/config.json": false,
+	}
+	for _, instruction := range plan.Instructions {
+		if _, ok := wantTargets[instruction.TargetRelative]; ok {
+			wantTargets[instruction.TargetRelative] = true
+		}
+	}
+	for target, found := range wantTargets {
+		if !found {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
+func TestStardewPlannerBuildsGenericArchiveWithModsFolder(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Mods", "Automate", "config.json"), `{}`)
+
+	plan, err := Build("413150", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:stardewvalley:generic-mods-folder" || plan.ModType != "stardew-smapi-mod" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Mods/Automate/config.json" {
+		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
 
@@ -424,6 +530,73 @@ func TestRegistryBuildsGenericManifestPlanFromVortexMetadataSpec(t *testing.T) {
 	}
 	if len(metadata.AdditionalLogicalFileNames) != 1 || metadata.AdditionalLogicalFileNames[0] != "author.example" {
 		t.Fatalf("logical names = %+v", metadata.AdditionalLogicalFileNames)
+	}
+}
+
+func TestManifestComponentChoiceSelectExactlyOneRejectsMultipleSelections(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "RedChicken", "mod.json"), `{"displayName":"Red Chickens","id":"author.redchickens","Description":"Makes chickens red."}`)
+	writeFile(t, filepath.Join(root, "RedChicken", "payload.dat"), "red")
+	writeFile(t, filepath.Join(root, "BlueChicken", "mod.json"), `{"displayName":"Blue Chickens","id":"author.bluechickens","Description":"Makes chickens blue."}`)
+	writeFile(t, filepath.Join(root, "BlueChicken", "payload.dat"), "blue")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"999999"},
+		VortexGameID: "examplegame",
+		ModTypes: []ModTypeSpec{{
+			ID:         "example-mod",
+			TargetRoot: "ConfiguredMods",
+		}},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:examplegame:manifest-variants",
+			VortexInstallerID: "manifest-variants",
+			Priority:          50,
+			ModType:           "example-mod",
+			Match: MatchSpec{
+				ManifestFileName: "mod.json",
+			},
+			MetadataExtractors: []MetadataExtractorSpec{{
+				Kind:             MetadataKindJSONManifest,
+				ManifestFileName: "mod.json",
+				NameField:        "displayName",
+				UniqueIDField:    "id",
+			}},
+			ComponentChoices: &ComponentChoiceSpec{
+				Kind:      "component-choice",
+				Name:      "Variant Selection",
+				GroupID:   "example-variants",
+				GroupName: "Variant",
+				GroupType: "SelectExactlyOne",
+			},
+			InstructionMode: InstructionManifestFolders,
+		}},
+	}})
+
+	_, err := registry.BuildWithOptions("examplegame", root, BuildOptions{
+		Selections: map[string][]string{
+			"example-variants": {"component:RedChicken", "component:BlueChicken"},
+		},
+	})
+	var choice ChoiceRequiredError
+	if !errors.As(err, &choice) {
+		t.Fatalf("expected exactly-one choice error, got %v", err)
+	}
+
+	plan, err := registry.BuildWithOptions("examplegame", root, BuildOptions{
+		Selections: map[string][]string{
+			"example-variants": {"component:RedChicken"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.DetectedFrom) != 1 || plan.DetectedFrom[0].Path != "RedChicken/mod.json" {
+		t.Fatalf("detected from = %+v", plan.DetectedFrom)
+	}
+	for _, instruction := range plan.Instructions {
+		if strings.Contains(instruction.TargetRelative, "BlueChicken") {
+			t.Fatalf("unselected variant staged: %+v", plan.Instructions)
+		}
 	}
 }
 

@@ -25,6 +25,14 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - If a decision was previously inferred before source verification, mark it for review and either confirm it against upstream source or explicitly redesign it.
 - Keep citations or source file references in implementation notes, tests, or documentation whenever we encode Vortex-derived behavior.
 
+## Extension Boundary
+
+- Every supported game must have an explicit DMM game extension, even when the install behavior is basic. The core app must not infer that a game, Nexus domain, archive layout, launch tool, load order file, Workshop behavior, runtime requirement, or deployment root is supported without an extension declaring it.
+- Game-specific logic belongs in the extension API implementation for that game. Generic packages may provide reusable primitives such as archive-root planning, launch-tool setup, plugin activation generation, event hooks, target-root resolution, FOMOD evaluation, rollback, and deployment, but they must not contain game-specific branches.
+- If a game needs behavior that is not covered by the current extension API, add a reusable extension capability first and then have the game extension declare that capability. Do not solve it by adding a one-off game branch to `server`, `storage`, `deploy`, `steam`, `installplan`, or UI code.
+- First-party compiled Go extensions are the MVP extension packaging model. They are bundled in this repository for now, but their code is still the only allowed place for game-specific behavior. Runtime-loaded/community extensions are a later packaging and security boundary, not a license to bypass the extension API during MVP.
+- Metadata-only and research-blocked extensions are acceptable for games with verified source/catalog signals but incomplete install support. They should explain the known source state without pretending that archive installation, launch tools, Workshop actions, or load order are supported.
+
 ## Decisions Requiring Source Review
 
 - Stardew SMAPI launch integration: verify the Vortex extension's primary-tool and deployment behavior, then define the Steam Deck equivalent for launching through SMAPI.
@@ -360,7 +368,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 ## Game Handler Guidelines
 
-- MVP should start with a generic file/folder handler plus Vortex-modeled metadata specs for the first selected game.
+- MVP should start with generic reusable handler primitives plus Vortex-modeled metadata specs declared by explicit game extensions.
 - A game handler should define:
   - Game identity and Steam app IDs
   - Supported Nexus game domains
@@ -374,15 +382,14 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
   - Validation checks
   - Deployment strategy preferences
   - Load order rules if applicable
-- Implement handlers as internal Go packages for MVP.
-- External plugin handlers are future work.
+- Implement game extensions as internal Go packages for MVP. External/community extension packaging is future work, but the core/extension behavior boundary still applies now.
 - Prefer declarative/spec-driven game metadata inside those Go packages. Procedural code is acceptable only when the installer behavior, metadata extraction, or runtime validation genuinely cannot be represented by the current metadata evaluator; when that happens, extend the evaluator before adding one-off logic.
 - Do not add game-specific runtime requirements directly to the generic server/UI. If a game needs SMAPI, script extenders, mod loaders, launch options, or equivalent runtime integration, expose that through handler/provider metadata attached to the staged mod, then have diagnostics evaluate the enabled mod types.
 - Launch tools are game-extension capabilities. A handler may declare tools such as SMAPI, their required files, platform-specific executable names, desired Steam launch behavior, and whether the tool should become the default/primary launch target when required by enabled mod metadata.
 - Primary launch-tool selection must be expressed in extension metadata/rules, such as "enabled mods of these mod types or metadata requirements require tool `smapi` as the primary launch tool." Generic code evaluates the rule; it must not know Stardew-specific tool semantics.
 - Stardew's extension should mirror Vortex's primary-tool model: when enabled mods require SMAPI and SMAPI is deployed, DMM should configure the Steam launch path to run SMAPI rather than making generic server code know Stardew-specific launch rules.
 - If the requirement cannot be derived from the current handler/provider metadata, surface it as an unsupported/missing handler capability rather than pretending DMM can validate it generically.
-- Prototype/TexMod-style support is non-MVP.
+- Prototype/TexMod-style support must be expressed through extension-declared launch-tool and installer capabilities. Prefer a typed optional dynamic launch-input spec on the generic launch-tool API, such as generated profile config or enabled-mod file list inputs, rather than a game-specific branch or a stringly special case. Static launch tools such as SMAPI must not be forced to opt into dynamic inputs.
 - External commands are disabled by default. They may be justified later for tools such as script extenders, patchers, load-order tools, archive conversion, or game-specific installers.
 - Any future external-command handler must require explicit user approval and show the command/action clearly.
 - Interactive FOMOD installers should be driven through the web UI once implemented.

@@ -188,6 +188,7 @@ func inspectWith7z(filePath, format string) (Inspection, error) {
 		return inspection, nil
 	}
 	cmd := exec.Command("7z", "l", "-slt", "--", filePath)
+	cmd.Env = archiveHelperEnv(os.Environ())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return Inspection{}, helperCommandError("7z", "inspect archive", out)
@@ -312,6 +313,7 @@ func extractWith7z(ctx context.Context, filePath, destDir string) error {
 		return errors.New(missing7zMessage("extract this archive"))
 	}
 	cmd := exec.CommandContext(ctx, "7z", "x", "-y", "-o"+destDir, filePath)
+	cmd.Env = archiveHelperEnv(os.Environ())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
@@ -328,6 +330,7 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 	}
 	if _, err := exec.LookPath("unrar"); err == nil {
 		cmd := exec.CommandContext(ctx, "unrar", "x", "-o+", filePath, destDir+string(filepath.Separator))
+		cmd.Env = archiveHelperEnv(os.Environ())
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			if errors.Is(ctx.Err(), context.Canceled) {
@@ -345,6 +348,47 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 
 func missing7zMessage(action string) string {
 	return "7z is required to " + action + ". Install 7-Zip/p7zip from the Decky plugin Dependencies view, then retry the install."
+}
+
+func archiveHelperEnv(base []string) []string {
+	out := make([]string, 0, len(base)+1)
+	hasPath := false
+	for _, item := range base {
+		key, _, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(key, "PATH") {
+			hasPath = true
+		}
+		if dropArchiveHelperEnvKey(key) {
+			continue
+		}
+		out = append(out, item)
+	}
+	if !hasPath {
+		out = append(out, "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin")
+	}
+	return out
+}
+
+func dropArchiveHelperEnvKey(key string) bool {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	if strings.HasPrefix(key, "LD_") {
+		return true
+	}
+	if strings.HasPrefix(key, "STEAM_COMPAT_") || strings.HasPrefix(key, "STEAM_RUNTIME") {
+		return true
+	}
+	if strings.HasPrefix(key, "PRESSURE_VESSEL_") {
+		return true
+	}
+	switch key {
+	case "SYSTEM_LD_LIBRARY_PATH":
+		return true
+	default:
+		return false
+	}
 }
 
 func helperCommandError(tool, action string, out []byte) error {

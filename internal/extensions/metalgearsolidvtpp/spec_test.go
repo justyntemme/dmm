@@ -2,7 +2,6 @@ package metalgearsolidvtpp
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-func TestExtensionRegistersSnakeBiteBlockedCapability(t *testing.T) {
+func TestExtensionRegistersSnakeBitePackedArchiveCapability(t *testing.T) {
 	extension := gameext.MustCompileExtension(Extension())
 	if extension.ID != VortexGameID {
 		t.Fatalf("extension id = %q", extension.ID)
@@ -24,27 +23,51 @@ func TestExtensionRegistersSnakeBiteBlockedCapability(t *testing.T) {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
 	}
 	installer := extension.InstallPlan.Installers[0]
-	if installer.InstructionMode != installplan.InstructionUnsupported || installer.ModType != snakeBiteModType {
+	if installer.InstructionMode != installplan.InstructionCustom || installer.ModType != snakeBiteModType {
 		t.Fatalf("installer = %+v", installer)
 	}
-	if !strings.Contains(installer.UnsupportedReason, "QAR/FPK") {
-		t.Fatalf("unsupported reason = %q", installer.UnsupportedReason)
+	if installer.CustomMatch == nil || installer.CustomBuild == nil {
+		t.Fatalf("installer missing custom hooks: %+v", installer)
+	}
+	if len(extension.InstallPlan.ModTypes) != 1 || extension.InstallPlan.ModTypes[0].DeploymentMode != installplan.ModTypeDeploymentEventHook {
+		t.Fatalf("mod types = %+v", extension.InstallPlan.ModTypes)
+	}
+	if len(extension.PackedArchiveMutations) != 1 {
+		t.Fatalf("packed archive mutations = %+v", extension.PackedArchiveMutations)
+	}
+	mutation := extension.PackedArchiveMutations[0]
+	if mutation.PackageFormat != "snakebite-mgsv" || mutation.RequiresEngine != "gzs-qar-fpk" {
+		t.Fatalf("packed archive mutation = %+v", mutation)
 	}
 }
 
-func TestSnakeBitePackageIsDetectedButBlocked(t *testing.T) {
+func TestSnakeBitePackageIsDetectedAndStagedForPackedArchiveMutation(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/file.dat" /></FpkEntries></ModEntry>`)
 	writeFile(t, filepath.Join(root, "Assets", "tpp", "demo", "example.fpk"), "payload")
 
 	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
-	_, err := registry.Build(SteamAppID, root)
-	if err == nil {
-		t.Fatal("expected unsupported SnakeBite package")
+	plan, err := registry.Build(SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "packed QAR/FPK archives") {
-		t.Fatalf("error = %T %v", err, err)
+	if plan.ModType != snakeBiteModType || plan.PlannerID != "snakebite:metalgearsolidvtpp:mgsv-package" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Name != "Infinite Heaven" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+	var sawMetadata, sawPayload bool
+	for _, instruction := range plan.Instructions {
+		switch instruction.StagingRelative {
+		case "metadata.xml":
+			sawMetadata = true
+		case "Assets/tpp/demo/example.fpk":
+			sawPayload = true
+		}
+	}
+	if !sawMetadata || !sawPayload {
+		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
 

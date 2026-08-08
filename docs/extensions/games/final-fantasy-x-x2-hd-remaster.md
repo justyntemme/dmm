@@ -8,19 +8,21 @@
 
 ## Verified Sources
 
-- Nexus API game-domain verification: `https://api.nexusmods.com/v1/games.json`
-- Vortex central extension manifest: `https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json`
-- Vortex bundled game extension source: `https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games`
+- Final Fantasy X/X-2 External File Loader Nexus page: `https://www.nexusmods.com/finalfantasyxx2hdremaster/mods/150`
+- External File Loader source repository: `https://gitlab.com/ffgriever/ffx-x-2-hd-external-file-loader`
+- Representative External File Loader content mod: `https://www.nexusmods.com/finalfantasyxx2hdremaster/mods/244`
 - Live Steam Deck path check: `/home/deck/.local/share/Steam/steamapps/common/FINAL FANTASY FFX&FFX-2 HD Remaster`
 
 ## Current DMM Capability
 
 - DMM declares the verified Nexus domain so game-scoped Nexus browsing works.
 - DMM checks for the launcher, `FFX.exe`, `FFX-2.exe`, and the main VBF archives.
-- Archive installs are intentionally blocked because no verified Vortex extension was found and representative layouts have not been classified.
+- DMM supports ffgriever's External File Loader root package when the archive contains `dinput8.dll`, `hook.ini`, and `modules/...`.
+- DMM supports content archives rooted at `data/mods`, `ffx_data`, or `ffx2_data`, deploying content under `data/mods`.
+- Runtime diagnostics warn when External File Loader is missing before enabling external-file content mods.
 
 ## Beta Gaps
 
-- Representative Nexus archives must be reviewed before install rules are added.
-- The extension needs verified rules for VBF patching, loose binary/root replacement, loader-specific folders, or other observed mod patterns.
+- Live-test the External File Loader package and a safe `ffx_data`/`ffx2_data` content mod.
+- Add profile-aware load-order editing for External File Loader `modules/config/ff10-file-loader.ini` only after that config contract is source-reviewed.
 - Any future VBF mutation must use a generic extension-framework capability with manifest-aware backup/rollback instead of direct game-specific writes in core code.
