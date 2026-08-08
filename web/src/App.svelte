@@ -606,6 +606,7 @@
   let globalInstallCandidates: InstallCandidate[] = [];
   let loading = true;
   let error = "";
+  let authRejected = false;
   let drawer: Drawer = null;
   let confirmation: Confirmation | null = null;
   let surface: Surface = "actions";
@@ -778,7 +779,15 @@
   }
 
   async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-    return fetch(input, { ...init, headers: apiHeaders(init.headers) });
+    const response = await fetch(input, { ...init, headers: apiHeaders(init.headers) });
+    if (response.status === 401) {
+      authRejected = true;
+      loading = false;
+      closeEventSocket();
+    } else if (response.ok && authRejected) {
+      authRejected = false;
+    }
+    return response;
   }
 
   async function getJSON<T>(url: string): Promise<T> {
@@ -994,6 +1003,7 @@
   }
 
   function connectEvents() {
+    if (authRejected) return;
     if (eventSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(eventSocket.readyState)) return;
     if (eventReconnectTimer !== null) {
       window.clearTimeout(eventReconnectTimer);
@@ -1068,6 +1078,26 @@
       eventSocket = null;
       socket.close();
     }
+  }
+
+  function clearLocalPairingToken() {
+    apiAuthToken = "";
+    authRejected = true;
+    error = "";
+    try {
+      window.localStorage.removeItem(authStorageKey);
+    } catch (_err) {
+      // Clearing in-memory state is still enough for this browser session.
+    }
+    closeEventSocket();
+  }
+
+  function retryPairing() {
+    authRejected = false;
+    error = "";
+    loading = true;
+    void refresh();
+    connectEvents();
   }
 
   function handleDomainEvent(event: DomainEvent) {
@@ -3713,7 +3743,7 @@
 
 <main class="app-shell">
   <header class="app-header">
-    <button type="button" class="icon-button" aria-label="Open games" on:click={() => (drawer = "games")}>☰</button>
+    <button type="button" class="icon-button" aria-label="Open games" disabled={authRejected} on:click={() => (drawer = "games")}>☰</button>
     <div class="title-block">
       {#if surface === "game" && selectedGame}
         <img src={gameImage(selectedGame.app_id)} alt="" />
@@ -3723,10 +3753,10 @@
         <h1>{title}</h1>
       </div>
     </div>
-    <button type="button" class="icon-button" aria-label="Open settings" on:click={() => (drawer = "settings")}>⚙</button>
+    <button type="button" class="icon-button" aria-label="Open settings" disabled={authRejected} on:click={() => (drawer = "settings")}>⚙</button>
   </header>
 
-  {#if drawer}
+  {#if drawer && !authRejected}
     <button type="button" class="scrim" aria-label="Close menu" on:click={() => (drawer = null)}></button>
     <aside class="drawer">
       {#if drawer === "games"}
@@ -3802,17 +3832,29 @@
     </aside>
   {/if}
 
-  <section class="status-strip" aria-label="App status">
-    <button type="button" on:click={openActionCenter}>{globalActionCount} Action{globalActionCount === 1 ? "" : "s"}</button>
-    <button type="button" on:click={() => (drawer = "games")}>{manageableGameCount} Ready</button>
-    <button type="button" on:click={() => openSettings("sources")}>{readySourceCatalogCount}/{sourceCatalogCount} Sources</button>
-  </section>
+  {#if !authRejected}
+    <section class="status-strip" aria-label="App status">
+      <button type="button" on:click={openActionCenter}>{globalActionCount} Action{globalActionCount === 1 ? "" : "s"}</button>
+      <button type="button" on:click={() => (drawer = "games")}>{manageableGameCount} Ready</button>
+      <button type="button" on:click={() => openSettings("sources")}>{readySourceCatalogCount}/{sourceCatalogCount} Sources</button>
+    </section>
+  {/if}
 
-  {#if error}
+  {#if error && !authRejected}
     <section class="alert">{error}</section>
   {/if}
 
-  {#if loading}
+  {#if authRejected}
+    <section class="empty-state pairing-required">
+      <p class="eyebrow">Pairing Required</p>
+      <h2>Open the current Phone URL from Decky Mod Manager.</h2>
+      <p class="hint">This browser does not have the active DMM pairing token, or the token was reset from the Steam Deck.</p>
+      <div class="pairing-actions">
+        <button type="button" on:click={retryPairing}>Retry</button>
+        <button type="button" class="secondary-action" on:click={clearLocalPairingToken}>Clear Stored Pairing</button>
+      </div>
+    </section>
+  {:else if loading}
     <section class="empty-state">Loading...</section>
   {:else if surface === "actions"}
     <section class="settings-screen">

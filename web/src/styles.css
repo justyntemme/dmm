@@ -525,6 +525,28 @@ h2 {
   margin: 0;
 }
 
+.pairing-required {
+  display: grid;
+  gap: 12px;
+}
+
+.pairing-required h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.pairing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pairing-actions button {
+  flex: 1 1 160px;
+}
+
 .game-workspace,
 .settings-screen {
   display: grid;
