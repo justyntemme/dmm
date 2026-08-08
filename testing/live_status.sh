@@ -36,10 +36,25 @@ tail_log() {
   local path="$2"
   section "$label"
   if [[ -f "$path" ]]; then
-    tail -n "${LOG_LINES:-80}" "$path"
+    tail -n "${LOG_LINES:-80}" "$path" | redact_log
   else
     echo "missing: $path"
   fi
+}
+
+redact_log() {
+  python3 - <<'PY'
+import re
+import sys
+
+query_pattern = re.compile(r"(?i)((?:key|expires|md5|token|api_key)=)[^&\"'\s\\]+")
+json_field_pattern = re.compile(r"(?i)(\"(?:nxm_)?(?:key|expires|token|api_key)\"\s*:\s*\")[^\"]*(\")")
+
+for line in sys.stdin:
+    line = query_pattern.sub(r"\1[redacted]", line)
+    line = json_field_pattern.sub(r"\1[redacted]\2", line)
+    sys.stdout.write(line)
+PY
 }
 
 section "Decky Mod Manager live status"

@@ -135,8 +135,12 @@ func redactURL(raw string) string {
 	return parts[0] + "?" + strings.Join(queryParts, "&")
 }
 
-var sensitiveQueryValuePattern = regexp.MustCompile(`(?i)(key|expires|md5)=([^&"'\s]+)`)
+var (
+	sensitiveQueryValuePattern = regexp.MustCompile(`(?i)((?:key|expires|md5|token|api_key)=)[^&"'\s\\]+`)
+	sensitiveJSONFieldPattern  = regexp.MustCompile(`(?i)("(?:nxm_)?(?:key|expires|token|api_key)"\s*:\s*")[^"]*(")`)
+)
 
 func redactText(text string) string {
-	return sensitiveQueryValuePattern.ReplaceAllString(text, "$1=[redacted]")
+	text = sensitiveQueryValuePattern.ReplaceAllString(text, "${1}[redacted]")
+	return sensitiveJSONFieldPattern.ReplaceAllString(text, "${1}[redacted]${2}")
 }
