@@ -104,3 +104,36 @@ func TestQARPreservesRawRecord(t *testing.T) {
 		t.Fatal("rewriting an unchanged raw-record archive changed bytes")
 	}
 }
+
+func TestExtractQAREntryDataByHash(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "00.dat")
+	wantHash := HashFileNameWithExtension("Assets/tpp/demo/example.fpk")
+	archive := QARFile{
+		Flags:   3150048,
+		Version: 1,
+		Entries: []QAREntry{
+			{FilePath: "Assets/tpp/demo/other.lua", Data: []byte("other")},
+			{FilePath: "Assets/tpp/demo/example.fpk", Hash: wantHash, Compressed: true, Data: []byte("wanted")},
+		},
+	}
+	if err := WriteQAR(path, archive); err != nil {
+		t.Fatal(err)
+	}
+	data, ok, err := ExtractQAREntryDataByHash(path, wantHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("entry was not found")
+	}
+	if !bytes.Equal(data, []byte("wanted")) {
+		t.Fatalf("data = %q", data)
+	}
+	data, ok, err = ExtractQAREntryDataByHash(path, HashFileNameWithExtension("Assets/tpp/demo/missing.fpk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || data != nil {
+		t.Fatalf("missing entry returned ok=%v data=%q", ok, data)
+	}
+}

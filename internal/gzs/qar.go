@@ -35,6 +35,7 @@ type QAREntry struct {
 	FilePath   string
 	Compressed bool
 	DataHash   [16]byte
+	RawOffset  int64
 	RawRecord  []byte
 	Data       []byte
 }
@@ -86,6 +87,57 @@ func ReadQARReader(reader *io.SectionReader) (QARFile, error) {
 		return entries[i].Hash < entries[j].Hash
 	})
 	return QARFile{Flags: flags, Version: version, Entries: entries}, nil
+}
+
+func ExtractQAREntryDataByHash(path string, hash uint64) ([]byte, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	data, ok, err := ExtractQAREntryDataByHashReader(io.NewSectionReader(file, 0, stat.Size()), hash)
+	return data, ok, err
+}
+
+func ExtractQAREntryDataByHashReader(reader *io.SectionReader, hash uint64) ([]byte, bool, error) {
+	var header [32]byte
+	if _, err := reader.ReadAt(header[:], 0); err != nil {
+		return nil, false, err
+	}
+	if binary.LittleEndian.Uint32(header[0:4]) != qarMagic {
+		return nil, false, errors.New("not a QAR archive")
+	}
+	flags := binary.LittleEndian.Uint32(header[4:8]) ^ qarXORMask1
+	count := binary.LittleEndian.Uint32(header[8:12]) ^ qarXORMask2
+	version := binary.LittleEndian.Uint32(header[24:28]) ^ qarXORMask1
+	if count > 2_000_000 {
+		return nil, false, errors.New("QAR archive entry count is unreasonable")
+	}
+	shift := qarBlockShift(flags)
+	table := make([]byte, int(count)*8)
+	if _, err := reader.ReadAt(table, int64(len(header))); err != nil {
+		return nil, false, err
+	}
+	for _, section := range decryptQARSectionList(table, version, false) {
+		offset := int64(section>>40) << shift
+		entry, err := readQAREntryHeader(reader, offset, version)
+		if err != nil {
+			return nil, false, err
+		}
+		if entry.Hash != hash {
+			continue
+		}
+		if err := readQAREntryRaw(reader, &entry, offset, version); err != nil {
+			return nil, false, err
+		}
+		data, err := ExportQAREntryData(reader, entry, version)
+		return data, true, err
+	}
+	return nil, false, nil
 }
 
 func WriteQAR(path string, archive QARFile) error {
@@ -210,6 +262,17 @@ func ExportQAREntryData(reader *io.SectionReader, entry QAREntry, version uint32
 }
 
 func readQAREntry(reader *io.SectionReader, offset int64, version uint32) (QAREntry, error) {
+	entry, err := readQAREntryHeader(reader, offset, version)
+	if err != nil {
+		return QAREntry{}, err
+	}
+	if err := readQAREntryRaw(reader, &entry, offset, version); err != nil {
+		return QAREntry{}, err
+	}
+	return entry, nil
+}
+
+func readQAREntryHeader(reader *io.SectionReader, offset int64, version uint32) (QAREntry, error) {
 	var header [32]byte
 	if _, err := reader.ReadAt(header[:], offset); err != nil {
 		return QAREntry{}, err
@@ -221,10 +284,6 @@ func readQAREntry(reader *io.SectionReader, offset int64, version uint32) (QAREn
 	if compressedSize > 1<<34 || uncompressedSize > 1<<34 {
 		return QAREntry{}, errors.New("QAR entry size is unreasonable")
 	}
-	raw := make([]byte, 32+compressedSize)
-	if _, err := reader.ReadAt(raw, offset); err != nil {
-		return QAREntry{}, err
-	}
 	var dataHash [16]byte
 	copy(dataHash[0:4], uint32Bytes(binary.LittleEndian.Uint32(header[16:20])^qarXORMask4))
 	copy(dataHash[4:8], uint32Bytes(binary.LittleEndian.Uint32(header[20:24])^qarXORMask1))
@@ -234,8 +293,28 @@ func readQAREntry(reader *io.SectionReader, offset int64, version uint32) (QAREn
 		Hash:       hash,
 		Compressed: uncompressedSize != compressedSize,
 		DataHash:   dataHash,
-		RawRecord:  raw,
+		RawOffset:  offset,
 	}, nil
+}
+
+func readQAREntryRaw(reader *io.SectionReader, entry *QAREntry, offset int64, version uint32) error {
+	if entry == nil {
+		return errors.New("QAR entry is nil")
+	}
+	var header [16]byte
+	if _, err := reader.ReadAt(header[:], offset+8); err != nil {
+		return err
+	}
+	size1 := binary.LittleEndian.Uint32(header[0:4]) ^ qarXORMask2
+	size2 := binary.LittleEndian.Uint32(header[4:8]) ^ qarXORMask3
+	_, compressedSize := qarEntrySizes(version, size1, size2)
+	raw := make([]byte, 32+compressedSize)
+	if _, err := reader.ReadAt(raw, offset); err != nil {
+		return err
+	}
+	entry.RawOffset = offset
+	entry.RawRecord = raw
+	return nil
 }
 
 func writeGeneratedQAREntry(writer io.Writer, entry QAREntry, version uint32) error {
