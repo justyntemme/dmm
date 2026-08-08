@@ -9421,10 +9421,79 @@ func TestLaunchToolArgumentsIncludeDynamicInputPath(t *testing.T) {
 			ArgumentToken:  "--package-list={path}",
 		}},
 	}
-	args := launchToolArguments(gamePath, tool)
+	args := launchToolArguments(gamePath, tool, nil)
 	want := "--package-list=" + filepath.ToSlash(filepath.Join(gamePath, "DMM/TexMod/packages.txt"))
 	if len(args) != 2 || args[0] != "--native" || args[1] != want {
 		t.Fatalf("args = %#v, want dynamic arg %q", args, want)
+	}
+}
+
+func TestLaunchToolDynamicArgumentGeneratesEnabledModRoot(t *testing.T) {
+	game := storage.Game{
+		SteamAppID: "2210",
+		GamePath:   filepath.ToSlash(t.TempDir()),
+	}
+	manifest := stagedManifest{
+		ModType: "quake4-fs-game",
+		Files: []stagedManifestFile{{
+			Path:           "Impacts_and_Injury/autoexec.cfg",
+			TargetRelative: "Impacts_and_Injury/autoexec.cfg",
+		}},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := []storage.InstalledMod{{
+		ID:           42,
+		Name:         "Impacts and Injury",
+		ManifestJSON: string(manifestJSON),
+		Enabled:      true,
+	}}
+	tool := gameext.LaunchToolSpec{
+		ID:                 "quake4-fs-game",
+		Name:               "Quake 4 fs_game launch",
+		ExecutableRelative: "Quake4.exe",
+		DynamicArguments: []gameext.LaunchToolDynamicArgumentSpec{{
+			ID:                "fs-game-folder",
+			Name:              "Enabled fs_game folder",
+			Kind:              gameext.LaunchToolDynamicArgumentEnabledModRoot,
+			SourceModTypes:    []string{"quake4-fs-game"},
+			ArgumentTokens:    []string{"+set fs_game {mod_folder_quoted}"},
+			RequireExactlyOne: true,
+		}},
+	}
+	dynamic, details := launchToolDynamicArguments(game, mods, tool)
+	if len(details) > 0 {
+		t.Fatalf("details = %+v", details)
+	}
+	args := launchToolArguments(game.GamePath, tool, dynamic)
+	if len(args) != 1 || args[0] != `+set fs_game "Impacts_and_Injury"` {
+		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestLaunchToolDynamicArgumentRequiresOneEnabledModRoot(t *testing.T) {
+	game := storage.Game{
+		SteamAppID: "2210",
+		GamePath:   filepath.ToSlash(t.TempDir()),
+	}
+	tool := gameext.LaunchToolSpec{
+		ID:                 "quake4-fs-game",
+		Name:               "Quake 4 fs_game launch",
+		ExecutableRelative: "Quake4.exe",
+		DynamicArguments: []gameext.LaunchToolDynamicArgumentSpec{{
+			ID:                "fs-game-folder",
+			Name:              "Enabled fs_game folder",
+			Kind:              gameext.LaunchToolDynamicArgumentEnabledModRoot,
+			SourceModTypes:    []string{"quake4-fs-game"},
+			ArgumentTokens:    []string{"+set fs_game {mod_folder_quoted}"},
+			RequireExactlyOne: true,
+		}},
+	}
+	dynamic, details := launchToolDynamicArguments(game, nil, tool)
+	if len(dynamic) != 0 || len(details) != 1 || !strings.Contains(details[0], "requires exactly one enabled mod") {
+		t.Fatalf("dynamic=%+v details=%+v", dynamic, details)
 	}
 }
 

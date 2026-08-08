@@ -134,6 +134,7 @@ type LaunchToolSpec struct {
 	RequiredFiles      []string
 	Variants           []LaunchToolVariantSpec
 	DynamicInputs      []LaunchToolDynamicInputSpec
+	DynamicArguments   []LaunchToolDynamicArgumentSpec
 	Shell              bool
 	Detach             bool
 	Exclusive          bool
@@ -151,6 +152,10 @@ const (
 	LaunchToolDynamicInputEnabledModFileList = "enabled-mod-file-list"
 )
 
+const (
+	LaunchToolDynamicArgumentEnabledModRoot = "enabled-mod-root"
+)
+
 type LaunchToolDynamicInputSpec struct {
 	ID             string
 	Name           string
@@ -158,6 +163,15 @@ type LaunchToolDynamicInputSpec struct {
 	SourceModTypes []string
 	OutputRelative string
 	ArgumentToken  string
+}
+
+type LaunchToolDynamicArgumentSpec struct {
+	ID                string
+	Name              string
+	Kind              string
+	SourceModTypes    []string
+	ArgumentTokens    []string
+	RequireExactlyOne bool
 }
 
 type LaunchToolVariantSpec struct {

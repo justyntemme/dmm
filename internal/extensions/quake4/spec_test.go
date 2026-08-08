@@ -1,13 +1,12 @@
 package quake4
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -18,8 +17,12 @@ func TestExtensionRegistersQ4BaseSupport(t *testing.T) {
 	if summary.ID != VortexGameID || summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("summary = %+v", summary)
 	}
-	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.LaunchTools) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	tool := summary.Capabilities.LaunchTools[0]
+	if tool.ID != "quake4-fs-game-launch" || len(tool.DynamicArguments) != 1 {
+		t.Fatalf("launch tool = %+v", tool)
 	}
 }
 
@@ -40,16 +43,27 @@ func TestQ4BaseInstallerTargetsQ4BaseFolder(t *testing.T) {
 	assertTarget(t, plan, "q4base/def/weapons/machinegun.def")
 }
 
-func TestFSGameFolderIsBlockedUntilDynamicLaunchOptionsExist(t *testing.T) {
+func TestFSGameFolderTargetsGameRootAndRequiresDynamicLaunchOption(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "Impacts_and_Injury", "autoexec.cfg"), "seta")
 	writeFile(t, filepath.Join(root, "Impacts_and_Injury", "effects.pk4"), "pk4")
 
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extension())})
-	_, err := registry.BuildInstallPlan(SteamAppID, root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "fs_game") {
-		t.Fatalf("err = %v", err)
+	plan, err := registry.BuildInstallPlan(SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != fsGameModType {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "Impacts_and_Injury/autoexec.cfg")
+	assertTarget(t, plan, "Impacts_and_Injury/effects.pk4")
+	_, tool, required := registry.RequiredPrimaryLaunchToolForSteamApp(SteamAppID, []gamehandler.RuntimeMod{{
+		Enabled: true,
+		ModType: fsGameModType,
+	}})
+	if !required || tool.ID != "quake4-fs-game-launch" || len(tool.DynamicArguments) != 1 {
+		t.Fatalf("launch tool = %+v required=%v", tool, required)
 	}
 }
 

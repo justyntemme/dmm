@@ -44,6 +44,7 @@ type Extension struct {
 type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
 type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
+type LaunchToolDynamicArgumentSpec = sdk.LaunchToolDynamicArgumentSpec
 type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
@@ -77,6 +78,7 @@ const (
 
 	LaunchToolDynamicInputGeneratedConfig    = sdk.LaunchToolDynamicInputGeneratedConfig
 	LaunchToolDynamicInputEnabledModFileList = sdk.LaunchToolDynamicInputEnabledModFileList
+	LaunchToolDynamicArgumentEnabledModRoot  = sdk.LaunchToolDynamicArgumentEnabledModRoot
 	PluginActivationFormatOriginal           = sdk.PluginActivationFormatOriginal
 	PluginActivationFormatAsterisked         = sdk.PluginActivationFormatAsterisked
 )
@@ -125,6 +127,7 @@ type FeatureSummary struct {
 	Arguments          []string                 `json:"arguments,omitempty"`
 	RequiredFiles      []string                 `json:"required_files,omitempty"`
 	DynamicInputs      []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
+	DynamicArguments   []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
 	Shell              bool                     `json:"shell,omitempty"`
 	Detach             bool                     `json:"detach,omitempty"`
 	Exclusive          bool                     `json:"exclusive,omitempty"`
@@ -145,6 +148,15 @@ type LaunchToolDynamicInput struct {
 	SourceModTypes []string `json:"source_mod_types,omitempty"`
 	OutputRelative string   `json:"output_relative,omitempty"`
 	ArgumentToken  string   `json:"argument_token,omitempty"`
+}
+
+type LaunchToolDynamicArg struct {
+	ID                string   `json:"id"`
+	Name              string   `json:"name,omitempty"`
+	Kind              string   `json:"kind"`
+	SourceModTypes    []string `json:"source_mod_types,omitempty"`
+	ArgumentTokens    []string `json:"argument_tokens,omitempty"`
+	RequireExactlyOne bool     `json:"require_exactly_one,omitempty"`
 }
 
 type WorkshopSummary struct {
@@ -731,6 +743,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Arguments:          append([]string(nil), tool.Arguments...),
 			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
 			DynamicInputs:      launchToolDynamicInputs(tool.DynamicInputs),
+			DynamicArguments:   launchToolDynamicArguments(tool.DynamicArguments),
 			Shell:              tool.Shell,
 			Detach:             tool.Detach,
 			Exclusive:          tool.Exclusive,
@@ -849,6 +862,24 @@ func launchToolDynamicInputs(inputs []sdk.LaunchToolDynamicInputSpec) []LaunchTo
 			SourceModTypes: appendClean([]string{}, input.SourceModTypes...),
 			OutputRelative: input.OutputRelative,
 			ArgumentToken:  input.ArgumentToken,
+		})
+	}
+	return out
+}
+
+func launchToolDynamicArguments(args []sdk.LaunchToolDynamicArgumentSpec) []LaunchToolDynamicArg {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]LaunchToolDynamicArg, 0, len(args))
+	for _, arg := range args {
+		out = append(out, LaunchToolDynamicArg{
+			ID:                arg.ID,
+			Name:              arg.Name,
+			Kind:              arg.Kind,
+			SourceModTypes:    appendClean([]string{}, arg.SourceModTypes...),
+			ArgumentTokens:    appendClean([]string{}, arg.ArgumentTokens...),
+			RequireExactlyOne: arg.RequireExactlyOne,
 		})
 	}
 	return out

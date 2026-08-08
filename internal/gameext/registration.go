@@ -621,6 +621,7 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 			}
 		}
 		errs = append(errs, validateLaunchToolDynamicInputs(id, tool.DynamicInputs)...)
+		errs = append(errs, validateLaunchToolDynamicArguments(id, tool.DynamicArguments)...)
 		for _, variant := range tool.Variants {
 			platformID := strings.TrimSpace(variant.PlatformID)
 			if platformID == "" {
@@ -646,6 +647,49 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 		for _, modType := range tool.ProviderModTypes {
 			if strings.TrimSpace(modType) == "" {
 				errs = append(errs, errors.New("launch tool "+id+" provider mod type is required"))
+			}
+		}
+	}
+	return errs
+}
+
+func validateLaunchToolDynamicArguments(toolID string, args []sdk.LaunchToolDynamicArgumentSpec) []error {
+	var errs []error
+	for _, arg := range args {
+		id := strings.TrimSpace(arg.ID)
+		if id == "" {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument id is required"))
+			continue
+		}
+		if strings.ContainsAny(id, "/\\") {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" id must be a simple identifier"))
+		}
+		if strings.TrimSpace(arg.Name) == "" {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" name is required"))
+		}
+		switch strings.TrimSpace(arg.Kind) {
+		case sdk.LaunchToolDynamicArgumentEnabledModRoot:
+		default:
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" kind must be enabled-mod-root"))
+		}
+		if len(arg.SourceModTypes) == 0 {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" must declare source mod types"))
+		}
+		for _, modType := range arg.SourceModTypes {
+			if strings.TrimSpace(modType) == "" {
+				errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" source mod type is required"))
+			}
+		}
+		if len(arg.ArgumentTokens) == 0 {
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" must declare argument tokens"))
+		}
+		for _, token := range arg.ArgumentTokens {
+			if strings.TrimSpace(token) == "" {
+				errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" argument token is required"))
+				continue
+			}
+			if err := validateLaunchArgument(token); err != nil {
+				errs = append(errs, errors.New("launch tool "+toolID+" dynamic argument "+id+" argument token: "+err.Error()))
 			}
 		}
 	}

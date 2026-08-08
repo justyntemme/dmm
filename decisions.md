@@ -23,6 +23,17 @@ Use this file only when an implementation path requires a meaningful architectur
 
 ## Decisions
 
+### Model Extension-Owned Dynamic Launch Arguments
+
+- Date: 2026-08-08
+- Area: Extension framework and Steam launch-tool integration
+- Decision: Add typed dynamic launch arguments to the extension SDK. Extensions can declare that a launch tool needs arguments derived from enabled profile mods, starting with an `enabled-mod-root` argument source. The backend resolves those arguments from staged manifests and exposes the desired Steam launch options through the existing Decky launch-tool action path.
+- Options considered: add a Quake-specific launch-option hook; generate per-game wrapper scripts from extension hooks; add generic typed dynamic launch arguments resolved from enabled profile state.
+- Rationale: Quake 4 `fs_game` support needs the enabled mod folder in `+set fs_game <folder>`, but that behavior belongs in the Quake extension. A typed dynamic argument keeps the game-specific token in the extension while core only validates placeholders, reads DMM-owned staged manifests, and builds the same launch-option request shape used by static tools such as SMAPI.
+- Tradeoffs: the MVP implementation supports game-root target mappings only and blocks external target-root dynamic launch roots with a clear diagnostic. It also blocks `RequireExactlyOne` launch tools until exactly one matching enabled mod can provide a launch root, which is correct for Quake 4 but may need additional generic selection semantics for future games that support multiple active roots.
+- Verification/source references: Quake 4 research notes in `docs/extensions/games/quake-4.md`; implementation in `internal/extensions/quake4`, `internal/extensions/sdk`, `internal/gameext`, and `internal/server`; tests in `internal/extensions/quake4/spec_test.go` and `internal/server/server_test.go`.
+- Follow-up: live-test a Quake 4 `fs_game` archive and Steam launch-option update on the Deck, then extend the same typed argument model only when a source-verified extension requires more input kinds.
+
 ### Use A Process-Scoped Pairing Token For MVP API Auth
 
 - Date: 2026-08-08

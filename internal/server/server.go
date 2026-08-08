@@ -668,6 +668,7 @@ type launchToolResponse struct {
 	Arguments          []string                         `json:"arguments,omitempty"`
 	RequiredFiles      []string                         `json:"required_files,omitempty"`
 	DynamicInputs      []gameext.LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
+	DynamicArguments   []gameext.LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
 	Shell              bool                             `json:"shell,omitempty"`
 	Detach             bool                             `json:"detach,omitempty"`
 	Exclusive          bool                             `json:"exclusive,omitempty"`
@@ -1081,7 +1082,8 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
 
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
-	arguments := launchToolArguments(game.GamePath, tool)
+	dynamicArguments, dynamicArgumentDetails := launchToolDynamicArguments(game, mods, tool)
+	arguments := launchToolArguments(game.GamePath, tool, dynamicArguments)
 	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
 	resp.DesiredOptions = desired
 	resp.Tool = &launchToolResponse{
@@ -1092,6 +1094,7 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		Arguments:          arguments,
 		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
 		DynamicInputs:      launchToolDynamicInputsForResponse(tool.DynamicInputs),
+		DynamicArguments:   launchToolDynamicArgumentsForResponse(tool.DynamicArguments),
 		Shell:              tool.Shell,
 		Detach:             tool.Detach,
 		Exclusive:          tool.Exclusive,
@@ -1105,6 +1108,10 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	if missing := missingLaunchToolDynamicInputFiles(game.GamePath, tool); len(missing) > 0 {
 		resp.MissingFiles = append(resp.MissingFiles, missing...)
 		resp.Details = append(resp.Details, "Dynamic launch input files are missing; apply the current profile before configuring this launch tool.")
+		return resp, nil
+	}
+	if len(dynamicArgumentDetails) > 0 {
+		resp.Details = append(resp.Details, dynamicArgumentDetails...)
 		return resp, nil
 	}
 	if unsupported, reason := unsupportedSteamLaunchToolBridge(tool); unsupported {
@@ -1149,8 +1156,9 @@ func launchOptionsConfigured(currentOptions, desiredOptions, executablePath stri
 	return strings.Contains(currentOptions, strings.TrimSpace(executablePath))
 }
 
-func launchToolArguments(gamePath string, tool games.LaunchToolSpec) []string {
+func launchToolArguments(gamePath string, tool games.LaunchToolSpec, dynamicArguments []string) []string {
 	args := append([]string(nil), tool.Arguments...)
+	args = append(args, dynamicArguments...)
 	for _, input := range tool.DynamicInputs {
 		token := strings.TrimSpace(input.ArgumentToken)
 		if token == "" {
@@ -1160,6 +1168,127 @@ func launchToolArguments(gamePath string, tool games.LaunchToolSpec) []string {
 		args = append(args, strings.ReplaceAll(token, "{path}", path))
 	}
 	return args
+}
+
+type launchToolDynamicModRoot struct {
+	modName string
+	folder  string
+	path    string
+}
+
+func launchToolDynamicArguments(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec) ([]string, []string) {
+	if len(tool.DynamicArguments) == 0 {
+		return nil, nil
+	}
+	var args []string
+	var details []string
+	for _, spec := range tool.DynamicArguments {
+		switch strings.TrimSpace(spec.Kind) {
+		case gameext.LaunchToolDynamicArgumentEnabledModRoot:
+			next, nextDetails := launchToolEnabledModRootArguments(game, mods, tool, spec)
+			if len(nextDetails) > 0 {
+				details = append(details, nextDetails...)
+				continue
+			}
+			args = append(args, next...)
+		default:
+			details = append(details, fmt.Sprintf("Launch tool %s uses unsupported dynamic argument kind %q.", tool.ID, spec.Kind))
+		}
+	}
+	return args, details
+}
+
+func launchToolEnabledModRootArguments(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec, spec gameext.LaunchToolDynamicArgumentSpec) ([]string, []string) {
+	sourceModTypes := canonicalSet(spec.SourceModTypes)
+	var roots []launchToolDynamicModRoot
+	var details []string
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		if _, ok := sourceModTypes[canonicalModType(installedModType(mod))]; !ok {
+			continue
+		}
+		modRoots, err := launchToolModTargetRoots(mod)
+		if err != nil {
+			details = append(details, fmt.Sprintf("Enabled mod %s cannot provide launch root %s: %v.", mod.Name, spec.Name, err))
+			continue
+		}
+		if len(modRoots) == 0 {
+			details = append(details, fmt.Sprintf("Enabled mod %s has no target folder for launch root %s.", mod.Name, spec.Name))
+			continue
+		}
+		if len(modRoots) > 1 {
+			details = append(details, fmt.Sprintf("Enabled mod %s spans multiple launch roots for %s: %s.", mod.Name, spec.Name, strings.Join(modRoots, ", ")))
+			continue
+		}
+		folder := modRoots[0]
+		roots = append(roots, launchToolDynamicModRoot{
+			modName: strings.TrimSpace(mod.Name),
+			folder:  folder,
+			path:    filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(folder))),
+		})
+	}
+	if len(details) > 0 {
+		return nil, details
+	}
+	if spec.RequireExactlyOne && len(roots) != 1 {
+		return nil, []string{fmt.Sprintf("Launch tool %s requires exactly one enabled mod for %s; found %d.", tool.Name, spec.Name, len(roots))}
+	}
+	var args []string
+	for _, root := range roots {
+		for _, token := range spec.ArgumentTokens {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			args = append(args, launchToolExpandDynamicArgumentToken(token, root))
+		}
+	}
+	return args, nil
+}
+
+func launchToolModTargetRoots(mod storage.InstalledMod) ([]string, error) {
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		return nil, err
+	}
+	roots := map[string]struct{}{}
+	for _, file := range manifest.Files {
+		if strings.TrimSpace(file.TargetRoot) != "" {
+			return nil, errors.New("dynamic launch roots for external target roots are not implemented")
+		}
+		targetRelative := filepath.ToSlash(strings.TrimSpace(file.TargetRelative))
+		if targetRelative == "" {
+			continue
+		}
+		cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(targetRelative)))
+		if cleaned == "." || filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "../") {
+			return nil, fmt.Errorf("unsafe target path %q", file.TargetRelative)
+		}
+		root := strings.Split(cleaned, "/")[0]
+		if root == "" || strings.ContainsAny(root, "\x00\r\n") {
+			return nil, fmt.Errorf("unsafe launch root %q", root)
+		}
+		roots[root] = struct{}{}
+	}
+	out := make([]string, 0, len(roots))
+	for root := range roots {
+		out = append(out, root)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func launchToolExpandDynamicArgumentToken(token string, root launchToolDynamicModRoot) string {
+	replacer := strings.NewReplacer(
+		"{mod_folder_quoted}", strconv.Quote(root.folder),
+		"{mod_path_quoted}", strconv.Quote(root.path),
+		"{mod_folder}", root.folder,
+		"{mod_path}", root.path,
+		"{mod_name}", root.modName,
+	)
+	return replacer.Replace(token)
 }
 
 func missingLaunchToolDynamicInputFiles(gamePath string, tool games.LaunchToolSpec) []string {
@@ -1193,6 +1322,24 @@ func launchToolDynamicInputsForResponse(inputs []gameext.LaunchToolDynamicInputS
 			SourceModTypes: append([]string(nil), input.SourceModTypes...),
 			OutputRelative: input.OutputRelative,
 			ArgumentToken:  input.ArgumentToken,
+		})
+	}
+	return out
+}
+
+func launchToolDynamicArgumentsForResponse(args []gameext.LaunchToolDynamicArgumentSpec) []gameext.LaunchToolDynamicArg {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]gameext.LaunchToolDynamicArg, 0, len(args))
+	for _, arg := range args {
+		out = append(out, gameext.LaunchToolDynamicArg{
+			ID:                arg.ID,
+			Name:              arg.Name,
+			Kind:              arg.Kind,
+			SourceModTypes:    append([]string(nil), arg.SourceModTypes...),
+			ArgumentTokens:    append([]string(nil), arg.ArgumentTokens...),
+			RequireExactlyOne: arg.RequireExactlyOne,
 		})
 	}
 	return out

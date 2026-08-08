@@ -16,10 +16,9 @@ const (
 	VortexGameID = "quake4"
 	Name         = "Quake 4"
 
-	q4baseModType      = "quake4-q4base"
-	fsGameBlockedType  = "quake4-fs-game-blocked"
-	q4baseRoot         = "q4base"
-	fsGameBlockedCause = "Quake 4 fs_game folder archives require a dynamic launch-option action such as +set fs_game <folder>. DMM can stage the files only after the extension framework can bind one enabled mod folder to a Steam launch action, so this archive is blocked instead of installing a mod that cannot be launched."
+	q4baseModType = "quake4-q4base"
+	fsGameModType = "quake4-fs-game"
+	q4baseRoot    = "q4base"
 )
 
 func Extension() sdk.Extension {
@@ -42,16 +41,16 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: q4baseModType, TargetRoot: q4baseRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: fsGameBlockedType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: fsGameModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:quake4:fs-game-blocked",
-		VortexInstallerID: "quake4-fs-game-blocked",
+		ID:                "source:quake4:fs-game",
+		VortexInstallerID: "quake4-fs-game",
 		Priority:          20,
-		ModType:           fsGameBlockedType,
+		ModType:           fsGameModType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchFSGameArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: fsGameBlockedCause,
+		CustomBuild:       buildFSGameArchive,
+		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:quake4:q4base",
@@ -68,11 +67,27 @@ func Register(r sdk.Registrar) {
 		Name:        "Quake 4 q4base folder",
 		Kind:        "game-folder",
 		Required:    true,
-		ModTypes:    []string{q4baseModType},
+		ModTypes:    []string{q4baseModType, fsGameModType},
 		Message:     "Quake 4 is missing q4base, so DMM cannot deploy q4base replacement mods.",
 		OKMessage:   "Quake 4 has the expected q4base folder and executable markers.",
 		InstallHint: "Verify Quake 4 files in Steam before testing q4base replacement mods.",
 		Check:       requiredFilesCheck([]string{"Quake4.exe", "q4base/Quake4Config.cfg"}),
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "quake4-fs-game-launch",
+		Name:               "Quake 4 fs_game launch",
+		ExecutableRelative: "Quake4.exe",
+		RequiredFiles:      []string{"Quake4.exe"},
+		DefaultPrimary:     true,
+		ModTypes:           []string{fsGameModType},
+		DynamicArguments: []sdk.LaunchToolDynamicArgumentSpec{{
+			ID:                "fs-game-folder",
+			Name:              "Enabled fs_game folder",
+			Kind:              sdk.LaunchToolDynamicArgumentEnabledModRoot,
+			SourceModTypes:    []string{fsGameModType},
+			ArgumentTokens:    []string{"+set fs_game {mod_folder_quoted}"},
+			RequireExactlyOne: true,
+		}},
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "quake4-executable",
