@@ -350,6 +350,14 @@ To verify phone/tablet API pairing stays token-gated after a deployed package st
 ~/.testing/live_auth_pairing_check.sh
 ```
 
+To validate the Decky `Reset Phone Pairing` backend behavior without using the UI, run this on the Deck:
+
+```bash
+~/.testing/live_pairing_rotation_check.sh
+```
+
+This intentionally rotates the runtime API token, invokes the Decky bridge reset path, proves the old token is rejected while the new token is accepted, and then hands the test backend to a transient user-systemd unit so SSH-driven validation leaves the API reachable. Any phone or tablet already paired with the old URL must open the new Decky Phone URL afterward.
+
 The check confirms `/api/health` and static web assets remain public, state APIs reject missing and wrong tokens, REST query-string tokens are rejected, the header token works, `/api/status` does not expose the token, and WebSocket query tokens are accepted only at the upgrade boundary.
 
 After installing and deploying a fresh test mod, run the stricter live acceptance check:

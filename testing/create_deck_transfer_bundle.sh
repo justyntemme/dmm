@@ -49,6 +49,7 @@ FILES=(
   "${ROOT_DIR}/testing/live_nexus_browser_handoff_check.sh"
   "${ROOT_DIR}/testing/live_ui_preferences_check.sh"
   "${ROOT_DIR}/testing/live_auth_pairing_check.sh"
+  "${ROOT_DIR}/testing/live_pairing_rotation_check.sh"
   "${ROOT_DIR}/testing/live_local_archive_security_check.sh"
   "${ROOT_DIR}/testing/live_extension_coverage_check.sh"
   "${ROOT_DIR}/testing/live_extension_targets_check.sh"
@@ -131,6 +132,7 @@ Or run the individual checks:
   ~/.testing/live_extension_targets_check.sh
   ~/.testing/live_provider_resolve_check.sh
   ~/.testing/live_auth_pairing_check.sh
+  ~/.testing/live_pairing_rotation_check.sh
   ~/.testing/live_local_archive_security_check.sh
 
 For auto-install validation, start the server from Decky, run:

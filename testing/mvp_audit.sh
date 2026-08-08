@@ -61,6 +61,7 @@ section "Testing script syntax"
     testing/live_nexus_browser_handoff_check.sh \
     testing/live_ui_preferences_check.sh \
     testing/live_auth_pairing_check.sh \
+    testing/live_pairing_rotation_check.sh \
     testing/live_local_archive_security_check.sh \
     testing/live_extension_coverage_check.sh \
     testing/live_extension_targets_check.sh \
@@ -102,6 +103,7 @@ section "Deck testing artifact coverage"
     live_nexus_browser_handoff_check.sh \
     live_ui_preferences_check.sh \
     live_auth_pairing_check.sh \
+    live_pairing_rotation_check.sh \
     live_local_archive_security_check.sh \
     live_extension_coverage_check.sh \
     live_extension_targets_check.sh \
