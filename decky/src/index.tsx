@@ -1056,6 +1056,8 @@ function deckyTabBody(tab: Tab, content: ReactNode, contentKey: string, onCancel
 }
 
 function jobToastBody(job: Job): string {
+  if (isDeckyModUpdateAction(job) && job.status === "waiting") return job.message || "Open Action Center to install this downloaded update.";
+  if (isDeckyModUpdateAction(job) && (job.status === "running" || job.status === "queued")) return job.message || "DMM is downloading or installing this mod update.";
   if (job.status === "waiting") return job.message || "Open Action Center on Decky or the phone/tablet UI to continue.";
   if (job.status === "running" || job.status === "queued") return job.message || "DMM is working on this action.";
   if (job.status === "completed") return job.message || "The action completed.";
@@ -1077,6 +1079,7 @@ function jobToastTitle(job: Job): string {
   if (job.type === "repair") return "DMM repair";
   if (job.type === "recover-downloads") return "DMM recovery";
   if (job.type === "extension-notice") return "DMM extension notice";
+  if (isDeckyModUpdateAction(job)) return "DMM mod update";
   return "Decky Mod Manager";
 }
 
@@ -1188,8 +1191,21 @@ function deckyJobMatchesInstallCandidate(job: Job, candidate: InstallCandidate) 
 }
 
 function deckyJobStatusLabel(job: Job) {
-	const status = job.status.replace(/[_-]+/g, " ");
-	return status.charAt(0).toUpperCase() + status.slice(1);
+  if (isDeckyModUpdateAction(job) && job.status === "waiting") return "Ready to update";
+  if (isDeckyModUpdateAction(job) && (job.status === "queued" || job.status === "running")) return "Updating";
+  const status = job.status.replace(/[_-]+/g, " ");
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function isDeckyModUpdateAction(job: Job) {
+  return job.type === "captured-install" && Boolean(job.payload?.installed_mod_id && job.payload?.update_to_file_id);
+}
+
+function deckyModUpdateActionDetail(job: Job) {
+  if (!isDeckyModUpdateAction(job)) return "";
+  const from = job.payload?.update_from_file_id || "current";
+  const to = job.payload?.update_to_file_id || "latest";
+  return `Update ${from} -> ${to}`;
 }
 
 function extensionNoticeToolName(job: Job) {
@@ -1217,7 +1233,7 @@ function safeHTTPURL(value: unknown) {
 }
 
 function deckyJobPrimaryActionLabel(job: Job) {
-  if (job.type === "captured-install" && job.status === "waiting") return "Install";
+  if (job.type === "captured-install" && job.status === "waiting") return isDeckyModUpdateAction(job) ? "Install Update" : "Install";
   if (job.type === "captured-install" && job.status === "failed") return "Retry";
   if (job.type === "steam-workshop-action" && job.status === "failed") return "Retry";
   if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) return extensionNoticeActionLabel(job);
@@ -5826,6 +5842,11 @@ function DeckyModManagerRoute() {
                         {deckyJobStatusLabel(job)} · {job.message || jobToastBody(job)}
                       </div>
                       <DeckyJobProgress job={job} />
+                      {deckyModUpdateActionDetail(job) && (
+                        <div style={{ color: "#bae6fd", fontSize: "11px", fontWeight: 700, lineHeight: 1.25, minWidth: 0, overflowWrap: "anywhere" }}>
+                          {deckyModUpdateActionDetail(job)}
+                        </div>
+                      )}
                       {extensionTool && (
                         <div style={{ color: "#bae6fd", fontSize: "11px", fontWeight: 700, lineHeight: 1.25, minWidth: 0, overflowWrap: "anywhere" }}>
                           Tool: {extensionTool}

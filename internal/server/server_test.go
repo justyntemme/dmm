@@ -1731,6 +1731,17 @@ func TestCapturedInstallDownloadQueuesAndCancelsBeforeSlot(t *testing.T) {
 	waitForJobStatus(t, srv, job.ID, jobs.StatusCanceled)
 }
 
+func TestCapturedInstallDownloadedMessageDistinguishesUpdates(t *testing.T) {
+	installMessage := capturedInstallDownloadedMessage("Lookup Anything", capturedInstall{})
+	if installMessage != "Downloaded Lookup Anything; install it to add it disabled" {
+		t.Fatalf("install message = %q", installMessage)
+	}
+	updateMessage := capturedInstallDownloadedMessage("Lookup Anything", capturedInstall{ReplaceInstalledModID: 42})
+	if updateMessage != "Downloaded update for Lookup Anything; install it to replace the current cached version" {
+		t.Fatalf("update message = %q", updateMessage)
+	}
+}
+
 func TestCapturedInstallDownloadThrottlesSameGameDomain(t *testing.T) {
 	srv := newTestServer(t)
 	setCapturedDownloadRetryDelay(t, 0)

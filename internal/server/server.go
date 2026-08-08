@@ -7933,7 +7933,11 @@ func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.J
 		return jobs.Job{}, errCapturedInstallNoArchive
 	}
 
-	job, ok := s.jobs.Run(jobID, "Installing downloaded archive from "+pending.Resolved.GameDomain)
+	message := "Installing downloaded archive from " + pending.Resolved.GameDomain
+	if pending.ReplaceInstalledModID > 0 {
+		message = "Installing downloaded update from " + pending.Resolved.GameDomain
+	}
+	job, ok := s.jobs.Run(jobID, message)
 	if !ok {
 		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
@@ -8119,10 +8123,21 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 			"archive_sha256", result.SHA256,
 			"archive_bytes", result.BytesWritten,
 		)
-		s.jobs.Wait(jobID, "Downloaded "+name+"; install it to add it disabled")
+		s.jobs.Wait(jobID, capturedInstallDownloadedMessage(name, pending))
 		return
 	}
 	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func capturedInstallDownloadedMessage(name string, pending capturedInstall) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "archive"
+	}
+	if pending.ReplaceInstalledModID > 0 {
+		return "Downloaded update for " + name + "; install it to replace the current cached version"
+	}
+	return "Downloaded " + name + "; install it to add it disabled"
 }
 
 func capturedDownloadThrottleKey(resolved catalog.ResolvedDownload) string {

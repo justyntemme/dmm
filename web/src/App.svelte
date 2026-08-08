@@ -3598,6 +3598,12 @@
     if (action.type === "installer-choice") {
       return "Choose installer options to finish adding this mod to the selected profile.";
     }
+    if (isModUpdateAction(action)) {
+      if (action.status === "waiting") return "Install this downloaded update to replace the current cached version for this profile. The mod keeps its current on/off state.";
+      if (action.status === "running" || action.status === "queued") return "DMM is downloading or installing this update through the normal safe profile pipeline.";
+      if (action.status === "failed") return "The update was not installed. Retry from the cached action when available, or clear it if this update is no longer needed.";
+      return "This update action is retained in job history for diagnostics.";
+    }
     if (action.status === "waiting") {
       return "Add this downloaded mod to the selected profile, or cancel it and keep the archive cache untouched.";
     }
@@ -3614,11 +3620,28 @@
     if (action.type === "extension-notice" && action.status === "waiting") return "Needs review";
     if (action.type === "steam-workshop-action" && (action.status === "waiting" || action.status === "queued")) return "Waiting for Decky";
     if (action.type === "installer-choice" && action.status === "waiting") return "Needs choices";
+    if (isModUpdateAction(action) && action.status === "waiting") return "Ready to update";
+    if (isModUpdateAction(action) && (action.status === "queued" || action.status === "running")) return "Updating";
     if (action.status === "waiting") return "Ready to install";
     if (action.status === "running") return "Processing";
     if (action.status === "queued") return "Queued";
     if (action.status === "failed") return "Failed";
     return action.status;
+  }
+
+  function isModUpdateAction(action: Job) {
+    return action.type === "captured-install" && Boolean(action.payload?.installed_mod_id && action.payload?.update_to_file_id);
+  }
+
+  function capturedInstallPrimaryLabel(action: Job) {
+    return isModUpdateAction(action) ? "Install Update" : "Install";
+  }
+
+  function modUpdateActionDetail(action: Job) {
+    if (!isModUpdateAction(action)) return "";
+    const from = action.payload?.update_from_file_id || "current";
+    const to = action.payload?.update_to_file_id || "latest";
+    return `Update ${from} -> ${to}`;
   }
 
   function actionSource(action: Job) {
@@ -3866,9 +3889,12 @@
 	                        <small>{progress.label}</small>
 	                      </div>
 	                    {/if}
-	                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
-	                      <small>Tool: {extensionNoticeTool(action)}</small>
-	                    {/if}
+                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
+                      <small>Tool: {extensionNoticeTool(action)}</small>
+                    {/if}
+                    {#if modUpdateActionDetail(action)}
+                      <small>{modUpdateActionDetail(action)}</small>
+                    {/if}
 	                    <p class="action-next-step">{actionNextStep(action)}</p>
 	                    <small>{new Date(action.updated_at).toLocaleString()}</small>
 	                  </div>
@@ -3879,7 +3905,7 @@
 	                    {/if}
 	                    {#if action.status === "waiting"}
 	                      {#if action.type === "captured-install"}
-	                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Install"}</button>
+	                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : capturedInstallPrimaryLabel(action)}</button>
 	                      {/if}
 	                    {/if}
 	                    {#if action.type === "captured-install" && action.status === "failed"}
@@ -4805,6 +4831,9 @@
                     {#if action.type === "extension-notice" && extensionNoticeTool(action)}
                       <small>Tool: {extensionNoticeTool(action)}</small>
                     {/if}
+                    {#if modUpdateActionDetail(action)}
+                      <small>{modUpdateActionDetail(action)}</small>
+                    {/if}
                     <p class="action-next-step">{actionNextStep(action)}</p>
                     <small>{new Date(action.updated_at).toLocaleString()}</small>
                     {#if action.type === "captured-install" && action.status === "waiting" && profiles.length > 0}
@@ -4827,7 +4856,7 @@
                         <button type="button" on:click={() => openActionItem(action)}>Open Choices</button>
                       {/if}
                       {#if action.type === "captured-install" && action.status === "waiting"}
-                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Install"}</button>
+                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : capturedInstallPrimaryLabel(action)}</button>
                       {/if}
                       {#if action.type === "captured-install" && action.status === "failed"}
                         <button type="button" on:click={() => retryCapturedInstallAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
