@@ -99,16 +99,56 @@ class Plugin:
 
     async def stop_server(self):
         self._log("stop_server requested")
+        await self._stop_backend("manual stop")
+        return await self.status()
+
+    async def reset_api_token(self):
+        self._log("reset api token requested")
+        was_running = self.backend_process is not None and self.backend_process.poll() is None or self._backend_responds()
+        await self._stop_backend("api token reset")
+        for path in [self.auth_token_file, self.auth_token_file.with_suffix(".tmp")]:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception as exc:
+                self._log(f"reset api token cleanup failed path={path}: {self._redact_url(str(exc))}")
+        if was_running:
+            status = await self._start_server("api token reset")
+        else:
+            self._ensure_auth_token()
+            status = await self.status()
+        self._log(f"reset api token finished running={status.get('running')} token_file={self.auth_token_file}")
+        return status
+
+    async def _stop_backend(self, reason):
+        self._log(f"backend stop requested reason={reason}")
         if self.backend_process and self.backend_process.poll() is None:
             os.killpg(os.getpgid(self.backend_process.pid), signal.SIGTERM)
             try:
                 self.backend_process.wait(timeout=5)
-                self._log("backend stopped with SIGTERM")
+                self._log("tracked backend stopped with SIGTERM")
             except subprocess.TimeoutExpired:
                 os.killpg(os.getpgid(self.backend_process.pid), signal.SIGKILL)
-                self._log("backend killed after timeout")
+                self._log("tracked backend killed after timeout")
         self.backend_process = None
-        return await self.status()
+
+        plugin_dir = Path(__file__).resolve().parent
+        binary = plugin_dir / "bin" / "dmm-server"
+        if self._backend_responds() and binary.exists():
+            pattern = f"^{re.escape(str(binary))}$"
+            result = self._run_command(["pkill", "-TERM", "-f", pattern], check=False)
+            self._log(f"untracked backend stop requested rc={result.returncode} pattern={pattern}")
+            for _ in range(20):
+                if not self._backend_responds():
+                    break
+                await asyncio.sleep(0.25)
+        if self._backend_responds() and binary.exists():
+            pattern = f"^{re.escape(str(binary))}$"
+            result = self._run_command(["pkill", "-KILL", "-f", pattern], check=False)
+            self._log(f"untracked backend kill requested rc={result.returncode} pattern={pattern}")
+            for _ in range(10):
+                if not self._backend_responds():
+                    break
+                await asyncio.sleep(0.2)
 
     async def status(self):
         tracked_running = self.backend_process is not None and self.backend_process.poll() is None

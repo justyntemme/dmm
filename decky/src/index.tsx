@@ -3633,6 +3633,7 @@ function DeckyModManagerRoute() {
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [updateResult, setUpdateResult] = useState<string>("");
   const [updateBusy, setUpdateBusy] = useState<boolean>(false);
+  const [securityResult, setSecurityResult] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [managedGames, setManagedGames] = useState<ManagedGame[]>([]);
   const [catalogs, setCatalogs] = useState<CatalogStatus[]>([]);
@@ -4654,12 +4655,57 @@ function DeckyModManagerRoute() {
   async function setLanOnly(lanOnly: boolean) {
     try {
       setError("");
+      setSecurityResult("");
       const result = await call<[boolean], { ok: boolean; error?: string }>("set_lan_only", lanOnly);
       if (!result.ok) setError(result.error ?? "Unable to update server settings.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  async function resetPairingToken() {
+    try {
+      setError("");
+      setSecurityResult("Rotating pairing token...");
+      closeEventMonitor();
+      const nextStatus = await call<[], BackendStatus>("reset_api_token");
+      applyBackendAuthFromStatus(nextStatus);
+      setStatus(nextStatus);
+      setSecurityResult("Pairing token rotated. Use the new Phone URL shown in Decky.");
+      await refresh();
+      if (nextStatus.running) {
+        await seedJobNotifications({ seed: true });
+        connectEventMonitor();
+      }
+      await logFrontendEvent("decky pairing token reset", { running: nextStatus.running, token_file: nextStatus.auth?.token_file || "" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setSecurityResult(message);
+      await logFrontendEvent("decky pairing token reset failed", { error: message });
+    }
+  }
+
+  function askResetPairingToken() {
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle="Reset Phone Pairing"
+        strDescription="DMM will rotate the API token and restart the backend. Old phone URLs and open phone sessions will stop working until the new Phone URL is opened."
+        strOKButtonText="Reset Pairing"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void resetPairingToken();
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Reset Phone Pairing", bNeverPopOut: true }
+    );
   }
 
   async function setAutoInstallCapturedDownloads(autoInstall: boolean) {
@@ -6231,13 +6277,27 @@ function DeckyModManagerRoute() {
         <div>
           <div style={{ fontWeight: 800, marginBottom: "6px" }}>Server Access</div>
           <div>LAN only: {status?.backend?.lan_only ? "Enabled" : "Disabled"}</div>
+          <div>API auth: {status?.auth?.enabled ? "Pairing token enabled" : "Unavailable until server starts"}</div>
           <div>Captured installs: {status?.backend?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</div>
           <div>New mod state: {status?.backend?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</div>
           <div>FOMOD installers: {status?.backend?.install.auto_show_fomod_installers ? "Auto display" : "Action Center"}</div>
           <div>Downloads: {status?.backend?.download?.active_captured_downloads ?? 0}/{status?.backend?.download?.max_concurrent_captured_downloads ?? 2} active</div>
           <div>NXM handler: {nxm?.registered ? "Registered" : "Not registered"}</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, marginTop: "6px", overflowWrap: "anywhere" }}>
+            Phone sessions use the pairing token embedded in the Phone URL. Reset pairing if that URL was shared with the wrong device.
+          </div>
         </div>
       </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" onClick={askResetPairingToken} disabled={!status?.auth?.enabled}>
+          Reset Phone Pairing
+        </ButtonItem>
+      </PanelSectionRow>
+      {securityResult && (
+        <PanelSectionRow>
+          <div style={{ color: error ? "#fbbf24" : "#72e0a2", overflowWrap: "anywhere" }}>{securityResult}</div>
+        </PanelSectionRow>
+      )}
       <PanelSectionRow>
         <ToggleField
           label="Auto-install captured downloads"
