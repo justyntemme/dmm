@@ -16,7 +16,7 @@ const (
 	VortexGameID = "finalfantasyxx2hdremaster"
 	Name         = "Final Fantasy X/X-2 HD Remaster"
 
-	loaderModType      = "finalfantasyxx2hdremaster-external-file-loader"
+	loaderModType       = "finalfantasyxx2hdremaster-external-file-loader"
 	externalFileModType = "finalfantasyxx2hdremaster-external-file-mod"
 	blockedModType      = "finalfantasyxx2hdremaster-unclassified-blocked"
 	externalModsRoot    = "data/mods"
@@ -105,6 +105,11 @@ func Register(r sdk.Registrar) {
 		OKMessage:   "External File Loader files are present.",
 		InstallHint: "Install ffgriever's Final Fantasy X and X-2 HD External File Loader before enabling external-file content mods.",
 		Check:       checkExternalFileLoader,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "will-deploy",
+		Name:    "Write External File Loader paths",
+		Handler: willDeployExternalFileLoaderConfig,
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

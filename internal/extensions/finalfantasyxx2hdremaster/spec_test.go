@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -23,6 +25,10 @@ func TestExtensionRegistersExternalFileInstallers(t *testing.T) {
 	}
 	if len(ext.RuntimeRequirements.RuntimeRequirements) != 2 {
 		t.Fatalf("runtime requirements = %+v", ext.RuntimeRequirements.RuntimeRequirements)
+	}
+	registry := gameext.NewRegistry([]gameext.Extension{ext})
+	if !registry.HasEventHandlerForSteamApp(SteamAppID, "will-deploy") {
+		t.Fatal("expected External File Loader will-deploy handler")
 	}
 }
 
@@ -96,6 +102,87 @@ func TestRequiredFilesAndLoaderChecks(t *testing.T) {
 	}
 	if got := checkExternalFileLoader(context.Background(), root); len(got) != 2 {
 		t.Fatalf("loader details = %+v", got)
+	}
+}
+
+func TestWillDeployWritesExternalFileLoaderConfig(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extension())})
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "game")
+	workDir := filepath.Join(root, "work")
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(loaderConfigRel)), strings.Join([]string{
+		"[General]",
+		"allowNoVbf=true",
+		"",
+		"[Paths]",
+		"Old=data/old",
+		"DMM=data/mods",
+		"",
+		"[Logging]",
+		"logAccess=true",
+		"",
+	}, "\r\n"))
+
+	result, err := registry.RunEventHandlers(context.Background(), SteamAppID, "will-deploy", sdk.EventHandlerInput{
+		GamePath: gamePath,
+		WorkDir:  workDir,
+		Mods: []sdk.DeploymentMod{{
+			Name:    "HD Texture Pack",
+			ModType: externalFileModType,
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	if mapping.TargetRelative != loaderConfigRel || mapping.TargetPolicy != deploy.TargetPolicyPatchExisting || mapping.Strategy != deploy.StrategyCopy {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	if mapping.RestorePath == "" {
+		t.Fatalf("expected restore path: %+v", mapping)
+	}
+	bodyBytes, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
+	for _, want := range []string{
+		"[General]",
+		"allowNoVbf=true",
+		"[Logging]",
+		"logAccess=true",
+		"[Paths]",
+		"DMM=data/mods",
+		"Path2=data/old",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("generated config missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Count(body, "data/mods") != 1 {
+		t.Fatalf("generated config should de-duplicate data/mods:\n%s", body)
+	}
+}
+
+func TestWillDeploySkipsExternalFileLoaderConfigWithoutEnabledMods(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extension())})
+
+	result, err := registry.RunEventHandlers(context.Background(), SteamAppID, "will-deploy", sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:    "Disabled Texture Pack",
+			ModType: externalFileModType,
+			Enabled: false,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 0 || len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "skipped") {
+		t.Fatalf("result = %+v", result)
 	}
 }
 

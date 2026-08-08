@@ -19,10 +19,11 @@
 - DMM checks for the launcher, `FFX.exe`, `FFX-2.exe`, and the main VBF archives.
 - DMM supports ffgriever's External File Loader root package when the archive contains `dinput8.dll`, `hook.ini`, and `modules/...`.
 - DMM supports content archives rooted at `data/mods`, `ffx_data`, or `ffx2_data`, deploying content under `data/mods`.
+- DMM generates `modules/config/ff10-file-loader.ini` during deploy when External File Loader content mods are enabled. The generated config keeps DMM's `data/mods` path first, preserves existing user paths after it, and preserves non-`[Paths]` sections such as `[General]` and `[Logging]`.
 - Runtime diagnostics warn when External File Loader is missing before enabling external-file content mods.
 
 ## Beta Gaps
 
 - Live-test the External File Loader package and a safe `ffx_data`/`ffx2_data` content mod.
-- Add profile-aware load-order editing for External File Loader `modules/config/ff10-file-loader.ini` only after that config contract is source-reviewed.
+- Add profile-aware per-mod path isolation and load-order editing for External File Loader only if live testing proves the single DMM-managed `data/mods` path is not sufficient.
 - Any future VBF mutation must use a generic extension-framework capability with manifest-aware backup/rollback instead of direct game-specific writes in core code.
