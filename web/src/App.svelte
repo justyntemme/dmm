@@ -4312,28 +4312,25 @@
                 <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Paste one link, or one link per line. Nexus pages open on the Deck for Mod Manager Download; nxm:// and other supported provider links can be captured directly."></textarea>
                 <button type="submit">Add URL(s)</button>
               </form>
-              <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
-                <label class="local-archive-picker">
-                  <span>Upload from This Device</span>
-                  <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar,.fomod,.mgsv" on:change={handleLocalArchiveChange} />
-                </label>
-                {#if localArchiveFile}
-                  <p class="hint">{localArchiveFile.name} · {formatBytes(localArchiveFile.size)}</p>
-                {/if}
-                <button type="submit" class="secondary-action" disabled={!localArchiveFile || localArchiveBusy}>{localArchiveBusy ? "Uploading..." : "Upload Archive"}</button>
-              </form>
-              {#if localArchiveMessage}
-                <p class="hint success-copy">{localArchiveMessage}</p>
-              {/if}
               <section class="deck-archive-browser" aria-label="Deck archive files">
                 <button type="button" class="archive-accordion-trigger" on:click={toggleDeckArchiveBrowser}>
                   <span>
-                    <strong>Import Mod Archive From Deck</strong>
-                    <small>Browse Downloads for .zip, .7z, .rar, .fomod, and .mgsv files</small>
+                    <strong>Import Mod Archive</strong>
+                    <small>Browse Deck Downloads first, or upload an archive from this device</small>
                   </span>
                   <em>{deckArchiveBrowserOpen ? "Hide" : "Open"}</em>
                 </button>
                 {#if deckArchiveBrowserOpen}
+                  <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
+                    <label class="local-archive-picker">
+                      <span>Upload from This Device</span>
+                      <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar,.fomod,.mgsv" on:change={handleLocalArchiveChange} />
+                    </label>
+                    {#if localArchiveFile}
+                      <p class="hint">{localArchiveFile.name} · {formatBytes(localArchiveFile.size)}</p>
+                    {/if}
+                    <button type="submit" class="secondary-action" disabled={!localArchiveFile || localArchiveBusy}>{localArchiveBusy ? "Uploading..." : "Upload Archive"}</button>
+                  </form>
                   <div class="archive-browser-controls">
                     <label>
                       <span>Folder Path</span>
@@ -4371,6 +4368,9 @@
                   {/if}
                   {#if deckLocalArchiveMessage}
                     <p class="hint success-copy">{deckLocalArchiveMessage}</p>
+                  {/if}
+                  {#if localArchiveMessage}
+                    <p class="hint success-copy">{localArchiveMessage}</p>
                   {/if}
                 {/if}
               </section>
