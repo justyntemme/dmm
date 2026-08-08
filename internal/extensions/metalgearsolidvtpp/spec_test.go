@@ -284,6 +284,38 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 	}
 }
 
+func TestWillDeploySnakeBitePackagesBlocksConflictingEnabledPackages(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "staging", "first")
+	second := filepath.Join(root, "staging", "second")
+	writeFile(t, filepath.Join(first, "metadata.xml"), `<ModEntry Name="First" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
+	writeFile(t, filepath.Join(second, "metadata.xml"), `<ModEntry Name="Second" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
+
+	_, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
+		AppID:    SteamAppID,
+		GamePath: filepath.Join(root, "missing-game-path"),
+		Mods: []sdk.DeploymentMod{{
+			ID:          1,
+			Name:        "First",
+			ModType:     snakeBiteModType,
+			Enabled:     true,
+			StagingPath: first,
+		}, {
+			ID:          2,
+			Name:        "Second",
+			ModType:     snakeBiteModType,
+			Enabled:     true,
+			StagingPath: second,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected SnakeBite package conflict")
+	}
+	if !strings.Contains(err.Error(), "First") || !strings.Contains(err.Error(), "Second") || !strings.Contains(err.Error(), "/Assets/tpp/demo/shared.lua") {
+		t.Fatalf("conflict error = %v", err)
+	}
+}
+
 func requireMapping(t *testing.T, mappings []deploy.FileMapping, targetRelative string) deploy.FileMapping {
 	t.Helper()
 	for _, mapping := range mappings {

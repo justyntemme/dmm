@@ -46,6 +46,9 @@ func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInpu
 	if len(packages) == 0 {
 		return sdk.EventHandlerResult{Messages: []string{"MGSV SnakeBite packed archive deployment skipped because this profile has no enabled SnakeBite packages."}}, nil
 	}
+	if conflicts := snakeBitePackageConflicts(packages); len(conflicts) > 0 {
+		return sdk.EventHandlerResult{}, errors.New("MGSV SnakeBite package conflicts must be resolved before deployment: " + strings.Join(conflicts, "; "))
+	}
 	mappings, messages, err := buildSnakeBiteArchives(ctx, input, packages)
 	if err != nil {
 		return sdk.EventHandlerResult{}, err
@@ -208,6 +211,67 @@ func snakeBiteModQARHashes(packages []snakeBiteDeployPackage) map[uint64]struct{
 		}
 	}
 	return hashes
+}
+
+type snakeBiteConflictOwner struct {
+	modName string
+	path    string
+}
+
+func snakeBitePackageConflicts(packages []snakeBiteDeployPackage) []string {
+	qarOwners := map[uint64]snakeBiteConflictOwner{}
+	fpkOwners := map[string]snakeBiteConflictOwner{}
+	seenConflicts := map[string]struct{}{}
+	var conflicts []string
+	addConflict := func(message string) {
+		if _, ok := seenConflicts[message]; ok {
+			return
+		}
+		seenConflicts[message] = struct{}{}
+		conflicts = append(conflicts, message)
+	}
+	for _, pkg := range packages {
+		modName := strings.TrimSpace(pkg.mod.Name)
+		if modName == "" {
+			modName = fmt.Sprintf("installed mod %d", pkg.mod.ID)
+		}
+		for _, entry := range pkg.metadata.QarEntries.Entries {
+			qpath := gzs.ToQARPath(entry.FilePath)
+			if qpath == "/" || strings.Contains(strings.ToLower(qpath), ".fpk") {
+				continue
+			}
+			hash := gzs.HashFileNameWithExtension(qpath)
+			if current, ok := qarOwners[hash]; ok && current.modName != modName {
+				addConflict(fmt.Sprintf("%s and %s both modify %s in 00.dat", current.modName, modName, snakeBiteDisplayPath(current.path, qpath)))
+				continue
+			}
+			qarOwners[hash] = snakeBiteConflictOwner{modName: modName, path: qpath}
+		}
+		for _, entry := range pkg.metadata.FpkEntries.Entries {
+			fpkPath := gzs.ToQARPath(entry.FpkFile)
+			filePath := gzs.ToQARPath(entry.FilePath)
+			if fpkPath == "/" || filePath == "/" {
+				continue
+			}
+			key := fmt.Sprintf("%016x:%016x", gzs.HashFileNameWithExtension(fpkPath), gzs.HashFileNameWithExtension(filePath))
+			display := fmt.Sprintf("%s inside %s", filePath, fpkPath)
+			if current, ok := fpkOwners[key]; ok && current.modName != modName {
+				addConflict(fmt.Sprintf("%s and %s both modify %s", current.modName, modName, snakeBiteDisplayPath(current.path, display)))
+				continue
+			}
+			fpkOwners[key] = snakeBiteConflictOwner{modName: modName, path: display}
+		}
+	}
+	sort.Strings(conflicts)
+	return conflicts
+}
+
+func snakeBiteDisplayPath(first, fallback string) string {
+	first = strings.TrimSpace(first)
+	if first != "" && first != "/" {
+		return first
+	}
+	return fallback
 }
 
 func snakeBiteMoveSystemEntries(baseZeroPath string, zeroEntries, oneEntries map[uint64]gzs.QAREntry, modQARHashes map[uint64]struct{}) (int, error) {
