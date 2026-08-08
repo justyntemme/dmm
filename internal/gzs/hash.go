@@ -88,6 +88,19 @@ func HashFileNameWithExtension(filePath string) uint64 {
 	return (typeID << 51) | HashFileName(hashable, false)
 }
 
+func HashFileNameLegacy(text string, removeExtension bool) uint64 {
+	if removeExtension {
+		if idx := strings.Index(text, "."); idx != -1 {
+			text = text[:idx]
+		}
+	}
+	var seed uint64
+	if len(text) > 0 {
+		seed = uint64(text[0])<<16 + uint64(len(text))
+	}
+	return city.Hash64WithSeeds([]byte(text+"\x00"), cityHashSeed, seed) & 0xFFFFFFFFFFFF
+}
+
 func ToQARPath(path string) string {
 	return "/" + strings.TrimLeft(filepath.ToSlash(path), "/")
 }
