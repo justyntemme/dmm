@@ -45,6 +45,11 @@ echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "data_dir=${DATA_DIR}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [[ ! -f "${SCRIPT_DIR}/dmm_test_auth.py" && -f "${HOME}/.testing/dmm_test_auth.py" ]]; then
+  SCRIPT_DIR="${HOME}/.testing"
+fi
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export BASE_URL
 export APP_ID
 export DATA_DIR
@@ -58,6 +63,7 @@ import time
 import urllib.error
 import urllib.request
 
+from dmm_test_auth import auth_headers
 
 base = os.environ["BASE_URL"].rstrip("/")
 app_id = os.environ["APP_ID"]
@@ -70,7 +76,7 @@ def request(method, path, body=None):
     if body is not None:
         payload = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base + path, data=payload, headers=headers, method=method)
+    req = urllib.request.Request(base + path, data=payload, headers=auth_headers(headers), method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()

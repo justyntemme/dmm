@@ -2,16 +2,21 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:17942}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 - "$BASE_URL" <<'PY'
 import json
 import sys
 import urllib.request
 
+from dmm_test_auth import auth_headers
+
 base_url = sys.argv[1].rstrip("/")
 
 def request(path):
-    with urllib.request.urlopen(base_url + path, timeout=20) as response:
+    req = urllib.request.Request(base_url + path, headers=auth_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=20) as response:
         return json.load(response)
 
 games = request("/api/games")
@@ -55,8 +60,12 @@ fallout = games_by_app.get("377160")
 if not fallout:
     failures.append("Fallout 4 missing from live game list")
 else:
-    if fallout.get("state") != "clean_candidate" or fallout.get("markers"):
-        failures.append(f"Fallout 4 should ignore extension-known F4SE marker: state={fallout.get('state')} markers={fallout.get('markers')}")
+    if fallout.get("state") not in ("clean_candidate", "needs_review"):
+        failures.append(f"Fallout 4 unexpected state: state={fallout.get('state')} markers={fallout.get('markers')}")
+    if fallout.get("state") == "needs_review":
+        markers = [str(marker) for marker in fallout.get("markers") or []]
+        if not any("Script Extender loader" in marker for marker in markers):
+            failures.append(f"Fallout 4 review state should explain the unmanaged F4SE marker: markers={markers}")
     extension = fallout.get("extension") or {}
     if not extension.get("plugin_activation") or not extension.get("launch_tools") or not extension.get("installer_choices"):
         failures.append(f"Fallout 4 extension capability mismatch: {extension}")
@@ -143,6 +152,12 @@ installer_targets = {
     "megabonk": ("megabonk", ("installers", "runtime_requirements", "game_versions")),
     "projectzomboid": ("projectzomboid", ("installers", "target_roots", "steam_workshop")),
     "starwarsjedisurvivor": ("starwarsjedisurvivor", ("installers", "load_orders", "event_handlers")),
+    "prototype": ("prototype", ("installers", "runtime_requirements")),
+    "prototype2": ("prototype2", ("installers", "runtime_requirements")),
+    "rometotalwar": ("rometotalwar", ("installers", "runtime_requirements", "game_versions")),
+    "metalgearsolidvtpp": ("metalgearsolidvtpp", ("installers", "runtime_requirements", "packed_archive_mutations", "merges", "event_handlers")),
+    "finalfantasyxx2hdremaster": ("finalfantasyxx2hdremaster", ("installers", "runtime_requirements")),
+    "totalwarrome2": ("totalwarrome2", ("installers", "runtime_requirements", "event_handlers")),
 }
 
 for extension_id, (domain, caps) in installer_targets.items():
@@ -171,19 +186,6 @@ require_launch_tool(
     arguments=["-launch default"],
     default_primary=True,
 )
-
-research_targets = {
-    "prototype": "prototype",
-    "prototype2": "prototype2",
-    "rometotalwar": "rometotalwar",
-    "metalgearsolidvtpp": "metalgearsolidvtpp",
-    "finalfantasyxx2hdremaster": "finalfantasyxx2hdremaster",
-    "totalwarrome2": "totalwarrome2",
-}
-for extension_id, domain in research_targets.items():
-    require_coverage(extension_id, "research_blocked")
-    require_domain(extension_id, domain)
-    require_caps(extension_id, "installers")
 
 metadata_targets = {
     "braid": "26800",

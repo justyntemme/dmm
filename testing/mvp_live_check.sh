@@ -8,6 +8,12 @@ APP_ID="${APP_ID:-413150}"
 REQUIRE_DEPLOYED="${REQUIRE_DEPLOYED:-1}"
 ALLOW_WARNINGS="${ALLOW_WARNINGS:-1}"
 REQUIRE_JOB_PAYLOAD="${REQUIRE_JOB_PAYLOAD:-0}"
+STATE_DIR="${STATE_DIR:-${HOME}/.local/state/decky-mod-manager}"
+TOKEN_FILE="${DMM_TOKEN_FILE:-${STATE_DIR}/api-token}"
+API_TOKEN="${DMM_AUTH_TOKEN:-}"
+if [[ -z "${API_TOKEN}" && -f "${TOKEN_FILE}" ]]; then
+  API_TOKEN="$(<"${TOKEN_FILE}")"
+fi
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -15,7 +21,11 @@ section() {
 
 fetch() {
   local url="$1"
-  curl -fsS "$url"
+  local curl_args=(-fsS)
+  if [[ -n "${API_TOKEN}" && "${url}" == */api/* && "${url}" != */api/health ]]; then
+    curl_args+=(-H "X-DMM-Token: ${API_TOKEN}")
+  fi
+  curl "${curl_args[@]}" "$url"
 }
 
 section "MVP live acceptance check"
@@ -23,6 +33,7 @@ echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "require_deployed=${REQUIRE_DEPLOYED}"
 echo "require_job_payload=${REQUIRE_JOB_PAYLOAD}"
+echo "api_auth=$([[ -n "${API_TOKEN}" ]] && printf token || printf none)"
 
 health_json="$(fetch "${BASE_URL}/api/health")"
 diagnostics_json="$(fetch "${BASE_URL}/api/games/${APP_ID}/diagnostics")"

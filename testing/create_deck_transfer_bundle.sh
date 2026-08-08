@@ -34,6 +34,7 @@ FILES=(
   "${ROOT_DIR}/testing/install_decky_plugin_from_package.sh"
   "${ROOT_DIR}/testing/install_decky_privileged_wrapper.sh"
   "${ROOT_DIR}/testing/install_decky_testing_sudoers.sh"
+  "${ROOT_DIR}/testing/dmm_test_auth.py"
   "${ROOT_DIR}/testing/deck_package_smoke.sh"
   "${ROOT_DIR}/testing/deck_rehearsal.sh"
   "${ROOT_DIR}/testing/live_status.sh"

@@ -8,6 +8,8 @@ REQUIRE_NO_UNSUPPORTED="${REQUIRE_NO_UNSUPPORTED:-0}"
 REQUIRE_NO_RESEARCH_BLOCKED="${REQUIRE_NO_RESEARCH_BLOCKED:-0}"
 REQUIRE_NO_BROWSE_ONLY="${REQUIRE_NO_BROWSE_ONLY:-0}"
 EXPECTED_COVERAGE="${EXPECTED_COVERAGE:-413150=installer,774361=installer,1868140=installer,761830=installer,1210320=installer,2210=installer,4760=installer,4770=installer,70=installer,107100=installer,17410=installer,239350=installer,412830=installer,281990=workshop_only}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -28,6 +30,8 @@ import sys
 import urllib.error
 import urllib.request
 
+from dmm_test_auth import auth_headers
+
 base_url = os.environ["BASE_URL"].rstrip("/")
 require_no_unsupported = os.environ.get("REQUIRE_NO_UNSUPPORTED", "0").strip().lower() in ("1", "true", "yes", "on")
 require_no_research_blocked = os.environ.get("REQUIRE_NO_RESEARCH_BLOCKED", "0").strip().lower() in ("1", "true", "yes", "on")
@@ -37,7 +41,7 @@ valid_coverages = {"installer", "research_blocked", "browse_only", "workshop_onl
 
 
 def request(path):
-    req = urllib.request.Request(base_url + path, method="GET")
+    req = urllib.request.Request(base_url + path, headers=auth_headers(), method="GET")
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             body = resp.read()

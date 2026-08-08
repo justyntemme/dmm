@@ -51,6 +51,11 @@ echo "app_id=${APP_ID}"
 echo "profile_name=${PROFILE_NAME}"
 echo "db_path=${DB_PATH}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [[ ! -f "${SCRIPT_DIR}/dmm_test_auth.py" && -f "${HOME}/.testing/dmm_test_auth.py" ]]; then
+  SCRIPT_DIR="${HOME}/.testing"
+fi
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 export BASE_URL
 export APP_ID
 export PROFILE_NAME
@@ -63,6 +68,8 @@ import pathlib
 import sqlite3
 import urllib.error
 import urllib.request
+
+from dmm_test_auth import auth_headers
 
 
 base = os.environ["BASE_URL"].rstrip("/")
@@ -77,7 +84,7 @@ def request(method, path, body=None):
     if body is not None:
         payload = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base + path, data=payload, headers=headers, method=method)
+    req = urllib.request.Request(base + path, data=payload, headers=auth_headers(headers), method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()

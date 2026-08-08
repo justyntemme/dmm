@@ -6,6 +6,8 @@ HOST="${HOST:-127.0.0.1}"
 BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
 APP_ID="${APP_ID:-413150}"
 REQUIRE_RESTORE_AVAILABLE="${REQUIRE_RESTORE_AVAILABLE:-1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -26,6 +28,8 @@ import os
 import urllib.error
 import urllib.request
 
+from dmm_test_auth import auth_headers
+
 
 base = os.environ["BASE_URL"].rstrip("/")
 app_id = os.environ["APP_ID"]
@@ -33,7 +37,7 @@ require_restore_available = os.environ.get("REQUIRE_RESTORE_AVAILABLE", "1") != 
 
 
 def request(method, path):
-    req = urllib.request.Request(base + path, method=method)
+    req = urllib.request.Request(base + path, headers=auth_headers(), method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read()

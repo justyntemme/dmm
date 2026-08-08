@@ -6,6 +6,9 @@ HOST="${HOST:-127.0.0.1}"
 BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
 APP_ID="${APP_ID:-413150}"
 DATA_DIR="${DATA_DIR:-${HOME}/.local/share/decky-mod-manager}"
+STATE_DIR="${STATE_DIR:-${HOME}/.local/state/decky-mod-manager}"
+TOKEN_FILE="${DMM_TOKEN_FILE:-${STATE_DIR}/api-token}"
+API_TOKEN="${DMM_AUTH_TOKEN:-}"
 GAME_PATH="${GAME_PATH:-}"
 REQUIRE_RUNTIME="${REQUIRE_RUNTIME:-0}"
 REQUIRE_SMAPI_ROOT="${REQUIRE_SMAPI_ROOT:-0}"
@@ -50,9 +53,18 @@ section "Stardew deployed mod file visibility check"
 echo "base_url=${BASE_URL}"
 echo "app_id=${APP_ID}"
 echo "data_dir=${DATA_DIR}"
+echo "api_auth=$([[ -n "${API_TOKEN}" ]] && printf env || ([[ -f "${TOKEN_FILE}" ]] && printf token-file || printf none))"
 
-diagnostics_json="$(curl -fsS "${BASE_URL}/api/games/${APP_ID}/diagnostics")"
-deployment_json="$(curl -fsS "${BASE_URL}/api/games/${APP_ID}/deploy/status")"
+if [[ -z "${API_TOKEN}" && -f "${TOKEN_FILE}" ]]; then
+  API_TOKEN="$(<"${TOKEN_FILE}")"
+fi
+curl_args=(-fsS)
+if [[ -n "${API_TOKEN}" ]]; then
+  curl_args+=(-H "X-DMM-Token: ${API_TOKEN}")
+fi
+
+diagnostics_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/diagnostics")"
+deployment_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/deploy/status")"
 
 export DIAGNOSTICS_JSON="${diagnostics_json}"
 export DEPLOYMENT_JSON="${deployment_json}"

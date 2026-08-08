@@ -6,6 +6,8 @@ HOST="${HOST:-127.0.0.1}"
 BASE_URL="${BASE_URL:-http://${HOST}:${PORT}}"
 APP_ID="${APP_ID:-413150}"
 SECOND_APP_ID="${SECOND_APP_ID:-377160}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 section() {
   printf '\n==> %s\n' "$1"
@@ -25,6 +27,8 @@ import time
 import urllib.error
 import urllib.request
 
+from dmm_test_auth import auth_headers
+
 base_url = os.environ["BASE_URL"].rstrip("/")
 app_id = os.environ.get("APP_ID", "413150")
 second_app_id = os.environ.get("SECOND_APP_ID", "377160")
@@ -36,7 +40,7 @@ def request(method, path, payload=None):
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
+    req = urllib.request.Request(base_url + path, data=data, headers=auth_headers(headers), method=method)
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             body = resp.read()

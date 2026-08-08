@@ -4,6 +4,8 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://127.0.0.1:17942}"
 APP_ID="${APP_ID:-413150}"
 NEXUS_URL="${NEXUS_URL:-https://www.nexusmods.com/stardewvalley/mods/2400?file_id=135998}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 - <<'PY'
 import json
@@ -11,6 +13,8 @@ import os
 import sys
 import urllib.error
 import urllib.request
+
+from dmm_test_auth import auth_headers
 
 base_url = os.environ.get("BASE_URL", "http://127.0.0.1:17942").rstrip("/")
 app_id = os.environ.get("APP_ID", "413150")
@@ -22,7 +26,7 @@ def request(method, path, payload=None):
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
+    req = urllib.request.Request(base_url + path, data=data, headers=auth_headers(headers), method=method)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8")

@@ -4,6 +4,8 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://127.0.0.1:17942}"
 APP_ID="${APP_ID:-377160}"
 ALT_DOMAIN="${ALT_DOMAIN:-fallout4london}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 - <<'PY'
 import json
@@ -12,12 +14,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from dmm_test_auth import auth_headers
+
 base_url = os.environ.get("BASE_URL", "http://127.0.0.1:17942").rstrip("/")
 app_id = os.environ.get("APP_ID", "377160")
 alt_domain = os.environ.get("ALT_DOMAIN", "fallout4london")
 
 def request(path):
-    req = urllib.request.Request(base_url + path, method="GET")
+    req = urllib.request.Request(base_url + path, headers=auth_headers(), method="GET")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             body = resp.read().decode("utf-8")

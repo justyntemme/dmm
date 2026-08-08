@@ -3,6 +3,8 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:17942}"
 APP_ID="${APP_ID:-413150}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 - "${BASE_URL}" "${APP_ID}" <<'PY'
 import json
@@ -10,6 +12,8 @@ import os
 import sys
 import urllib.error
 import urllib.request
+
+from dmm_test_auth import auth_headers
 
 base_url = sys.argv[1].rstrip("/")
 app_id = sys.argv[2]
@@ -21,7 +25,7 @@ def request(method, path, body=None):
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base_url + path, data=data, headers=headers, method=method)
+    req = urllib.request.Request(base_url + path, data=data, headers=auth_headers(headers), method=method)
     try:
         with urllib.request.urlopen(req, timeout=45) as resp:
             payload = resp.read()
