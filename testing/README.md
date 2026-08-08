@@ -336,6 +336,14 @@ To verify non-Nexus provider URL resolution paths without installing archives, r
 
 The provider check validates ready public providers and confirms ModDB remains deferred until a supported official API/client path is verified. Credential-gated providers run only when their test URL environment variables are set.
 
+To verify phone/tablet local archive browsing remains token-protected and limited to approved Deck archive folders:
+
+```sh
+~/.testing/live_local_archive_security_check.sh
+```
+
+The check confirms unauthenticated state APIs are rejected, the default browse root is the Deck Downloads area, and obvious escapes such as `/tmp` and parent traversal are rejected.
+
 After installing and deploying a fresh test mod, run the stricter live acceptance check:
 
 ```sh
