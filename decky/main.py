@@ -1213,10 +1213,20 @@ class Plugin:
 
     async def install_latest_update(self):
         repo = os.environ.get("DMM_UPDATE_REPO", "justyntemme/dmm").strip() or "justyntemme/dmm"
-        release = os.environ.get("DMM_UPDATE_RELEASE", "dev-latest").strip() or "dev-latest"
         package_url = os.environ.get("DMM_UPDATE_PACKAGE_URL", "").strip()
-        if not package_url:
-            package_url = f"https://github.com/{repo}/releases/download/{release}/{self.update_package_name}"
+        release = os.environ.get("DMM_UPDATE_RELEASE", "").strip()
+        try:
+            if not package_url:
+                package_url, release = await asyncio.to_thread(self._resolve_update_package, repo, release)
+        except Exception as exc:
+            error = self._redact_url(str(exc))
+            self._log(f"latest update resolve failed repo={repo} release={release or 'latest'} error={error}")
+            return {
+                "ok": False,
+                "error": error,
+                "message": "DMM could not find a published GitHub release package.",
+                "url": "",
+            }
         testing_dir = Path(os.environ.get("DMM_UPDATE_STAGING_DIR", "/home/deck/.testing")).expanduser()
         package_path = testing_dir / self.update_package_name
         tmp_path = testing_dir / f".{self.update_package_name}.download"
@@ -1315,6 +1325,39 @@ class Plugin:
                 "bytes": downloaded,
                 "log": str(update_log),
             }
+
+    def _resolve_update_package(self, repo, release):
+        repo = str(repo or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+            raise RuntimeError("DMM_UPDATE_REPO must look like owner/repo")
+        release = str(release or "").strip()
+        if release:
+            return f"https://github.com/{repo}/releases/download/{urllib.parse.quote(release)}/{self.update_package_name}", release
+
+        endpoint = f"https://api.github.com/repos/{repo}/releases/latest"
+        request = urllib.request.Request(endpoint, headers={"User-Agent": "Decky-Mod-Manager-Updater"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"GitHub latest release lookup failed with HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"GitHub latest release lookup failed: {exc.reason}") from exc
+
+        tag = str(payload.get("tag_name") or "").strip()
+        assets = payload.get("assets") if isinstance(payload, dict) else None
+        if not tag or not isinstance(assets, list):
+            raise RuntimeError("GitHub latest release response did not include a tag and assets")
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            if str(asset.get("name") or "") != self.update_package_name:
+                continue
+            url = str(asset.get("browser_download_url") or "").strip()
+            if not url:
+                break
+            return url, tag
+        raise RuntimeError(f"latest release {tag} does not include {self.update_package_name}")
 
     def _download_update_package(self, package_url, tmp_path, package_path):
         tmp_path.parent.mkdir(parents=True, exist_ok=True)

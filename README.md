@@ -105,10 +105,10 @@ Use the ZIP for the normal Decky Developer install flow. The tarball is only for
 
 ## Development Updates
 
-The Decky Debug tab includes an `Install Latest Update` button for developer builds. It downloads:
+The Decky Debug tab includes an `Install Latest Update` button for developer builds. By default it resolves the latest published GitHub release and downloads its package asset:
 
 ```text
-https://github.com/justyntemme/dmm/releases/download/dev-latest/decky-mod-manager.tar.gz
+decky-mod-manager.tar.gz
 ```
 
 Then it validates the package layout, stages it at:
@@ -125,7 +125,7 @@ and starts the existing root-owned test installer wrapper:
 
 That wrapper is intentionally narrow: it only installs the staged DMM package and reboots the Deck after a successful install. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
 
-GitHub Actions builds package artifacts on pushes, pull requests, and manual workflow runs. Every push to `main` also force-updates the `dev-latest` development release with the tarball and ZIP. No manual release tag is needed for the current development loop.
+GitHub Actions builds and publishes package artifacts only for version tags such as `v0.1.0`. Use `DMM_UPDATE_RELEASE=<tag>` or `DMM_UPDATE_PACKAGE_URL=<url>` to force the Decky updater or `testing/update_deck_from_dev_release.sh` to install a specific build.
 
 ## Logs
 
