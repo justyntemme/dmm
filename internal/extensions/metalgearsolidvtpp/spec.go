@@ -9,6 +9,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/peversion"
 )
 
 const (
@@ -68,6 +69,11 @@ func Register(r sdk.Registrar) {
 		ModTypes:          []string{snakeBiteModType},
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "snakebite:metalgearsolidvtpp:qar-fpk", Name: "SnakeBite QAR/FPK merge"})
+	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+		ID:       "metalgearsolidvtpp-exe-version",
+		Name:     "mgsvtpp.exe file version",
+		Provider: gameVersion,
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "will-deploy",
 		Name:    "Apply SnakeBite packed archive mutations",
@@ -87,6 +93,21 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return sdk.GameVersionResult{}, nil
+	}
+	version, err := peversion.FileVersion(filepath.Join(gamePath, "mgsvtpp.exe"))
+	if err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	return sdk.GameVersionResult{Version: version, Source: "mgsvtpp.exe"}, nil
 }
 
 func missingSnakeBiteStagedPackageFiles(stagingPath string) []string {

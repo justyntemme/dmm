@@ -44,11 +44,14 @@ func TestExtensionRegistersSnakeBitePackedArchiveCapability(t *testing.T) {
 	if mutation.PackageFormat != "snakebite-mgsv" || mutation.RequiresEngine != "gzs-qar-fpk" {
 		t.Fatalf("packed archive mutation = %+v", mutation)
 	}
+	if len(extension.GameVersionProviders) != 1 || extension.GameVersionProviders[0].ID != "metalgearsolidvtpp-exe-version" {
+		t.Fatalf("game version providers = %+v", extension.GameVersionProviders)
+	}
 }
 
 func TestSnakeBitePackageIsDetectedAndStagedForPackedArchiveMutation(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/file.dat" /></FpkEntries></ModEntry>`)
+	writeFile(t, filepath.Join(root, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="0.0.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/file.dat" /></FpkEntries></ModEntry>`)
 	writeFile(t, filepath.Join(root, "Assets", "tpp", "demo", "example.fpk"), "payload")
 
 	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
@@ -130,7 +133,7 @@ func TestWillDeploySnakeBitePackagesGeneratesPatchedZeroDat(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/mod.bin" /></FpkEntries></ModEntry>`)
+	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="0.0.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/mod.bin" /></FpkEntries></ModEntry>`)
 	if err := gzs.WriteFPK(filepath.Join(stagingPath, filepath.FromSlash(fpkRel)), gzs.FPKFile{
 		Entries: []gzs.FPKEntry{{FilePath: "/Assets/tpp/demo/mod.bin", Data: []byte("mod")}},
 	}); err != nil {
@@ -237,7 +240,7 @@ func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)), "patched")
 	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)), "patched-one")
-	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Loose MGSV File" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/new.lua" /></QarEntries></ModEntry>`)
+	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Loose MGSV File" Version="1.0"><MGSVersion Version="0.0.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/new.lua" /></QarEntries></ModEntry>`)
 	writeFile(t, filepath.Join(stagingPath, "Assets", "tpp", "demo", "new.lua"), "new")
 	result, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
 		AppID:       SteamAppID,
@@ -288,8 +291,8 @@ func TestWillDeploySnakeBitePackagesBlocksConflictingEnabledPackages(t *testing.
 	root := t.TempDir()
 	first := filepath.Join(root, "staging", "first")
 	second := filepath.Join(root, "staging", "second")
-	writeFile(t, filepath.Join(first, "metadata.xml"), `<ModEntry Name="First" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
-	writeFile(t, filepath.Join(second, "metadata.xml"), `<ModEntry Name="Second" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
+	writeFile(t, filepath.Join(first, "metadata.xml"), `<ModEntry Name="First" Version="1.0"><MGSVersion Version="0.0.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
+	writeFile(t, filepath.Join(second, "metadata.xml"), `<ModEntry Name="Second" Version="1.0"><MGSVersion Version="0.0.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/shared.lua" /></QarEntries></ModEntry>`)
 
 	_, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
 		AppID:    SteamAppID,
@@ -311,8 +314,66 @@ func TestWillDeploySnakeBitePackagesBlocksConflictingEnabledPackages(t *testing.
 	if err == nil {
 		t.Fatal("expected SnakeBite package conflict")
 	}
-	if !strings.Contains(err.Error(), "First") || !strings.Contains(err.Error(), "Second") || !strings.Contains(err.Error(), "/Assets/tpp/demo/shared.lua") {
+	if !strings.Contains(err.Error(), "Disable one") || !strings.Contains(err.Error(), "First") || !strings.Contains(err.Error(), "Second") || !strings.Contains(err.Error(), "/Assets/tpp/demo/shared.lua") {
 		t.Fatalf("conflict error = %v", err)
+	}
+}
+
+func TestValidateSnakeBitePackageCompatibilityBlocksOldSnakeBiteMetadata(t *testing.T) {
+	pkg := snakeBiteDeployPackage{
+		mod: sdk.DeploymentMod{ID: 1, Name: "Old Package"},
+		metadata: snakeBiteMetadataProbe{
+			Name: "Old Package",
+			SBVersion: struct {
+				Version string `xml:"Version,attr"`
+			}{Version: "0.7.9.0"},
+		},
+	}
+	_, err := validateSnakeBitePackageCompatibility(sdk.EventHandlerInput{}, []snakeBiteDeployPackage{pkg})
+	if err == nil {
+		t.Fatal("expected old SnakeBite metadata to be blocked")
+	}
+	if !strings.Contains(err.Error(), "0.8.0.0") || !strings.Contains(err.Error(), "Old Package") {
+		t.Fatalf("compatibility error = %v", err)
+	}
+}
+
+func TestValidateSnakeBitePackageCompatibilitySkipsWildcardMGSVersion(t *testing.T) {
+	pkg := snakeBiteDeployPackage{
+		mod: sdk.DeploymentMod{ID: 1, Name: "Wildcard Package"},
+		metadata: snakeBiteMetadataProbe{
+			Name: "Wildcard Package",
+			SBVersion: struct {
+				Version string `xml:"Version,attr"`
+			}{Version: "0.8.0.0"},
+			MGSVersion: struct {
+				Version string `xml:"Version,attr"`
+			}{Version: "0.0.0.0"},
+		},
+	}
+	messages, err := validateSnakeBitePackageCompatibility(sdk.EventHandlerInput{}, []snakeBiteDeployPackage{pkg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("messages = %+v", messages)
+	}
+}
+
+func TestCompareDottedVersions(t *testing.T) {
+	tests := []struct {
+		lhs  string
+		rhs  string
+		want int
+	}{
+		{lhs: "1.0", rhs: "1.0.0.0", want: 0},
+		{lhs: "0.7.9.0", rhs: "0.8.0.0", want: -1},
+		{lhs: "1.15.1.0", rhs: "1.15.0.0", want: 1},
+	}
+	for _, tt := range tests {
+		if got := compareDottedVersions(tt.lhs, tt.rhs); got != tt.want {
+			t.Fatalf("compareDottedVersions(%q, %q) = %d, want %d", tt.lhs, tt.rhs, got, tt.want)
+		}
 	}
 }
 

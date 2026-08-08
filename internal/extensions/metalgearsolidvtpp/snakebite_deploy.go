@@ -22,6 +22,7 @@ const (
 	snakeBiteZeroArchiveRel     = "master/0/00.dat"
 	snakeBiteOneArchiveRel      = "master/0/01.dat"
 	snakeBiteGeneratedQARFlags  = 3150048
+	minSnakeBiteMetadataVersion = "0.8.0.0"
 )
 
 type snakeBiteDeployPackage struct {
@@ -46,13 +47,18 @@ func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInpu
 	if len(packages) == 0 {
 		return sdk.EventHandlerResult{Messages: []string{"MGSV SnakeBite packed archive deployment skipped because this profile has no enabled SnakeBite packages."}}, nil
 	}
+	compatMessages, err := validateSnakeBitePackageCompatibility(input, packages)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
 	if conflicts := snakeBitePackageConflicts(packages); len(conflicts) > 0 {
-		return sdk.EventHandlerResult{}, errors.New("MGSV SnakeBite package conflicts must be resolved before deployment: " + strings.Join(conflicts, "; "))
+		return sdk.EventHandlerResult{}, errors.New(snakeBiteConflictMessage(conflicts))
 	}
 	mappings, messages, err := buildSnakeBiteArchives(ctx, input, packages)
 	if err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
+	messages = append(compatMessages, messages...)
 	return sdk.EventHandlerResult{
 		Mappings: mappings,
 		Messages: messages,
@@ -81,6 +87,47 @@ func enabledSnakeBitePackages(input sdk.EventHandlerInput) ([]snakeBiteDeployPac
 		return packages[i].mod.ID > packages[j].mod.ID
 	})
 	return packages, nil
+}
+
+func validateSnakeBitePackageCompatibility(input sdk.EventHandlerInput, packages []snakeBiteDeployPackage) ([]string, error) {
+	var messages []string
+	installedVersion, versionSource, versionErr := installedMGSVVersion(input.GamePath)
+	for _, pkg := range packages {
+		name := snakeBitePackageName(pkg)
+		sbVersion := strings.TrimSpace(pkg.metadata.SBVersion.Version)
+		if sbVersion != "" && compareDottedVersions(sbVersion, minSnakeBiteMetadataVersion) < 0 {
+			return nil, fmt.Errorf("%s was created with SnakeBite metadata %s; DMM supports SnakeBite package metadata %s or newer. Download an updated package before installing", name, sbVersion, minSnakeBiteMetadataVersion)
+		}
+		requiredMGSVersion := strings.TrimSpace(pkg.metadata.MGSVersion.Version)
+		if requiredMGSVersion == "" || compareDottedVersions(requiredMGSVersion, "0.0.0.0") == 0 {
+			continue
+		}
+		if versionErr != nil {
+			return nil, fmt.Errorf("%s requires MGSV version %s, but DMM could not read %s: %w", name, requiredMGSVersion, filepath.ToSlash(filepath.Join(input.GamePath, "mgsvtpp.exe")), versionErr)
+		}
+		if installedVersion == "" {
+			return nil, fmt.Errorf("%s requires MGSV version %s, but DMM could not determine the installed MGSV version", name, requiredMGSVersion)
+		}
+		switch compareDottedVersions(installedVersion, requiredMGSVersion) {
+		case -1:
+			return nil, fmt.Errorf("%s requires MGSV version %s, but %s reports %s. Update MGSV before installing this package", name, requiredMGSVersion, versionSource, installedVersion)
+		case 1:
+			messages = append(messages, fmt.Sprintf("%s targets older MGSV version %s; installed %s reports %s.", name, requiredMGSVersion, versionSource, installedVersion))
+		}
+	}
+	return messages, nil
+}
+
+func installedMGSVVersion(gamePath string) (version string, source string, err error) {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return "", "mgsvtpp.exe", nil
+	}
+	result, err := gameVersion(context.Background(), sdk.GameVersionInput{GamePath: gamePath})
+	if err != nil {
+		return "", "mgsvtpp.exe", err
+	}
+	return strings.TrimSpace(result.Version), strings.TrimSpace(result.Source), nil
 }
 
 func buildSnakeBiteArchives(ctx context.Context, input sdk.EventHandlerInput, packages []snakeBiteDeployPackage) ([]deploy.FileMapping, []string, error) {
@@ -218,6 +265,17 @@ type snakeBiteConflictOwner struct {
 	path    string
 }
 
+func snakeBitePackageName(pkg snakeBiteDeployPackage) string {
+	name := strings.TrimSpace(pkg.mod.Name)
+	if name == "" {
+		name = strings.TrimSpace(pkg.metadata.Name)
+	}
+	if name == "" {
+		name = fmt.Sprintf("installed mod %d", pkg.mod.ID)
+	}
+	return name
+}
+
 func snakeBitePackageConflicts(packages []snakeBiteDeployPackage) []string {
 	qarOwners := map[uint64]snakeBiteConflictOwner{}
 	fpkOwners := map[string]snakeBiteConflictOwner{}
@@ -231,10 +289,7 @@ func snakeBitePackageConflicts(packages []snakeBiteDeployPackage) []string {
 		conflicts = append(conflicts, message)
 	}
 	for _, pkg := range packages {
-		modName := strings.TrimSpace(pkg.mod.Name)
-		if modName == "" {
-			modName = fmt.Sprintf("installed mod %d", pkg.mod.ID)
-		}
+		modName := snakeBitePackageName(pkg)
 		for _, entry := range pkg.metadata.QarEntries.Entries {
 			qpath := gzs.ToQARPath(entry.FilePath)
 			if qpath == "/" || strings.Contains(strings.ToLower(qpath), ".fpk") {
@@ -264,6 +319,24 @@ func snakeBitePackageConflicts(packages []snakeBiteDeployPackage) []string {
 	}
 	sort.Strings(conflicts)
 	return conflicts
+}
+
+func snakeBiteConflictMessage(conflicts []string) string {
+	if len(conflicts) == 0 {
+		return ""
+	}
+	var message strings.Builder
+	message.WriteString("MGSV SnakeBite package conflicts must be resolved before deployment. Disable one of the conflicting mods or move it to another profile, then apply the profile again.")
+	message.WriteString(" Conflicts: ")
+	limit := len(conflicts)
+	if limit > 6 {
+		limit = 6
+	}
+	message.WriteString(strings.Join(conflicts[:limit], "; "))
+	if len(conflicts) > limit {
+		message.WriteString(fmt.Sprintf("; %d more", len(conflicts)-limit))
+	}
+	return message.String()
 }
 
 func snakeBiteDisplayPath(first, fallback string) string {
@@ -510,6 +583,51 @@ func snakeBiteQAREntryCompressed(path string, metadataCompressed bool) bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(filepath.Ext(path)), ".fpk")
+}
+
+func compareDottedVersions(lhs, rhs string) int {
+	left := dottedVersionParts(lhs)
+	right := dottedVersionParts(rhs)
+	if len(left) < len(right) {
+		left = append(left, make([]int, len(right)-len(left))...)
+	}
+	if len(right) < len(left) {
+		right = append(right, make([]int, len(left)-len(right))...)
+	}
+	for i := 0; i < len(left); i++ {
+		switch {
+		case left[i] < right[i]:
+			return -1
+		case left[i] > right[i]:
+			return 1
+		}
+	}
+	return 0
+}
+
+func dottedVersionParts(value string) []int {
+	fields := strings.FieldsFunc(strings.TrimSpace(value), func(r rune) bool {
+		return r == '.' || r == '-' || r == '_' || r == ' '
+	})
+	parts := make([]int, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		n := 0
+		for _, r := range field {
+			if r < '0' || r > '9' {
+				break
+			}
+			n = n*10 + int(r-'0')
+		}
+		parts = append(parts, n)
+	}
+	if len(parts) == 0 {
+		return []int{0}
+	}
+	return parts
 }
 
 func copyFile(src, dst string) error {
