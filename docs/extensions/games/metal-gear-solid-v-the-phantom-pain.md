@@ -17,15 +17,14 @@
 ## Current DMM Capability
 
 - DMM registers the Nexus domain so MGSV can be browsed through the existing browser-first Nexus flow.
-- SnakeBite `.MGSV` packages are detected through their `metadata.xml` shape and blocked with a clear unsupported message.
+- SnakeBite `.MGSV` packages are detected through their `metadata.xml` shape and staged as `metalgearsolidvtpp-snakebite` mods.
+- Enabled SnakeBite packages rebuild a DMM-generated `master/0/00.dat` through the extension `will-deploy` hook. The core deploy layer applies that generated archive with `patch-existing` restore metadata so profile switches, disable, purge, repair, and rollback stay DMM-owned.
+- The generic GZS package supplies QAR/FPK read/write primitives. MGSV-specific SnakeBite metadata parsing and merge decisions stay inside this extension.
 - Required-file diagnostics verify `mgsvtpp.exe`, `master/0/00.dat`, and `master/0/01.dat`.
 
-## Beta Gaps
+## Remaining Beta Gaps
 
-- Real MGSV support requires a generic extension-framework capability for packed QAR/FPK archive mutation:
-  - read SnakeBite `metadata.xml`
-  - prepare/restore `master/0/00.dat` and `master/0/01.dat`
-  - merge FPK files
-  - rebuild QAR archives
-  - persist enough DMM-owned state for disable, uninstall, rollback, and profile switching
-- Until that capability exists, DMM must not symlink or copy `.MGSV` package contents into the game folder.
+- Live Deck validation against a real Nexus SnakeBite package is still required before this can be counted as MVP-complete.
+- The current implementation generates `00.dat` only. It source-verifies SnakeBite's normal install path, but `MoveDatFiles`-style first-run reshuffling of system files is not modeled as a separate DMM action yet.
+- Conflict UX for multiple enabled SnakeBite packages should become explicit instead of relying only on profile priority.
+- Large-archive progress reporting should be added before broad MGSV release testing because QAR/FPK rebuilds can take noticeable time on Steam Deck hardware.

@@ -1,13 +1,18 @@
 package metalgearsolidvtpp
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gzs"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -96,6 +101,142 @@ func TestRequiredFilesCheck(t *testing.T) {
 	}
 }
 
+func TestWillDeploySnakeBitePackagesGeneratesPatchedZeroDat(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "game")
+	stagingPath := filepath.Join(root, "staging", "mod")
+	workDir := filepath.Join(root, "staging", "_generated", "event-hooks", SteamAppID, "1", "will-deploy")
+	fpkRel := "Assets/tpp/demo/example.fpk"
+	baseFPK := writeFPK(t, root, "base.fpk", []gzs.FPKEntry{
+		{FilePath: "/Assets/tpp/demo/base.bin", Data: []byte("base")},
+	})
+	baseZero := gzs.QARFile{
+		Flags:   3150048,
+		Version: 1,
+		Entries: []gzs.QAREntry{
+			{FilePath: fpkRel, Hash: gzs.HashFileNameWithExtension(fpkRel), Compressed: true, Data: baseFPK},
+			{FilePath: "Assets/tpp/demo/keep.lua", Data: []byte("keep")},
+		},
+	}
+	if err := gzs.WriteQAR(filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)), baseZero); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteOneArchiveRel)), "not scanned")
+	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Infinite Heaven" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/example.fpk" /></QarEntries><FpkEntries><FpkEntry FpkFile="/Assets/tpp/demo/example.fpk" FilePath="/Assets/tpp/demo/mod.bin" /></FpkEntries></ModEntry>`)
+	if err := gzs.WriteFPK(filepath.Join(stagingPath, filepath.FromSlash(fpkRel)), gzs.FPKFile{
+		Entries: []gzs.FPKEntry{{FilePath: "/Assets/tpp/demo/mod.bin", Data: []byte("mod")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
+		AppID:       SteamAppID,
+		GamePath:    gamePath,
+		ProfileID:   1,
+		StagingRoot: filepath.Join(root, "staging"),
+		WorkDir:     workDir,
+		Mods: []sdk.DeploymentMod{{
+			ID:          7,
+			Name:        "Infinite Heaven",
+			ModType:     snakeBiteModType,
+			Enabled:     true,
+			Priority:    0,
+			StagingPath: stagingPath,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	if mapping.TargetRelative != snakeBiteZeroArchiveRel || mapping.TargetPolicy != deploy.TargetPolicyPatchExisting || mapping.Strategy != deploy.StrategyCopy || mapping.RestorePath == "" {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	fpkData, ok, err := gzs.ExtractQAREntryDataByHash(mapping.SourcePath, gzs.HashFileNameWithExtension(fpkRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("generated 00.dat is missing merged FPK")
+	}
+	mergedFPK, err := readTestFPK(fpkData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[[16]byte][]byte{}
+	for _, entry := range mergedFPK.Entries {
+		data, err := gzs.ExportFPKEntryData(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got[entry.PathMD5] = data
+	}
+	if !bytes.Equal(got[gzs.FPKPathMD5("/Assets/tpp/demo/base.bin")], []byte("base")) {
+		t.Fatalf("base FPK entry was not preserved: %+v", got)
+	}
+	if !bytes.Equal(got[gzs.FPKPathMD5("/Assets/tpp/demo/mod.bin")], []byte("mod")) {
+		t.Fatalf("mod FPK entry was not merged: %+v", got)
+	}
+	keepData, ok, err := gzs.ExtractQAREntryDataByHash(mapping.SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/keep.lua"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !bytes.Equal(keepData, []byte("keep")) {
+		t.Fatalf("unrelated QAR entry = ok %v data %q", ok, keepData)
+	}
+}
+
+func TestWillDeploySnakeBitePackagesUsesManagedRestoreAsBase(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "game")
+	stagingRoot := filepath.Join(root, "staging")
+	stagingPath := filepath.Join(stagingRoot, "mod")
+	restorePath := filepath.Join(stagingRoot, "restore", snakeBiteZeroArchiveRel)
+	if err := gzs.WriteQAR(restorePath, gzs.QARFile{
+		Flags:   3150048,
+		Version: 1,
+		Entries: []gzs.QAREntry{{FilePath: "Assets/tpp/demo/original.lua", Data: []byte("original")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)), "patched")
+	writeFile(t, filepath.Join(stagingPath, "metadata.xml"), `<ModEntry Name="Loose MGSV File" Version="1.0"><MGSVersion Version="1.15.0.0"></MGSVersion><SBVersion Version="0.9.0.0"></SBVersion><QarEntries><QarEntry FilePath="/Assets/tpp/demo/new.lua" /></QarEntries></ModEntry>`)
+	writeFile(t, filepath.Join(stagingPath, "Assets", "tpp", "demo", "new.lua"), "new")
+	result, err := willDeploySnakeBitePackages(context.Background(), sdk.EventHandlerInput{
+		AppID:       SteamAppID,
+		GamePath:    gamePath,
+		ProfileID:   1,
+		StagingRoot: stagingRoot,
+		WorkDir:     filepath.Join(stagingRoot, "_generated", "event-hooks", SteamAppID, "1", "will-deploy"),
+		ManagedFiles: []deploy.AppliedFile{{
+			TargetPath:  filepath.Join(gamePath, filepath.FromSlash(snakeBiteZeroArchiveRel)),
+			RestorePath: restorePath,
+		}},
+		Mods: []sdk.DeploymentMod{{
+			ID:          8,
+			Name:        "Loose MGSV File",
+			ModType:     snakeBiteModType,
+			Enabled:     true,
+			StagingPath: stagingPath,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 || result.Mappings[0].RestorePath != restorePath {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	original, ok, err := gzs.ExtractQAREntryDataByHash(result.Mappings[0].SourcePath, gzs.HashFileNameWithExtension("Assets/tpp/demo/original.lua"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !bytes.Equal(original, []byte("original")) {
+		t.Fatalf("generated archive did not use managed restore as base: ok=%v data=%q", ok, original)
+	}
+}
+
 func writeFile(t *testing.T, path string, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -104,4 +245,22 @@ func writeFile(t *testing.T, path string, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeFPK(t *testing.T, root, name string, entries []gzs.FPKEntry) []byte {
+	t.Helper()
+	path := filepath.Join(root, name)
+	if err := gzs.WriteFPK(path, gzs.FPKFile{Entries: entries}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func readTestFPK(data []byte) (gzs.FPKFile, error) {
+	reader := bytes.NewReader(data)
+	return gzs.ReadFPKReader(io.NewSectionReader(reader, 0, int64(len(data))))
 }

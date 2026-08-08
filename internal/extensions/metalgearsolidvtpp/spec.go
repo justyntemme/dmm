@@ -2,7 +2,6 @@ package metalgearsolidvtpp
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,8 +24,6 @@ var requiredGameFiles = []string{
 	"master/0/00.dat",
 	"master/0/01.dat",
 }
-
-const snakeBiteDeployBlockedReason = "MGSV SnakeBite packages patch packed QAR/FPK game archives. DMM has staged this package safely, but enabling it requires the generic packed-archive mutation engine before DMM can rebuild master/0/00.dat without corrupting game data."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -90,22 +87,6 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
-}
-
-func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
-	if err := ctx.Err(); err != nil {
-		return sdk.EventHandlerResult{}, err
-	}
-	for _, mod := range input.Mods {
-		if !mod.Enabled || !strings.EqualFold(strings.TrimSpace(mod.ModType), snakeBiteModType) {
-			continue
-		}
-		if missing := missingSnakeBiteStagedPackageFiles(mod.StagingPath); len(missing) > 0 {
-			return sdk.EventHandlerResult{}, errors.New("MGSV SnakeBite package " + mod.Name + " is missing staged package files: " + strings.Join(missing, ", "))
-		}
-		return sdk.EventHandlerResult{}, installplan.Unsupported(snakeBiteDeployBlockedReason)
-	}
-	return sdk.EventHandlerResult{Messages: []string{"MGSV SnakeBite packed archive deployment skipped because no SnakeBite package is enabled in this profile."}}, nil
 }
 
 func missingSnakeBiteStagedPackageFiles(stagingPath string) []string {

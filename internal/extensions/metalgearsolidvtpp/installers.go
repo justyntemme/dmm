@@ -18,17 +18,10 @@ type snakeBiteMetadataProbe struct {
 	Website     string   `xml:"Website,attr"`
 	Description string   `xml:"Description"`
 	QarEntries  struct {
-		Entries []struct {
-			FilePath    string `xml:"FilePath,attr"`
-			ContentHash string `xml:"ContentHash,attr"`
-		} `xml:"QarEntry"`
+		Entries []snakeBiteMetadataQAREntry `xml:"QarEntry"`
 	} `xml:"QarEntries"`
 	FpkEntries struct {
-		Entries []struct {
-			FpkFile     string `xml:"FpkFile,attr"`
-			FilePath    string `xml:"FilePath,attr"`
-			ContentHash string `xml:"ContentHash,attr"`
-		} `xml:"FpkEntry"`
+		Entries []snakeBiteMetadataFPKEntry `xml:"FpkEntry"`
 	} `xml:"FpkEntries"`
 	SBVersion struct {
 		Version string `xml:"Version,attr"`
@@ -36,6 +29,19 @@ type snakeBiteMetadataProbe struct {
 	MGSVersion struct {
 		Version string `xml:"Version,attr"`
 	} `xml:"MGSVersion"`
+}
+
+type snakeBiteMetadataQAREntry struct {
+	Hash        uint64 `xml:"Hash,attr"`
+	FilePath    string `xml:"FilePath,attr"`
+	Compressed  bool   `xml:"Compressed,attr"`
+	ContentHash string `xml:"ContentHash,attr"`
+}
+
+type snakeBiteMetadataFPKEntry struct {
+	FpkFile     string `xml:"FpkFile,attr"`
+	FilePath    string `xml:"FilePath,attr"`
+	ContentHash string `xml:"ContentHash,attr"`
 }
 
 func matchSnakeBitePackage(extractedRoot string) bool {
