@@ -3231,6 +3231,12 @@ func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 	if completed.Payload["download_bytes_written"] == "" {
 		t.Fatalf("completed job did not include download progress payload: %+v", completed.Payload)
 	}
+	if completed.Payload["download_status"] != "downloaded" {
+		t.Fatalf("completed job download status = %q, payload = %+v", completed.Payload["download_status"], completed.Payload)
+	}
+	if completed.Payload["download_total_bytes"] != completed.Payload["download_bytes_written"] {
+		t.Fatalf("completed job download totals differ: %+v", completed.Payload)
+	}
 	if attempts != 2 {
 		t.Fatalf("download attempts = %d", attempts)
 	}

@@ -2367,14 +2367,27 @@
     const payload = job.payload ?? {};
     const written = Number(payload.download_bytes_written ?? 0);
     const total = Number(payload.download_total_bytes ?? 0);
-    if (!Number.isFinite(written) || written <= 0) return null;
+    const rate = Number(payload.download_rate_bytes_per_second ?? 0);
+    const status = String(payload.download_status ?? "");
+    if (!status && (!Number.isFinite(written) || written <= 0) && (!Number.isFinite(total) || total <= 0)) return null;
     const boundedTotal = Number.isFinite(total) && total > 0 ? total : 0;
-    const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (written / boundedTotal) * 100)) : 0;
+    const boundedWritten = Number.isFinite(written) && written > 0 ? written : 0;
+    const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (boundedWritten / boundedTotal) * 100)) : 0;
+    const rateLabel = Number.isFinite(rate) && rate > 0 ? ` · ${formatBytes(rate)}/s` : "";
+    const indeterminate = boundedTotal <= 0 && !["downloaded", "completed"].includes(status);
+    const label =
+      boundedTotal > 0
+        ? `${formatBytes(boundedWritten)} / ${formatBytes(boundedTotal)}${rateLabel}`
+        : boundedWritten > 0
+          ? `${formatBytes(boundedWritten)} downloaded${rateLabel}`
+          : "Starting download...";
     return {
-      written,
+      written: boundedWritten,
       total: boundedTotal,
       percent,
-      label: boundedTotal > 0 ? `${formatBytes(written)} / ${formatBytes(boundedTotal)}` : `${formatBytes(written)} downloaded`
+      indeterminate,
+      barWidth: indeterminate ? 36 : boundedTotal > 0 ? percent : 100,
+      label
     };
   }
 
@@ -4023,7 +4036,7 @@
 	                    {#if action.message}<p>{action.message}</p>{/if}
 	                    {#if progress}
 	                      <div class="job-progress" aria-label="Download progress">
-	                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+	                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
 	                        <small>{progress.label}</small>
 	                      </div>
 	                    {/if}
@@ -4147,7 +4160,7 @@
 	                    {#if job.message}<p>{job.message}</p>{/if}
 	                    {#if progress}
 	                      <div class="job-progress" aria-label="Download progress">
-	                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+	                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
 	                        <small>{progress.label}</small>
 	                      </div>
 	                    {/if}
@@ -4291,7 +4304,7 @@
                   {#if job.message}<small>{job.message}</small>{/if}
                   {#if progress}
                     <div class="job-progress compact-progress" aria-label="Download progress">
-                      <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+                      <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
                       <small>{progress.label}</small>
                     </div>
                   {/if}
@@ -4996,7 +5009,7 @@
                     {#if action.message}<p>{action.message}</p>{/if}
                     {#if progress}
                       <div class="job-progress" aria-label="Download progress">
-                        <div class="job-progress-track"><span style={`width: ${progress.total > 0 ? progress.percent : 100}%`}></span></div>
+                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
                         <small>{progress.label}</small>
                       </div>
                     {/if}

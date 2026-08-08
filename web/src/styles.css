@@ -2745,6 +2745,13 @@ dd {
   background: #7dd3fc;
 }
 
+.action-list .job-progress-track.indeterminate span,
+.jobs .job-progress-track.indeterminate span,
+.activity-strip .job-progress-track.indeterminate span,
+.job-progress-track.indeterminate span {
+  background: linear-gradient(90deg, #38bdf8, #bae6fd, #38bdf8);
+}
+
 .action-controls {
   display: grid;
   justify-items: end;

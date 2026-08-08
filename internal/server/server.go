@@ -107,8 +107,8 @@ const (
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
-	downloadProgressInterval   = 2 * time.Second
-	downloadProgressByteStep   = int64(8 << 20)
+	downloadProgressInterval   = 1 * time.Second
+	downloadProgressByteStep   = int64(2 << 20)
 )
 
 type installerChoiceRequiredError struct {
@@ -8388,6 +8388,7 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 	pending.ArchiveSHA256 = result.SHA256
 	pending.ArchiveBytes = result.BytesWritten
 	s.rememberCapturedInstall(jobID, pending)
+	s.markCapturedDownloadFinished(jobID, pending, result)
 	s.cfgMu.RLock()
 	autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
 	s.cfgMu.RUnlock()
@@ -8483,16 +8484,21 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 }
 
 func (s *Server) capturedDownloadProgressReporter(jobID string, pending capturedInstall, linkIndex, linkTotal int) func(download.Progress) {
+	var startedAt time.Time
 	var lastAt time.Time
 	var lastBytes int64
 	return func(progress download.Progress) {
 		now := time.Now()
+		if startedAt.IsZero() {
+			startedAt = now
+		}
 		done := progress.TotalBytes > 0 && progress.BytesWritten >= progress.TotalBytes
 		if !done && !lastAt.IsZero() && now.Sub(lastAt) < downloadProgressInterval && progress.BytesWritten-lastBytes < downloadProgressByteStep {
 			return
 		}
-		payload := s.capturedDownloadProgressPayload(jobID, pending, progress, now)
-		message := capturedDownloadProgressMessage(pending.Resolved.GameDomain, linkIndex, linkTotal, progress)
+		rate := downloadProgressRate(progress.BytesWritten, now.Sub(startedAt))
+		payload := s.capturedDownloadProgressPayload(jobID, pending, progress, now, linkIndex, linkTotal, rate)
+		message := capturedDownloadProgressMessage(pending.Resolved.GameDomain, linkIndex, linkTotal, progress, rate)
 		if _, ok := s.jobs.RunWithPayload(jobID, message, payload); ok {
 			lastAt = now
 			lastBytes = progress.BytesWritten
@@ -8500,7 +8506,25 @@ func (s *Server) capturedDownloadProgressReporter(jobID string, pending captured
 	}
 }
 
-func (s *Server) capturedDownloadProgressPayload(jobID string, pending capturedInstall, progress download.Progress, updatedAt time.Time) jobs.JobPayload {
+func (s *Server) markCapturedDownloadFinished(jobID string, pending capturedInstall, result download.Result) {
+	payload := s.capturedDownloadProgressPayload(jobID, pending, download.Progress{
+		BytesWritten: result.BytesWritten,
+		TotalBytes:   result.BytesWritten,
+	}, time.Now(), 0, 0, 0)
+	payload["download_status"] = "downloaded"
+	if result.Path != "" {
+		payload["archive_path"] = result.Path
+	}
+	if result.SHA256 != "" {
+		payload["archive_sha256"] = result.SHA256
+	}
+	if result.BytesWritten > 0 {
+		payload["archive_bytes"] = strconv.FormatInt(result.BytesWritten, 10)
+	}
+	s.jobs.SetPayload(jobID, payload)
+}
+
+func (s *Server) capturedDownloadProgressPayload(jobID string, pending capturedInstall, progress download.Progress, updatedAt time.Time, linkIndex, linkTotal int, rateBytesPerSecond int64) jobs.JobPayload {
 	job, ok := s.jobs.Get(jobID)
 	var payload jobs.JobPayload
 	if ok {
@@ -8511,8 +8535,31 @@ func (s *Server) capturedDownloadProgressPayload(jobID string, pending capturedI
 	if payload == nil {
 		payload = jobs.JobPayload{}
 	}
+	status := "downloading"
+	if progress.BytesWritten <= 0 {
+		status = "starting"
+	}
+	if progress.TotalBytes > 0 && progress.BytesWritten >= progress.TotalBytes {
+		status = "downloaded"
+	}
+	payload["download_status"] = status
 	payload["download_bytes_written"] = strconv.FormatInt(max(progress.BytesWritten, 0), 10)
 	payload["download_updated_at"] = updatedAt.UTC().Format(time.RFC3339)
+	if linkIndex > 0 {
+		payload["download_link_index"] = strconv.Itoa(linkIndex)
+	} else {
+		delete(payload, "download_link_index")
+	}
+	if linkTotal > 0 {
+		payload["download_link_total"] = strconv.Itoa(linkTotal)
+	} else {
+		delete(payload, "download_link_total")
+	}
+	if rateBytesPerSecond > 0 {
+		payload["download_rate_bytes_per_second"] = strconv.FormatInt(rateBytesPerSecond, 10)
+	} else {
+		delete(payload, "download_rate_bytes_per_second")
+	}
 	if progress.TotalBytes > 0 {
 		payload["download_total_bytes"] = strconv.FormatInt(progress.TotalBytes, 10)
 		payload["download_percent"] = downloadProgressPercent(progress.BytesWritten, progress.TotalBytes)
@@ -8523,7 +8570,7 @@ func (s *Server) capturedDownloadProgressPayload(jobID string, pending capturedI
 	return payload
 }
 
-func capturedDownloadProgressMessage(gameDomain string, linkIndex, linkTotal int, progress download.Progress) string {
+func capturedDownloadProgressMessage(gameDomain string, linkIndex, linkTotal int, progress download.Progress, rateBytesPerSecond int64) string {
 	domain := strings.TrimSpace(gameDomain)
 	if domain == "" {
 		domain = "catalog"
@@ -8533,10 +8580,24 @@ func capturedDownloadProgressMessage(gameDomain string, linkIndex, linkTotal int
 		linkLabel = fmt.Sprintf(" (%d/%d)", linkIndex, linkTotal)
 	}
 	written := formatDownloadSize(progress.BytesWritten)
-	if progress.TotalBytes > 0 {
-		return fmt.Sprintf("Downloading archive from %s%s: %s / %s (%s%%)", domain, linkLabel, written, formatDownloadSize(progress.TotalBytes), downloadProgressPercent(progress.BytesWritten, progress.TotalBytes))
+	rateLabel := ""
+	if rateBytesPerSecond > 0 {
+		rateLabel = ", " + formatDownloadSize(rateBytesPerSecond) + "/s"
 	}
-	return fmt.Sprintf("Downloading archive from %s%s: %s downloaded", domain, linkLabel, written)
+	if progress.TotalBytes > 0 {
+		return fmt.Sprintf("Downloading archive from %s%s: %s / %s (%s%%%s)", domain, linkLabel, written, formatDownloadSize(progress.TotalBytes), downloadProgressPercent(progress.BytesWritten, progress.TotalBytes), rateLabel)
+	}
+	if progress.BytesWritten <= 0 {
+		return fmt.Sprintf("Starting download from %s%s", domain, linkLabel)
+	}
+	return fmt.Sprintf("Downloading archive from %s%s: %s downloaded%s", domain, linkLabel, written, rateLabel)
+}
+
+func downloadProgressRate(bytesWritten int64, elapsed time.Duration) int64 {
+	if bytesWritten <= 0 || elapsed <= 0 {
+		return 0
+	}
+	return int64(float64(bytesWritten) / elapsed.Seconds())
 }
 
 func downloadProgressPercent(written, total int64) string {

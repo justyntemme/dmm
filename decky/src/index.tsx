@@ -1506,12 +1506,25 @@ function jobDownloadProgress(job: Job) {
   const payload = job.payload ?? {};
   const written = Number(payload.download_bytes_written ?? 0);
   const total = Number(payload.download_total_bytes ?? 0);
-  if (!Number.isFinite(written) || written <= 0) return null;
+  const rate = Number(payload.download_rate_bytes_per_second ?? 0);
+  const status = String(payload.download_status ?? "");
+  if (!status && (!Number.isFinite(written) || written <= 0) && (!Number.isFinite(total) || total <= 0)) return null;
   const boundedTotal = Number.isFinite(total) && total > 0 ? total : 0;
-  const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (written / boundedTotal) * 100)) : 0;
+  const boundedWritten = Number.isFinite(written) && written > 0 ? written : 0;
+  const percent = boundedTotal > 0 ? Math.min(100, Math.max(0, (boundedWritten / boundedTotal) * 100)) : 0;
+  const rateLabel = Number.isFinite(rate) && rate > 0 ? ` · ${formatBytes(rate)}/s` : "";
+  const indeterminate = boundedTotal <= 0 && !["downloaded", "completed"].includes(status);
+  const label =
+    boundedTotal > 0
+      ? `${formatBytes(boundedWritten)} / ${formatBytes(boundedTotal)}${rateLabel}`
+      : boundedWritten > 0
+        ? `${formatBytes(boundedWritten)} downloaded${rateLabel}`
+        : "Starting download...";
   return {
     percent,
-    label: boundedTotal > 0 ? `${formatBytes(written)} / ${formatBytes(boundedTotal)}` : `${formatBytes(written)} downloaded`
+    indeterminate,
+    barWidth: indeterminate ? 36 : boundedTotal > 0 ? percent : 100,
+    label
   };
 }
 
@@ -1532,10 +1545,10 @@ function DeckyJobProgress({ job }: { job: Job }) {
       >
         <div
           style={{
-            background: "#7dd3fc",
+            background: progress.indeterminate ? "linear-gradient(90deg, #38bdf8, #bae6fd, #38bdf8)" : "#7dd3fc",
             height: "100%",
             minWidth: "7px",
-            width: `${progress.percent > 0 ? progress.percent : 100}%`
+            width: `${progress.barWidth}%`
           }}
         />
       </div>
