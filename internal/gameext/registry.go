@@ -806,6 +806,92 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 	return sdk.GameVersionResult{}, false, nil
 }
 
+func (r Registry) RunExtensionTests(ctx context.Context, appID, trigger string, input sdk.ExtensionTestInput) ([]sdk.ExtensionTestResult, bool) {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 {
+		return nil, false
+	}
+	trigger = canonical(trigger)
+	var results []sdk.ExtensionTestResult
+	ran := false
+	for _, extension := range extensions {
+		for _, test := range extension.ExtensionTests {
+			status := strings.TrimSpace(test.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if status != sdk.CapabilityStatusReady || test.Check == nil {
+				continue
+			}
+			if trigger != "" && canonical(test.Trigger) != trigger {
+				continue
+			}
+			ran = true
+			nextInput := input
+			nextInput.AppID = strings.TrimSpace(appID)
+			nextInput.GameID = firstNonEmpty(strings.TrimSpace(nextInput.GameID), strings.TrimSpace(extension.InstallPlan.VortexGameID))
+			nextInput.Trigger = firstNonEmpty(strings.TrimSpace(nextInput.Trigger), strings.TrimSpace(test.Trigger))
+			nextInput.Mods = append([]sdk.DeploymentMod(nil), input.Mods...)
+			result, err := test.Check(ctx, nextInput)
+			if err != nil {
+				result = sdk.ExtensionTestResult{
+					TestID:   strings.TrimSpace(test.ID),
+					TestName: strings.TrimSpace(test.Name),
+					Status:   sdk.HealthCheckStatusFailed,
+					Severity: sdk.HealthCheckSeverityError,
+					Message:  "Extension test failed",
+					Details:  err.Error(),
+				}
+			}
+			results = append(results, normalizeExtensionTestResult(test, result))
+		}
+	}
+	return results, ran
+}
+
+func normalizeExtensionTestResult(test sdk.ExtensionTestSpec, result sdk.ExtensionTestResult) sdk.ExtensionTestResult {
+	result.TestID = firstNonEmpty(result.TestID, strings.TrimSpace(test.ID))
+	result.TestName = firstNonEmpty(result.TestName, strings.TrimSpace(test.Name), result.TestID)
+	result.Trigger = firstNonEmpty(strings.TrimSpace(result.Trigger), strings.TrimSpace(test.Trigger))
+	status := strings.TrimSpace(result.Status)
+	if status == "" {
+		status = sdk.HealthCheckStatusPassed
+	}
+	switch status {
+	case sdk.HealthCheckStatusPassed, sdk.HealthCheckStatusWarning, sdk.HealthCheckStatusFailed:
+	default:
+		status = sdk.HealthCheckStatusFailed
+		result.Details = strings.TrimSpace(firstNonEmpty(result.Details, "extension returned unsupported test status"))
+	}
+	result.Status = status
+	severity := strings.TrimSpace(result.Severity)
+	if severity == "" {
+		if status == sdk.HealthCheckStatusPassed {
+			severity = sdk.HealthCheckSeverityInfo
+		} else if status == sdk.HealthCheckStatusWarning {
+			severity = sdk.HealthCheckSeverityWarning
+		} else {
+			severity = sdk.HealthCheckSeverityError
+		}
+	}
+	switch severity {
+	case sdk.HealthCheckSeverityInfo, sdk.HealthCheckSeverityWarning, sdk.HealthCheckSeverityError:
+	default:
+		severity = sdk.HealthCheckSeverityError
+	}
+	result.Severity = severity
+	if strings.TrimSpace(result.Message) == "" {
+		if result.Status == sdk.HealthCheckStatusPassed {
+			result.Message = "Extension test passed"
+		} else {
+			result.Message = "Extension test reported an issue"
+		}
+	}
+	result.Details = strings.TrimSpace(result.Details)
+	result.Actions = appendClean([]string{}, result.Actions...)
+	return result
+}
+
 func (r Registry) RunModHealthChecks(ctx context.Context, appID string, inputs []sdk.ModHealthCheckInput) ([]sdk.HealthCheckResult, bool) {
 	extensions := r.ExtensionsForSteamApp(appID)
 	if len(extensions) == 0 || len(inputs) == 0 {

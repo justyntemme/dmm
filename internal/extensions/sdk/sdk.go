@@ -475,6 +475,30 @@ type ExtensionTestSpec struct {
 	Trigger string
 	Status  string
 	Message string
+	Check   ExtensionTestFunc
+}
+
+type ExtensionTestFunc func(context.Context, ExtensionTestInput) (ExtensionTestResult, error)
+
+type ExtensionTestInput struct {
+	AppID       string
+	GameID      string
+	GamePath    string
+	LibraryPath string
+	ProfileID   int64
+	Trigger     string
+	Mods        []DeploymentMod
+}
+
+type ExtensionTestResult struct {
+	TestID   string
+	TestName string
+	Trigger  string
+	Status   string
+	Severity string
+	Message  string
+	Details  string
+	Actions  []string
 }
 
 type ExtensionToDoSpec struct {

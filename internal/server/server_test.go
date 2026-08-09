@@ -9036,6 +9036,105 @@ func TestGameDiagnosticsIncludesExtensionHealthCheckWarnings(t *testing.T) {
 	}
 }
 
+func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Extension Test Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999024"
+	var captured sdk.ExtensionTestInput
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "extensiontestgame",
+		Name:    "Extension Test Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"extensiontestgame"},
+				VortexGameID: "extensiontestgame",
+			})
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+				ID:      "runtime-test",
+				Name:    "Runtime Test",
+				Trigger: "gamemode-activated",
+				Check: func(_ context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+					captured = input
+					return sdk.ExtensionTestResult{
+						Status:   sdk.HealthCheckStatusWarning,
+						Severity: sdk.HealthCheckSeverityWarning,
+						Message:  "Runtime needs attention",
+						Details:  "test detail",
+						Actions:  []string{"Review runtime setup"},
+					}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Extension Test Game",
+		InstallDir:  "Extension Test Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "extensiontestgame", ModID: "1", FileID: "2"},
+		Name:         "Test Mod",
+		ArchivePath:  filepath.Join(t.TempDir(), "test.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "staging", "extensiontestgame"),
+		ManifestJSON: `{"game_id":"extensiontestgame","mod_type":"root","files":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		ExtensionTests []struct {
+			TestID   string   `json:"test_id"`
+			Trigger  string   `json:"trigger"`
+			Status   string   `json:"status"`
+			Severity string   `json:"severity"`
+			Message  string   `json:"message"`
+			Details  string   `json:"details"`
+			Actions  []string `json:"actions"`
+		} `json:"extension_tests"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if captured.AppID != appID || captured.GameID != "extensiontestgame" || captured.GamePath != gamePath || captured.LibraryPath != "/steam" || captured.ProfileID != mod.ProfileID {
+		t.Fatalf("captured input = %+v", captured)
+	}
+	if len(captured.Mods) != 1 || captured.Mods[0].ID != mod.ID || captured.Mods[0].Name != "Test Mod" {
+		t.Fatalf("captured mods = %+v", captured.Mods)
+	}
+	if len(body.ExtensionTests) != 1 {
+		t.Fatalf("extension tests = %+v", body.ExtensionTests)
+	}
+	test := body.ExtensionTests[0]
+	if test.TestID != "runtime-test" || test.Trigger != "gamemode-activated" || test.Status != sdk.HealthCheckStatusWarning || test.Severity != sdk.HealthCheckSeverityWarning || test.Message != "Runtime needs attention" || test.Details != "test detail" || !slices.Equal(test.Actions, []string{"Review runtime setup"}) {
+		t.Fatalf("extension test = %+v", test)
+	}
+	if !strings.Contains(strings.Join(body.ValidationWarnings, "\n"), "Runtime Test: Runtime needs attention: test detail") {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

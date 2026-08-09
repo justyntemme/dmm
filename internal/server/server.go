@@ -642,6 +642,7 @@ type gameDiagnosticsResponse struct {
 	Deployment          deploymentStatusResponse         `json:"deployment"`
 	Preview             deployPreviewSummary             `json:"preview"`
 	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
+	ExtensionTests      []gameExtensionTestResponse      `json:"extension_tests,omitempty"`
 	HealthChecks        []gameHealthCheckResponse        `json:"health_checks,omitempty"`
 	ValidationWarnings  []string                         `json:"validation_warnings,omitempty"`
 }
@@ -667,6 +668,17 @@ type gameHealthCheckResponse struct {
 	Severity       string `json:"severity"`
 	Message        string `json:"message"`
 	Details        string `json:"details,omitempty"`
+}
+
+type gameExtensionTestResponse struct {
+	TestID   string   `json:"test_id"`
+	TestName string   `json:"test_name"`
+	Trigger  string   `json:"trigger,omitempty"`
+	Status   string   `json:"status"`
+	Severity string   `json:"severity"`
+	Message  string   `json:"message"`
+	Details  string   `json:"details,omitempty"`
+	Actions  []string `json:"actions,omitempty"`
 }
 
 type gameResponse struct {
@@ -1052,6 +1064,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 		}
 	}
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
+	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
@@ -1149,6 +1162,37 @@ func (s *Server) recomputeGameConflictsAndRules(ctx context.Context, appID strin
 		"calculate_overrides": calculateOverrides,
 	})
 	return eventHandled, nil
+}
+
+func (s *Server) extensionTests(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("extension tests running without active profile context", "app_id", game.SteamAppID, "error", err)
+	}
+	results, ran := s.games.RunExtensionTests(ctx, game.SteamAppID, "", sdk.ExtensionTestInput{
+		AppID:       strings.TrimSpace(game.SteamAppID),
+		GamePath:    strings.TrimSpace(game.GamePath),
+		LibraryPath: strings.TrimSpace(game.LibraryPath),
+		ProfileID:   profileID,
+		Mods:        deploymentModsForHooks(mods),
+	})
+	if !ran || len(results) == 0 {
+		return nil
+	}
+	out := make([]gameExtensionTestResponse, 0, len(results))
+	for _, result := range results {
+		out = append(out, gameExtensionTestResponse{
+			TestID:   strings.TrimSpace(result.TestID),
+			TestName: strings.TrimSpace(result.TestName),
+			Trigger:  strings.TrimSpace(result.Trigger),
+			Status:   strings.TrimSpace(result.Status),
+			Severity: strings.TrimSpace(result.Severity),
+			Message:  strings.TrimSpace(result.Message),
+			Details:  strings.TrimSpace(result.Details),
+			Actions:  append([]string(nil), result.Actions...),
+		})
+	}
+	return out
 }
 
 func (s *Server) extensionHealthChecks(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameHealthCheckResponse {
@@ -1690,6 +1734,17 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 		if requirement.Required && requirement.Status != gamehandler.RequirementOK {
 			warnings = append(warnings, requirement.Name+" "+requirementWarningKind(requirement.Kind)+" requirement is "+string(requirement.Status)+": "+requirement.Message)
 		}
+	}
+	for _, test := range resp.ExtensionTests {
+		if test.Status == sdk.HealthCheckStatusPassed && test.Severity == sdk.HealthCheckSeverityInfo {
+			continue
+		}
+		prefix := strings.TrimSpace(test.TestName)
+		message := strings.TrimSpace(test.Message)
+		if test.Details != "" {
+			message = strings.TrimSpace(message + ": " + test.Details)
+		}
+		warnings = append(warnings, strings.TrimSpace(prefix+": "+message))
 	}
 	for _, check := range resp.HealthChecks {
 		if check.Status == sdk.HealthCheckStatusPassed && check.Severity == sdk.HealthCheckSeverityInfo {
