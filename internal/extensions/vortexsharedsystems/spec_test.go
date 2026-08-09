@@ -15,13 +15,12 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "discover-tools")
-	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "registerGameInfoProvider")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "discover-tools", "registerGameInfoProvider")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
 	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "gamebryo-incompatible-mod-archives", "game-version-gamemode")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames", "local-game-settings")
-	assertBlocked(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
+	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts")
 	assertBlocked(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
 }

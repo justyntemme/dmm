@@ -126,6 +126,24 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 					return sdk.GameVersionResult{Version: "1.2.0", Source: "test"}, nil
 				},
 			})
+			r.RegisterGameInfoProvider(sdk.GameInfoProviderSpec{
+				ID:           "sample-info",
+				Name:         "Sample info",
+				Tags:         []string{"game_version"},
+				CacheSeconds: 60,
+				Priority:     42,
+				Provider: func(_ context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
+					if input.AppID != "100" || input.GamePath != "/games/sample" || input.GameVersion != "1.2.0" {
+						t.Fatalf("game info input = %+v", input)
+					}
+					return sdk.GameInfoResult{Details: []sdk.GameInfoDetail{{
+						ID:     "game_version",
+						Title:  "Installed Version",
+						Value:  input.GameVersion,
+						Source: "sample-info",
+					}}}, nil
+				},
+			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
 				ID:               "sample-plugins",
 				Name:             "Sample plugins.txt",
@@ -334,6 +352,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].ID != "sample-version" {
 		t.Fatalf("game version capabilities = %+v", summary.Capabilities.GameVersions)
 	}
+	if len(summary.Capabilities.GameInfoProviders) != 1 || summary.Capabilities.GameInfoProviders[0].ID != "sample-info" || summary.Capabilities.GameInfoProviders[0].Priority != 42 {
+		t.Fatalf("game info capabilities = %+v", summary.Capabilities.GameInfoProviders)
+	}
 	version, ran, err := registry.DetectGameVersion(context.Background(), "100", sdk.GameVersionInput{
 		GamePath:     "/games/sample",
 		SteamBuildID: "build-1",
@@ -343,6 +364,17 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if !ran || version.Version != "1.2.0" || version.Source != "test" {
 		t.Fatalf("detected version = %+v, ran = %v", version, ran)
+	}
+	info, ran, err := registry.QueryGameInfo(context.Background(), "100", sdk.GameInfoInput{
+		GamePath:     "/games/sample",
+		SteamBuildID: "build-1",
+		GameVersion:  version.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ran || len(info) != 1 || info[0].ID != "game_version" || info[0].Value != "1.2.0" {
+		t.Fatalf("game info = %+v, ran = %v", info, ran)
 	}
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)

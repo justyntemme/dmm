@@ -429,6 +429,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/complete", s.handleCompleteOpenDirectoryAction)
 	mux.HandleFunc("POST /api/games/{appID}/extension-actions/{actionID}/run", s.handleQueueExtensionAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
+	mux.HandleFunc("GET /api/games/{appID}/info", s.handleGameInfo)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/order", s.handleSetSteamWorkshopOrder)
@@ -701,6 +702,21 @@ type gameResponse struct {
 	Extension     *gameExtensionInfo  `json:"extension,omitempty"`
 }
 
+type gameInfoResponse struct {
+	AppID   string                   `json:"app_id"`
+	Name    string                   `json:"name"`
+	Ran     bool                     `json:"ran"`
+	Details []gameInfoDetailResponse `json:"details"`
+}
+
+type gameInfoDetailResponse struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Type   string `json:"type,omitempty"`
+	Value  any    `json:"value"`
+	Source string `json:"source,omitempty"`
+}
+
 type gameExtensionInfo struct {
 	ID                  string              `json:"id"`
 	Name                string              `json:"name"`
@@ -716,6 +732,7 @@ type gameExtensionInfo struct {
 	PluginActivation    bool                `json:"plugin_activation"`
 	LoadOrder           bool                `json:"load_order"`
 	GameVersions        bool                `json:"game_versions"`
+	GameInfoProviders   bool                `json:"game_info_providers"`
 	Sources             []gameext.SourceRef `json:"sources,omitempty"`
 }
 
@@ -3473,6 +3490,63 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, responses)
 }
 
+func (s *Server) handleGameInfo(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	details, ran, err := s.games.QueryGameInfo(r.Context(), appID, gameext.GameInfoInput{
+		AppID:        game.SteamAppID,
+		GamePath:     game.GamePath,
+		LibraryPath:  game.LibraryPath,
+		SteamBuildID: game.SteamBuildID,
+		GameVersion:  game.Version,
+	})
+	if err != nil {
+		s.logger.Warn("game info provider failed", "app_id", appID, "name", game.Name, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	response := gameInfoResponse{
+		AppID:   game.SteamAppID,
+		Name:    game.Name,
+		Ran:     ran,
+		Details: gameInfoDetailsResponse(details),
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func gameInfoDetailsResponse(details []gameext.GameInfoDetail) []gameInfoDetailResponse {
+	if len(details) == 0 {
+		return []gameInfoDetailResponse{}
+	}
+	out := make([]gameInfoDetailResponse, 0, len(details))
+	for _, detail := range details {
+		id := strings.TrimSpace(detail.ID)
+		if id == "" {
+			continue
+		}
+		title := strings.TrimSpace(detail.Title)
+		if title == "" {
+			title = id
+		}
+		out = append(out, gameInfoDetailResponse{
+			ID:     id,
+			Title:  title,
+			Type:   strings.TrimSpace(detail.Type),
+			Value:  detail.Value,
+			Source: strings.TrimSpace(detail.Source),
+		})
+	}
+	return out
+}
+
 func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.Game, bool, error) {
 	s.gameDiscoveryMu.Lock()
 	defer s.gameDiscoveryMu.Unlock()
@@ -3540,6 +3614,7 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		PluginActivation:    len(extension.PluginActivations) > 0,
 		LoadOrder:           len(extension.LoadOrders) > 0 || len(extension.Merges) > 0,
 		GameVersions:        len(extension.GameVersionProviders) > 0,
+		GameInfoProviders:   len(extension.GameInfoProviders) > 0,
 		Sources:             append([]gameext.SourceRef(nil), extension.Sources...),
 	}
 }

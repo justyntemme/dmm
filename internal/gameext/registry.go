@@ -100,6 +100,9 @@ type SteamWorkshopSpec = sdk.SteamWorkshopSpec
 type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
 type GameVersionInput = sdk.GameVersionInput
 type GameVersionResult = sdk.GameVersionResult
+type GameInfoInput = sdk.GameInfoInput
+type GameInfoResult = sdk.GameInfoResult
+type GameInfoDetail = sdk.GameInfoDetail
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
 type ArchiveTypeSpec = sdk.ArchiveTypeSpec
@@ -852,6 +855,65 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 	return sdk.GameVersionResult{}, false, nil
 }
 
+func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.GameInfoInput) ([]sdk.GameInfoDetail, bool, error) {
+	extensions := r.ExtensionsForSteamApp(appID)
+	for _, extension := range r.extensions {
+		if strings.TrimSpace(extension.Kind) == sdk.ExtensionKindFramework {
+			extensions = append(extensions, extension)
+		}
+	}
+	input.AppID = strings.TrimSpace(appID)
+	type providerRef struct {
+		spec sdk.GameInfoProviderSpec
+	}
+	providers := []providerRef{}
+	for _, extension := range extensions {
+		for _, provider := range extension.GameInfoProviders {
+			status := strings.TrimSpace(provider.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if provider.Provider == nil || status != sdk.CapabilityStatusReady {
+				continue
+			}
+			providers = append(providers, providerRef{spec: provider})
+		}
+	}
+	if len(providers) == 0 {
+		return nil, false, nil
+	}
+	sort.SliceStable(providers, func(i, j int) bool {
+		if providers[i].spec.Priority == providers[j].spec.Priority {
+			return strings.ToLower(providers[i].spec.ID) < strings.ToLower(providers[j].spec.ID)
+		}
+		return providers[i].spec.Priority > providers[j].spec.Priority
+	})
+	details := []sdk.GameInfoDetail{}
+	for _, provider := range providers {
+		result, err := provider.spec.Provider(ctx, input)
+		if err != nil {
+			return nil, true, err
+		}
+		for _, detail := range result.Details {
+			detail.ID = strings.TrimSpace(detail.ID)
+			if detail.ID == "" {
+				continue
+			}
+			detail.Title = strings.TrimSpace(detail.Title)
+			if detail.Title == "" {
+				detail.Title = detail.ID
+			}
+			detail.Type = strings.TrimSpace(detail.Type)
+			detail.Source = strings.TrimSpace(detail.Source)
+			if detail.Source == "" {
+				detail.Source = strings.TrimSpace(provider.spec.ID)
+			}
+			details = append(details, detail)
+		}
+	}
+	return details, true, nil
+}
+
 func (r Registry) RunExtensionTests(ctx context.Context, appID, trigger string, input sdk.ExtensionTestInput) ([]sdk.ExtensionTestResult, bool) {
 	extensions := r.ExtensionsForSteamApp(appID)
 	if len(extensions) == 0 {
@@ -1374,6 +1436,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Name:         provider.Name,
 			Tags:         appendClean([]string{}, provider.Tags...),
 			CacheSeconds: provider.CacheSeconds,
+			Priority:     provider.Priority,
 			Status:       defaultString(provider.Status, sdk.CapabilityStatusReady),
 			Message:      provider.Message,
 		})

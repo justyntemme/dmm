@@ -1,6 +1,11 @@
 package vortexsharedsystems
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"context"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+)
 
 const (
 	ID      = "vortex-shared-systems"
@@ -45,7 +50,7 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 		readyAPI("discover-tools", "Discover extension-declared and DMM-managed external tools"),
 		blockedAPI("bake-settings", "Bake profile-local game settings"),
 		blockedAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
-		blockedAPI("registerGameInfoProvider", "Register generic game info provider"),
+		readyAPI("registerGameInfoProvider", "Register generic game info provider"),
 	} {
 		r.RegisterExtensionAPI(api)
 	}
@@ -131,8 +136,19 @@ func registerVortexTests(r sdk.Registrar) {
 		Name:         "Vortex game version info provider",
 		Tags:         []string{"game_version"},
 		CacheSeconds: 300,
-		Status:       sdk.CapabilityStatusBlocked,
-		Message:      blockedMessage,
+		Priority:     15,
+		Provider: func(_ context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
+			version := strings.TrimSpace(input.GameVersion)
+			if version == "" {
+				return sdk.GameInfoResult{}, nil
+			}
+			return sdk.GameInfoResult{Details: []sdk.GameInfoDetail{{
+				ID:     "game_version",
+				Title:  "Installed Version",
+				Value:  version,
+				Source: "game-version",
+			}}}, nil
+		},
 	})
 	r.RegisterExtensionTest(blockedTest("test-setup-uninstall-entry", "Vortex setup uninstall-entry test", "startup"))
 }

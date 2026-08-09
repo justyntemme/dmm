@@ -627,6 +627,10 @@ func validateGameInfoProviders(specs []sdk.GameInfoProviderSpec) []error {
 		if id == "" {
 			continue
 		}
+		status := strings.TrimSpace(spec.Status)
+		if spec.Provider == nil && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
+			errs = append(errs, errors.New("game info provider "+id+" function is required"))
+		}
 		for _, tag := range spec.Tags {
 			if strings.TrimSpace(tag) == "" {
 				errs = append(errs, errors.New("game info provider "+id+" tag is required"))

@@ -333,8 +333,32 @@ type GameInfoProviderSpec struct {
 	Name         string
 	Tags         []string
 	CacheSeconds int
+	Priority     int
+	Provider     GameInfoProviderFunc
 	Status       string
 	Message      string
+}
+
+type GameInfoProviderFunc func(context.Context, GameInfoInput) (GameInfoResult, error)
+
+type GameInfoInput struct {
+	AppID        string
+	GamePath     string
+	LibraryPath  string
+	SteamBuildID string
+	GameVersion  string
+}
+
+type GameInfoResult struct {
+	Details []GameInfoDetail
+}
+
+type GameInfoDetail struct {
+	ID     string
+	Title  string
+	Type   string
+	Value  any
+	Source string
 }
 
 const (

@@ -693,6 +693,67 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	}
 }
 
+func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "900",
+		Name:        "Info Game",
+		InstallDir:  "Info Game",
+		LibraryPath: "/library",
+		Path:        "/library/steamapps/common/Info Game",
+		Version:     "2.3.4",
+		BuildID:     "build-42",
+		State:       "installed",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "infotest",
+		Name:    "Info Test",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{"900"}, NexusDomains: []string{"infotest"}, VortexGameID: "infotest"})
+			r.RegisterGameInfoProvider(sdk.GameInfoProviderSpec{
+				ID:           "installed-version",
+				Name:         "Installed version",
+				Tags:         []string{"game_version"},
+				CacheSeconds: 300,
+				Priority:     15,
+				Provider: func(_ context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
+					if input.AppID != "900" || input.GamePath != "/library/steamapps/common/Info Game" || input.SteamBuildID != "build-42" || input.GameVersion != "2.3.4" {
+						t.Fatalf("game info input = %+v", input)
+					}
+					return sdk.GameInfoResult{Details: []sdk.GameInfoDetail{{
+						ID:    "game_version",
+						Title: "Installed Version",
+						Value: input.GameVersion,
+					}}}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/900/info", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body gameInfoResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.AppID != "900" || !body.Ran || len(body.Details) != 1 {
+		t.Fatalf("body = %+v", body)
+	}
+	if body.Details[0].ID != "game_version" || body.Details[0].Title != "Installed Version" || body.Details[0].Value != "2.3.4" || body.Details[0].Source != "installed-version" {
+		t.Fatalf("detail = %+v", body.Details[0])
+	}
+}
+
 func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	body, err := json.Marshal(gameResponse{
 		AppID:        "108600",
