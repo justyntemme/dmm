@@ -749,7 +749,7 @@ const deckyRuntimeStyles = `
   display: grid;
   gap: 10px;
   grid-auto-rows: max-content;
-  min-height: auto !important;
+  min-height: max-content !important;
   overflow: visible;
 }
 .dmm-settings-section > * {
@@ -759,13 +759,13 @@ const deckyRuntimeStyles = `
 .dmm-settings-row {
   align-self: stretch !important;
   height: auto !important;
-  min-height: 64px !important;
+  min-height: 68px !important;
   overflow: visible !important;
 }
 .dmm-settings-section .dmm-focus-card {
   align-self: stretch !important;
   height: auto !important;
-  min-height: 56px;
+  min-height: 62px;
   overflow: visible !important;
 }
   .dmm-focus-card-focused,
@@ -3752,7 +3752,7 @@ const freshSettingsCardStyle: CSSProperties = {
   display: "grid",
   gap: "10px",
   gridAutoRows: "max-content",
-  minHeight: "unset",
+  minHeight: "max-content",
   overflow: "visible"
 };
 
@@ -5335,8 +5335,6 @@ function FreshDeckyModManagerRoute() {
             key={item.id}
             className="dmm-decky-tab"
             aria-selected={tab === item.id}
-            role="button"
-            tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
