@@ -642,6 +642,7 @@ type EventHandlerInput struct {
 	ManagedFiles []deploy.AppliedFile
 	Mods         []DeploymentMod
 	ModIDs       []int64
+	AddedFiles   []AddedFile
 	Progress     EventProgressFunc
 }
 
@@ -676,11 +677,35 @@ type DeploymentMod struct {
 	SourceFileID     string
 }
 
+type AddedFile struct {
+	FilePath       string
+	TargetRootID   string
+	TargetRootPath string
+	TargetRelative string
+	Candidates     []AddedFileCandidate
+}
+
+type AddedFileCandidate struct {
+	InstalledModID int64
+	Name           string
+	ModType        string
+	StagingPath    string
+	TargetRootID   string
+}
+
 type EventHandlerResult struct {
 	ReplaceMappings bool
 	Mappings        []deploy.FileMapping
+	AdoptedFiles    []AdoptedFile
 	Notices         []EventNotice
 	Messages        []string
+}
+
+type AdoptedFile struct {
+	InstalledModID  int64
+	StagingRelative string
+	TargetRootID    string
+	TargetRelative  string
 }
 
 type EventNotice struct {

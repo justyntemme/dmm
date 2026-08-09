@@ -74,6 +74,62 @@ DMM currently has first-party Go extension registration for:
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
 
+## Mechanical API Matrix
+
+Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-09.
+
+| Vortex surface | Source-backed use | DMM surface | Runtime status | Next gap |
+| --- | ---: | --- | --- | --- |
+| `context.registerGame` | 80 | `RegisterGame` | Partial runtime | Setup/prep execution, richer multi-store discovery, and same-Steam-app logical game selection outside captured installs. |
+| `context.registerInstaller` | 70 | `RegisterInstaller` | Partial runtime | More reusable installer helpers for source-backed `testSupportedContent`, wrapper normalization, component choice rules, and packed/archive engines. |
+| `context.registerModType` | 40 | `RegisterModType` | Partial runtime | Shared mod-type helpers still missing ENB, GeDoSaTo runtime, DInput confirmation UI, and UMM patch execution. |
+| `context.registerAction` | 51 | `RegisterExtensionAction` | Metadata-only | Generic executable extension action contract and UI renderer. |
+| `context.registerTest` | 28 | `RegisterExtensionTest` | Metadata-only | Runnable diagnostic/test hooks and trigger wiring. |
+| `context.registerReducer` | 27 | `RegisterStateReducer` | Metadata-only | Extension state store/reducer runtime or first-party typed state replacement. |
+| `context.registerMigration` | 18 | `RegisterStateMigration` | Metadata-only | Migration executor plus safe purge/adoption primitives. |
+| `context.registerDialog` | 12 | `RegisterExtensionDialog` | Metadata-only | Extension dialog schema/runtime. |
+| `context.registerAPI` | 10 | `RegisterExtensionAPI` plus shared Go helpers | Partial runtime | Explicit dependency graph/import contract for cross-extension APIs; QuickBMS and Gamebryo plugin APIs remain blocked. |
+| `context.registerTableAttribute` | 9 | `RegisterExtensionTableAttribute` | Metadata-only | Generic extension columns/attributes for phone and Deck surfaces. |
+| `context.registerLoadOrder` | 9 | `RegisterLoadOrder` | Partial runtime | Generic load-order models, persistence, conflict/rule UI, LOOT-backed Gamebryo sorting. |
+| `context.registerGameStub` | 9 | `VortexStub` game registration | Metadata-only | Keep source-backed but unsupported until each game has verified install/runtime support. |
+| `context.registerSettings` | 8 | `RegisterExtensionSetting` | Metadata-only | Extension-owned settings schema and persistence. |
+| `context.registerDashlet` | 7 | `RegisterExtensionDashlet` | Metadata-only | Product decision whether DMM keeps dashlet concept or maps to Action Center/diagnostics cards. |
+| `context.registerMainPage` | 7 | `RegisterExtensionMainPage` | Metadata-only | Generic extension page runtime, likely phone-first only. |
+| `context.registerMerge` | 5 | `RegisterMerge` plus shared helpers | Partial runtime | Broader merge helpers beyond current XML/MTL and DAZIP AddIns support. |
+| `context.registerInterpreter` | 5 | `RegisterInterpreter` | Metadata-only | Safe external interpreter/tool execution contract. |
+| `context.registerArchiveType` | 4 | `RegisterArchiveType` | Metadata-only/blocked | BSA/BA2, ARC, and QuickBMS list/extract/write engines. |
+| `context.registerProfileFeature` | 4 | `RegisterProfileFeature` | Metadata-only | Profile file/savegame/settings feature execution. |
+| `context.optional.registerCollectionFeature` | 3 | `RegisterCollectionFeature` | Metadata-only | Collection import/postprocess runtime. |
+| `context.registerPersistor` | 3 | `RegisterStatePersistor` | Metadata-only | Extension-owned persisted state runtime. |
+| `context.registerLoadOrderPage` | 3 | `RegisterExtensionLoadOrderPage` | Metadata-only | Load-order page renderer/editor. |
+| `context.registerAttributeExtractor` | 2 | `RegisterAttributeExtractor` | Metadata-only | Runnable metadata extraction hooks outside install planning. |
+| `context.registerGameInfoProvider` | 2 | `RegisterGameInfoProvider` | Metadata-only | Runtime polling/caching for game info providers. |
+| `context.registerProfileFile` | 2 | `RegisterProfileFile` | Metadata-only | Profile file backup/switching support. |
+| `context.registerActionCheck` | 2 | `RegisterExtensionActionCheck` | Metadata-only | Generic action validation hooks. |
+| `context.registerControlWrapper` | 1 | `RegisterExtensionControlWrapper` | Metadata-only | UI wrapper/adornment equivalent, likely mapped to DMM row badges/actions. |
+| `context.registerHistoryStack` | 1 | `RegisterHistoryStack` | Metadata-only | Extension history/undo state runtime. |
+| `context.registerHealthCheck` | 1 | `RegisterHealthCheck` | Metadata-only | Runnable health checks surfaced through diagnostics. |
+| `context.registerStartHook` | 1 | `RegisterStartHook` | Metadata-only | Startup hook scheduler with explicit safety boundaries. |
+
+Event and request/response gaps from actual source:
+
+| Vortex event/API | Source-backed use | DMM status | Required DMM work |
+| --- | --- | --- | --- |
+| `will-deploy`, `did-deploy`, `will-purge`, `did-purge` | deploy lifecycle, new-file monitor, Gamebryo, Witcher, BG3, BepInEx, FNIS | Partial runtime | Keep extending input data; add snapshot/update behavior where Vortex expects mutable installed mod folders. |
+| `will-remove-mods`, `did-remove-mod`, `did-remove-profile` | new-file monitor, savegame/profile utilities, Witcher | Partial runtime | Add complete new-file snapshot checks before removals and richer profile/savegame context. |
+| `did-install-mod`, `mod-enabled`, `mods-enabled`, `profile-will-change`, `profile-did-change` | BepInEx, Stardew, Witcher, Gamebryo, savegames | Partial runtime | Ensure all user flows emit them consistently, including bulk operations and Deck-only actions. |
+| `added-files` / `removed-files` | `new-file-monitor`, BattleTech | Partial runtime | DMM now snapshots extension-owned target roots, detects new unmanaged files before deployment, lets extensions adopt them, and persists adopted manifest entries. Removed-file events and multi-owner user resolution remain missing. |
+| `gamemode-activated` | UMM, Gamebryo, BepInEx, Stardew, BG3, QuickBMS, plugin checks | Declared only | Add DMM active-game event source and runnable diagnostics/hooks. |
+| `will-install-dependencies` | dependency manager | Missing runtime | Add dependency-install lifecycle before auto acquisition/runtime setup. |
+| `check-mods-version` | BG3 | Missing runtime | Add game/extension-driven update compatibility checks. |
+| `update-conflicts-and-rules` | dependency manager | Missing runtime | Add dependency/rule conflict recomputation event. |
+| `deploy-single-mod` | Stardew config mod, Witcher, FNIS, dependency manager, script extenders | Missing request/response bus | Add explicit core command to deploy a selected mod/profile subset without bypassing manifests. |
+| `purge-mods-in-path` | DAZIP, game migrations, Sims, Spyro, Blade & Sorcery | Missing request/response bus | Add scoped purge primitive that removes only manifest-owned files under extension-declared paths. |
+| `browse-for-download`, `nexus-download` | UMM, script extender installer | Missing request/response bus | Route through DMM catalog/captured-download flow with visible user consent. |
+| `discover-tools` | script extender installer | Missing request/response bus | Add explicit tool discovery/refresh command. |
+| `bake-settings` | local game settings | Missing request/response bus | Add profile settings bake runtime. |
+| `unfulfilled-rules` | dependency manager | Missing request/response bus | Add dependency/rule evaluation service. |
+
 ## Current Vortex Source Audit
 
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
@@ -84,7 +140,7 @@ Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 Remaining placeholder groups from direct source calls:
 
-- Dedicated source-backed `registerGame` ports with remaining blocked runtime gaps: `game-battletech` keeps BattleTech Documents mod deployment and version parsing but blocks Vortex `added-files` adoption; `game-prisonarchitect` maps Vortex LocalAppData mod deployment to Proton LocalAppData and blocks native-Linux mod-path verification; `game-nehrim` preserves Vortex's Nehrim-to-Oblivion facts but blocks install until DMM has a cross-app Steam root resolver.
+- Dedicated source-backed `registerGame` ports with remaining blocked runtime gaps: `game-prisonarchitect` maps Vortex LocalAppData mod deployment to Proton LocalAppData and blocks native-Linux mod-path verification; `game-nehrim` preserves Vortex's Nehrim-to-Oblivion facts but blocks install until DMM has a cross-app Steam root resolver.
 - Documents/AppData `registerGame` entries promoted with shared DMM target-root support: `game-grimrock`, `game-sims3`, and `game-teso`.
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
@@ -92,12 +148,12 @@ Remaining placeholder groups from direct source calls:
 - Shared BepInEx dependency work: `game-untitledgoose` now has a dedicated source-backed DMM extension with BepInEx installer/runtime metadata.
 - DAZIP game entries promoted with a source-backed DMM `dazip` helper: `game-dragonage` and `game-dragonage2`. DMM supports Vortex `dazipOuter` nested `.dazip` extraction, `dazipInner` planning for extracted DAZIP contents, Dragon Age Origins AddIns.xml generation during `will-deploy`, and DA2 game-root addins deployment. Historical DA2 purge migration remains blocked until a generic migration/purge-mods-in-path runtime exists.
 - UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and `umm-installer` tool archive staging through a reusable `tool-only` deployment mode. Unity Mod Manager auto-download, discovery, launch, and patch execution remain blocked until the reusable external-tool flow exists.
-- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, and `game-untitledgoose` records Vortex's migration/auto-download paths as blocked metadata until DMM has generic purge-migration and auto-acquisition runtimes.
+- Lifecycle and event-bus work: `game-battletech` now uses reusable DMM `added-files` adoption runtime for Vortex's single-owner generated-file flow. `game-untitledgoose` records Vortex's migration/auto-download paths as blocked metadata until DMM has generic purge-migration and auto-acquisition runtimes.
 - Merge work: Wolcen XML/MTL payload merging is now source-backed through `internal/extensions/xmlmerge`; Dragon Age Origins AddIns.xml generation is source-backed through the DAZIP helper.
 
 Observed source-backed blocker details:
 
-- `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM ports the normal Documents mods installer and version parser, but not the new-file adoption runtime.
+- `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM ports the normal Documents mods installer, version parser, and this single-owner new-file adoption flow through reusable snapshot/adoption runtime plus BattleTech extension logic.
 - `game-conanexiles/src/index.js` registers a load-order page and writes `ConanSandbox/Mods/modlist.txt` with staged `.pak` paths in user order. DMM now ports this through `internal/extensions/conanexiles` and the reusable `internal/extensions/loadorderfile` helper.
 - `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM now ports this through `internal/extensions/divinityoriginalsin2`, with source-domain-aware install planning, multi-extension target-root resolution for the shared Steam app, per-edition Proton Documents roots, and the source-backed `.pak` deploy reminder.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM now implements the managed DAZIP outer/inner installer flow and AddIns.xml generation path.
@@ -112,7 +168,7 @@ Implementation priority from this audit:
 3. Add migration purge runtime to finish DAZIP parity beyond the current Dragon Age outer/inner archive support.
 4. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
 5. Extend the reusable XML/MTL merge helper as new source-backed merge shapes appear, and add source-backed patch-existing/setup runtime for games that modify existing user/game files outside the current deploy mapping model.
-6. Add new-file adoption runtime for `added-files`, then complete BattleTech lifecycle parity.
+6. Extend new-file monitoring beyond the current BattleTech single-owner `added-files` adoption runtime with removed-file reporting and user resolution for multi-owner candidates.
 
 ## MVP-Critical Gaps
 
@@ -219,7 +275,8 @@ DMM status:
 
 - Supports extension handlers and generated deploy mappings for deploy/purge paths already wired in core.
 - First-class event constants and execution points now exist for `will-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change`.
-- Still missing execution points for `added-files`, `gamemode-activated`, `will-install-dependencies`, `check-mods-version`, and `update-conflicts-and-rules`.
+- Has a first runtime execution point for `added-files` before deployment planning, modeled on Vortex `new-file-monitor` plus BattleTech adoption.
+- Still missing execution points for `removed-files`, `gamemode-activated`, `will-install-dependencies`, `check-mods-version`, and `update-conflicts-and-rules`.
 - Missing a generic request/response bus equivalent to Vortex `emitAndAwait` for extension-to-core operations such as `deploy-single-mod`, `purge-mods-in-path`, `browse-for-download`, `discover-tools`, and `bake-settings`.
 
 Priority: P0 for parity and safe profile transitions.

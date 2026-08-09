@@ -74,12 +74,10 @@ func Register(r sdk.Registrar) {
 		Name:     "BattleTech ProductVersion",
 		Provider: gameVersion,
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "battletech-added-files-adoption",
-		Name:    "BattleTech added-files adoption",
-		Trigger: sdk.EventAddedFiles,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex copies single-owner generated files back into that mod's staging folder during added-files. DMM needs a reusable new-file adoption runtime before enabling that parity behavior.",
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventAddedFiles,
+		Name:    "Adopt generated BattleTech mod files",
+		Handler: adoptGeneratedFiles,
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-battletech extension source",

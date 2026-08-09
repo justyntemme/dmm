@@ -8827,6 +8827,168 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	}
 }
 
+func TestDeployAdoptsNewFilesBeforePlanning(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Adoption Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999002"
+	var observed []sdk.AddedFile
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "adoptiongame",
+		Name:    "Adoption Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"adoptiongame"},
+				VortexGameID: "adoptiongame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "adopt-root", TargetRoot: ""})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventAddedFiles,
+				Name:  "Adopt generated file",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					observed = append([]sdk.AddedFile(nil), input.AddedFiles...)
+					var result sdk.EventHandlerResult
+					for _, file := range input.AddedFiles {
+						if len(file.Candidates) != 1 {
+							continue
+						}
+						candidate := file.Candidates[0]
+						targetRel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(file.TargetRelative)))
+						target := filepath.Join(candidate.StagingPath, filepath.FromSlash(targetRel))
+						if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+							return sdk.EventHandlerResult{}, err
+						}
+						source, err := os.Open(file.FilePath)
+						if err != nil {
+							return sdk.EventHandlerResult{}, err
+						}
+						dest, err := os.Create(target)
+						if err != nil {
+							_ = source.Close()
+							return sdk.EventHandlerResult{}, err
+						}
+						_, copyErr := io.Copy(dest, source)
+						closeErr := errors.Join(source.Close(), dest.Close())
+						if copyErr != nil {
+							return sdk.EventHandlerResult{}, copyErr
+						}
+						if closeErr != nil {
+							return sdk.EventHandlerResult{}, closeErr
+						}
+						if err := os.Remove(file.FilePath); err != nil {
+							return sdk.EventHandlerResult{}, err
+						}
+						result.AdoptedFiles = append(result.AdoptedFiles, sdk.AdoptedFile{
+							InstalledModID:  candidate.InstalledModID,
+							StagingRelative: targetRel,
+							TargetRelative:  targetRel,
+						})
+					}
+					return result, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Adoption Game",
+		InstallDir:  "Adoption Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "adoptiongame", "mods", "1", "files", "2")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "Mods", "Example"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "Mods", "Example", "mod.json"), []byte(`{"name":"Example"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "adopt-root",
+		PlannerID: "adoptiongame:root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Mods/Example/mod.json",
+			TargetRelative:  "Mods/Example/mod.json",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "adoptiongame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Example Mod",
+		ArchivePath:    filepath.Join(t.TempDir(), "adoption.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("initial deploy status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	generated := filepath.Join(gamePath, "Mods", "Example", "generated.json")
+	if err := os.WriteFile(generated, []byte(`{"generated":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("second deploy status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(observed) != 1 || observed[0].TargetRelative != "Mods/Example/generated.json" || len(observed[0].Candidates) != 1 || observed[0].Candidates[0].InstalledModID != mod.ID {
+		t.Fatalf("observed added files = %+v", observed)
+	}
+	body, err := os.ReadFile(filepath.Join(gamePath, "Mods", "Example", "generated.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != `{"generated":true}` {
+		t.Fatalf("generated deployed body = %q", string(body))
+	}
+	updated, err := srv.db.InstalledModForSteamApp(context.Background(), appID, mod.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := parseStagedManifest(updated.ManifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]struct{}{}
+	for _, file := range manifest.Files {
+		paths[file.Path] = struct{}{}
+	}
+	if _, ok := paths["Mods/Example/generated.json"]; !ok {
+		t.Fatalf("updated manifest missing adopted file: %+v", manifest.Files)
+	}
+}
+
 func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Lifecycle Game")

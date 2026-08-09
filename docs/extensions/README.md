@@ -23,6 +23,7 @@ The runtime source of truth is still the compiled Go extension registered under 
 ## Current First-Party Notes
 
 - [Stardew Valley](games/stardew-valley.md)
+- [BattleTech](games/battletech.md)
 - [Bastion](games/bastion.md)
 - [Blasphemous](games/blasphemous.md)
 - [Braid](games/braid.md)

@@ -885,6 +885,7 @@ func (r Registry) RunEventHandlers(ctx context.Context, appID, event string, inp
 		}
 		out.Notices = append(out.Notices, next.Notices...)
 		out.Messages = append(out.Messages, next.Messages...)
+		out.AdoptedFiles = append(out.AdoptedFiles, next.AdoptedFiles...)
 	}
 	return out, nil
 }

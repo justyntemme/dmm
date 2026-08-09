@@ -5844,6 +5844,9 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 		"files":         len(applied),
 		"source":        source,
 	})
+	if err := s.updateAddedFilesSnapshot(ctx, appID, 0, applied); err != nil {
+		s.logger.Warn("new-file snapshot update failed", "job_id", jobID, "app_id", appID, "source", source, "error", err)
+	}
 	if err := s.runDeploymentEventHandlers(ctx, appID, gameext.EventDidDeploy, source, plan, applied); err != nil {
 		s.logger.Warn("post-deployment extension event failed", "job_id", jobID, "app_id", appID, "source", source, "event", gameext.EventDidDeploy, "error", err)
 	}
@@ -5937,6 +5940,9 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 		"action": "purged",
 		"files":  len(files),
 	})
+	if err := s.updateAddedFilesSnapshot(r.Context(), appID, 0, nil); err != nil {
+		s.logger.Warn("new-file snapshot update after purge failed", "job_id", job.ID, "app_id", appID, "error", err)
+	}
 	if err := s.runDeploymentEventHandlers(r.Context(), appID, gameext.EventDidPurge, "purge", deploy.Plan{}, files); err != nil {
 		s.logger.Warn("post-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", gameext.EventDidPurge, "error", err)
 	}
@@ -6424,6 +6430,9 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		"files":  result.DeploymentFilesPurged,
 	})
 	if result.DeploymentFilesPurged > 0 {
+		if err := s.updateAddedFilesSnapshot(r.Context(), appID, 0, nil); err != nil {
+			s.logger.Warn("new-file snapshot update after reset purge failed", "job_id", job.ID, "app_id", appID, "error", err)
+		}
 		if err := s.runDeploymentEventHandlers(r.Context(), appID, gameext.EventDidPurge, "reset", deploy.Plan{}, files); err != nil {
 			s.logger.Warn("post-reset purge extension event failed", "job_id", job.ID, "app_id", appID, "event", gameext.EventDidPurge, "error", err)
 		}
@@ -10194,6 +10203,17 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		return deploy.Plan{}, err
 	}
 	defaultStrategy := s.deploymentStrategyForProfile(appID, profile)
+	adopted, err := s.processAddedFilesBeforeDeploy(ctx, game, profile.ID, mods, managedFiles)
+	if err != nil {
+		return deploy.Plan{}, err
+	}
+	if adopted > 0 {
+		mods, err = s.db.InstalledModsForSteamApp(ctx, appID)
+		if err != nil {
+			return deploy.Plan{}, err
+		}
+		s.logger.Info("reloaded installed mods after extension file adoption", "app_id", appID, "profile_id", profile.ID, "adopted", adopted)
+	}
 
 	active, err := s.activeDeploymentMappings(ctx, game, mods)
 	if err != nil {

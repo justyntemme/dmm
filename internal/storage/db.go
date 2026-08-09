@@ -1998,6 +1998,35 @@ WHERE g.steam_app_id = ? AND im.id = ?
 	return scanInstalledMod(row)
 }
 
+func (db *DB) UpdateInstalledModManifest(ctx context.Context, installedModID int64, manifestJSON string) error {
+	if installedModID <= 0 {
+		return errors.New("installed mod id is required")
+	}
+	manifestJSON = strings.TrimSpace(manifestJSON)
+	if manifestJSON == "" {
+		return errors.New("installed mod manifest is required")
+	}
+	if !json.Valid([]byte(manifestJSON)) {
+		return errors.New("installed mod manifest must be valid JSON")
+	}
+	result, err := db.conn.ExecContext(ctx, `
+UPDATE installed_mods
+SET checksum_manifest_json = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`, manifestJSON, installedModID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (db *DB) installedModByID(ctx context.Context, id int64) (InstalledMod, error) {
 	row := db.conn.QueryRowContext(ctx, `
 WITH active_profile AS (
