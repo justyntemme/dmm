@@ -69,7 +69,7 @@ DMM currently has first-party Go extension registration for:
 - Vortex `supportedTools` are modeled separately from DMM primary/wrapper launch tools, so external tools such as FO4Edit, Wrye Bash, Creation Kit, Hammer, and Witcher Script Merger no longer pollute launch-option decisions.
 - Vortex `requiresLauncher` can be represented as source-backed launcher requirement metadata for store-specific launcher facts. Runtime application is still a separate capability.
 - Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, history stacks, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
-- Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions, while `internal/extensions/vortexgamecatalog` covers the remaining Vortex games as metadata/research-blocked entries with verified game IDs, Nexus domains, Steam app IDs where Vortex declares them, source links, and blocked installer/mod-type/load-order capability summaries.
+- Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions. `internal/extensions/vortexgamecatalog` is currently empty and remains only as a source-reviewed shim for future generated metadata if a verified Vortex entry cannot yet be promoted to a dedicated extension.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -79,8 +79,8 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 1.
-- Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 0.
+- Remaining placeholders are not allowed to count as full parity. If a future placeholder is introduced, it must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
 
@@ -92,14 +92,14 @@ Remaining placeholder groups from direct source calls:
 - Shared BepInEx dependency work: `game-untitledgoose` now has a dedicated source-backed DMM extension with BepInEx installer/runtime metadata.
 - DAZIP game entries promoted with a source-backed DMM `dazip` helper: `game-dragonage` and `game-dragonage2`. DMM supports Vortex `dazipInner` planning for extracted DAZIP contents, Dragon Age Origins AddIns.xml generation during `will-deploy`, and DA2 game-root addins deployment. Vortex `dazipOuter` nested submodules and historical DA2 purge migration remain blocked.
 - UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and records the blocked Unity Mod Manager tool download/patch runtime until a reusable external-tool flow exists.
-- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, `game-divinityoriginalsin2` needs `will-deploy`/`did-deploy` in-game enable reminder after multi-variant support, and `game-untitledgoose` records Vortex's migration/auto-download paths as blocked metadata until DMM has generic purge-migration and auto-acquisition runtimes.
+- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, and `game-untitledgoose` records Vortex's migration/auto-download paths as blocked metadata until DMM has generic purge-migration and auto-acquisition runtimes.
 - Merge work: Wolcen XML/MTL payload merging is now source-backed through `internal/extensions/xmlmerge`; Dragon Age Origins AddIns.xml generation is source-backed through the DAZIP helper.
 
 Observed source-backed blocker details:
 
 - `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM ports the normal Documents mods installer and version parser, but not the new-file adoption runtime.
 - `game-conanexiles/src/index.js` registers a load-order page and writes `ConanSandbox/Mods/modlist.txt` with staged `.pak` paths in user order. DMM now ports this through `internal/extensions/conanexiles` and the reusable `internal/extensions/loadorderfile` helper.
-- `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM needs a multi-logical-game-per-Steam-app resolver and source-backed deploy notification handler.
+- `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM now ports this through `internal/extensions/divinityoriginalsin2`, with source-domain-aware install planning, multi-extension target-root resolution for the shared Steam app, per-edition Proton Documents roots, and the source-backed `.pak` deploy reminder.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM now implements the managed DAZIP inner installer and AddIns.xml generation path, but nested outer `.dazip` submodules remain blocked.
 - `game-wolcen/src/index.js` registers an XML/MTL merge over the `Game` folder. DMM now ports this through `internal/extensions/wolcen` and the reusable `internal/extensions/xmlmerge` helper, which rewrites XML/MTL mappings during `will-deploy` into generated merged outputs.
 - `game-pathfinderkingmaker/src/index.js`, `game-pathfinderwrathoftherighteous/src/index.ts`, `game-gardenpaws/src/index.js`, and `game-oni/src/index.js` require `modtype-umm`. DMM now has a typed source-backed UMM helper and Mods-folder deployment for these games, but still needs Unity Mod Manager external-tool download/discovery/patch runtime before claiming full UMM runtime parity.
@@ -107,13 +107,12 @@ Observed source-backed blocker details:
 
 Implementation priority from this audit:
 
-1. Promote simple `registerGame`/`registerGameStub` placeholders into dedicated source-backed DMM extension packages so the catalog shim can shrink without inventing behavior.
+1. Keep any future `registerGame`/`registerGameStub` placeholders temporary; promote them into dedicated source-backed DMM extension packages before claiming parity.
 2. Continue using the generic generated load-order file helper for future games that write ordered text manifests.
-3. Add multi-logical-game-per-Steam-app selection, then port Divinity: Original Sin 2.
-4. Add nested `.dazip` submodule extraction and migration purge runtime to finish DAZIP parity beyond the current Dragon Age inner-archive support.
-5. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
-6. Extend the reusable XML/MTL merge helper as new source-backed merge shapes appear, and add source-backed patch-existing/setup runtime for games that modify existing user/game files outside the current deploy mapping model.
-7. Add new-file adoption runtime for `added-files`, then complete BattleTech lifecycle parity.
+3. Add nested `.dazip` submodule extraction and migration purge runtime to finish DAZIP parity beyond the current Dragon Age inner-archive support.
+4. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
+5. Extend the reusable XML/MTL merge helper as new source-backed merge shapes appear, and add source-backed patch-existing/setup runtime for games that modify existing user/game files outside the current deploy mapping model.
+6. Add new-file adoption runtime for `added-files`, then complete BattleTech lifecycle parity.
 
 ## MVP-Critical Gaps
 
@@ -138,7 +137,7 @@ DMM status:
 - Remaining gap: no first-class setup/prep action runtime equivalent to Vortex `setup`, though setup can be advertised through `GameSetups`/blocked source metadata.
 - Remaining gap: `requiresLauncher` is represented as metadata, but store-specific launcher/runtime application is not yet executed outside existing Decky Steam launch-option requests.
 - Generic installers can now use source-backed `details.stopPatterns` matching, with case-insensitive evaluation matching Vortex helper behavior.
-- Remaining gap: no explicit multi-logical-game-per-Steam-app resolver. Vortex uses this for cases such as XCOM 2/War of the Chosen and Divinity: Original Sin 2 variants, while DMM currently maps one app ID to one active extension.
+- DMM now supports source-domain-aware install planning and multi-extension target-root lookup for games where Vortex registers multiple logical game IDs under one Steam app, such as Divinity: Original Sin 2. Remaining work is broader UI/runtime selection for same-app variants outside the captured-install path when a future extension needs separate event/tool/version behavior by logical game ID.
 
 Priority: P0 for more game conversions.
 
@@ -325,7 +324,7 @@ Priority: P2 for MVP unless needed to safely adopt dirty Vortex installs.
 2. Implement generic planner helpers for source-backed `testSupportedContent`, broader wrapper-root normalization, component-choice rules, and merge-mode path transforms.
 3. Convert shared Vortex framework extensions into DMM shared helpers before converting more game extensions: common interpreters, archive engines, Gamebryo archive/plugin helpers, QuickBMS, BepInEx, UMM, dependency/rule primitives, and game-version helpers.
 4. Promote catalog entries into dedicated game extensions when a target game becomes MVP-critical, implementing the missing reusable SDK/runtime capability first and keeping every game-specific rule inside that game extension package.
-5. Add a multi-logical-game-per-app resolver before converting Vortex extensions that register multiple selectable game IDs against one Steam app.
+5. Extend the multi-logical-game-per-app resolver if a future extension needs logical-game-specific event, tool, version, or UI selection beyond the captured-install and target-root paths now implemented.
 6. Only mark an extension as parity-complete when source-reviewed behavior is implemented, tested lightly, and exposed in `/api/extensions` with enough detail to audit support.
 
 ## Guardrails

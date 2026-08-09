@@ -31,6 +31,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/devilmaycry5"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/divinityoriginalsin2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonsdogma"
@@ -214,6 +215,8 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(darksouls2.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(devilmaycry5.Extension()),
+		gameext.MustCompileExtension(divinityoriginalsin2.Extensions()[0]),
+		gameext.MustCompileExtension(divinityoriginalsin2.Extensions()[1]),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dragonage.Extension()),

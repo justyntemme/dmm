@@ -5239,7 +5239,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	if err != nil {
 		return storage.InstalledMod{}, err
 	}
-	plan, err := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(candidate.SteamAppID, extractPath, game.GamePath, filepath.Base(candidate.ArchivePath), selections)
+	plan, err := s.games.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(candidate.SteamAppID, candidate.SourceGameDomain, extractPath, game.GamePath, filepath.Base(candidate.ArchivePath), selections)
 	if err != nil {
 		if choice, ok := installerChoiceFromPlanError(err); ok {
 			return storage.InstalledMod{}, choice
@@ -9641,11 +9641,11 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		}
 		return storage.InstalledMod{}, installplan.Unsupported(inspection.InstallerKind + " installer UI is not implemented yet")
 	}
-	installPlan, err := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(appID, extractPath, game.GamePath, filepath.Base(archivePath), nil)
+	installPlan, err := s.games.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(appID, pending.Resolved.GameDomain, extractPath, game.GamePath, filepath.Base(archivePath), nil)
 	if err != nil {
 		if choice, ok := installerChoiceFromPlanError(err); ok {
 			if selections, _, presetOK := s.installerChoicePresetSelectionsForPending(ctx, appID, jobID, pending, choice.Kind); presetOK {
-				presetPlan, presetErr := s.games.BuildInstallPlanWithGamePathArchiveAndSelections(appID, extractPath, game.GamePath, filepath.Base(archivePath), selections)
+				presetPlan, presetErr := s.games.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(appID, pending.Resolved.GameDomain, extractPath, game.GamePath, filepath.Base(archivePath), selections)
 				if presetErr == nil {
 					installPlan = presetPlan
 					err = nil

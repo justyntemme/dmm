@@ -409,6 +409,93 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 }
 
+func TestRegistryBuildInstallPlanUsesNexusDomainForSharedSteamApp(t *testing.T) {
+	extensions := []Extension{
+		MustCompileExtension(sdk.Extension{
+			ID:      "shared-original",
+			Name:    "Shared Original",
+			Version: "1.0.0",
+			BuildID: "test",
+			Register: func(r sdk.Registrar) {
+				r.RegisterGame(sdk.GameRegistration{
+					SteamAppIDs:  []string{"777"},
+					NexusDomains: []string{"sharedoriginal"},
+					VortexGameID: "sharedoriginal",
+				})
+				r.RegisterTargetRoot(sdk.TargetRootSpec{
+					ID:       "original-root",
+					Name:     "Original Root",
+					Resolver: staticTestTargetRoot,
+				})
+				r.RegisterModType(installplan.ModTypeSpec{ID: "original-mod", TargetRootID: "original-root"})
+				r.RegisterInstaller(installplan.InstallerSpec{
+					ID:                "original-installer",
+					VortexInstallerID: "game-query-mod-path",
+					Priority:          100,
+					ModType:           "original-mod",
+					TargetRootID:      "original-root",
+					StripCommonRoot:   true,
+					InstructionMode:   installplan.InstructionArchiveRoot,
+				})
+			},
+		}),
+		MustCompileExtension(sdk.Extension{
+			ID:      "shared-definitive",
+			Name:    "Shared Definitive",
+			Version: "1.0.0",
+			BuildID: "test",
+			Register: func(r sdk.Registrar) {
+				r.RegisterGame(sdk.GameRegistration{
+					SteamAppIDs:  []string{"777"},
+					NexusDomains: []string{"shareddefinitive"},
+					VortexGameID: "shareddefinitive",
+				})
+				r.RegisterTargetRoot(sdk.TargetRootSpec{
+					ID:       "definitive-root",
+					Name:     "Definitive Root",
+					Resolver: staticTestTargetRoot,
+				})
+				r.RegisterModType(installplan.ModTypeSpec{ID: "definitive-mod", TargetRootID: "definitive-root"})
+				r.RegisterInstaller(installplan.InstallerSpec{
+					ID:                "definitive-installer",
+					VortexInstallerID: "game-query-mod-path",
+					Priority:          100,
+					ModType:           "definitive-mod",
+					TargetRootID:      "definitive-root",
+					StripCommonRoot:   true,
+					InstructionMode:   installplan.InstructionArchiveRoot,
+				})
+			},
+		}),
+	}
+	registry := NewRegistry(extensions)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "mod.pak"), []byte("pak"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original, err := registry.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections("777", "sharedoriginal", root, "", "mod.zip", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.ModType != "original-mod" || len(original.Instructions) != 1 || original.Instructions[0].TargetRoot != "original-root" {
+		t.Fatalf("original plan = %+v", original)
+	}
+	definitive, err := registry.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections("777", "shareddefinitive", root, "", "mod.zip", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definitive.ModType != "definitive-mod" || len(definitive.Instructions) != 1 || definitive.Instructions[0].TargetRoot != "definitive-root" {
+		t.Fatalf("definitive plan = %+v", definitive)
+	}
+}
+
+func staticTestTargetRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.TargetRootResult{}, err
+	}
+	return sdk.TargetRootResult{Path: filepath.Join(os.TempDir(), "dmm-test-target-root"), Source: "test"}, nil
+}
+
 func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
 	extension, err := CompileExtension(sdk.Extension{
 		ID:      "workshop-only",

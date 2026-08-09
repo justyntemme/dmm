@@ -343,22 +343,26 @@ const (
 )
 
 type Registry struct {
-	extensions             []Extension
-	extensionsBySteamAppID map[string]Extension
-	steamAppByNexusDomain  map[string]string
-	nexusDomainsBySteamApp map[string][]string
-	installPlans           installplan.Registry
-	runtimeRequirements    gamehandler.Registry
+	extensions                []Extension
+	extensionsBySteamAppID    map[string]Extension
+	extensionListBySteamAppID map[string][]Extension
+	extensionsByNexusDomain   map[string]Extension
+	steamAppByNexusDomain     map[string]string
+	nexusDomainsBySteamApp    map[string][]string
+	installPlans              installplan.Registry
+	runtimeRequirements       gamehandler.Registry
 }
 
 func NewRegistry(extensions []Extension) Registry {
 	installSpecs := make([]installplan.GameSpec, 0, len(extensions))
 	runtimeSpecs := make([]gamehandler.GameSpec, 0, len(extensions))
 	registry := Registry{
-		extensions:             []Extension{},
-		extensionsBySteamAppID: map[string]Extension{},
-		steamAppByNexusDomain:  map[string]string{},
-		nexusDomainsBySteamApp: map[string][]string{},
+		extensions:                []Extension{},
+		extensionsBySteamAppID:    map[string]Extension{},
+		extensionListBySteamAppID: map[string][]Extension{},
+		extensionsByNexusDomain:   map[string]Extension{},
+		steamAppByNexusDomain:     map[string]string{},
+		nexusDomainsBySteamApp:    map[string][]string{},
 	}
 	for _, extension := range extensions {
 		registry.extensions = append(registry.extensions, extension)
@@ -368,6 +372,7 @@ func NewRegistry(extensions []Extension) Registry {
 				continue
 			}
 			registry.extensionsBySteamAppID[appID] = extension
+			registry.extensionListBySteamAppID[appID] = append(registry.extensionListBySteamAppID[appID], extension)
 			domains := appendClean([]string{}, extension.NexusDomains...)
 			domains = appendClean(domains, extension.GameMetadata.CompatibleDownloads...)
 			for _, domain := range domains {
@@ -383,8 +388,20 @@ func NewRegistry(extensions []Extension) Registry {
 			if domain == "" || len(extension.SteamAppIDs) == 0 {
 				continue
 			}
+			if _, exists := registry.extensionsByNexusDomain[domain]; !exists {
+				registry.extensionsByNexusDomain[domain] = extension
+			}
 			if _, exists := registry.steamAppByNexusDomain[domain]; !exists {
 				registry.steamAppByNexusDomain[domain] = canonical(extension.SteamAppIDs[0])
+			}
+		}
+		for _, domain := range extension.GameMetadata.CompatibleDownloads {
+			domain = canonical(domain)
+			if domain == "" {
+				continue
+			}
+			if _, exists := registry.extensionsByNexusDomain[domain]; !exists {
+				registry.extensionsByNexusDomain[domain] = extension
 			}
 		}
 		if strings.TrimSpace(extension.InstallPlan.VortexGameID) != "" || len(extension.InstallPlan.SteamAppIDs) > 0 {
@@ -418,6 +435,29 @@ func (r Registry) ExtensionForSteamApp(appID string) (Extension, bool) {
 	return extension, ok
 }
 
+func (r Registry) ExtensionsForSteamApp(appID string) []Extension {
+	extensions := r.extensionListBySteamAppID[canonical(appID)]
+	if len(extensions) == 0 {
+		return []Extension{}
+	}
+	out := make([]Extension, len(extensions))
+	copy(out, extensions)
+	return out
+}
+
+func extensionMatchesSteamApp(extension Extension, appID string) bool {
+	appID = canonical(appID)
+	if appID == "" {
+		return true
+	}
+	for _, candidate := range extension.SteamAppIDs {
+		if canonical(candidate) == appID {
+			return true
+		}
+	}
+	return false
+}
+
 func (r Registry) SupportsSteamApp(appID string) bool {
 	_, ok := r.ExtensionForSteamApp(appID)
 	return ok
@@ -426,6 +466,11 @@ func (r Registry) SupportsSteamApp(appID string) bool {
 func (r Registry) SteamAppIDForNexusDomain(domain string) (string, bool) {
 	appID, ok := r.steamAppByNexusDomain[canonical(domain)]
 	return appID, ok
+}
+
+func (r Registry) ExtensionForNexusDomain(domain string) (Extension, bool) {
+	extension, ok := r.extensionsByNexusDomain[canonical(domain)]
+	return extension, ok
 }
 
 func (r Registry) NexusDomainForSteamAppID(appID string) (string, bool) {
@@ -459,14 +504,28 @@ func (r Registry) BuildInstallPlanWithGamePathAndSelections(gameID, extractedRoo
 }
 
 func (r Registry) BuildInstallPlanWithGamePathArchiveAndSelections(gameID, extractedRoot, gamePath, archiveName string, selections map[string][]string) (installplan.Plan, error) {
+	return r.buildInstallPlanWithPlatformApp(gameID, gameID, extractedRoot, gamePath, archiveName, selections)
+}
+
+func (r Registry) buildInstallPlanWithPlatformApp(platformAppID, gameID, extractedRoot, gamePath, archiveName string, selections map[string][]string) (installplan.Plan, error) {
 	options := installplan.BuildOptions{}
-	if platform, ok := r.InstallPlatformForSteamApp(gameID, gamePath); ok {
+	if platform, ok := r.InstallPlatformForSteamApp(platformAppID, gamePath); ok {
 		options.PlatformID = platform.ID
 	}
 	options.ArchiveName = strings.TrimSpace(archiveName)
 	options.GamePath = strings.TrimSpace(gamePath)
 	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
+}
+
+func (r Registry) BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(appID, domain, extractedRoot, gamePath, archiveName string, selections map[string][]string) (installplan.Plan, error) {
+	gameID := strings.TrimSpace(appID)
+	if extension, ok := r.ExtensionForNexusDomain(domain); ok && extensionMatchesSteamApp(extension, appID) {
+		if vortexGameID := strings.TrimSpace(extension.InstallPlan.VortexGameID); vortexGameID != "" {
+			gameID = vortexGameID
+		}
+	}
+	return r.buildInstallPlanWithPlatformApp(appID, gameID, extractedRoot, gamePath, archiveName, selections)
 }
 
 func (r Registry) InstallerChoiceForSteamApp(appID, kind string) (InstallerChoiceSpec, bool) {
@@ -678,20 +737,22 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 }
 
 func (r Registry) ResolveTargetRoot(ctx context.Context, appID, rootID string, input sdk.TargetRootInput) (sdk.TargetRootResult, bool, error) {
-	extension, ok := r.ExtensionForSteamApp(appID)
-	if !ok {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 {
 		return sdk.TargetRootResult{}, false, nil
 	}
 	rootID = canonical(rootID)
-	for _, spec := range extension.TargetRoots {
-		if canonical(spec.ID) != rootID {
-			continue
+	for _, extension := range extensions {
+		for _, spec := range extension.TargetRoots {
+			if canonical(spec.ID) != rootID {
+				continue
+			}
+			if spec.Resolver == nil {
+				return sdk.TargetRootResult{}, true, errors.New("target root " + spec.ID + " has no resolver")
+			}
+			result, err := spec.Resolver(ctx, input)
+			return result, true, err
 		}
-		if spec.Resolver == nil {
-			return sdk.TargetRootResult{}, true, errors.New("target root " + spec.ID + " has no resolver")
-		}
-		result, err := spec.Resolver(ctx, input)
-		return result, true, err
 	}
 	return sdk.TargetRootResult{}, false, nil
 }
