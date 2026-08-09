@@ -93,6 +93,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
@@ -196,6 +197,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
 		gameext.MustCompileExtension(witcher3.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
+		gameext.MustCompileExtension(xrebirth.Extension()),
 	)
 	return extensions
 }

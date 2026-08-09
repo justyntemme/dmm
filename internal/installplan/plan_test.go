@@ -837,6 +837,105 @@ func TestCustomInstallerBuildsPlanFromExtensionHook(t *testing.T) {
 	}
 }
 
+func TestPlannerMatchesVortexStyleStopPatternsIntoQueryModPath(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "wrapper", "t", "0001.xml"), "<language />")
+	writeFile(t, filepath.Join(root, "wrapper", "readme.txt"), "docs")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"2870"},
+		VortexGameID: "xrebirth",
+		QueryModPath: "extensions",
+		StopPatterns: []string{
+			`(^|/)t/[^/]+\.xml$`,
+		},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:xrebirth:dropin",
+			VortexInstallerID: "dropin",
+			Priority:          75,
+			ModType:           "xrebirth-dropin",
+			Match:             MatchSpec{UseGameStopPatterns: true},
+			StripCommonRoot:   true,
+			InstructionMode:   InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("2870", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:xrebirth:dropin" || len(plan.Instructions) != 2 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	for _, instruction := range plan.Instructions {
+		if !strings.HasPrefix(instruction.TargetRelative, "extensions/") {
+			t.Fatalf("target did not use queryModPath default: %+v", instruction)
+		}
+	}
+}
+
+func TestPlannerMatchesVortexStyleFileExtensionsAllMode(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "docs", "readme.md"), "readme")
+	writeFile(t, filepath.Join(root, "docs", "preview.png"), "image")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"2870"},
+		VortexGameID: "xrebirth",
+		QueryModPath: "extensions",
+		Installers: []InstallerSpec{{
+			ID:                "vortex:xrebirth:docs",
+			VortexInstallerID: "documentation",
+			Priority:          90,
+			ModType:           "xrebirth-documentation",
+			Match: MatchSpec{
+				FileExtensions:    []string{".md", ".png"},
+				FileExtensionMode: MatchModeAll,
+			},
+			StripCommonRoot: true,
+			InstructionMode: InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("2870", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:xrebirth:docs" || len(plan.Instructions) != 2 {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+func TestPlannerMatchesVortexStyleRegexAnyMode(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "ReShade", "preset.ini"), "preset")
+
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"2870"},
+		VortexGameID: "xrebirth",
+		Installers: []InstallerSpec{{
+			ID:                "vortex:xrebirth:shader",
+			VortexInstallerID: "shader-injector",
+			Priority:          65,
+			ModType:           "xrebirth-shader-injector",
+			Match: MatchSpec{
+				RegexPatterns: []string{`(^|/)ReShade/`},
+				RegexMode:     MatchModeAny,
+			},
+			StripCommonRoot: true,
+			InstructionMode: InstructionArchiveRoot,
+		}},
+	}})
+
+	plan, err := registry.Build("2870", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:xrebirth:shader" {
+		t.Fatalf("planner = %q", plan.PlannerID)
+	}
+}
+
 func writeFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

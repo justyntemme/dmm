@@ -161,28 +161,6 @@ func sourceURL(dir string) string {
 	return "https://github.com/Nexus-Mods/Vortex/tree/" + vortexCommit + "/extensions/games/" + strings.TrimSpace(dir) + "/src"
 }
 
-func xRebirthStopPatterns() []string {
-	return []string{
-		`[^/]*\.cat$`,
-		`[^/]*\.dat$`,
-		`(^|/)t/[^/]+\.xml$`,
-		`(^|/)lang\.dat$`,
-		`(^|/)assets/.+`,
-		`(^|/)libraries/.+\.xml$`,
-		`(^|/)maps/.+\.xml$`,
-		`(^|/)md/.+\.xml$`,
-		`(^|/)cinematics/.+`,
-		`(^|/)aiscripts/.+\.xml$`,
-		`(^|/)voice-[^/]+/.+\.(ogg|wav)$`,
-		`(^|/)ui/.+`,
-		`(^|/)sfx/.+`,
-		`[^/]*\.cur$`,
-		`[^/]*\.(ogg|mp3|wav)$`,
-		`[^/]*\.(mkv|mp4|webm)$`,
-		`[^/]*\.ini$`,
-	}
-}
-
 var games = []GameSpec{
 	{VortexDir: "game-7daystodie", ID: "7daystodie", Name: "7 Days to Die", SteamAppIDs: []string{"251570"}, HasCustomInstallers: true, HasModTypes: true, HasLoadOrder: true},
 	{VortexDir: "game-ahatintime", ID: "ahatintime", Name: "A Hat in Time", SteamAppIDs: []string{"253230"}, HasCustomInstallers: true},
@@ -330,18 +308,4 @@ var games = []GameSpec{
 	{VortexDir: "game-wolcen", ID: "wolcenlordsofmayhem", Name: "Wolcen: Lords of Mayhem", SteamAppIDs: []string{"424370"}, Notes: []string{"Vortex declares merge behavior for XML/MTL files; DMM needs source-reviewed merge runtime before full support."}},
 	{VortexDir: "game-worldoftanks", ID: "worldoftanks", Name: "World of Tanks", AllowNoSteamAppID: true, Notes: []string{"Vortex uses Wargaming registry discovery and versioned res_mods targeting; DMM needs a verified Linux/Deck discovery path before full support."}},
 	{VortexDir: "game-xcom2", ID: "xcom2", Name: "XCOM 2", SteamAppIDs: []string{"268500"}, HasCustomInstallers: true, HasLoadOrder: true, Notes: []string{"Vortex also registers War of the Chosen against Steam app 268500; DMM needs a multi-variant-per-app resolver before exposing both separately."}},
-	{
-		VortexDir:           "game-xrebirth",
-		ID:                  "xrebirth",
-		Name:                "X Rebirth",
-		SteamAppIDs:         []string{"2870"},
-		ExecutableRelative:  "XRebirth.exe",
-		RequiredFiles:       []string{"XRebirth.exe"},
-		QueryModPath:        "extensions",
-		MergeMode:           sdk.GameMergeModeAll,
-		StopPatterns:        xRebirthStopPatterns(),
-		Environment:         map[string]string{"SteamAPPId": "2870"},
-		HasCustomInstallers: true,
-		Notes:               []string{"Vortex combines a hand-written content.xml installer with table-declared installers and health checks; DMM needs source-reviewed XML metadata extraction and health-check runtime parity."},
-	},
 }

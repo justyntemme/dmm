@@ -171,4 +171,4 @@ Source-backed catalog coverage:
 - [x] `game-worldoftanks` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-x4foundations` - DMM counterpart: `internal/extensions/x4foundations`.
 - [x] `game-xcom2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
-- [x] `game-xrebirth` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-xrebirth` - DMM counterpart: `internal/extensions/xrebirth`.

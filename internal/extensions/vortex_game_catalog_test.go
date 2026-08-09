@@ -64,10 +64,6 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 		t.Fatalf("Neverwinter domains = %+v, want neverwinter", nwn.NexusDomains)
 	}
 
-	xrebirth := summaryByID(t, registry, "xrebirth")
-	if xrebirth.Capabilities.GameRegistration == nil || xrebirth.Capabilities.GameRegistration.QueryModPath != "extensions" || len(xrebirth.Capabilities.GameRegistration.StopPatterns) == 0 {
-		t.Fatalf("X Rebirth metadata = %+v", xrebirth.Capabilities.GameRegistration)
-	}
 }
 
 func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.ExtensionSummary {

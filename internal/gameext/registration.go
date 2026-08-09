@@ -3,6 +3,7 @@ package gameext
 import (
 	"errors"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -59,6 +60,9 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 		Environment:         copyRegistrationMap(spec.Environment),
 	}
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
+	r.extension.InstallPlan.QueryModPath = strings.TrimSpace(spec.QueryModPath)
+	r.extension.InstallPlan.QueryModPathDynamic = spec.QueryModPathDynamic
+	r.extension.InstallPlan.StopPatterns = appendClean(nil, spec.StopPatterns...)
 	r.extension.RuntimeRequirements.SteamAppID = firstClean(spec.SteamAppIDs)
 	if gameID := strings.TrimSpace(spec.VortexGameID); gameID != "" {
 		r.extension.InstallPlan.VortexGameID = gameID
@@ -693,6 +697,18 @@ func validateInstallPlanTargetRoots(spec installplan.GameSpec, targetRoots []sdk
 
 func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 	var errs []error
+	if !spec.QueryModPathDynamic {
+		if err := validateRelativeOrRoot(spec.QueryModPath); err != nil {
+			errs = append(errs, errors.New("game query mod path: "+err.Error()))
+		}
+	} else if strings.ContainsAny(spec.QueryModPath, "\x00\r\n") {
+		errs = append(errs, errors.New("game query mod path must not contain control line breaks"))
+	}
+	for _, pattern := range spec.StopPatterns {
+		if err := validateRegexPattern(pattern); err != nil {
+			errs = append(errs, errors.New("game stop pattern: "+err.Error()))
+		}
+	}
 	switch strings.TrimSpace(spec.Deployment.DefaultStrategy) {
 	case "", installplan.DeployStrategyHardlink, installplan.DeployStrategySymlink, installplan.DeployStrategyCopy:
 	default:
@@ -745,6 +761,7 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		if err := validateRelativeOrRoot(installer.TargetRoot); err != nil {
 			errs = append(errs, errors.New("installer "+id+" target root: "+err.Error()))
 		}
+		errs = append(errs, validateInstallerMatch(id, installer.Match, spec.StopPatterns)...)
 		for _, generated := range installer.GeneratedFiles {
 			if err := validateRelativePath(generated.FromGameRelative); err != nil {
 				errs = append(errs, errors.New("installer "+id+" generated source path: "+err.Error()))
@@ -760,6 +777,48 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateInstallerMatch(installerID string, match installplan.MatchSpec, gameStopPatterns []string) []error {
+	var errs []error
+	switch strings.TrimSpace(match.FileExtensionMode) {
+	case "", installplan.MatchModeAny, installplan.MatchModeAll:
+	default:
+		errs = append(errs, errors.New("installer "+installerID+" file extension mode must be any or all"))
+	}
+	switch strings.TrimSpace(match.RegexMode) {
+	case "", installplan.MatchModeAny, installplan.MatchModeAll:
+	default:
+		errs = append(errs, errors.New("installer "+installerID+" regex mode must be any or all"))
+	}
+	for _, extension := range match.FileExtensions {
+		if err := validateFileExtension(extension); err != nil {
+			errs = append(errs, errors.New("installer "+installerID+" file extension: "+err.Error()))
+		}
+	}
+	for _, pattern := range match.RegexPatterns {
+		if err := validateRegexPattern(pattern); err != nil {
+			errs = append(errs, errors.New("installer "+installerID+" regex pattern: "+err.Error()))
+		}
+	}
+	if match.UseGameStopPatterns && len(gameStopPatterns) == 0 {
+		errs = append(errs, errors.New("installer "+installerID+" uses game stop patterns but the game registered none"))
+	}
+	return errs
+}
+
+func validateRegexPattern(pattern string) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return errors.New("pattern is required")
+	}
+	if strings.ContainsAny(pattern, "\x00\r\n") {
+		return errors.New("pattern must not contain control line breaks")
+	}
+	if _, err := regexp.Compile(pattern); err != nil {
+		return errors.New("invalid regex: " + err.Error())
+	}
+	return nil
 }
 
 func validateInstallPlatforms(platforms []sdk.InstallPlatformSpec) []error {

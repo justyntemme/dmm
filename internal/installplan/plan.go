@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,11 +91,14 @@ type BuildOptions struct {
 }
 
 type GameSpec struct {
-	SteamAppIDs  []string
-	VortexGameID string
-	Deployment   DeploymentSpec
-	ModTypes     []ModTypeSpec
-	Installers   []InstallerSpec
+	SteamAppIDs         []string
+	VortexGameID        string
+	QueryModPath        string
+	QueryModPathDynamic bool
+	StopPatterns        []string
+	Deployment          DeploymentSpec
+	ModTypes            []ModTypeSpec
+	Installers          []InstallerSpec
 }
 
 type DeploymentSpec struct {
@@ -250,7 +254,17 @@ type MatchSpec struct {
 	ExcludeTopLevelDirs   []string
 	RequireTopLevelDirs   []string
 	FileBasenames         []string
+	FileExtensions        []string
+	FileExtensionMode     string
+	RegexPatterns         []string
+	RegexMode             string
+	UseGameStopPatterns   bool
 }
+
+const (
+	MatchModeAny = "any"
+	MatchModeAll = "all"
+)
 
 type PayloadSpec struct {
 	FileBasenames []string
@@ -400,7 +414,7 @@ func buildFromSpec(spec GameSpec, requestedGameID, extractedRoot string, options
 		if platformID != "" && strings.TrimSpace(installer.PlatformID) != "" && canonicalGameID(installer.PlatformID) != platformID {
 			continue
 		}
-		if !matchesInstaller(extractedRoot, installer) {
+		if !matchesInstaller(extractedRoot, spec, installer) {
 			continue
 		}
 		plan, err := buildWithInstaller(spec, installer, requestedGameID, extractedRoot, options)
@@ -485,7 +499,13 @@ func targetRootForInstaller(spec GameSpec, installer InstallerSpec) string {
 			return strings.TrimSpace(modTypeSpec.TargetRoot)
 		}
 	}
-	return strings.TrimSpace(installer.TargetRoot)
+	if target := strings.TrimSpace(installer.TargetRoot); target != "" {
+		return target
+	}
+	if !spec.QueryModPathDynamic {
+		return strings.TrimSpace(spec.QueryModPath)
+	}
+	return ""
 }
 
 func targetRootIDForInstaller(spec GameSpec, installer InstallerSpec) string {
@@ -1228,7 +1248,7 @@ func manifestStagingRoot(extractedRoot, modRoot, manifestFileName string) string
 	return "mod"
 }
 
-func matchesInstaller(extractedRoot string, installer InstallerSpec) bool {
+func matchesInstaller(extractedRoot string, spec GameSpec, installer InstallerSpec) bool {
 	if installer.CustomMatch != nil {
 		return installer.CustomMatch(extractedRoot)
 	}
@@ -1244,6 +1264,15 @@ func matchesInstaller(extractedRoot string, installer InstallerSpec) bool {
 		}
 	}
 	if len(match.FileBasenames) > 0 && !hasFileBasename(extractedRoot, match.FileBasenames) {
+		return false
+	}
+	if len(match.FileExtensions) > 0 && !matchFileExtensions(extractedRoot, match.FileExtensions, match.FileExtensionMode) {
+		return false
+	}
+	if len(match.RegexPatterns) > 0 && !matchRegexPatterns(extractedRoot, match.RegexPatterns, match.RegexMode) {
+		return false
+	}
+	if match.UseGameStopPatterns && !matchGameStopPatterns(extractedRoot, spec.StopPatterns) {
 		return false
 	}
 	if strings.TrimSpace(match.ManifestFileName) != "" {
@@ -1295,6 +1324,124 @@ func hasFileBasename(root string, basenames []string) bool {
 		return nil
 	})
 	return found
+}
+
+func matchFileExtensions(root string, extensions []string, mode string) bool {
+	files, err := dataFileRelPaths(root)
+	if err != nil || len(files) == 0 {
+		return false
+	}
+	wanted := map[string]struct{}{}
+	for _, extension := range extensions {
+		extension = strings.ToLower(strings.TrimSpace(extension))
+		if extension == "" {
+			continue
+		}
+		if !strings.HasPrefix(extension, ".") {
+			extension = "." + extension
+		}
+		wanted[extension] = struct{}{}
+	}
+	if len(wanted) == 0 {
+		return false
+	}
+	switch canonicalMatchMode(mode) {
+	case MatchModeAll:
+		for _, file := range files {
+			if !fileMatchesExtension(file, wanted) {
+				return false
+			}
+		}
+		return true
+	default:
+		for _, file := range files {
+			if fileMatchesExtension(file, wanted) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func fileMatchesExtension(file string, extensions map[string]struct{}) bool {
+	file = strings.ToLower(filepath.ToSlash(file))
+	for extension := range extensions {
+		if strings.HasSuffix(file, extension) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchGameStopPatterns(root string, patterns []string) bool {
+	normalized := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if !strings.HasPrefix(pattern, "(?i)") {
+			pattern = "(?i)" + pattern
+		}
+		normalized = append(normalized, pattern)
+	}
+	return matchRegexPatterns(root, normalized, MatchModeAny)
+}
+
+func matchRegexPatterns(root string, patterns []string, mode string) bool {
+	files, err := dataFileRelPaths(root)
+	if err != nil || len(files) == 0 {
+		return false
+	}
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		expression, err := regexp.Compile(pattern)
+		if err != nil {
+			return false
+		}
+		compiled = append(compiled, expression)
+	}
+	if len(compiled) == 0 {
+		return false
+	}
+	fileMatches := func(file string) bool {
+		file = filepath.ToSlash(file)
+		for _, expression := range compiled {
+			if expression.MatchString(file) {
+				return true
+			}
+		}
+		return false
+	}
+	switch canonicalMatchMode(mode) {
+	case MatchModeAll:
+		for _, file := range files {
+			if !fileMatches(file) {
+				return false
+			}
+		}
+		return true
+	default:
+		for _, file := range files {
+			if fileMatches(file) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func canonicalMatchMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case MatchModeAll:
+		return MatchModeAll
+	default:
+		return MatchModeAny
+	}
 }
 
 func findPayloadFile(root string, payload PayloadSpec) (string, bool) {
