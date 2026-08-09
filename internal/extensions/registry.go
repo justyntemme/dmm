@@ -114,6 +114,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexgamecatalog"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsharedsystems"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexuisurfaces"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vtmbloodlines"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warthunder"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
@@ -251,6 +252,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(totalwarrome2.Extension()),
 		gameext.MustCompileExtension(totalwarromeremastered.Extension()),
 		gameext.MustCompileExtension(transportfever2.Extension()),
+		gameext.MustCompileExtension(vtmbloodlines.Extension()),
 		gameext.MustCompileExtension(warno.Extension()),
 		gameext.MustCompileExtension(warthunder.Extension()),
 		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
