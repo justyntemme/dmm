@@ -69,6 +69,7 @@ type Extension struct {
 	StateStores              []sdk.StateStoreSpec
 	StatePersistors          []sdk.StatePersistorSpec
 	StateMigrations          []sdk.StateMigrationSpec
+	HistoryStacks            []sdk.HistoryStackSpec
 	HealthChecks             []sdk.HealthCheckSpec
 	AttributeExtractors      []sdk.AttributeExtractorSpec
 	StartHooks               []sdk.StartHookSpec
@@ -123,6 +124,7 @@ type StateReducerSpec = sdk.StateReducerSpec
 type StateStoreSpec = sdk.StateStoreSpec
 type StatePersistorSpec = sdk.StatePersistorSpec
 type StateMigrationSpec = sdk.StateMigrationSpec
+type HistoryStackSpec = sdk.HistoryStackSpec
 type HealthCheckSpec = sdk.HealthCheckSpec
 type AttributeExtractorSpec = sdk.AttributeExtractorSpec
 type StartHookSpec = sdk.StartHookSpec
@@ -235,6 +237,7 @@ type ExtensionCapabilities struct {
 	StateStores              []FeatureSummary         `json:"state_stores,omitempty"`
 	StatePersistors          []FeatureSummary         `json:"state_persistors,omitempty"`
 	StateMigrations          []FeatureSummary         `json:"state_migrations,omitempty"`
+	HistoryStacks            []FeatureSummary         `json:"history_stacks,omitempty"`
 	HealthChecks             []FeatureSummary         `json:"health_checks,omitempty"`
 	AttributeExtractors      []FeatureSummary         `json:"attribute_extractors,omitempty"`
 	StartHooks               []FeatureSummary         `json:"start_hooks,omitempty"`
@@ -1264,6 +1267,15 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message:     migration.Message,
 		})
 	}
+	for _, history := range extension.HistoryStacks {
+		summary.Capabilities.HistoryStacks = append(summary.Capabilities.HistoryStacks, FeatureSummary{
+			ID:      history.ID,
+			Name:    history.Name,
+			Scope:   history.Scope,
+			Status:  defaultString(history.Status, sdk.CapabilityStatusReady),
+			Message: history.Message,
+		})
+	}
 	for _, check := range extension.HealthChecks {
 		summary.Capabilities.HealthChecks = append(summary.Capabilities.HealthChecks, FeatureSummary{
 			ID:      check.ID,
@@ -1336,6 +1348,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.StateStores)
 	sortFeatureSummaries(summary.Capabilities.StatePersistors)
 	sortFeatureSummaries(summary.Capabilities.StateMigrations)
+	sortFeatureSummaries(summary.Capabilities.HistoryStacks)
 	sortFeatureSummaries(summary.Capabilities.HealthChecks)
 	sortFeatureSummaries(summary.Capabilities.AttributeExtractors)
 	sortFeatureSummaries(summary.Capabilities.StartHooks)

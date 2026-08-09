@@ -372,6 +372,13 @@ func (r *Registrar) RegisterStateMigration(spec sdk.StateMigrationSpec) {
 	r.extension.StateMigrations = append(r.extension.StateMigrations, spec)
 }
 
+func (r *Registrar) RegisterHistoryStack(spec sdk.HistoryStackSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.HistoryStacks = append(r.extension.HistoryStacks, spec)
+}
+
 func (r *Registrar) RegisterHealthCheck(spec sdk.HealthCheckSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -505,6 +512,9 @@ func validateExtension(extension Extension) error {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
 	errs = append(errs, validateStateMigrations(extension.StateMigrations)...)
+	errs = append(errs, validateStatusedScoped("history stack", extension.HistoryStacks, func(spec sdk.HistoryStackSpec) (string, string, string, string, string) {
+		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
+	})...)
 	errs = append(errs, validateStatusedNamed("health check", extension.HealthChecks, func(spec sdk.HealthCheckSpec) (string, string, string, string) {
 		return spec.ID, spec.Name, spec.Status, spec.Message
 	})...)
@@ -566,6 +576,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.StateStores) > 0 ||
 		len(extension.StatePersistors) > 0 ||
 		len(extension.StateMigrations) > 0 ||
+		len(extension.HistoryStacks) > 0 ||
 		len(extension.HealthChecks) > 0 ||
 		len(extension.AttributeExtractors) > 0 ||
 		len(extension.StartHooks) > 0

@@ -41,6 +41,8 @@ High-volume Vortex calls:
 - `context.registerGameInfoProvider`: 2 call sites.
 - `context.registerProfileFile`: 2 call sites.
 - `context.registerActionCheck`: 2 call sites.
+- `context.registerControlWrapper`: 1 call site.
+- `context.registerHistoryStack`: 1 call site.
 - `context.registerHealthCheck`: 1 call site.
 - `context.registerStartHook`: 1 call site.
 
@@ -49,6 +51,8 @@ Frequent Vortex event names:
 - `onAsync`: `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `will-enable-mods`, `added-files`, `download-script-extender`, `update-conflicts-and-rules`, `apply-settings`.
 - `events.on`: `gamemode-activated`, `did-install-mod`, `profile-will-change`, `profile-did-change`, `mod-enabled`, `mods-enabled`, `will-install-dependencies`, `autosort-plugins`, `collection-postprocess-complete`, `set-plugin-list`, `did-update-masterlist`, `mod-content-changed`.
 - `emitAndAwait`: `purge-mods-in-path`, `deploy-single-mod`, `browse-for-download`, `nexus-download`, `discover-tools`, `bake-settings`, `unfulfilled-rules`.
+- Literal `context.registerAPI` names found in source: `lootSortAsync`, `isBlueprintPlugin`, `ummAddGame`, `bepinexAddGame`, `getHashVersion`, `qbmsRegisterGame`, `qbmsList`, `qbmsExtract`, `qbmsWrite`, and `qbmsReimport`.
+- Direct `context.api.*` usage is dominated by Redux state reads/writes (`store`, `getState`), event bus use (`events`, `onAsync`, `onStateChange`, `emitAndAwait`), notifications/dialogs (`sendNotification`, `showErrorNotification`, `showDialog`), stylesheets, metadata lookup/save, directory selection, and `addMetaServer`.
 
 ## Current DMM SDK Coverage
 
@@ -63,7 +67,7 @@ DMM currently has first-party Go extension registration for:
 - Extension-declared Vortex `registerGame` metadata now covers executable path, required files, static or dynamic query-mod-path signals, merge mode, cleanup requirement, stop patterns, compatible download domains, and environment key/value metadata.
 - Vortex `supportedTools` are modeled separately from DMM primary/wrapper launch tools, so external tools such as FO4Edit, Wrye Bash, Creation Kit, Hammer, and Witcher Script Merger no longer pollute launch-option decisions.
 - Vortex `requiresLauncher` can be represented as source-backed launcher requirement metadata for store-specific launcher facts. Runtime application is still a separate capability.
-- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
+- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, history stacks, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
 - Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions, while `internal/extensions/vortexgamecatalog` covers the remaining Vortex games as metadata/research-blocked entries with verified game IDs, Nexus domains, Steam app IDs where Vortex declares them, source links, and blocked installer/mod-type/load-order capability summaries.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 

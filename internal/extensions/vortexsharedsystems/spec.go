@@ -73,6 +73,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionTest(blockedTest("gamebryo-oblivion-fonts", "Oblivion font settings check", "gamemode-activated"))
 	r.RegisterExtensionTest(blockedTest("gamebryo-skyrim-fonts", "Skyrim font settings check", "gamemode-activated"))
 	r.RegisterExtensionMainPage(blockedMainPage("morrowind-plugins", "Morrowind plugins", "plugins"))
+	r.RegisterHistoryStack(sdk.HistoryStackSpec{
+		ID:      "plugins",
+		Name:    "Gamebryo plugin history stack",
+		Scope:   "gamebryo-plugins",
+		Status:  sdk.CapabilityStatusBlocked,
+		Message: blockedMessage,
+	})
 }
 
 func registerDependencyManager(r sdk.Registrar) {

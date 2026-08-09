@@ -77,6 +77,7 @@ type Registrar interface {
 	RegisterStateStore(StateStoreSpec)
 	RegisterStatePersistor(StatePersistorSpec)
 	RegisterStateMigration(StateMigrationSpec)
+	RegisterHistoryStack(HistoryStackSpec)
 	RegisterHealthCheck(HealthCheckSpec)
 	RegisterAttributeExtractor(AttributeExtractorSpec)
 	RegisterStartHook(StartHookSpec)
@@ -565,6 +566,14 @@ type StateMigrationSpec struct {
 	ToVersion   string
 	Status      string
 	Message     string
+}
+
+type HistoryStackSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
 }
 
 type HealthCheckSpec struct {

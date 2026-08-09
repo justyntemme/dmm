@@ -192,6 +192,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{ID: "rules", Name: "Rules"})
 			r.RegisterStateStore(sdk.StateStoreSpec{ID: "load-order", Name: "Load order", Scope: "profile"})
 			r.RegisterStateMigration(sdk.StateMigrationSpec{ID: "load-order-1", Name: "Load order migration", FromVersion: "0.0.1", ToVersion: "0.0.2"})
+			r.RegisterHistoryStack(sdk.HistoryStackSpec{ID: "plugins", Name: "Plugin history", Scope: "plugins"})
 			r.RegisterHealthCheck(sdk.HealthCheckSpec{ID: "sample-health", Name: "Sample health"})
 			r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{ID: "manifest", Name: "Manifest metadata", Target: "mods"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
@@ -380,6 +381,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.StateMigrations) != 1 || summary.Capabilities.StateMigrations[0].FromVersion != "0.0.1" {
 		t.Fatalf("state migration capabilities = %+v", summary.Capabilities.StateMigrations)
+	}
+	if len(summary.Capabilities.HistoryStacks) != 1 || summary.Capabilities.HistoryStacks[0].ID != "plugins" {
+		t.Fatalf("history stack capabilities = %+v", summary.Capabilities.HistoryStacks)
 	}
 	if len(summary.Capabilities.HealthChecks) != 1 || summary.Capabilities.HealthChecks[0].ID != "sample-health" {
 		t.Fatalf("health check capabilities = %+v", summary.Capabilities.HealthChecks)

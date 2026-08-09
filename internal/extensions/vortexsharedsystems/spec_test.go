@@ -22,6 +22,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames", "local-game-settings")
 	assertBlocked(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts")
+	assertBlocked(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
 }
 
 func assertBlocked(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {
