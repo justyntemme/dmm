@@ -696,6 +696,8 @@ const deckyRuntimeStyles = `
   border: 0;
   box-shadow: none !important;
   cursor: pointer;
+  display: flex;
+  flex: 1 1 0;
   outline: none !important;
   pointer-events: auto;
   -webkit-tap-highlight-color: transparent;
@@ -705,8 +707,16 @@ const deckyRuntimeStyles = `
 .dmm-decky-tab:focus,
 .dmm-decky-tab:focus-visible,
 .dmm-decky-tab:focus-within {
+  background-image: none !important;
+  border-color: transparent !important;
   box-shadow: none !important;
+  filter: none !important;
   outline: none !important;
+}
+.dmm-decky-tab::before,
+.dmm-decky-tab::after {
+  content: none !important;
+  display: none !important;
 }
 .dmm-action-grid,
 .dmm-action-grid > *,
@@ -729,6 +739,21 @@ const deckyRuntimeStyles = `
 .dmm-settings-row span,
 .dmm-settings-row div {
   min-width: 0;
+}
+.dmm-settings-section {
+  align-content: start;
+  align-items: stretch;
+  display: grid;
+  gap: 10px;
+  grid-auto-rows: max-content;
+  min-height: auto !important;
+  overflow: visible;
+}
+.dmm-settings-section > * {
+  min-width: 0;
+}
+.dmm-settings-row {
+  min-height: 60px;
 }
   .dmm-focus-card-focused,
   .dmm-settings-row-focused {
@@ -3693,7 +3718,7 @@ const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
   gridAutoRows: "auto",
-  minHeight: "132px",
+  minHeight: "144px",
   overflow: "visible"
 };
 
@@ -3701,9 +3726,9 @@ const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
   alignItems: "stretch",
-  gap: "12px",
+  gap: "10px",
   gridAutoRows: "auto",
-  minHeight: "96px",
+  minHeight: "unset",
   overflow: "visible"
 };
 
@@ -3773,7 +3798,7 @@ function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", di
     fontWeight: 900,
     justifyContent: "center",
     lineHeight: 1.22,
-    minHeight: "52px",
+    minHeight: "56px",
     opacity: disabled ? 0.52 : 1,
     padding: "12px 10px",
     textAlign: "center",
@@ -3861,7 +3886,7 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     display: "grid",
     gap: "10px",
     gridTemplateColumns: "minmax(0, 1fr) 48px",
-    minHeight: "64px",
+    minHeight: "60px",
     opacity: disabled ? 0.62 : 1,
     padding: "12px",
     scrollMarginBlock: "18px",
@@ -3904,7 +3929,7 @@ function FreshToggleRow(props: { label: string; checked: boolean; disabled?: boo
       }}
       style={freshToggleRowStyle(props.disabled)}
     >
-      <span style={{ fontSize: "12px", fontWeight: 900, lineHeight: 1.2, overflowWrap: "anywhere" }}>{props.label}</span>
+      <span style={{ fontSize: "12px", fontWeight: 900, lineHeight: 1.22, overflowWrap: "anywhere" }}>{props.label}</span>
       <span aria-hidden style={freshToggleSwitchStyle(props.checked, props.disabled)}>
         <span style={freshToggleKnobStyle} />
       </span>
@@ -5230,7 +5255,7 @@ function FreshDeckyModManagerRoute() {
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
           <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
         </Focusable>
-        <div style={freshSettingsCardStyle}>
+        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
           <div style={freshSettingsSectionTitleStyle}>Security</div>
           <FreshToggleRow label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
           <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
@@ -5245,18 +5270,18 @@ function FreshDeckyModManagerRoute() {
             Reset Phone Pairing
           </FreshActionButton>
         </div>
-        <div style={freshSettingsCardStyle}>
+        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
           <div style={freshSettingsSectionTitleStyle}>Automation</div>
           <FreshToggleRow label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
           <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
-        <div style={freshSettingsCardStyle}>
+        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
           <div style={freshSettingsSectionTitleStyle}>Debug</div>
           <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
         </div>
         {showDebug && (
-          <div style={freshSettingsCardStyle}>
+          <div className="dmm-settings-section" style={freshSettingsCardStyle}>
             <div style={freshSettingsSectionTitleStyle}>Debug Tools</div>
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
@@ -5282,8 +5307,7 @@ function FreshDeckyModManagerRoute() {
             key={item.id}
             className="dmm-decky-tab"
             aria-selected={tab === item.id}
-            role="tab"
-            tabIndex={-1}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
           >
