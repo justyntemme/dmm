@@ -97,6 +97,9 @@ func (s Service) WriteUserlistForProfile(spec sdk.PluginActivationSpec, profileI
 	if profileID < 0 {
 		return Userlist{}, errors.New("profile id is invalid")
 	}
+	if err := validateUserlistActionChecks(userlist); err != nil {
+		return Userlist{}, err
+	}
 	normalized := normalizeUserlist(userlist)
 	body, err := yaml.Marshal(normalized)
 	if err != nil {
@@ -136,6 +139,37 @@ func (s Service) WriteUserlistForProfile(spec sdk.PluginActivationSpec, profileI
 		s.Logger.Info("LOOT userlist written", "game_id", paths.gameID, "profile_id", profileID, "path", userlistPath, "plugins", len(normalized.Plugins), "groups", len(normalized.Groups))
 	}
 	return normalized, nil
+}
+
+func validateUserlistActionChecks(userlist Userlist) error {
+	seen := map[string]struct{}{}
+	for _, plugin := range userlist.Plugins {
+		name := cleanName(plugin.Name)
+		if name == "" {
+			continue
+		}
+		for _, rule := range []struct {
+			kind string
+			refs []string
+		}{
+			{kind: "after", refs: plugin.After},
+			{kind: "requires", refs: plugin.Requires},
+			{kind: "incompatible", refs: plugin.Incompatible},
+		} {
+			for _, ref := range rule.refs {
+				ref = cleanName(ref)
+				if ref == "" {
+					continue
+				}
+				key := strings.ToUpper(name) + "\x00" + rule.kind + "\x00" + strings.ToUpper(ref)
+				if _, ok := seen[key]; ok {
+					return fmt.Errorf("duplicate LOOT userlist rule %q", name+" "+rule.kind+" "+ref)
+				}
+				seen[key] = struct{}{}
+			}
+		}
+	}
+	return nil
 }
 
 func (s Service) CopyUserlistForProfile(spec sdk.PluginActivationSpec, sourceProfileID, targetProfileID int64) (bool, error) {

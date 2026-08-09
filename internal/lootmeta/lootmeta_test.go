@@ -70,7 +70,7 @@ func TestUserlistReadWriteNormalizesVortexShape(t *testing.T) {
 
 	written, err := service.WriteUserlist(spec, Userlist{
 		Plugins: []UserlistPlugin{
-			{Name: " Example.esp ", After: []string{"A.esm", "a.esm"}, Requires: []string{"Base.esm"}},
+			{Name: " Example.esp ", After: []string{"A.esm"}, Requires: []string{"Base.esm"}},
 			{Name: "example.ESP", Group: "Late Loaders", Incompatible: []string{"Old.esp"}},
 		},
 		Groups: []UserlistGroup{
@@ -113,6 +113,22 @@ func TestUserlistReadWriteNormalizesVortexShape(t *testing.T) {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("userlist.yaml missing %q:\n%s", want, string(body))
 		}
+	}
+}
+
+func TestWriteUserlistRejectsDuplicateVortexRule(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	_, err := service.WriteUserlist(spec, Userlist{
+		Plugins: []UserlistPlugin{
+			{Name: "Example.esp", After: []string{"Fallout4.esm"}},
+			{Name: " example.ESP ", Requires: []string{"Other.esp"}, After: []string{" fallout4.ESM "}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `duplicate LOOT userlist rule "example.ESP after fallout4.ESM"`) {
+		t.Fatalf("WriteUserlist() duplicate error = %v", err)
 	}
 }
 

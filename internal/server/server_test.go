@@ -7067,6 +7067,13 @@ func TestLOOTUserlistRoutesAreProfileScopedAndCopiedWithProfile(t *testing.T) {
 	if writeRec.Code != http.StatusOK {
 		t.Fatalf("write userlist status = %d, body = %s", writeRec.Code, writeRec.Body.String())
 	}
+	duplicateReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/games/377160/load-order/loot/userlist?profile_id=%d", sourceID), bytes.NewBufferString(`{"plugins":[{"name":"Example.esp","after":["Fallout4.esm"]},{"name":"example.ESP","after":["fallout4.ESM"]}],"groups":[]}`))
+	duplicateReq.RemoteAddr = "127.0.0.1:1"
+	duplicateRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(duplicateRec, duplicateReq)
+	if duplicateRec.Code != http.StatusBadRequest || !strings.Contains(duplicateRec.Body.String(), "duplicate LOOT userlist rule") {
+		t.Fatalf("duplicate userlist status = %d, body = %s", duplicateRec.Code, duplicateRec.Body.String())
+	}
 
 	createBody := fmt.Sprintf(`{"name":"Profile Copy","source_profile_id":%d}`, sourceID)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/profiles", bytes.NewBufferString(createBody))
