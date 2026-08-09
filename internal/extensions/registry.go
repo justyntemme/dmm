@@ -22,6 +22,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cyberpunk2077"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/daggerfallunity"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darkestdungeon"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/darksouls"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darksouls2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
@@ -47,6 +48,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/greedfall"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/grimdawn"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
@@ -99,6 +101,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sekiro"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sevendaystodie"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/shadowrunreturns"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sims4"
@@ -110,11 +113,13 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spidermanmilesmorales"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stacklands"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/starbound"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starfield"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsroguesquadron"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/stateofdecay"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/steinsgate"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/subnautica"
@@ -184,6 +189,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(cyberpunk2077.Extension()),
 		gameext.MustCompileExtension(daggerfallunity.Extension()),
 		gameext.MustCompileExtension(darkestdungeon.Extension()),
+		gameext.MustCompileExtension(darksouls.Extension()),
 		gameext.MustCompileExtension(dawnofman.Extension()),
 		gameext.MustCompileExtension(darksouls2.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
@@ -205,6 +211,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(gnorpapologue.Extension()),
 		gameext.MustCompileExtension(godhood.Extension()),
 		gameext.MustCompileExtension(greedfall.Extension()),
+		gameext.MustCompileExtension(grimdawn.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),
@@ -263,6 +270,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(rometotalwar.Extension()),
 		gameext.MustCompileExtension(sekiro.Extension()),
 		gameext.MustCompileExtension(sevendaystodie.Extension()),
+		gameext.MustCompileExtension(shadowrunreturns.Extension()),
 		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(sims4.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
@@ -273,12 +281,14 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),
 		gameext.MustCompileExtension(spelunky.Extension()),
 		gameext.MustCompileExtension(starfield.Extension()),
+		gameext.MustCompileExtension(starbound.Extension()),
 		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
 		gameext.MustCompileExtension(starwarsroguesquadron.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(steinsgate.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(stacklands.Extension()),
+		gameext.MustCompileExtension(stateofdecay.Extension()),
 		gameext.MustCompileExtension(subnautica.Extension()),
 		gameext.MustCompileExtension(subnauticabelowzero.Extension()),
 		gameext.MustCompileExtension(survivingmars.Extension()),
