@@ -115,6 +115,7 @@ func didDeployFrostyReminder(ctx context.Context, input sdk.EventHandlerInput) (
 	}
 	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
 		Message:     "Open Frosty Mod Manager and finish importing deployed Battlefront II .fbmod files before launching the game. Steam/Epic users also need DatapathFix configured for mods to load.",
+		ActionKind:  sdk.EventNoticeActionRunLaunchTool,
 		ToolID:      "starwarsbattlefront22017-frosty",
 		ToolName:    "Frosty Mod Manager",
 		ActionLabel: "Open Frosty",

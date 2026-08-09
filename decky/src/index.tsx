@@ -31,6 +31,7 @@ import { ComponentType, CSSProperties, ReactNode, useEffect, useMemo, useRef, us
 declare const SteamClient:
   | {
       Apps?: {
+        RunGame?: (appId: string, launchOptions: string, param2: number, launchSource: number) => void;
         SetAppLaunchOptions?: (appid: number, launchOptions: string) => void;
         GetSubscribedWorkshopItems?: (appid: number) => Promise<SteamWorkshopClientItem[]>;
         GetSubscribedWorkshopItemDetails?: (appid: number, itemIds: string[]) => Promise<SteamWorkshopClientItemDetails[]>;
@@ -642,6 +643,8 @@ const DMM_DECKY_ROUTE = "/decky-mod-manager";
 const DMM_BROWSER_ROUTE = "/decky-mod-manager-browser";
 const DMM_NATIVE_BROWSER_NAME = "DeckyModManagerBrowser";
 const DMM_NATIVE_BROWSER_TAB_ID = "dmm-native-browser-tab";
+const EXTENSION_NOTICE_ACTION_RUN_LAUNCH_TOOL = "run-launch-tool";
+const STEAM_LAUNCH_SOURCE_DASH_APP_LAUNCH_CMD_LINE = 300;
 
 const deckyQuickAccessFrameStyle: CSSProperties = {
   alignSelf: "stretch",
@@ -1122,6 +1125,18 @@ function extensionNoticeToolName(job: Job) {
   return String(job.payload?.tool_name || job.payload?.tool_id || "").trim();
 }
 
+function extensionNoticeActionKind(job: Job) {
+  return String(job.payload?.action_kind || "").trim();
+}
+
+function extensionNoticeRunToolAvailable(job: Job) {
+  return extensionNoticeActionKind(job) === EXTENSION_NOTICE_ACTION_RUN_LAUNCH_TOOL && String(job.payload?.tool_action_available || "").trim() === "true";
+}
+
+function extensionNoticeRunToolError(job: Job) {
+  return String(job.payload?.tool_action_error || "").trim();
+}
+
 function extensionNoticeActionLabel(job: Job) {
   const label = String(job.payload?.action_label || "").trim();
   if (label) return label;
@@ -1146,6 +1161,7 @@ function deckyJobPrimaryActionLabel(job: Job) {
   if (job.type === "captured-install" && job.status === "waiting") return isDeckyModUpdateAction(job) ? "Install Update" : "Install";
   if (job.type === "captured-install" && job.status === "failed") return "Retry";
   if (job.type === "steam-workshop-action" && job.status === "failed") return "Retry";
+  if (job.type === "extension-notice" && extensionNoticeRunToolAvailable(job)) return extensionNoticeActionLabel(job);
   if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) return extensionNoticeActionLabel(job);
   return "";
 }
@@ -4513,6 +4529,61 @@ function FreshDeckyModManagerRoute() {
     }
   }
 
+  async function runExtensionNoticeLaunchTool(job: Job, appID: string) {
+    const payload = job.payload ?? {};
+    const launchOptions = String(payload.tool_launch_options || "").trim();
+    const toolID = String(payload.tool_id || "").trim();
+    const toolName = extensionNoticeToolName(job) || toolID || "Extension tool";
+    const unavailable = extensionNoticeRunToolError(job);
+    if (!extensionNoticeRunToolAvailable(job)) {
+      throw new Error(unavailable || "This extension tool action is not available.");
+    }
+    if (!appID) {
+      throw new Error("Extension tool action did not include a Steam app ID.");
+    }
+    if (!launchOptions) {
+      throw new Error("Extension tool action did not include launch options.");
+    }
+
+    const started = await call<[string], { ok: boolean; error?: string; proceed?: boolean; job?: Job }>("start_extension_notice_action", job.id);
+    if (!started.ok) {
+      throw new Error(started.error || "Unable to start extension tool action.");
+    }
+    if (!started.proceed) {
+      setMessage("Extension tool action is already being handled.");
+      return;
+    }
+
+    try {
+      const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
+      if (typeof steamApps?.RunGame !== "function") {
+        throw new Error("Steam run-game API is unavailable in this Decky context.");
+      }
+      await logFrontendEvent("extension notice launch tool running", { job_id: job.id, app_id: appID, tool_id: toolID });
+      steamApps.RunGame(appID, launchOptions, 0, STEAM_LAUNCH_SOURCE_DASH_APP_LAUNCH_CMD_LINE);
+      await sleep(700);
+      const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_extension_notice_action", job.id, {
+        applied: true,
+        source: "decky-manual"
+      });
+      if (!report.ok) {
+        throw new Error(report.error || "Unable to record extension tool launch.");
+      }
+      await maybeShowDeckyActionToast(report.job, "fresh-extension-notice-action");
+      showLaunchToast("DMM extension tool", `${toolName} launch requested.`);
+      setMessage(`${toolName} launch requested.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await logFrontendEvent("extension notice launch tool failed", { job_id: job.id, app_id: appID, tool_id: toolID, error: message });
+      await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_extension_notice_action", job.id, {
+        applied: false,
+        error: message,
+        source: "decky-manual"
+      });
+      throw err;
+    }
+  }
+
   async function activateActionJob(job: Job) {
     try {
       setBusyJobID(job.id);
@@ -4538,6 +4609,17 @@ function FreshDeckyModManagerRoute() {
         const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("retry_captured_install", job.id);
         if (!result.ok) setError(result.error || "Unable to retry.");
         else await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-action-retry");
+      } else if (job.type === "extension-notice" && extensionNoticeRunToolAvailable(job)) {
+        await runExtensionNoticeLaunchTool(job, appID);
+      } else if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) {
+        await openDMMBrowserViewCapture(extensionNoticeHelpURL(job), {
+          appID,
+          profileID: selectedProfile?.id ?? 0,
+          source: "fresh-extension-notice-help",
+          title: extensionNoticeActionLabel(job)
+        });
+      } else if (job.type === "extension-notice" && extensionNoticeActionKind(job) === EXTENSION_NOTICE_ACTION_RUN_LAUNCH_TOOL && extensionNoticeRunToolError(job)) {
+        setError(extensionNoticeRunToolError(job));
       } else if (appID) {
         setTab("games");
         setSelectedGameID(appID);
@@ -4773,6 +4855,9 @@ function FreshDeckyModManagerRoute() {
               </div>
               <div style={{ color: job.status === "failed" ? "#f87171" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{deckyJobStatusLabel(job)}</div>
               {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
+              {job.type === "extension-notice" && extensionNoticeRunToolError(job) && (
+                <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{extensionNoticeRunToolError(job)}</div>
+              )}
               <DeckyJobProgress job={job} />
               <DeckyJobIssueReview job={job} />
               <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>
@@ -4919,6 +5004,9 @@ function FreshDeckyModManagerRoute() {
           >
             <div style={{ color: job.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: 900 }}>{job.title}</div>
             {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
+            {job.type === "extension-notice" && extensionNoticeRunToolError(job) && (
+              <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{extensionNoticeRunToolError(job)}</div>
+            )}
             <DeckyJobProgress job={job} />
             <DeckyJobIssueReview job={job} />
             <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {deckyJobPrimaryActionLabel(job) || "Open"}</div>

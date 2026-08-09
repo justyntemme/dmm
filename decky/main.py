@@ -938,6 +938,34 @@ class Plugin:
         self._log(f"workshop action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
         return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
 
+    async def start_extension_notice_action(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required.", "proceed": False}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "proceed": False}
+        result, error = self._backend_json_result("POST", f"/api/extension-notices/{urllib.parse.quote(job_id)}/start", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to start extension notice action.", "proceed": False}
+        proceed = bool(result.get("proceed")) if isinstance(result, dict) else False
+        self._log(f"extension notice action start job_id={job_id} proceed={proceed}")
+        return {"ok": True, "proceed": proceed, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def record_extension_notice_action(self, job_id, report):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not isinstance(report, dict):
+            report = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps(report).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/extension-notices/{urllib.parse.quote(job_id)}/complete", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to record extension notice action."}
+        self._log(f"extension notice action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
+        return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
+
     async def launch_actions(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "actions": []}

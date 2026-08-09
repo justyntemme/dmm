@@ -329,6 +329,7 @@ func didDeployAnvilToolkitReminder(ctx context.Context, input sdk.EventHandlerIn
 	}
 	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
 		Message:     "Run AnvilToolkit to repack Ghost Recon Breakpoint .forge files when this mod requires Anvil data repacking. Check the Nexus mod page for which .forge file to unpack and repack.",
+		ActionKind:  sdk.EventNoticeActionRunLaunchTool,
 		ToolID:      anvilToolkitModType,
 		ToolName:    "AnvilToolkit",
 		ActionLabel: "Run AnvilToolkit",

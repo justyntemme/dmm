@@ -328,11 +328,16 @@ type EventHandlerResult struct {
 
 type EventNotice struct {
 	Message     string
+	ActionKind  string
 	ToolID      string
 	ToolName    string
 	ActionLabel string
 	HelpURL     string
 }
+
+const (
+	EventNoticeActionRunLaunchTool = "run-launch-tool"
+)
 
 type BlockingIssue struct {
 	Kind    string   `json:"kind"`

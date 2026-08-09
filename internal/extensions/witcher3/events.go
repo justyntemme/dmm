@@ -77,6 +77,7 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 	if deployIncludesScriptMergeRelevantMods(input) {
 		notices = append(notices, sdk.EventNotice{
 			Message:     "Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
+			ActionKind:  sdk.EventNoticeActionRunLaunchTool,
 			ToolID:      scriptMergerToolID,
 			ToolName:    "W3 Script Merger",
 			ActionLabel: "Run Script Merger",

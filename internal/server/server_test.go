@@ -8623,6 +8623,9 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	if err := os.MkdirAll(gamePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "hook-tool.exe"), []byte("tool"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	const appID = "999001"
 	var willDeployCalls int
 	var didDeployCalls int
@@ -8638,6 +8641,12 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 				VortexGameID: "hookgame",
 			})
 			r.RegisterModType(installplan.ModTypeSpec{ID: "hook-root", TargetRoot: "", DeploymentMode: installplan.ModTypeDeploymentEventHook})
+			r.RegisterLaunchTool(sdk.LaunchToolSpec{
+				ID:                 "hook-tool",
+				Name:               "Hook Tool",
+				ExecutableRelative: "hook-tool.exe",
+				RequiredFiles:      []string{"hook-tool.exe"},
+			})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: "will-deploy",
 				Name:  "Generate hook file",
@@ -8680,6 +8689,7 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 					}
 					return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
 						Message:     "observed deploy",
+						ActionKind:  sdk.EventNoticeActionRunLaunchTool,
 						ToolID:      "hook-tool",
 						ToolName:    "Hook Tool",
 						ActionLabel: "Open Hook Tool",
@@ -8754,13 +8764,18 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 		t.Fatalf("generated file = %q", string(body))
 	}
 	noticeCount := 0
+	var noticeJobID string
 	for _, job := range srv.jobs.List() {
 		if job.Type != jobTypeExtensionNotice {
 			continue
 		}
 		noticeCount++
-		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" || job.Payload["tool_id"] != "hook-tool" || job.Payload["action_label"] != "Open Hook Tool" || job.Payload["help_url"] != "https://example.invalid/hook-tool" {
+		noticeJobID = job.ID
+		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" || job.Payload["action_kind"] != sdk.EventNoticeActionRunLaunchTool || job.Payload["tool_id"] != "hook-tool" || job.Payload["action_label"] != "Open Hook Tool" || job.Payload["help_url"] != "https://example.invalid/hook-tool" || job.Payload["tool_action_available"] != "true" {
 			t.Fatalf("extension notice job = %+v", job)
+		}
+		if !strings.Contains(job.Payload["tool_launch_options"], "hook-tool.exe") {
+			t.Fatalf("extension notice launch options = %q", job.Payload["tool_launch_options"])
 		}
 		if !strings.Contains(job.Message, "observed deploy") {
 			t.Fatalf("extension notice message = %q", job.Message)
@@ -8770,8 +8785,9 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 		t.Fatalf("extension notice count = %d", noticeCount)
 	}
 
-	srv.queueExtensionNoticeJobs(appID, "did-deploy", "manual", "Hook Game", []gameext.EventNotice{{
+	srv.queueExtensionNoticeJobs(context.Background(), appID, "did-deploy", "manual", "Hook Game", []gameext.EventNotice{{
 		Message:     "observed deploy",
+		ActionKind:  gameext.EventNoticeActionRunLaunchTool,
 		ToolID:      "hook-tool",
 		ToolName:    "Hook Tool",
 		ActionLabel: "Open Hook Tool",
@@ -8785,6 +8801,27 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	}
 	if noticeCount != 1 {
 		t.Fatalf("extension notice count after duplicate deploy = %d", noticeCount)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/extension-notices/"+noticeJobID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("extension notice start status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/extension-notices/"+noticeJobID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("extension notice complete status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	completed, ok := srv.jobs.Get(noticeJobID)
+	if !ok || completed.Status != jobs.StatusCompleted {
+		t.Fatalf("extension notice completed job = %+v ok=%v", completed, ok)
 	}
 }
 

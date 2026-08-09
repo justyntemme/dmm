@@ -81,6 +81,7 @@ const (
 	LaunchToolDynamicInputGeneratedConfig    = sdk.LaunchToolDynamicInputGeneratedConfig
 	LaunchToolDynamicInputEnabledModFileList = sdk.LaunchToolDynamicInputEnabledModFileList
 	LaunchToolDynamicArgumentEnabledModRoot  = sdk.LaunchToolDynamicArgumentEnabledModRoot
+	EventNoticeActionRunLaunchTool           = sdk.EventNoticeActionRunLaunchTool
 	PluginActivationFormatOriginal           = sdk.PluginActivationFormatOriginal
 	PluginActivationFormatAsterisked         = sdk.PluginActivationFormatAsterisked
 )
@@ -394,6 +395,23 @@ func (r Registry) ModTypeProvidesLaunchTool(appID, modType string) (LaunchToolSp
 		}
 	}
 	return LaunchToolSpec{}, false
+}
+
+func (r Registry) LaunchToolForSteamApp(appID, toolID string) (Extension, LaunchToolSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return Extension{}, LaunchToolSpec{}, false
+	}
+	toolID = canonical(toolID)
+	if toolID == "" {
+		return Extension{}, LaunchToolSpec{}, false
+	}
+	for _, tool := range extension.LaunchTools {
+		if canonical(tool.ID) == toolID {
+			return extension, tool, true
+		}
+	}
+	return Extension{}, LaunchToolSpec{}, false
 }
 
 func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
