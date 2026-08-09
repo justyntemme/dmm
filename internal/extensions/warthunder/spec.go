@@ -2,6 +2,7 @@ package warthunder
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/textpatch"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -14,6 +15,13 @@ const (
 	audioRoot    = "sound/mod"
 	skinsModType = "warthunder-skins"
 	audioModType = "warthunder-audio-modtype"
+
+	configFile  = "config.blk"
+	soundConfig = `sound{
+  speakerMode:t="auto"
+  fmod_sound_enable:b=yes
+  enable_mod:b=yes
+}`
 )
 
 func Extension() sdk.Extension {
@@ -49,14 +57,22 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:             "warthunder-prepare-for-modding",
 		Name:           "Prepare War Thunder mod folders and audio config",
-		GeneratedFiles: []string{skinsRoot, audioRoot, "config.blk"},
+		GeneratedFiles: []string{skinsRoot, audioRoot},
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "warthunder-config-blk-audio-toggle",
-		Name:    "Patch War Thunder config.blk audio mod setting",
-		Trigger: "game-setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex replaces the sound{} block in config.blk during setup so audio mods load. DMM needs executable setup/patch-existing file support before audio parity is complete.",
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event: sdk.EventWillDeploy,
+		Name:  "Patch War Thunder audio config",
+		Handler: textpatch.BlockPatchHandler(textpatch.Options{
+			ID:                     "warthunder-audio-config",
+			TargetRelative:         configFile,
+			Pattern:                `(?m)^sound\{[\s\S]*?\}$`,
+			Replacement:            soundConfig,
+			RequiredModTypes:       []string{audioModType},
+			RequiredTargetPrefixes: []string{audioRoot},
+			SkipMessage:            "War Thunder audio config patch skipped because this profile has no enabled audio mods.",
+			AlreadyPresentMessage:  "War Thunder audio config is already patched for audio mods.",
+			SuccessMessage:         "Generated War Thunder audio config patch from Vortex-compatible extension metadata.",
+		}),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
