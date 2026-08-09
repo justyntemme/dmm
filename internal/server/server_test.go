@@ -631,6 +631,11 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 		t.Fatalf("stellaris extension info = %+v", stellaris)
 	}
 
+	brawlhalla := gameExtensionInfoForSteamApp(games.DefaultRegistry, "291550")
+	if brawlhalla == nil || !brawlhalla.Supported || brawlhalla.Coverage != gameext.CoverageResearchBlocked || !brawlhalla.Nexus || brawlhalla.Installers {
+		t.Fatalf("brawlhalla extension info = %+v", brawlhalla)
+	}
+
 	bastion := gameExtensionInfoForSteamApp(games.DefaultRegistry, "107100")
 	if bastion == nil || !bastion.Supported || bastion.Coverage != gameext.CoverageInstaller || !bastion.Nexus || !bastion.Installers {
 		t.Fatalf("bastion extension info = %+v", bastion)

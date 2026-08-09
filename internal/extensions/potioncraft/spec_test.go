@@ -20,7 +20,7 @@ func TestExtensionRegistersBepInExInstallerSupport(t *testing.T) {
 	if len(summary.NexusDomains) != 1 || summary.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", summary.NexusDomains)
 	}
-	if len(summary.Capabilities.Installers) != 5 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 

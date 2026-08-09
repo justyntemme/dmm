@@ -106,7 +106,7 @@ func TestUnityExtensionRegistersBepInExCapabilities(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 5 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	gamePath := t.TempDir()

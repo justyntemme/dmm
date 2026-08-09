@@ -2674,7 +2674,7 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		CoverageLabel:       coverageLabel,
 		Nexus:               len(extension.NexusDomains) > 0,
 		SteamWorkshop:       extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0,
-		Installers:          len(extension.InstallPlan.Installers) > 0,
+		Installers:          gameext.HasSupportedInstallers(extension),
 		InstallerChoices:    len(extension.InstallerChoices) > 0,
 		RuntimeRequirements: len(extension.RuntimeRequirements.RuntimeRequirements) > 0 || len(extension.RuntimeRequirements.DependencyMetadataKinds) > 0,
 		LaunchTools:         len(extension.LaunchTools) > 0,

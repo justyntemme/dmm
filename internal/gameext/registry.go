@@ -102,6 +102,7 @@ type ExtensionSummary struct {
 type ExtensionCapabilities struct {
 	ModTypes               []FeatureSummary `json:"mod_types,omitempty"`
 	Installers             []FeatureSummary `json:"installers,omitempty"`
+	UnsupportedInstallers  []FeatureSummary `json:"unsupported_installers,omitempty"`
 	InstallerChoices       []FeatureSummary `json:"installer_choices,omitempty"`
 	RuntimeRequirements    []FeatureSummary `json:"runtime_requirements,omitempty"`
 	LaunchTools            []FeatureSummary `json:"launch_tools,omitempty"`
@@ -727,7 +728,12 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, installer := range extension.InstallPlan.Installers {
-		summary.Capabilities.Installers = append(summary.Capabilities.Installers, FeatureSummary{ID: installer.ID, Name: installer.VortexInstallerID})
+		feature := FeatureSummary{ID: installer.ID, Name: installer.VortexInstallerID}
+		if installer.InstructionMode == installplan.InstructionUnsupported {
+			summary.Capabilities.UnsupportedInstallers = append(summary.Capabilities.UnsupportedInstallers, feature)
+			continue
+		}
+		summary.Capabilities.Installers = append(summary.Capabilities.Installers, feature)
 	}
 	for _, choice := range extension.InstallerChoices {
 		summary.Capabilities.InstallerChoices = append(summary.Capabilities.InstallerChoices, FeatureSummary{ID: choice.ID, Name: defaultString(choice.Name, choice.Kind)})
@@ -807,6 +813,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	sortFeatureSummaries(summary.Capabilities.ModTypes)
 	sortFeatureSummaries(summary.Capabilities.Installers)
+	sortFeatureSummaries(summary.Capabilities.UnsupportedInstallers)
 	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
@@ -847,6 +854,15 @@ func ExtensionCoverage(extension Extension) (string, string) {
 		return CoverageBrowseOnly, "Browse only"
 	}
 	return CoverageMetadataOnly, "Metadata only"
+}
+
+func HasSupportedInstallers(extension Extension) bool {
+	for _, installer := range extension.InstallPlan.Installers {
+		if installer.InstructionMode != installplan.InstructionUnsupported {
+			return true
+		}
+	}
+	return false
 }
 
 func launchToolDynamicInputs(inputs []sdk.LaunchToolDynamicInputSpec) []LaunchToolDynamicInput {

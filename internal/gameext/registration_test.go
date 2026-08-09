@@ -376,6 +376,9 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].Coverage != CoverageResearchBlocked {
 		t.Fatalf("summaries = %+v", summaries)
 	}
+	if len(summaries[0].Capabilities.Installers) != 0 || len(summaries[0].Capabilities.UnsupportedInstallers) != 1 {
+		t.Fatalf("research-blocked installer capabilities = %+v", summaries[0].Capabilities)
+	}
 }
 
 func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
