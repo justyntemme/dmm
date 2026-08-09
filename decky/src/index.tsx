@@ -746,18 +746,27 @@ const deckyRuntimeStyles = `
 .dmm-settings-section {
   align-content: start;
   align-items: stretch;
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 10px;
+  grid-auto-rows: max-content;
   min-height: auto !important;
   overflow: visible;
 }
 .dmm-settings-section > * {
-  flex: 0 0 auto;
+  align-self: stretch;
   min-width: 0;
 }
 .dmm-settings-row {
-  min-height: 60px;
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 64px !important;
+  overflow: visible !important;
+}
+.dmm-settings-section .dmm-focus-card {
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 56px;
+  overflow: visible !important;
 }
   .dmm-focus-card-focused,
   .dmm-settings-row-focused {
@@ -3730,9 +3739,9 @@ const freshSectionStyle: CSSProperties = {
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignItems: "stretch",
-  display: "flex",
-  flexDirection: "column",
+  display: "grid",
   gap: "8px",
+  gridAutoRows: "max-content",
   minHeight: "144px",
   overflow: "visible"
 };
@@ -3740,9 +3749,9 @@ const freshSettingsPrimaryCardStyle: CSSProperties = {
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignItems: "stretch",
-  display: "flex",
-  flexDirection: "column",
+  display: "grid",
   gap: "10px",
+  gridAutoRows: "max-content",
   minHeight: "unset",
   overflow: "visible"
 };
@@ -3769,7 +3778,7 @@ function freshTabStyle(active: boolean): CSSProperties {
     alignItems: "center",
     background: active ? "#0f766e" : "#192231",
     border: "0",
-    borderBottom: `2px solid ${active ? "#99f6e4" : "transparent"}`,
+    borderBottom: "2px solid transparent",
     borderRadius: "6px",
     boxSizing: "border-box",
     boxShadow: "none",
@@ -3811,10 +3820,12 @@ function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", di
     display: "flex",
     fontSize: "12px",
     fontWeight: 900,
+    height: "auto",
     justifyContent: "center",
     lineHeight: 1.22,
     minHeight: "56px",
     opacity: disabled ? 0.52 : 1,
+    overflow: "visible",
     padding: "12px 10px",
     textAlign: "center",
     whiteSpace: "normal"
@@ -3901,8 +3912,10 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     display: "grid",
     gap: "10px",
     gridTemplateColumns: "minmax(0, 1fr) 48px",
+    height: "auto",
     minHeight: "60px",
     opacity: disabled ? 0.62 : 1,
+    overflow: "visible",
     padding: "12px",
     scrollMarginBlock: "18px",
     width: "100%"
