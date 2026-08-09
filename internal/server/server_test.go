@@ -6837,6 +6837,97 @@ func TestStaticHandlerServesConfiguredWebDist(t *testing.T) {
 	}
 }
 
+func TestPurgeModsInPathRemovesOnlyMatchingManagedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	legacyPath := filepath.Join(gamePath, "OldMods")
+	currentPath := filepath.Join(gamePath, "Mods")
+	if err := os.MkdirAll(legacyPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(currentPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "999000",
+		Name:        "Scoped Purge Test",
+		InstallDir:  "Scoped Purge Test",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	legacyMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   "999000",
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "purge-test", ModID: "legacy", FileID: "1"},
+		Name:         "Legacy Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "legacy.zip"),
+		StagingPath:  filepath.Join(root, "staging", "legacy"),
+		ManifestJSON: `{"mod_type":"legacy-type"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   "999000",
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "purge-test", ModID: "current", FileID: "1"},
+		Name:         "Current Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "current.zip"),
+		StagingPath:  filepath.Join(root, "staging", "current"),
+		ManifestJSON: `{"mod_type":"current-type"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetLegacy := filepath.Join(legacyPath, "legacy.dll")
+	targetOtherTypeInLegacyPath := filepath.Join(legacyPath, "current.dll")
+	targetCurrent := filepath.Join(currentPath, "current.dll")
+	for _, path := range []string{targetLegacy, targetOtherTypeInLegacyPath, targetCurrent} {
+		if err := os.WriteFile(path, []byte("managed"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "999000", deploy.StrategyCopy, []deploy.AppliedFile{
+		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetOtherTypeInLegacyPath, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := srv.purgeModsInPath(context.Background(), "999000", "legacy-type", legacyPath, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Purged) != 1 || result.Purged[0].TargetPath != targetLegacy || len(result.Remaining) != 2 || result.DeploymentID == 0 {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(targetLegacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy target should be removed, stat err = %v", err)
+	}
+	for _, path := range []string{targetOtherTypeInLegacyPath, targetCurrent} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("remaining target %s stat err = %v", path, err)
+		}
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "999000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("latest files = %+v", files)
+	}
+	for _, file := range files {
+		if file.TargetPath == targetLegacy {
+			t.Fatalf("purged file remained in manifest: %+v", files)
+		}
+	}
+}
+
 func createDuplicateEntryZip(path string) error {
 	file, err := os.Create(path)
 	if err != nil {

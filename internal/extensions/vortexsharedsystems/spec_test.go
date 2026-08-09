@@ -15,7 +15,8 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "registerGameInfoProvider")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "purge-mods-in-path")
+	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "registerGameInfoProvider")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
 	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "gamebryo-incompatible-mod-archives", "game-version-gamemode")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
@@ -37,6 +38,23 @@ func assertBlocked(t *testing.T, kind string, features []gameext.FeatureSummary,
 			t.Fatalf("%s %s missing from %+v", kind, id, features)
 		}
 		if feature.Status != sdk.CapabilityStatusBlocked || feature.Message == "" {
+			t.Fatalf("%s %s = %+v", kind, id, feature)
+		}
+	}
+}
+
+func assertReady(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {
+	t.Helper()
+	featuresByID := map[string]gameext.FeatureSummary{}
+	for _, feature := range features {
+		featuresByID[feature.ID] = feature
+	}
+	for _, id := range ids {
+		feature, ok := featuresByID[id]
+		if !ok {
+			t.Fatalf("%s %s missing from %+v", kind, id, features)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message != "" {
 			t.Fatalf("%s %s = %+v", kind, id, feature)
 		}
 	}

@@ -40,7 +40,7 @@ func Register(r sdk.Registrar) {
 func registerCrossExtensionAPIs(r sdk.Registrar) {
 	for _, api := range []sdk.ExtensionAPISpec{
 		blockedAPI("deploy-single-mod", "Deploy one mod through the deployment pipeline"),
-		blockedAPI("purge-mods-in-path", "Purge managed mods under a path"),
+		readyAPI("purge-mods-in-path", "Purge managed mods under a path"),
 		blockedAPI("browse-for-download", "Open a source-backed download browser"),
 		blockedAPI("discover-tools", "Discover extension-declared external tools"),
 		blockedAPI("bake-settings", "Bake profile-local game settings"),
@@ -139,6 +139,10 @@ func registerVortexTests(r sdk.Registrar) {
 
 func blockedAPI(id, name string) sdk.ExtensionAPISpec {
 	return sdk.ExtensionAPISpec{ID: id, Name: name, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
+}
+
+func readyAPI(id, name string) sdk.ExtensionAPISpec {
+	return sdk.ExtensionAPISpec{ID: id, Name: name, Status: sdk.CapabilityStatusReady}
 }
 
 func blockedAction(id, name, scope, kind string) sdk.ExtensionActionSpec {
