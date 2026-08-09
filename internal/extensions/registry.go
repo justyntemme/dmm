@@ -47,6 +47,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hotlinemiami"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/kingdomcomedeliverance"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kotor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/markoftheninja"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/masterchiefcollection"
@@ -186,6 +187,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(hotlinemiami.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
+		gameext.MustCompileExtension(kingdomcomedeliverance.Extension()),
 		gameext.MustCompileExtension(kotor.Extensions()[0]),
 		gameext.MustCompileExtension(kotor.Extensions()[1]),
 		gameext.MustCompileExtension(markoftheninja.Extension()),

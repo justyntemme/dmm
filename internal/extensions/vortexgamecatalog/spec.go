@@ -199,7 +199,6 @@ var games = []GameSpec{
 	{VortexDir: "game-grimdawn", ID: "grimdawn", Name: "Grim Dawn", SteamAppIDs: []string{"219990"}},
 	{VortexDir: "game-grimrock", ID: "grimrock", Name: "Legend of Grimrock", SteamAppIDs: []string{"207170"}},
 	{VortexDir: "game-kerbalspaceprogram", ID: "kerbalspaceprogram", Name: "Kerbal Space Program", SteamAppIDs: []string{"220200"}},
-	{VortexDir: "game-kingdomcome-deliverance", ID: "kingdomcomedeliverance", Name: "Kingdom Come: Deliverance", SteamAppIDs: []string{"379430"}, HasLoadOrder: true, Notes: []string{"Vortex writes Mods/mod_order.txt from extension state and registers actions/table attributes; DMM needs source-reviewed load-order UI/runtime parity."}},
 	{VortexDir: "game-microsoftflightsimulator", ID: "microsoftflightsimulator", Name: "Microsoft Flight Simulator", SteamAppIDs: []string{"1250410"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-morrowind", ID: "morrowind", Name: "Morrowind", SteamAppIDs: []string{"22320"}, HasLoadOrder: true},
 	{VortexDir: "game-mount-and-blade2", ID: "mountandblade2bannerlord", Name: "Mount & Blade II: Bannerlord", VortexStub: true, SupportModID: "875"},
