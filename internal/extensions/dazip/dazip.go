@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
@@ -34,13 +36,6 @@ func Extension() sdk.Extension {
 			r.RegisterSource(sdk.SourceRef{
 				Name: "Vortex modtype-dazip source",
 				URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-dazip/src",
-			})
-			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-				ID:      "dazip-outer-submodule-runtime",
-				Name:    "DAZIP nested submodule extraction",
-				Trigger: "install",
-				Status:  sdk.CapabilityStatusBlocked,
-				Message: "DMM implements Vortex dazipInner planning for extracted DAZIP contents, but Vortex dazipOuter needs nested .dazip submodule extraction before archives containing DAZIP files can run automatically.",
 			})
 			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 				ID:      "dazip-migration-runtime",
@@ -71,8 +66,7 @@ func InnerInstaller(id, targetRootID string, priority int) installplan.Installer
 	}
 }
 
-func OuterInstallerBlocked(id string, priority int) installplan.InstallerSpec {
-	reason := "Vortex treats .dazip files inside an archive as nested submodules. DMM needs nested archive extraction/submodule runtime before this outer DAZIP installer can run."
+func OuterInstaller(id string, priority int) installplan.InstallerSpec {
 	return installplan.InstallerSpec{
 		ID:                strings.TrimSpace(id),
 		VortexInstallerID: "dazipOuter",
@@ -80,10 +74,8 @@ func OuterInstallerBlocked(id string, priority int) installplan.InstallerSpec {
 		ModType:           ModType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       MatchOuter,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: reason,
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           reason,
+		CustomBuild:       BuildOuter,
+		InstructionMode:   installplan.InstructionCustom,
 	}
 }
 
@@ -106,6 +98,74 @@ func MatchInner(root string) bool {
 		return false
 	}
 	return innerSupport(files).supported
+}
+
+func BuildOuter(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	var dazips []string
+	for _, file := range files {
+		if strings.EqualFold(filepath.Ext(file), ".dazip") {
+			dazips = append(dazips, filepath.ToSlash(file))
+		}
+	}
+	if len(dazips) == 0 {
+		return installplan.Plan{}, installplan.Unsupported("DAZIP outer installer matched but no nested .dazip files were found")
+	}
+	sort.Strings(dazips)
+	plan := installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    input.Installer.ModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-dazip-outer",
+			Path:   strings.Join(dazips, ","),
+			Reason: "Vortex dazipOuter matched nested .dazip submodules",
+		}},
+		Warnings: []string{"Nested DAZIP archive extracted and planned through the source-backed dazipInner helper."},
+	}
+	for idx, dazipRel := range dazips {
+		extractedRoot := filepath.Join(input.ExtractedRoot, ".dmm-dazip-submodules", sanitizeSegment(strings.TrimSuffix(filepath.Base(dazipRel), filepath.Ext(dazipRel)))+"-"+strconv.Itoa(idx+1))
+		if err := os.RemoveAll(extractedRoot); err != nil {
+			return installplan.Plan{}, err
+		}
+		if _, err := archive.Extract(filepath.Join(input.ExtractedRoot, filepath.FromSlash(dazipRel)), extractedRoot); err != nil {
+			return installplan.Plan{}, err
+		}
+		innerPlan, err := BuildInner(installplan.BuildInput{
+			GameID:        input.GameID,
+			ExtractedRoot: extractedRoot,
+			Installer:     input.Installer,
+			TargetRoot:    input.TargetRoot,
+			TargetRootID:  input.TargetRootID,
+			ArchiveName:   filepath.Base(dazipRel),
+			GamePath:      input.GamePath,
+			LibraryPath:   input.LibraryPath,
+			Selections:    input.Selections,
+		})
+		if err != nil {
+			return installplan.Plan{}, err
+		}
+		for _, detection := range innerPlan.DetectedFrom {
+			detection.Path = filepath.ToSlash(filepath.Join(dazipRel, detection.Path))
+			plan.DetectedFrom = append(plan.DetectedFrom, detection)
+		}
+		plan.Metadata = append(plan.Metadata, innerPlan.Metadata...)
+		plan.Instructions = append(plan.Instructions, innerPlan.Instructions...)
+	}
+	if len(plan.Instructions) == 0 {
+		return installplan.Plan{}, errors.New("DAZIP outer installer matched but produced no deployable files")
+	}
+	sort.SliceStable(plan.Instructions, func(i, j int) bool {
+		if plan.Instructions[i].TargetRelative == plan.Instructions[j].TargetRelative {
+			return plan.Instructions[i].SourcePath < plan.Instructions[j].SourcePath
+		}
+		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
+	})
+	return plan, nil
 }
 
 func BuildInner(input installplan.BuildInput) (installplan.Plan, error) {

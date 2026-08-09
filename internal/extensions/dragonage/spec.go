@@ -55,7 +55,7 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: overrideModType, TargetRootID: overrideRootID})
 	dazip.RegisterModType(r, documentsRootID)
-	r.RegisterInstaller(dazip.OuterInstallerBlocked("vortex:dragonage:dazip-outer", 15))
+	r.RegisterInstaller(dazip.OuterInstaller("vortex:dragonage:dazip-outer", 15))
 	r.RegisterInstaller(dazip.InnerInstaller("vortex:dragonage:dazip-inner", documentsRootID, 15))
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:dragonage:override",
