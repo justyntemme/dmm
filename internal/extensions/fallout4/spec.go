@@ -141,6 +141,15 @@ func Register(r sdk.Registrar) {
 		SupportsLightPlugins: true,
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Fallout4",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Fallout4.ini"},
+			{Name: "Fallout4Prefs.ini"},
+			{Name: "Fallout4Custom.ini", Optional: true},
+		},
+	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4-persistent-subgraph-offsets",
 		Name:     "Fallout 4 persistent subgraph offsets",
@@ -282,6 +291,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Gamebryo archive invalidation support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
+		},
+		{
+			Name: "Vortex local game settings support",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/local-gamesettings/src",
 		},
 		{
 			Name: "Vortex script extender installer",

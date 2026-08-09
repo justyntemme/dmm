@@ -66,6 +66,13 @@ func Register(r sdk.Registrar) {
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "obse", Name: "Oblivion Script Extender", ShortName: "OBSE", ExecutableRelative: "obse_loader.exe", RequiredFiles: []string{"obse_loader.exe"}, Relative: true, Exclusive: true})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{ID: "oblivion-gamebryo-plugins", Name: "Oblivion plugins.txt activation", GameID: VortexGameID, AppDataPath: "oblivion", Format: gamebryo.FormatOriginal, LOOTGameID: VortexGameID, LOOTPrelude: true, NativePlugins: []string{"oblivion.esm"}})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Oblivion",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Oblivion.ini"},
+		},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Oblivion archive invalidation settings",
@@ -104,5 +111,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex script-extender installer game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-installer/src/gameSupport.ts"},
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
+		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
 	}
 }

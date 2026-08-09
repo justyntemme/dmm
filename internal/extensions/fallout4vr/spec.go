@@ -119,6 +119,14 @@ func Register(r sdk.Registrar) {
 		NativePlugins:        []string{"fallout4.esm", "fallout4_vr.esm"},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Fallout4VR",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Fallout4Custom.ini"},
+			{Name: "Fallout4Prefs.ini"},
+		},
+	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4vr-persistent-subgraph-offsets",
 		Name:     "Fallout 4 VR persistent subgraph offsets",
@@ -183,5 +191,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex script-extender installer game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-installer/src/gameSupport.ts"},
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
+		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
 	}
 }

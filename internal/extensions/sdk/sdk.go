@@ -605,18 +605,22 @@ type ProfileFeatureSpec struct {
 }
 
 type ProfileFileSpec struct {
-	ID      string
-	Name    string
-	GameID  string
-	Base    string
-	Path    string
-	Status  string
-	Message string
+	ID                  string
+	Name                string
+	GameID              string
+	Base                string
+	Path                string
+	FeatureID           string
+	Optional            bool
+	SyncOnProfileSwitch bool
+	Status              string
+	Message             string
 }
 
 const (
 	ProfileFileBaseGamePath           = "game_path"
 	ProfileFileBaseProtonLocalAppData = "proton_local_app_data"
+	ProfileFileBaseProtonDocuments    = "proton_documents"
 )
 
 type CollectionFeatureSpec struct {

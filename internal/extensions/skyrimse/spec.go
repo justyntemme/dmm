@@ -134,6 +134,15 @@ func Register(r sdk.Registrar) {
 		SupportsLightPlugins: true,
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Skyrim Special Edition",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Skyrim.ini"},
+			{Name: "SkyrimPrefs.ini"},
+			{Name: "SkyrimCustom.ini", Optional: true},
+		},
+	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimse-exe-version",
 		Name:     "SkyrimSE.exe file version",
@@ -247,6 +256,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Gamebryo archive invalidation support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
+		},
+		{
+			Name: "Vortex local game settings support",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/local-gamesettings/src",
 		},
 		{
 			Name: "Vortex script extender installer",

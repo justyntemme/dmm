@@ -97,6 +97,15 @@ func Register(r sdk.Registrar) {
 		NativePlugins: []string{"fallout3.esm"},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Fallout3",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Fallout.ini"},
+			{Name: "FalloutPrefs.ini"},
+			{Name: "FalloutCustom.ini", Optional: true},
+		},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Fallout 3 archive invalidation settings",
@@ -147,5 +156,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex script-extender installer game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-installer/src/gameSupport.ts"},
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
+		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
 	}
 }

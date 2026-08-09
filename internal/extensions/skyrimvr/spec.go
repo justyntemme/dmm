@@ -127,6 +127,15 @@ func Register(r sdk.Registrar) {
 		NativePlugins:        []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Skyrim VR",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Skyrim.ini"},
+			{Name: "SkyrimVR.ini"},
+			{Name: "SkyrimPrefs.ini"},
+		},
+	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimvr-exe-version",
 		Name:     "SkyrimVR.exe file version",
@@ -186,5 +195,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex script-extender installer game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-installer/src/gameSupport.ts"},
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
+		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
 	}
 }

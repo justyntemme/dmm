@@ -1798,9 +1798,12 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 			errs = append(errs, errors.New("profile file "+id+" game id is required"))
 		}
 		switch strings.TrimSpace(spec.Base) {
-		case "", sdk.ProfileFileBaseGamePath, sdk.ProfileFileBaseProtonLocalAppData:
+		case "", sdk.ProfileFileBaseGamePath, sdk.ProfileFileBaseProtonLocalAppData, sdk.ProfileFileBaseProtonDocuments:
 		default:
 			errs = append(errs, errors.New("profile file "+id+" base is not supported"))
+		}
+		if spec.SyncOnProfileSwitch && strings.TrimSpace(spec.FeatureID) == "" {
+			errs = append(errs, errors.New("profile file "+id+" sync feature id is required"))
 		}
 		if strings.TrimSpace(spec.Path) != "" {
 			if err := validateRelativePath(spec.Path); err != nil {

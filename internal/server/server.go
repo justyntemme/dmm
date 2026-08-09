@@ -2687,16 +2687,19 @@ type updateProfileFeatureRequest struct {
 }
 
 type profileFileResponse struct {
-	ProfileID    int64  `json:"profile_id"`
-	FileID       string `json:"file_id"`
-	Name         string `json:"name"`
-	GameID       string `json:"game_id"`
-	Base         string `json:"base,omitempty"`
-	Path         string `json:"path,omitempty"`
-	ResolvedPath string `json:"resolved_path,omitempty"`
-	Status       string `json:"status"`
-	Message      string `json:"message,omitempty"`
-	Extension    string `json:"extension,omitempty"`
+	ProfileID           int64  `json:"profile_id"`
+	FileID              string `json:"file_id"`
+	Name                string `json:"name"`
+	GameID              string `json:"game_id"`
+	Base                string `json:"base,omitempty"`
+	Path                string `json:"path,omitempty"`
+	FeatureID           string `json:"feature_id,omitempty"`
+	Optional            bool   `json:"optional,omitempty"`
+	SyncOnProfileSwitch bool   `json:"sync_on_profile_switch,omitempty"`
+	ResolvedPath        string `json:"resolved_path,omitempty"`
+	Status              string `json:"status"`
+	Message             string `json:"message,omitempty"`
+	Extension           string `json:"extension,omitempty"`
 }
 
 type deleteProfileResponse struct {
@@ -8575,6 +8578,10 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err)
 			return
 		}
+		if err := s.syncProfileFilesForProfileSwitch(r.Context(), appID, profile, replacement, false); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		activeProfile, err = s.db.SetDefaultProfile(r.Context(), replacement.ID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -8595,16 +8602,20 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		apply = s.applyProfileChangesForUserAction(r.Context(), appID, "profile-delete-switch")
 		if apply.Status != "applied" {
+			replacementProfile := activeProfile
 			restored, restoreErr := s.db.SetDefaultProfile(r.Context(), profileID)
 			if restoreErr != nil {
 				s.logger.Error("failed to restore active profile after delete apply failure", "app_id", appID, "profile_id", profileID, "replacement_profile_id", replacement.ID, "error", restoreErr)
 			} else {
-				activeProfile = restored
 				s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
 					"action":     "default_profile_restored",
 					"profile_id": restored.ID,
 					"game_id":    restored.GameID,
 				})
+				if syncErr := s.syncProfileFilesForProfileSwitch(r.Context(), appID, replacementProfile, restored, true); syncErr != nil {
+					s.logger.Error("failed to restore profile-local game settings after delete apply failure", "app_id", appID, "profile_id", profileID, "replacement_profile_id", replacement.ID, "error", syncErr)
+				}
+				activeProfile = restored
 			}
 			writeJSON(w, http.StatusConflict, deleteProfileResponse{ActiveProfile: activeProfile, Apply: apply})
 			return
@@ -8672,6 +8683,22 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 	}); err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
+	}
+	currentProfile, hasCurrentProfile, err := s.defaultProfileForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if hasCurrentProfile && currentProfile.ID != profileID {
+		targetProfile, err := s.db.Profile(r.Context(), profileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.syncProfileFilesForProfileSwitch(r.Context(), appID, currentProfile, targetProfile, true); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 	}
 	profile, err := s.db.SetDefaultProfile(r.Context(), profileID)
 	if err != nil {
@@ -8884,16 +8911,19 @@ func (s *Server) profileFileResponses(game storage.Game, profileID int64) []prof
 				message += resolveErr.Error()
 			}
 			responses = append(responses, profileFileResponse{
-				ProfileID:    profileID,
-				FileID:       fileID,
-				Name:         name,
-				GameID:       file.GameID,
-				Base:         file.Base,
-				Path:         file.Path,
-				ResolvedPath: resolved,
-				Status:       status,
-				Message:      message,
-				Extension:    extension.ID,
+				ProfileID:           profileID,
+				FileID:              fileID,
+				Name:                name,
+				GameID:              file.GameID,
+				Base:                file.Base,
+				Path:                file.Path,
+				FeatureID:           file.FeatureID,
+				Optional:            file.Optional,
+				SyncOnProfileSwitch: file.SyncOnProfileSwitch,
+				ResolvedPath:        resolved,
+				Status:              status,
+				Message:             message,
+				Extension:           extension.ID,
 			})
 		}
 	}
@@ -8920,6 +8950,12 @@ func resolveProfileFilePath(game storage.Game, spec sdk.ProfileFileSpec) (string
 		return filepath.Join(gamePath, rel), nil
 	case sdk.ProfileFileBaseProtonLocalAppData:
 		base, err := protonLocalAppDataBase(game)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(base, rel), nil
+	case sdk.ProfileFileBaseProtonDocuments:
+		base, err := protonDocumentsBase(game)
 		if err != nil {
 			return "", err
 		}
@@ -13468,6 +13504,27 @@ func protonLocalAppDataBase(game storage.Game) (string, error) {
 		"steamuser",
 		"AppData",
 		"Local",
+	), nil
+}
+
+func protonDocumentsBase(game storage.Game) (string, error) {
+	libraryPath := strings.TrimSpace(game.LibraryPath)
+	if libraryPath == "" {
+		libraryPath = inferSteamLibraryPath(game.GamePath)
+	}
+	if libraryPath == "" {
+		return "", errors.New("Steam library path is required for Proton documents")
+	}
+	return filepath.Join(
+		libraryPath,
+		"steamapps",
+		"compatdata",
+		game.SteamAppID,
+		"pfx",
+		"drive_c",
+		"users",
+		"steamuser",
+		"Documents",
 	), nil
 }
 

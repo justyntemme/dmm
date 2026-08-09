@@ -31,6 +31,17 @@ type PluginActivationOptions struct {
 	SupportsBlueprintFiles bool
 }
 
+type LocalGameSettingsOptions struct {
+	GameID      string
+	MyGamesPath string
+	Files       []LocalGameSettingFile
+}
+
+type LocalGameSettingFile struct {
+	Name     string
+	Optional bool
+}
+
 func RegisterPluginActivation(r sdk.Registrar, opts PluginActivationOptions) {
 	r.RegisterPluginActivation(PluginActivation(opts))
 	for _, file := range PluginActivationProfileFiles(opts) {
@@ -114,6 +125,69 @@ func LocalLOOTRulesProfileFeature() sdk.ProfileFeatureSpec {
 		Name:    "LOOT Rules",
 		Message: "This profile has its own plugin rules and groups, matching Vortex's Gamebryo local LOOT rules profile feature.",
 	}
+}
+
+func RegisterLocalGameSettings(r sdk.Registrar, opts LocalGameSettingsOptions) {
+	r.RegisterProfileFeature(LocalGameSettingsProfileFeature())
+	for _, file := range LocalGameSettingsProfileFiles(opts) {
+		r.RegisterProfileFile(file)
+	}
+}
+
+func LocalGameSettingsProfileFeature() sdk.ProfileFeatureSpec {
+	return sdk.ProfileFeatureSpec{
+		ID:      "local_game_settings",
+		Name:    "Game Settings",
+		Message: "This profile has its own game settings, matching Vortex's local game settings profile feature.",
+	}
+}
+
+func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileFileSpec {
+	gameID := strings.TrimSpace(opts.GameID)
+	myGamesPath := strings.Trim(strings.TrimSpace(opts.MyGamesPath), "/")
+	if gameID == "" || myGamesPath == "" {
+		return nil
+	}
+	files := make([]sdk.ProfileFileSpec, 0, len(opts.Files))
+	for _, file := range opts.Files {
+		name := strings.Trim(strings.TrimSpace(file.Name), "/")
+		if name == "" {
+			continue
+		}
+		files = append(files, sdk.ProfileFileSpec{
+			ID:                  gameID + "-local-game-settings-" + sanitizeSettingFileID(name),
+			Name:                name,
+			GameID:              gameID,
+			Base:                sdk.ProfileFileBaseProtonDocuments,
+			Path:                path.Join("My Games", myGamesPath, name),
+			FeatureID:           "local_game_settings",
+			Optional:            file.Optional,
+			SyncOnProfileSwitch: true,
+		})
+	}
+	return files
+}
+
+func sanitizeSettingFileID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		if b.Len() > 0 {
+			current := b.String()
+			if current[len(current)-1] != '-' {
+				b.WriteRune('-')
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "settings-file"
+	}
+	return out
 }
 
 func StopFolders(extra ...string) []string {

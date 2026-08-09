@@ -9527,6 +9527,153 @@ func TestProfileFilesEndpointResolvesGamebryoProfileFiles(t *testing.T) {
 	if loadOrder.Status != sdk.CapabilityStatusReady || loadOrder.Base != sdk.ProfileFileBaseProtonLocalAppData || loadOrder.Path != "Fallout4/loadorder.txt" || loadOrder.ResolvedPath != filepath.Join(wantBase, "loadorder.txt") {
 		t.Fatalf("load order profile file = %+v", loadOrder)
 	}
+	wantDocuments := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
+	settings := byID["fallout4-local-game-settings-fallout4-ini"]
+	if settings.Status != sdk.CapabilityStatusReady || settings.Base != sdk.ProfileFileBaseProtonDocuments || settings.Path != "My Games/Fallout4/Fallout4.ini" || settings.ResolvedPath != filepath.Join(wantDocuments, "Fallout4.ini") || settings.FeatureID != "local_game_settings" || settings.Optional || !settings.SyncOnProfileSwitch {
+		t.Fatalf("settings profile file = %+v", settings)
+	}
+	custom := byID["fallout4-local-game-settings-fallout4custom-ini"]
+	if !custom.Optional || custom.FeatureID != "local_game_settings" || !custom.SyncOnProfileSwitch {
+		t.Fatalf("custom settings profile file = %+v", custom)
+	}
+}
+
+func TestProfileSwitchSyncsLocalGameSettings(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	oldProfile := profiles[0]
+	newProfile, err := srv.db.CreateProfileForSteamApp(context.Background(), fallout4.SteamAppID, "Alternate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileFeatureState(context.Background(), oldProfile.ID, "local_game_settings", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileFeatureState(context.Background(), newProfile.ID, "local_game_settings", true); err != nil {
+		t.Fatal(err)
+	}
+
+	globalRoot := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
+	if err := os.MkdirAll(globalRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	globalINI := filepath.Join(globalRoot, "Fallout4.ini")
+	globalPrefs := filepath.Join(globalRoot, "Fallout4Prefs.ini")
+	if err := os.WriteFile(globalINI, []byte("old ini"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(globalPrefs, []byte("old prefs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := srv.profileFilesForSwitch(game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]profileFileForSwitch{}
+	for _, file := range files {
+		byID[file.Spec.ID] = file
+	}
+	ini := byID["fallout4-local-game-settings-fallout4-ini"]
+	prefs := byID["fallout4-local-game-settings-fallout4prefs-ini"]
+	if ini.Spec.ID == "" || prefs.Spec.ID == "" {
+		t.Fatalf("profile files = %+v", byID)
+	}
+	if err := os.MkdirAll(filepath.Dir(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, ini.Spec)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, ini.Spec), []byte("new ini"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, prefs.Spec)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, prefs.Spec), []byte("new prefs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(newProfile.ID, 10)+"/default", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switch status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if body, err := os.ReadFile(globalINI); err != nil || string(body) != "new ini" {
+		t.Fatalf("global ini = %q, err = %v", string(body), err)
+	}
+	if body, err := os.ReadFile(globalINI + ".baked"); err != nil || string(body) != "new ini" {
+		t.Fatalf("baked ini = %q, err = %v", string(body), err)
+	}
+	if body, err := os.ReadFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, oldProfile.ID, ini.Spec)); err != nil || string(body) != "old ini" {
+		t.Fatalf("old profile ini = %q, err = %v", string(body), err)
+	}
+	if body, err := os.ReadFile(srv.profileFileBackupPath(fallout4.SteamAppID, ini.Spec)); err != nil || string(body) != "old ini" {
+		t.Fatalf("backup ini = %q, err = %v", string(body), err)
+	}
+	if _, err := os.Stat(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, byID["fallout4-local-game-settings-fallout4custom-ini"].Spec)); !os.IsNotExist(err) {
+		t.Fatalf("optional custom file should not be created, err = %v", err)
+	}
+}
+
+func TestProfileSwitchBlocksWhenRequiredLocalGameSettingsAreMissing(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newProfile, err := srv.db.CreateProfileForSteamApp(context.Background(), fallout4.SteamAppID, "Missing Settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileFeatureState(context.Background(), newProfile.ID, "local_game_settings", true); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(newProfile.ID, 10)+"/default", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("switch status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	current, ok, err := srv.defaultProfileForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil || !ok || current.ID != profiles[0].ID {
+		t.Fatalf("current profile = %+v ok=%v err=%v", current, ok, err)
+	}
 }
 
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
