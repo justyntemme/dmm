@@ -256,7 +256,7 @@ Vortex source examples:
 DMM status:
 
 - First-party Go extensions can share normal Go packages, but there is no explicit registered extension API namespace, dependency graph, or import contract.
-- Source-backed metadata exists for Vortex `quickbms-support` APIs and `gameversion-hash`'s `getHashVersion` API, but both are blocked until executable/runtime behavior is implemented.
+- Source-backed metadata exists for Vortex `quickbms-support` APIs. Vortex `gameversion-hash`'s `getHashVersion` behavior now has a reusable DMM helper: converted game extensions can declare `hashFiles`/`hashDirPath`, DMM computes the Vortex-style chained MD5 hash, and it maps through the Vortex backend hash map when reachable. The Vortex UI/actions for editing hash-map entries remain metadata-only.
 - Vortex `modtype-umm`'s `ummAddGame` API now maps to a typed DMM `umm` helper for converted first-party Go extensions. DMM also supports the source-backed `umm-installer` archive shape as a managed `tool-only` staging payload. Runtime Unity Mod Manager auto-download, discovery, launch, and patch execution are still blocked until the reusable external-tool flow exists.
 - Source-backed metadata exists for shared-system APIs/events used by FNIS, local game settings, dependency management, new-file monitoring, and Vortex test helpers: `deploy-single-mod`, `purge-mods-in-path`, `browse-for-download`, `discover-tools`, `bake-settings`, `unfulfilled-rules`, `registerGameInfoProvider`, and new-file adoption.
 - Missing runtime implementations for extension-owned persistent state/persistor/migration behavior equivalent to Vortex `registerReducer`, `registerPersistor`, and `registerMigration`.

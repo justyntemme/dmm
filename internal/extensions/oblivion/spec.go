@@ -2,6 +2,7 @@ package oblivion
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -93,7 +94,7 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 func registerStoreMetadata(r sdk.Registrar) {
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Status: sdk.CapabilityStatusMetadata, Message: "Vortex can discover Oblivion through GOG. DMM's current Steam Deck target uses Steam discovery."})
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Status: sdk.CapabilityStatusMetadata, Message: "Vortex can discover Oblivion through Xbox and defaults to the English language folder. DMM needs generic store/language selection before enabling this path."})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{ID: "oblivion-hash-version", Name: "Oblivion.esm hash version", Status: sdk.CapabilityStatusBlocked, Message: "Vortex declares hashFiles for Oblivion. DMM needs a reusable hash-version provider runtime before this can run."})
+	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "oblivion-hash-version", Name: "Oblivion.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Oblivion.esm"}}))
 }
 
 func sources() []sdk.SourceRef {

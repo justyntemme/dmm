@@ -1,6 +1,7 @@
 package kerbalspaceprogram
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -52,12 +53,7 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "kerbalspaceprogram-assembly-version",
-		Name:    "Kerbal Space Program Assembly-CSharp hash",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex records KSP_x64_Data/Managed/Assembly-CSharp.dll as a hash file. DMM records this source-backed version signal until the generic hash-version runtime is executable.",
-	})
+	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "kerbalspaceprogram-assembly-version", Name: "Kerbal Space Program Assembly-CSharp hash", VortexGameID: VortexGameID, HashFiles: []string{"KSP_x64_Data/Managed/Assembly-CSharp.dll"}}))
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-kerbalspaceprogram extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-kerbalspaceprogram/src",

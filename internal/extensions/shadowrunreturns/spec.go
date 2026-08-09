@@ -1,6 +1,7 @@
 package shadowrunreturns
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -61,12 +62,17 @@ func Register(r sdk.Registrar) {
 		Name:           "Ensure Shadowrun Returns ContentPacks folder exists",
 		GeneratedFiles: []string{modRoot},
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "shadowrunreturns-hash-version",
-		Name:    "Shadowrun Returns managed assembly hash version",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex hashes several managed assemblies and the editor executable for game-version metadata. DMM needs a reusable hash-version provider runtime before this can run.",
-	})
+	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{
+		ID:           "shadowrunreturns-hash-version",
+		Name:         "Shadowrun Returns managed assembly hash version",
+		VortexGameID: VortexGameID,
+		HashFiles: []string{
+			"Shadowrun_Data/Managed/Assembly-UnityScript.dll",
+			"Shadowrun_Data/Managed/Assembly-CSharp.dll",
+			"Shadowrun_Data/Managed/Assembly-CSharp-firstpass.dll",
+			"ShadowrunEditor.exe",
+		},
+	}))
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-shadowrunreturns extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-shadowrunreturns/src",

@@ -1,6 +1,7 @@
 package grimdawn
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -54,12 +55,7 @@ func Register(r sdk.Registrar) {
 		Name:           "Ensure Grim Dawn mods folder exists",
 		GeneratedFiles: []string{modRoot},
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "grimdawn-hash-version",
-		Name:    "Grim Dawn executable and Game.dll hash version",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex hashes Grim Dawn.exe and Game.dll for game-version metadata. DMM needs a reusable hash-version provider runtime before this can run.",
-	})
+	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "grimdawn-hash-version", Name: "Grim Dawn executable and Game.dll hash version", VortexGameID: VortexGameID, HashFiles: []string{"Grim Dawn.exe", "Game.dll"}}))
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      "gog",
 		Name:    "GOG",

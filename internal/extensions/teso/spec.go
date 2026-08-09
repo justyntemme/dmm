@@ -1,6 +1,7 @@
 package teso
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -49,7 +50,16 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{ID: "teso-ensure-addons-folder", Name: "Ensure The Elder Scrolls Online AddOns folder exists", GeneratedFiles: []string{"Elder Scrolls Online/live/Addons"}})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{ID: "teso-hash-version", Name: "The Elder Scrolls Online hash version", Status: sdk.CapabilityStatusBlocked, Message: "Vortex declares hash files for ESO launcher/game version metadata. DMM needs a reusable hash-version provider runtime before this can run."})
+	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{
+		ID:           "teso-hash-version",
+		Name:         "The Elder Scrolls Online hash version",
+		VortexGameID: VortexGameID,
+		HashFiles: []string{
+			"../The Elder Scrolls Online/game/game_player.version",
+			"../The Elder Scrolls Online/depot/depot.version",
+			"Bethesda.net_Launcher.version",
+		},
+	}))
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Status: sdk.CapabilityStatusMetadata, Message: "Vortex can discover the standalone ESO launcher through the Windows registry. DMM's current Steam Deck target uses Steam discovery."})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-teso extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-teso/src"})
 }
