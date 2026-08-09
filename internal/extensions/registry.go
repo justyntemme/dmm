@@ -22,6 +22,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/factorio"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
@@ -58,6 +59,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/neverwinter"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/nomanssky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
@@ -107,6 +109,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcherlegacy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -148,6 +151,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(elex.Extension()),
+		gameext.MustCompileExtension(factorio.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(fez.Extension()),
@@ -187,6 +191,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(neverwinter.Extensions()[0]),
 		gameext.MustCompileExtension(neverwinter.Extensions()[1]),
 		gameext.MustCompileExtension(neverwinter.Extensions()[2]),
+		gameext.MustCompileExtension(nomanssky.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
@@ -230,6 +235,8 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(transportfever2.Extension()),
 		gameext.MustCompileExtension(warno.Extension()),
 		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
+		gameext.MustCompileExtension(witcherlegacy.Extensions()[0]),
+		gameext.MustCompileExtension(witcherlegacy.Extensions()[1]),
 		gameext.MustCompileExtension(witcher3.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
 		gameext.MustCompileExtension(xrebirth.Extension()),
