@@ -194,7 +194,6 @@ var games = []GameSpec{
 	{VortexDir: "game-darkestdungeon", ID: "darkestdungeon", Name: "Darkest Dungeon", SteamAppIDs: []string{"262060"}, HasCustomInstallers: true},
 	{VortexDir: "game-darksouls", ID: "darksouls", Name: "Dark Souls", SteamAppIDs: []string{"211420"}, Notes: []string{"Vortex setup prompts for DSfix and opens Nexus mod 19; DMM needs a source-reviewed runtime/tool requirement before claiming full support."}},
 	{VortexDir: "game-darksouls2", ID: "darksouls2", Name: "Dark Souls II", SteamAppIDs: []string{"236430", "335300"}},
-	{VortexDir: "game-dawnofman", ID: "dawnofman", Name: "Dawn of Man", SteamAppIDs: []string{"858810"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-divinityoriginalsin2", ID: "divinityoriginalsin2", Name: "Divinity: Original Sin 2", SteamAppIDs: []string{"435150"}, Notes: []string{"Vortex registers both Original and Definitive Edition against Steam app 435150; DMM needs a multi-variant-per-app resolver before representing both as selectable game records."}},
 	{VortexDir: "game-dmc5", ID: "devilmaycry5", Name: "Devil May Cry 5", VortexStub: true, SupportModID: "434"},
 	{VortexDir: "game-dragonage", ID: "dragonage", Name: "Dragon Age: Origins", SteamAppIDs: []string{"17450", "47810"}},

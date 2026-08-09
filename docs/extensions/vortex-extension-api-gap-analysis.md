@@ -124,6 +124,7 @@ DMM status:
 - Surviving Mars is promoted from catalog metadata into `internal/extensions/survivingmars`, covering Vortex `modcontent.hpk` archive root handling and the AppData mods target root adapted to Steam Proton compatdata on Deck.
 - Daggerfall Unity is promoted from catalog metadata into `internal/extensions/daggerfallunity`, covering Vortex `.dfmod` handling, Windows/no-platform payload filtering, and `DaggerfallUnity_Data/StreamingAssets` deployment.
 - Sekiro is promoted from catalog metadata into `internal/extensions/sekiro`, covering Vortex loose `.partsbnd.dcx` handling, root `parts` package handling, and Mod Engine presence diagnostics.
+- Dawn of Man is promoted from catalog metadata into `internal/extensions/dawnofman`, covering Vortex scenario `.scn.xml` installs into Documents scenarios, UMM-style `Info.json` installs into game `Mods`, and blocked UMM setup parity metadata.
 - Source-backed metadata now exists for shared Vortex mod types `dazip`, `dinput`, `enb`, `gedosato`, and `umm`, plus their registered installers where Vortex has them. They are marked `blocked` until the reusable DMM helpers exist.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
 - Needed helper APIs include source-backed versions of Vortex `testSupportedContent`, advanced `mergeMods` path transforms, broader wrapper-root normalization variants, and richer component-choice rules.
