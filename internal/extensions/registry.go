@@ -29,6 +29,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/greedfall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
@@ -140,6 +141,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(galacticcivilizations3.Extension()),
 		gameext.MustCompileExtension(gnorpapologue.Extension()),
 		gameext.MustCompileExtension(godhood.Extension()),
+		gameext.MustCompileExtension(greedfall.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),

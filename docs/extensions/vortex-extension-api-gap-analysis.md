@@ -120,6 +120,7 @@ DMM status:
 - Torchlight II is promoted from catalog metadata into `internal/extensions/torchlight2`, covering Vortex's `.mod` installer, documents mods target root, Linux `ModLauncher.bin.x86` executable metadata, and Steam launcher requirement metadata.
 - Galactic Civilizations III is promoted from catalog metadata into `internal/extensions/galacticcivilizations3`, covering Vortex's documents-root mod path selection, broad archive copy installer, `.faction` routing, Crusade mod-type metadata, and in-game enable reminder.
 - A Hat in Time is promoted from catalog metadata into `internal/extensions/ahatintime`, covering Vortex `modinfo.ini` archive root handling and supported Modding Tools metadata.
+- GreedFall is promoted from catalog metadata into `internal/extensions/greedfall`, covering Vortex datalocal wrapper stripping, FOMOD exclusion, executable version metadata, and a did-deploy hook that refreshes managed target timestamps after deployment.
 - Source-backed metadata now exists for shared Vortex mod types `dazip`, `dinput`, `enb`, `gedosato`, and `umm`, plus their registered installers where Vortex has them. They are marked `blocked` until the reusable DMM helpers exist.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
 - Needed helper APIs include source-backed versions of Vortex `testSupportedContent`, advanced `mergeMods` path transforms, broader wrapper-root normalization variants, and richer component-choice rules.

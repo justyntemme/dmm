@@ -218,7 +218,6 @@ var games = []GameSpec{
 	{VortexDir: "game-fallout4vr", ID: "fallout4vr", Name: "Fallout 4 VR", SteamAppIDs: []string{"611660"}, NexusDomains: []string{"fallout4"}, HasCustomInstallers: true},
 	{VortexDir: "game-falloutnv", ID: "falloutnv", Name: "Fallout: New Vegas", SteamAppIDs: []string{"22380"}, NexusDomains: []string{"newvegas"}, HasCustomInstallers: true},
 	{VortexDir: "game-gardenpaws", ID: "gardenpaws", Name: "Garden Paws", SteamAppIDs: []string{"840010"}, Notes: []string{"Vortex requires modtype-umm and prompts for Unity Mod Manager; DMM needs typed UMM helper parity before claiming full support."}},
-	{VortexDir: "game-greedfall", ID: "greedfall", Name: "GreedFall", SteamAppIDs: []string{"606880"}, HasCustomInstallers: true},
 	{VortexDir: "game-grimdawn", ID: "grimdawn", Name: "Grim Dawn", SteamAppIDs: []string{"219990"}},
 	{VortexDir: "game-grimrock", ID: "grimrock", Name: "Legend of Grimrock", SteamAppIDs: []string{"207170"}},
 	{VortexDir: "game-kerbalspaceprogram", ID: "kerbalspaceprogram", Name: "Kerbal Space Program", SteamAppIDs: []string{"220200"}},
