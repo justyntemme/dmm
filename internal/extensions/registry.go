@@ -45,6 +45,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryoarchive"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamestores"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gardenpaws"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
@@ -85,7 +86,10 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/oblivion"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/oxygennotincluded"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/palworld"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/pathfinderkingmaker"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/pathfinderwrathoftherighteous"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/pillarsofeternity2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
@@ -215,6 +219,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(galacticcivilizations3.Extension()),
+		gameext.MustCompileExtension(gardenpaws.Extension()),
 		gameext.MustCompileExtension(gnorpapologue.Extension()),
 		gameext.MustCompileExtension(godhood.Extension()),
 		gameext.MustCompileExtension(greedfall.Extension()),
@@ -261,7 +266,10 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
 		gameext.MustCompileExtension(oblivion.Extension()),
+		gameext.MustCompileExtension(oxygennotincluded.Extension()),
 		gameext.MustCompileExtension(palworld.Extension()),
+		gameext.MustCompileExtension(pathfinderkingmaker.Extension()),
+		gameext.MustCompileExtension(pathfinderwrathoftherighteous.Extension()),
 		gameext.MustCompileExtension(pillarsofeternity2.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),

@@ -79,7 +79,7 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 12.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 8.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
@@ -89,7 +89,8 @@ Remaining placeholder groups from direct source calls:
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
 - Source-backed `registerGameStub` support-mod entries: none remain in the catalog. `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, and `game-subnauticabelowzero` now have dedicated DMM extension packages that preserve Vortex support-mod metadata without claiming installer support.
-- Shared UMM/DAZIP/BepInEx dependency work: `game-dragonage`, `game-dragonage2`, `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, `game-pathfinderwrathoftherighteous`, `game-untitledgoose`.
+- Shared DAZIP/BepInEx dependency work: `game-dragonage`, `game-dragonage2`, `game-untitledgoose`.
+- UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and records the blocked Unity Mod Manager tool download/patch runtime until a reusable external-tool flow exists.
 - Lifecycle and event-bus work: `game-battletech` (`added-files` adoption), `game-divinityoriginalsin2` (`will-deploy`/`did-deploy` in-game enable reminder), `game-untitledgoose` (`emitAndAwait` plus migration).
 - Merge work: `game-dragonage` merges DAZIP manifest data into `AddIns.xml`; `game-wolcen` merges XML/MTL payloads.
 
@@ -100,7 +101,7 @@ Observed source-backed blocker details:
 - `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM needs a multi-logical-game-per-Steam-app resolver and source-backed deploy notification handler.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM needs a shared DAZIP/AddIns merge capability.
 - `game-wolcen/src/index.js` registers an XML/MTL merge over the `Game` folder. DMM needs a generic extension merge runtime that can read current deployed files and write merged outputs.
-- `game-pathfinderkingmaker/src/index.js`, `game-pathfinderwrathoftherighteous/src/index.ts`, `game-gardenpaws/src/index.js`, and `game-oni/src/index.js` require `modtype-umm`. DMM has source metadata for UMM but needs a typed runtime helper for Unity Mod Manager installation/discovery.
+- `game-pathfinderkingmaker/src/index.js`, `game-pathfinderwrathoftherighteous/src/index.ts`, `game-gardenpaws/src/index.js`, and `game-oni/src/index.js` require `modtype-umm`. DMM now has a typed source-backed UMM helper and Mods-folder deployment for these games, but still needs Unity Mod Manager external-tool download/discovery/patch runtime before claiming full UMM runtime parity.
 - `game-untitledgoose/src/index.ts` uses BepInEx setup, an Epic launcher resolver, and a migration. DMM has BepInEx installer helpers but needs Epic discovery and migration runtime before claiming full parity.
 
 Implementation priority from this audit:
@@ -109,7 +110,7 @@ Implementation priority from this audit:
 2. Continue using the generic generated load-order file helper for future games that write ordered text manifests.
 3. Add multi-logical-game-per-Steam-app selection, then port Divinity: Original Sin 2.
 4. Add shared DAZIP/AddIns merge capability, then port Dragon Age and Dragon Age 2.
-5. Add typed UMM helper/runtime, then port the UMM-dependent Unity games.
+5. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
 6. Add generic merge runtime for XML/MTL and source-backed patch-existing/setup runtime, then port Wolcen and similar merge/setup games.
 7. Add new-file adoption runtime for `added-files`, then port BattleTech.
 
@@ -256,7 +257,7 @@ DMM status:
 
 - First-party Go extensions can share normal Go packages, but there is no explicit registered extension API namespace, dependency graph, or import contract.
 - Source-backed metadata exists for Vortex `quickbms-support` APIs and `gameversion-hash`'s `getHashVersion` API, but both are blocked until executable/runtime behavior is implemented.
-- Source-backed metadata exists for Vortex `modtype-umm`'s `ummAddGame` API, but it is blocked until DMM has a typed Unity Mod Manager helper/API that converted game extensions can call.
+- Vortex `modtype-umm`'s `ummAddGame` API now maps to a typed DMM `umm` helper for converted first-party Go extensions. Runtime Unity Mod Manager download/discovery/patch execution is still blocked until the reusable external-tool flow exists.
 - Source-backed metadata exists for shared-system APIs/events used by FNIS, local game settings, dependency management, new-file monitoring, and Vortex test helpers: `deploy-single-mod`, `purge-mods-in-path`, `browse-for-download`, `discover-tools`, `bake-settings`, `unfulfilled-rules`, `registerGameInfoProvider`, and new-file adoption.
 - Missing runtime implementations for extension-owned persistent state/persistor/migration behavior equivalent to Vortex `registerReducer`, `registerPersistor`, and `registerMigration`.
 
