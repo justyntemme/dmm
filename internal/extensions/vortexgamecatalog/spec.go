@@ -264,8 +264,6 @@ var games = []GameSpec{
 	{VortexDir: "game-stateofdecay", ID: "stateofdecay", Name: "State of Decay", SteamAppIDs: []string{"241540"}},
 	{VortexDir: "game-subnautica", ID: "subnautica", Name: "Subnautica", VortexStub: true, SupportModID: "202"},
 	{VortexDir: "game-subnauticabelowzero", ID: "subnauticabelowzero", Name: "Subnautica: Below Zero", VortexStub: true, SupportModID: "203"},
-	{VortexDir: "game-sw-kotor", ID: "kotor", Name: "Star Wars: Knights of the Old Republic", SteamAppIDs: []string{"32370"}, HasCustomInstallers: true, HasModTypes: true},
-	{VortexDir: "game-sw-kotor", ID: "kotor2", Name: "Star Wars: Knights of the Old Republic II", SteamAppIDs: []string{"208580"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-teso", ID: "teso", Name: "The Elder Scrolls Online", SteamAppIDs: []string{"306130"}, NexusDomains: []string{"elderscrollsonline"}},
 	{VortexDir: "game-totalwarthreekingdoms", ID: "totalwarthreekingdoms", Name: "Total War: Three Kingdoms", SteamAppIDs: []string{"779340"}, HasCustomInstallers: true},
 	{VortexDir: "game-untitledgoose", ID: "untitledgoosegame", Name: "Untitled Goose Game", AllowNoSteamAppID: true, Notes: []string{"Vortex discovers this game through Epic and wires BepInEx support plus a migration; DMM needs source-reviewed Epic discovery and BepInEx migration parity before full support."}},
