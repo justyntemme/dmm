@@ -789,8 +789,6 @@ const deckySidebarListStyle: CSSProperties = {
   width: "100%"
 };
 
-const deckyLocalArchivePageSize = 12;
-
 const deckySidebarSurfaceStyle: CSSProperties = {
   boxSizing: "border-box",
   display: "grid",
