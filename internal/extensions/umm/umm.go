@@ -8,6 +8,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -68,6 +69,30 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 			URL:            ToolGitHubURL,
 			ArchiveName:    ToolFileName,
 			Required:       true,
+			SourceModID:    ToolModID,
+			SourceFileID:   ToolFileID,
+			SourceGame:     "site",
+			SourceProvider: "vortex-modtype-umm",
+			Message:        "Vortex modtype-umm uses Nexus site mod " + ToolModID + " file " + ToolFileID + " and falls back to GitHub release " + ToolVersion + ". DMM acquires the GitHub release asset through the shared captured-install pipeline.",
+		},
+	})
+	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+		ID:               gameID + "-umm-installed",
+		Name:             ToolName,
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         []string{modType},
+		ProviderModTypes: []string{ToolModType},
+		Message:          ToolName + " is required before " + gameName + " UMM mods can work in game.",
+		OKMessage:        ToolName + " is installed as a DMM-managed tool. Run the tool if this game still needs UMM's patch/configuration step.",
+		InstallHint:      "Install " + ToolName + ", then launch it from DMM Tools if UMM still needs to patch or configure this game.",
+		Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+			ID:             "umm-" + ToolVersion,
+			Name:           ToolName + " " + ToolVersion,
+			Catalog:        "github",
+			URL:            ToolGitHubURL,
+			ArchiveName:    ToolFileName,
+			Required:       true,
 			AutoAcquire:    opts.AutoDownload,
 			SourceModID:    ToolModID,
 			SourceFileID:   ToolFileID,
@@ -80,7 +105,7 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		ID:      "ummAddGame",
 		Name:    "Register Unity Mod Manager game support",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM supports the opt-in, Mods-folder installer, tool archive installer, source-verified tool acquisition, managed tool discovery, and Decky tool launch path; patch execution remains separate runtime work.",
+		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM supports the opt-in, Mods-folder installer, tool archive installer, source-verified tool acquisition, managed tool discovery, and Decky tool launch path.",
 	})
 	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
 		ID:      gameID + "-umm-support-dashlet",
@@ -97,8 +122,8 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		ID:      gameID + "-umm-runtime",
 		Name:    gameName + " Unity Mod Manager runtime",
 		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: message + " After launch, the user still needs UMM's own patch/install flow until DMM has a verified noninteractive UMM patch contract.",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: message + " Source review shows Vortex installs/locates UMM and registers it as a tool; the actual patch/configuration step remains inside UMM's own UI.",
 	})
 }
 

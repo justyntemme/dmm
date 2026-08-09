@@ -11,9 +11,10 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/pathfinderkingmaker"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/pathfinderwrathoftherighteous"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 )
 
-func TestUMMVortexPortsExposeModsInstallerToolLaunchAndBlockedPatchRuntime(t *testing.T) {
+func TestUMMVortexPortsExposeModsInstallerToolLaunchAndRuntimeRequirement(t *testing.T) {
 	tests := []struct {
 		name            string
 		extension       gameext.Extension
@@ -45,10 +46,13 @@ func TestUMMVortexPortsExposeModsInstallerToolLaunchAndBlockedPatchRuntime(t *te
 			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "metadata" {
 				t.Fatalf("UMM supported tool = %+v", summary.Capabilities.SupportedTools)
 			}
+			if len(summary.Capabilities.RuntimeRequirements) != 1 || summary.Capabilities.RuntimeRequirements[0].ID == "" || summary.Capabilities.RuntimeRequirements[0].Acquisition == nil {
+				t.Fatalf("UMM runtime requirement = %+v", summary.Capabilities.RuntimeRequirements)
+			}
 			if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
 				t.Fatalf("UMM metadata = api %+v dashlets %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionDashlets, summary.Capabilities.ExtensionToDos)
 			}
-			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionToDos[0].Status != "blocked" {
+			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionToDos[0].Status != "metadata" {
 				t.Fatalf("UMM runtime split = api %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionToDos)
 			}
 			if len(summary.Capabilities.GameStores) != tt.wantGameStores {
@@ -62,6 +66,22 @@ func TestUMMVortexPortsExposeModsInstallerToolLaunchAndBlockedPatchRuntime(t *te
 				t.Fatal(err)
 			}
 			assertSimpleTarget(t, plan, "Mods/file.txt")
+
+			consumerModType := summary.Capabilities.RuntimeRequirements[0].ModTypes[0]
+			requirements := registry.RuntimeRequirements(context.Background(), tt.appID, t.TempDir(), []gamehandler.RuntimeMod{{
+				Enabled: true,
+				ModType: consumerModType,
+			}})
+			if len(requirements) != 1 || requirements[0].Status != gamehandler.RequirementMissing || requirements[0].Acquisition == nil {
+				t.Fatalf("missing UMM runtime requirement = %+v", requirements)
+			}
+			requirements = registry.RuntimeRequirements(context.Background(), tt.appID, t.TempDir(), []gamehandler.RuntimeMod{
+				{Enabled: true, ModType: consumerModType},
+				{Enabled: true, ModType: "umm"},
+			})
+			if len(requirements) != 1 || requirements[0].Status != gamehandler.RequirementOK || len(requirements[0].Details) != 1 {
+				t.Fatalf("satisfied UMM runtime requirement = %+v", requirements)
+			}
 		})
 	}
 }
