@@ -10119,6 +10119,67 @@ func TestDeployReportsRemovedFilesBeforePlanning(t *testing.T) {
 	}
 }
 
+func TestRecomputeConflictsAndRulesRunsExtensionEvent(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Rules Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999023"
+	var captured sdk.EventHandlerInput
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "rulesgame",
+		Name:    "Rules Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"rulesgame"},
+				VortexGameID: "rulesgame",
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventUpdateConflictsRules,
+				Name:  "Refresh conflicts and rules",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					captured = input
+					return sdk.EventHandlerResult{Messages: []string{"rules refreshed"}}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Rules Game",
+		InstallDir:  "Rules Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/conflicts-and-rules/recompute", bytes.NewBufferString(`{"calculate_overrides":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("recompute status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp recomputeConflictsAndRulesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.EventHandled || !resp.CalculateOverrides || resp.Diagnostics.AppID != appID {
+		t.Fatalf("response = %+v", resp)
+	}
+	if captured.Event != sdk.EventUpdateConflictsRules || !captured.CalculateOverrides || captured.AppID != appID || captured.Source != "api" {
+		t.Fatalf("captured input = %+v", captured)
+	}
+}
+
 func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Lifecycle Game")

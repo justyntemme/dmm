@@ -441,6 +441,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/installer-choice-presets", s.handleGameInstallerChoicePresets)
 	mux.HandleFunc("DELETE /api/games/{appID}/installer-choice-presets/{presetID}", s.handleDeleteInstallerChoicePreset)
 	mux.HandleFunc("POST /api/games/{appID}/mods/recover-downloads", s.handleRecoverDownloads)
+	mux.HandleFunc("POST /api/games/{appID}/conflicts-and-rules/recompute", s.handleRecomputeGameConflictsAndRules)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/settings", s.handleDeploySettings)
 	mux.HandleFunc("PUT /api/games/{appID}/deploy/settings", s.handleUpdateDeploySettings)
 	mux.HandleFunc("GET /api/games/{appID}/deploy/status", s.handleDeployStatus)
@@ -634,6 +635,18 @@ type gameDiagnosticsResponse struct {
 	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
 	HealthChecks        []gameHealthCheckResponse        `json:"health_checks,omitempty"`
 	ValidationWarnings  []string                         `json:"validation_warnings,omitempty"`
+}
+
+type recomputeConflictsAndRulesRequest struct {
+	CalculateOverrides bool `json:"calculate_overrides,omitempty"`
+}
+
+type recomputeConflictsAndRulesResponse struct {
+	AppID              string                  `json:"app_id"`
+	Event              string                  `json:"event"`
+	EventHandled       bool                    `json:"event_handled"`
+	CalculateOverrides bool                    `json:"calculate_overrides"`
+	Diagnostics        gameDiagnosticsResponse `json:"diagnostics"`
 }
 
 type gameHealthCheckResponse struct {
@@ -970,34 +983,41 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "appID is required", http.StatusBadRequest)
 		return
 	}
-	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	resp, err := s.gameDiagnostics(r.Context(), appID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
 		return
 	}
-	profiles, err := s.db.ProfilesForSteamApp(r.Context(), appID)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnosticsResponse, error) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return gameDiagnosticsResponse{}, err
 	}
-	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	profiles, err := s.db.ProfilesForSteamApp(ctx, appID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return gameDiagnosticsResponse{}, err
 	}
-	if _, err := s.cleanupDuplicateInstallCandidates(r.Context(), appID, "game-diagnostics"); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	candidates, err := s.db.InstallCandidatesForSteamApp(r.Context(), appID)
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return gameDiagnosticsResponse{}, err
 	}
-	deployment, err := s.deploymentStatus(r.Context(), appID)
+	if _, err := s.cleanupDuplicateInstallCandidates(ctx, appID, "game-diagnostics"); err != nil {
+		return gameDiagnosticsResponse{}, err
+	}
+	candidates, err := s.db.InstallCandidatesForSteamApp(ctx, appID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return gameDiagnosticsResponse{}, err
+	}
+	deployment, err := s.deploymentStatus(ctx, appID)
+	if err != nil {
+		return gameDiagnosticsResponse{}, err
 	}
 
 	resp := gameDiagnosticsResponse{
@@ -1022,8 +1042,8 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 			resp.EnabledMods++
 		}
 	}
-	resp.RuntimeRequirements = s.games.RuntimeRequirements(r.Context(), appID, game.GamePath, runtimeModsForRequirements(mods))
-	resp.HealthChecks = s.extensionHealthChecks(r.Context(), game, mods)
+	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
+	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
 			continue
@@ -1035,14 +1055,91 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 			resp.ActiveDeployJobs++
 		}
 	}
-	plan, err := s.buildGameDeployPlan(r.Context(), appID)
+	plan, err := s.buildGameDeployPlan(ctx, appID)
 	if err != nil {
 		resp.Preview.Error = err.Error()
 	} else {
 		resp.Preview = summarizeDeployPreview(plan)
 	}
 	resp.ValidationWarnings = gameDiagnosticsWarnings(resp)
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
+}
+
+func (s *Server) handleRecomputeGameConflictsAndRules(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	var req recomputeConflictsAndRulesRequest
+	if r.Body != nil && r.Body != http.NoBody {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("calculate_overrides")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			http.Error(w, "calculate_overrides must be a boolean", http.StatusBadRequest)
+			return
+		}
+		req.CalculateOverrides = value
+	}
+	eventHandled, err := s.recomputeGameConflictsAndRules(r.Context(), appID, req.CalculateOverrides, "api")
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
+		return
+	}
+	diagnostics, err := s.gameDiagnostics(r.Context(), appID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, recomputeConflictsAndRulesResponse{
+		AppID:              appID,
+		Event:              gameext.EventUpdateConflictsRules,
+		EventHandled:       eventHandled,
+		CalculateOverrides: req.CalculateOverrides,
+		Diagnostics:        diagnostics,
+	})
+}
+
+func (s *Server) recomputeGameConflictsAndRules(ctx context.Context, appID string, calculateOverrides bool, source string) (bool, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return false, errors.New("appID is required")
+	}
+	if _, err := s.db.GameBySteamApp(ctx, appID); err != nil {
+		return false, err
+	}
+	eventHandled := s.games.HasEventHandlerForSteamApp(appID, gameext.EventUpdateConflictsRules)
+	if eventHandled {
+		if err := s.runLifecycleEventHandlers(ctx, lifecycleEventRequest{
+			AppID:              appID,
+			Event:              gameext.EventUpdateConflictsRules,
+			Source:             source,
+			CalculateOverrides: calculateOverrides,
+		}); err != nil {
+			return true, err
+		}
+	}
+	s.logger.Info("conflict and rule recompute completed", "app_id", appID, "source", source, "event_handled", eventHandled, "calculate_overrides", calculateOverrides)
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":              "conflicts_and_rules_recomputed",
+		"event":               gameext.EventUpdateConflictsRules,
+		"event_handled":       eventHandled,
+		"calculate_overrides": calculateOverrides,
+	})
+	return eventHandled, nil
 }
 
 func (s *Server) extensionHealthChecks(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameHealthCheckResponse {
@@ -12373,13 +12470,14 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 }
 
 type lifecycleEventRequest struct {
-	AppID        string
-	Event        string
-	Source       string
-	ProfileID    int64
-	ManagedFiles []deploy.AppliedFile
-	ModIDs       []int64
-	Mods         []storage.InstalledMod
+	AppID              string
+	Event              string
+	Source             string
+	ProfileID          int64
+	ManagedFiles       []deploy.AppliedFile
+	ModIDs             []int64
+	Mods               []storage.InstalledMod
+	CalculateOverrides bool
 }
 
 func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEventRequest) error {
@@ -12415,16 +12513,17 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 		return err
 	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
-		AppID:        appID,
-		GamePath:     game.GamePath,
-		LibraryPath:  game.LibraryPath,
-		ProfileID:    profileID,
-		StagingRoot:  stagingRoot,
-		WorkDir:      workDir,
-		Source:       strings.TrimSpace(req.Source),
-		ManagedFiles: append([]deploy.AppliedFile(nil), req.ManagedFiles...),
-		Mods:         deploymentModsForHooks(mods),
-		ModIDs:       append([]int64(nil), req.ModIDs...),
+		AppID:              appID,
+		GamePath:           game.GamePath,
+		LibraryPath:        game.LibraryPath,
+		ProfileID:          profileID,
+		StagingRoot:        stagingRoot,
+		WorkDir:            workDir,
+		Source:             strings.TrimSpace(req.Source),
+		ManagedFiles:       append([]deploy.AppliedFile(nil), req.ManagedFiles...),
+		Mods:               deploymentModsForHooks(mods),
+		ModIDs:             append([]int64(nil), req.ModIDs...),
+		CalculateOverrides: req.CalculateOverrides,
 	})
 	if err != nil {
 		return err

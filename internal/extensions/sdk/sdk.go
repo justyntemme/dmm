@@ -759,7 +759,9 @@ type EventHandlerInput struct {
 	ModIDs       []int64
 	AddedFiles   []AddedFile
 	RemovedFiles []RemovedFile
-	Progress     EventProgressFunc
+	// CalculateOverrides mirrors Vortex's update-conflicts-and-rules event argument.
+	CalculateOverrides bool
+	Progress           EventProgressFunc
 }
 
 type EventProgressFunc func(EventProgress)
