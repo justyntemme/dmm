@@ -470,6 +470,19 @@ func (r Registry) ExtensionForSteamApp(appID string) (Extension, bool) {
 	return extension, ok
 }
 
+func (r Registry) ExtensionByID(extensionID string) (Extension, bool) {
+	extensionID = canonical(extensionID)
+	if extensionID == "" {
+		return Extension{}, false
+	}
+	for _, extension := range r.extensions {
+		if canonical(extension.ID) == extensionID {
+			return extension, true
+		}
+	}
+	return Extension{}, false
+}
+
 func (r Registry) ExtensionsForSteamApp(appID string) []Extension {
 	extensions := r.extensionListBySteamAppID[canonical(appID)]
 	if len(extensions) == 0 {
@@ -711,6 +724,23 @@ func (r Registry) ExtensionActionForSteamApp(appID, actionID string) (Extension,
 		}
 	}
 	return Extension{}, sdk.ExtensionActionSpec{}, false
+}
+
+func (r Registry) ExtensionSetting(extensionID, settingID string) (Extension, sdk.ExtensionSettingSpec, bool) {
+	extension, ok := r.ExtensionByID(extensionID)
+	if !ok {
+		return Extension{}, sdk.ExtensionSettingSpec{}, false
+	}
+	settingID = canonical(settingID)
+	if settingID == "" {
+		return Extension{}, sdk.ExtensionSettingSpec{}, false
+	}
+	for _, setting := range extension.ExtensionSettings {
+		if canonical(setting.ID) == settingID {
+			return extension, setting, true
+		}
+	}
+	return Extension{}, sdk.ExtensionSettingSpec{}, false
 }
 
 func (r Registry) ProfileFeatureForSteamApp(appID, featureID string) (Extension, sdk.ProfileFeatureSpec, bool) {

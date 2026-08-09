@@ -605,6 +605,94 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	}
 }
 
+func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
+	srv := newTestServer(t)
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "settingtest",
+		Name:    "Setting Test",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:    "merge_config",
+				Name:  "Merge Config",
+				Scope: "profile",
+			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:      "blocked_setting",
+				Name:    "Blocked Setting",
+				Scope:   "debug",
+				Status:  sdk.CapabilityStatusBlocked,
+				Message: "not ready",
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/extensions/settings", nil)
+	listReq.RemoteAddr = "127.0.0.1:1"
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var list []extensionSettingResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || string(list[1].Value) != "null" || list[1].SettingID != "merge_config" {
+		t.Fatalf("initial settings = %+v", list)
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/extensions/settingtest/settings/merge_config", bytes.NewBufferString(`{"value":{"enabled":true,"mode":"safe"}}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.RemoteAddr = "127.0.0.1:1"
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, body = %s", putRec.Code, putRec.Body.String())
+	}
+	var updated extensionSettingResponse
+	if err := json.Unmarshal(putRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.ExtensionID != "settingtest" || updated.SettingID != "merge_config" || string(updated.Value) != `{"enabled":true,"mode":"safe"}` {
+		t.Fatalf("updated = %+v", updated)
+	}
+	domainEvents, err := srv.db.ListDomainEventsAfter(context.Background(), 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundEvent := false
+	for _, event := range domainEvents {
+		if event.Type == events.TypeExtensionSettingsChanged && strings.Contains(string(event.Payload), "extension_setting_updated") {
+			foundEvent = true
+			break
+		}
+	}
+	if !foundEvent {
+		t.Fatalf("extension settings event not found in %+v", domainEvents)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPut, "/api/extensions/settingtest/settings/blocked_setting", bytes.NewBufferString(`{"value":true}`))
+	blockedReq.Header.Set("Content-Type", "application/json")
+	blockedReq.RemoteAddr = "127.0.0.1:1"
+	blockedRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusConflict {
+		t.Fatalf("blocked status = %d, body = %s", blockedRec.Code, blockedRec.Body.String())
+	}
+
+	missingReq := httptest.NewRequest(http.MethodPut, "/api/extensions/settingtest/settings/missing", bytes.NewBufferString(`{"value":true}`))
+	missingReq.Header.Set("Content-Type", "application/json")
+	missingReq.RemoteAddr = "127.0.0.1:1"
+	missingRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, body = %s", missingRec.Code, missingRec.Body.String())
+	}
+}
+
 func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	body, err := json.Marshal(gameResponse{
 		AppID:        "108600",

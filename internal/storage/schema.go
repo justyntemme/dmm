@@ -269,6 +269,15 @@ CREATE TABLE IF NOT EXISTS extension_migration_runs (
 	UNIQUE(extension_id, migration_id, steam_app_id)
 );
 
+CREATE TABLE IF NOT EXISTS extension_setting_values (
+	extension_id TEXT NOT NULL,
+	setting_id TEXT NOT NULL,
+	value_json TEXT NOT NULL DEFAULT 'null',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(extension_id, setting_id)
+);
+
 CREATE TABLE IF NOT EXISTS steam_workshop_items (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,

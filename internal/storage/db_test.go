@@ -250,6 +250,32 @@ func TestRecordExtensionMigrationRunTracksCompletion(t *testing.T) {
 	}
 }
 
+func TestExtensionSettingValuesPersistJSON(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	value, err := db.SetExtensionSettingValue(context.Background(), "StardewValley", "MergeConfig", []byte(`{"enabled":true,"profile":"default"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ExtensionID != "stardewvalley" || value.SettingID != "mergeconfig" || value.ValueJSON != `{"enabled":true,"profile":"default"}` {
+		t.Fatalf("value = %+v", value)
+	}
+	if _, err := db.SetExtensionSettingValue(context.Background(), "stardewvalley", "mergeconfig", []byte(`{"enabled":`)); err == nil {
+		t.Fatal("expected invalid JSON error")
+	}
+	values, err := db.ExtensionSettingValues(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].ValueJSON != `{"enabled":true,"profile":"default"}` {
+		t.Fatalf("values = %+v", values)
+	}
+}
+
 func TestJobsPersistPayload(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

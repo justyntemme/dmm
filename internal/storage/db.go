@@ -208,6 +208,13 @@ type ExtensionSnapshot struct {
 	CapabilitiesJSON string `json:"capabilities_json"`
 }
 
+type ExtensionSettingValue struct {
+	ExtensionID string `json:"extension_id"`
+	SettingID   string `json:"setting_id"`
+	ValueJSON   string `json:"value_json"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type ExtensionMigrationRunParams struct {
 	ExtensionID string
 	MigrationID string
@@ -509,6 +516,79 @@ ON CONFLICT(extension_id, migration_id, steam_app_id) DO UPDATE SET
 	updated_at = CURRENT_TIMESTAMP
 `, params.ExtensionID, params.MigrationID, params.SteamAppID, params.FromVersion, params.ToVersion, params.Status, params.Message)
 	return err
+}
+
+func (db *DB) ExtensionSettingValues(ctx context.Context) ([]ExtensionSettingValue, error) {
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT extension_id, setting_id, value_json, updated_at
+FROM extension_setting_values
+ORDER BY extension_id ASC, setting_id ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExtensionSettingValue
+	for rows.Next() {
+		var value ExtensionSettingValue
+		if err := rows.Scan(&value.ExtensionID, &value.SettingID, &value.ValueJSON, &value.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(value.ValueJSON) == "" {
+			value.ValueJSON = "null"
+		}
+		if !json.Valid([]byte(value.ValueJSON)) {
+			return nil, errors.New("stored extension setting value is invalid JSON")
+		}
+		out = append(out, value)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SetExtensionSettingValue(ctx context.Context, extensionID, settingID string, valueJSON []byte) (ExtensionSettingValue, error) {
+	extensionID = strings.TrimSpace(strings.ToLower(extensionID))
+	settingID = strings.TrimSpace(strings.ToLower(settingID))
+	valueJSON = bytesTrimSpace(valueJSON)
+	if extensionID == "" || settingID == "" {
+		return ExtensionSettingValue{}, errors.New("extension id and setting id are required")
+	}
+	if len(valueJSON) == 0 {
+		valueJSON = []byte("null")
+	}
+	if !json.Valid(valueJSON) {
+		return ExtensionSettingValue{}, errors.New("extension setting value must be valid JSON")
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO extension_setting_values (extension_id, setting_id, value_json, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(extension_id, setting_id) DO UPDATE SET
+	value_json = excluded.value_json,
+	updated_at = CURRENT_TIMESTAMP
+`, extensionID, settingID, string(valueJSON))
+	if err != nil {
+		return ExtensionSettingValue{}, err
+	}
+	return db.extensionSettingValue(ctx, extensionID, settingID)
+}
+
+func (db *DB) extensionSettingValue(ctx context.Context, extensionID, settingID string) (ExtensionSettingValue, error) {
+	var value ExtensionSettingValue
+	err := db.conn.QueryRowContext(ctx, `
+SELECT extension_id, setting_id, value_json, updated_at
+FROM extension_setting_values
+WHERE extension_id = ? AND setting_id = ?
+`, extensionID, settingID).Scan(&value.ExtensionID, &value.SettingID, &value.ValueJSON, &value.UpdatedAt)
+	if strings.TrimSpace(value.ValueJSON) == "" {
+		value.ValueJSON = "null"
+	}
+	if err == nil && !json.Valid([]byte(value.ValueJSON)) {
+		return ExtensionSettingValue{}, errors.New("stored extension setting value is invalid JSON")
+	}
+	return value, err
+}
+
+func bytesTrimSpace(value []byte) []byte {
+	return []byte(strings.TrimSpace(string(value)))
 }
 
 func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items []SteamWorkshopItem) ([]SteamWorkshopItem, bool, error) {

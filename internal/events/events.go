@@ -9,17 +9,18 @@ import (
 type Type string
 
 const (
-	TypeJobsSnapshot       = "jobs.snapshot"
-	TypeJobUpdated         = "job.updated"
-	TypeGameChanged        = "game.changed"
-	TypeProfileModsChanged = "profile_mods.changed"
-	TypeDeploymentChanged  = "deployment.changed"
-	TypeLaunchChanged      = "launch.changed"
-	TypeWorkshopChanged    = "workshop.changed"
-	TypeInstallChanged     = "install.changed"
-	TypeModUpdatesChanged  = "mod_updates.changed"
-	TypeUIChanged          = "ui.changed"
-	TypeDeckyBrowserOpen   = "decky.browser.open"
+	TypeJobsSnapshot             = "jobs.snapshot"
+	TypeJobUpdated               = "job.updated"
+	TypeGameChanged              = "game.changed"
+	TypeProfileModsChanged       = "profile_mods.changed"
+	TypeDeploymentChanged        = "deployment.changed"
+	TypeLaunchChanged            = "launch.changed"
+	TypeWorkshopChanged          = "workshop.changed"
+	TypeInstallChanged           = "install.changed"
+	TypeModUpdatesChanged        = "mod_updates.changed"
+	TypeUIChanged                = "ui.changed"
+	TypeExtensionSettingsChanged = "extension_settings.changed"
+	TypeDeckyBrowserOpen         = "decky.browser.open"
 )
 
 type Event struct {

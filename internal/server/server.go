@@ -405,6 +405,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/dependencies", s.handleDependencies)
 	mux.HandleFunc("GET /api/extensions", s.handleExtensions)
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
+	mux.HandleFunc("GET /api/extensions/settings", s.handleExtensionSettings)
+	mux.HandleFunc("PUT /api/extensions/{extensionID}/settings/{settingID}", s.handleSetExtensionSetting)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/install-candidates", s.handleInstallCandidates)
 	mux.HandleFunc("POST /api/decky/browser/open", s.handleDeckyBrowserOpen)
@@ -2618,6 +2620,21 @@ type deckyBrowserOpenRequest struct {
 	Title      string `json:"title"`
 }
 
+type extensionSettingResponse struct {
+	ExtensionID string          `json:"extension_id"`
+	SettingID   string          `json:"setting_id"`
+	Name        string          `json:"name"`
+	Scope       string          `json:"scope,omitempty"`
+	Status      string          `json:"status"`
+	Message     string          `json:"message,omitempty"`
+	Value       json.RawMessage `json:"value"`
+	UpdatedAt   string          `json:"updated_at,omitempty"`
+}
+
+type updateExtensionSettingRequest struct {
+	Value json.RawMessage `json:"value"`
+}
+
 type createProfileRequest struct {
 	Name            string `json:"name"`
 	SourceProfileID int64  `json:"source_profile_id,omitempty"`
@@ -3264,6 +3281,136 @@ func (s *Server) handleExtensionSnapshots(w http.ResponseWriter, r *http.Request
 		})
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func (s *Server) handleExtensionSettings(w http.ResponseWriter, r *http.Request) {
+	values, err := s.db.ExtensionSettingValues(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.extensionSettingResponses(values))
+}
+
+func (s *Server) handleSetExtensionSetting(w http.ResponseWriter, r *http.Request) {
+	extensionID := strings.TrimSpace(r.PathValue("extensionID"))
+	settingID := strings.TrimSpace(r.PathValue("settingID"))
+	if extensionID == "" || settingID == "" {
+		http.Error(w, "extensionID and settingID are required", http.StatusBadRequest)
+		return
+	}
+	var req updateExtensionSettingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.Value) == 0 {
+		http.Error(w, "value is required", http.StatusBadRequest)
+		return
+	}
+	extension, setting, ok := s.games.ExtensionSetting(extensionID, settingID)
+	if !ok {
+		http.Error(w, "extension setting is not registered", http.StatusNotFound)
+		return
+	}
+	status := strings.TrimSpace(setting.Status)
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	if status != sdk.CapabilityStatusReady {
+		message := strings.TrimSpace(setting.Message)
+		if message == "" {
+			message = "extension setting runtime is not available"
+		}
+		http.Error(w, message, http.StatusConflict)
+		return
+	}
+	value, err := s.db.SetExtensionSettingValue(r.Context(), extension.ID, setting.ID, req.Value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("extension setting updated", "extension_id", value.ExtensionID, "setting_id", value.SettingID)
+	s.publishEvent(events.Event{
+		Type: events.TypeExtensionSettingsChanged,
+		Payload: events.MustPayload(map[string]any{
+			"action":       "extension_setting_updated",
+			"extension_id": value.ExtensionID,
+			"setting_id":   value.SettingID,
+		}),
+	})
+	writeJSON(w, http.StatusOK, extensionSettingResponse{
+		ExtensionID: value.ExtensionID,
+		SettingID:   value.SettingID,
+		Name:        fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
+		Scope:       setting.Scope,
+		Status:      status,
+		Message:     setting.Message,
+		Value:       json.RawMessage(value.ValueJSON),
+		UpdatedAt:   value.UpdatedAt,
+	})
+}
+
+func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValue) []extensionSettingResponse {
+	valueByKey := map[string]storage.ExtensionSettingValue{}
+	for _, value := range values {
+		key := extensionSettingKey(value.ExtensionID, value.SettingID)
+		if key == "" {
+			continue
+		}
+		valueByKey[key] = value
+	}
+	responses := []extensionSettingResponse{}
+	for _, extension := range s.games.ExtensionSummaries() {
+		for _, setting := range extension.Capabilities.ExtensionSettings {
+			settingID := strings.TrimSpace(setting.ID)
+			if settingID == "" {
+				continue
+			}
+			valueJSON := "null"
+			updatedAt := ""
+			if stored, ok := valueByKey[extensionSettingKey(extension.ID, settingID)]; ok {
+				valueJSON = stored.ValueJSON
+				updatedAt = stored.UpdatedAt
+			}
+			if !json.Valid([]byte(valueJSON)) {
+				valueJSON = "null"
+			}
+			responses = append(responses, extensionSettingResponse{
+				ExtensionID: extension.ID,
+				SettingID:   settingID,
+				Name:        fallbackString(strings.TrimSpace(setting.Name), settingID),
+				Scope:       setting.Scope,
+				Status:      fallbackString(strings.TrimSpace(setting.Status), sdk.CapabilityStatusReady),
+				Message:     setting.Message,
+				Value:       json.RawMessage(valueJSON),
+				UpdatedAt:   updatedAt,
+			})
+		}
+	}
+	sort.Slice(responses, func(i, j int) bool {
+		if responses[i].ExtensionID == responses[j].ExtensionID {
+			return responses[i].SettingID < responses[j].SettingID
+		}
+		return responses[i].ExtensionID < responses[j].ExtensionID
+	})
+	return responses
+}
+
+func extensionSettingKey(extensionID, settingID string) string {
+	extensionID = strings.TrimSpace(strings.ToLower(extensionID))
+	settingID = strings.TrimSpace(strings.ToLower(settingID))
+	if extensionID == "" || settingID == "" {
+		return ""
+	}
+	return extensionID + "\x00" + settingID
+}
+
+func fallbackString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func extensionSnapshotsFromSummaries(summaries []gameext.ExtensionSummary) []storage.ExtensionSnapshot {
