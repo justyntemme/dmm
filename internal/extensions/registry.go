@@ -88,6 +88,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sevendaystodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sims4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimvr"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
@@ -234,6 +235,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(sekiro.Extension()),
 		gameext.MustCompileExtension(sevendaystodie.Extension()),
 		gameext.MustCompileExtension(shieldwall.Extension()),
+		gameext.MustCompileExtension(sims4.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
 		gameext.MustCompileExtension(skyrimvr.Extension()),

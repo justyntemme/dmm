@@ -212,7 +212,6 @@ var games = []GameSpec{
 	{VortexDir: "game-re3remake", ID: "residentevil32020", Name: "Resident Evil 3 (2020)", VortexStub: true, SupportModID: "433"},
 	{VortexDir: "game-shadowrunreturns", ID: "shadowrunreturns", Name: "Shadowrun Returns", SteamAppIDs: []string{"234650"}},
 	{VortexDir: "game-sims3", ID: "thesims3", Name: "The Sims 3", SteamAppIDs: []string{"47890"}},
-	{VortexDir: "game-sims4", ID: "thesims4", Name: "The Sims 4", AllowNoSteamAppID: true, HasCustomInstallers: true, HasModTypes: true, Notes: []string{"Vortex uses Windows registry/Documents discovery and purges profile-local resource.cfg paths through purge-mods-in-path; DMM needs source-reviewed Sims profile-file parity before full support."}},
 	{VortexDir: "game-skyrim", ID: "skyrim", Name: "Skyrim", SteamAppIDs: []string{"72850"}},
 	{VortexDir: "game-starbound", ID: "starbound", Name: "Starbound", SteamAppIDs: []string{"211820"}},
 	{VortexDir: "game-starfield", ID: "starfield", Name: "Starfield", VortexStub: true, SupportModID: "634"},
