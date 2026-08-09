@@ -712,6 +712,21 @@ func (r Registry) ExtensionActionForSteamApp(appID, actionID string) (Extension,
 	return Extension{}, sdk.ExtensionActionSpec{}, false
 }
 
+func (r Registry) ProfileFeatureForSteamApp(appID, featureID string) (Extension, sdk.ProfileFeatureSpec, bool) {
+	featureID = canonical(featureID)
+	if featureID == "" {
+		return Extension{}, sdk.ProfileFeatureSpec{}, false
+	}
+	for _, extension := range r.ExtensionsForSteamApp(appID) {
+		for _, feature := range extension.ProfileFeatures {
+			if canonical(feature.ID) == featureID {
+				return extension, feature, true
+			}
+		}
+	}
+	return Extension{}, sdk.ProfileFeatureSpec{}, false
+}
+
 func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {

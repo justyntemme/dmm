@@ -9164,6 +9164,122 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 	}
 }
 
+func TestProfileFeatureEndpointsUseExtensionDeclarations(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999025"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "profilefeaturegame",
+		Name:    "Profile Feature Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"profilefeaturegame"},
+				VortexGameID: "profilefeaturegame",
+			})
+			r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
+				ID:   "local_loot_rules",
+				Name: "LOOT Rules",
+			})
+			r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
+				ID:      "blocked_settings",
+				Name:    "Blocked Settings",
+				Status:  sdk.CapabilityStatusBlocked,
+				Message: "not implemented",
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Profile Feature Game",
+		InstallDir:  "Profile Feature Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Profile Feature Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	profileID := profiles[0].ID
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/features", nil)
+	getReq.RemoteAddr = "127.0.0.1:1"
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+	var features []profileFeatureResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &features); err != nil {
+		t.Fatal(err)
+	}
+	if len(features) != 2 {
+		t.Fatalf("features = %+v", features)
+	}
+	if features[0].FeatureID != "blocked_settings" || features[0].Status != sdk.CapabilityStatusBlocked || features[0].Enabled {
+		t.Fatalf("blocked feature = %+v", features[0])
+	}
+	if features[1].FeatureID != "local_loot_rules" || features[1].Status != sdk.CapabilityStatusReady || features[1].Enabled {
+		t.Fatalf("ready feature = %+v", features[1])
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/features/local_loot_rules", bytes.NewBufferString(`{"enabled":true}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.RemoteAddr = "127.0.0.1:1"
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, body = %s", putRec.Code, putRec.Body.String())
+	}
+	var updated profileFeatureResponse
+	if err := json.Unmarshal(putRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.FeatureID != "local_loot_rules" || !updated.Enabled || updated.Extension != "profilefeaturegame" {
+		t.Fatalf("updated feature = %+v", updated)
+	}
+	domainEvents, err := srv.db.ListDomainEventsAfter(context.Background(), 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundEvent := false
+	for _, event := range domainEvents {
+		if event.Type == events.TypeProfileModsChanged && event.AppID == appID && strings.Contains(string(event.Payload), "profile_feature_updated") {
+			foundEvent = true
+			break
+		}
+	}
+	if !foundEvent {
+		t.Fatalf("profile feature event not found in %+v", domainEvents)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/features/blocked_settings", bytes.NewBufferString(`{"enabled":true}`))
+	blockedReq.Header.Set("Content-Type", "application/json")
+	blockedReq.RemoteAddr = "127.0.0.1:1"
+	blockedRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusConflict {
+		t.Fatalf("blocked status = %d, body = %s", blockedRec.Code, blockedRec.Body.String())
+	}
+
+	missingReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/features/not_registered", bytes.NewBufferString(`{"enabled":true}`))
+	missingReq.Header.Set("Content-Type", "application/json")
+	missingReq.RemoteAddr = "127.0.0.1:1"
+	missingRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, body = %s", missingRec.Code, missingRec.Body.String())
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

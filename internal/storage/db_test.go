@@ -584,6 +584,9 @@ func TestCreateProfileFromSourceCopiesMembership(t *testing.T) {
 	if _, err := db.SetProfileModState(context.Background(), mod.ProfileID, mod.ID, &disabled, &priority); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.SetProfileFeatureState(context.Background(), mod.ProfileID, "local_loot_rules", true); err != nil {
+		t.Fatal(err)
+	}
 
 	clone, err := db.CreateProfileForSteamAppFromSource(context.Background(), "413150", "Test Copy", mod.ProfileID)
 	if err != nil {
@@ -598,6 +601,13 @@ func TestCreateProfileFromSourceCopiesMembership(t *testing.T) {
 	}
 	if len(cloneMods) != 1 || cloneMods[0].ID != mod.ID || cloneMods[0].Enabled || cloneMods[0].Priority != 7 {
 		t.Fatalf("clone mods = %+v", cloneMods)
+	}
+	features, err := db.ProfileFeatureStates(context.Background(), clone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(features) != 1 || features[0].FeatureID != "local_loot_rules" || !features[0].Enabled {
+		t.Fatalf("clone features = %+v", features)
 	}
 }
 

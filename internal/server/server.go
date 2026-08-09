@@ -474,6 +474,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/local-archives/import", s.handleImportLocalArchivePath)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}", s.handleDeleteProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
+	mux.HandleFunc("GET /api/profiles/{profileID}/features", s.handleProfileFeatures)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/features/{featureID}", s.handleSetProfileFeature)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
@@ -2623,6 +2625,20 @@ type createProfileRequest struct {
 type setDefaultProfileResponse struct {
 	Profile storage.Profile      `json:"profile"`
 	Apply   profileApplyResponse `json:"apply"`
+}
+
+type profileFeatureResponse struct {
+	ProfileID int64  `json:"profile_id"`
+	FeatureID string `json:"feature_id"`
+	Name      string `json:"name"`
+	Enabled   bool   `json:"enabled"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
+	Extension string `json:"extension,omitempty"`
+}
+
+type updateProfileFeatureRequest struct {
+	Enabled *bool `json:"enabled"`
 }
 
 type deleteProfileResponse struct {
@@ -8402,6 +8418,145 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 	}
 	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "profile-switch")
 	writeJSON(w, http.StatusOK, setDefaultProfileResponse{Profile: profile, Apply: apply})
+}
+
+func (s *Server) handleProfileFeatures(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	states, err := s.db.ProfileFeatureStates(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.profileFeatureResponses(appID, profileID, states))
+}
+
+func (s *Server) handleSetProfileFeature(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	featureID := strings.TrimSpace(r.PathValue("featureID"))
+	if featureID == "" {
+		http.Error(w, "featureID is required", http.StatusBadRequest)
+		return
+	}
+	var req updateProfileFeatureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Enabled == nil {
+		http.Error(w, "enabled is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	extension, feature, ok := s.games.ProfileFeatureForSteamApp(appID, featureID)
+	if !ok {
+		http.Error(w, "profile feature is not registered for this game", http.StatusNotFound)
+		return
+	}
+	status := strings.TrimSpace(feature.Status)
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	if status != sdk.CapabilityStatusReady {
+		message := strings.TrimSpace(feature.Message)
+		if message == "" {
+			message = "profile feature runtime is not available"
+		}
+		http.Error(w, message, http.StatusConflict)
+		return
+	}
+	state, err := s.db.SetProfileFeatureState(r.Context(), profileID, feature.ID, *req.Enabled)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile feature state updated", "app_id", appID, "profile_id", profileID, "feature_id", state.FeatureID, "enabled", state.Enabled, "extension_id", extension.ID)
+	resp := profileFeatureResponse{
+		ProfileID: profileID,
+		FeatureID: state.FeatureID,
+		Name:      feature.Name,
+		Enabled:   state.Enabled,
+		Status:    status,
+		Message:   feature.Message,
+		Extension: extension.ID,
+	}
+	if strings.TrimSpace(resp.Name) == "" {
+		resp.Name = resp.FeatureID
+	}
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":     "profile_feature_updated",
+		"profile_id": profileID,
+		"feature_id": state.FeatureID,
+		"enabled":    state.Enabled,
+		"extension":  extension.ID,
+	})
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) profileFeatureResponses(appID string, profileID int64, states []storage.ProfileFeatureState) []profileFeatureResponse {
+	stateByID := map[string]bool{}
+	for _, state := range states {
+		featureID := strings.TrimSpace(strings.ToLower(state.FeatureID))
+		if featureID == "" {
+			continue
+		}
+		stateByID[featureID] = state.Enabled
+	}
+	responses := []profileFeatureResponse{}
+	seen := map[string]struct{}{}
+	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
+		for _, feature := range extension.ProfileFeatures {
+			featureID := strings.TrimSpace(feature.ID)
+			canonicalID := strings.ToLower(featureID)
+			if featureID == "" || canonicalID == "" {
+				continue
+			}
+			if _, ok := seen[canonicalID]; ok {
+				continue
+			}
+			seen[canonicalID] = struct{}{}
+			status := strings.TrimSpace(feature.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			name := strings.TrimSpace(feature.Name)
+			if name == "" {
+				name = featureID
+			}
+			responses = append(responses, profileFeatureResponse{
+				ProfileID: profileID,
+				FeatureID: featureID,
+				Name:      name,
+				Enabled:   stateByID[canonicalID],
+				Status:    status,
+				Message:   feature.Message,
+				Extension: extension.ID,
+			})
+		}
+	}
+	sort.Slice(responses, func(i, j int) bool {
+		if responses[i].Extension == responses[j].Extension {
+			return responses[i].FeatureID < responses[j].FeatureID
+		}
+		return responses[i].Extension < responses[j].Extension
+	})
+	return responses
 }
 
 func (s *Server) validateTargetProfile(ctx context.Context, appID string, profileID int64) error {

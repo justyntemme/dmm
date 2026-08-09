@@ -133,6 +133,12 @@ type ProfilePluginActivationState struct {
 	Priority     int    `json:"priority"`
 }
 
+type ProfileFeatureState struct {
+	ProfileID int64  `json:"profile_id"`
+	FeatureID string `json:"feature_id"`
+	Enabled   bool   `json:"enabled"`
+}
+
 type SetProfilePluginActivationStateParams struct {
 	ProfileID    int64
 	ActivationID string
@@ -1091,11 +1097,79 @@ ORDER BY pm.priority ASC, pm.installed_mod_id ASC
 `, profileID, gameID, sourceProfileID); err != nil {
 			return Profile{}, err
 		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_features (profile_id, feature_id, enabled, updated_at)
+SELECT ?, feature_id, enabled, CURRENT_TIMESTAMP
+FROM profile_features
+WHERE profile_id = ?
+ORDER BY feature_id ASC
+`, profileID, sourceProfileID); err != nil {
+			return Profile{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return Profile{}, err
 	}
 	return db.Profile(ctx, profileID)
+}
+
+func (db *DB) ProfileFeatureStates(ctx context.Context, profileID int64) ([]ProfileFeatureState, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT profile_id, feature_id, enabled
+FROM profile_features
+WHERE profile_id = ?
+ORDER BY feature_id ASC
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var states []ProfileFeatureState
+	for rows.Next() {
+		var state ProfileFeatureState
+		var enabled int
+		if err := rows.Scan(&state.ProfileID, &state.FeatureID, &enabled); err != nil {
+			return nil, err
+		}
+		state.Enabled = enabled != 0
+		states = append(states, state)
+	}
+	return states, rows.Err()
+}
+
+func (db *DB) SetProfileFeatureState(ctx context.Context, profileID int64, featureID string, enabled bool) (ProfileFeatureState, error) {
+	if profileID <= 0 {
+		return ProfileFeatureState{}, errors.New("profile id is required")
+	}
+	featureID = strings.TrimSpace(strings.ToLower(featureID))
+	if featureID == "" {
+		return ProfileFeatureState{}, errors.New("feature id is required")
+	}
+	var exists int
+	if err := db.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE id = ?`, profileID).Scan(&exists); err != nil {
+		return ProfileFeatureState{}, err
+	}
+	if exists == 0 {
+		return ProfileFeatureState{}, sql.ErrNoRows
+	}
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO profile_features (profile_id, feature_id, enabled, updated_at)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, feature_id) DO UPDATE SET
+	enabled = excluded.enabled,
+	updated_at = CURRENT_TIMESTAMP
+`, profileID, featureID, enabledInt)
+	if err != nil {
+		return ProfileFeatureState{}, err
+	}
+	return ProfileFeatureState{ProfileID: profileID, FeatureID: featureID, Enabled: enabled}, nil
 }
 
 func (db *DB) SetDefaultProfile(ctx context.Context, profileID int64) (Profile, error) {
