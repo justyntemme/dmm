@@ -5063,6 +5063,13 @@ function QuickAccessContent() {
     }
   }
 
+  function openQuickPairPhoneModal() {
+    if (!status?.auth?.enabled || !pairingURLFromStatus(status)) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(<PairPhoneModal status={status} closeModal={closeModal} />, window, { strTitle: "Pair Phone", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 520, popupHeight: 720 });
+  }
+
   useEffect(() => {
     void refreshStatus();
     const listener = () => void refreshStatus();
@@ -5089,9 +5096,14 @@ function QuickAccessContent() {
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
+          <ButtonItem layout="below" onClick={openQuickPairPhoneModal} disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)}>
+            Pair Phone
+          </ButtonItem>
+        </PanelSectionRow>
+        <PanelSectionRow>
           <div style={{ display: "grid", gap: "6px", width: "100%" }}>
             <div>Status: {status?.running ? "Running" : "Stopped"}</div>
-            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Phone URL: {status?.url ?? "Unavailable"}</div>
+            <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
             {status?.backend && <div>Games: {status.backend.game_count}</div>}
             {status?.backend && <div>Nexus: {status.backend.nexus.api_key_configured ? "Configured" : "Missing"}</div>}
             {error && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{error}</div>}
