@@ -1716,7 +1716,7 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 			return payload, errors.New(toolName + ": installed tool executable is missing")
 		}
 		payload["tool_action_available"] = "true"
-		payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(tool.ExecutablePath)
+		payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(tool.ExecutablePath, tool.Arguments...)
 		return payload, nil
 	}
 	extension, tool, kind, status, message, ok := s.extensionExecutableTool(appID, game.GamePath, toolID)

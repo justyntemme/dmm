@@ -74,7 +74,7 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 		}
 	}
 	for _, tool := range summary.Capabilities.SupportedTools {
-		if tool.ID == "umm" && tool.Acquisition != nil && tool.Acquisition.Catalog == "github" && tool.Acquisition.SourceModID == umm.ToolModID && tool.Acquisition.SourceFileID == umm.ToolFileID {
+		if tool.ID == "umm" && tool.DefaultPrimary && tool.Acquisition != nil && tool.Acquisition.Catalog == "github" && tool.Acquisition.SourceModID == umm.ToolModID && tool.Acquisition.SourceFileID == umm.ToolFileID {
 			seenToolAcquisition = true
 		}
 	}

@@ -10057,6 +10057,13 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 					Required:    true,
 				},
 			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:             "umm",
+				Name:           "Unity Mod Manager",
+				Arguments:      []string{"--managed"},
+				DefaultPrimary: true,
+				Status:         sdk.CapabilityStatusMetadata,
+			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "missing-loader",
 				Name:               "Missing Loader",
@@ -10134,7 +10141,7 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		t.Fatalf("missing launch tool discovery = %+v", missing)
 	}
 	managed := discoveredToolByIDSource(result.Tools, "umm", "managed-mod-metadata")
-	if managed == nil || !managed.Present || managed.InstalledModID != installed.ID || managed.Version != "1.2.3" || managed.ExecutablePath != filepath.Join(stagingPath, "Managed", "UnityModManager.exe") {
+	if managed == nil || !managed.Present || managed.InstalledModID != installed.ID || managed.Version != "1.2.3" || managed.ExecutablePath != filepath.Join(stagingPath, "Managed", "UnityModManager.exe") || !managed.DefaultPrimary || len(managed.Arguments) != 1 || managed.Arguments[0] != "--managed" {
 		t.Fatalf("managed tool discovery = %+v", managed)
 	}
 
@@ -10298,7 +10305,7 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	if queued.Job.Type != jobTypeExtensionToolAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["tool_kind"] != "managed-tool" || queued.Job.Payload["tool_installed_mod_id"] != strconv.FormatInt(installed.ID, 10) || queued.Job.Payload["tool_action_available"] != "true" {
 		t.Fatalf("managed tool launch job = %+v", queued.Job)
 	}
-	if !strings.Contains(queued.Job.Payload["tool_launch_options"], filepath.ToSlash(filepath.Join(stagingPath, "Managed", "UnityModManager.exe"))) {
+	if !strings.Contains(queued.Job.Payload["tool_launch_options"], filepath.ToSlash(filepath.Join(stagingPath, "Managed", "UnityModManager.exe"))) || !strings.Contains(queued.Job.Payload["tool_launch_options"], "--managed") {
 		t.Fatalf("managed tool launch options = %q", queued.Job.Payload["tool_launch_options"])
 	}
 

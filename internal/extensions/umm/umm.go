@@ -56,10 +56,11 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		GeneratedFiles: []string{ModRoot},
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
-		ID:      "umm",
-		Name:    ToolName,
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex locates Unity Mod Manager through the Windows registry and registers it as a dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata, can acquire the source-verified UMM package, and can queue installed tools through the Decky extension-tool launch path.",
+		ID:             "umm",
+		Name:           ToolName,
+		DefaultPrimary: true,
+		Status:         sdk.CapabilityStatusMetadata,
+		Message:        "Vortex locates Unity Mod Manager through the Windows registry and registers it as a default-primary dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata, can acquire the source-verified UMM package, and can queue installed tools through the Decky extension-tool launch path.",
 		Acquisition: &sdk.ToolAcquisitionSpec{
 			ID:             "umm-" + ToolVersion,
 			Name:           ToolName + " " + ToolVersion,

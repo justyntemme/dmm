@@ -238,7 +238,8 @@ func (s *Server) managedToolFromMetadata(appID string, mod storage.InstalledMod,
 	if id == "" {
 		return discoveredTool{}, false
 	}
-	declaredRel := s.executableRelativeForManagedTool(appID, id, extension, gamePath)
+	declaredTool, declared := s.declaredManagedTool(appID, id, extension, gamePath)
+	declaredRel := declaredTool.ExecutableRelative
 	executableRel := firstNonEmpty(metadata.StagingRelative, metadata.TargetRelative, declaredRel, metadata.SourcePath)
 	executablePath := ""
 	if rel, ok := safeRelative(executableRel); ok && strings.TrimSpace(mod.StagingPath) != "" {
@@ -277,6 +278,12 @@ func (s *Server) managedToolFromMetadata(appID string, mod storage.InstalledMod,
 		Version:            strings.TrimSpace(metadata.Version),
 		ExecutablePath:     executablePath,
 		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(executableRel)),
+		Arguments:          cleanStrings(declaredTool.Arguments),
+		RequiredFiles:      cleanStrings(declaredTool.RequiredFiles),
+		Shell:              declared && declaredTool.Shell,
+		Detach:             declared && declaredTool.Detach,
+		Exclusive:          declared && declaredTool.Exclusive,
+		DefaultPrimary:     declared && declaredTool.DefaultPrimary,
 		Present:            present,
 	}, true
 }
@@ -574,22 +581,22 @@ func declaredToolFiles(gamePath, executableRelative string, requiredFiles []stri
 	return executablePath, missing
 }
 
-func (s *Server) executableRelativeForManagedTool(appID, id string, extension gameext.Extension, gamePath string) string {
+func (s *Server) declaredManagedTool(appID, id string, extension gameext.Extension, gamePath string) (gameext.LaunchToolSpec, bool) {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if id == "" {
-		return ""
+		return gameext.LaunchToolSpec{}, false
 	}
 	for _, tool := range extension.LaunchTools {
 		if strings.ToLower(strings.TrimSpace(tool.ID)) == id {
-			return s.games.ResolveLaunchToolForSteamApp(appID, gamePath, tool).ExecutableRelative
+			return s.games.ResolveLaunchToolForSteamApp(appID, gamePath, tool), true
 		}
 	}
 	for _, tool := range extension.SupportedTools {
 		if strings.ToLower(strings.TrimSpace(tool.ID)) == id {
-			return tool.ExecutableRelative
+			return launchToolFromSupportedTool(tool), true
 		}
 	}
-	return ""
+	return gameext.LaunchToolSpec{}, false
 }
 
 func safeRelative(value string) (string, bool) {
