@@ -21,6 +21,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonsdogma"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/factorio"
@@ -154,6 +155,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
+		gameext.MustCompileExtension(dragonsdogma.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(elex.Extension()),
 		gameext.MustCompileExtension(factorio.Extension()),

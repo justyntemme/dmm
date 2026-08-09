@@ -195,7 +195,6 @@ var games = []GameSpec{
 	{VortexDir: "game-dmc5", ID: "devilmaycry5", Name: "Devil May Cry 5", VortexStub: true, SupportModID: "434"},
 	{VortexDir: "game-dragonage", ID: "dragonage", Name: "Dragon Age: Origins", SteamAppIDs: []string{"17450", "47810"}},
 	{VortexDir: "game-dragonage2", ID: "dragonage2", Name: "Dragon Age 2", SteamAppIDs: []string{"15543", "1238040"}},
-	{VortexDir: "game-dragons-dogma", ID: "dragonsdogma", Name: "Dragon's Dogma", SteamAppIDs: []string{"367500"}, HasCustomInstallers: true},
 	{VortexDir: "game-enderal", ID: "enderal", Name: "Enderal", SteamAppIDs: []string{"933480"}},
 	{VortexDir: "game-fallout3", ID: "fallout3", Name: "Fallout 3", SteamAppIDs: []string{"22300", "22370"}},
 	{VortexDir: "game-fallout4vr", ID: "fallout4vr", Name: "Fallout 4 VR", SteamAppIDs: []string{"611660"}, NexusDomains: []string{"fallout4"}, HasCustomInstallers: true},
