@@ -191,7 +191,6 @@ var games = []GameSpec{
 	{VortexDir: "game-codevein", ID: "codevein", Name: "Code Vein", SteamAppIDs: []string{"678960"}, HasCustomInstallers: true, HasLoadOrder: true},
 	{VortexDir: "game-conanexiles", ID: "conanexiles", Name: "Conan Exiles", SteamAppIDs: []string{"440900"}, Notes: []string{"Vortex writes a modlist.txt on deploy lifecycle events; DMM needs source-reviewed lifecycle/load-order generation before claiming full support."}},
 	{VortexDir: "game-cyberpunk2077", ID: "cyberpunk2077", Name: "Cyberpunk 2077", VortexStub: true, SupportModID: "196"},
-	{VortexDir: "game-daggerfallunity", ID: "daggerfallunity", Name: "Daggerfall Unity", AllowNoSteamAppID: true, HasCustomInstallers: true},
 	{VortexDir: "game-darkestdungeon", ID: "darkestdungeon", Name: "Darkest Dungeon", SteamAppIDs: []string{"262060"}, HasCustomInstallers: true},
 	{VortexDir: "game-darksouls", ID: "darksouls", Name: "Dark Souls", SteamAppIDs: []string{"211420"}, Notes: []string{"Vortex setup prompts for DSfix and opens Nexus mod 19; DMM needs a source-reviewed runtime/tool requirement before claiming full support."}},
 	{VortexDir: "game-darksouls2", ID: "darksouls2", Name: "Dark Souls II", SteamAppIDs: []string{"236430", "335300"}},
