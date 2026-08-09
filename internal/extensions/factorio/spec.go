@@ -58,7 +58,6 @@ func Register(r sdk.Registrar) {
 		ModType:           modType,
 		NameSource:        installplan.NameSourceArchive,
 		TargetRootID:      modsRootID,
-		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{

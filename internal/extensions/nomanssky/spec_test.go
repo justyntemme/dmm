@@ -34,7 +34,7 @@ func TestPakArchiveTargetsDeprecatedPCBANKSMods(t *testing.T) {
 	if plan.PlannerID != "vortex:nomanssky:deprecated-pak" || plan.ModType != "nomanssky-deprecated-pak" {
 		t.Fatalf("plan identity = %+v", plan)
 	}
-	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "GAMEDATA/PCBANKS/MODS/MOD.pak" {
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "GAMEDATA/PCBANKS/MODS/wrapped/MOD.pak" {
 		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
@@ -50,7 +50,7 @@ func TestDLLArchiveTargetsBinaries(t *testing.T) {
 	if plan.PlannerID != "vortex:nomanssky:binaries" || plan.ModType != "nomanssky-binaries" {
 		t.Fatalf("plan identity = %+v", plan)
 	}
-	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Binaries/dxgi.dll" {
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "Binaries/injector/dxgi.dll" {
 		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }

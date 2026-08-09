@@ -56,6 +56,9 @@ func TestDefaultInstallerTargetsUserModsRoot(t *testing.T) {
 			t.Fatalf("target root = %q", instruction.TargetRoot)
 		}
 	}
+	if plan.Instructions[0].TargetRelative != "CoolMod_1.0.0/control.lua" {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
 }
 
 func writeFile(t *testing.T, path string, body string) {

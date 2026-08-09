@@ -14,7 +14,6 @@ func installers() []installplan.InstallerSpec {
 				FileExtensions:    []string{".dll"},
 				FileExtensionMode: installplan.MatchModeAny,
 			},
-			StripCommonRoot: true,
 			InstructionMode: installplan.InstructionArchiveRoot,
 		},
 		{
@@ -27,7 +26,6 @@ func installers() []installplan.InstallerSpec {
 				FileExtensions:    []string{".pak"},
 				FileExtensionMode: installplan.MatchModeAny,
 			},
-			StripCommonRoot: true,
 			InstructionMode: installplan.InstructionArchiveRoot,
 		},
 		{
@@ -36,7 +34,6 @@ func installers() []installplan.InstallerSpec {
 			Priority:          100,
 			ModType:           gameModType,
 			NameSource:        installplan.NameSourceArchive,
-			StripCommonRoot:   true,
 			InstructionMode:   installplan.InstructionArchiveRoot,
 		},
 	}

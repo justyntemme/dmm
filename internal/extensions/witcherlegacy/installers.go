@@ -12,7 +12,6 @@ func witcherUserInstaller(gameID, modType string) installplan.InstallerSpec {
 		Match: installplan.MatchSpec{
 			FileBasenames: []string{"cook.hash"},
 		},
-		StripCommonRoot: true,
 		InstructionMode: installplan.InstructionArchiveRoot,
 	}
 }
@@ -24,7 +23,6 @@ func defaultInstaller(gameID, modType string) installplan.InstallerSpec {
 		Priority:          100,
 		ModType:           modType,
 		NameSource:        installplan.NameSourceArchive,
-		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	}
 }

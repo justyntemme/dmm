@@ -38,7 +38,7 @@ func TestWitcherUserContentTargetsOverride(t *testing.T) {
 	if plan.PlannerID != "vortex:witcher:user-content" || plan.ModType != "witcheruser" {
 		t.Fatalf("plan identity = %+v", plan)
 	}
-	if len(plan.Instructions) != 2 || plan.Instructions[0].TargetRelative != "Data/Override/cook.hash" {
+	if len(plan.Instructions) != 2 || plan.Instructions[0].TargetRelative != "Data/Override/module/cook.hash" {
 		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
@@ -54,7 +54,7 @@ func TestWitcher2UserContentTargetsUserContent(t *testing.T) {
 	if plan.PlannerID != "vortex:witcher2:user-content" || plan.ModType != "witcher2user" {
 		t.Fatalf("plan identity = %+v", plan)
 	}
-	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "UserContent/cook.hash" {
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "UserContent/user/cook.hash" {
 		t.Fatalf("instructions = %+v", plan.Instructions)
 	}
 }
