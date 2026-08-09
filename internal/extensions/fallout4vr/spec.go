@@ -117,6 +117,7 @@ func Register(r sdk.Registrar) {
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"fallout4.esm", "fallout4_vr.esm"},
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4vr-persistent-subgraph-offsets",
 		Name:     "Fallout 4 VR persistent subgraph offsets",

@@ -44,6 +44,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
+	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -6711,6 +6712,86 @@ func TestCreateProfileCopiesSourceMembership(t *testing.T) {
 	}
 	if len(mods) != 1 || mods[0].ID != mod.ID || mods[0].Enabled || mods[0].Priority != 7 {
 		t.Fatalf("copied profile mods = %+v", mods)
+	}
+}
+
+func TestLOOTUserlistRoutesAreProfileScopedAndCopiedWithProfile(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), "377160")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	sourceID := profiles[0].ID
+	writeReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/games/377160/load-order/loot/userlist?profile_id=%d", sourceID), bytes.NewBufferString(`{"plugins":[{"name":"Example.esp","after":["Fallout4.esm"]}],"groups":[]}`))
+	writeReq.RemoteAddr = "127.0.0.1:1"
+	writeRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(writeRec, writeReq)
+	if writeRec.Code != http.StatusOK {
+		t.Fatalf("write userlist status = %d, body = %s", writeRec.Code, writeRec.Body.String())
+	}
+
+	createBody := fmt.Sprintf(`{"name":"Profile Copy","source_profile_id":%d}`, sourceID)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/games/377160/profiles", bytes.NewBufferString(createBody))
+	createReq.RemoteAddr = "127.0.0.1:1"
+	createRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create profile status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+	var created storage.Profile
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/games/377160/load-order/loot/userlist?profile_id=%d", created.ID), nil)
+	readReq.RemoteAddr = "127.0.0.1:1"
+	readRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("read copied userlist status = %d, body = %s", readRec.Code, readRec.Body.String())
+	}
+	var userlist lootmeta.Userlist
+	if err := json.NewDecoder(readRec.Body).Decode(&userlist); err != nil {
+		t.Fatal(err)
+	}
+	if len(userlist.Plugins) != 1 || userlist.Plugins[0].Name != "Example.esp" || len(userlist.Plugins[0].After) != 1 {
+		t.Fatalf("copied userlist = %+v", userlist)
+	}
+
+	otherReq := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/games/377160/load-order/loot/userlist?profile_id=%d", created.ID), bytes.NewBufferString(`{"plugins":[{"name":"Other.esp","requires":["Example.esp"]}],"groups":[]}`))
+	otherReq.RemoteAddr = "127.0.0.1:1"
+	otherRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusOK {
+		t.Fatalf("write other profile userlist status = %d, body = %s", otherRec.Code, otherRec.Body.String())
+	}
+	sourceReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/games/377160/load-order/loot/userlist?profile_id=%d", sourceID), nil)
+	sourceReq.RemoteAddr = "127.0.0.1:1"
+	sourceRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(sourceRec, sourceReq)
+	if sourceRec.Code != http.StatusOK {
+		t.Fatalf("read source userlist status = %d, body = %s", sourceRec.Code, sourceRec.Body.String())
+	}
+	var sourceUserlist lootmeta.Userlist
+	if err := json.NewDecoder(sourceRec.Body).Decode(&sourceUserlist); err != nil {
+		t.Fatal(err)
+	}
+	if len(sourceUserlist.Plugins) != 1 || sourceUserlist.Plugins[0].Name != "Example.esp" {
+		t.Fatalf("source userlist changed = %+v", sourceUserlist)
 	}
 }
 

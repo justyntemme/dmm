@@ -65,6 +65,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "WryeBash", Name: "Wrye Bash", ExecutableRelative: "Wrye Bash.exe", RequiredFiles: []string{"Wrye Bash.exe"}})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "obse", Name: "Oblivion Script Extender", ShortName: "OBSE", ExecutableRelative: "obse_loader.exe", RequiredFiles: []string{"obse_loader.exe"}, Relative: true, Exclusive: true})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{ID: "oblivion-gamebryo-plugins", Name: "Oblivion plugins.txt activation", AppDataPath: "oblivion", Format: gamebryo.FormatOriginal, LOOTGameID: VortexGameID, LOOTPrelude: true, NativePlugins: []string{"oblivion.esm"}}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Oblivion archive invalidation settings",

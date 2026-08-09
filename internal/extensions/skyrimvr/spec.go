@@ -125,6 +125,7 @@ func Register(r sdk.Registrar) {
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimvr-exe-version",
 		Name:     "SkyrimVR.exe file version",

@@ -129,6 +129,7 @@ func Register(r sdk.Registrar) {
 		LOOTPrelude:   true,
 		NativePlugins: []string{"falloutnv.esm"},
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Fallout: New Vegas archive invalidation settings",

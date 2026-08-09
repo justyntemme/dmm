@@ -132,6 +132,7 @@ func Register(r sdk.Registrar) {
 		},
 		SupportsLightPlugins: true,
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimse-exe-version",
 		Name:     "SkyrimSE.exe file version",

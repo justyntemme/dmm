@@ -3894,15 +3894,25 @@ func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
+	profileID, ok := s.lootProfileIDForRequest(w, r, game)
+	if !ok {
+		return
+	}
 	status, err := s.loot.Refresh(r.Context(), spec)
 	if err != nil {
 		s.logger.Warn("LOOT metadata refresh failed", "app_id", game.SteamAppID, "activation_id", spec.ID, "error", err)
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	status, err = s.loot.StatusForProfile(spec, profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	s.logger.Info(
 		"LOOT metadata refreshed",
 		"app_id", game.SteamAppID,
+		"profile_id", profileID,
 		"activation_id", spec.ID,
 		"game_id", status.GameID,
 		"masterlist_game_id", status.MasterlistGameID,
@@ -3913,11 +3923,15 @@ func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleGameLoadOrderLOOTUserlist(w http.ResponseWriter, r *http.Request) {
-	_, spec, ok := s.lootActivationForRequest(w, r)
+	game, spec, ok := s.lootActivationForRequest(w, r)
 	if !ok {
 		return
 	}
-	userlist, err := s.loot.ReadUserlist(spec)
+	profileID, ok := s.lootProfileIDForRequest(w, r, game)
+	if !ok {
+		return
+	}
+	userlist, err := s.loot.ReadUserlistForProfile(spec, profileID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -3930,12 +3944,16 @@ func (s *Server) handleUpdateGameLoadOrderLOOTUserlist(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
+	profileID, ok := s.lootProfileIDForRequest(w, r, game)
+	if !ok {
+		return
+	}
 	var req lootmeta.Userlist
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	userlist, err := s.loot.WriteUserlist(spec, req)
+	userlist, err := s.loot.WriteUserlistForProfile(spec, profileID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -3943,12 +3961,14 @@ func (s *Server) handleUpdateGameLoadOrderLOOTUserlist(w http.ResponseWriter, r 
 	s.logger.Info(
 		"LOOT userlist updated",
 		"app_id", game.SteamAppID,
+		"profile_id", profileID,
 		"activation_id", spec.ID,
 		"plugins", len(userlist.Plugins),
 		"groups", len(userlist.Groups),
 	)
 	s.publishGameEvent(events.TypeProfileModsChanged, game.SteamAppID, map[string]any{
 		"action":        "loot_userlist_updated",
+		"profile_id":    profileID,
 		"activation_id": spec.ID,
 		"summary":       userlist.Summary(),
 	})
@@ -3985,6 +4005,46 @@ func (s *Server) lootActivationForRequest(w http.ResponseWriter, r *http.Request
 		return storage.Game{}, gameext.PluginActivationSpec{}, false
 	}
 	return game, spec, true
+}
+
+func (s *Server) lootProfileIDForRequest(w http.ResponseWriter, r *http.Request, game storage.Game) (int64, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("profile_id"))
+	if raw == "" {
+		profiles, err := s.db.ProfilesForSteamApp(r.Context(), game.SteamAppID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return 0, false
+		}
+		for _, profile := range profiles {
+			if profile.IsDefault {
+				return profile.ID, true
+			}
+		}
+		if len(profiles) > 0 {
+			return profiles[0].ID, true
+		}
+		writeError(w, http.StatusBadRequest, errors.New("profile is required for LOOT user rules"))
+		return 0, false
+	}
+	profileID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || profileID <= 0 {
+		writeError(w, http.StatusBadRequest, errors.New("valid profile_id is required"))
+		return 0, false
+	}
+	profile, err := s.db.Profile(r.Context(), profileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusBadRequest, errors.New("profile was not found"))
+			return 0, false
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return 0, false
+	}
+	if profile.GameID != game.ID {
+		writeError(w, http.StatusBadRequest, errors.New("profile does not belong to this game"))
+		return 0, false
+	}
+	return profileID, true
 }
 
 type gameModResponse struct {
@@ -6871,6 +6931,9 @@ func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if req.SourceProfileID > 0 {
+		s.copyLOOTUserlistForCreatedProfile(appID, req.SourceProfileID, profile.ID)
+	}
 	s.logger.Info("profile created", "app_id", appID, "profile_id", profile.ID, "name", profile.Name, "source_profile_id", req.SourceProfileID, "mod_count", profile.ModCount, "enabled_mod_count", profile.EnabledModCount)
 	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
 		"action":            "profile_created",
@@ -6878,6 +6941,21 @@ func (s *Server) handleCreateGameProfile(w http.ResponseWriter, r *http.Request)
 		"source_profile_id": req.SourceProfileID,
 	})
 	writeJSON(w, http.StatusCreated, profile)
+}
+
+func (s *Server) copyLOOTUserlistForCreatedProfile(appID string, sourceProfileID, targetProfileID int64) {
+	spec, ok := s.games.PluginActivationForSteamApp(appID)
+	if !ok || (strings.TrimSpace(spec.LOOTGameID) == "" && strings.TrimSpace(spec.LOOTMasterlistGameID) == "") {
+		return
+	}
+	copied, err := s.loot.CopyUserlistForProfile(spec, sourceProfileID, targetProfileID)
+	if err != nil {
+		s.logger.Warn("LOOT userlist profile copy failed", "app_id", appID, "source_profile_id", sourceProfileID, "target_profile_id", targetProfileID, "error", err)
+		return
+	}
+	if copied {
+		s.logger.Info("LOOT userlist copied for new profile", "app_id", appID, "source_profile_id", sourceProfileID, "target_profile_id", targetProfileID)
+	}
 }
 
 func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
@@ -11367,7 +11445,7 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	resp.Name = spec.Name
 	resp.PluginsFile = activationFileName(spec.PluginsFile, "plugins.txt")
 	resp.LoadOrderFile = activationFileName(spec.LoadOrderFile, "loadorder.txt")
-	if status, err := s.loot.Status(spec); err != nil {
+	if status, err := s.loot.StatusForProfile(spec, profileID); err != nil {
 		resp.Warnings = append(resp.Warnings, err.Error())
 	} else if status.Supported {
 		resp.LOOT = &status

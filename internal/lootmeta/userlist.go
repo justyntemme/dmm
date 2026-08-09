@@ -58,6 +58,10 @@ func (u Userlist) Summary() RuleSummary {
 }
 
 func (s Service) ReadUserlist(spec sdk.PluginActivationSpec) (Userlist, error) {
+	return s.ReadUserlistForProfile(spec, 0)
+}
+
+func (s Service) ReadUserlistForProfile(spec sdk.PluginActivationSpec, profileID int64) (Userlist, error) {
 	paths, ok, err := s.paths(spec)
 	if err != nil {
 		return Userlist{}, err
@@ -65,24 +69,24 @@ func (s Service) ReadUserlist(spec sdk.PluginActivationSpec) (Userlist, error) {
 	if !ok {
 		return Userlist{}, errors.New("LOOT userlist is not supported")
 	}
-	body, err := os.ReadFile(paths.userlistPath)
+	if profileID < 0 {
+		return Userlist{}, errors.New("profile id is invalid")
+	}
+	body, err := os.ReadFile(paths.userlistPathForProfile(profileID))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return EmptyUserlist(), nil
 		}
 		return Userlist{}, err
 	}
-	if len(strings.TrimSpace(string(body))) <= 5 {
-		return EmptyUserlist(), nil
-	}
-	var userlist Userlist
-	if err := yaml.Unmarshal(body, &userlist); err != nil {
-		return Userlist{}, fmt.Errorf("LOOT userlist parse failed: %w", err)
-	}
-	return normalizeUserlist(userlist), nil
+	return yamlBytesToUserlist(body)
 }
 
 func (s Service) WriteUserlist(spec sdk.PluginActivationSpec, userlist Userlist) (Userlist, error) {
+	return s.WriteUserlistForProfile(spec, 0, userlist)
+}
+
+func (s Service) WriteUserlistForProfile(spec sdk.PluginActivationSpec, profileID int64, userlist Userlist) (Userlist, error) {
 	paths, ok, err := s.paths(spec)
 	if err != nil {
 		return Userlist{}, err
@@ -90,15 +94,19 @@ func (s Service) WriteUserlist(spec sdk.PluginActivationSpec, userlist Userlist)
 	if !ok {
 		return Userlist{}, errors.New("LOOT userlist is not supported")
 	}
+	if profileID < 0 {
+		return Userlist{}, errors.New("profile id is invalid")
+	}
 	normalized := normalizeUserlist(userlist)
 	body, err := yaml.Marshal(normalized)
 	if err != nil {
 		return Userlist{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.userlistPath), 0o700); err != nil {
+	userlistPath := paths.userlistPathForProfile(profileID)
+	if err := os.MkdirAll(filepath.Dir(userlistPath), 0o700); err != nil {
 		return Userlist{}, err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(paths.userlistPath), ".dmm-userlist-*")
+	tmp, err := os.CreateTemp(filepath.Dir(userlistPath), ".dmm-userlist-*")
 	if err != nil {
 		return Userlist{}, err
 	}
@@ -120,14 +128,86 @@ func (s Service) WriteUserlist(spec sdk.PluginActivationSpec, userlist Userlist)
 	if err := tmp.Close(); err != nil {
 		return Userlist{}, err
 	}
-	if err := os.Rename(tmpPath, paths.userlistPath); err != nil {
+	if err := os.Rename(tmpPath, userlistPath); err != nil {
 		return Userlist{}, err
 	}
 	removeTmp = false
 	if s.Logger != nil {
-		s.Logger.Info("LOOT userlist written", "game_id", paths.gameID, "path", paths.userlistPath, "plugins", len(normalized.Plugins), "groups", len(normalized.Groups))
+		s.Logger.Info("LOOT userlist written", "game_id", paths.gameID, "profile_id", profileID, "path", userlistPath, "plugins", len(normalized.Plugins), "groups", len(normalized.Groups))
 	}
 	return normalized, nil
+}
+
+func (s Service) CopyUserlistForProfile(spec sdk.PluginActivationSpec, sourceProfileID, targetProfileID int64) (bool, error) {
+	if targetProfileID <= 0 {
+		return false, errors.New("target profile id is required")
+	}
+	if sourceProfileID < 0 {
+		return false, errors.New("source profile id is invalid")
+	}
+	paths, ok, err := s.paths(spec)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, errors.New("LOOT userlist is not supported")
+	}
+	sourcePath := paths.userlistPathForProfile(sourceProfileID)
+	targetPath := paths.userlistPathForProfile(targetProfileID)
+	body, err := os.ReadFile(sourcePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if _, err := yamlBytesToUserlist(body); err != nil {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+		return false, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(targetPath), ".dmm-userlist-copy-*")
+	if err != nil {
+		return false, err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		return false, err
+	}
+	removeTmp = false
+	if s.Logger != nil {
+		s.Logger.Info("LOOT userlist copied", "game_id", paths.gameID, "source_profile_id", sourceProfileID, "target_profile_id", targetProfileID, "path", targetPath)
+	}
+	return true, nil
+}
+
+func yamlBytesToUserlist(body []byte) (Userlist, error) {
+	if len(strings.TrimSpace(string(body))) <= 5 {
+		return EmptyUserlist(), nil
+	}
+	var userlist Userlist
+	if err := yaml.Unmarshal(body, &userlist); err != nil {
+		return Userlist{}, fmt.Errorf("LOOT userlist parse failed: %w", err)
+	}
+	return normalizeUserlist(userlist), nil
 }
 
 func normalizeUserlist(userlist Userlist) Userlist {

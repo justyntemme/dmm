@@ -95,6 +95,7 @@ func Register(r sdk.Registrar) {
 		LOOTPrelude:   true,
 		NativePlugins: []string{"fallout3.esm"},
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Fallout 3 archive invalidation settings",

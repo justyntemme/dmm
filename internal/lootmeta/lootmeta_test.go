@@ -115,6 +115,69 @@ func TestUserlistReadWriteNormalizesVortexShape(t *testing.T) {
 	}
 }
 
+func TestProfileUserlistsAreIsolated(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	if _, err := service.WriteUserlistForProfile(spec, 10, Userlist{Plugins: []UserlistPlugin{{Name: "A.esp", After: []string{"Fallout4.esm"}}}}); err != nil {
+		t.Fatalf("WriteUserlistForProfile(10) error = %v", err)
+	}
+	if _, err := service.WriteUserlistForProfile(spec, 11, Userlist{Plugins: []UserlistPlugin{{Name: "B.esp", Requires: []string{"A.esp"}}}}); err != nil {
+		t.Fatalf("WriteUserlistForProfile(11) error = %v", err)
+	}
+
+	left, err := service.ReadUserlistForProfile(spec, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := service.ReadUserlistForProfile(spec, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left.Plugins) != 1 || left.Plugins[0].Name != "A.esp" {
+		t.Fatalf("left userlist = %+v", left)
+	}
+	if len(right.Plugins) != 1 || right.Plugins[0].Name != "B.esp" {
+		t.Fatalf("right userlist = %+v", right)
+	}
+
+	status, err := service.StatusForProfile(spec, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.ProfileID != 10 || status.UserlistRules.Rules != 1 || !strings.Contains(status.Userlist.Path, filepath.Join("profiles", "10", "userlist.yaml")) {
+		t.Fatalf("status = %+v", status)
+	}
+}
+
+func TestCopyUserlistForProfileSeedsNewProfile(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	if _, err := service.WriteUserlistForProfile(spec, 10, Userlist{
+		Plugins: []UserlistPlugin{{Name: "Example.esp", Group: "Late"}},
+		Groups:  []UserlistGroup{{Name: "Late", After: []string{"default"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	copied, err := service.CopyUserlistForProfile(spec, 10, 12)
+	if err != nil {
+		t.Fatalf("CopyUserlistForProfile() error = %v", err)
+	}
+	if !copied {
+		t.Fatal("expected userlist copy")
+	}
+	read, err := service.ReadUserlistForProfile(spec, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Plugins) != 1 || read.Plugins[0].Group != "Late" || len(read.Groups) != 1 {
+		t.Fatalf("copied userlist = %+v", read)
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

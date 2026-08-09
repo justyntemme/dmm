@@ -30,6 +30,7 @@ type Service struct {
 type Status struct {
 	Supported          bool        `json:"supported"`
 	Revision           string      `json:"revision,omitempty"`
+	ProfileID          int64       `json:"profile_id,omitempty"`
 	GameID             string      `json:"game_id,omitempty"`
 	MasterlistGameID   string      `json:"masterlist_game_id,omitempty"`
 	SorterStatus       string      `json:"sorter_status,omitempty"`
@@ -51,6 +52,13 @@ type FileStatus struct {
 }
 
 func (s Service) Status(spec sdk.PluginActivationSpec) (Status, error) {
+	return s.StatusForProfile(spec, 0)
+}
+
+func (s Service) StatusForProfile(spec sdk.PluginActivationSpec, profileID int64) (Status, error) {
+	if profileID < 0 {
+		return Status{}, errors.New("profile id is invalid")
+	}
 	paths, ok, err := s.paths(spec)
 	if err != nil {
 		return Status{}, err
@@ -58,7 +66,7 @@ func (s Service) Status(spec sdk.PluginActivationSpec) (Status, error) {
 	if !ok {
 		return Status{Supported: false}, nil
 	}
-	userlist, userlistErr := s.ReadUserlist(spec)
+	userlist, userlistErr := s.ReadUserlistForProfile(spec, profileID)
 	summary := RuleSummary{}
 	userlistWarning := ""
 	if userlistErr == nil {
@@ -69,12 +77,13 @@ func (s Service) Status(spec sdk.PluginActivationSpec) (Status, error) {
 	return Status{
 		Supported:        true,
 		Revision:         Revision,
+		ProfileID:        profileID,
 		GameID:           paths.gameID,
 		MasterlistGameID: paths.masterlistGameID,
 		SorterStatus:     "blocked",
 		SorterMessage:    "LOOT masterlist/userlist caching is available, but automatic sorting is blocked until DMM integrates a real LOOT-compatible sorting engine instead of a simplified sorter.",
 		Masterlist:       fileStatus(paths.masterlistPath, paths.masterlistURL),
-		Userlist:         fileStatus(paths.userlistPath, ""),
+		Userlist:         fileStatus(paths.userlistPathForProfile(profileID), ""),
 		UserlistRules:    summary,
 		UserlistWarning:  userlistWarning,
 		Prelude:          fileStatus(paths.preludePath, paths.preludeURL),
@@ -113,6 +122,7 @@ func (s Service) Refresh(ctx context.Context, spec sdk.PluginActivationSpec) (St
 type lootPaths struct {
 	gameID           string
 	masterlistGameID string
+	gameDir          string
 	masterlistPath   string
 	userlistPath     string
 	preludePath      string
@@ -146,12 +156,20 @@ func (s Service) paths(spec sdk.PluginActivationSpec) (lootPaths, bool, error) {
 	return lootPaths{
 		gameID:           gameID,
 		masterlistGameID: masterlistGameID,
+		gameDir:          filepath.Join(dataDir, "loot", gameID),
 		masterlistPath:   filepath.Join(dataDir, "loot", gameID, "masterlist", "masterlist.yaml"),
 		userlistPath:     filepath.Join(dataDir, "loot", gameID, "userlist.yaml"),
 		preludePath:      filepath.Join(dataDir, "loot", "prelude", "prelude.yaml"),
 		masterlistURL:    fmt.Sprintf("%s/%s/%s/masterlist.yaml", baseURL, masterlistGameID, Revision),
 		preludeURL:       fmt.Sprintf("%s/prelude/%s/prelude.yaml", baseURL, Revision),
 	}, true, nil
+}
+
+func (p lootPaths) userlistPathForProfile(profileID int64) string {
+	if profileID > 0 {
+		return filepath.Join(p.gameDir, "profiles", fmt.Sprintf("%d", profileID), "userlist.yaml")
+	}
+	return p.userlistPath
 }
 
 func safeID(value string) bool {

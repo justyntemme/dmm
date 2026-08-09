@@ -139,6 +139,7 @@ func Register(r sdk.Registrar) {
 		},
 		SupportsLightPlugins: true,
 	}))
+	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4-persistent-subgraph-offsets",
 		Name:     "Fallout 4 persistent subgraph offsets",

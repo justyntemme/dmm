@@ -53,6 +53,14 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 	}
 }
 
+func LocalLOOTRulesProfileFeature() sdk.ProfileFeatureSpec {
+	return sdk.ProfileFeatureSpec{
+		ID:      "local_loot_rules",
+		Name:    "LOOT Rules",
+		Message: "This profile has its own plugin rules and groups, matching Vortex's Gamebryo local LOOT rules profile feature.",
+	}
+}
+
 func StopFolders(extra ...string) []string {
 	values := []string{
 		"Data",

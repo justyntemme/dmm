@@ -472,6 +472,7 @@
   type LOOTStatus = {
     supported: boolean;
     revision?: string;
+    profile_id?: number;
     game_id?: string;
     masterlist_game_id?: string;
     sorter_status?: string;
@@ -1885,12 +1886,22 @@
     };
   }
 
+  function lootUserlistURL(game: Game, profileID = selectedProfile?.id ?? profiles.find((profile) => profile.is_default)?.id ?? profiles[0]?.id ?? 0) {
+    const params = profileID > 0 ? `?profile_id=${encodeURIComponent(String(profileID))}` : "";
+    return `/api/games/${game.app_id}/load-order/loot/userlist${params}`;
+  }
+
+  function lootMetadataRefreshURL(game: Game, profileID = selectedProfile?.id ?? profiles.find((profile) => profile.is_default)?.id ?? profiles[0]?.id ?? 0) {
+    const params = profileID > 0 ? `?profile_id=${encodeURIComponent(String(profileID))}` : "";
+    return `/api/games/${game.app_id}/load-order/loot/refresh${params}`;
+  }
+
   async function loadLOOTUserlist(game: Game, loadOrder: PluginLoadOrder) {
     lootUserlist = null;
     lootUserlistMessage = "";
     if (!loadOrder.loot?.supported) return;
     try {
-      lootUserlist = await getJSON<LOOTUserlist>(`/api/games/${game.app_id}/load-order/loot/userlist`);
+      lootUserlist = await getJSON<LOOTUserlist>(lootUserlistURL(game, loadOrder.profile_id));
     } catch (err) {
       lootUserlistMessage = err instanceof Error ? err.message : String(err);
     }
@@ -1902,7 +1913,7 @@
     lootUserlistMessage = "";
     error = "";
     try {
-      const response = await apiFetch(`/api/games/${selectedGame.app_id}/load-order/loot/userlist`, {
+      const response = await apiFetch(lootUserlistURL(selectedGame), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next)
@@ -2074,7 +2085,7 @@
     lootRefreshBusy = true;
     error = "";
     try {
-      const response = await apiFetch(`/api/games/${selectedGame.app_id}/load-order/loot/refresh`, { method: "POST" });
+      const response = await apiFetch(lootMetadataRefreshURL(selectedGame), { method: "POST" });
       if (!response.ok) {
         error = await response.text();
         return;
@@ -5376,9 +5387,9 @@
                     <div class="loot-userlist-panel">
                       <div class="panel-heading compact-heading">
                         <h4>User Rules</h4>
-                        <span>{pluginLoadOrder.loot.userlist_rules?.rules ?? 0} rules · {pluginLoadOrder.loot.userlist_rules?.groups ?? 0} groups</span>
+                        <span>{selectedProfile?.name ?? "Active profile"} · {pluginLoadOrder.loot.userlist_rules?.rules ?? 0} rules · {pluginLoadOrder.loot.userlist_rules?.groups ?? 0} groups</span>
                       </div>
-                      <p class="hint">Rules are persisted in DMM's LOOT userlist for this game. Automatic sorting remains blocked until a real LOOT-compatible sorter is integrated.</p>
+                      <p class="hint">Rules are persisted in DMM's profile-local LOOT userlist, mirroring Vortex's local LOOT rules profile feature. Automatic sorting remains blocked until a real LOOT-compatible sorter is integrated.</p>
                       {#if lootUserlistMessage}
                         <p class={lootUserlistMessage.toLowerCase().includes("required") ? "error-text" : "deploy-message"}>{lootUserlistMessage}</p>
                       {/if}
