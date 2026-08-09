@@ -609,18 +609,21 @@ type StateMigrationSpec struct {
 
 const (
 	StateMigrationCommandPurgeModsInPath = "purge-mods-in-path"
+	StateMigrationCommandSetModType      = "set-mod-type"
 )
 
 type StateMigrationCommandSpec struct {
-	ID             string
-	Name           string
-	Command        string
-	SteamAppID     string
-	ModType        string
-	TargetRootID   string
-	TargetRelative string
-	Status         string
-	Message        string
+	ID              string
+	Name            string
+	Command         string
+	SteamAppID      string
+	ModType         string
+	TargetModType   string
+	ExcludeModTypes []string
+	TargetRootID    string
+	TargetRelative  string
+	Status          string
+	Message         string
 }
 
 type HistoryStackSpec struct {

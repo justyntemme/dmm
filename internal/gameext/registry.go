@@ -264,6 +264,8 @@ type FeatureSummary struct {
 	DefaultPrimary     bool                     `json:"default_primary,omitempty"`
 	ModTypes           []string                 `json:"mod_types,omitempty"`
 	ProviderModTypes   []string                 `json:"provider_mod_types,omitempty"`
+	TargetModType      string                   `json:"target_mod_type,omitempty"`
+	ExcludedModTypes   []string                 `json:"excluded_mod_types,omitempty"`
 	Patterns           []string                 `json:"patterns,omitempty"`
 	PackageFormat      string                   `json:"package_format,omitempty"`
 	StateFileRelative  string                   `json:"state_file_relative,omitempty"`
@@ -1794,10 +1796,12 @@ func migrationCommandSummaries(commands []sdk.StateMigrationCommandSpec) []Featu
 			ModTypes: appendClean([]string{},
 				command.ModType,
 			),
-			Target:  command.TargetRootID,
-			Path:    command.TargetRelative,
-			Status:  defaultString(command.Status, sdk.CapabilityStatusReady),
-			Message: command.Message,
+			TargetModType:    command.TargetModType,
+			ExcludedModTypes: appendClean([]string{}, command.ExcludeModTypes...),
+			Target:           command.TargetRootID,
+			Path:             command.TargetRelative,
+			Status:           defaultString(command.Status, sdk.CapabilityStatusReady),
+			Message:          command.Message,
 		})
 	}
 	sortFeatureSummaries(out)

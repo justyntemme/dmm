@@ -77,7 +77,7 @@ func Register(r sdk.Registrar) {
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.1",
 		Status:      sdk.CapabilityStatusBlocked,
-		Message:     "Vortex migrates existing non-deprecated mods to the deprecated PAK mod type before redeploying; DMM has no released pre-MVP data to migrate.",
+		Message:     "Vortex migrates existing non-deprecated mods to the deprecated PAK mod type before redeploying. DMM has the generic retag command, but this migration stays blocked until DMM tracks prior extension versions so it cannot run against fresh installs.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

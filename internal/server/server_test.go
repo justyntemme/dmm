@@ -7380,6 +7380,102 @@ func TestExtensionMigrationRunsPurgeCommandOnce(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999011"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationretypegame",
+		Name:    "Migration Retype Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationretypegame"},
+				VortexGameID: "migrationretypegame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "retag-paks",
+				Name:        "Retag old PAK mods",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.1",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:              "set-deprecated-pak-type",
+					Name:            "Retag non-deprecated PAK mods",
+					Command:         sdk.StateMigrationCommandSetModType,
+					TargetModType:   "nomanssky-deprecated-pak",
+					ExcludeModTypes: []string{"nomanssky-deprecated-pak"},
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Retype Game",
+		InstallDir:  "Migration Retype Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	recordMod := func(name, sourceModID, modType string) storage.InstalledMod {
+		t.Helper()
+		mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+			SteamAppID:   appID,
+			Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationretypegame", ModID: sourceModID, FileID: "1"},
+			Name:         name,
+			Version:      "1",
+			ArchivePath:  filepath.Join(root, sourceModID+".zip"),
+			StagingPath:  filepath.Join(root, "staging", sourceModID),
+			ManifestJSON: `{"game_id":"migrationretypegame","mod_type":"` + modType + `","files":[]}`,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return mod
+	}
+	oldPak := recordMod("Old PAK", "old-pak", "nomanssky-mod")
+	binaries := recordMod("Binary Injector", "binary", "nomanssky-binaries")
+	deprecated := recordMod("Already Deprecated", "deprecated", "nomanssky-deprecated-pak")
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typesByID := map[int64]string{}
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			t.Fatal(err)
+		}
+		typesByID[mod.ID] = manifest.ModType
+	}
+	if typesByID[oldPak.ID] != "nomanssky-deprecated-pak" || typesByID[binaries.ID] != "nomanssky-deprecated-pak" || typesByID[deprecated.ID] != "nomanssky-deprecated-pak" {
+		t.Fatalf("typesByID = %+v", typesByID)
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "retag-paks", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
 func TestDeploySingleModUpdatesOnlySelectedManagedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

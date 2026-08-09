@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -132,9 +133,63 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 		}
 		_, err = s.purgeModsInPath(ctx, commandGame.SteamAppID, command.ModType, targetPath, source+":"+commandID)
 		return true, err
+	case sdk.StateMigrationCommandSetModType:
+		changed, err := s.setInstalledModTypesForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return changed > 0, err
 	default:
 		return false, fmt.Errorf("unsupported extension migration command %q", command.Command)
 	}
+}
+
+func (s *Server) setInstalledModTypesForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) (int, error) {
+	targetType := strings.TrimSpace(command.TargetModType)
+	if targetType == "" {
+		return 0, fmt.Errorf("extension migration command %s target mod type is required", command.ID)
+	}
+	fromType := canonicalModType(command.ModType)
+	excluded := map[string]struct{}{}
+	for _, value := range command.ExcludeModTypes {
+		if key := canonicalModType(value); key != "" {
+			excluded[key] = struct{}{}
+		}
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			return changed, err
+		}
+		currentType := canonicalModType(manifest.ModType)
+		if currentType == "" {
+			continue
+		}
+		if fromType != "" && currentType != fromType {
+			continue
+		}
+		if _, skip := excluded[currentType]; skip {
+			continue
+		}
+		if currentType == canonicalModType(targetType) {
+			continue
+		}
+		manifest.ModType = targetType
+		body, err := json.Marshal(manifest)
+		if err != nil {
+			return changed, err
+		}
+		if err := s.db.UpdateInstalledModManifest(ctx, mod.ID, string(body)); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	if changed > 0 {
+		s.logger.Info("extension migration retagged installed mods", "app_id", appID, "source", source, "from_mod_type", command.ModType, "target_mod_type", targetType, "excluded_mod_types", strings.Join(command.ExcludeModTypes, ","), "mods", changed)
+	}
+	return changed, nil
 }
 
 func (s *Server) extensionMigrationTargetPath(ctx context.Context, game storage.Game, command sdk.StateMigrationCommandSpec) (string, error) {

@@ -2091,7 +2091,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2100,6 +2100,17 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 		}
 		if modType := strings.TrimSpace(command.ModType); modType != "" && strings.ContainsAny(modType, "/\\\x00\r\n") {
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" mod type must be a simple identifier"))
+		}
+		if targetModType := strings.TrimSpace(command.TargetModType); targetModType != "" && strings.ContainsAny(targetModType, "/\\\x00\r\n") {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target mod type must be a simple identifier"))
+		}
+		for _, excluded := range command.ExcludeModTypes {
+			if value := strings.TrimSpace(excluded); value != "" && strings.ContainsAny(value, "/\\\x00\r\n") {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" excluded mod type must be a simple identifier"))
+			}
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandSetModType && strings.TrimSpace(command.TargetModType) == "" {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target mod type is required"))
 		}
 		if rootID := strings.TrimSpace(command.TargetRootID); rootID != "" {
 			if _, ok := targetRoots[strings.ToLower(rootID)]; !ok {
