@@ -383,10 +383,22 @@ func dataRootForBG3(files []string) string {
 		sort.Strings(roots)
 		return roots[0]
 	}
+	var dataRoots []string
 	for _, dir := range dirs {
 		if strings.EqualFold(filepath.Base(filepath.FromSlash(dir)), "Data") {
-			return filepath.ToSlash(dir)
+			dataRoots = append(dataRoots, filepath.ToSlash(dir))
 		}
+	}
+	sort.Slice(dataRoots, func(i, j int) bool {
+		leftParts := len(strings.Split(strings.Trim(dataRoots[i], "/"), "/"))
+		rightParts := len(strings.Split(strings.Trim(dataRoots[j], "/"), "/"))
+		if leftParts != rightParts {
+			return leftParts < rightParts
+		}
+		return dataRoots[i] < dataRoots[j]
+	})
+	if len(dataRoots) > 0 {
+		return dataRoots[0]
 	}
 	return ""
 }
