@@ -3132,6 +3132,15 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
     }
   }
 
+  function closeNexusBrowserFromGamepad(event?: GamepadEvent | { preventDefault?: () => void; stopPropagation?: () => void; stopImmediatePropagation?: () => void }) {
+    consumeNexusBrowserGamepadEvent(event);
+    void logFrontendEvent("nexus browser modal gamepad close requested", {
+      app_id: props.appID,
+      game_domain: props.gameDomain
+    });
+    props.closeModal();
+  }
+
   function absorbNexusBrowserModalCancel() {
     void logFrontendEvent("nexus browser modal cancel absorbed", {
       app_id: props.appID,
@@ -3146,13 +3155,14 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
   return (
     <ModalRoot onCancel={absorbNexusBrowserModalCancel} bCancelDisabled bAllowFullSize bHideCloseIcon>
       <style>{deckyRuntimeStyles}</style>
-      <Focusable
-        actionDescriptionMap={{ [GamepadButton.TRIGGER_RIGHT]: "Search" }}
-        flow-children="down"
-        onButtonDown={handleNexusBrowserButtonDown}
-        onButtonUp={handleNexusBrowserButtonUp}
-        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
-        style={{
+	      <Focusable
+	        actionDescriptionMap={{ [GamepadButton.CANCEL]: "Close", [GamepadButton.TRIGGER_RIGHT]: "Search" }}
+	        flow-children="down"
+	        onButtonDown={handleNexusBrowserButtonDown}
+	        onButtonUp={handleNexusBrowserButtonUp}
+	        onCancelButton={closeNexusBrowserFromGamepad}
+	        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+	        style={{
           boxSizing: "border-box",
           color: "#f8fafc",
           display: "grid",
@@ -3231,50 +3241,47 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           {mods.length === 0 && !busy && !error && (
             <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>{vortexOnly ? "No Vortex-compatible mods matched this search." : "No Nexus mods matched this search."}</div>
           )}
-          {mods.map((mod) => {
-            return (
-              <div
-                key={mod.mod_id}
-                className="dmm-sidebar-row"
-                style={{
-                  ...deckyCompositeRowStyle(false),
-                  alignSelf: "start",
-                  background: "#111827",
-                  flexShrink: 0,
-                  minHeight: "146px",
-                  padding: "10px"
-                }}
-              >
-                <div style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "112px minmax(0, 1fr)", width: "100%" }}>
-                  <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "64px", overflow: "hidden", width: "112px" }}>
-                    {mod.thumbnail_url ? (
-                      <img src={mod.thumbnail_url} style={{ height: "100%", objectFit: "cover", width: "100%" }} />
-                    ) : (
-                      <div style={{ alignItems: "center", color: "#71717a", display: "flex", fontSize: "11px", height: "100%", justifyContent: "center", textAlign: "center" }}>No image</div>
-                    )}
-                  </div>
-                  <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
-                    <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
-                      <div style={{ ...deckyTwoLineTextStyle, flex: "1 1 120px", fontWeight: 900 }}>{mod.name}</div>
-                      <span style={deckySourcePillStyle("nexus")}>Nexus</span>
-                    </div>
-                    <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, maxHeight: "3.75em", overflow: "hidden", overflowWrap: "anywhere" }}>{mod.summary}</div>
-                    <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "10px" }}>
-                      <span>v{mod.version || "unknown"}</span>
-                      <span>{compactNumber(mod.downloads)} downloads</span>
-                      <span>{compactNumber(mod.endorsements)} endorsements</span>
-                      <span>{mod.updated_at ? `Updated ${new Date(mod.updated_at).toLocaleDateString()}` : "Updated unknown"}</span>
-                    </div>
-                  </div>
-                </div>
-                <Focusable className="dmm-action-grid" flow-children="right" style={deckyActionGridStyle(1)}>
-                  <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={() => void openModPage(mod)} onClick={() => void openModPage(mod)} style={deckyCompactActionStyle("neutral")}>
-                    View Mod Page
-                  </Focusable>
-                </Focusable>
-              </div>
-            );
-          })}
+	          {mods.map((mod) => (
+	            <Focusable
+	              key={mod.mod_id}
+	              className="dmm-sidebar-row"
+	              focusClassName="dmm-sidebar-row-focused"
+	              onActivate={() => void openModPage(mod)}
+	              onClick={() => void openModPage(mod)}
+	              style={{
+	                ...deckyCompositeRowStyle(false),
+	                alignSelf: "start",
+	                background: "#111827",
+	                flexShrink: 0,
+	                minHeight: "132px",
+	                padding: "10px"
+	              }}
+	            >
+	              <div style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "112px minmax(0, 1fr)", width: "100%" }}>
+	                <div style={{ background: "#030712", border: "1px solid #303741", borderRadius: "6px", height: "64px", overflow: "hidden", width: "112px" }}>
+	                  {mod.thumbnail_url ? (
+	                    <img src={mod.thumbnail_url} style={{ height: "100%", objectFit: "cover", width: "100%" }} />
+	                  ) : (
+	                    <div style={{ alignItems: "center", color: "#71717a", display: "flex", fontSize: "11px", height: "100%", justifyContent: "center", textAlign: "center" }}>No image</div>
+	                  )}
+	                </div>
+	                <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
+	                  <div style={{ alignItems: "flex-start", display: "flex", flexWrap: "wrap", gap: "6px", minWidth: 0 }}>
+	                    <div style={{ ...deckyTwoLineTextStyle, flex: "1 1 120px", fontWeight: 900 }}>{mod.name}</div>
+	                    <span style={deckySourcePillStyle("nexus")}>Nexus</span>
+	                  </div>
+	                  <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, maxHeight: "3.75em", overflow: "hidden", overflowWrap: "anywhere" }}>{mod.summary}</div>
+	                  <div style={{ color: "#a1a1aa", display: "flex", flexWrap: "wrap", fontSize: "11px", gap: "10px" }}>
+	                    <span>v{mod.version || "unknown"}</span>
+	                    <span>{compactNumber(mod.downloads)} downloads</span>
+	                    <span>{compactNumber(mod.endorsements)} endorsements</span>
+	                    <span>{mod.updated_at ? `Updated ${new Date(mod.updated_at).toLocaleDateString()}` : "Updated unknown"}</span>
+	                  </div>
+	                  <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A View Mod Page</div>
+	                </div>
+	              </div>
+	            </Focusable>
+	          ))}
           {mods.length > 0 && offset < totalCount && (
             <Focusable className="dmm-focus-card" focusClassName="dmm-focus-card-focused" onActivate={loadMore} onClick={loadMore} style={deckyCompactActionStyle("neutral", busy)}>
               {busy ? "Loading More" : "Load More"}
