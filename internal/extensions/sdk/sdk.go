@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -331,4 +332,28 @@ type EventNotice struct {
 	ToolName    string
 	ActionLabel string
 	HelpURL     string
+}
+
+type BlockingIssue struct {
+	Kind    string   `json:"kind"`
+	Title   string   `json:"title"`
+	Message string   `json:"message"`
+	Details []string `json:"details,omitempty"`
+	Actions []string `json:"actions,omitempty"`
+}
+
+type BlockingIssuesError struct {
+	Issues []BlockingIssue `json:"issues"`
+}
+
+func (err BlockingIssuesError) Error() string {
+	for _, issue := range err.Issues {
+		if message := strings.TrimSpace(issue.Message); message != "" {
+			return message
+		}
+		if title := strings.TrimSpace(issue.Title); title != "" {
+			return title
+		}
+	}
+	return "extension blocked deployment"
 }

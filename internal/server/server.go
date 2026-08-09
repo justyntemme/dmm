@@ -5531,7 +5531,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	job, _ = s.jobs.Run(job.ID, "Preparing deployment for "+appID)
 	plan, err := s.buildGameDeployPlanWithProgress(r.Context(), appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
-		job, _ = s.jobs.Fail(job.ID, err.Error())
+		job = s.failJobWithError(job, err)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -5549,7 +5549,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("deployment confirmed", "job_id", job.ID, "app_id", appID, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	result, err := s.applyPreparedDeployment(r.Context(), appID, job.ID, plan, "Applying enabled mods", "manual")
 	if err != nil {
-		job, _ = s.jobs.Fail(job.ID, err.Error())
+		job = s.failJobWithError(job, err)
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan, "applied": result.Applied})
 		return
 	}
@@ -5604,7 +5604,7 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 	plan, err := s.buildGameDeployPlanWithProgress(ctx, appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
 		s.logger.Warn("profile apply preview failed", "app_id", appID, "source", source, "error", err)
-		job, _ = s.jobs.Fail(job.ID, err.Error())
+		job = s.failJobWithError(job, err)
 		return profileApplyResponse{
 			Status:  "failed",
 			Message: "Profile was updated, but DMM could not preview game-folder changes: " + err.Error(),
@@ -5634,7 +5634,7 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 	s.logger.Info("profile apply started", "job_id", job.ID, "app_id", appID, "source", source, "actions", len(plan.Actions), "strategy", plan.Strategy)
 	result, err := s.applyPreparedDeployment(ctx, appID, job.ID, plan, "Applying enabled mods", source)
 	if err != nil {
-		job, _ = s.jobs.Fail(job.ID, err.Error())
+		job = s.failJobWithError(job, err)
 		return profileApplyResponse{
 			Status:  "failed",
 			Message: "Profile was updated, but DMM could not apply game-folder changes: " + err.Error(),
@@ -6691,6 +6691,19 @@ func jobAPIResponses(list []jobs.Job) []jobResponse {
 	return out
 }
 
+func (s *Server) failJobWithError(job jobs.Job, err error) jobs.Job {
+	if nextPayload, ok := jobPayloadWithBlockingIssues(job.Payload, err); ok {
+		if next, updated := s.jobs.SetPayload(job.ID, nextPayload); updated {
+			job = next
+		}
+	}
+	failed, ok := s.jobs.Fail(job.ID, err.Error())
+	if !ok {
+		return job
+	}
+	return failed
+}
+
 func jobAPIResponse(job jobs.Job) jobResponse {
 	payload := cloneJobPayload(job.Payload)
 	appID := strings.TrimSpace(payload["app_id"])
@@ -6717,6 +6730,77 @@ func cloneJobPayload(payload jobs.JobPayload) jobs.JobPayload {
 	out := make(jobs.JobPayload, len(payload))
 	for key, value := range payload {
 		out[key] = value
+	}
+	return out
+}
+
+func jobPayloadWithBlockingIssues(payload jobs.JobPayload, err error) (jobs.JobPayload, bool) {
+	var blocking gameext.BlockingIssuesError
+	if !errors.As(err, &blocking) || len(blocking.Issues) == 0 {
+		return payload, false
+	}
+	next := cloneJobPayload(payload)
+	if next == nil {
+		next = jobs.JobPayload{}
+	}
+	issues := normalizeBlockingIssues(blocking.Issues)
+	if len(issues) == 0 {
+		return payload, false
+	}
+	first := issues[0]
+	next["issue_kind"] = strings.TrimSpace(first.Kind)
+	next["issue_title"] = strings.TrimSpace(first.Title)
+	next["issue_message"] = strings.TrimSpace(first.Message)
+	next["issue_count"] = strconv.Itoa(len(issues))
+	if raw, err := json.Marshal(issues); err == nil {
+		next["issues_json"] = string(raw)
+	}
+	if raw, err := json.Marshal(first.Details); err == nil && len(first.Details) > 0 {
+		next["issue_details_json"] = string(raw)
+	}
+	if raw, err := json.Marshal(first.Actions); err == nil && len(first.Actions) > 0 {
+		next["issue_actions_json"] = string(raw)
+	}
+	for key, value := range next {
+		if strings.TrimSpace(value) == "" {
+			delete(next, key)
+		}
+	}
+	return next, true
+}
+
+func normalizeBlockingIssues(issues []gameext.BlockingIssue) []gameext.BlockingIssue {
+	out := make([]gameext.BlockingIssue, 0, len(issues))
+	for _, issue := range issues {
+		issue.Kind = strings.TrimSpace(issue.Kind)
+		issue.Title = strings.TrimSpace(issue.Title)
+		issue.Message = strings.TrimSpace(issue.Message)
+		issue.Details = cleanStrings(issue.Details)
+		issue.Actions = cleanStrings(issue.Actions)
+		if issue.Kind == "" {
+			issue.Kind = "extension-blocker"
+		}
+		if issue.Message == "" {
+			issue.Message = issue.Title
+		}
+		if issue.Title == "" {
+			issue.Title = "Extension review needed"
+		}
+		if issue.Message == "" && len(issue.Details) == 0 {
+			continue
+		}
+		out = append(out, issue)
+	}
+	return out
+}
+
+func cleanStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
 	}
 	return out
 }

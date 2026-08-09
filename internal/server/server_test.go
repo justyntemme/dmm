@@ -2372,6 +2372,29 @@ func TestExtensionEventProgressUpdaterPublishesReadableJobMessage(t *testing.T) 
 	}
 }
 
+func TestFailJobWithExtensionBlockingIssuesAddsReviewPayload(t *testing.T) {
+	srv := newTestServer(t)
+	job := srv.jobs.CreateWithPayload("deploy", "Apply enabled mods", jobs.JobPayload{"app_id": "287700"})
+
+	failed := srv.failJobWithError(job, gameext.BlockingIssuesError{Issues: []gameext.BlockingIssue{{
+		Kind:    "packed-archive-conflict",
+		Title:   "SnakeBite package conflicts",
+		Message: "Resolve package conflicts before deployment.",
+		Details: []string{"First and Second both modify /Assets/tpp/demo/shared.lua"},
+		Actions: []string{"Disable one conflicting mod.", "Apply the profile again."},
+	}}})
+
+	if failed.Status != jobs.StatusFailed || failed.Payload["issue_kind"] != "packed-archive-conflict" || failed.Payload["issue_count"] != "1" {
+		t.Fatalf("failed job = %+v", failed)
+	}
+	if !json.Valid([]byte(failed.Payload["issue_details_json"])) || !strings.Contains(failed.Payload["issue_details_json"], "shared.lua") {
+		t.Fatalf("issue details payload = %q", failed.Payload["issue_details_json"])
+	}
+	if !json.Valid([]byte(failed.Payload["issue_actions_json"])) || !strings.Contains(failed.Payload["issue_actions_json"], "Disable") {
+		t.Fatalf("issue actions payload = %q", failed.Payload["issue_actions_json"])
+	}
+}
+
 func TestResolveCatalogURLReportsBrowserRequiredForNexusPage(t *testing.T) {
 	srv := newTestServer(t)
 

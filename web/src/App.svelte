@@ -2391,6 +2391,34 @@
     };
   }
 
+  function jobIssueTitle(job: Job) {
+    return String(job.payload?.issue_title ?? "").trim();
+  }
+
+  function jobIssueMessage(job: Job) {
+    return String(job.payload?.issue_message ?? "").trim();
+  }
+
+  function jobIssueDetails(job: Job) {
+    return parseJobStringList(job.payload?.issue_details_json);
+  }
+
+  function jobIssueActions(job: Job) {
+    return parseJobStringList(job.payload?.issue_actions_json);
+  }
+
+  function parseJobStringList(value: string | undefined) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   async function searchNexusMods(nextSort = nexusSearchSort, nextWindow = nexusSearchTimeWindow) {
     if (!selectedGame) return;
     nexusSearchBusy = true;
@@ -4027,6 +4055,10 @@
           <div class="action-list">
             {#each visibleActionItems as action}
               {@const progress = jobDownloadProgress(action)}
+              {@const issueTitle = jobIssueTitle(action)}
+              {@const issueMessage = jobIssueMessage(action)}
+              {@const issueDetails = jobIssueDetails(action)}
+              {@const issueActions = jobIssueActions(action)}
               <article class:failed-action={action.status === "failed"}>
                 <div>
                   <div class="mod-title-line">
@@ -4040,6 +4072,22 @@
 	                        <small>{progress.label}</small>
 	                      </div>
 	                    {/if}
+                    {#if issueTitle || issueDetails.length || issueActions.length}
+                      <div class="job-issue-review">
+                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
+                        {#if issueMessage && issueMessage !== action.message}<p>{issueMessage}</p>{/if}
+                        {#if issueDetails.length}
+                          <ul>
+                            {#each issueDetails as detail}
+                              <li>{detail}</li>
+                            {/each}
+                          </ul>
+                        {/if}
+                        {#if issueActions.length}
+                          <small>{issueActions.join(" ")}</small>
+                        {/if}
+                      </div>
+                    {/if}
                     {#if action.type === "extension-notice" && extensionNoticeTool(action)}
                       <small>Tool: {extensionNoticeTool(action)}</small>
                     {/if}
@@ -4149,6 +4197,10 @@
             <div class="jobs">
               {#each visibleJobs as job}
                 {@const progress = jobDownloadProgress(job)}
+                {@const issueTitle = jobIssueTitle(job)}
+                {@const issueMessage = jobIssueMessage(job)}
+                {@const issueDetails = jobIssueDetails(job)}
+                {@const issueActions = jobIssueActions(job)}
                 <article class="job">
 	                  <div>
 	                    <div class="mod-title-line">
@@ -4162,9 +4214,25 @@
 	                      <div class="job-progress" aria-label="Download progress">
 	                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
 	                        <small>{progress.label}</small>
-	                      </div>
-	                    {/if}
-	                  </div>
+		                      </div>
+		                    {/if}
+		                    {#if issueTitle || issueDetails.length || issueActions.length}
+		                      <div class="job-issue-review">
+		                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
+		                        {#if issueMessage && issueMessage !== job.message}<p>{issueMessage}</p>{/if}
+		                        {#if issueDetails.length}
+		                          <ul>
+		                            {#each issueDetails as detail}
+		                              <li>{detail}</li>
+		                            {/each}
+		                          </ul>
+		                        {/if}
+		                        {#if issueActions.length}
+		                          <small>{issueActions.join(" ")}</small>
+		                        {/if}
+		                      </div>
+		                    {/if}
+		                  </div>
 	                  <div class="job-actions">
 	                    <span>{job.status}</span>
 	                    {#if canCancelJob(job)}
@@ -4293,6 +4361,8 @@
             <section class="activity-strip" aria-label="Game activity">
               {#each selectedGameActivity.slice(0, 3) as job}
                 {@const progress = jobDownloadProgress(job)}
+                {@const issueTitle = jobIssueTitle(job)}
+                {@const issueDetails = jobIssueDetails(job)}
                 <article class:failed-action={job.status === "failed"}>
                   <div class="mod-title-line">
                     <strong>{job.title}</strong>
@@ -4306,6 +4376,12 @@
                     <div class="job-progress compact-progress" aria-label="Download progress">
                       <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
                       <small>{progress.label}</small>
+                    </div>
+                  {/if}
+                  {#if issueTitle || issueDetails.length}
+                    <div class="job-issue-review compact-issue-review">
+                      {#if issueTitle}<strong>{issueTitle}</strong>{/if}
+                      {#if issueDetails.length}<small>{issueDetails[0]}</small>{/if}
                     </div>
                   {/if}
                 </article>
@@ -5000,6 +5076,10 @@
             <div class="action-list">
               {#each selectedGameActionItems as action}
                 {@const progress = jobDownloadProgress(action)}
+                {@const issueTitle = jobIssueTitle(action)}
+                {@const issueMessage = jobIssueMessage(action)}
+                {@const issueDetails = jobIssueDetails(action)}
+                {@const issueActions = jobIssueActions(action)}
                 <article class:failed-action={action.status === "failed"}>
                   <div>
                     <div class="mod-title-line">
@@ -5011,6 +5091,22 @@
                       <div class="job-progress" aria-label="Download progress">
                         <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
                         <small>{progress.label}</small>
+                      </div>
+                    {/if}
+                    {#if issueTitle || issueDetails.length || issueActions.length}
+                      <div class="job-issue-review">
+                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
+                        {#if issueMessage && issueMessage !== action.message}<p>{issueMessage}</p>{/if}
+                        {#if issueDetails.length}
+                          <ul>
+                            {#each issueDetails as detail}
+                              <li>{detail}</li>
+                            {/each}
+                          </ul>
+                        {/if}
+                        {#if issueActions.length}
+                          <small>{issueActions.join(" ")}</small>
+                        {/if}
                       </div>
                     {/if}
                     {#if action.type === "extension-notice" && extensionNoticeTool(action)}

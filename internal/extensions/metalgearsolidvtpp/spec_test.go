@@ -3,6 +3,7 @@ package metalgearsolidvtpp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -313,6 +314,10 @@ func TestWillDeploySnakeBitePackagesBlocksConflictingEnabledPackages(t *testing.
 	})
 	if err == nil {
 		t.Fatal("expected SnakeBite package conflict")
+	}
+	var blockers sdk.BlockingIssuesError
+	if !errors.As(err, &blockers) || len(blockers.Issues) != 1 || blockers.Issues[0].Kind != "packed-archive-conflict" || len(blockers.Issues[0].Details) != 1 {
+		t.Fatalf("blocking issues = %+v, err = %v", blockers, err)
 	}
 	if !strings.Contains(err.Error(), "Disable one") || !strings.Contains(err.Error(), "First") || !strings.Contains(err.Error(), "Second") || !strings.Contains(err.Error(), "/Assets/tpp/demo/shared.lua") {
 		t.Fatalf("conflict error = %v", err)

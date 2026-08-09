@@ -1469,6 +1469,37 @@ function DeckyJobProgress({ job }: { job: Job }) {
   );
 }
 
+function DeckyJobIssueReview({ job }: { job: Job }) {
+  const title = String(job.payload?.issue_title ?? "").trim();
+  const message = String(job.payload?.issue_message ?? "").trim();
+  const details = parseDeckyJobStringList(job.payload?.issue_details_json);
+  const actions = parseDeckyJobStringList(job.payload?.issue_actions_json);
+  if (!title && details.length === 0 && actions.length === 0) return null;
+  return (
+    <div style={{ background: "#241a0d", border: "1px solid #92400e", borderRadius: "7px", display: "grid", gap: "5px", marginTop: "2px", minWidth: 0, padding: "8px" }}>
+      {title && <div style={{ color: "#fed7aa", fontSize: "12px", fontWeight: 900, lineHeight: 1.2, overflowWrap: "anywhere" }}>{title}</div>}
+      {message && message !== job.message && <div style={{ color: "#fde68a", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{message}</div>}
+      {details.slice(0, 3).map((detail) => (
+        <div key={detail} style={{ color: "#f8fafc", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>- {detail}</div>
+      ))}
+      {details.length > 3 && <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{details.length - 3} more conflict detail{details.length - 3 === 1 ? "" : "s"}</div>}
+      {actions.length > 0 && <div style={{ color: "#fde68a", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{actions.join(" ")}</div>}
+    </div>
+  );
+}
+
+function parseDeckyJobStringList(value: string | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function focusDeckyRef(ref: { current: HTMLElement | null }, label: string, logDetail: Record<string, string | number | boolean> = {}) {
   window.setTimeout(() => {
     const target = ref.current;
@@ -4723,6 +4754,7 @@ function FreshDeckyModManagerRoute() {
               <div style={{ color: job.status === "failed" ? "#f87171" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{deckyJobStatusLabel(job)}</div>
               {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
               <DeckyJobProgress job={job} />
+              <DeckyJobIssueReview job={job} />
               <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>
                 {busyJobID === job.id ? "Working" : `A ${primary}`}{deckyJobCanCancel(job) ? " · Y Cancel" : ""}
               </div>
@@ -4868,6 +4900,7 @@ function FreshDeckyModManagerRoute() {
             <div style={{ color: job.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: 900 }}>{job.title}</div>
             {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
             <DeckyJobProgress job={job} />
+            <DeckyJobIssueReview job={job} />
             <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {deckyJobPrimaryActionLabel(job) || "Open"}</div>
           </Focusable>
         ))}

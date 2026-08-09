@@ -68,6 +68,8 @@ type EventHandlerResult = sdk.EventHandlerResult
 type EventNotice = sdk.EventNotice
 type EventProgress = sdk.EventProgress
 type EventProgressFunc = sdk.EventProgressFunc
+type BlockingIssue = sdk.BlockingIssue
+type BlockingIssuesError = sdk.BlockingIssuesError
 
 const (
 	SteamWorkshopActionSubscribe   = sdk.SteamWorkshopActionSubscribe

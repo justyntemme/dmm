@@ -2706,6 +2706,38 @@ dd {
   color: #a1a1aa;
 }
 
+.job-issue-review {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  border: 1px solid #92400e;
+  border-radius: 8px;
+  padding: 10px;
+  background: #241a0d;
+}
+
+.job-issue-review strong {
+  color: #fed7aa;
+}
+
+.job-issue-review p,
+.job-issue-review small {
+  margin: 0;
+  color: #fde68a;
+}
+
+.job-issue-review ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #f8fafc;
+}
+
+.compact-issue-review {
+  padding: 8px;
+}
+
 .compact-progress {
   width: 100%;
 }

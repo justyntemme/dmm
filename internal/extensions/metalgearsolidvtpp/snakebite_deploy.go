@@ -52,7 +52,7 @@ func willDeploySnakeBitePackages(ctx context.Context, input sdk.EventHandlerInpu
 		return sdk.EventHandlerResult{}, err
 	}
 	if conflicts := snakeBitePackageConflicts(packages); len(conflicts) > 0 {
-		return sdk.EventHandlerResult{}, errors.New(snakeBiteConflictMessage(conflicts))
+		return sdk.EventHandlerResult{}, snakeBiteConflictError(conflicts)
 	}
 	mappings, messages, err := buildSnakeBiteArchives(ctx, input, packages)
 	if err != nil {
@@ -337,6 +337,25 @@ func snakeBiteConflictMessage(conflicts []string) string {
 		message.WriteString(fmt.Sprintf("; %d more", len(conflicts)-limit))
 	}
 	return message.String()
+}
+
+func snakeBiteConflictError(conflicts []string) error {
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return sdk.BlockingIssuesError{
+		Issues: []sdk.BlockingIssue{{
+			Kind:    "packed-archive-conflict",
+			Title:   "SnakeBite package conflicts",
+			Message: snakeBiteConflictMessage(conflicts),
+			Details: append([]string(nil), conflicts...),
+			Actions: []string{
+				"Disable one of each conflicting MGSV mod.",
+				"Move conflicting packages into separate profiles if you want alternate loadouts.",
+				"Apply the profile again after resolving the conflict.",
+			},
+		}},
+	}
 }
 
 func snakeBiteDisplayPath(first, fallback string) string {
