@@ -202,7 +202,6 @@ var games = []GameSpec{
 	{VortexDir: "game-dragonage", ID: "dragonage", Name: "Dragon Age: Origins", SteamAppIDs: []string{"17450", "47810"}},
 	{VortexDir: "game-dragonage2", ID: "dragonage2", Name: "Dragon Age 2", SteamAppIDs: []string{"15543", "1238040"}},
 	{VortexDir: "game-dragons-dogma", ID: "dragonsdogma", Name: "Dragon's Dogma", SteamAppIDs: []string{"367500"}, HasCustomInstallers: true},
-	{VortexDir: "game-elex", ID: "elex", Name: "Elex", SteamAppIDs: []string{"411300"}, HasCustomInstallers: true},
 	{VortexDir: "game-enderal", ID: "enderal", Name: "Enderal", SteamAppIDs: []string{"933480"}},
 	{
 		VortexDir:           "game-factorio",
@@ -298,7 +297,6 @@ var games = []GameSpec{
 		HasCustomInstallers: true,
 	},
 	{VortexDir: "game-teso", ID: "teso", Name: "The Elder Scrolls Online", SteamAppIDs: []string{"306130"}, NexusDomains: []string{"elderscrollsonline"}},
-	{VortexDir: "game-torchlight2", ID: "torchlight2", Name: "Torchlight II", SteamAppIDs: []string{"200710"}, HasCustomInstallers: true},
 	{VortexDir: "game-totalwarthreekingdoms", ID: "totalwarthreekingdoms", Name: "Total War: Three Kingdoms", SteamAppIDs: []string{"779340"}, HasCustomInstallers: true},
 	{VortexDir: "game-untitledgoose", ID: "untitledgoosegame", Name: "Untitled Goose Game", AllowNoSteamAppID: true, Notes: []string{"Vortex discovers this game through Epic and wires BepInEx support plus a migration; DMM needs source-reviewed Epic discovery and BepInEx migration parity before full support."}},
 	{VortexDir: "game-vtmbloodlines", ID: "vampirebloodlines", Name: "Vampire: The Masquerade - Bloodlines", SteamAppIDs: []string{"2600"}, HasModTypes: true},

@@ -16,6 +16,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
@@ -82,6 +83,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thekingiswatching"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thomaswasalone"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/torchlight2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
@@ -127,6 +129,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
+		gameext.MustCompileExtension(elex.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(fez.Extension()),
@@ -188,6 +191,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(thedivision2.Extension()),
 		gameext.MustCompileExtension(thekingiswatching.Extension()),
 		gameext.MustCompileExtension(thomaswasalone.Extension()),
+		gameext.MustCompileExtension(torchlight2.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
 		gameext.MustCompileExtension(totalwarrome2.Extension()),

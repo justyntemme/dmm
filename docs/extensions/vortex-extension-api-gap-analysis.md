@@ -116,6 +116,8 @@ DMM status:
 - Supports declarative and custom Go installer rules, mod types, archive-root installs, common-root stripping, generated files, target policies, metadata extractors, custom builders, FOMOD, and generic component choices.
 - Supports source-backed Vortex `declareInstallers`-style table matchers for file suffixes, regex patterns, game stop patterns, common-root stripping, and archive-root copy planning.
 - X Rebirth is promoted from catalog metadata into `internal/extensions/xrebirth`, covering its Vortex `content.xml` custom installer plus table-declared savegame, shader injector, utility, drop-in, save-patch, and documentation installers.
+- Elex is promoted from catalog metadata into `internal/extensions/elex`, covering the Vortex `.pak` installer, `data/packed` mod root, required executable metadata, and Vortex's FOMOD exclusion.
+- Torchlight II is promoted from catalog metadata into `internal/extensions/torchlight2`, covering Vortex's `.mod` installer, documents mods target root, Linux `ModLauncher.bin.x86` executable metadata, and Steam launcher requirement metadata.
 - Source-backed metadata now exists for shared Vortex mod types `dazip`, `dinput`, `enb`, `gedosato`, and `umm`, plus their registered installers where Vortex has them. They are marked `blocked` until the reusable DMM helpers exist.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
 - Needed helper APIs include source-backed versions of Vortex `testSupportedContent`, advanced `mergeMods` path transforms, broader wrapper-root normalization variants, and richer component-choice rules.
