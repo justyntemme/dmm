@@ -10001,6 +10001,124 @@ func TestDeployAdoptsNewFilesBeforePlanning(t *testing.T) {
 	}
 }
 
+func TestDeployReportsRemovedFilesBeforePlanning(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Removed Files Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999022"
+	var observed []sdk.RemovedFile
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "removedfilesgame",
+		Name:    "Removed Files Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"removedfilesgame"},
+				VortexGameID: "removedfilesgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "root", TargetRoot: ""})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventRemovedFiles,
+				Name:  "Observe removed generated files",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					observed = append([]sdk.RemovedFile(nil), input.RemovedFiles...)
+					return sdk.EventHandlerResult{Messages: []string{"removed files observed"}}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Removed Files Game",
+		InstallDir:  "Removed Files Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "removedfilesgame", "mods", "1", "files", "2")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "Mods", "Example"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "Mods", "Example", "mod.json"), []byte(`{"name":"Example"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "root",
+		PlannerID: "removedfilesgame:root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Mods/Example/mod.json",
+			TargetRelative:  "Mods/Example/mod.json",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "removedfilesgame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Example Mod",
+		ArchivePath:    filepath.Join(t.TempDir(), "removedfiles.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	deployGame := func(label string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/deploy", nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("%s deploy status = %d, body = %s", label, rec.Code, rec.Body.String())
+		}
+	}
+
+	deployGame("initial")
+	generated := filepath.Join(gamePath, "Mods", "Example", "generated.json")
+	if err := os.WriteFile(generated, []byte(`{"generated":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	applied, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.updateAddedFilesSnapshot(context.Background(), appID, 0, applied); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(generated); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.buildGameDeployPlan(context.Background(), appID); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(observed) != 1 {
+		t.Fatalf("observed removed files = %+v", observed)
+	}
+	removed := observed[0]
+	if removed.TargetRelative != "Mods/Example/generated.json" || len(removed.Candidates) != 1 || removed.Candidates[0].InstalledModID != mod.ID {
+		t.Fatalf("removed file = %+v", removed)
+	}
+}
+
 func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Lifecycle Game")

@@ -11947,7 +11947,7 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		return deploy.Plan{}, err
 	}
 	defaultStrategy := s.deploymentStrategyForProfile(appID, profile)
-	adopted, err := s.processAddedFilesBeforeDeploy(ctx, game, profile.ID, mods, managedFiles)
+	adopted, err := s.processNewFileMonitorChangesBeforeDeploy(ctx, game, profile.ID, mods, managedFiles)
 	if err != nil {
 		return deploy.Plan{}, err
 	}

@@ -168,6 +168,7 @@ const (
 	EventProfileWillChange    = sdk.EventProfileWillChange
 	EventProfileDidChange     = sdk.EventProfileDidChange
 	EventAddedFiles           = sdk.EventAddedFiles
+	EventRemovedFiles         = sdk.EventRemovedFiles
 	EventGamemodeActivated    = sdk.EventGamemodeActivated
 	EventWillInstallDeps      = sdk.EventWillInstallDeps
 	EventCheckModsVersion     = sdk.EventCheckModsVersion

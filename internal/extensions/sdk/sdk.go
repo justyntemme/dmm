@@ -735,6 +735,7 @@ const (
 	EventProfileWillChange    = "profile-will-change"
 	EventProfileDidChange     = "profile-did-change"
 	EventAddedFiles           = "added-files"
+	EventRemovedFiles         = "removed-files"
 	EventGamemodeActivated    = "gamemode-activated"
 	EventWillInstallDeps      = "will-install-dependencies"
 	EventCheckModsVersion     = "check-mods-version"
@@ -757,6 +758,7 @@ type EventHandlerInput struct {
 	Mods         []DeploymentMod
 	ModIDs       []int64
 	AddedFiles   []AddedFile
+	RemovedFiles []RemovedFile
 	Progress     EventProgressFunc
 }
 
@@ -806,6 +808,10 @@ type AddedFileCandidate struct {
 	StagingPath    string
 	TargetRootID   string
 }
+
+type RemovedFile = AddedFile
+
+type RemovedFileCandidate = AddedFileCandidate
 
 type EventHandlerResult struct {
 	ReplaceMappings bool

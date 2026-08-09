@@ -40,47 +40,81 @@ type addedFilesRoot struct {
 	Path string
 }
 
-func (s *Server) processAddedFilesBeforeDeploy(ctx context.Context, game storage.Game, profileID int64, mods []storage.InstalledMod, managedFiles []deploy.AppliedFile) (int, error) {
-	if !s.games.HasEventHandlerForSteamApp(game.SteamAppID, gameext.EventAddedFiles) {
+func (s *Server) processNewFileMonitorChangesBeforeDeploy(ctx context.Context, game storage.Game, profileID int64, mods []storage.InstalledMod, managedFiles []deploy.AppliedFile) (int, error) {
+	if !s.hasNewFileMonitorHandler(game.SteamAppID) {
 		return 0, nil
 	}
 	model, err := s.addedFilesModel(ctx, game, mods, managedFiles)
 	if err != nil {
 		return 0, err
 	}
-	added, err := s.detectAddedFiles(ctx, game.SteamAppID, profileID, model)
+	added, removed, err := s.detectFileMonitorChanges(ctx, game.SteamAppID, profileID, model)
 	if err != nil {
 		return 0, err
 	}
-	if len(added) == 0 {
-		return 0, nil
+	adopted := 0
+	if len(added) > 0 && s.games.HasEventHandlerForSteamApp(game.SteamAppID, gameext.EventAddedFiles) {
+		result, err := s.runFileMonitorEventHandlers(ctx, game, profileID, mods, managedFiles, gameext.EventAddedFiles, added, nil)
+		if err != nil {
+			return 0, err
+		}
+		adopted, err = s.persistAdoptedFiles(ctx, mods, result.AdoptedFiles)
+		if err != nil {
+			return adopted, err
+		}
+		if adopted > 0 {
+			s.logger.Info("extension adopted newly generated files", "app_id", game.SteamAppID, "profile_id", profileID, "detected", len(added), "adopted", adopted)
+		}
 	}
-	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, gameext.EventAddedFiles, gameext.EventHandlerInput{
-		AppID:        game.SteamAppID,
-		GamePath:     game.GamePath,
-		LibraryPath:  game.LibraryPath,
-		ProfileID:    profileID,
-		StagingRoot:  filepath.Join(s.cfg.DataDir, "staging"),
-		Source:       "new-file-monitor",
-		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
-		Mods:         deploymentModsForHooks(mods),
-		AddedFiles:   added,
-	})
-	if err != nil {
-		return 0, err
-	}
-	adopted, err := s.persistAdoptedFiles(ctx, mods, result.AdoptedFiles)
-	if err != nil {
-		return adopted, err
-	}
-	if adopted > 0 {
-		s.logger.Info("extension adopted newly generated files", "app_id", game.SteamAppID, "profile_id", profileID, "detected", len(added), "adopted", adopted)
+	if len(removed) > 0 && s.games.HasEventHandlerForSteamApp(game.SteamAppID, gameext.EventRemovedFiles) {
+		if _, err := s.runFileMonitorEventHandlers(ctx, game, profileID, mods, managedFiles, gameext.EventRemovedFiles, nil, removed); err != nil {
+			return adopted, err
+		}
 	}
 	return adopted, nil
 }
 
+func (s *Server) runFileMonitorEventHandlers(ctx context.Context, game storage.Game, profileID int64, mods []storage.InstalledMod, managedFiles []deploy.AppliedFile, event string, added []sdk.AddedFile, removed []sdk.RemovedFile) (gameext.EventHandlerResult, error) {
+	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
+	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", game.SteamAppID, strconv.FormatInt(profileID, 10), event)
+	if err := os.RemoveAll(workDir); err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
+	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
+		AppID:        game.SteamAppID,
+		GamePath:     game.GamePath,
+		LibraryPath:  game.LibraryPath,
+		ProfileID:    profileID,
+		StagingRoot:  stagingRoot,
+		WorkDir:      workDir,
+		Source:       "new-file-monitor",
+		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
+		Mods:         deploymentModsForHooks(mods),
+		AddedFiles:   added,
+		RemovedFiles: removed,
+	})
+	if err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
+	notices := extensionEventNotices(result)
+	for _, notice := range notices {
+		s.logger.Info("extension file-monitor event notice", "app_id", game.SteamAppID, "event", event, "message", notice.Message, "tool_id", notice.ToolID)
+	}
+	s.queueExtensionNoticeJobs(ctx, game.SteamAppID, event, "new-file-monitor", game.Name, notices)
+	s.logger.Info("extension file-monitor event handled", "app_id", game.SteamAppID, "event", event, "profile_id", profileID, "added", len(added), "removed", len(removed), "work_dir", workDir)
+	return result, nil
+}
+
+func (s *Server) hasNewFileMonitorHandler(appID string) bool {
+	return s.games.HasEventHandlerForSteamApp(appID, gameext.EventAddedFiles) ||
+		s.games.HasEventHandlerForSteamApp(appID, gameext.EventRemovedFiles)
+}
+
 func (s *Server) updateAddedFilesSnapshot(ctx context.Context, appID string, profileID int64, applied []deploy.AppliedFile) error {
-	if !s.games.HasEventHandlerForSteamApp(appID, gameext.EventAddedFiles) {
+	if !s.hasNewFileMonitorHandler(appID) {
 		return nil
 	}
 	game, err := s.db.GameBySteamApp(ctx, appID)
@@ -120,33 +154,46 @@ func (s *Server) updateAddedFilesSnapshot(ctx context.Context, appID string, pro
 	return nil
 }
 
-func (s *Server) detectAddedFiles(ctx context.Context, appID string, profileID int64, model addedFilesModel) ([]sdk.AddedFile, error) {
+func (s *Server) detectFileMonitorChanges(ctx context.Context, appID string, profileID int64, model addedFilesModel) ([]sdk.AddedFile, []sdk.RemovedFile, error) {
 	oldSnapshot, ok, err := s.loadAddedFilesSnapshot(appID, profileID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	current, err := s.currentAddedFilesSnapshot(model)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	oldByRoot := map[string]addedFilesSnapshotRoot{}
 	for _, root := range oldSnapshot.Roots {
 		oldByRoot[filepath.Clean(root.TargetRootPath)] = root
 	}
-	var out []sdk.AddedFile
+	var added []sdk.AddedFile
+	var removed []sdk.RemovedFile
 	for _, root := range current.Roots {
 		oldRoot, ok := oldByRoot[filepath.Clean(root.TargetRootPath)]
 		if !ok {
 			continue
 		}
-		added := sortedDifference(root.Entries, oldRoot.Entries)
-		for _, rel := range added {
+		addedEntries := sortedDifference(root.Entries, oldRoot.Entries)
+		for _, rel := range addedEntries {
 			filePath := filepath.Clean(filepath.Join(root.TargetRootPath, filepath.FromSlash(rel)))
 			candidates := s.addedFileCandidates(filePath, model)
-			out = append(out, sdk.AddedFile{
+			added = append(added, sdk.AddedFile{
+				FilePath:       filePath,
+				TargetRootID:   root.TargetRootID,
+				TargetRootPath: root.TargetRootPath,
+				TargetRelative: rel,
+				Candidates:     candidates,
+			})
+		}
+		removedEntries := sortedDifference(oldRoot.Entries, root.Entries)
+		for _, rel := range removedEntries {
+			filePath := filepath.Clean(filepath.Join(root.TargetRootPath, filepath.FromSlash(rel)))
+			candidates := s.addedFileCandidates(filePath, model)
+			removed = append(removed, sdk.RemovedFile{
 				FilePath:       filePath,
 				TargetRootID:   root.TargetRootID,
 				TargetRootPath: root.TargetRootPath,
@@ -155,10 +202,10 @@ func (s *Server) detectAddedFiles(ctx context.Context, appID string, profileID i
 			})
 		}
 	}
-	if len(out) > 0 {
-		s.logger.Info("new files detected before deployment", "app_id", appID, "profile_id", profileID, "files", len(out))
+	if len(added) > 0 || len(removed) > 0 {
+		s.logger.Info("file-monitor changes detected before deployment", "app_id", appID, "profile_id", profileID, "added", len(added), "removed", len(removed))
 	}
-	return out, nil
+	return added, removed, nil
 }
 
 func (s *Server) addedFilesModel(ctx context.Context, game storage.Game, mods []storage.InstalledMod, managedFiles []deploy.AppliedFile) (addedFilesModel, error) {
