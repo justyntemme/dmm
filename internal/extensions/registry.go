@@ -53,6 +53,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
@@ -175,6 +176,9 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(metroexodus.Extension()),
 		gameext.MustCompileExtension(mewgenics.Extension()),
 		gameext.MustCompileExtension(mirrorsedge.Extension()),
+		gameext.MustCompileExtension(mountandblade.Extensions()[0]),
+		gameext.MustCompileExtension(mountandblade.Extensions()[1]),
+		gameext.MustCompileExtension(mountandblade.Extensions()[2]),
 		gameext.MustCompileExtension(mrprepper.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
