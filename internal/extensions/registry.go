@@ -10,6 +10,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bloodstainedritualofthenight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/braid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/brawlhalla"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/breakingwheel"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/codevein"
@@ -20,6 +21,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/daggerfallunity"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darkestdungeon"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/darksouls2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
@@ -27,6 +29,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonsdogma"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/enderal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/factorio"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4vr"
@@ -49,6 +52,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hollowknight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/hotlinemiami"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kenshi"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/kerbalspaceprogram"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kingdomcomedeliverance"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kotor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/markoftheninja"
@@ -159,6 +163,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(blasphemous.Extension()),
 		gameext.MustCompileExtension(bloodstainedritualofthenight.Extension()),
 		gameext.MustCompileExtension(braid.Extension()),
+		gameext.MustCompileExtension(breakingwheel.Extension()),
 		gameext.MustCompileExtension(brawlhalla.Extension()),
 		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(citizensleeper.Extension()),
@@ -170,12 +175,14 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(daggerfallunity.Extension()),
 		gameext.MustCompileExtension(darkestdungeon.Extension()),
 		gameext.MustCompileExtension(dawnofman.Extension()),
+		gameext.MustCompileExtension(darksouls2.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dragonsdogma.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(elex.Extension()),
+		gameext.MustCompileExtension(enderal.Extension()),
 		gameext.MustCompileExtension(factorio.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
@@ -196,6 +203,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(hollowknight.Extension()),
 		gameext.MustCompileExtension(hotlinemiami.Extension()),
 		gameext.MustCompileExtension(kenshi.Extension()),
+		gameext.MustCompileExtension(kerbalspaceprogram.Extension()),
 		gameext.MustCompileExtension(kingdomcomedeliverance.Extension()),
 		gameext.MustCompileExtension(kotor.Extensions()[0]),
 		gameext.MustCompileExtension(kotor.Extensions()[1]),
