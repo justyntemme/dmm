@@ -3697,9 +3697,20 @@ const freshSettingsPrimaryCardStyle: CSSProperties = {
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
+  alignItems: "stretch",
   gap: "10px",
-  minHeight: "72px",
+  gridAutoRows: "auto",
+  minHeight: "88px",
   overflow: "visible"
+};
+
+const freshSettingsSectionTitleStyle: CSSProperties = {
+  color: "#f8fafc",
+  fontSize: "13px",
+  fontWeight: 900,
+  lineHeight: 1.2,
+  minHeight: "18px",
+  overflowWrap: "anywhere"
 };
 
 const freshActionRowStyle: CSSProperties = {
@@ -3734,6 +3745,7 @@ function freshTabStyle(active: boolean): CSSProperties {
     overflow: "hidden",
     padding: "0 4px",
     textTransform: "uppercase",
+    userSelect: "none",
     width: "100%",
     whiteSpace: "nowrap"
   };
@@ -3845,9 +3857,10 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     display: "grid",
     gap: "10px",
     gridTemplateColumns: "minmax(0, 1fr) 44px",
-    minHeight: "60px",
+    minHeight: "58px",
     opacity: disabled ? 0.62 : 1,
-    padding: "12px 10px",
+    padding: "10px",
+    scrollMarginBlock: "18px",
     width: "100%"
   };
 }
@@ -5208,13 +5221,13 @@ function FreshDeckyModManagerRoute() {
           onClick={() => void toggleFreshServer()}
           style={freshSettingsPrimaryCardStyle}
         >
-          <div style={{ fontWeight: 900 }}>Server</div>
+          <div style={freshSettingsSectionTitleStyle}>Server</div>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
           <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
         </Focusable>
         <div style={freshSettingsCardStyle}>
-          <div style={{ fontWeight: 900 }}>Security</div>
+          <div style={freshSettingsSectionTitleStyle}>Security</div>
           <FreshToggleRow label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
           <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
             Pair Phone
@@ -5229,18 +5242,18 @@ function FreshDeckyModManagerRoute() {
           </FreshActionButton>
         </div>
         <div style={freshSettingsCardStyle}>
-          <div style={{ fontWeight: 900 }}>Automation</div>
+          <div style={freshSettingsSectionTitleStyle}>Automation</div>
           <FreshToggleRow label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
           <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
         <div style={freshSettingsCardStyle}>
-          <div style={{ fontWeight: 900 }}>Debug</div>
+          <div style={freshSettingsSectionTitleStyle}>Debug</div>
           <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
         </div>
         {showDebug && (
           <div style={freshSettingsCardStyle}>
-            <div style={{ fontWeight: 900 }}>Debug Tools</div>
+            <div style={freshSettingsSectionTitleStyle}>Debug Tools</div>
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
             <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
@@ -5261,16 +5274,16 @@ function FreshDeckyModManagerRoute() {
       <style>{deckyRuntimeStyles}</style>
       <div style={freshDeckyTabBarStyle}>
         {freshDeckyTabs.map((item) => (
-          <button
+          <div
             key={item.id}
             className="dmm-decky-tab"
-            tabIndex={-1}
-            onMouseDown={(event) => event.preventDefault()}
+            aria-selected={tab === item.id}
+            role="tab"
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
           >
             {item.label}
-          </button>
+          </div>
         ))}
       </div>
       <Focusable
