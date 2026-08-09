@@ -693,6 +693,7 @@ const deckyRuntimeStyles = `
 }
 .dmm-decky-tab {
   appearance: none;
+  border: 0;
   box-shadow: none !important;
   cursor: pointer;
   outline: none !important;
@@ -3697,7 +3698,7 @@ const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
   gap: "10px",
-  minHeight: "auto",
+  minHeight: "72px",
   overflow: "visible"
 };
 
@@ -3711,19 +3712,29 @@ const freshActionRowStyle: CSSProperties = {
 
 function freshTabStyle(active: boolean): CSSProperties {
   return {
-    ...deckyFocusableCardBase,
     alignItems: "center",
     background: active ? "#0f766e" : "#192231",
-    border: `1px solid ${active ? "#5eead4" : "#334155"}`,
+    border: "0",
+    borderBottom: `2px solid ${active ? "#99f6e4" : "transparent"}`,
+    borderRadius: "6px",
+    boxSizing: "border-box",
+    boxShadow: "none",
     color: "#f8fafc",
+    cursor: "pointer",
     display: "flex",
     fontSize: "11px",
     fontWeight: 900,
     height: "34px",
     justifyContent: "center",
     lineHeight: 1,
+    margin: 0,
+    maxWidth: "100%",
+    minWidth: 0,
+    outline: "none",
+    overflow: "hidden",
     padding: "0 4px",
     textTransform: "uppercase",
+    width: "100%",
     whiteSpace: "nowrap"
   };
 }
@@ -3834,9 +3845,9 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     display: "grid",
     gap: "10px",
     gridTemplateColumns: "minmax(0, 1fr) 44px",
-    minHeight: "52px",
+    minHeight: "60px",
     opacity: disabled ? 0.62 : 1,
-    padding: "10px",
+    padding: "12px 10px",
     width: "100%"
   };
 }
@@ -5223,10 +5234,13 @@ function FreshDeckyModManagerRoute() {
           <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
-        <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
+        <div style={freshSettingsCardStyle}>
+          <div style={{ fontWeight: 900 }}>Debug</div>
+          <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
+        </div>
         {showDebug && (
           <div style={freshSettingsCardStyle}>
-            <div style={{ fontWeight: 900 }}>Debug</div>
+            <div style={{ fontWeight: 900 }}>Debug Tools</div>
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
             <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
@@ -5251,6 +5265,7 @@ function FreshDeckyModManagerRoute() {
             key={item.id}
             className="dmm-decky-tab"
             tabIndex={-1}
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
           >
