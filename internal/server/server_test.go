@@ -10511,6 +10511,27 @@ func TestActivateGameAutoAcquiresExtensionRuntime(t *testing.T) {
 	if !ok || pending.Source != "extension-runtime-auto-acquire:"+requirementID || pending.Resolved.ModID != "example/runtime" || pending.ArchivePath == "" {
 		t.Fatalf("runtime auto-acquire pending = %+v ok=%v", pending, ok)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /deploy status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var deployResp struct {
+		Job          jobResponse           `json:"job"`
+		Acquisitions []autoAcquireResponse `json:"acquisitions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&deployResp); err != nil {
+		t.Fatal(err)
+	}
+	if deployResp.Job.Status != jobs.StatusCompleted || !strings.Contains(deployResp.Job.Message, "runtime download") {
+		t.Fatalf("deploy runtime pause job = %+v", deployResp.Job)
+	}
+	if len(deployResp.Acquisitions) != 1 || !deployResp.Acquisitions[0].Duplicate || deployResp.Acquisitions[0].Job == nil || deployResp.Acquisitions[0].Job.ID != waiting.ID {
+		t.Fatalf("deploy runtime acquisitions = %+v", deployResp.Acquisitions)
+	}
 }
 
 func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {

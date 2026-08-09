@@ -2469,12 +2469,13 @@ type fileConflictWinnerResponse struct {
 }
 
 type profileApplyResponse struct {
-	Status  string                    `json:"status"`
-	Message string                    `json:"message"`
-	Job     *jobs.Job                 `json:"job,omitempty"`
-	Plan    *deploy.Plan              `json:"plan,omitempty"`
-	Applied []deploy.AppliedFile      `json:"applied,omitempty"`
-	Launch  *gameLaunchStatusResponse `json:"launch,omitempty"`
+	Status       string                    `json:"status"`
+	Message      string                    `json:"message"`
+	Job          *jobs.Job                 `json:"job,omitempty"`
+	Plan         *deploy.Plan              `json:"plan,omitempty"`
+	Applied      []deploy.AppliedFile      `json:"applied,omitempty"`
+	Launch       *gameLaunchStatusResponse `json:"launch,omitempty"`
+	Acquisitions []autoAcquireResponse     `json:"acquisitions,omitempty"`
 }
 
 type deploymentApplyResult struct {
@@ -3952,6 +3953,54 @@ func runtimeRequirementProviderInstalled(mods []storage.InstalledMod, providerMo
 
 func runtimeRequirementSatisfied(ctx context.Context, gamePath string, requirement gamehandler.RuntimeRequirementSpec) bool {
 	return requirement.Check != nil && len(requirement.Check(ctx, gamePath)) > 0
+}
+
+func (s *Server) queueRequiredRuntimeAcquisitionsForDeploy(ctx context.Context, appID string, job jobs.Job, source string) ([]autoAcquireResponse, bool, jobs.Job, error) {
+	appID = strings.TrimSpace(appID)
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "deploy"
+	}
+	profileID, err := s.activeProfileID(ctx, appID, nil)
+	if err != nil {
+		return nil, false, job, err
+	}
+	acquisitions, err := s.autoAcquireExtensionRuntimes(ctx, appID, source+"-will-deploy", profileID)
+	if err != nil {
+		return acquisitions, false, job, err
+	}
+	if len(acquisitions) == 0 {
+		return nil, false, job, nil
+	}
+	failures := 0
+	for _, acquisition := range acquisitions {
+		if strings.TrimSpace(acquisition.Error) != "" {
+			failures++
+		}
+	}
+	message := "Queued required runtime download; apply enabled mods again after it installs"
+	if failures == len(acquisitions) {
+		message = "Required runtime acquisition failed; review Action Center before applying enabled mods"
+	} else if failures > 0 {
+		message = "Queued required runtime download with " + strconv.Itoa(failures) + " acquisition warning" + plural(failures) + "; review Action Center before applying enabled mods"
+	}
+	updated, _ := s.jobs.Complete(job.ID, message)
+	s.logger.Info(
+		"deployment paused for runtime acquisition",
+		"job_id", job.ID,
+		"app_id", appID,
+		"source", source,
+		"profile_id", profileID,
+		"acquisitions", len(acquisitions),
+		"failures", failures,
+	)
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":       "runtime_acquisition_queued",
+		"job_id":       job.ID,
+		"acquisitions": len(acquisitions),
+		"failures":     failures,
+	})
+	return acquisitions, true, updated, nil
 }
 
 func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.Request) {
@@ -7001,6 +7050,19 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	appID := r.PathValue("appID")
 	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Preparing deployment for "+appID)
+	if acquisitions, blocked, updatedJob, err := s.queueRequiredRuntimeAcquisitionsForDeploy(r.Context(), appID, job, "manual"); err != nil {
+		job = s.failJobWithError(updatedJob, err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	} else if blocked {
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"job":          jobAPIResponse(updatedJob),
+			"acquisitions": acquisitions,
+		})
+		return
+	} else {
+		job = updatedJob
+	}
 	plan, err := s.buildGameDeployPlanWithProgress(r.Context(), appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
 		job = s.failJobWithError(job, err)
@@ -7073,6 +7135,24 @@ func (s *Server) postDeploymentLaunchStatus(ctx context.Context, appID, parentJo
 func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, source string) profileApplyResponse {
 	job := s.jobs.CreateWithPayload("deploy", "Apply enabled mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Preparing deployment for "+appID)
+	if acquisitions, blocked, updatedJob, err := s.queueRequiredRuntimeAcquisitionsForDeploy(ctx, appID, job, source); err != nil {
+		s.logger.Warn("profile apply runtime acquisition failed", "app_id", appID, "source", source, "error", err)
+		job = s.failJobWithError(updatedJob, err)
+		return profileApplyResponse{
+			Status:  "failed",
+			Message: "Profile was updated, but DMM could not queue required runtime downloads: " + err.Error(),
+			Job:     &job,
+		}
+	} else if blocked {
+		return profileApplyResponse{
+			Status:       "blocked",
+			Message:      updatedJob.Message,
+			Job:          &updatedJob,
+			Acquisitions: acquisitions,
+		}
+	} else {
+		job = updatedJob
+	}
 	plan, err := s.buildGameDeployPlanWithProgress(ctx, appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
 		s.logger.Warn("profile apply preview failed", "app_id", appID, "source", source, "error", err)
@@ -10853,6 +10933,24 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		message := "Installed " + staged.Name + " disabled; enable it to apply to the game"
 		s.jobs.Complete(jobID, message)
 		publishInstalled(false, message)
+		finish()
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		job = jobs.Job{ID: jobID}
+	}
+	if _, blocked, updatedJob, err := s.queueRequiredRuntimeAcquisitionsForDeploy(ctx, staged.SteamAppID, job, "auto-enable"); err != nil {
+		message := "Installed " + staged.Name + " enabled; required runtime acquisition failed: " + err.Error()
+		s.logger.Warn("auto-enable runtime acquisition failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
+		finish()
+		return
+	} else if blocked {
+		message := "Installed " + staged.Name + " enabled; " + updatedJob.Message
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
 		finish()
 		return
 	}
