@@ -79,7 +79,7 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 2.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 1.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
@@ -89,10 +89,10 @@ Remaining placeholder groups from direct source calls:
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
 - Source-backed `registerGameStub` support-mod entries: none remain in the catalog. `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, and `game-subnauticabelowzero` now have dedicated DMM extension packages that preserve Vortex support-mod metadata without claiming installer support.
-- Shared BepInEx dependency work: `game-untitledgoose`.
+- Shared BepInEx dependency work: `game-untitledgoose` now has a dedicated source-backed DMM extension with BepInEx installer/runtime metadata.
 - DAZIP game entries promoted with a source-backed DMM `dazip` helper: `game-dragonage` and `game-dragonage2`. DMM supports Vortex `dazipInner` planning for extracted DAZIP contents, Dragon Age Origins AddIns.xml generation during `will-deploy`, and DA2 game-root addins deployment. Vortex `dazipOuter` nested submodules and historical DA2 purge migration remain blocked.
 - UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and records the blocked Unity Mod Manager tool download/patch runtime until a reusable external-tool flow exists.
-- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, `game-divinityoriginalsin2` needs `will-deploy`/`did-deploy` in-game enable reminder after multi-variant support, and `game-untitledgoose` needs `emitAndAwait` plus migration.
+- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, `game-divinityoriginalsin2` needs `will-deploy`/`did-deploy` in-game enable reminder after multi-variant support, and `game-untitledgoose` records Vortex's migration/auto-download paths as blocked metadata until DMM has generic purge-migration and auto-acquisition runtimes.
 - Merge work: Wolcen XML/MTL payload merging is now source-backed through `internal/extensions/xmlmerge`; Dragon Age Origins AddIns.xml generation is source-backed through the DAZIP helper.
 
 Observed source-backed blocker details:
@@ -103,7 +103,7 @@ Observed source-backed blocker details:
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM now implements the managed DAZIP inner installer and AddIns.xml generation path, but nested outer `.dazip` submodules remain blocked.
 - `game-wolcen/src/index.js` registers an XML/MTL merge over the `Game` folder. DMM now ports this through `internal/extensions/wolcen` and the reusable `internal/extensions/xmlmerge` helper, which rewrites XML/MTL mappings during `will-deploy` into generated merged outputs.
 - `game-pathfinderkingmaker/src/index.js`, `game-pathfinderwrathoftherighteous/src/index.ts`, `game-gardenpaws/src/index.js`, and `game-oni/src/index.js` require `modtype-umm`. DMM now has a typed source-backed UMM helper and Mods-folder deployment for these games, but still needs Unity Mod Manager external-tool download/discovery/patch runtime before claiming full UMM runtime parity.
-- `game-untitledgoose/src/index.ts` uses BepInEx setup, an Epic launcher resolver, and a migration. DMM has BepInEx installer helpers but needs Epic discovery and migration runtime before claiming full parity.
+- `game-untitledgoose/src/index.ts` uses BepInEx setup, an Epic launcher resolver, `bepinexAddGame({ autoDownloadBepInEx: true })`, and a migration. DMM now ports this through `internal/extensions/untitledgoose`, including BepInEx installers/runtime requirements, Epic launcher metadata, setup metadata, and blocked to-dos for Epic discovery, BepInEx auto-download, and migration purge runtime.
 
 Implementation priority from this audit:
 
