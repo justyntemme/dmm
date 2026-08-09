@@ -4403,6 +4403,26 @@ function FreshDeckyModManagerRoute() {
         setError(result.error || "Unable to install update.");
         return;
       }
+      if (result.result?.browser_required) {
+        const browserURL = String(result.result.file_url || result.result.resolved?.source_url || "").trim();
+        if (!browserURL) {
+          setError("This update needs a Nexus browser handoff, but DMM did not receive a page URL.");
+          return;
+        }
+        const opened = await openDMMBrowserViewCapture(browserURL, {
+          appID: selectedGameID,
+          profileID: selectedProfile?.id ?? 0,
+          source: "decky-mod-update",
+          title: `DMM Update - ${mod.name}`
+        });
+        if (!opened) {
+          setError("DMM could not open the controlled Nexus browser. Check Debug Live Logs.");
+          return;
+        }
+        await maybeShowDeckyActionToast(result.job ?? result.result.job, "fresh-update-mod-browser-required");
+        setMessage(`Opening ${mod.name} on Nexus. Click Nexus Mod Manager Download there to capture the update.`);
+        return;
+      }
       await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-update-mod");
       await loadSelectedGameState(selectedGameID);
       setMessage(result.job?.message || result.result?.job?.message || "Update install started.");
