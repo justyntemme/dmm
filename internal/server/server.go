@@ -420,6 +420,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
 	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/refresh", s.handleRefreshGameLoadOrderLOOT)
+	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/sort", s.handleSortGameLoadOrderLOOT)
 	mux.HandleFunc("GET /api/games/{appID}/load-order/loot/userlist", s.handleGameLoadOrderLOOTUserlist)
 	mux.HandleFunc("PUT /api/games/{appID}/load-order/loot/userlist", s.handleUpdateGameLoadOrderLOOTUserlist)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
@@ -2211,6 +2212,11 @@ type updateProfilePluginActivationOrderRequest struct {
 	Plugins []string `json:"plugins"`
 }
 
+type lootSortRequest struct {
+	ProfileID int64 `json:"profile_id,omitempty"`
+	Apply     *bool `json:"apply,omitempty"`
+}
+
 type transferProfileModRequest struct {
 	TargetProfileID int64 `json:"target_profile_id"`
 	Enabled         *bool `json:"enabled,omitempty"`
@@ -2242,6 +2248,15 @@ type profilePluginActivationUpdateResponse struct {
 	State     *storage.ProfilePluginActivationState  `json:"state,omitempty"`
 	States    []storage.ProfilePluginActivationState `json:"states,omitempty"`
 	Apply     profileApplyResponse                   `json:"apply"`
+}
+
+type lootSortResponse struct {
+	LoadOrder     pluginLoadOrderResponse                `json:"load_order"`
+	States        []storage.ProfilePluginActivationState `json:"states,omitempty"`
+	SortedPlugins []string                               `json:"sorted_plugins"`
+	Warnings      []string                               `json:"warnings,omitempty"`
+	Engine        string                                 `json:"engine,omitempty"`
+	Apply         profileApplyResponse                   `json:"apply"`
 }
 
 type fileConflictWinnerResponse struct {
@@ -3922,6 +3937,87 @@ func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, status)
 }
 
+func (s *Server) handleSortGameLoadOrderLOOT(w http.ResponseWriter, r *http.Request) {
+	game, spec, ok := s.lootActivationForRequest(w, r)
+	if !ok {
+		return
+	}
+	var req lootSortRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	profileID := req.ProfileID
+	if profileID <= 0 {
+		var ok bool
+		profileID, ok = s.lootProfileIDForRequest(w, r, game)
+		if !ok {
+			return
+		}
+	} else if err := s.validateProfileBelongsToGame(r.Context(), profileID, game); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	input, mutable, err := s.lootSortInput(r.Context(), game, profileID, spec)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	out, err := s.loot.Sort(r.Context(), spec, profileID, input)
+	if err != nil {
+		s.logger.Warn("LOOT sort failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		writeError(w, http.StatusFailedDependency, err)
+		return
+	}
+	orderedMutable := sortedMutablePlugins(out.SortedPlugins, mutable)
+	var states []storage.ProfilePluginActivationState
+	if len(orderedMutable) > 0 {
+		states, err = s.db.SetProfilePluginActivationOrder(r.Context(), profileID, spec.ID, orderedMutable)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		s.logger.Info("LOOT sorted profile plugin activation order", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "sorted_plugins", len(out.SortedPlugins), "mutable_plugins", len(orderedMutable), "engine", out.Engine)
+		s.publishGameEvent(events.TypeProfileModsChanged, game.SteamAppID, map[string]any{
+			"action":        "loot_sort",
+			"profile_id":    profileID,
+			"activation_id": spec.ID,
+			"plugins":       orderedMutable,
+			"engine":        out.Engine,
+		})
+	}
+	mods, err := s.db.InstalledModsForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	loadOrder, err := s.profilePluginLoadOrder(r.Context(), game, profileID, mods)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	shouldApply := true
+	if req.Apply != nil {
+		shouldApply = *req.Apply
+	}
+	apply := profileApplyResponse{Status: "skipped", Message: "Profile changes were not applied."}
+	if shouldApply && len(orderedMutable) > 0 {
+		apply = s.applyProfileChangesForUserAction(r.Context(), game.SteamAppID, "loot-sort")
+	} else if len(orderedMutable) == 0 {
+		apply = profileApplyResponse{Status: "noop", Message: "LOOT returned only native plugins, so no DMM-managed plugin order changed."}
+	}
+	writeJSON(w, http.StatusOK, lootSortResponse{
+		LoadOrder:     loadOrder,
+		States:        states,
+		SortedPlugins: out.SortedPlugins,
+		Warnings:      out.Warnings,
+		Engine:        out.Engine,
+		Apply:         apply,
+	})
+}
+
 func (s *Server) handleGameLoadOrderLOOTUserlist(w http.ResponseWriter, r *http.Request) {
 	game, spec, ok := s.lootActivationForRequest(w, r)
 	if !ok {
@@ -4007,6 +4103,20 @@ func (s *Server) lootActivationForRequest(w http.ResponseWriter, r *http.Request
 	return game, spec, true
 }
 
+func (s *Server) validateProfileBelongsToGame(ctx context.Context, profileID int64, game storage.Game) error {
+	profile, err := s.db.Profile(ctx, profileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("profile was not found")
+		}
+		return err
+	}
+	if profile.GameID != game.ID {
+		return errors.New("profile does not belong to this game")
+	}
+	return nil
+}
+
 func (s *Server) lootProfileIDForRequest(w http.ResponseWriter, r *http.Request, game storage.Game) (int64, bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("profile_id"))
 	if raw == "" {
@@ -4045,6 +4155,57 @@ func (s *Server) lootProfileIDForRequest(w http.ResponseWriter, r *http.Request,
 		return 0, false
 	}
 	return profileID, true
+}
+
+func (s *Server) lootSortInput(ctx context.Context, game storage.Game, profileID int64, spec gameext.PluginActivationSpec) (lootmeta.SortInput, map[string]pluginActivationEntry, error) {
+	mods, err := s.db.InstalledModsForProfile(ctx, profileID)
+	if err != nil {
+		return lootmeta.SortInput{}, nil, err
+	}
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		return lootmeta.SortInput{}, nil, err
+	}
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		return lootmeta.SortInput{}, nil, err
+	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	entries := pluginActivationEntries(spec, active.Mappings, native, states)
+	input := lootmeta.SortInput{
+		GamePath:      game.GamePath,
+		GameLocalPath: "",
+		Plugins:       make([]lootmeta.SortPlugin, 0, len(native)+len(entries)),
+		CurrentOrder:  make([]string, 0, len(native)+len(entries)),
+	}
+	if targetRoot, err := protonLocalAppDataTargetRoot(game, spec); err == nil {
+		input.GameLocalPath = targetRoot
+	}
+	dataPath := filepath.Join(game.GamePath, filepath.FromSlash(spec.GameDataRoot))
+	for _, name := range native {
+		pluginPath := filepath.Join(dataPath, filepath.FromSlash(name))
+		if _, err := os.Stat(pluginPath); err != nil {
+			s.logger.Warn("native plugin skipped for LOOT sort because file is unavailable", "app_id", game.SteamAppID, "profile_id", profileID, "plugin", name, "path", pluginPath, "error", err)
+			continue
+		}
+		input.Plugins = append(input.Plugins, lootmeta.SortPlugin{Name: name, Path: pluginPath, Source: "native", Active: true})
+		input.CurrentOrder = append(input.CurrentOrder, name)
+	}
+	mutable := make(map[string]pluginActivationEntry, len(entries))
+	for _, entry := range entries {
+		pluginPath, ok := sourcePathForPluginActivationEntry(spec, entry, active.Mappings)
+		if !ok {
+			s.logger.Warn("DMM plugin skipped for LOOT sort because staged file is unavailable", "app_id", game.SteamAppID, "profile_id", profileID, "plugin", entry.Name, "installed_mod_id", entry.InstalledModID)
+			continue
+		}
+		input.Plugins = append(input.Plugins, lootmeta.SortPlugin{Name: entry.Name, Path: pluginPath, Source: "dmm", Active: entry.Active})
+		input.CurrentOrder = append(input.CurrentOrder, entry.Name)
+		mutable[pluginActivationRequestKey(entry.Name)] = entry
+	}
+	if len(input.Plugins) == 0 {
+		return lootmeta.SortInput{}, nil, errors.New("no current profile plugin files are available for LOOT sorting")
+	}
+	return input, mutable, nil
 }
 
 type gameModResponse struct {
@@ -11671,6 +11832,53 @@ func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deplo
 		}
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
+	return out
+}
+
+func sourcePathForPluginActivationEntry(spec gameext.PluginActivationSpec, entry pluginActivationEntry, mappings []deploy.FileMapping) (string, bool) {
+	extensions := pluginExtensionSet(spec)
+	key := pluginActivationRequestKey(entry.Name)
+	for _, mapping := range mappings {
+		if entry.InstalledModID > 0 && mapping.InstalledModID > 0 && mapping.InstalledModID != entry.InstalledModID {
+			continue
+		}
+		name, ok := pluginNameFromTarget(spec, mapping.TargetRelative, extensions)
+		if !ok || pluginActivationRequestKey(name) != key {
+			continue
+		}
+		sourcePath := strings.TrimSpace(mapping.SourcePath)
+		if sourcePath == "" {
+			continue
+		}
+		if info, err := os.Stat(sourcePath); err == nil && !info.IsDir() {
+			return sourcePath, true
+		}
+	}
+	return "", false
+}
+
+func sortedMutablePlugins(sorted []string, mutable map[string]pluginActivationEntry) []string {
+	out := make([]string, 0, len(mutable))
+	seen := map[string]struct{}{}
+	for _, name := range sorted {
+		key := pluginActivationRequestKey(name)
+		entry, ok := mutable[key]
+		if !ok {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, entry.Name)
+	}
+	for key, entry := range mutable {
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, entry.Name)
+	}
 	return out
 }
 

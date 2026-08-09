@@ -6795,6 +6795,120 @@ func TestLOOTUserlistRoutesAreProfileScopedAndCopiedWithProfile(t *testing.T) {
 	}
 }
 
+func TestLOOTSortRouteUpdatesProfilePluginOrderThroughHelper(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	libraryPath := filepath.Join(root, "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Fallout4.esm"), []byte("native"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(srv.cfg.DataDir, "loot", "fallout4", "masterlist"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srv.cfg.DataDir, "loot", "fallout4", "masterlist", "masterlist.yaml"), []byte("plugins: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(srv.cfg.DataDir, "loot", "prelude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srv.cfg.DataDir, "loot", "prelude", "prelude.yaml"), []byte("globals: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "fallout4", "mods", "1", "files", "2")
+	if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Example.esp", "Other.esp"} {
+		if err := os.WriteFile(filepath.Join(stagingPath, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    fallout4.SteamAppID,
+		ModType:   "fallout4-data-root",
+		PlannerID: "vortex:fallout4:data-root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Example.esp",
+			TargetRelative:  "Data/Example.esp",
+		}, {
+			StagingRelative: "Other.esp",
+			TargetRelative:  "Data/Other.esp",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: fallout4.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Example",
+		Version:        "2",
+		ArchivePath:    filepath.Join(srv.cfg.DataDir, "downloads", "example.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(root, "sort-request.json")
+	srv.loot.SorterCommand = fakeSorterForServerTest(t, capture, `{"sorted_plugins":["Fallout4.esm","Other.esp","Example.esp"],"warnings":["fake sort"],"engine":"fake-libloot"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/377160/load-order/loot/sort", bytes.NewBufferString(fmt.Sprintf(`{"profile_id":%d,"apply":false}`, profiles[0].ID)))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sort status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body lootSortResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(body.SortedPlugins, ",") != "Fallout4.esm,Other.esp,Example.esp" || body.Engine != "fake-libloot" {
+		t.Fatalf("sort response = %+v", body)
+	}
+	if len(body.States) != 2 || body.States[0].PluginName != "Other.esp" || body.States[1].PluginName != "Example.esp" {
+		t.Fatalf("states = %+v", body.States)
+	}
+	if body.Apply.Status != "skipped" {
+		t.Fatalf("apply = %+v", body.Apply)
+	}
+	requestBody, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(requestBody), `"current_order":["Fallout4.esm","Example.esp","Other.esp"]`) {
+		t.Fatalf("helper request did not include current order: %s", requestBody)
+	}
+}
+
 func TestDeleteDefaultProfileAppliesReplacementBeforeDelete(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
@@ -11109,6 +11223,19 @@ func newTestServer(t *testing.T) *Server {
 		_ = srv.db.Close()
 	})
 	return srv
+}
+
+func fakeSorterForServerTest(t *testing.T, capturePath, response string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dmm-loot-sorter")
+	quote := func(value string) string {
+		return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+	}
+	script := "#!/bin/sh\ncat > " + quote(capturePath) + "\nprintf '%s\\n' " + quote(response) + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func writeSteamLaunchOptions(t *testing.T, appID, options string) {

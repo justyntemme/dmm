@@ -2,6 +2,7 @@ package lootmeta
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -178,6 +179,74 @@ func TestCopyUserlistForProfileSeedsNewProfile(t *testing.T) {
 	}
 }
 
+func TestSorterStatusReportsHelperAvailability(t *testing.T) {
+	service := Service{DataDir: t.TempDir(), SorterCommand: filepath.Join(t.TempDir(), "missing-sorter")}
+	status := service.SorterStatus()
+	if status.Available || status.Status != "blocked" || !strings.Contains(status.Message, "dmm-loot-sorter") {
+		t.Fatalf("missing sorter status = %+v", status)
+	}
+
+	helper := fakeSorter(t, `{"sorted_plugins":["B.esp","A.esp"],"engine":"fake-libloot"}`)
+	service.SorterCommand = helper
+	status = service.SorterStatus()
+	if !status.Available || status.Status != "ready" || status.Command != helper {
+		t.Fatalf("available sorter status = %+v", status)
+	}
+}
+
+func TestSortInvokesHelperWithProfileLOOTPaths(t *testing.T) {
+	dir := t.TempDir()
+	gamePath := filepath.Join(dir, "game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(gamePath, "A.esp")
+	bPath := filepath.Join(gamePath, "B.esp")
+	for _, path := range []string{aPath, bPath} {
+		if err := os.WriteFile(path, []byte("plugin"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "loot", "fallout4", "masterlist"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "loot", "fallout4", "masterlist", "masterlist.yaml"), []byte("plugins: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(dir, "request.json")
+	helper := fakeSorterWithCapture(t, capture, `{"sorted_plugins":["B.esp","A.esp"],"warnings":["sorted"],"engine":"fake-libloot"}`)
+	service := Service{DataDir: dir, SorterCommand: helper}
+
+	out, err := service.Sort(context.Background(), sdk.PluginActivationSpec{LOOTGameID: "fallout4"}, 42, SortInput{
+		GamePath: gamePath,
+		Plugins: []SortPlugin{
+			{Name: "A.esp", Path: aPath, Source: "dmm", Active: true},
+			{Name: "B.esp", Path: bPath, Source: "dmm", Active: true},
+		},
+		CurrentOrder: []string{"A.esp", "B.esp"},
+	})
+	if err != nil {
+		t.Fatalf("Sort() error = %v", err)
+	}
+	if strings.Join(out.SortedPlugins, ",") != "B.esp,A.esp" || out.Engine != "fake-libloot" {
+		t.Fatalf("sort output = %+v", out)
+	}
+	body, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req sorterRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.GameID != "fallout4" || !strings.Contains(req.Userlist, filepath.Join("profiles", "42", "userlist.yaml")) {
+		t.Fatalf("sort request paths = %+v", req)
+	}
+	if req.Contract != "dmm-loot-sorter.v1" || len(req.Plugins) != 2 {
+		t.Fatalf("sort request = %+v", req)
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -185,4 +254,24 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func fakeSorter(t *testing.T, response string) string {
+	t.Helper()
+	return fakeSorterWithCapture(t, "", response)
+}
+
+func fakeSorterWithCapture(t *testing.T, capturePath, response string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "dmm-loot-sorter")
+	var script string
+	if capturePath == "" {
+		script = "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '" + strings.ReplaceAll(response, "'", "'\\''") + "'\n"
+	} else {
+		script = "#!/bin/sh\ncat > '" + strings.ReplaceAll(capturePath, "'", "'\\''") + "'\nprintf '%s\\n' '" + strings.ReplaceAll(response, "'", "'\\''") + "'\n"
+	}
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

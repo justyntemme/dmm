@@ -21,10 +21,11 @@ const (
 )
 
 type Service struct {
-	DataDir    string
-	BaseURL    string
-	HTTPClient *http.Client
-	Logger     *slog.Logger
+	DataDir       string
+	BaseURL       string
+	SorterCommand string
+	HTTPClient    *http.Client
+	Logger        *slog.Logger
 }
 
 type Status struct {
@@ -35,6 +36,9 @@ type Status struct {
 	MasterlistGameID   string      `json:"masterlist_game_id,omitempty"`
 	SorterStatus       string      `json:"sorter_status,omitempty"`
 	SorterMessage      string      `json:"sorter_message,omitempty"`
+	SorterEngine       string      `json:"sorter_engine,omitempty"`
+	SorterCommand      string      `json:"sorter_command,omitempty"`
+	SorterAvailable    bool        `json:"sorter_available"`
 	Masterlist         FileStatus  `json:"masterlist,omitempty"`
 	Userlist           FileStatus  `json:"userlist,omitempty"`
 	UserlistRules      RuleSummary `json:"userlist_rules,omitempty"`
@@ -74,14 +78,27 @@ func (s Service) StatusForProfile(spec sdk.PluginActivationSpec, profileID int64
 	} else {
 		userlistWarning = userlistErr.Error()
 	}
+	sorter := s.SorterStatus()
+	if sorter.Available {
+		if !fileStatus(paths.masterlistPath, paths.masterlistURL).Exists {
+			sorter.Status = "blocked"
+			sorter.Message = "LOOT sorter helper is available, but the masterlist is missing. Refresh LOOT metadata before sorting."
+		} else if spec.LOOTPrelude && !fileStatus(paths.preludePath, paths.preludeURL).Exists {
+			sorter.Status = "blocked"
+			sorter.Message = "LOOT sorter helper is available, but the prelude is missing. Refresh LOOT metadata before sorting."
+		}
+	}
 	return Status{
 		Supported:        true,
 		Revision:         Revision,
 		ProfileID:        profileID,
 		GameID:           paths.gameID,
 		MasterlistGameID: paths.masterlistGameID,
-		SorterStatus:     "blocked",
-		SorterMessage:    "LOOT masterlist/userlist caching is available, but automatic sorting is blocked until DMM integrates a real LOOT-compatible sorting engine instead of a simplified sorter.",
+		SorterStatus:     sorter.Status,
+		SorterMessage:    sorter.Message,
+		SorterEngine:     sorter.Engine,
+		SorterCommand:    sorter.Command,
+		SorterAvailable:  sorter.Available,
 		Masterlist:       fileStatus(paths.masterlistPath, paths.masterlistURL),
 		Userlist:         fileStatus(paths.userlistPathForProfile(profileID), ""),
 		UserlistRules:    summary,

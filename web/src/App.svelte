@@ -477,6 +477,9 @@
     masterlist_game_id?: string;
     sorter_status?: string;
     sorter_message?: string;
+    sorter_engine?: string;
+    sorter_command?: string;
+    sorter_available: boolean;
     masterlist?: LOOTFileStatus;
     userlist?: LOOTFileStatus;
     userlist_rules?: LOOTRuleSummary;
@@ -614,6 +617,15 @@
     apply: ProfileApplyResult;
   };
 
+  type LOOTSortResult = {
+    load_order: PluginLoadOrder;
+    states?: ProfilePluginActivationState[];
+    sorted_plugins: string[];
+    warnings?: string[];
+    engine?: string;
+    apply: ProfileApplyResult;
+  };
+
   type SetDefaultProfileResult = {
     profile: Profile;
     apply: ProfileApplyResult;
@@ -736,6 +748,7 @@
   let modUpdateMessage = "";
   let modUpdateBrowserPrompt: ModUpdateBrowserPrompt | null = null;
   let modUpdateBrowserOpenBusy = false;
+  let lootSortBusy = false;
   let modIOAPIKey = "";
   let curseForgeAPIKey = "";
   let catalogSettingsBusy = "";
@@ -2096,6 +2109,33 @@
       }
     } finally {
       lootRefreshBusy = false;
+    }
+  }
+
+  async function sortWithLOOT() {
+    if (!selectedGame || !pluginLoadOrder?.loot?.supported || lootSortBusy) return;
+    lootSortBusy = true;
+    lootUserlistMessage = "";
+    error = "";
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/load-order/loot/sort`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: pluginLoadOrder.profile_id ?? selectedProfile?.id })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: LOOTSortResult = await response.json();
+      pluginLoadOrder = result.load_order;
+      lootUserlistMessage = result.warnings?.length
+        ? `LOOT sorted with ${result.engine ?? "configured helper"} and returned ${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}.`
+        : `LOOT sorted ${result.sorted_plugins.length} plugin${result.sorted_plugins.length === 1 ? "" : "s"} with ${result.engine ?? "configured helper"}.`;
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } finally {
+      lootSortBusy = false;
     }
   }
 
@@ -5346,6 +5386,9 @@
                     <button type="button" class="secondary-action compact" disabled={lootRefreshBusy} on:click={refreshLOOTMetadata}>
                       {lootRefreshBusy ? "Updating" : "Download Metadata"}
                     </button>
+                    <button type="button" class="secondary-action compact" disabled={lootSortBusy || !pluginLoadOrder.loot.sorter_available} on:click={sortWithLOOT}>
+                      {lootSortBusy ? "Sorting" : "Sort With LOOT"}
+                    </button>
                     <div class="loot-file-grid">
                       <article>
                         <span>Masterlist</span>
@@ -5378,6 +5421,9 @@
                     {#if pluginLoadOrder.loot.sorter_message}
                       <p class="hint">{pluginLoadOrder.loot.sorter_message}</p>
                     {/if}
+                    {#if pluginLoadOrder.loot.sorter_command}
+                      <p class="hint">Sorter: {pluginLoadOrder.loot.sorter_engine ?? "libloot"} via {pluginLoadOrder.loot.sorter_command} · {pluginLoadOrder.loot.sorter_status ?? "unknown"}</p>
+                    {/if}
                     {#if pluginLoadOrder.loot.last_refresh_warning}
                       <p class="error-text">{pluginLoadOrder.loot.last_refresh_warning}</p>
                     {/if}
@@ -5389,7 +5435,7 @@
                         <h4>User Rules</h4>
                         <span>{selectedProfile?.name ?? "Active profile"} · {pluginLoadOrder.loot.userlist_rules?.rules ?? 0} rules · {pluginLoadOrder.loot.userlist_rules?.groups ?? 0} groups</span>
                       </div>
-                      <p class="hint">Rules are persisted in DMM's profile-local LOOT userlist, mirroring Vortex's local LOOT rules profile feature. Automatic sorting remains blocked until a real LOOT-compatible sorter is integrated.</p>
+                      <p class="hint">Rules are persisted in DMM's profile-local LOOT userlist, mirroring Vortex's local LOOT rules profile feature. Sorting uses the real libloot helper when it is installed; DMM does not use simplified load-order sorting.</p>
                       {#if lootUserlistMessage}
                         <p class={lootUserlistMessage.toLowerCase().includes("required") ? "error-text" : "deploy-message"}>{lootUserlistMessage}</p>
                       {/if}
