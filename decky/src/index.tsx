@@ -4790,13 +4790,18 @@ function FreshDeckyModManagerRoute() {
     });
   }
 
-  function handleRouteButtonDown(event: GamepadEvent) {
-    if (event.detail.button === GamepadButton.CANCEL && tab === "games" && selectedGameID) {
+  function handleRouteCancel(event: Pick<GamepadEvent, "preventDefault" | "stopPropagation">) {
+    if (tab === "games" && selectedGameID) {
       event.preventDefault();
       event.stopPropagation();
       clearSelectedGame();
-      return;
+      return true;
     }
+    return false;
+  }
+
+  function handleRouteButtonDown(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.CANCEL && handleRouteCancel(event)) return;
     if (event.detail.button === GamepadButton.BUMPER_LEFT) {
       event.preventDefault();
       event.stopPropagation();
@@ -5160,7 +5165,7 @@ function FreshDeckyModManagerRoute() {
   const content = tab === "actions" ? renderActions() : tab === "games" ? renderGames() : renderSettings();
 
   return (
-    <Focusable flow-children="down" onButtonDown={handleRouteButtonDown} style={freshDeckyShellStyle}>
+    <Focusable flow-children="down" onButtonDown={handleRouteButtonDown} onCancelButton={handleRouteCancel} style={freshDeckyShellStyle}>
       <style>{deckyRuntimeStyles}</style>
       <Focusable flow-children="right" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={freshDeckyTabBarStyle}>
         {freshDeckyTabs.map((item) => (
