@@ -113,6 +113,13 @@ func (r *Registrar) RegisterGameVersionProvider(spec sdk.GameVersionProviderSpec
 	r.extension.GameVersionProviders = append(r.extension.GameVersionProviders, spec)
 }
 
+func (r *Registrar) RegisterGameInfoProvider(spec sdk.GameInfoProviderSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.GameInfoProviders = append(r.extension.GameInfoProviders, spec)
+}
+
 func (r *Registrar) RegisterPluginActivation(spec sdk.PluginActivationSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -270,6 +277,13 @@ func (r *Registrar) RegisterExtensionActionCheck(spec sdk.ExtensionActionCheckSp
 	r.extension.ExtensionActionChecks = append(r.extension.ExtensionActionChecks, spec)
 }
 
+func (r *Registrar) RegisterExtensionControlWrapper(spec sdk.ExtensionControlWrapperSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionControlWrappers = append(r.extension.ExtensionControlWrappers, spec)
+}
+
 func (r *Registrar) RegisterExtensionAPI(spec sdk.ExtensionAPISpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -392,6 +406,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallPlatforms(extension.InstallPlatforms)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
+	errs = append(errs, validateGameInfoProviders(extension.GameInfoProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateUnmanagedMarkers(extension.UnmanagedMarkers)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
@@ -436,6 +451,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedTarget("extension action check", extension.ExtensionActionChecks, func(spec sdk.ExtensionActionCheckSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Target, spec.Status, spec.Message
 	})...)
+	errs = append(errs, validateExtensionControlWrappers(extension.ExtensionControlWrappers)...)
 	errs = append(errs, validateExtensionAPIs(extension.ExtensionAPIs)...)
 	errs = append(errs, validateStatusedNamed("profile feature", extension.ProfileFeatures, func(spec sdk.ProfileFeatureSpec) (string, string, string, string) {
 		return spec.ID, spec.Name, spec.Status, spec.Message
@@ -482,6 +498,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.InstallPlatforms) > 0 ||
 		len(extension.RuntimeRequirements.RuntimeRequirements) > 0 ||
 		len(extension.LaunchTools) > 0 ||
+		len(extension.GameInfoProviders) > 0 ||
 		len(extension.PluginActivations) > 0 ||
 		len(extension.UnmanagedMarkers) > 0 ||
 		len(extension.ConflictIgnores) > 0 ||
@@ -503,6 +520,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.ExtensionTableAttrs) > 0 ||
 		len(extension.ExtensionLoadOrderPages) > 0 ||
 		len(extension.ExtensionActionChecks) > 0 ||
+		len(extension.ExtensionControlWrappers) > 0 ||
 		len(extension.ExtensionAPIs) > 0 ||
 		len(extension.ProfileFeatures) > 0 ||
 		len(extension.ProfileFiles) > 0 ||
@@ -550,6 +568,27 @@ func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {
 		status := strings.TrimSpace(spec.Status)
 		if spec.Provider == nil && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
 			errs = append(errs, errors.New("game version provider "+id+" function is required"))
+		}
+	}
+	return errs
+}
+
+func validateGameInfoProviders(specs []sdk.GameInfoProviderSpec) []error {
+	errs := validateStatusedNamed("game info provider", specs, func(spec sdk.GameInfoProviderSpec) (string, string, string, string) {
+		return spec.ID, spec.Name, spec.Status, spec.Message
+	})
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		for _, tag := range spec.Tags {
+			if strings.TrimSpace(tag) == "" {
+				errs = append(errs, errors.New("game info provider "+id+" tag is required"))
+			}
+			if strings.ContainsAny(tag, "\x00\r\n") {
+				errs = append(errs, errors.New("game info provider "+id+" tag must not contain control line breaks"))
+			}
 		}
 	}
 	return errs
@@ -1369,6 +1408,12 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateExtensionControlWrappers(specs []sdk.ExtensionControlWrapperSpec) []error {
+	return validateStatusedTarget("extension control wrapper", specs, func(spec sdk.ExtensionControlWrapperSpec) (string, string, string, string, string) {
+		return spec.ID, spec.Name, spec.Target, spec.Status, spec.Message
+	})
 }
 
 func validateStartHooks(specs []sdk.StartHookSpec) []error {

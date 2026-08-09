@@ -25,8 +25,8 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 44
-  - Framework/shared counterparts: 35
+- DMM counterparts identified in the current pass: 55
+  - Framework/shared counterparts: 46
   - Game counterparts: 9
 
 ## Framework And Shared Extensions
@@ -36,15 +36,15 @@ Counts:
 - [x] `documentation` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed main-page/action/todo metadata marked blocked until DMM has a generic extension UI runtime.
 - [x] `extension-dashlet` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed dashlet metadata marked blocked until DMM has a generic extension UI runtime.
 - [x] `feedback` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed feedback main-page/dialog/action/state metadata marked blocked; public feedback submission is not part of Steam Deck MVP.
-- [ ] `fnis-integration`
-- [ ] `gamebryo-archive-check`
+- [x] `fnis-integration` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed FNIS settings/action/test/todo metadata and blocked `deploy-single-mod` dependency until DMM has an external-tool/deploy-single-mod runtime.
+- [x] `gamebryo-archive-check` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed Gamebryo archive compatibility test metadata marked blocked until DMM has BSA/BA2 inspection parity.
 - [x] `gamebryo-archive-invalidation` - DMM counterpart: shared `internal/extensions/gamebryo` archive-invalidation handler.
 - [x] `gamebryo-archive-support` - DMM counterpart: `internal/extensions/gamebryoarchive` framework extension. Current parity is source-backed BA2/BSA archive type metadata with blocked runtime status until native list/extract/write engines exist.
 - [x] `gamebryo-bsa-support` - DMM counterpart: `internal/extensions/gamebryoarchive` framework extension. Current parity is source-backed BSA archive type metadata with blocked runtime status until the native BSA engine exists.
-- [ ] `gamebryo-plugin-indexlock`
+- [x] `gamebryo-plugin-indexlock` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed plugin index-lock state/table metadata marked blocked until DMM has Gamebryo plugin table/rule runtime parity.
 - [x] `gamebryo-plugin-management` - DMM counterpart: shared `internal/extensions/gamebryo` plugin activation capability. Full Bethesda load-order/sorting parity remains tracked separately.
-- [ ] `gamebryo-savegame-management`
-- [ ] `gamebryo-test-settings`
+- [x] `gamebryo-savegame-management` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed savegame state/action/main-page/profile-feature metadata marked blocked until DMM implements savegame profile management.
+- [x] `gamebryo-test-settings` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed Oblivion/Skyrim settings test metadata marked blocked until DMM has Gamebryo settings validation.
 - [x] `gameinfo-steam` - DMM counterpart: core Steam library/app manifest discovery. This is core platform capability in DMM, not a separate game extension.
 - [x] `gamestore-gog` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows GOG Galaxy registry/client integration.
 - [x] `gamestore-origin` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows Origin/EA manifest and protocol integration.
@@ -52,11 +52,11 @@ Counts:
 - [x] `gamestore-xbox` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows Xbox app registry and shell launch integration.
 - [x] `gameversion-hash` - DMM counterpart: `internal/extensions/gameversionhash` framework extension. Current parity is source-backed provider/API metadata marked blocked until DMM supports extension-declared hash inputs and the Vortex backend hash map resolver.
 - [x] `issue-tracker` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed issue dashlet/dialog/state metadata marked blocked until DMM has a generic issue/reporting runtime.
-- [ ] `local-gamesettings`
+- [x] `local-gamesettings` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed profile-feature/test metadata and blocked `bake-settings` API until DMM implements profile-local game settings.
 - [x] `meta-editor` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed metadata editor dialog/action/state metadata marked blocked until DMM has a generic metadata edit runtime.
 - [x] `mo-import` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed MO import dialog/action metadata marked blocked; actual MO import remains a future migration feature.
 - [x] `mod-content` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed mod-content table/action metadata marked blocked until DMM has generic extension table attributes/actions.
-- [ ] `mod-dependency-manager`
+- [x] `mod-dependency-manager` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed dependency state/table/action/dialog/settings/start-hook metadata marked blocked until DMM implements dependency/rule graph runtime and UI.
 - [x] `mod-highlight` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed mod highlight table/action/state metadata marked blocked until DMM has generic table attributes and UI state.
 - [x] `mod-report` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed mod report action metadata marked blocked until DMM has a reporting/export flow.
 - [x] `modtype-bepinex` - DMM counterpart: shared `internal/extensions/bepinex` Unity/BepInEx installer/runtime capability.
@@ -65,16 +65,16 @@ Counts:
 - [x] `modtype-enb` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed ENB mod type metadata marked blocked until game-root deployment and unsafe DLL confirmation are implemented; Vortex's ENB installer registration is currently commented out upstream.
 - [x] `modtype-gedosato` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed GeDoSaTo mod type and installer metadata marked blocked until external tool discovery and texture-folder targeting exist.
 - [x] `modtype-umm` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed Unity Mod Manager mod type, installer, and `ummAddGame` API metadata marked blocked until DMM has a typed UMM helper/API and tool discovery flow.
-- [ ] `morrowind-plugin-management`
+- [x] `morrowind-plugin-management` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed Morrowind plugin main-page metadata marked blocked until DMM implements Morrowind plugin activation/load-order runtime.
 - [x] `mtframework-arc-support` - DMM counterpart: `internal/extensions/mtframeworkarc` framework extension. Current parity is source-backed ARC archive type metadata with blocked runtime status until a Deck-safe ARCtool bridge or native ARC engine exists.
-- [ ] `new-file-monitor`
+- [x] `new-file-monitor` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed lifecycle/new-file-adoption metadata; DMM lifecycle events exist but managed adoption UI/runtime remains blocked.
 - [x] `nmm-import-tool` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed NMM import dialog/action/todo/state metadata marked blocked; actual NMM import remains a future migration feature.
 - [x] `open-directory` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed open-folder action metadata marked blocked until DMM has a Deck-safe open-directory action.
 - [x] `quickbms-support` - DMM counterpart: `internal/extensions/quickbmssupport` framework extension. Current parity is source-backed QuickBMS API metadata for register/list/extract/write/reimport with blocked runtime status until the executable bridge exists.
 - [x] `script-extender-error-check` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender runtime requirement capability. Full Vortex parity still needs source review per game/tool.
 - [x] `script-extender-installer` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender installer capability.
-- [ ] `test-gameversion`
-- [ ] `test-setup`
+- [x] `test-gameversion` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed game-version test and `registerGameInfoProvider` metadata marked blocked until generic game-info provider runtime exists.
+- [x] `test-setup` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed setup test metadata marked blocked until DMM has generic setup/uninstall-entry test runtime.
 - [x] `theme-switcher` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed theme settings/state metadata marked blocked; custom theming is not part of Steam Deck MVP.
 - [x] `titlebar-launcher` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed titlebar launcher settings/state metadata marked blocked; DMM launch controls are Decky-native.
 

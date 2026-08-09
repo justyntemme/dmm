@@ -60,7 +60,7 @@ DMM currently has first-party Go extension registration for:
 - Plugin activation, unmanaged markers, conflict ignores, deploy ignores, packed archive mutation declarations, merge/load-order summaries, and lifecycle event handlers.
 - Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
 - Extension-declared archive type, game store, game version provider, and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines or platform integrations are executable.
-- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, and attribute extractors.
+- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -181,7 +181,8 @@ DMM status:
 - First-party Go extensions can share normal Go packages, but there is no explicit registered extension API namespace, dependency graph, or import contract.
 - Source-backed metadata exists for Vortex `quickbms-support` APIs and `gameversion-hash`'s `getHashVersion` API, but both are blocked until executable/runtime behavior is implemented.
 - Source-backed metadata exists for Vortex `modtype-umm`'s `ummAddGame` API, but it is blocked until DMM has a typed Unity Mod Manager helper/API that converted game extensions can call.
-- Missing extension-owned persistent state/persistor/migration contracts equivalent to `registerReducer`, `registerPersistor`, and `registerMigration`.
+- Source-backed metadata exists for shared-system APIs/events used by FNIS, local game settings, dependency management, new-file monitoring, and Vortex test helpers: `deploy-single-mod`, `purge-mods-in-path`, `browse-for-download`, `discover-tools`, `bake-settings`, `unfulfilled-rules`, `registerGameInfoProvider`, and new-file adoption.
+- Missing runtime implementations for extension-owned persistent state/persistor/migration behavior equivalent to Vortex `registerReducer`, `registerPersistor`, and `registerMigration`.
 
 Priority: P1 for full Vortex parity; P0 only when a converted MVP game needs cross-extension behavior.
 
@@ -235,7 +236,8 @@ Vortex source examples:
 DMM status:
 
 - Has DMM-owned VFS, staging, deployment manifests, rollback, and local archive import.
-- Missing new-file adoption/monitoring, Vortex/NMM/MO import, savegame profile features, and local game settings baking.
+- Has source-backed blocked metadata for new-file adoption/monitoring, Vortex/NMM/MO import UI entries, savegame profile features, and local game settings baking.
+- Missing the actual runtime implementations for those features.
 
 Priority: P2 for MVP unless needed to safely adopt dirty Vortex installs.
 

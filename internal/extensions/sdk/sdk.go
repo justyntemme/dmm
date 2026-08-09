@@ -43,6 +43,7 @@ type Registrar interface {
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
 	RegisterLaunchTool(LaunchToolSpec)
 	RegisterGameVersionProvider(GameVersionProviderSpec)
+	RegisterGameInfoProvider(GameInfoProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
 	RegisterUnmanagedMarker(UnmanagedMarkerSpec)
 	RegisterConflictIgnore(ConflictIgnoreSpec)
@@ -65,6 +66,7 @@ type Registrar interface {
 	RegisterExtensionTableAttribute(ExtensionTableAttributeSpec)
 	RegisterExtensionLoadOrderPage(ExtensionLoadOrderPageSpec)
 	RegisterExtensionActionCheck(ExtensionActionCheckSpec)
+	RegisterExtensionControlWrapper(ExtensionControlWrapperSpec)
 	RegisterExtensionAPI(ExtensionAPISpec)
 	RegisterProfileFeature(ProfileFeatureSpec)
 	RegisterProfileFile(ProfileFileSpec)
@@ -244,6 +246,15 @@ type GameVersionResult struct {
 	Source  string
 }
 
+type GameInfoProviderSpec struct {
+	ID           string
+	Name         string
+	Tags         []string
+	CacheSeconds int
+	Status       string
+	Message      string
+}
+
 const (
 	PluginActivationFormatOriginal   = "original"
 	PluginActivationFormatAsterisked = "asterisked"
@@ -416,6 +427,15 @@ type ExtensionActionCheckSpec struct {
 	Target  string
 	Status  string
 	Message string
+}
+
+type ExtensionControlWrapperSpec struct {
+	ID       string
+	Name     string
+	Target   string
+	Priority int
+	Status   string
+	Message  string
 }
 
 type ExtensionAPISpec struct {

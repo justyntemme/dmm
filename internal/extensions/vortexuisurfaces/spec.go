@@ -36,6 +36,7 @@ func Register(r sdk.Registrar) {
 		blockedAPI("registerMainPage", "Register main page"),
 		blockedAPI("registerTableAttribute", "Register table attribute"),
 		blockedAPI("registerLoadOrderPage", "Register load-order page"),
+		blockedAPI("registerControlWrapper", "Register UI control wrapper"),
 		blockedAPI("registerProfileFile", "Register profile-managed file"),
 		blockedAPI("registerReducer", "Register extension state reducer"),
 		blockedAPI("registerPersistor", "Register extension state persistor"),
@@ -50,6 +51,14 @@ func Register(r sdk.Registrar) {
 		Target:  "extension-state",
 		Status:  sdk.CapabilityStatusBlocked,
 		Message: blockedMessage,
+	})
+	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
+		ID:       "registerControlWrapper",
+		Name:     "Vortex registerControlWrapper",
+		Target:   "extension-ui",
+		Priority: 0,
+		Status:   sdk.CapabilityStatusBlocked,
+		Message:  blockedMessage,
 	})
 	r.RegisterExtensionDialog(blockedDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
 	r.RegisterExtensionDashlet(blockedDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))

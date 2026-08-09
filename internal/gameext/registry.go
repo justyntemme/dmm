@@ -23,48 +23,50 @@ type Extension struct {
 	SteamAppIDs  []string
 	NexusDomains []string
 
-	InstallPlan             installplan.GameSpec
-	RuntimeRequirements     gamehandler.GameSpec
-	InstallerChoices        []sdk.InstallerChoiceSpec
-	LaunchTools             []sdk.LaunchToolSpec
-	InstallPlatforms        []sdk.InstallPlatformSpec
-	GameVersionProviders    []sdk.GameVersionProviderSpec
-	PluginActivations       []sdk.PluginActivationSpec
-	UnmanagedMarkers        []sdk.UnmanagedMarkerSpec
-	ConflictIgnores         []sdk.ConflictIgnoreSpec
-	DeployIgnores           []sdk.DeployIgnoreSpec
-	PackedArchiveMutations  []sdk.PackedArchiveMutationSpec
-	TargetRoots             []sdk.TargetRootSpec
-	SteamWorkshop           sdk.SteamWorkshopSpec
-	Sources                 []sdk.SourceRef
-	Merges                  []sdk.MergeSpec
-	LoadOrders              []sdk.LoadOrderSpec
-	ArchiveTypes            []sdk.ArchiveTypeSpec
-	Interpreters            []sdk.InterpreterSpec
-	GameStores              []sdk.GameStoreSpec
-	GameSetups              []sdk.GameSetupSpec
-	ExtensionActions        []sdk.ExtensionActionSpec
-	ExtensionSettings       []sdk.ExtensionSettingSpec
-	ExtensionTests          []sdk.ExtensionTestSpec
-	ExtensionToDos          []sdk.ExtensionToDoSpec
-	ExtensionDialogs        []sdk.ExtensionDialogSpec
-	ExtensionDashlets       []sdk.ExtensionDashletSpec
-	ExtensionMainPages      []sdk.ExtensionMainPageSpec
-	ExtensionTableAttrs     []sdk.ExtensionTableAttributeSpec
-	ExtensionLoadOrderPages []sdk.ExtensionLoadOrderPageSpec
-	ExtensionActionChecks   []sdk.ExtensionActionCheckSpec
-	ExtensionAPIs           []sdk.ExtensionAPISpec
-	ProfileFeatures         []sdk.ProfileFeatureSpec
-	ProfileFiles            []sdk.ProfileFileSpec
-	CollectionFeatures      []sdk.CollectionFeatureSpec
-	StateReducers           []sdk.StateReducerSpec
-	StateStores             []sdk.StateStoreSpec
-	StatePersistors         []sdk.StatePersistorSpec
-	StateMigrations         []sdk.StateMigrationSpec
-	HealthChecks            []sdk.HealthCheckSpec
-	AttributeExtractors     []sdk.AttributeExtractorSpec
-	StartHooks              []sdk.StartHookSpec
-	EventHandlers           []sdk.EventHandlerSpec
+	InstallPlan              installplan.GameSpec
+	RuntimeRequirements      gamehandler.GameSpec
+	InstallerChoices         []sdk.InstallerChoiceSpec
+	LaunchTools              []sdk.LaunchToolSpec
+	InstallPlatforms         []sdk.InstallPlatformSpec
+	GameVersionProviders     []sdk.GameVersionProviderSpec
+	GameInfoProviders        []sdk.GameInfoProviderSpec
+	PluginActivations        []sdk.PluginActivationSpec
+	UnmanagedMarkers         []sdk.UnmanagedMarkerSpec
+	ConflictIgnores          []sdk.ConflictIgnoreSpec
+	DeployIgnores            []sdk.DeployIgnoreSpec
+	PackedArchiveMutations   []sdk.PackedArchiveMutationSpec
+	TargetRoots              []sdk.TargetRootSpec
+	SteamWorkshop            sdk.SteamWorkshopSpec
+	Sources                  []sdk.SourceRef
+	Merges                   []sdk.MergeSpec
+	LoadOrders               []sdk.LoadOrderSpec
+	ArchiveTypes             []sdk.ArchiveTypeSpec
+	Interpreters             []sdk.InterpreterSpec
+	GameStores               []sdk.GameStoreSpec
+	GameSetups               []sdk.GameSetupSpec
+	ExtensionActions         []sdk.ExtensionActionSpec
+	ExtensionSettings        []sdk.ExtensionSettingSpec
+	ExtensionTests           []sdk.ExtensionTestSpec
+	ExtensionToDos           []sdk.ExtensionToDoSpec
+	ExtensionDialogs         []sdk.ExtensionDialogSpec
+	ExtensionDashlets        []sdk.ExtensionDashletSpec
+	ExtensionMainPages       []sdk.ExtensionMainPageSpec
+	ExtensionTableAttrs      []sdk.ExtensionTableAttributeSpec
+	ExtensionLoadOrderPages  []sdk.ExtensionLoadOrderPageSpec
+	ExtensionActionChecks    []sdk.ExtensionActionCheckSpec
+	ExtensionControlWrappers []sdk.ExtensionControlWrapperSpec
+	ExtensionAPIs            []sdk.ExtensionAPISpec
+	ProfileFeatures          []sdk.ProfileFeatureSpec
+	ProfileFiles             []sdk.ProfileFileSpec
+	CollectionFeatures       []sdk.CollectionFeatureSpec
+	StateReducers            []sdk.StateReducerSpec
+	StateStores              []sdk.StateStoreSpec
+	StatePersistors          []sdk.StatePersistorSpec
+	StateMigrations          []sdk.StateMigrationSpec
+	HealthChecks             []sdk.HealthCheckSpec
+	AttributeExtractors      []sdk.AttributeExtractorSpec
+	StartHooks               []sdk.StartHookSpec
+	EventHandlers            []sdk.EventHandlerSpec
 }
 
 type SourceRef = sdk.SourceRef
@@ -81,6 +83,7 @@ type TargetRootSpec = sdk.TargetRootSpec
 type TargetRootInput = sdk.TargetRootInput
 type TargetRootResult = sdk.TargetRootResult
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
+type GameInfoProviderSpec = sdk.GameInfoProviderSpec
 type UnmanagedMarkerSpec = sdk.UnmanagedMarkerSpec
 type SteamWorkshopSpec = sdk.SteamWorkshopSpec
 type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
@@ -102,6 +105,7 @@ type ExtensionMainPageSpec = sdk.ExtensionMainPageSpec
 type ExtensionTableAttributeSpec = sdk.ExtensionTableAttributeSpec
 type ExtensionLoadOrderPageSpec = sdk.ExtensionLoadOrderPageSpec
 type ExtensionActionCheckSpec = sdk.ExtensionActionCheckSpec
+type ExtensionControlWrapperSpec = sdk.ExtensionControlWrapperSpec
 type ExtensionAPISpec = sdk.ExtensionAPISpec
 type ProfileFeatureSpec = sdk.ProfileFeatureSpec
 type ProfileFileSpec = sdk.ProfileFileSpec
@@ -176,49 +180,51 @@ type ExtensionSummary struct {
 }
 
 type ExtensionCapabilities struct {
-	ModTypes                []FeatureSummary `json:"mod_types,omitempty"`
-	Installers              []FeatureSummary `json:"installers,omitempty"`
-	UnsupportedInstallers   []FeatureSummary `json:"unsupported_installers,omitempty"`
-	InstallerChoices        []FeatureSummary `json:"installer_choices,omitempty"`
-	RuntimeRequirements     []FeatureSummary `json:"runtime_requirements,omitempty"`
-	LaunchTools             []FeatureSummary `json:"launch_tools,omitempty"`
-	InstallPlatforms        []FeatureSummary `json:"install_platforms,omitempty"`
-	GameVersions            []FeatureSummary `json:"game_versions,omitempty"`
-	PluginActivations       []FeatureSummary `json:"plugin_activations,omitempty"`
-	UnmanagedMarkers        []FeatureSummary `json:"unmanaged_markers,omitempty"`
-	ConflictIgnores         []FeatureSummary `json:"conflict_ignores,omitempty"`
-	DeployIgnores           []FeatureSummary `json:"deploy_ignores,omitempty"`
-	PackedArchiveMutations  []FeatureSummary `json:"packed_archive_mutations,omitempty"`
-	TargetRoots             []FeatureSummary `json:"target_roots,omitempty"`
-	SteamWorkshop           *WorkshopSummary `json:"steam_workshop,omitempty"`
-	Merges                  []FeatureSummary `json:"merges,omitempty"`
-	LoadOrders              []FeatureSummary `json:"load_orders,omitempty"`
-	ArchiveTypes            []FeatureSummary `json:"archive_types,omitempty"`
-	Interpreters            []FeatureSummary `json:"interpreters,omitempty"`
-	GameStores              []FeatureSummary `json:"game_stores,omitempty"`
-	GameSetups              []FeatureSummary `json:"game_setups,omitempty"`
-	ExtensionActions        []FeatureSummary `json:"extension_actions,omitempty"`
-	ExtensionSettings       []FeatureSummary `json:"extension_settings,omitempty"`
-	ExtensionTests          []FeatureSummary `json:"extension_tests,omitempty"`
-	ExtensionToDos          []FeatureSummary `json:"extension_todos,omitempty"`
-	ExtensionDialogs        []FeatureSummary `json:"extension_dialogs,omitempty"`
-	ExtensionDashlets       []FeatureSummary `json:"extension_dashlets,omitempty"`
-	ExtensionMainPages      []FeatureSummary `json:"extension_main_pages,omitempty"`
-	ExtensionTableAttrs     []FeatureSummary `json:"extension_table_attributes,omitempty"`
-	ExtensionLoadOrderPages []FeatureSummary `json:"extension_load_order_pages,omitempty"`
-	ExtensionActionChecks   []FeatureSummary `json:"extension_action_checks,omitempty"`
-	ExtensionAPIs           []FeatureSummary `json:"extension_apis,omitempty"`
-	ProfileFeatures         []FeatureSummary `json:"profile_features,omitempty"`
-	ProfileFiles            []FeatureSummary `json:"profile_files,omitempty"`
-	CollectionFeatures      []FeatureSummary `json:"collection_features,omitempty"`
-	StateReducers           []FeatureSummary `json:"state_reducers,omitempty"`
-	StateStores             []FeatureSummary `json:"state_stores,omitempty"`
-	StatePersistors         []FeatureSummary `json:"state_persistors,omitempty"`
-	StateMigrations         []FeatureSummary `json:"state_migrations,omitempty"`
-	HealthChecks            []FeatureSummary `json:"health_checks,omitempty"`
-	AttributeExtractors     []FeatureSummary `json:"attribute_extractors,omitempty"`
-	StartHooks              []FeatureSummary `json:"start_hooks,omitempty"`
-	EventHandlers           []FeatureSummary `json:"event_handlers,omitempty"`
+	ModTypes                 []FeatureSummary `json:"mod_types,omitempty"`
+	Installers               []FeatureSummary `json:"installers,omitempty"`
+	UnsupportedInstallers    []FeatureSummary `json:"unsupported_installers,omitempty"`
+	InstallerChoices         []FeatureSummary `json:"installer_choices,omitempty"`
+	RuntimeRequirements      []FeatureSummary `json:"runtime_requirements,omitempty"`
+	LaunchTools              []FeatureSummary `json:"launch_tools,omitempty"`
+	InstallPlatforms         []FeatureSummary `json:"install_platforms,omitempty"`
+	GameVersions             []FeatureSummary `json:"game_versions,omitempty"`
+	GameInfoProviders        []FeatureSummary `json:"game_info_providers,omitempty"`
+	PluginActivations        []FeatureSummary `json:"plugin_activations,omitempty"`
+	UnmanagedMarkers         []FeatureSummary `json:"unmanaged_markers,omitempty"`
+	ConflictIgnores          []FeatureSummary `json:"conflict_ignores,omitempty"`
+	DeployIgnores            []FeatureSummary `json:"deploy_ignores,omitempty"`
+	PackedArchiveMutations   []FeatureSummary `json:"packed_archive_mutations,omitempty"`
+	TargetRoots              []FeatureSummary `json:"target_roots,omitempty"`
+	SteamWorkshop            *WorkshopSummary `json:"steam_workshop,omitempty"`
+	Merges                   []FeatureSummary `json:"merges,omitempty"`
+	LoadOrders               []FeatureSummary `json:"load_orders,omitempty"`
+	ArchiveTypes             []FeatureSummary `json:"archive_types,omitempty"`
+	Interpreters             []FeatureSummary `json:"interpreters,omitempty"`
+	GameStores               []FeatureSummary `json:"game_stores,omitempty"`
+	GameSetups               []FeatureSummary `json:"game_setups,omitempty"`
+	ExtensionActions         []FeatureSummary `json:"extension_actions,omitempty"`
+	ExtensionSettings        []FeatureSummary `json:"extension_settings,omitempty"`
+	ExtensionTests           []FeatureSummary `json:"extension_tests,omitempty"`
+	ExtensionToDos           []FeatureSummary `json:"extension_todos,omitempty"`
+	ExtensionDialogs         []FeatureSummary `json:"extension_dialogs,omitempty"`
+	ExtensionDashlets        []FeatureSummary `json:"extension_dashlets,omitempty"`
+	ExtensionMainPages       []FeatureSummary `json:"extension_main_pages,omitempty"`
+	ExtensionTableAttrs      []FeatureSummary `json:"extension_table_attributes,omitempty"`
+	ExtensionLoadOrderPages  []FeatureSummary `json:"extension_load_order_pages,omitempty"`
+	ExtensionActionChecks    []FeatureSummary `json:"extension_action_checks,omitempty"`
+	ExtensionControlWrappers []FeatureSummary `json:"extension_control_wrappers,omitempty"`
+	ExtensionAPIs            []FeatureSummary `json:"extension_apis,omitempty"`
+	ProfileFeatures          []FeatureSummary `json:"profile_features,omitempty"`
+	ProfileFiles             []FeatureSummary `json:"profile_files,omitempty"`
+	CollectionFeatures       []FeatureSummary `json:"collection_features,omitempty"`
+	StateReducers            []FeatureSummary `json:"state_reducers,omitempty"`
+	StateStores              []FeatureSummary `json:"state_stores,omitempty"`
+	StatePersistors          []FeatureSummary `json:"state_persistors,omitempty"`
+	StateMigrations          []FeatureSummary `json:"state_migrations,omitempty"`
+	HealthChecks             []FeatureSummary `json:"health_checks,omitempty"`
+	AttributeExtractors      []FeatureSummary `json:"attribute_extractors,omitempty"`
+	StartHooks               []FeatureSummary `json:"start_hooks,omitempty"`
+	EventHandlers            []FeatureSummary `json:"event_handlers,omitempty"`
 }
 
 type FeatureSummary struct {
@@ -258,6 +264,8 @@ type FeatureSummary struct {
 	Target             string                   `json:"target,omitempty"`
 	Path               string                   `json:"path,omitempty"`
 	GameID             string                   `json:"game_id,omitempty"`
+	Tags               []string                 `json:"tags,omitempty"`
+	CacheSeconds       int                      `json:"cache_seconds,omitempty"`
 }
 
 type LaunchToolDynamicInput struct {
@@ -917,6 +925,16 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: provider.Message,
 		})
 	}
+	for _, provider := range extension.GameInfoProviders {
+		summary.Capabilities.GameInfoProviders = append(summary.Capabilities.GameInfoProviders, FeatureSummary{
+			ID:           provider.ID,
+			Name:         provider.Name,
+			Tags:         appendClean([]string{}, provider.Tags...),
+			CacheSeconds: provider.CacheSeconds,
+			Status:       defaultString(provider.Status, sdk.CapabilityStatusReady),
+			Message:      provider.Message,
+		})
+	}
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
 	}
@@ -1089,6 +1107,16 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: check.Message,
 		})
 	}
+	for _, wrapper := range extension.ExtensionControlWrappers {
+		summary.Capabilities.ExtensionControlWrappers = append(summary.Capabilities.ExtensionControlWrappers, FeatureSummary{
+			ID:       wrapper.ID,
+			Name:     wrapper.Name,
+			Target:   wrapper.Target,
+			Priority: wrapper.Priority,
+			Status:   defaultString(wrapper.Status, sdk.CapabilityStatusReady),
+			Message:  wrapper.Message,
+		})
+	}
 	for _, api := range extension.ExtensionAPIs {
 		summary.Capabilities.ExtensionAPIs = append(summary.Capabilities.ExtensionAPIs, FeatureSummary{
 			ID:      api.ID,
@@ -1199,6 +1227,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
 	sortFeatureSummaries(summary.Capabilities.InstallPlatforms)
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
+	sortFeatureSummaries(summary.Capabilities.GameInfoProviders)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.UnmanagedMarkers)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
@@ -1221,6 +1250,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.ExtensionTableAttrs)
 	sortFeatureSummaries(summary.Capabilities.ExtensionLoadOrderPages)
 	sortFeatureSummaries(summary.Capabilities.ExtensionActionChecks)
+	sortFeatureSummaries(summary.Capabilities.ExtensionControlWrappers)
 	sortFeatureSummaries(summary.Capabilities.ExtensionAPIs)
 	sortFeatureSummaries(summary.Capabilities.ProfileFeatures)
 	sortFeatureSummaries(summary.Capabilities.ProfileFiles)

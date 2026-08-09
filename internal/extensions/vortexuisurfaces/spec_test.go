@@ -21,6 +21,7 @@ func TestExtensionRegistersBlockedVortexUISurfaceMetadata(t *testing.T) {
 	assertBlocked(t, "main page", summary.Capabilities.ExtensionMainPages, "registerMainPage")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "registerTableAttribute")
 	assertBlocked(t, "action check", summary.Capabilities.ExtensionActionChecks, "registerActionCheck")
+	assertBlocked(t, "control wrapper", summary.Capabilities.ExtensionControlWrappers, "registerControlWrapper")
 	assertBlocked(t, "profile file", summary.Capabilities.ProfileFiles, "registerProfileFile")
 	assertBlocked(t, "state reducer", summary.Capabilities.StateReducers, "registerReducer")
 	assertBlocked(t, "state persistor", summary.Capabilities.StatePersistors, "registerPersistor")
