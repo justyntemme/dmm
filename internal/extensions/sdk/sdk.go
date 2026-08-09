@@ -801,6 +801,7 @@ const (
 	EventWillInstallDeps      = "will-install-dependencies"
 	EventCheckModsVersion     = "check-mods-version"
 	EventUpdateConflictsRules = "update-conflicts-and-rules"
+	EventBakeSettings         = "bake-settings"
 )
 
 type EventHandlerFunc func(context.Context, EventHandlerInput) (EventHandlerResult, error)

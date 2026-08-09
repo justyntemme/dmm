@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
 
@@ -94,6 +96,56 @@ func (s *Server) syncProfileFilesForProfileSwitch(ctx context.Context, appID str
 	}
 	s.logger.Info("profile-local game settings sync completed", "app_id", appID, "old_profile_id", oldProfile.ID, "new_profile_id", newProfile.ID)
 	return nil
+}
+
+func (s *Server) switchProfileSettings(ctx context.Context, appID, source string, oldProfile, newProfile storage.Profile, captureOld bool) error {
+	if oldProfile.ID > 0 && newProfile.ID > 0 && oldProfile.ID == newProfile.ID {
+		return nil
+	}
+	if oldProfile.ID > 0 {
+		if err := s.bakeProfileSettings(ctx, appID, source+"-old", oldProfile); err != nil {
+			return err
+		}
+	}
+	if err := s.syncProfileFilesForProfileSwitch(ctx, appID, oldProfile, newProfile, captureOld); err != nil {
+		return err
+	}
+	if newProfile.ID > 0 {
+		if err := s.bakeProfileSettings(ctx, appID, source+"-new", newProfile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) bakeProfileSettings(ctx context.Context, appID, source string, profile storage.Profile) error {
+	if profile.ID <= 0 || !s.games.HasEventHandlerForSteamApp(appID, gameext.EventBakeSettings) {
+		return nil
+	}
+	mods, err := s.db.InstalledModsForProfile(ctx, profile.ID)
+	if err != nil {
+		return err
+	}
+	enabled := make([]storage.InstalledMod, 0, len(mods))
+	for _, mod := range mods {
+		if mod.Enabled {
+			enabled = append(enabled, mod)
+		}
+	}
+	sort.SliceStable(enabled, func(i, j int) bool {
+		if enabled[i].Priority == enabled[j].Priority {
+			return enabled[i].Name < enabled[j].Name
+		}
+		return enabled[i].Priority < enabled[j].Priority
+	})
+	s.logger.Info("baking extension profile settings", "app_id", appID, "profile_id", profile.ID, "source", source, "enabled_mods", len(enabled))
+	return s.runLifecycleEventHandlers(ctx, lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventBakeSettings,
+		Source:    source,
+		ProfileID: profile.ID,
+		Mods:      enabled,
+	})
 }
 
 func (s *Server) profileFilesForSwitch(game storage.Game) ([]profileFileForSwitch, error) {

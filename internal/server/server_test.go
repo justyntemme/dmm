@@ -9637,6 +9637,137 @@ func TestProfileSwitchSyncsLocalGameSettings(t *testing.T) {
 	}
 }
 
+func TestProfileSwitchBakesSettingsWithProfileEnabledMods(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999020"
+	type bakeCall struct {
+		source    string
+		profileID int64
+		mods      []string
+	}
+	var calls []bakeCall
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(sdk.Extension{
+		ID:      "bake-settings-test",
+		Name:    "Bake Settings Test",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"bakesettingstest"},
+				VortexGameID: "bakesettingstest",
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventBakeSettings,
+				Name:  "Bake profile settings",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					call := bakeCall{source: input.Source, profileID: input.ProfileID}
+					for _, mod := range input.Mods {
+						call.mods = append(call.mods, mod.Name)
+						if !mod.Enabled {
+							t.Fatalf("bake-settings received disabled mod: %+v", mod)
+						}
+					}
+					calls = append(calls, call)
+					return sdk.EventHandlerResult{}, nil
+				},
+			})
+		},
+	})})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Bake Settings Test",
+		InstallDir:  "Bake Settings Test",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Bake Settings Test"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "direct",
+			GameDomain: "bakesettingstest",
+			ModID:      "first",
+			FileID:     "1",
+			SourceURL:  "https://example.invalid/first.zip",
+		},
+		Name:          "First Enabled",
+		Version:       "1",
+		ArchivePath:   "/downloads/first.zip",
+		ArchiveSHA256: "first-sum",
+		StagingPath:   "/staging/first",
+		ManifestJSON:  "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "direct",
+			GameDomain: "bakesettingstest",
+			ModID:      "second",
+			FileID:     "2",
+			SourceURL:  "https://example.invalid/second.zip",
+		},
+		Name:          "Second Enabled",
+		Version:       "2",
+		ArchivePath:   "/downloads/second.zip",
+		ArchiveSHA256: "second-sum",
+		StagingPath:   "/staging/second",
+		ManifestJSON:  "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	oldProfile := profiles[0]
+	oldDisabled := false
+	oldPriority := 4
+	if _, err := srv.db.SetProfileModState(context.Background(), oldProfile.ID, second.ID, &oldDisabled, &oldPriority); err != nil {
+		t.Fatal(err)
+	}
+	newProfile, err := srv.db.CreateProfileForSteamAppFromSource(context.Background(), appID, "Alternate", oldProfile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newFirstDisabled := false
+	newFirstPriority := 1
+	if _, err := srv.db.SetProfileModState(context.Background(), newProfile.ID, first.ID, &newFirstDisabled, &newFirstPriority); err != nil {
+		t.Fatal(err)
+	}
+	newSecondEnabled := true
+	newSecondPriority := -2
+	if _, err := srv.db.SetProfileModState(context.Background(), newProfile.ID, second.ID, &newSecondEnabled, &newSecondPriority); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(newProfile.ID, 10)+"/default", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switch status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(calls) != 2 {
+		t.Fatalf("bake-settings calls = %+v", calls)
+	}
+	if calls[0].source != "profile-switch-old" || calls[0].profileID != oldProfile.ID || strings.Join(calls[0].mods, ",") != "First Enabled" {
+		t.Fatalf("old bake call = %+v", calls[0])
+	}
+	if calls[1].source != "profile-switch-new" || calls[1].profileID != newProfile.ID || strings.Join(calls[1].mods, ",") != "Second Enabled" {
+		t.Fatalf("new bake call = %+v", calls[1])
+	}
+}
+
 func TestProfileSwitchBlocksWhenRequiredLocalGameSettingsAreMissing(t *testing.T) {
 	srv := newTestServer(t)
 	libraryPath := filepath.Join(t.TempDir(), "steam-library")

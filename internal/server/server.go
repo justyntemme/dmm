@@ -8578,7 +8578,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err)
 			return
 		}
-		if err := s.syncProfileFilesForProfileSwitch(r.Context(), appID, profile, replacement, false); err != nil {
+		if err := s.switchProfileSettings(r.Context(), appID, "profile-delete-switch", profile, replacement, false); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
 		}
@@ -8612,7 +8612,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 					"profile_id": restored.ID,
 					"game_id":    restored.GameID,
 				})
-				if syncErr := s.syncProfileFilesForProfileSwitch(r.Context(), appID, replacementProfile, restored, true); syncErr != nil {
+				if syncErr := s.switchProfileSettings(r.Context(), appID, "profile-delete-restore", replacementProfile, restored, true); syncErr != nil {
 					s.logger.Error("failed to restore profile-local game settings after delete apply failure", "app_id", appID, "profile_id", profileID, "replacement_profile_id", replacement.ID, "error", syncErr)
 				}
 				activeProfile = restored
@@ -8695,7 +8695,7 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := s.syncProfileFilesForProfileSwitch(r.Context(), appID, currentProfile, targetProfile, true); err != nil {
+		if err := s.switchProfileSettings(r.Context(), appID, "profile-switch", currentProfile, targetProfile, true); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
 		}

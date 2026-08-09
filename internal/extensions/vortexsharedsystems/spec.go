@@ -48,7 +48,7 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 		readyAPI("purge-mods-in-path", "Purge managed mods under a path"),
 		blockedAPI("browse-for-download", "Open a source-backed download browser"),
 		readyAPI("discover-tools", "Discover extension-declared and DMM-managed external tools"),
-		blockedAPI("bake-settings", "Bake profile-local game settings"),
+		readyAPI("bake-settings", "Bake profile-local game settings"),
 		blockedAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
 		readyAPI("registerGameInfoProvider", "Register generic game info provider"),
 	} {

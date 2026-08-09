@@ -185,6 +185,7 @@ const (
 	EventWillInstallDeps      = sdk.EventWillInstallDeps
 	EventCheckModsVersion     = sdk.EventCheckModsVersion
 	EventUpdateConflictsRules = sdk.EventUpdateConflictsRules
+	EventBakeSettings         = sdk.EventBakeSettings
 )
 
 type DeploymentMod = sdk.DeploymentMod
