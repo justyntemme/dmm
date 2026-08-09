@@ -34,6 +34,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/enderal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/factorio"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4vr"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/falloutnv"
@@ -82,6 +83,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nomanssky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/oblivion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/palworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/pillarsofeternity2"
@@ -105,6 +107,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sims4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrim"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimvr"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
@@ -201,6 +204,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(elex.Extension()),
 		gameext.MustCompileExtension(enderal.Extension()),
 		gameext.MustCompileExtension(factorio.Extension()),
+		gameext.MustCompileExtension(fallout3.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(fallout4vr.Extension()),
@@ -252,6 +256,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(nomanssky.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
+		gameext.MustCompileExtension(oblivion.Extension()),
 		gameext.MustCompileExtension(palworld.Extension()),
 		gameext.MustCompileExtension(pillarsofeternity2.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
@@ -274,6 +279,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(sims4.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
+		gameext.MustCompileExtension(skyrim.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
 		gameext.MustCompileExtension(skyrimvr.Extension()),
 		gameext.MustCompileExtension(sno.Extension()),
