@@ -15,13 +15,16 @@ import (
 )
 
 type Extension struct {
-	ID           string
-	Name         string
-	Version      string
-	BuildID      string
-	Kind         string
-	SteamAppIDs  []string
-	NexusDomains []string
+	ID                string
+	Name              string
+	Version           string
+	BuildID           string
+	Kind              string
+	SteamAppIDs       []string
+	NexusDomains      []string
+	VortexStub        bool
+	AllowNoSteamAppID bool
+	SupportModID      string
 
 	InstallPlan              installplan.GameSpec
 	RuntimeRequirements      gamehandler.GameSpec
@@ -165,18 +168,21 @@ const (
 type DeploymentMod = sdk.DeploymentMod
 
 type ExtensionSummary struct {
-	ID            string                `json:"id"`
-	Name          string                `json:"name"`
-	Version       string                `json:"version"`
-	BuildID       string                `json:"build_id"`
-	Kind          string                `json:"kind"`
-	SteamAppIDs   []string              `json:"steam_app_ids"`
-	NexusDomains  []string              `json:"nexus_domains"`
-	VortexGameID  string                `json:"vortex_game_id"`
-	Coverage      string                `json:"coverage"`
-	CoverageLabel string                `json:"coverage_label"`
-	Sources       []SourceRef           `json:"sources,omitempty"`
-	Capabilities  ExtensionCapabilities `json:"capabilities"`
+	ID                string                `json:"id"`
+	Name              string                `json:"name"`
+	Version           string                `json:"version"`
+	BuildID           string                `json:"build_id"`
+	Kind              string                `json:"kind"`
+	SteamAppIDs       []string              `json:"steam_app_ids"`
+	NexusDomains      []string              `json:"nexus_domains"`
+	VortexGameID      string                `json:"vortex_game_id"`
+	VortexStub        bool                  `json:"vortex_stub,omitempty"`
+	AllowNoSteamAppID bool                  `json:"allow_no_steam_app_id,omitempty"`
+	SupportModID      string                `json:"support_mod_id,omitempty"`
+	Coverage          string                `json:"coverage"`
+	CoverageLabel     string                `json:"coverage_label"`
+	Sources           []SourceRef           `json:"sources,omitempty"`
+	Capabilities      ExtensionCapabilities `json:"capabilities"`
 }
 
 type ExtensionCapabilities struct {
@@ -849,17 +855,20 @@ func launchToolApplies(tool LaunchToolSpec, mods []gamehandler.RuntimeMod) bool 
 func summarizeExtension(extension Extension) ExtensionSummary {
 	coverage, coverageLabel := ExtensionCoverage(extension)
 	summary := ExtensionSummary{
-		ID:            extension.ID,
-		Name:          extension.Name,
-		Version:       extension.Version,
-		BuildID:       extension.BuildID,
-		Kind:          extension.Kind,
-		SteamAppIDs:   appendClean([]string{}, extension.SteamAppIDs...),
-		NexusDomains:  appendClean([]string{}, extension.NexusDomains...),
-		VortexGameID:  extension.InstallPlan.VortexGameID,
-		Coverage:      coverage,
-		CoverageLabel: coverageLabel,
-		Sources:       append([]SourceRef(nil), extension.Sources...),
+		ID:                extension.ID,
+		Name:              extension.Name,
+		Version:           extension.Version,
+		BuildID:           extension.BuildID,
+		Kind:              extension.Kind,
+		SteamAppIDs:       appendClean([]string{}, extension.SteamAppIDs...),
+		NexusDomains:      appendClean([]string{}, extension.NexusDomains...),
+		VortexGameID:      extension.InstallPlan.VortexGameID,
+		VortexStub:        extension.VortexStub,
+		AllowNoSteamAppID: extension.AllowNoSteamAppID,
+		SupportModID:      extension.SupportModID,
+		Coverage:          coverage,
+		CoverageLabel:     coverageLabel,
+		Sources:           append([]SourceRef(nil), extension.Sources...),
 	}
 	for _, modType := range extension.InstallPlan.ModTypes {
 		mode := strings.TrimSpace(modType.DeploymentMode)

@@ -61,6 +61,7 @@ DMM currently has first-party Go extension registration for:
 - Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
 - Extension-declared archive type, game store, game version provider, and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines or platform integrations are executable.
 - Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
+- Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions, while `internal/extensions/vortexgamecatalog` covers the remaining Vortex games as metadata/research-blocked entries with verified game IDs, Nexus domains, Steam app IDs where Vortex declares them, source links, and blocked installer/mod-type/load-order capability summaries.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -82,10 +83,12 @@ Vortex game registrations commonly declare `queryModPath`, `requiredFiles`, `sup
 DMM status:
 
 - Supports Steam app IDs, Nexus domains, Vortex game IDs, target roots, tools, game version providers, installer specs, stop folders in installer-choice specs, and deployment defaults.
+- Source-backed Vortex game catalog entries can now represent Vortex `registerGameStub` separately from normal `registerGame` entries that have no verified Steam app ID, so DMM does not invent Steam ownership for Windows/Epic/registry-only Vortex discovery paths.
 - Partial gap: no first-class setup/prep action contract equivalent to Vortex `setup`.
 - Partial gap: no explicit `requiredFiles`/`environment` declaration on `GameRegistration` for game discovery diagnostics.
 - Partial gap: no first-class `requiresLauncher` contract; DMM models the actionable subset through extension-declared launch tools and Decky launch-option requests.
 - Partial gap: no generic game details field for stop patterns shared across installers and diagnostics.
+- Partial gap: no explicit multi-logical-game-per-Steam-app resolver. Vortex uses this for cases such as XCOM 2/War of the Chosen and Divinity: Original Sin 2 variants, while DMM currently maps one app ID to one active extension.
 
 Priority: P0 for more game conversions.
 
@@ -247,8 +250,9 @@ Priority: P2 for MVP unless needed to safely adopt dirty Vortex installs.
 2. Wire new SDK registrations into DMM capability summaries and persisted extension snapshots so every extension can advertise exact support without core game branches.
 3. Add runtime execution only for the subset needed by current MVP games, starting with lifecycle event parity around profile/mod install, enable, remove, purge, and deploy operations.
 4. Convert shared Vortex framework extensions into DMM shared helpers before converting more game extensions: common interpreters, archive engines, Gamebryo archive/plugin helpers, QuickBMS, BepInEx, UMM, dependency/rule primitives, and game-version helpers.
-5. Convert target game extensions against the updated SDK and keep every game-specific rule in that game extension package.
-6. Only mark an extension as parity-complete when source-reviewed behavior is implemented, tested lightly, and exposed in `/api/extensions` with enough detail to audit support.
+5. Promote catalog entries into dedicated game extensions when a target game becomes MVP-critical, implementing the missing reusable SDK/runtime capability first and keeping every game-specific rule inside that game extension package.
+6. Add a multi-logical-game-per-app resolver before converting Vortex extensions that register multiple selectable game IDs against one Steam app.
+7. Only mark an extension as parity-complete when source-reviewed behavior is implemented, tested lightly, and exposed in `/api/extensions` with enough detail to audit support.
 
 ## Guardrails
 

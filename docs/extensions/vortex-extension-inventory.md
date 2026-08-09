@@ -25,9 +25,9 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 55
+- DMM counterparts identified in the current pass: 132
   - Framework/shared counterparts: 46
-  - Game counterparts: 9
+  - Game counterparts: 86
 
 ## Framework And Shared Extensions
 
@@ -80,89 +80,95 @@ Counts:
 
 ## Game Extensions
 
-- [ ] `game-7daystodie`
-- [ ] `game-ahatintime`
-- [ ] `game-baldursgate3`
-- [ ] `game-battletech`
-- [ ] `game-bladeandsorcery`
-- [ ] `game-bloodstainedritualofthenight`
-- [ ] `game-breakingwheel`
-- [ ] `game-codevein`
-- [ ] `game-conanexiles`
-- [ ] `game-cyberpunk2077`
-- [ ] `game-daggerfallunity`
-- [ ] `game-darkestdungeon`
-- [ ] `game-darksouls`
-- [ ] `game-darksouls2`
-- [ ] `game-dawnofman`
-- [ ] `game-divinityoriginalsin2`
-- [ ] `game-dmc5`
-- [ ] `game-dragonage`
-- [ ] `game-dragonage2`
-- [ ] `game-dragons-dogma`
-- [ ] `game-elex`
-- [ ] `game-enderal`
-- [ ] `game-factorio`
-- [ ] `game-fallout3`
+Source-backed catalog coverage:
+
+- Remaining Vortex game entries are represented by `internal/extensions/vortexgamecatalog` unless a richer dedicated first-party DMM extension is listed.
+- The catalog preserves verified Vortex game IDs, Nexus domains, Steam app IDs when Vortex declares them, `registerGameStub` support-mod metadata, and source URLs pinned to the scanned Vortex commit.
+- Catalog entries do not claim executable install parity. When the Vortex source registers custom installers, mod types, load order, lifecycle behavior, or other game-specific runtime logic that DMM has not ported yet, the DMM extension exposes blocked metadata so the UI/API can report the gap instead of silently installing unsafely.
+
+- [x] `game-7daystodie` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-ahatintime` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-baldursgate3` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-battletech` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-bladeandsorcery` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-bloodstainedritualofthenight` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-breakingwheel` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-codevein` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-conanexiles` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-cyberpunk2077` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-daggerfallunity` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-darkestdungeon` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-darksouls` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-darksouls2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-dawnofman` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-divinityoriginalsin2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-dmc5` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-dragonage` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-dragonage2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-dragons-dogma` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-elex` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-enderal` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-factorio` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-fallout3` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-fallout4` - DMM counterpart: `internal/extensions/fallout4`.
-- [ ] `game-fallout4vr`
-- [ ] `game-falloutnv`
-- [ ] `game-galciv3`
-- [ ] `game-gardenpaws`
-- [ ] `game-greedfall`
-- [ ] `game-grimdawn`
-- [ ] `game-grimrock`
+- [x] `game-fallout4vr` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-falloutnv` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-galciv3` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-gardenpaws` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-greedfall` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-grimdawn` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-grimrock` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-kenshi` - DMM counterpart: `internal/extensions/kenshi`.
-- [ ] `game-kerbalspaceprogram`
-- [ ] `game-kingdomcome-deliverance`
+- [x] `game-kerbalspaceprogram` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-kingdomcome-deliverance` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-masterchiefcollection` - DMM counterpart: `internal/extensions/masterchiefcollection`.
-- [ ] `game-microsoftflightsimulator`
-- [ ] `game-monster-hunter-world`
-- [ ] `game-morrowind`
-- [ ] `game-mount-and-blade`
-- [ ] `game-mount-and-blade2`
-- [ ] `game-nehrim`
-- [ ] `game-neverwinter-nights`
-- [ ] `game-neverwinter-nights2`
-- [ ] `game-nomanssky`
-- [ ] `game-oblivion`
-- [ ] `game-oni`
-- [ ] `game-palworld`
-- [ ] `game-pathfinderkingmaker`
-- [ ] `game-pathfinderwrathoftherighteous`
-- [ ] `game-pillarsofeternity2`
-- [ ] `game-prisonarchitect`
-- [ ] `game-re2remake`
-- [ ] `game-re3remake`
+- [x] `game-microsoftflightsimulator` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-monster-hunter-world` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-morrowind` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-mount-and-blade` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-mount-and-blade2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-nehrim` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-neverwinter-nights` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-neverwinter-nights2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-nomanssky` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-oblivion` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-oni` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-palworld` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-pathfinderkingmaker` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-pathfinderwrathoftherighteous` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-pillarsofeternity2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-prisonarchitect` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-re2remake` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-re3remake` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-rimworld` - DMM counterpart: `internal/extensions/rimworld`.
-- [ ] `game-sekiro`
-- [ ] `game-shadowrunreturns`
-- [ ] `game-sims3`
-- [ ] `game-sims4`
-- [ ] `game-skyrim`
+- [x] `game-sekiro` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-shadowrunreturns` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-sims3` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-sims4` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-skyrim` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-skyrimse` - DMM counterpart: `internal/extensions/skyrimse`.
-- [ ] `game-skyrimvr`
+- [x] `game-skyrimvr` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-spyroreignitedtrilogy` - DMM counterpart: `internal/extensions/spyroreignitedtrilogy`.
-- [ ] `game-starbound`
+- [x] `game-starbound` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-stardewvalley` - DMM counterpart: `internal/extensions/stardewvalley`.
-- [ ] `game-starfield`
-- [ ] `game-stateofdecay`
-- [ ] `game-subnautica`
-- [ ] `game-subnauticabelowzero`
-- [ ] `game-survivingmars`
-- [ ] `game-sw-kotor`
-- [ ] `game-teamfortress2`
-- [ ] `game-teso`
-- [ ] `game-torchlight2`
-- [ ] `game-totalwarthreekingdoms`
-- [ ] `game-untitledgoose`
-- [ ] `game-vtmbloodlines`
-- [ ] `game-warthunder`
-- [ ] `game-witcher`
-- [ ] `game-witcher2`
+- [x] `game-starfield` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-stateofdecay` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-subnautica` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-subnauticabelowzero` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-survivingmars` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-sw-kotor` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-teamfortress2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-teso` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-torchlight2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-totalwarthreekingdoms` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-untitledgoose` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-vtmbloodlines` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-warthunder` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-witcher` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-witcher2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-witcher3` - DMM counterpart: `internal/extensions/witcher3`.
-- [ ] `game-wolcen`
-- [ ] `game-worldoftanks`
+- [x] `game-wolcen` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-worldoftanks` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
 - [x] `game-x4foundations` - DMM counterpart: `internal/extensions/x4foundations`.
-- [ ] `game-xcom2`
-- [ ] `game-xrebirth`
+- [x] `game-xcom2` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.
+- [x] `game-xrebirth` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.

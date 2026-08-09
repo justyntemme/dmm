@@ -82,11 +82,14 @@ type Registrar interface {
 }
 
 type GameRegistration struct {
-	SteamAppIDs  []string
-	NexusDomains []string
-	VortexGameID string
-	Deployment   installplan.DeploymentSpec
-	Workshop     SteamWorkshopSpec
+	SteamAppIDs       []string
+	NexusDomains      []string
+	VortexGameID      string
+	VortexStub        bool
+	AllowNoSteamAppID bool
+	SupportModID      string
+	Deployment        installplan.DeploymentSpec
+	Workshop          SteamWorkshopSpec
 }
 
 type SteamWorkshopSpec struct {

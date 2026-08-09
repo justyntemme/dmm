@@ -86,6 +86,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/transportfever2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexgamecatalog"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsharedsystems"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexuisurfaces"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
@@ -96,7 +97,7 @@ import (
 )
 
 func FirstParty() []gameext.Extension {
-	return []gameext.Extension{
+	extensions := []gameext.Extension{
 		gameext.MustCompileExtension(commoninterpreters.Extension()),
 		gameext.MustCompileExtension(gamebryoarchive.Extension()),
 		gameext.MustCompileExtension(gamestores.Extension()),
@@ -106,6 +107,11 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(sharedmodtypes.Extension()),
 		gameext.MustCompileExtension(vortexsharedsystems.Extension()),
 		gameext.MustCompileExtension(vortexuisurfaces.Extension()),
+	}
+	for _, extension := range vortexgamecatalog.Extensions() {
+		extensions = append(extensions, gameext.MustCompileExtension(extension))
+	}
+	extensions = append(extensions,
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),
@@ -190,5 +196,6 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
 		gameext.MustCompileExtension(witcher3.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
-	}
+	)
+	return extensions
 }

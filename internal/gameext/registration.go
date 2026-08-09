@@ -44,6 +44,9 @@ func MustCompileExtension(spec sdk.Extension) Extension {
 func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.SteamAppIDs = appendClean(r.extension.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.NexusDomains = appendClean(r.extension.NexusDomains, spec.NexusDomains...)
+	r.extension.VortexStub = spec.VortexStub
+	r.extension.AllowNoSteamAppID = spec.AllowNoSteamAppID
+	r.extension.SupportModID = strings.TrimSpace(spec.SupportModID)
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.RuntimeRequirements.SteamAppID = firstClean(spec.SteamAppIDs)
 	if gameID := strings.TrimSpace(spec.VortexGameID); gameID != "" {
@@ -384,8 +387,8 @@ func validateExtension(extension Extension) error {
 	}
 	switch strings.TrimSpace(extension.Kind) {
 	case sdk.ExtensionKindGame:
-		if len(extension.SteamAppIDs) == 0 {
-			errs = append(errs, errors.New("game extension must register at least one Steam app id"))
+		if len(extension.SteamAppIDs) == 0 && !extension.VortexStub && !extension.AllowNoSteamAppID {
+			errs = append(errs, errors.New("game extension must register at least one Steam app id unless it is a source-backed Vortex stub or explicitly allows no Steam app id"))
 		}
 	case sdk.ExtensionKindFramework:
 		if len(extension.SteamAppIDs) > 0 {
