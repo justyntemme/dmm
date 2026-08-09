@@ -125,6 +125,8 @@ func Register(r sdk.Registrar) {
 		Name:          "Fallout: New Vegas plugins.txt activation",
 		AppDataPath:   "falloutnv",
 		Format:        gamebryo.FormatOriginal,
+		LOOTGameID:    VortexGameID,
+		LOOTPrelude:   true,
 		NativePlugins: []string{"falloutnv.esm"},
 	}))
 	r.RegisterEventHandler(sdk.EventHandlerSpec{

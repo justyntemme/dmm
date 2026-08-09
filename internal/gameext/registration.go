@@ -963,6 +963,12 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 		default:
 			errs = append(errs, errors.New("plugin activation "+id+" format must be original or asterisked"))
 		}
+		if err := validateSimpleOptionalID(spec.LOOTGameID); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" LOOT game id: "+err.Error()))
+		}
+		if err := validateSimpleOptionalID(spec.LOOTMasterlistGameID); err != nil {
+			errs = append(errs, errors.New("plugin activation "+id+" LOOT masterlist game id: "+err.Error()))
+		}
 		if len(spec.PluginExtensions) == 0 {
 			errs = append(errs, errors.New("plugin activation "+id+" must declare plugin extensions"))
 		}
@@ -979,6 +985,20 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateSimpleOptionalID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return errors.New("must contain only lowercase letters, digits, hyphens, or underscores")
+	}
+	return nil
 }
 
 func validateUnmanagedMarkers(specs []sdk.UnmanagedMarkerSpec) []error {

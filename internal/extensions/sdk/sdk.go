@@ -334,6 +334,9 @@ type PluginActivationSpec struct {
 	PluginsFile            string
 	LoadOrderFile          string
 	Format                 string
+	LOOTGameID             string
+	LOOTMasterlistGameID   string
+	LOOTPrelude            bool
 	PluginExtensions       []string
 	NativePlugins          []string
 	NativePluginManifests  []string

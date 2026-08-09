@@ -54,7 +54,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{ID: "vortex:skyrim:fomod", Name: "FOMOD installer", Kind: "fomod", ModType: dataRootModType, TargetRoot: "Data", StopFolders: gamebryo.StopFolders("skse", "SkyProc Patchers")})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{ID: "skse", Name: "Skyrim Script Extender", ExecutableRelative: "skse_loader.exe", RequiredFiles: []string{"skse_loader.exe", "TESV.exe"}, DefaultPrimary: true, ModTypes: []string{scriptExtModType}, ProviderModTypes: []string{scriptExtModType}})
 	registerSupportedTools(r)
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{ID: "skyrim-gamebryo-plugins", Name: "Skyrim plugins.txt activation", AppDataPath: "Skyrim", Format: gamebryo.FormatOriginal, NativePlugins: []string{"skyrim.esm", "update.esm"}}))
+	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{ID: "skyrim-gamebryo-plugins", Name: "Skyrim plugins.txt activation", AppDataPath: "Skyrim", Format: gamebryo.FormatOriginal, LOOTGameID: VortexGameID, LOOTPrelude: true, NativePlugins: []string{"skyrim.esm", "update.esm"}}))
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Skyrim archive invalidation settings",

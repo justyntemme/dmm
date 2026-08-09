@@ -91,6 +91,8 @@ func Register(r sdk.Registrar) {
 		Name:          "Fallout 3 plugins.txt activation",
 		AppDataPath:   "Fallout3",
 		Format:        gamebryo.FormatOriginal,
+		LOOTGameID:    VortexGameID,
+		LOOTPrelude:   true,
 		NativePlugins: []string{"fallout3.esm"},
 	}))
 	r.RegisterEventHandler(sdk.EventHandlerSpec{

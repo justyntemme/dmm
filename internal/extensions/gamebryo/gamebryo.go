@@ -16,6 +16,9 @@ type PluginActivationOptions struct {
 	Name                   string
 	AppDataPath            string
 	Format                 string
+	LOOTGameID             string
+	LOOTMasterlistGameID   string
+	LOOTPrelude            bool
 	NativePlugins          []string
 	NativePluginManifests  []string
 	NativePluginPatterns   []string
@@ -37,6 +40,9 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 		PluginsFile:            "plugins.txt",
 		LoadOrderFile:          "loadorder.txt",
 		Format:                 opts.Format,
+		LOOTGameID:             strings.TrimSpace(opts.LOOTGameID),
+		LOOTMasterlistGameID:   strings.TrimSpace(opts.LOOTMasterlistGameID),
+		LOOTPrelude:            opts.LOOTPrelude,
 		PluginExtensions:       extensions,
 		NativePlugins:          lowerCopy(opts.NativePlugins),
 		NativePluginManifests:  append([]string(nil), opts.NativePluginManifests...),

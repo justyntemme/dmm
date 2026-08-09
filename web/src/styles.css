@@ -1902,6 +1902,54 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.loot-status-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #273244;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0b1220;
+}
+
+.loot-status-panel > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.loot-status-panel strong,
+.loot-status-panel small {
+  overflow-wrap: anywhere;
+}
+
+.loot-status-panel small {
+  color: #9ca3af;
+}
+
+.loot-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.loot-file-grid article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #243044;
+  border-radius: 8px;
+  padding: 8px;
+  background: #101827;
+}
+
+.loot-file-grid span {
+  color: #7dd3fc;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .plugin-load-order-list {
   display: grid;
   gap: 8px;

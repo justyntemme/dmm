@@ -124,6 +124,8 @@ func Register(r sdk.Registrar) {
 		Name:          "Skyrim Special Edition plugins.txt activation",
 		AppDataPath:   "Skyrim Special Edition",
 		Format:        gamebryo.FormatAsterisked,
+		LOOTGameID:    VortexGameID,
+		LOOTPrelude:   true,
 		NativePlugins: nativePlugins(),
 		NativePluginManifests: []string{
 			"Skyrim.ccc",

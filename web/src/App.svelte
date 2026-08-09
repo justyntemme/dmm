@@ -464,8 +464,30 @@
     target_root?: string;
     plugins_file?: string;
     load_order_file?: string;
+    loot?: LOOTStatus;
     plugins: PluginLoadOrderEntry[];
     warnings?: string[];
+  };
+
+  type LOOTStatus = {
+    supported: boolean;
+    revision?: string;
+    game_id?: string;
+    masterlist_game_id?: string;
+    sorter_status?: string;
+    sorter_message?: string;
+    masterlist?: LOOTFileStatus;
+    userlist?: LOOTFileStatus;
+    prelude?: LOOTFileStatus;
+    last_refresh_warning?: string;
+  };
+
+  type LOOTFileStatus = {
+    path?: string;
+    url?: string;
+    exists: boolean;
+    size_bytes?: number;
+    updated_at?: string;
   };
 
   type PluginLoadOrderEntry = {
@@ -666,6 +688,7 @@
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
   let busyPluginActivationRows: Record<string, boolean> = {};
+  let lootRefreshBusy = false;
   let workshopOrderBusy = false;
   type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move";
 
@@ -1797,6 +1820,32 @@
     } finally {
       const { [key]: _removed, ...rest } = busyPluginActivationRows;
       busyPluginActivationRows = rest;
+    }
+  }
+
+  function lootFileStatusLabel(file?: LOOTFileStatus) {
+    if (!file?.exists) return "Missing";
+    const updated = file.updated_at ? new Date(file.updated_at).toLocaleString() : "unknown time";
+    const size = file.size_bytes ? `${Math.round(file.size_bytes / 1024)} KB` : "0 KB";
+    return `${size} · ${updated}`;
+  }
+
+  async function refreshLOOTMetadata() {
+    if (!selectedGame || lootRefreshBusy) return;
+    lootRefreshBusy = true;
+    error = "";
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/load-order/loot/refresh`, { method: "POST" });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const status: LOOTStatus = await response.json();
+      if (pluginLoadOrder) {
+        pluginLoadOrder = { ...pluginLoadOrder, loot: status };
+      }
+    } finally {
+      lootRefreshBusy = false;
     }
   }
 
@@ -5036,6 +5085,52 @@
                     {#each pluginLoadOrder.warnings as warning}
                       <p>{warning}</p>
                     {/each}
+                  </div>
+                {/if}
+                {#if pluginLoadOrder.loot?.supported}
+                  <div class="loot-status-panel">
+                    <div>
+                      <strong>LOOT metadata</strong>
+                      <small>{pluginLoadOrder.loot.game_id} · {pluginLoadOrder.loot.revision ?? "unknown revision"}</small>
+                    </div>
+                    <button type="button" class="secondary-action compact" disabled={lootRefreshBusy} on:click={refreshLOOTMetadata}>
+                      {lootRefreshBusy ? "Updating" : "Download Metadata"}
+                    </button>
+                    <div class="loot-file-grid">
+                      <article>
+                        <span>Masterlist</span>
+                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.masterlist)}</strong>
+                        {#if pluginLoadOrder.loot.masterlist?.url}
+                          <small>{pluginLoadOrder.loot.masterlist.url}</small>
+                        {/if}
+                        {#if pluginLoadOrder.loot.masterlist?.path}
+                          <small>{pluginLoadOrder.loot.masterlist.path}</small>
+                        {/if}
+                      </article>
+                      <article>
+                        <span>Userlist</span>
+                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.userlist)}</strong>
+                        {#if pluginLoadOrder.loot.userlist?.path}
+                          <small>{pluginLoadOrder.loot.userlist.path}</small>
+                        {/if}
+                      </article>
+                      <article>
+                        <span>Prelude</span>
+                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.prelude)}</strong>
+                        {#if pluginLoadOrder.loot.prelude?.url}
+                          <small>{pluginLoadOrder.loot.prelude.url}</small>
+                        {/if}
+                        {#if pluginLoadOrder.loot.prelude?.path}
+                          <small>{pluginLoadOrder.loot.prelude.path}</small>
+                        {/if}
+                      </article>
+                    </div>
+                    {#if pluginLoadOrder.loot.sorter_message}
+                      <p class="hint">{pluginLoadOrder.loot.sorter_message}</p>
+                    {/if}
+                    {#if pluginLoadOrder.loot.last_refresh_warning}
+                      <p class="error-text">{pluginLoadOrder.loot.last_refresh_warning}</p>
+                    {/if}
                   </div>
                 {/if}
                 {#if pluginLoadOrder.plugins.length > 0}

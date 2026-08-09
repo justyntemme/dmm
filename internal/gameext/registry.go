@@ -285,6 +285,8 @@ type FeatureSummary struct {
 	Target             string                   `json:"target,omitempty"`
 	Path               string                   `json:"path,omitempty"`
 	GameID             string                   `json:"game_id,omitempty"`
+	MasterlistGameID   string                   `json:"masterlist_game_id,omitempty"`
+	LOOTPrelude        bool                     `json:"loot_prelude,omitempty"`
 	Tags               []string                 `json:"tags,omitempty"`
 	CacheSeconds       int                      `json:"cache_seconds,omitempty"`
 	Launcher           string                   `json:"launcher,omitempty"`
@@ -1101,7 +1103,13 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, activation := range extension.PluginActivations {
-		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
+		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{
+			ID:               activation.ID,
+			Name:             activation.Name,
+			GameID:           activation.LOOTGameID,
+			MasterlistGameID: activation.LOOTMasterlistGameID,
+			LOOTPrelude:      activation.LOOTPrelude,
+		})
 	}
 	for _, marker := range extension.UnmanagedMarkers {
 		summary.Capabilities.UnmanagedMarkers = append(summary.Capabilities.UnmanagedMarkers, FeatureSummary{

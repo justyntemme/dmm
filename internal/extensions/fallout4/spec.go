@@ -131,6 +131,8 @@ func Register(r sdk.Registrar) {
 		Name:          "Fallout 4 plugins.txt activation",
 		AppDataPath:   "Fallout4",
 		Format:        gamebryo.FormatAsterisked,
+		LOOTGameID:    VortexGameID,
+		LOOTPrelude:   true,
 		NativePlugins: nativePlugins(),
 		NativePluginManifests: []string{
 			"Fallout4.ccc",

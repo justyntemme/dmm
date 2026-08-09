@@ -116,11 +116,14 @@ func Register(r sdk.Registrar) {
 		Relative:           true,
 	})
 	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
-		ID:            "skyrimvr-gamebryo-plugins",
-		Name:          "Skyrim VR plugins.txt activation",
-		AppDataPath:   "Skyrim VR",
-		Format:        gamebryo.FormatAsterisked,
-		NativePlugins: []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
+		ID:                   "skyrimvr-gamebryo-plugins",
+		Name:                 "Skyrim VR plugins.txt activation",
+		AppDataPath:          "Skyrim VR",
+		Format:               gamebryo.FormatAsterisked,
+		LOOTGameID:           VortexGameID,
+		LOOTMasterlistGameID: "skyrimse",
+		LOOTPrelude:          true,
+		NativePlugins:        []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
 	}))
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimvr-exe-version",

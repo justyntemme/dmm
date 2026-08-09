@@ -46,6 +46,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
+	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -64,6 +65,7 @@ type Server struct {
 	catalogMu sync.RWMutex
 	catalogs  []catalog.RemoteModCatalog
 	games     games.Registry
+	loot      lootmeta.Service
 
 	gameDiscoveryMu      sync.Mutex
 	gameDiscoveryCache   []steam.Game
@@ -222,6 +224,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		},
 		catalogs: catalogResolversForConfig(cfg),
 		games:    gameRegistry,
+		loot: lootmeta.Service{
+			DataDir: cfg.DataDir,
+			Logger:  logger,
+		},
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
@@ -413,6 +419,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
+	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/refresh", s.handleRefreshGameLoadOrderLOOT)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
 	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
@@ -523,6 +530,7 @@ type pluginLoadOrderResponse struct {
 	TargetRoot    string                 `json:"target_root,omitempty"`
 	PluginsFile   string                 `json:"plugins_file,omitempty"`
 	LoadOrderFile string                 `json:"load_order_file,omitempty"`
+	LOOT          *lootmeta.Status       `json:"loot,omitempty"`
 	Plugins       []pluginLoadOrderEntry `json:"plugins"`
 	Warnings      []string               `json:"warnings,omitempty"`
 }
@@ -3877,6 +3885,44 @@ func (s *Server) handleGameLoadOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "game was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, errors.New("plugin activation is not supported for this game"))
+		return
+	}
+	status, err := s.loot.Refresh(r.Context(), spec)
+	if err != nil {
+		s.logger.Warn("LOOT metadata refresh failed", "app_id", game.SteamAppID, "activation_id", spec.ID, "error", err)
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	s.logger.Info(
+		"LOOT metadata refreshed",
+		"app_id", game.SteamAppID,
+		"activation_id", spec.ID,
+		"game_id", status.GameID,
+		"masterlist_game_id", status.MasterlistGameID,
+		"masterlist_exists", status.Masterlist.Exists,
+		"prelude_exists", status.Prelude.Exists,
+	)
+	writeJSON(w, http.StatusOK, status)
 }
 
 type gameModResponse struct {
@@ -11259,6 +11305,11 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	resp.Name = spec.Name
 	resp.PluginsFile = activationFileName(spec.PluginsFile, "plugins.txt")
 	resp.LoadOrderFile = activationFileName(spec.LoadOrderFile, "loadorder.txt")
+	if status, err := s.loot.Status(spec); err != nil {
+		resp.Warnings = append(resp.Warnings, err.Error())
+	} else if status.Supported {
+		resp.LOOT = &status
+	}
 	if targetRoot, err := protonLocalAppDataTargetRoot(game, spec); err != nil {
 		resp.Warnings = append(resp.Warnings, err.Error())
 	} else {
