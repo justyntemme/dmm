@@ -1,6 +1,7 @@
 package sims3
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversiontext"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -52,7 +53,12 @@ func Register(r sdk.Registrar) {
 		Name:           "Prepare The Sims 3 Resource.cfg",
 		GeneratedFiles: []string{"Electronic Arts/The Sims 3/Mods/Packages", "Electronic Arts/The Sims 3/Mods/Resource.cfg"},
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{ID: "sims3-sku-version", Name: "The Sims 3 SKU version", Status: sdk.CapabilityStatusBlocked, Message: "Vortex parses game/bin/skuversion.txt for GameVersion. DMM needs a reusable text-file game-version provider before this can run."})
+	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
+		ID:        "sims3-sku-version",
+		Name:      "The Sims 3 SKU version",
+		Paths:     []string{"game/bin/skuversion.txt"},
+		Extractor: gameversiontext.KeyValueLine("GameVersion", "="),
+	}))
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Status: sdk.CapabilityStatusMetadata, Message: "Vortex discovers The Sims 3 through the Windows registry. DMM adapts the install target to the Steam Deck Proton Documents path for Steam app 47890."})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-sims3 extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-sims3/src"})
 }

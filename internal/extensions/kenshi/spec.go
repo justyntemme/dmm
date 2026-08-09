@@ -1,11 +1,7 @@
 package kenshi
 
 import (
-	"context"
-	"os"
-	"path/filepath"
-	"strings"
-
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversiontext"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -72,33 +68,15 @@ func Register(r sdk.Registrar) {
 			"OpenConstructionSet.dll",
 		},
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:       "kenshi-current-version",
-		Name:     "currentVersion.txt",
-		Provider: gameVersion,
-	})
+	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
+		ID:        "kenshi-current-version",
+		Name:      "currentVersion.txt",
+		Paths:     []string{"currentVersion.txt"},
+		Extractor: gameversiontext.WhitespaceField(1, true),
+	}))
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
-}
-
-func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
-	if err := ctx.Err(); err != nil {
-		return sdk.GameVersionResult{}, err
-	}
-	gamePath := strings.TrimSpace(input.GamePath)
-	if gamePath == "" {
-		return sdk.GameVersionResult{}, nil
-	}
-	data, err := os.ReadFile(filepath.Join(gamePath, "currentVersion.txt"))
-	if err != nil {
-		return sdk.GameVersionResult{}, err
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) >= 2 {
-		return sdk.GameVersionResult{Version: fields[1], Source: "currentVersion.txt"}, nil
-	}
-	return sdk.GameVersionResult{Version: strings.TrimSpace(string(data)), Source: "currentVersion.txt"}, nil
 }
 
 func sources() []sdk.SourceRef {
