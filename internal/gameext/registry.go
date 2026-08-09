@@ -117,6 +117,25 @@ const (
 	PluginActivationFormatAsterisked         = sdk.PluginActivationFormatAsterisked
 	ExtensionKindGame                        = sdk.ExtensionKindGame
 	ExtensionKindFramework                   = sdk.ExtensionKindFramework
+
+	EventWillDeploy           = sdk.EventWillDeploy
+	EventDidDeploy            = sdk.EventDidDeploy
+	EventWillPurge            = sdk.EventWillPurge
+	EventDidPurge             = sdk.EventDidPurge
+	EventWillRemoveMods       = sdk.EventWillRemoveMods
+	EventDidRemoveMod         = sdk.EventDidRemoveMod
+	EventDidRemoveProfile     = sdk.EventDidRemoveProfile
+	EventWillEnableMods       = sdk.EventWillEnableMods
+	EventModEnabled           = sdk.EventModEnabled
+	EventModsEnabled          = sdk.EventModsEnabled
+	EventDidInstallMod        = sdk.EventDidInstallMod
+	EventProfileWillChange    = sdk.EventProfileWillChange
+	EventProfileDidChange     = sdk.EventProfileDidChange
+	EventAddedFiles           = sdk.EventAddedFiles
+	EventGamemodeActivated    = sdk.EventGamemodeActivated
+	EventWillInstallDeps      = sdk.EventWillInstallDeps
+	EventCheckModsVersion     = sdk.EventCheckModsVersion
+	EventUpdateConflictsRules = sdk.EventUpdateConflictsRules
 )
 
 type DeploymentMod = sdk.DeploymentMod

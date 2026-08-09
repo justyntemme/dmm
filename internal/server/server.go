@@ -5845,8 +5845,8 @@ func (s *Server) applyPreparedDeployment(ctx context.Context, appID, jobID strin
 		"files":         len(applied),
 		"source":        source,
 	})
-	if err := s.runDeploymentEventHandlers(ctx, appID, "did-deploy", source, plan, applied); err != nil {
-		s.logger.Warn("post-deployment extension event failed", "job_id", jobID, "app_id", appID, "source", source, "event", "did-deploy", "error", err)
+	if err := s.runDeploymentEventHandlers(ctx, appID, gameext.EventDidDeploy, source, plan, applied); err != nil {
+		s.logger.Warn("post-deployment extension event failed", "job_id", jobID, "app_id", appID, "source", source, "event", gameext.EventDidDeploy, "error", err)
 	}
 	launchStatus, launchErr := s.postDeploymentLaunchStatus(ctx, appID, jobID)
 	if launchErr != nil {
@@ -5909,6 +5909,17 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 	job := s.jobs.CreateWithPayload("purge", "Purge deployed mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Purging deployed files for "+appID)
 	s.logger.Info("purge confirmed", "job_id", job.ID, "app_id", appID, "files", len(files))
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:        appID,
+		Event:        gameext.EventWillPurge,
+		Source:       "purge",
+		ManagedFiles: files,
+	}); err != nil {
+		s.logger.Warn("pre-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", gameext.EventWillPurge, "error", err)
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+		return
+	}
 	if err := deploy.Purge(files); err != nil {
 		s.logger.Warn("purge failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -5927,8 +5938,8 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 		"action": "purged",
 		"files":  len(files),
 	})
-	if err := s.runDeploymentEventHandlers(r.Context(), appID, "did-purge", "purge", deploy.Plan{}, files); err != nil {
-		s.logger.Warn("post-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", "did-purge", "error", err)
+	if err := s.runDeploymentEventHandlers(r.Context(), appID, gameext.EventDidPurge, "purge", deploy.Plan{}, files); err != nil {
+		s.logger.Warn("post-purge extension event failed", "job_id", job.ID, "app_id", appID, "event", gameext.EventDidPurge, "error", err)
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 }
@@ -6313,6 +6324,15 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(files) > 0 {
 		s.logger.Info("reset purging deployed files", "job_id", job.ID, "app_id", appID, "files", len(files))
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:        appID,
+			Event:        gameext.EventWillPurge,
+			Source:       "reset",
+			ManagedFiles: files,
+		}); err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
 		if err := deploy.Purge(files); err != nil {
 			s.finishResetFailure(w, job.ID, result, err)
 			return
@@ -6329,6 +6349,19 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		s.finishResetFailure(w, job.ID, result, err)
 		return
 	}
+	removeIDs := installedModIDs(mods)
+	if len(removeIDs) > 0 {
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:  appID,
+			Event:  gameext.EventWillRemoveMods,
+			Source: "reset",
+			ModIDs: removeIDs,
+			Mods:   mods,
+		}); err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
+	}
 	for _, mod := range mods {
 		removed, err := s.db.DeleteInstalledModForSteamApp(r.Context(), appID, mod.ID)
 		if err != nil {
@@ -6336,6 +6369,15 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result.InstalledModsRemoved++
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:  appID,
+			Event:  gameext.EventDidRemoveMod,
+			Source: "reset",
+			ModIDs: []int64{removed.ID},
+			Mods:   mods,
+		}); err != nil {
+			s.logger.Warn("post-remove-mod extension event failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", removed.ID, "event", gameext.EventDidRemoveMod, "error", err)
+		}
 		if err := s.removeStagingPath(removed); err != nil {
 			s.logger.Warn("reset staging cleanup failed", "job_id", job.ID, "app_id", appID, "installed_mod_id", removed.ID, "staging_path", removed.StagingPath, "error", err)
 			continue
@@ -6382,7 +6424,22 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		"action": "reset",
 		"files":  result.DeploymentFilesPurged,
 	})
+	if result.DeploymentFilesPurged > 0 {
+		if err := s.runDeploymentEventHandlers(r.Context(), appID, gameext.EventDidPurge, "reset", deploy.Plan{}, files); err != nil {
+			s.logger.Warn("post-reset purge extension event failed", "job_id", job.ID, "app_id", appID, "event", gameext.EventDidPurge, "error", err)
+		}
+	}
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+func installedModIDs(mods []storage.InstalledMod) []int64 {
+	out := make([]int64, 0, len(mods))
+	for _, mod := range mods {
+		if mod.ID > 0 {
+			out = append(out, mod.ID)
+		}
+	}
+	return out
 }
 
 func (s *Server) finishResetFailure(w http.ResponseWriter, jobID string, result resetGameModsResponse, err error) {
@@ -6471,6 +6528,15 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "replacement profile is required", http.StatusBadRequest)
 			return
 		}
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:     appID,
+			Event:     gameext.EventProfileWillChange,
+			Source:    "profile-delete-switch",
+			ProfileID: replacement.ID,
+		}); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		activeProfile, err = s.db.SetDefaultProfile(r.Context(), replacement.ID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -6481,6 +6547,14 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 			"profile_id": activeProfile.ID,
 			"game_id":    activeProfile.GameID,
 		})
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:     appID,
+			Event:     gameext.EventProfileDidChange,
+			Source:    "profile-delete-switch",
+			ProfileID: activeProfile.ID,
+		}); err != nil {
+			s.logger.Warn("post-profile-change extension event failed", "app_id", appID, "profile_id", activeProfile.ID, "event", gameext.EventProfileDidChange, "error", err)
+		}
 		apply = s.applyProfileChangesForUserAction(r.Context(), appID, "profile-delete-switch")
 		if apply.Status != "applied" {
 			restored, restoreErr := s.db.SetDefaultProfile(r.Context(), profileID)
@@ -6521,6 +6595,14 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		"active_profile_id": activeProfile.ID,
 		"game_id":           deleted.GameID,
 	})
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventDidRemoveProfile,
+		Source:    "profile-delete",
+		ProfileID: deleted.ID,
+	}); err != nil {
+		s.logger.Warn("post-profile-remove extension event failed", "app_id", appID, "profile_id", deleted.ID, "event", gameext.EventDidRemoveProfile, "error", err)
+	}
 	writeJSON(w, http.StatusOK, deleteProfileResponse{Deleted: &deleted, ActiveProfile: activeProfile, Apply: apply})
 }
 
@@ -6539,14 +6621,23 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "valid profileID is required", http.StatusBadRequest)
 		return
 	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventProfileWillChange,
+		Source:    "profile-switch",
+		ProfileID: profileID,
+	}); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
 	profile, err := s.db.SetDefaultProfile(r.Context(), profileID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	appID, err := s.db.SteamAppIDForProfile(r.Context(), profile.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
@@ -6554,6 +6645,14 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		"profile_id": profile.ID,
 		"game_id":    profile.GameID,
 	})
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventProfileDidChange,
+		Source:    "profile-switch",
+		ProfileID: profile.ID,
+	}); err != nil {
+		s.logger.Warn("post-profile-change extension event failed", "app_id", appID, "profile_id", profile.ID, "event", gameext.EventProfileDidChange, "error", err)
+	}
 	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "profile-switch")
 	writeJSON(w, http.StatusOK, setDefaultProfileResponse{Profile: profile, Apply: apply})
 }
@@ -6594,6 +6693,23 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "enabled or priority is required", http.StatusBadRequest)
 		return
 	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if req.Enabled != nil {
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:     appID,
+			Event:     gameext.EventWillEnableMods,
+			Source:    "profile-mod-update",
+			ProfileID: profileID,
+			ModIDs:    []int64{installedModID},
+		}); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+	}
 	mod, err := s.db.SetProfileModState(r.Context(), profileID, installedModID, req.Enabled, req.Priority)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -6607,6 +6723,19 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		"enabled":          req.Enabled,
 		"priority":         req.Priority,
 	})
+	if req.Enabled != nil {
+		for _, event := range []string{gameext.EventModEnabled, gameext.EventModsEnabled} {
+			if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+				AppID:     mod.SteamAppID,
+				Event:     event,
+				Source:    "profile-mod-update",
+				ProfileID: profileID,
+				ModIDs:    []int64{installedModID},
+			}); err != nil {
+				s.logger.Warn("post-profile-mod-enabled extension event failed", "app_id", mod.SteamAppID, "profile_id", profileID, "installed_mod_id", installedModID, "event", event, "error", err)
+			}
+		}
+	}
 	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-update")
 	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
 }
@@ -9163,6 +9292,15 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 	if _, err := s.cleanupDuplicateInstallCandidates(ctx, staged.SteamAppID, "installed-mod-complete"); err != nil {
 		s.logger.Warn("installed mod completion skipped duplicate candidate cleanup", "job_id", jobID, "app_id", staged.SteamAppID, "installed_mod_id", staged.ID, "error", err)
 	}
+	if err := s.runLifecycleEventHandlers(ctx, lifecycleEventRequest{
+		AppID:     staged.SteamAppID,
+		Event:     gameext.EventDidInstallMod,
+		Source:    "install",
+		ProfileID: staged.ProfileID,
+		ModIDs:    []int64{staged.ID},
+	}); err != nil {
+		s.logger.Warn("post-install extension event failed", "job_id", jobID, "app_id", staged.SteamAppID, "installed_mod_id", staged.ID, "event", gameext.EventDidInstallMod, "error", err)
+	}
 	finish := func() {
 		if cleanup != nil {
 			cleanup()
@@ -10073,7 +10211,7 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		return deploy.Plan{}, err
 	}
 	mappings = append(mappings, activationMappings...)
-	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, "will-deploy", progress)
+	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, gameext.EventWillDeploy, progress)
 	if err != nil {
 		return deploy.Plan{}, err
 	}
@@ -10467,6 +10605,74 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	s.queueExtensionNoticeJobs(ctx, appID, event, source, game.Name, notices)
 	if len(result.Mappings) > 0 {
 		s.logger.Warn("extension deployment event returned ignored post-event mappings", "app_id", appID, "event", event, "mappings", len(result.Mappings))
+	}
+	return nil
+}
+
+type lifecycleEventRequest struct {
+	AppID        string
+	Event        string
+	Source       string
+	ProfileID    int64
+	ManagedFiles []deploy.AppliedFile
+	ModIDs       []int64
+	Mods         []storage.InstalledMod
+}
+
+func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEventRequest) error {
+	appID := strings.TrimSpace(req.AppID)
+	event := strings.TrimSpace(req.Event)
+	if appID == "" || event == "" || !s.games.HasEventHandlerForSteamApp(appID, event) {
+		return nil
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	mods := append([]storage.InstalledMod(nil), req.Mods...)
+	if mods == nil {
+		mods, err = s.db.InstalledModsForSteamApp(ctx, appID)
+		if err != nil {
+			return err
+		}
+	}
+	profileID := req.ProfileID
+	if profileID == 0 {
+		profileID, err = s.activeProfileID(ctx, appID, mods)
+		if err != nil {
+			return err
+		}
+	}
+	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
+	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", appID, strconv.FormatInt(profileID, 10), event)
+	if err := os.RemoveAll(workDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		return err
+	}
+	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
+		AppID:        appID,
+		GamePath:     game.GamePath,
+		LibraryPath:  game.LibraryPath,
+		ProfileID:    profileID,
+		StagingRoot:  stagingRoot,
+		WorkDir:      workDir,
+		Source:       strings.TrimSpace(req.Source),
+		ManagedFiles: append([]deploy.AppliedFile(nil), req.ManagedFiles...),
+		Mods:         deploymentModsForHooks(mods),
+		ModIDs:       append([]int64(nil), req.ModIDs...),
+	})
+	if err != nil {
+		return err
+	}
+	notices := extensionEventNotices(result)
+	for _, notice := range notices {
+		s.logger.Info("extension lifecycle event notice", "app_id", appID, "event", event, "message", notice.Message, "tool_id", notice.ToolID)
+	}
+	s.queueExtensionNoticeJobs(ctx, appID, event, req.Source, game.Name, notices)
+	if len(result.Mappings) > 0 {
+		s.logger.Warn("extension lifecycle event returned ignored mappings", "app_id", appID, "event", event, "mappings", len(result.Mappings))
 	}
 	return nil
 }
@@ -11004,7 +11210,7 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 	modType := strings.TrimSpace(manifest.ModType)
 	deploymentMode := s.games.ModTypeDeploymentModeForSteamApp(game.SteamAppID, modType)
 	eventHookOnly := deploymentMode == installplan.ModTypeDeploymentEventHook
-	if eventHookOnly && !s.games.HasEventHandlerForSteamApp(game.SteamAppID, "will-deploy") {
+	if eventHookOnly && !s.games.HasEventHandlerForSteamApp(game.SteamAppID, gameext.EventWillDeploy) {
 		return nil, fmt.Errorf("installed mod %q uses event-hook deployment but the %s extension has no will-deploy handler", mod.Name, game.SteamAppID)
 	}
 	manifestFiles := manifest.Files

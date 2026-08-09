@@ -8825,6 +8825,103 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	}
 }
 
+func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Lifecycle Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999003"
+	var captured sdk.EventHandlerInput
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "lifecyclegame",
+		Name:    "Lifecycle Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"lifecyclegame"},
+				VortexGameID: "lifecyclegame",
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventDidInstallMod,
+				Name:  "Observe install",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					captured = input
+					return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+						Message: "install observed",
+					}}}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Lifecycle Game",
+		InstallDir:  "Lifecycle Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "lifecyclegame",
+			ModID:      "10",
+			FileID:     "20",
+		},
+		Name:        "Lifecycle Payload",
+		ArchivePath: filepath.Join(t.TempDir(), "lifecycle.zip"),
+		StagingPath: filepath.Join(t.TempDir(), "staging", "lifecyclegame"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = srv.runLifecycleEventHandlers(context.Background(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     sdk.EventDidInstallMod,
+		Source:    "install-test",
+		ProfileID: mod.ProfileID,
+		ModIDs:    []int64{mod.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured.AppID != appID || captured.Event != sdk.EventDidInstallMod || captured.Source != "install-test" {
+		t.Fatalf("captured event identity = %+v", captured)
+	}
+	if captured.GamePath != gamePath || captured.LibraryPath != "/steam" || captured.ProfileID != mod.ProfileID {
+		t.Fatalf("captured game/profile context = %+v", captured)
+	}
+	if !slices.Equal(captured.ModIDs, []int64{mod.ID}) {
+		t.Fatalf("captured mod ids = %+v", captured.ModIDs)
+	}
+	if len(captured.Mods) != 1 || captured.Mods[0].ID != mod.ID || captured.Mods[0].Name != "Lifecycle Payload" {
+		t.Fatalf("captured mods = %+v", captured.Mods)
+	}
+	if captured.WorkDir == "" {
+		t.Fatal("captured work dir is empty")
+	}
+	if info, err := os.Stat(captured.WorkDir); err != nil || !info.IsDir() {
+		t.Fatalf("captured work dir stat = %v info=%+v", err, info)
+	}
+	noticeJobs := 0
+	for _, job := range srv.jobs.List() {
+		if job.Type == jobTypeExtensionNotice && job.Payload["event"] == sdk.EventDidInstallMod {
+			noticeJobs++
+		}
+	}
+	if noticeJobs != 1 {
+		t.Fatalf("extension notice jobs = %d", noticeJobs)
+	}
+}
+
 func TestDeployRejectsTargetlessManifestForDirectModType(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Direct Game")

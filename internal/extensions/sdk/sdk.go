@@ -385,6 +385,27 @@ type EventHandlerSpec struct {
 	Handler EventHandlerFunc
 }
 
+const (
+	EventWillDeploy           = "will-deploy"
+	EventDidDeploy            = "did-deploy"
+	EventWillPurge            = "will-purge"
+	EventDidPurge             = "did-purge"
+	EventWillRemoveMods       = "will-remove-mods"
+	EventDidRemoveMod         = "did-remove-mod"
+	EventDidRemoveProfile     = "did-remove-profile"
+	EventWillEnableMods       = "will-enable-mods"
+	EventModEnabled           = "mod-enabled"
+	EventModsEnabled          = "mods-enabled"
+	EventDidInstallMod        = "did-install-mod"
+	EventProfileWillChange    = "profile-will-change"
+	EventProfileDidChange     = "profile-did-change"
+	EventAddedFiles           = "added-files"
+	EventGamemodeActivated    = "gamemode-activated"
+	EventWillInstallDeps      = "will-install-dependencies"
+	EventCheckModsVersion     = "check-mods-version"
+	EventUpdateConflictsRules = "update-conflicts-and-rules"
+)
+
 type EventHandlerFunc func(context.Context, EventHandlerInput) (EventHandlerResult, error)
 
 type EventHandlerInput struct {
@@ -399,6 +420,7 @@ type EventHandlerInput struct {
 	Mappings     []deploy.FileMapping
 	ManagedFiles []deploy.AppliedFile
 	Mods         []DeploymentMod
+	ModIDs       []int64
 	Progress     EventProgressFunc
 }
 
