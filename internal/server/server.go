@@ -759,10 +759,11 @@ type gameActivationRequest struct {
 }
 
 type gameActivationResponse struct {
-	AppID        string                `json:"app_id"`
-	Event        string                `json:"event"`
-	EventHandled bool                  `json:"event_handled"`
-	Acquisitions []autoAcquireResponse `json:"acquisitions,omitempty"`
+	AppID          string                      `json:"app_id"`
+	Event          string                      `json:"event"`
+	EventHandled   bool                        `json:"event_handled"`
+	ExtensionTests []gameExtensionTestResponse `json:"extension_tests,omitempty"`
+	Acquisitions   []autoAcquireResponse       `json:"acquisitions,omitempty"`
 }
 
 type autoAcquireResponse struct {
@@ -1165,15 +1166,33 @@ func (s *Server) recomputeGameConflictsAndRules(ctx context.Context, appID strin
 }
 
 func (s *Server) extensionTests(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
-	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	return s.extensionTestsWithContext(ctx, game, mods, 0, "")
+}
+
+func (s *Server) extensionTestsForTrigger(ctx context.Context, game storage.Game, profileID int64, trigger string) []gameExtensionTestResponse {
+	mods, err := s.db.InstalledModsForSteamApp(ctx, game.SteamAppID)
+	if err != nil {
+		s.logger.Warn("extension tests skipped because installed mods could not be loaded", "app_id", game.SteamAppID, "trigger", trigger, "error", err)
+		return nil
+	}
+	return s.extensionTestsWithContext(ctx, game, mods, profileID, trigger)
+}
+
+func (s *Server) extensionTestsWithContext(ctx context.Context, game storage.Game, mods []storage.InstalledMod, profileID int64, trigger string) []gameExtensionTestResponse {
+	trigger = strings.TrimSpace(trigger)
+	var err error
+	if profileID == 0 {
+		profileID, err = s.activeProfileID(ctx, game.SteamAppID, mods)
+	}
 	if err != nil {
 		s.logger.Debug("extension tests running without active profile context", "app_id", game.SteamAppID, "error", err)
 	}
-	results, ran := s.games.RunExtensionTests(ctx, game.SteamAppID, "", sdk.ExtensionTestInput{
+	results, ran := s.games.RunExtensionTests(ctx, game.SteamAppID, trigger, sdk.ExtensionTestInput{
 		AppID:       strings.TrimSpace(game.SteamAppID),
 		GamePath:    strings.TrimSpace(game.GamePath),
 		LibraryPath: strings.TrimSpace(game.LibraryPath),
 		ProfileID:   profileID,
+		Trigger:     trigger,
 		Mods:        deploymentModsForHooks(mods),
 	})
 	if !ran || len(results) == 0 {
@@ -2121,6 +2140,26 @@ func extensionEventNotices(result gameext.EventHandlerResult) []gameext.EventNot
 	for _, message := range result.Messages {
 		message = strings.TrimSpace(message)
 		if message == "" {
+			continue
+		}
+		out = append(out, gameext.EventNotice{Message: message})
+	}
+	return out
+}
+
+func extensionTestNotices(results []gameExtensionTestResponse) []gameext.EventNotice {
+	out := make([]gameext.EventNotice, 0, len(results))
+	for _, result := range results {
+		if result.Status == sdk.HealthCheckStatusPassed && result.Severity == sdk.HealthCheckSeverityInfo {
+			continue
+		}
+		prefix := strings.TrimSpace(result.TestName)
+		message := strings.TrimSpace(result.Message)
+		if result.Details != "" {
+			message = strings.TrimSpace(message + ": " + result.Details)
+		}
+		message = strings.TrimSpace(prefix + ": " + message)
+		if message == ":" || message == "" {
 			continue
 		}
 		out = append(out, gameext.EventNotice{Message: message})
@@ -3996,7 +4035,8 @@ func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, err)
 			return
@@ -4025,6 +4065,8 @@ func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	tests := s.extensionTestsForTrigger(r.Context(), game, req.ProfileID, gameext.EventGamemodeActivated)
+	s.queueExtensionNoticeJobs(r.Context(), appID, gameext.EventGamemodeActivated, source, game.Name, extensionTestNotices(tests))
 	acquisitions, err := s.autoAcquireExtensionTools(r.Context(), appID, source, req.ProfileID)
 	if err != nil {
 		s.logger.Warn("game activation tool auto-acquisition failed", "app_id", appID, "source", source, "error", err)
@@ -4040,10 +4082,11 @@ func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
 	acquisitions = append(acquisitions, runtimeAcquisitions...)
 	s.logger.Info("game activation processed", "app_id", appID, "source", source, "event_handled", eventHandled, "acquisitions", len(acquisitions))
 	writeJSON(w, http.StatusAccepted, gameActivationResponse{
-		AppID:        appID,
-		Event:        gameext.EventGamemodeActivated,
-		EventHandled: eventHandled,
-		Acquisitions: acquisitions,
+		AppID:          appID,
+		Event:          gameext.EventGamemodeActivated,
+		EventHandled:   eventHandled,
+		ExtensionTests: tests,
+		Acquisitions:   acquisitions,
 	})
 }
 

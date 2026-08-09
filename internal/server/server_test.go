@@ -9133,6 +9133,35 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 	if !strings.Contains(strings.Join(body.ValidationWarnings, "\n"), "Runtime Test: Runtime needs attention: test detail") {
 		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
 	}
+
+	activateReq := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/activate", bytes.NewBufferString(`{"source":"decky-test"}`))
+	activateReq.Header.Set("Content-Type", "application/json")
+	activateReq.RemoteAddr = "127.0.0.1:1"
+	activateRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(activateRec, activateReq)
+	if activateRec.Code != http.StatusAccepted {
+		t.Fatalf("activate status = %d, body = %s", activateRec.Code, activateRec.Body.String())
+	}
+	var activateBody gameActivationResponse
+	if err := json.Unmarshal(activateRec.Body.Bytes(), &activateBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(activateBody.ExtensionTests) != 1 || activateBody.ExtensionTests[0].TestID != "runtime-test" {
+		t.Fatalf("activation extension tests = %+v", activateBody.ExtensionTests)
+	}
+	noticeJobs := 0
+	for _, job := range srv.jobs.List() {
+		if job.Type != jobTypeExtensionNotice {
+			continue
+		}
+		noticeJobs++
+		if job.Payload["event"] != gameext.EventGamemodeActivated || job.Payload["source"] != "decky-test" || !strings.Contains(job.Message, "Runtime Test: Runtime needs attention: test detail") {
+			t.Fatalf("activation notice job = %+v", job)
+		}
+	}
+	if noticeJobs != 1 {
+		t.Fatalf("extension notice jobs = %d", noticeJobs)
+	}
 }
 
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
