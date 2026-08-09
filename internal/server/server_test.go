@@ -7380,6 +7380,102 @@ func TestExtensionMigrationRunsPurgeCommandOnce(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationsRequirePreviousExtensionSnapshot(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999012"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "versionedmigrationgame",
+		Name:    "Versioned Migration Game",
+		Version: "1.0.0-dmm.1",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"versionedmigrationgame"},
+				VortexGameID: "versionedmigrationgame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "retag-old-type",
+				Name:        "Retag old mod type",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.0",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:            "set-new-type",
+					Name:          "Set new type",
+					Command:       sdk.StateMigrationCommandSetModType,
+					ModType:       "old-type",
+					TargetModType: "new-type",
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Versioned Migration Game",
+		InstallDir:  "Versioned Migration Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "versionedmigrationgame", ModID: "old", FileID: "1"},
+		Name:         "Old Type Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "old.zip"),
+		StagingPath:  filepath.Join(root, "staging", "old"),
+		ManifestJSON: `{"game_id":"versionedmigrationgame","mod_type":"old-type","files":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	discovered := []steam.Game{{AppID: appID}}
+	srv.runExtensionMigrationsForGames(context.Background(), discovered)
+	assertInstalledModType(t, srv, appID, mod.ID, "old-type")
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "retag-old-type", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed {
+		t.Fatal("fresh install should not run historical extension migration")
+	}
+
+	srv.extensionSnapshotsBeforeSync = map[string]storage.ExtensionSnapshot{
+		extension.ID: {ID: extension.ID, Version: "0.9.0"},
+	}
+	srv.runExtensionMigrationsForGames(context.Background(), discovered)
+	assertInstalledModType(t, srv, appID, mod.ID, "new-type")
+	completed, err = srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "retag-old-type", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("upgrade migration completion was not recorded")
+	}
+}
+
+func TestExtensionMigrationVersionGateSkipsCompletedTargets(t *testing.T) {
+	migration := sdk.StateMigrationSpec{ToVersion: "1.0.0"}
+	if ok, reason := extensionMigrationVersionEligible("1.0.0", true, "1.0.0-dmm.1", migration); ok || reason == "" {
+		t.Fatalf("target version should skip, ok=%v reason=%q", ok, reason)
+	}
+	if ok, reason := extensionMigrationVersionEligible("0.9.0", true, "0.9.5", migration); ok || reason == "" {
+		t.Fatalf("current version below target should skip, ok=%v reason=%q", ok, reason)
+	}
+	if ok, reason := extensionMigrationVersionEligible("0.9.0", true, "1.0.0-dmm.1", migration); !ok || reason != "" {
+		t.Fatalf("upgrade crossing target should run, ok=%v reason=%q", ok, reason)
+	}
+}
+
 func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()
@@ -7473,6 +7569,33 @@ func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
 	}
 	if !completed {
 		t.Fatal("migration completion was not recorded")
+	}
+}
+
+func assertInstalledModType(t *testing.T, srv *Server, appID string, modID int64, want string) {
+	t.Helper()
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mod storage.InstalledMod
+	found := false
+	for _, candidate := range mods {
+		if candidate.ID == modID {
+			mod = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("installed mod %d not found", modID)
+	}
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.ModType != want {
+		t.Fatalf("mod type = %q, want %q", manifest.ModType, want)
 	}
 }
 

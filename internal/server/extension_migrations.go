@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/events"
@@ -34,7 +35,13 @@ func (s *Server) runExtensionMigrationsForGames(ctx context.Context, discovered 
 			s.logger.Warn("extension migration skipped because game lookup failed", "app_id", appID, "extension", extension.ID, "error", err)
 			continue
 		}
+		previous, hasPrevious := s.extensionSnapshotsBeforeSync[strings.TrimSpace(extension.ID)]
 		for _, migration := range extension.StateMigrations {
+			ok, reason := extensionMigrationVersionEligible(previous.Version, hasPrevious, extension.Version, migration)
+			if !ok {
+				s.logger.Debug("extension migration skipped by version gate", "app_id", appID, "extension", extension.ID, "migration", migration.ID, "reason", reason, "previous_version", previous.Version, "current_version", extension.Version, "to_version", migration.ToVersion)
+				continue
+			}
 			if err := s.runExtensionMigration(ctx, game, extension, migration); err != nil {
 				s.logger.Warn("extension migration failed", "app_id", appID, "extension", extension.ID, "migration", migration.ID, "error", err)
 			}
@@ -103,6 +110,111 @@ func (s *Server) runExtensionMigration(ctx context.Context, game storage.Game, e
 	})
 	s.logger.Info("extension migration completed", "app_id", game.SteamAppID, "extension", extension.ID, "migration", migration.ID)
 	return nil
+}
+
+func extensionMigrationVersionEligible(previousVersion string, hasPrevious bool, currentVersion string, migration sdk.StateMigrationSpec) (bool, string) {
+	if !hasPrevious || strings.TrimSpace(previousVersion) == "" {
+		return false, "no previous extension snapshot"
+	}
+	targetVersion := strings.TrimSpace(migration.ToVersion)
+	if targetVersion == "" {
+		return false, "migration target version is empty"
+	}
+	if compareExtensionVersions(previousVersion, targetVersion) >= 0 {
+		return false, "previous extension version is already at or above migration target"
+	}
+	if current := strings.TrimSpace(currentVersion); current != "" && compareExtensionVersions(current, targetVersion) < 0 {
+		return false, "current extension version is below migration target"
+	}
+	return true, ""
+}
+
+func extensionSnapshotsByID(snapshots []storage.ExtensionSnapshot) map[string]storage.ExtensionSnapshot {
+	out := make(map[string]storage.ExtensionSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		id := strings.TrimSpace(snapshot.ID)
+		if id == "" {
+			continue
+		}
+		out[id] = snapshot
+	}
+	return out
+}
+
+func compareExtensionVersions(a, b string) int {
+	left := extensionVersionSegments(a)
+	right := extensionVersionSegments(b)
+	maxLen := len(left)
+	if len(right) > maxLen {
+		maxLen = len(right)
+	}
+	for i := 0; i < maxLen; i++ {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		if l == r {
+			continue
+		}
+		li, lnum := extensionVersionNumber(l)
+		ri, rnum := extensionVersionNumber(r)
+		switch {
+		case lnum && rnum:
+			if li < ri {
+				return -1
+			}
+			if li > ri {
+				return 1
+			}
+		case lnum != rnum:
+			if r == "" && !lnum {
+				continue
+			}
+			if l == "" && !rnum {
+				continue
+			}
+			if lnum && li == 0 && r == "" {
+				continue
+			}
+			if rnum && ri == 0 && l == "" {
+				continue
+			}
+			if lnum {
+				return 1
+			}
+			return -1
+		default:
+			cmp := strings.Compare(strings.ToLower(l), strings.ToLower(r))
+			if cmp < 0 {
+				return -1
+			}
+			if cmp > 0 {
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
+func extensionVersionSegments(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == '.' || r == '-' || r == '_' || r == '+' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+}
+
+func extensionVersionNumber(value string) (int, bool) {
+	if strings.TrimSpace(value) == "" {
+		return 0, true
+	}
+	number, err := strconv.Atoi(strings.TrimSpace(value))
+	return number, err == nil
 }
 
 func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame storage.Game, command sdk.StateMigrationCommandSpec, source string) (bool, error) {

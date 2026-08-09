@@ -68,6 +68,8 @@ type Server struct {
 	games     games.Registry
 	loot      lootmeta.Service
 
+	extensionSnapshotsBeforeSync map[string]storage.ExtensionSnapshot
+
 	gameDiscoveryMu      sync.Mutex
 	gameDiscoveryCache   []steam.Game
 	gameDiscoveryCacheAt time.Time
@@ -198,6 +200,11 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		return nil, err
 	}
 	gameRegistry := games.DefaultRegistry
+	previousExtensionSnapshots, err := db.ExtensionSnapshots(context.Background())
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := db.SyncExtensionSnapshots(context.Background(), extensionSnapshotsFromSummaries(gameRegistry.ExtensionSummaries())); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -230,6 +237,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			DataDir: cfg.DataDir,
 			Logger:  logger,
 		},
+
+		extensionSnapshotsBeforeSync: extensionSnapshotsByID(previousExtensionSnapshots),
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
