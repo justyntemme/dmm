@@ -7466,6 +7466,13 @@ function FreshDeckyModManagerRoute() {
     setDiagnosticLogs(logs);
   }
 
+  async function toggleFreshServer() {
+    const next = await call<[], BackendStatus>(status?.running ? "stop_server" : "start_server");
+    applyBackendAuthFromStatus(next);
+    setStatus(next);
+    await refreshFreshState();
+  }
+
   useEffect(() => {
     void refreshFreshState();
     const timer = window.setInterval(() => void refreshFreshState(), 5000);
@@ -7839,19 +7846,18 @@ function FreshDeckyModManagerRoute() {
   function renderSettings() {
     return (
       <>
-        <div style={freshSectionStyle}>
+        <Focusable
+          className="dmm-sidebar-row"
+          focusClassName="dmm-sidebar-row-focused"
+          onActivate={() => void toggleFreshServer()}
+          onClick={() => void toggleFreshServer()}
+          style={freshSectionStyle}
+        >
           <div style={{ fontWeight: 900 }}>Server</div>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Phone URL: {status?.url || "Unavailable"}</div>
-          <FreshActionButton onActivate={async () => {
-            const next = await call<[], BackendStatus>(status?.running ? "stop_server" : "start_server");
-            applyBackendAuthFromStatus(next);
-            setStatus(next);
-            await refreshFreshState();
-          }}>
-            {status?.running ? "Stop Server" : "Start Server"}
-          </FreshActionButton>
-        </div>
+          <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
+        </Focusable>
         <div style={freshSectionStyle}>
           <div style={{ fontWeight: 900 }}>Security</div>
           <ToggleField label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
