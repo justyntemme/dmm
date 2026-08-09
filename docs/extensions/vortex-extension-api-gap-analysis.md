@@ -79,12 +79,13 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 15.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 12.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
 
-- Remaining `registerGame` placeholders: `game-grimrock`, `game-nehrim`, `game-prisonarchitect`, `game-sims3`, `game-teso`.
+- Remaining `registerGame` placeholders: `game-nehrim`, `game-prisonarchitect`.
+- Documents/AppData `registerGame` entries promoted with shared DMM target-root support: `game-grimrock`, `game-sims3`, and `game-teso`.
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
 - Source-backed `registerGameStub` support-mod entries: none remain in the catalog. `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, and `game-subnauticabelowzero` now have dedicated DMM extension packages that preserve Vortex support-mod metadata without claiming installer support.

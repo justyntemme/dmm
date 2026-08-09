@@ -50,6 +50,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/greedfall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/grimdawn"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/grimrock"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife2episodes"
@@ -106,6 +107,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shadowrunreturns"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sims3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sims4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrim"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
@@ -130,6 +132,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/survivingmars"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/teamfortress2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/teso"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thekingiswatching"
@@ -216,6 +219,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(godhood.Extension()),
 		gameext.MustCompileExtension(greedfall.Extension()),
 		gameext.MustCompileExtension(grimdawn.Extension()),
+		gameext.MustCompileExtension(grimrock.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),
 		gameext.MustCompileExtension(halflife2.Extension()),
 		gameext.MustCompileExtension(halflife2episodes.Extensions()[0]),
@@ -277,6 +281,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(sevendaystodie.Extension()),
 		gameext.MustCompileExtension(shadowrunreturns.Extension()),
 		gameext.MustCompileExtension(shieldwall.Extension()),
+		gameext.MustCompileExtension(sims3.Extension()),
 		gameext.MustCompileExtension(sims4.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
 		gameext.MustCompileExtension(skyrim.Extension()),
@@ -300,6 +305,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(survivingmars.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
+		gameext.MustCompileExtension(teso.Extension()),
 		gameext.MustCompileExtension(thedivision2.Extension()),
 		gameext.MustCompileExtension(thekingiswatching.Extension()),
 		gameext.MustCompileExtension(thomaswasalone.Extension()),
