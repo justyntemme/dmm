@@ -25,8 +25,8 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 25
-  - Framework/shared counterparts: 16
+- DMM counterparts identified in the current pass: 30
+  - Framework/shared counterparts: 21
   - Game counterparts: 9
 
 ## Framework And Shared Extensions
@@ -60,11 +60,11 @@ Counts:
 - [ ] `mod-highlight`
 - [ ] `mod-report`
 - [x] `modtype-bepinex` - DMM counterpart: shared `internal/extensions/bepinex` Unity/BepInEx installer/runtime capability.
-- [ ] `modtype-dazip`
-- [ ] `modtype-dinput`
-- [ ] `modtype-enb`
-- [ ] `modtype-gedosato`
-- [ ] `modtype-umm`
+- [x] `modtype-dazip` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed DAZIP mod type and installer metadata marked blocked until nested DAZIP extraction/submodule planning and Addins.xml registration exist.
+- [x] `modtype-dinput` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed DInput mod type and installer metadata marked blocked until executable-relative DLL deployment and unsafe DLL confirmation exist.
+- [x] `modtype-enb` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed ENB mod type metadata marked blocked until game-root deployment and unsafe DLL confirmation are implemented; Vortex's ENB installer registration is currently commented out upstream.
+- [x] `modtype-gedosato` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed GeDoSaTo mod type and installer metadata marked blocked until external tool discovery and texture-folder targeting exist.
+- [x] `modtype-umm` - DMM counterpart: `internal/extensions/sharedmodtypes` framework extension. Current parity is source-backed Unity Mod Manager mod type, installer, and `ummAddGame` API metadata marked blocked until DMM has a typed UMM helper/API and tool discovery flow.
 - [ ] `morrowind-plugin-management`
 - [x] `mtframework-arc-support` - DMM counterpart: `internal/extensions/mtframeworkarc` framework extension. Current parity is source-backed ARC archive type metadata with blocked runtime status until a Deck-safe ARCtool bridge or native ARC engine exists.
 - [ ] `new-file-monitor`

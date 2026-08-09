@@ -102,8 +102,10 @@ Vortex source examples:
 DMM status:
 
 - Supports declarative and custom Go installer rules, mod types, archive-root installs, common-root stripping, generated files, target policies, metadata extractors, custom builders, FOMOD, and generic component choices.
+- Source-backed metadata now exists for shared Vortex mod types `dazip`, `dinput`, `enb`, `gedosato`, and `umm`, plus their registered installers where Vortex has them. They are marked `blocked` until the reusable DMM helpers exist.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
 - Needed helper APIs include source-backed versions of Vortex-style `queryModPath` defaults, `stopPatterns` matching, `testSupportedContent`, `mergeMods` path transforms, wrapper-root normalization, and component-choice rules.
+- Needed shared mod-type helpers include nested DAZIP extraction/submodule planning, executable-relative DLL deployment with unsafe-file confirmation, ENB game-root deployment, GeDoSaTo external tool discovery and texture targeting, and Unity Mod Manager game opt-in/tool discovery.
 
 Priority: P0.
 
@@ -179,6 +181,7 @@ DMM status:
 
 - First-party Go extensions can share normal Go packages, but there is no explicit registered extension API namespace, dependency graph, or import contract.
 - Source-backed metadata exists for Vortex `quickbms-support` APIs and `gameversion-hash`'s `getHashVersion` API, but both are blocked until executable/runtime behavior is implemented.
+- Source-backed metadata exists for Vortex `modtype-umm`'s `ummAddGame` API, but it is blocked until DMM has a typed Unity Mod Manager helper/API that converted game extensions can call.
 - Missing extension-owned persistent state/persistor/migration contracts equivalent to `registerReducer`, `registerPersistor`, and `registerMigration`.
 
 Priority: P1 for full Vortex parity; P0 only when a converted MVP game needs cross-extension behavior.

@@ -829,11 +829,22 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ID:             modType.ID,
 			Name:           modType.TargetRoot,
 			DeploymentMode: mode,
+			Status:         defaultString(modType.Status, sdk.CapabilityStatusReady),
+			Message:        modType.Message,
 		})
 	}
 	for _, installer := range extension.InstallPlan.Installers {
-		feature := FeatureSummary{ID: installer.ID, Name: installer.VortexInstallerID}
+		feature := FeatureSummary{
+			ID:      installer.ID,
+			Name:    installer.VortexInstallerID,
+			Status:  defaultString(installer.Status, sdk.CapabilityStatusReady),
+			Message: installer.Message,
+		}
 		if installer.InstructionMode == installplan.InstructionUnsupported {
+			feature.Status = sdk.CapabilityStatusBlocked
+			if feature.Message == "" {
+				feature.Message = installer.UnsupportedReason
+			}
 			summary.Capabilities.UnsupportedInstallers = append(summary.Capabilities.UnsupportedInstallers, feature)
 			continue
 		}

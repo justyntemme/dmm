@@ -107,6 +107,8 @@ type ModTypeSpec struct {
 	TargetRoot     string
 	TargetRootID   string
 	DeploymentMode string
+	Status         string
+	Message        string
 }
 
 const (
@@ -132,6 +134,8 @@ type InstallerSpec struct {
 	ComponentChoices   *ComponentChoiceSpec
 	InstructionMode    InstructionMode
 	UnsupportedReason  string
+	Status             string
+	Message            string
 	CustomMatch        CustomMatchFunc
 	CustomBuild        CustomBuildFunc
 }

@@ -62,6 +62,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
@@ -100,6 +101,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(gameversionhash.Extension()),
 		gameext.MustCompileExtension(mtframeworkarc.Extension()),
 		gameext.MustCompileExtension(quickbmssupport.Extension()),
+		gameext.MustCompileExtension(sharedmodtypes.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),

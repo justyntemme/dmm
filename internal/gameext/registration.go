@@ -363,7 +363,22 @@ func defaultExtensionKind(extension Extension) string {
 }
 
 func hasFrameworkCapability(extension Extension) bool {
-	return len(extension.ArchiveTypes) > 0 ||
+	return len(extension.InstallPlan.ModTypes) > 0 ||
+		len(extension.InstallPlan.Installers) > 0 ||
+		len(extension.InstallerChoices) > 0 ||
+		len(extension.TargetRoots) > 0 ||
+		len(extension.InstallPlatforms) > 0 ||
+		len(extension.RuntimeRequirements.RuntimeRequirements) > 0 ||
+		len(extension.LaunchTools) > 0 ||
+		len(extension.PluginActivations) > 0 ||
+		len(extension.UnmanagedMarkers) > 0 ||
+		len(extension.ConflictIgnores) > 0 ||
+		len(extension.DeployIgnores) > 0 ||
+		len(extension.PackedArchiveMutations) > 0 ||
+		len(extension.SteamWorkshop.Actions) > 0 ||
+		len(extension.Merges) > 0 ||
+		len(extension.LoadOrders) > 0 ||
+		len(extension.ArchiveTypes) > 0 ||
 		len(extension.Interpreters) > 0 ||
 		len(extension.GameStores) > 0 ||
 		len(extension.ExtensionActions) > 0 ||
@@ -500,6 +515,9 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		if err := validateRelativeOrRoot(modType.TargetRoot); err != nil {
 			errs = append(errs, errors.New("mod type "+id+" target root: "+err.Error()))
 		}
+		if err := validateCapabilityStatus("mod type", id, modType.Status, modType.Message); err != nil {
+			errs = append(errs, err)
+		}
 		switch strings.TrimSpace(modType.DeploymentMode) {
 		case "", installplan.ModTypeDeploymentDirect, installplan.ModTypeDeploymentEventHook:
 		default:
@@ -514,6 +532,9 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 		}
 		if strings.TrimSpace(installer.VortexInstallerID) == "" {
 			errs = append(errs, errors.New("installer "+id+" Vortex installer id is required"))
+		}
+		if err := validateCapabilityStatus("installer", id, installer.Status, installer.Message); err != nil {
+			errs = append(errs, err)
 		}
 		if platformID := strings.TrimSpace(installer.PlatformID); platformID != "" && strings.ContainsAny(platformID, "/\\") {
 			errs = append(errs, errors.New("installer "+id+" platform id must be a simple identifier"))
