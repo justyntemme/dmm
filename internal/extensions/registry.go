@@ -102,6 +102,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarpharaohdynasties"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarthreekingdoms"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/transportfever2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexgamecatalog"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsharedsystems"
@@ -227,6 +228,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(thekingiswatching.Extension()),
 		gameext.MustCompileExtension(thomaswasalone.Extension()),
 		gameext.MustCompileExtension(teamfortress2.Extension()),
+		gameext.MustCompileExtension(totalwarthreekingdoms.Extension()),
 		gameext.MustCompileExtension(torchlight2.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
