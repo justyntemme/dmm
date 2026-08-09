@@ -230,6 +230,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if appID, ok := registry.SteamAppIDForNexusDomain("samplegame"); !ok || appID != "100" {
 		t.Fatalf("nexus domain mapping = %q %v", appID, ok)
 	}
+	if appID, ok := registry.SteamAppIDForNexusDomain("sampleaddon"); ok || appID != "" {
+		t.Fatalf("compatible download domain should not own reverse mapping = %q %v", appID, ok)
+	}
+	if domains := registry.NexusDomainsForSteamAppID("100"); !contains(domains, "samplegame") || !contains(domains, "sampleaddon") {
+		t.Fatalf("nexus domains for app should include primary and compatible domains = %+v", domains)
+	}
 	if _, _, ok := registry.RequiredPrimaryLaunchToolForSteamApp("100", []gamehandler.RuntimeMod{{Enabled: true, ModType: "mod"}}); !ok {
 		t.Fatal("primary launch tool did not match enabled mod type")
 	}

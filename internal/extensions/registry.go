@@ -27,6 +27,8 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/factorio"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4vr"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/falloutnv"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
@@ -83,6 +85,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimvr"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sleepingdogs"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spelunky"
@@ -164,6 +167,8 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(factorio.Extension()),
 		gameext.MustCompileExtension(finalfantasy7rebirth.Extension()),
 		gameext.MustCompileExtension(fallout4.Extension()),
+		gameext.MustCompileExtension(fallout4vr.Extension()),
+		gameext.MustCompileExtension(falloutnv.Extension()),
 		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
 		gameext.MustCompileExtension(galacticcivilizations3.Extension()),
@@ -221,6 +226,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),
+		gameext.MustCompileExtension(skyrimvr.Extension()),
 		gameext.MustCompileExtension(sno.Extension()),
 		gameext.MustCompileExtension(stardewvalley.Extension()),
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),

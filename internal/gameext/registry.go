@@ -368,7 +368,9 @@ func NewRegistry(extensions []Extension) Registry {
 				continue
 			}
 			registry.extensionsBySteamAppID[appID] = extension
-			for _, domain := range extension.NexusDomains {
+			domains := appendClean([]string{}, extension.NexusDomains...)
+			domains = appendClean(domains, extension.GameMetadata.CompatibleDownloads...)
+			for _, domain := range domains {
 				domain = canonical(domain)
 				if domain == "" {
 					continue
@@ -381,7 +383,9 @@ func NewRegistry(extensions []Extension) Registry {
 			if domain == "" || len(extension.SteamAppIDs) == 0 {
 				continue
 			}
-			registry.steamAppByNexusDomain[domain] = canonical(extension.SteamAppIDs[0])
+			if _, exists := registry.steamAppByNexusDomain[domain]; !exists {
+				registry.steamAppByNexusDomain[domain] = canonical(extension.SteamAppIDs[0])
+			}
 		}
 		if strings.TrimSpace(extension.InstallPlan.VortexGameID) != "" || len(extension.InstallPlan.SteamAppIDs) > 0 {
 			installSpecs = append(installSpecs, extension.InstallPlan)

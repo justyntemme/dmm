@@ -1609,8 +1609,7 @@ func capturedInstallJobPayload(gameRegistry games.Registry, resolved catalog.Res
 	}
 	if appID := strings.TrimSpace(resolved.SteamAppID); appID != "" {
 		payload["app_id"] = appID
-	}
-	if appID, ok := gameRegistry.SteamAppIDForNexusDomain(resolved.GameDomain); ok {
+	} else if appID, ok := gameRegistry.SteamAppIDForNexusDomain(resolved.GameDomain); ok {
 		payload["app_id"] = appID
 	}
 	for key, value := range payload {
