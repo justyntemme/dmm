@@ -126,9 +126,10 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "Data/Tools/BodySlide/BodySlide.exe",
 		RequiredFiles:      []string{"Data/Tools/BodySlide/BodySlide.exe"},
 	})
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "fallout4-gamebryo-plugins",
 		Name:          "Fallout 4 plugins.txt activation",
+		GameID:        VortexGameID,
 		AppDataPath:   "Fallout4",
 		Format:        gamebryo.FormatAsterisked,
 		LOOTGameID:    VortexGameID,
@@ -138,7 +139,7 @@ func Register(r sdk.Registrar) {
 			"Fallout4.ccc",
 		},
 		SupportsLightPlugins: true,
-	}))
+	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4-persistent-subgraph-offsets",

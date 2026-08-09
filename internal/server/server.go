@@ -476,6 +476,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("GET /api/profiles/{profileID}/features", s.handleProfileFeatures)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/features/{featureID}", s.handleSetProfileFeature)
+	mux.HandleFunc("GET /api/profiles/{profileID}/files", s.handleProfileFiles)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
@@ -2639,6 +2640,19 @@ type profileFeatureResponse struct {
 
 type updateProfileFeatureRequest struct {
 	Enabled *bool `json:"enabled"`
+}
+
+type profileFileResponse struct {
+	ProfileID    int64  `json:"profile_id"`
+	FileID       string `json:"file_id"`
+	Name         string `json:"name"`
+	GameID       string `json:"game_id"`
+	Base         string `json:"base,omitempty"`
+	Path         string `json:"path,omitempty"`
+	ResolvedPath string `json:"resolved_path,omitempty"`
+	Status       string `json:"status"`
+	Message      string `json:"message,omitempty"`
+	Extension    string `json:"extension,omitempty"`
 }
 
 type deleteProfileResponse struct {
@@ -8559,6 +8573,113 @@ func (s *Server) profileFeatureResponses(appID string, profileID int64, states [
 	return responses
 }
 
+func (s *Server) handleProfileFiles(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.profileFileResponses(game, profileID))
+}
+
+func (s *Server) profileFileResponses(game storage.Game, profileID int64) []profileFileResponse {
+	responses := []profileFileResponse{}
+	seen := map[string]struct{}{}
+	for _, extension := range s.games.ExtensionsForSteamApp(game.SteamAppID) {
+		for _, file := range extension.ProfileFiles {
+			fileID := strings.TrimSpace(file.ID)
+			canonicalID := strings.ToLower(fileID)
+			if fileID == "" || canonicalID == "" {
+				continue
+			}
+			if _, ok := seen[canonicalID]; ok {
+				continue
+			}
+			seen[canonicalID] = struct{}{}
+			status := strings.TrimSpace(file.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			name := strings.TrimSpace(file.Name)
+			if name == "" {
+				name = fileID
+			}
+			resolved, resolveErr := resolveProfileFilePath(game, file)
+			message := strings.TrimSpace(file.Message)
+			if resolveErr != nil {
+				if message != "" {
+					message += "; "
+				}
+				message += resolveErr.Error()
+			}
+			responses = append(responses, profileFileResponse{
+				ProfileID:    profileID,
+				FileID:       fileID,
+				Name:         name,
+				GameID:       file.GameID,
+				Base:         file.Base,
+				Path:         file.Path,
+				ResolvedPath: resolved,
+				Status:       status,
+				Message:      message,
+				Extension:    extension.ID,
+			})
+		}
+	}
+	sort.Slice(responses, func(i, j int) bool {
+		if responses[i].Extension == responses[j].Extension {
+			return responses[i].FileID < responses[j].FileID
+		}
+		return responses[i].Extension < responses[j].Extension
+	})
+	return responses
+}
+
+func resolveProfileFilePath(game storage.Game, spec sdk.ProfileFileSpec) (string, error) {
+	rel := cleanProfileFileRelativePath(spec.Path)
+	if rel == "" {
+		return "", nil
+	}
+	switch strings.TrimSpace(spec.Base) {
+	case "", sdk.ProfileFileBaseGamePath:
+		gamePath := strings.TrimSpace(game.GamePath)
+		if gamePath == "" {
+			return "", errors.New("game path is unavailable")
+		}
+		return filepath.Join(gamePath, rel), nil
+	case sdk.ProfileFileBaseProtonLocalAppData:
+		base, err := protonLocalAppDataBase(game)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(base, rel), nil
+	default:
+		return "", errors.New("profile file base is unsupported")
+	}
+}
+
+func cleanProfileFileRelativePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(value))
+	if cleaned == "." || cleaned == ".." || filepath.IsAbs(cleaned) || strings.HasPrefix(filepath.ToSlash(cleaned), "../") {
+		return ""
+	}
+	return cleaned
+}
+
 func (s *Server) validateTargetProfile(ctx context.Context, appID string, profileID int64) error {
 	if profileID <= 0 {
 		return nil
@@ -13054,16 +13175,24 @@ func (s *Server) activeProfile(ctx context.Context, appID string, mods []storage
 }
 
 func protonLocalAppDataTargetRoot(game storage.Game, spec gameext.PluginActivationSpec) (string, error) {
+	base, err := protonLocalAppDataBase(game)
+	if err != nil {
+		return "", err
+	}
+	appDataPath := filepath.Clean(filepath.FromSlash(strings.TrimSpace(spec.AppDataPath)))
+	if appDataPath == "." || appDataPath == ".." || filepath.IsAbs(appDataPath) || strings.HasPrefix(filepath.ToSlash(appDataPath), "../") {
+		return "", errors.New("plugin activation app data path is unsafe")
+	}
+	return filepath.Join(base, appDataPath), nil
+}
+
+func protonLocalAppDataBase(game storage.Game) (string, error) {
 	libraryPath := strings.TrimSpace(game.LibraryPath)
 	if libraryPath == "" {
 		libraryPath = inferSteamLibraryPath(game.GamePath)
 	}
 	if libraryPath == "" {
-		return "", errors.New("Steam library path is required for Proton plugin activation")
-	}
-	appDataPath := filepath.Clean(filepath.FromSlash(strings.TrimSpace(spec.AppDataPath)))
-	if appDataPath == "." || appDataPath == ".." || filepath.IsAbs(appDataPath) || strings.HasPrefix(filepath.ToSlash(appDataPath), "../") {
-		return "", errors.New("plugin activation app data path is unsafe")
+		return "", errors.New("Steam library path is required for Proton local app data")
 	}
 	return filepath.Join(
 		libraryPath,
@@ -13076,7 +13205,6 @@ func protonLocalAppDataTargetRoot(game storage.Game, spec gameext.PluginActivati
 		"steamuser",
 		"AppData",
 		"Local",
-		appDataPath,
 	), nil
 }
 

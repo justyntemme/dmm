@@ -584,10 +584,16 @@ type ProfileFileSpec struct {
 	ID      string
 	Name    string
 	GameID  string
+	Base    string
 	Path    string
 	Status  string
 	Message string
 }
+
+const (
+	ProfileFileBaseGamePath           = "game_path"
+	ProfileFileBaseProtonLocalAppData = "proton_local_app_data"
+)
 
 type CollectionFeatureSpec struct {
 	ID      string

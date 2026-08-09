@@ -86,15 +86,16 @@ func Register(r sdk.Registrar) {
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "FO3Edit", Name: "FO3Edit", ExecutableRelative: "FO3Edit.exe", RequiredFiles: []string{"FO3Edit.exe"}})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "WryeBash", Name: "Wrye Bash", ExecutableRelative: "Wrye Bash.exe", RequiredFiles: []string{"Wrye Bash.exe"}})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "fose", Name: "Fallout Script Extender", ShortName: "FOSE", ExecutableRelative: "fose_loader.exe", RequiredFiles: []string{"fose_loader.exe", "Data/fallout3.esm"}, Relative: true, Exclusive: true, DefaultPrimary: true})
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "fallout3-gamebryo-plugins",
 		Name:          "Fallout 3 plugins.txt activation",
+		GameID:        VortexGameID,
 		AppDataPath:   "Fallout3",
 		Format:        gamebryo.FormatOriginal,
 		LOOTGameID:    VortexGameID,
 		LOOTPrelude:   true,
 		NativePlugins: []string{"fallout3.esm"},
-	}))
+	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",

@@ -9280,6 +9280,54 @@ func TestProfileFeatureEndpointsUseExtensionDeclarations(t *testing.T) {
 	}
 }
 
+func TestProfileFilesEndpointResolvesGamebryoProfileFiles(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profiles/"+strconv.FormatInt(profiles[0].ID, 10)+"/files", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var files []profileFileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &files); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]profileFileResponse{}
+	for _, file := range files {
+		byID[file.FileID] = file
+	}
+	wantBase := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Fallout4")
+	plugins := byID["fallout4-gamebryo-plugins-plugins-file"]
+	if plugins.Status != sdk.CapabilityStatusReady || plugins.Base != sdk.ProfileFileBaseProtonLocalAppData || plugins.Path != "Fallout4/plugins.txt" || plugins.ResolvedPath != filepath.Join(wantBase, "plugins.txt") {
+		t.Fatalf("plugins profile file = %+v", plugins)
+	}
+	loadOrder := byID["fallout4-gamebryo-plugins-loadorder-file"]
+	if loadOrder.Status != sdk.CapabilityStatusReady || loadOrder.Base != sdk.ProfileFileBaseProtonLocalAppData || loadOrder.Path != "Fallout4/loadorder.txt" || loadOrder.ResolvedPath != filepath.Join(wantBase, "loadorder.txt") {
+		t.Fatalf("load order profile file = %+v", loadOrder)
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

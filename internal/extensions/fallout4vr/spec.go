@@ -107,16 +107,17 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "FO4VREdit.exe",
 		RequiredFiles:      []string{"FO4VREdit.exe"},
 	})
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:                   "fallout4vr-gamebryo-plugins",
 		Name:                 "Fallout 4 VR plugins.txt activation",
+		GameID:               VortexGameID,
 		AppDataPath:          "Fallout4VR",
 		Format:               gamebryo.FormatAsterisked,
 		LOOTGameID:           VortexGameID,
 		LOOTMasterlistGameID: "fallout4",
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"fallout4.esm", "fallout4_vr.esm"},
-	}))
+	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4vr-persistent-subgraph-offsets",

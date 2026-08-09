@@ -119,9 +119,10 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "CreationKit.exe",
 		RequiredFiles:      []string{"CreationKit.exe"},
 	})
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "skyrimse-gamebryo-plugins",
 		Name:          "Skyrim Special Edition plugins.txt activation",
+		GameID:        VortexGameID,
 		AppDataPath:   "Skyrim Special Edition",
 		Format:        gamebryo.FormatAsterisked,
 		LOOTGameID:    VortexGameID,
@@ -131,7 +132,7 @@ func Register(r sdk.Registrar) {
 			"Skyrim.ccc",
 		},
 		SupportsLightPlugins: true,
-	}))
+	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimse-exe-version",

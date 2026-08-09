@@ -120,15 +120,16 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "Wrye Bash.exe",
 		RequiredFiles:      []string{"Wrye Bash.exe"},
 	})
-	r.RegisterPluginActivation(gamebryo.PluginActivation(gamebryo.PluginActivationOptions{
+	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "falloutnv-gamebryo-plugins",
 		Name:          "Fallout: New Vegas plugins.txt activation",
+		GameID:        VortexGameID,
 		AppDataPath:   "falloutnv",
 		Format:        gamebryo.FormatOriginal,
 		LOOTGameID:    VortexGameID,
 		LOOTPrelude:   true,
 		NativePlugins: []string{"falloutnv.esm"},
-	}))
+	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",

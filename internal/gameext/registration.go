@@ -1793,6 +1793,11 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 		if strings.TrimSpace(spec.GameID) == "" {
 			errs = append(errs, errors.New("profile file "+id+" game id is required"))
 		}
+		switch strings.TrimSpace(spec.Base) {
+		case "", sdk.ProfileFileBaseGamePath, sdk.ProfileFileBaseProtonLocalAppData:
+		default:
+			errs = append(errs, errors.New("profile file "+id+" base is not supported"))
+		}
 		if strings.TrimSpace(spec.Path) != "" {
 			if err := validateRelativePath(spec.Path); err != nil {
 				errs = append(errs, errors.New("profile file "+id+" path: "+err.Error()))

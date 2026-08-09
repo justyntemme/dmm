@@ -288,6 +288,7 @@ type FeatureSummary struct {
 	ToVersion          string                   `json:"to_version,omitempty"`
 	Target             string                   `json:"target,omitempty"`
 	ActionTarget       *ActionTargetSummary     `json:"action_target,omitempty"`
+	Base               string                   `json:"base,omitempty"`
 	Path               string                   `json:"path,omitempty"`
 	GameID             string                   `json:"game_id,omitempty"`
 	MasterlistGameID   string                   `json:"masterlist_game_id,omitempty"`
@@ -1557,6 +1558,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ID:      file.ID,
 			Name:    file.Name,
 			GameID:  file.GameID,
+			Base:    file.Base,
 			Path:    file.Path,
 			Status:  defaultString(file.Status, sdk.CapabilityStatusReady),
 			Message: file.Message,
