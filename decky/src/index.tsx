@@ -6681,8 +6681,10 @@ const freshDeckyBodyStyle: CSSProperties = {
   minHeight: 0,
   overflowX: "hidden",
   overflowY: "auto",
-  padding: "12px 0 168px",
-  scrollPaddingBlock: "12px",
+  overscrollBehavior: "contain",
+  padding: "16px 0 176px",
+  scrollPaddingBottom: "176px",
+  scrollPaddingTop: "28px",
   width: "100%"
 };
 
@@ -7044,6 +7046,7 @@ function FreshDeckyModManagerRoute() {
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [busyJobID, setBusyJobID] = useState("");
   const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
   const selectedGame = games.find((game) => game.app_id === selectedGameID) ?? null;
   const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
@@ -7533,6 +7536,14 @@ function FreshDeckyModManagerRoute() {
     if (next.id !== "games") setSuppressRunningAutoOpen(false);
   }
 
+  function snapBodyToTopIfFocusIsNearTop() {
+    const body = bodyRef.current;
+    if (!body || body.scrollTop <= 0 || body.scrollTop > 96) return;
+    requestAnimationFrame(() => {
+      if (body.scrollTop > 0 && body.scrollTop <= 96) body.scrollTo({ top: 0, behavior: "auto" });
+    });
+  }
+
   function handleRouteButtonDown(event: GamepadEvent) {
     if (event.detail.button === GamepadButton.CANCEL && tab === "games" && selectedGameID) {
       event.preventDefault();
@@ -7892,7 +7903,15 @@ function FreshDeckyModManagerRoute() {
           </Focusable>
         ))}
       </Focusable>
-      <Focusable key={`${tab}:${selectedGameID || "list"}`} flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD} preferredFocus style={freshDeckyBodyStyle}>
+      <Focusable
+        key={`${tab}:${selectedGameID || "list"}`}
+        ref={bodyRef}
+        flow-children="down"
+        navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+        onFocusCapture={snapBodyToTopIfFocusIsNearTop}
+        preferredFocus
+        style={freshDeckyBodyStyle}
+      >
         {content}
         {message && <div style={{ ...freshSectionStyle, color: "#99f6e4" }}>{message}</div>}
         {error && <div style={{ ...freshSectionStyle, borderColor: "#7f1d1d", color: "#f87171" }}>{error}</div>}
