@@ -5,10 +5,12 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/bloodstainedritualofthenight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/braid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/brawlhalla"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/citizensleeper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/codevein"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergenerals"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergeneralszerohour"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commoninterpreters"
@@ -86,6 +88,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/survivingmars"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/teamfortress2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thekingiswatching"
@@ -126,10 +129,12 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),
+		gameext.MustCompileExtension(bloodstainedritualofthenight.Extension()),
 		gameext.MustCompileExtension(braid.Extension()),
 		gameext.MustCompileExtension(brawlhalla.Extension()),
 		gameext.MustCompileExtension(civilizationvii.Extension()),
 		gameext.MustCompileExtension(citizensleeper.Extension()),
+		gameext.MustCompileExtension(codevein.Extension()),
 		gameext.MustCompileExtension(commandconquergenerals.Extension()),
 		gameext.MustCompileExtension(commandconquergeneralszerohour.Extension()),
 		gameext.MustCompileExtension(cultistsimulator.Extension()),
@@ -205,6 +210,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(thedivision2.Extension()),
 		gameext.MustCompileExtension(thekingiswatching.Extension()),
 		gameext.MustCompileExtension(thomaswasalone.Extension()),
+		gameext.MustCompileExtension(teamfortress2.Extension()),
 		gameext.MustCompileExtension(torchlight2.Extension()),
 		gameext.MustCompileExtension(spyroreignitedtrilogy.Extension()),
 		gameext.MustCompileExtension(totalwarpharaohdynasties.Extension()),
