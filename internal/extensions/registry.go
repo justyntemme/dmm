@@ -71,6 +71,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/pillarsofeternity2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/planetside2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
@@ -216,6 +217,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(nomanssky.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
+		gameext.MustCompileExtension(pillarsofeternity2.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
 		gameext.MustCompileExtension(plagueincevolved.Extension()),

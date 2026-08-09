@@ -207,7 +207,6 @@ var games = []GameSpec{
 	{VortexDir: "game-palworld", ID: "palworld", Name: "Palworld", VortexStub: true, SupportModID: "770"},
 	{VortexDir: "game-pathfinderkingmaker", ID: "pathfinderkingmaker", Name: "Pathfinder: Kingmaker", SteamAppIDs: []string{"640820"}, Notes: []string{"Vortex requires modtype-umm and prompts for Unity Mod Manager; DMM needs typed UMM helper parity before claiming full support."}},
 	{VortexDir: "game-pathfinderwrathoftherighteous", ID: "pathfinderwrathoftherighteous", Name: "Pathfinder: Wrath of the Righteous", SteamAppIDs: []string{"1184370"}},
-	{VortexDir: "game-pillarsofeternity2", ID: "pillarsofeternity2", Name: "Pillars of Eternity II: Deadfire", SteamAppIDs: []string{"560130"}, HasLoadOrder: true},
 	{VortexDir: "game-prisonarchitect", ID: "prisonarchitect", Name: "Prison Architect", SteamAppIDs: []string{"233450"}},
 	{VortexDir: "game-re2remake", ID: "residentevil22019", Name: "Resident Evil 2 (2019)", VortexStub: true, SupportModID: "432"},
 	{VortexDir: "game-re3remake", ID: "residentevil32020", Name: "Resident Evil 3 (2020)", VortexStub: true, SupportModID: "433"},
