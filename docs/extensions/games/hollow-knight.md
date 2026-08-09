@@ -34,5 +34,5 @@
 ## Beta Gaps
 
 - Live archive validation with representative Nexus Hollow Knight mods.
-- BepInEx automatic dependency download/install remains blocked until DMM has generic dependency-helper support.
+- BepInEx runtime acquisition is supported generically, but this extension does not declare auto-acquisition because the checked Vortex game extension does not opt into `autoDownloadBepInEx`.
 - The Vortex fallback notification flow is intentionally blocked in DMM until the UI can present a clear manual-review path.

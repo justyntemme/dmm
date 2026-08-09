@@ -58,16 +58,18 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
-		ID:          "untitledgoosegame-bepinex-installed",
-		Name:        "BepInEx",
-		Kind:        "mod-loader",
-		Required:    true,
-		ModTypes:    []string{rootModType, pluginModType, configModType},
-		Message:     "BepInEx is required before enabled Untitled Goose Game BepInEx mods can load.",
-		OKMessage:   "BepInEx is present in the Untitled Goose Game folder.",
-		InstallHint: "Install BepInEx for Untitled Goose Game, then enable and deploy it from DMM before enabling BepInEx plugin mods.",
-		HelpURL:     "https://github.com/BepInEx/BepInEx/releases",
-		Check:       bepinex.RuntimePresenceCheck(bepinex.DefaultRuntimeMarkers()),
+		ID:               "untitledgoosegame-bepinex-installed",
+		Name:             "BepInEx",
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         []string{rootModType, pluginModType, configModType},
+		ProviderModTypes: []string{runtimeModType},
+		Message:          "BepInEx is required before enabled Untitled Goose Game BepInEx mods can load.",
+		OKMessage:        "BepInEx is present in the Untitled Goose Game folder.",
+		InstallHint:      "Install BepInEx for Untitled Goose Game, then enable and deploy it from DMM before enabling BepInEx plugin mods.",
+		HelpURL:          "https://github.com/BepInEx/BepInEx/releases",
+		Acquisition:      runtimeAcquisition(),
+		Check:            bepinex.RuntimePresenceCheck(bepinex.DefaultRuntimeMarkers()),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "untitledgoosegame-epic-launcher",
@@ -94,13 +96,6 @@ func Register(r sdk.Registrar) {
 			Command:        sdk.StateMigrationCommandPurgeModsInPath,
 			TargetRelative: migrationTarget,
 		}},
-	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "untitledgoosegame-auto-download-bepinex",
-		Name:    "BepInEx auto-download parity",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex calls bepinexAddGame with autoDownloadBepInEx and default doorstop config. DMM can install BepInEx archives, but does not yet auto-acquire the runtime for this game.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-untitledgoose extension source",
@@ -175,6 +170,11 @@ func installers() []installplan.InstallerSpec {
 			UnsupportedReason: "Untitled Goose Game archive layout is not classified by the verified Vortex BepInEx extension rules. DMM blocks it until an extension-owned rule can place the files safely.",
 		},
 	}
+}
+
+func runtimeAcquisition() *gamehandler.RuntimeAcquisitionSpec {
+	acquisition := bepinex.DefaultRuntimeAcquisition(true)
+	return &acquisition
 }
 
 func matchAnyNonFOMODFile(root string) bool {

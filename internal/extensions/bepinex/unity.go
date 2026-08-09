@@ -15,6 +15,13 @@ const (
 	UnityPlatformWindows = "windows-proton"
 	UnityPlatformLinux   = "native-linux"
 
+	DefaultRuntimeVersion    = "5.4.22"
+	DefaultRuntimeModID      = "115"
+	DefaultRuntimeFileID     = "2526"
+	DefaultRuntimeArchive    = "BepInEx_x64_5.4.22.0.zip"
+	DefaultRuntimeGitHubURL  = "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip"
+	DefaultRuntimeSourceGame = "site"
+
 	bepInExRootModTypeSuffix      = "-bepinex-root"
 	bepInExPluginModTypeSuffix    = "-bepinex-plugin"
 	bepInExConfigModTypeSuffix    = "-bepinex-config-manager"
@@ -43,6 +50,8 @@ type UnityGameSpec struct {
 	RuntimeInstallHint       string
 	RuntimeHelpURL           string
 	RuntimeMarkers           []string
+	RuntimeAcquisition       *gamehandler.RuntimeAcquisitionSpec
+	AutoDownloadRuntime      bool
 	ExcludePluginDLLs        []string
 	NativeLinuxLaunchTool    bool
 	NativeLaunchToolName     string
@@ -114,6 +123,23 @@ func UnityBepInExModTypes(id string) []string {
 
 func UnityBepInExRuntimeModType(id string) string {
 	return cleanUnityID(id) + bepInExRuntimeModTypeSuffix
+}
+
+func DefaultRuntimeAcquisition(autoAcquire bool) gamehandler.RuntimeAcquisitionSpec {
+	return gamehandler.RuntimeAcquisitionSpec{
+		ID:             "bepinex-" + strings.ReplaceAll(DefaultRuntimeVersion, ".", "-") + "-x64",
+		Name:           "BepInEx " + DefaultRuntimeVersion + " x64",
+		Catalog:        "github",
+		URL:            DefaultRuntimeGitHubURL,
+		ArchiveName:    DefaultRuntimeArchive,
+		Required:       true,
+		AutoAcquire:    autoAcquire,
+		SourceModID:    DefaultRuntimeModID,
+		SourceFileID:   DefaultRuntimeFileID,
+		SourceGame:     DefaultRuntimeSourceGame,
+		SourceProvider: "vortex-modtype-bepinex",
+		Message:        "Vortex modtype-bepinex defaults to Nexus site mod " + DefaultRuntimeModID + " file " + DefaultRuntimeFileID + " for BepInEx " + DefaultRuntimeVersion + " x64 and falls back to GitHub. DMM acquires the source-verified GitHub release asset through the captured-install pipeline.",
+	}
 }
 
 func unityModTypes(id string) []installplan.ModTypeSpec {
@@ -189,17 +215,31 @@ func unityInstallers(id string, spec UnityGameSpec) []installplan.InstallerSpec 
 func unityRuntimeRequirement(id string, spec UnityGameSpec) gamehandler.RuntimeRequirementSpec {
 	name := firstUnityString(spec.RuntimeName, "BepInEx")
 	return gamehandler.RuntimeRequirementSpec{
-		ID:          id + "-bepinex-installed",
-		Name:        name,
-		Kind:        "mod-loader",
-		Required:    true,
-		ModTypes:    UnityBepInExModTypes(id),
-		Message:     name + " is required before enabled " + spec.Name + " BepInEx mods can load.",
-		OKMessage:   name + " is present in the " + spec.Name + " game folder.",
-		InstallHint: firstUnityString(spec.RuntimeInstallHint, "Install "+name+" for "+spec.Name+", then enable and deploy it from DMM before enabling BepInEx plugin mods."),
-		HelpURL:     firstUnityString(spec.RuntimeHelpURL, "https://github.com/BepInEx/BepInEx/releases"),
-		Check:       RuntimePresenceCheck(firstUnityStrings(spec.RuntimeMarkers, DefaultRuntimeMarkers())),
+		ID:               id + "-bepinex-installed",
+		Name:             name,
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         UnityBepInExModTypes(id),
+		ProviderModTypes: []string{UnityBepInExRuntimeModType(id)},
+		Message:          name + " is required before enabled " + spec.Name + " BepInEx mods can load.",
+		OKMessage:        name + " is present in the " + spec.Name + " game folder.",
+		InstallHint:      firstUnityString(spec.RuntimeInstallHint, "Install "+name+" for "+spec.Name+", then enable and deploy it from DMM before enabling BepInEx plugin mods."),
+		HelpURL:          firstUnityString(spec.RuntimeHelpURL, "https://github.com/BepInEx/BepInEx/releases"),
+		Acquisition:      unityRuntimeAcquisition(spec),
+		Check:            RuntimePresenceCheck(firstUnityStrings(spec.RuntimeMarkers, DefaultRuntimeMarkers())),
 	}
+}
+
+func unityRuntimeAcquisition(spec UnityGameSpec) *gamehandler.RuntimeAcquisitionSpec {
+	if spec.RuntimeAcquisition != nil {
+		acquisition := *spec.RuntimeAcquisition
+		return &acquisition
+	}
+	if !spec.AutoDownloadRuntime {
+		return nil
+	}
+	acquisition := DefaultRuntimeAcquisition(true)
+	return &acquisition
 }
 
 func unityNativeLinuxLaunchTool(id string, spec UnityGameSpec) sdk.LaunchToolSpec {

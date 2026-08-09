@@ -1165,7 +1165,14 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.InstallerChoices = append(summary.Capabilities.InstallerChoices, FeatureSummary{ID: choice.ID, Name: defaultString(choice.Name, choice.Kind)})
 	}
 	for _, requirement := range extension.RuntimeRequirements.RuntimeRequirements {
-		summary.Capabilities.RuntimeRequirements = append(summary.Capabilities.RuntimeRequirements, FeatureSummary{ID: requirement.ID, Name: requirement.Name})
+		summary.Capabilities.RuntimeRequirements = append(summary.Capabilities.RuntimeRequirements, FeatureSummary{
+			ID:               requirement.ID,
+			Name:             requirement.Name,
+			Kind:             requirement.Kind,
+			ModTypes:         appendClean([]string{}, requirement.ModTypes...),
+			ProviderModTypes: appendClean([]string{}, requirement.ProviderModTypes...),
+			Acquisition:      runtimeAcquisitionSummary(requirement.Acquisition),
+		})
 	}
 	for _, tool := range extension.LaunchTools {
 		summary.Capabilities.LaunchTools = append(summary.Capabilities.LaunchTools, FeatureSummary{
@@ -1733,6 +1740,26 @@ func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
 }
 
 func toolAcquisitionSummary(acquisition *sdk.ToolAcquisitionSpec) *ToolAcquisitionSummary {
+	if acquisition == nil {
+		return nil
+	}
+	return &ToolAcquisitionSummary{
+		ID:             strings.TrimSpace(acquisition.ID),
+		Name:           strings.TrimSpace(acquisition.Name),
+		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		URL:            strings.TrimSpace(acquisition.URL),
+		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Required:       acquisition.Required,
+		AutoAcquire:    acquisition.AutoAcquire,
+		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
+		Message:        strings.TrimSpace(acquisition.Message),
+	}
+}
+
+func runtimeAcquisitionSummary(acquisition *gamehandler.RuntimeAcquisitionSpec) *ToolAcquisitionSummary {
 	if acquisition == nil {
 		return nil
 	}

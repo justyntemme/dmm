@@ -942,11 +942,66 @@ func validateInstallerChoiceDestinationPrefixMode(mode string) error {
 func validateRuntimeSpec(spec gamehandler.GameSpec) []error {
 	var errs []error
 	for _, requirement := range spec.RuntimeRequirements {
-		if strings.TrimSpace(requirement.ID) == "" {
+		id := strings.TrimSpace(requirement.ID)
+		if id == "" {
 			errs = append(errs, errors.New("runtime requirement id is required"))
+			continue
 		}
 		if strings.TrimSpace(requirement.Name) == "" {
-			errs = append(errs, errors.New("runtime requirement name is required"))
+			errs = append(errs, errors.New("runtime requirement "+id+" name is required"))
+		}
+		for _, modType := range requirement.ModTypes {
+			if strings.TrimSpace(modType) == "" {
+				errs = append(errs, errors.New("runtime requirement "+id+" mod type is required"))
+			}
+		}
+		for _, modType := range requirement.ProviderModTypes {
+			if strings.TrimSpace(modType) == "" {
+				errs = append(errs, errors.New("runtime requirement "+id+" provider mod type is required"))
+			}
+		}
+		if requirement.Acquisition != nil {
+			errs = append(errs, validateRuntimeAcquisition(id, *requirement.Acquisition)...)
+		}
+	}
+	return errs
+}
+
+func validateRuntimeAcquisition(requirementID string, spec gamehandler.RuntimeAcquisitionSpec) []error {
+	var errs []error
+	id := strings.TrimSpace(spec.ID)
+	if id == "" {
+		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition id is required"))
+	} else {
+		errs = append(errs, validateSimpleID("runtime requirement "+requirementID+" acquisition", id)...)
+	}
+	if strings.TrimSpace(spec.Name) == "" {
+		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition name is required"))
+	}
+	if strings.TrimSpace(spec.Catalog) == "" {
+		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition catalog is required"))
+	}
+	rawURL := strings.TrimSpace(spec.URL)
+	if rawURL == "" {
+		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition url is required"))
+	} else {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition url must be an http or https URL"))
+		}
+	}
+	for _, value := range []struct {
+		label string
+		text  string
+	}{
+		{label: "archive name", text: spec.ArchiveName},
+		{label: "source mod id", text: spec.SourceModID},
+		{label: "source file id", text: spec.SourceFileID},
+		{label: "source game", text: spec.SourceGame},
+		{label: "source provider", text: spec.SourceProvider},
+	} {
+		if strings.ContainsAny(value.text, "\x00\r\n") {
+			errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition "+value.label+" must not contain control line breaks"))
 		}
 	}
 	return errs

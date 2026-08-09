@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -22,8 +23,15 @@ func TestUntitledGoosePortsEpicBepInExMetadata(t *testing.T) {
 	if len(summary.Capabilities.LauncherRequirements) != 1 || summary.Capabilities.LauncherRequirements[0].AppID != EpicAppID {
 		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
 	}
-	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
+	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("migration/todos = %+v / %+v", summary.Capabilities.StateMigrations, summary.Capabilities.ExtensionToDos)
+	}
+	if len(summary.Capabilities.RuntimeRequirements) != 1 {
+		t.Fatalf("runtime requirements = %+v", summary.Capabilities.RuntimeRequirements)
+	}
+	requirement := summary.Capabilities.RuntimeRequirements[0]
+	if requirement.Acquisition == nil || requirement.Acquisition.Catalog != "github" || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.SourceModID != bepinex.DefaultRuntimeModID {
+		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
 	}
 }
 

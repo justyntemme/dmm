@@ -42,6 +42,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
@@ -10416,6 +10417,99 @@ func TestActivateGameAutoAcquiresExtensionTools(t *testing.T) {
 	}
 	if len(activated.Acquisitions) != 1 || !activated.Acquisitions[0].Duplicate || activated.Acquisitions[0].Job == nil || activated.Acquisitions[0].Job.ID != waiting.ID {
 		t.Fatalf("duplicate activation response = %+v", activated)
+	}
+}
+
+func TestActivateGameAutoAcquiresExtensionRuntime(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999015"
+	const requirementID = "runtime-installed"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "runtimeacquire",
+		Name:    "Runtime Acquire",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"runtimeacquire"},
+				VortexGameID: "runtimeacquire",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-provider", TargetRoot: ""})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-consumer", TargetRoot: "Mods"})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               requirementID,
+				Name:             "Runtime Loader",
+				Kind:             "mod-loader",
+				Required:         true,
+				ModTypes:         []string{"runtime-consumer"},
+				ProviderModTypes: []string{"runtime-provider"},
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:          "runtime-loader-auto",
+					Name:        "Runtime Loader package",
+					Catalog:     "github",
+					URL:         "https://github.com/example/runtime/releases/download/v1.0.0/runtime.zip",
+					ArchiveName: "runtime.zip",
+					Required:    true,
+					AutoAcquire: true,
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Runtime Acquire Game",
+		InstallDir:  "Runtime Acquire Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Runtime Acquire Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("runtime archive"))
+	}))
+	defer downloadServer.Close()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
+		resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://github.com/example/runtime/releases/download/v1.0.0/runtime.zip",
+			SteamAppID: appID,
+			GameDomain: "github",
+			ModID:      "example/runtime",
+			FileID:     "djEuMA.cnVudGltZS56aXA",
+			FileName:   "runtime.zip",
+			Version:    "v1.0.0",
+			DownloadLinks: []catalog.DownloadLink{{
+				Name:      "GitHub release asset",
+				ShortName: "github",
+				URI:       downloadServer.URL + "/runtime.zip",
+			}},
+		},
+	}}
+	srv.catalogMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/activate", bytes.NewBufferString(`{"source":"decky-test"}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /activate status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var activated gameActivationResponse
+	if err := json.NewDecoder(rec.Body).Decode(&activated); err != nil {
+		t.Fatal(err)
+	}
+	if activated.AppID != appID || len(activated.Acquisitions) != 1 || activated.Acquisitions[0].Kind != "runtime" || activated.Acquisitions[0].Requirement != requirementID || activated.Acquisitions[0].Job == nil || !activated.Acquisitions[0].DownloadStarted {
+		t.Fatalf("activation response = %+v", activated)
+	}
+	waiting := waitForJobStatus(t, srv, activated.Acquisitions[0].Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(waiting.ID)
+	if !ok || pending.Source != "extension-runtime-auto-acquire:"+requirementID || pending.Resolved.ModID != "example/runtime" || pending.ArchivePath == "" {
+		t.Fatalf("runtime auto-acquire pending = %+v ok=%v", pending, ok)
 	}
 }
 

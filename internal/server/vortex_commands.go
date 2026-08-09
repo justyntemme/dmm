@@ -12,6 +12,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -190,6 +191,26 @@ func discoverSupportedTool(gamePath string, extension gameext.Extension, tool ga
 }
 
 func discoveredToolAcquisition(acquisition *gameext.ToolAcquisitionSpec) *toolAcquisition {
+	if acquisition == nil {
+		return nil
+	}
+	return &toolAcquisition{
+		ID:             strings.TrimSpace(acquisition.ID),
+		Name:           strings.TrimSpace(acquisition.Name),
+		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		URL:            strings.TrimSpace(acquisition.URL),
+		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Required:       acquisition.Required,
+		AutoAcquire:    acquisition.AutoAcquire,
+		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
+		Message:        strings.TrimSpace(acquisition.Message),
+	}
+}
+
+func discoveredRuntimeAcquisition(acquisition *gamehandler.RuntimeAcquisitionSpec) *toolAcquisition {
 	if acquisition == nil {
 		return nil
 	}

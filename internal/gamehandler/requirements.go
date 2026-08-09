@@ -15,15 +15,16 @@ const (
 )
 
 type RuntimeRequirement struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Kind        string            `json:"kind"`
-	Required    bool              `json:"required"`
-	Status      RequirementStatus `json:"status"`
-	Message     string            `json:"message"`
-	Details     []string          `json:"details,omitempty"`
-	HelpURL     string            `json:"help_url,omitempty"`
-	InstallHint string            `json:"install_hint,omitempty"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Kind        string              `json:"kind"`
+	Required    bool                `json:"required"`
+	Status      RequirementStatus   `json:"status"`
+	Message     string              `json:"message"`
+	Details     []string            `json:"details,omitempty"`
+	HelpURL     string              `json:"help_url,omitempty"`
+	InstallHint string              `json:"install_hint,omitempty"`
+	Acquisition *RuntimeAcquisition `json:"acquisition,omitempty"`
 }
 
 type RuntimeMod struct {
@@ -61,16 +62,48 @@ type GameSpec struct {
 }
 
 type RuntimeRequirementSpec struct {
-	ID          string
-	Name        string
-	Kind        string
-	Required    bool
-	ModTypes    []string
-	Message     string
-	OKMessage   string
-	HelpURL     string
-	InstallHint string
-	Check       func(context.Context, string) []string
+	ID               string
+	Name             string
+	Kind             string
+	Required         bool
+	ModTypes         []string
+	ProviderModTypes []string
+	Message          string
+	OKMessage        string
+	HelpURL          string
+	InstallHint      string
+	Acquisition      *RuntimeAcquisitionSpec
+	Check            func(context.Context, string) []string
+}
+
+type RuntimeAcquisitionSpec struct {
+	ID             string
+	Name           string
+	Catalog        string
+	URL            string
+	ArchiveName    string
+	Required       bool
+	AutoAcquire    bool
+	SourceModID    string
+	SourceFileID   string
+	SourceGame     string
+	SourceProvider string
+	Message        string
+}
+
+type RuntimeAcquisition struct {
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Catalog        string `json:"catalog,omitempty"`
+	URL            string `json:"url,omitempty"`
+	ArchiveName    string `json:"archive_name,omitempty"`
+	Required       bool   `json:"required,omitempty"`
+	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
+	SourceModID    string `json:"source_mod_id,omitempty"`
+	SourceFileID   string `json:"source_file_id,omitempty"`
+	SourceGame     string `json:"source_game,omitempty"`
+	SourceProvider string `json:"source_provider,omitempty"`
+	Message        string `json:"message,omitempty"`
 }
 
 type Registry struct {
@@ -130,6 +163,7 @@ func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec Runti
 		Message:     spec.Message,
 		HelpURL:     spec.HelpURL,
 		InstallHint: spec.InstallHint,
+		Acquisition: runtimeAcquisition(spec.Acquisition),
 	}
 	if spec.Check != nil {
 		if details := spec.Check(ctx, gamePath); len(details) > 0 {
@@ -144,6 +178,26 @@ func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec Runti
 		}
 	}
 	return req
+}
+
+func runtimeAcquisition(spec *RuntimeAcquisitionSpec) *RuntimeAcquisition {
+	if spec == nil {
+		return nil
+	}
+	return &RuntimeAcquisition{
+		ID:             strings.TrimSpace(spec.ID),
+		Name:           strings.TrimSpace(spec.Name),
+		Catalog:        strings.TrimSpace(spec.Catalog),
+		URL:            strings.TrimSpace(spec.URL),
+		ArchiveName:    strings.TrimSpace(spec.ArchiveName),
+		Required:       spec.Required,
+		AutoAcquire:    spec.AutoAcquire,
+		SourceModID:    strings.TrimSpace(spec.SourceModID),
+		SourceFileID:   strings.TrimSpace(spec.SourceFileID),
+		SourceGame:     strings.TrimSpace(spec.SourceGame),
+		SourceProvider: strings.TrimSpace(spec.SourceProvider),
+		Message:        strings.TrimSpace(spec.Message),
+	}
 }
 
 func modDependencyRequirements(spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {

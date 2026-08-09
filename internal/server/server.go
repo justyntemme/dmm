@@ -724,14 +724,16 @@ type gameActivationRequest struct {
 }
 
 type gameActivationResponse struct {
-	AppID        string                    `json:"app_id"`
-	Event        string                    `json:"event"`
-	EventHandled bool                      `json:"event_handled"`
-	Acquisitions []toolAutoAcquireResponse `json:"acquisitions,omitempty"`
+	AppID        string                `json:"app_id"`
+	Event        string                `json:"event"`
+	EventHandled bool                  `json:"event_handled"`
+	Acquisitions []autoAcquireResponse `json:"acquisitions,omitempty"`
 }
 
-type toolAutoAcquireResponse struct {
-	Tool            string           `json:"tool"`
+type autoAcquireResponse struct {
+	Kind            string           `json:"kind"`
+	Tool            string           `json:"tool,omitempty"`
+	Requirement     string           `json:"requirement,omitempty"`
 	Extension       string           `json:"extension"`
 	Acquisition     *toolAcquisition `json:"acquisition,omitempty"`
 	Job             *jobResponse     `json:"job,omitempty"`
@@ -3781,6 +3783,13 @@ func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	runtimeAcquisitions, err := s.autoAcquireExtensionRuntimes(r.Context(), appID, source, req.ProfileID)
+	if err != nil {
+		s.logger.Warn("game activation runtime auto-acquisition failed", "app_id", appID, "source", source, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	acquisitions = append(acquisitions, runtimeAcquisitions...)
 	s.logger.Info("game activation processed", "app_id", appID, "source", source, "event_handled", eventHandled, "acquisitions", len(acquisitions))
 	writeJSON(w, http.StatusAccepted, gameActivationResponse{
 		AppID:        appID,
@@ -3790,7 +3799,7 @@ func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source string, profileID int64) ([]toolAutoAcquireResponse, error) {
+func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source string, profileID int64) ([]autoAcquireResponse, error) {
 	extension, ok := s.games.ExtensionForSteamApp(appID)
 	if !ok {
 		return nil, nil
@@ -3805,7 +3814,7 @@ func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source st
 			present[strings.ToLower(strings.TrimSpace(tool.ID))] = struct{}{}
 		}
 	}
-	var responses []toolAutoAcquireResponse
+	var responses []autoAcquireResponse
 	for _, tool := range extension.SupportedTools {
 		toolID := strings.ToLower(strings.TrimSpace(tool.ID))
 		if toolID == "" || tool.Acquisition == nil || !tool.Acquisition.AutoAcquire {
@@ -3820,7 +3829,8 @@ func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source st
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		response := toolAutoAcquireResponse{
+		response := autoAcquireResponse{
+			Kind:        "tool",
 			Tool:        tool.ID,
 			Extension:   extension.ID,
 			Acquisition: discoveredToolAcquisition(&acquisition),
@@ -3852,6 +3862,96 @@ func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source st
 		s.logger.Info("extension tool auto-acquire queued", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "duplicate", result.Duplicate)
 	}
 	return responses, nil
+}
+
+func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source string, profileID int64) ([]autoAcquireResponse, error) {
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil, nil
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	var responses []autoAcquireResponse
+	for _, requirement := range extension.RuntimeRequirements.RuntimeRequirements {
+		requirementID := strings.TrimSpace(requirement.ID)
+		if requirementID == "" || requirement.Acquisition == nil || !requirement.Acquisition.AutoAcquire {
+			continue
+		}
+		acquisition := *requirement.Acquisition
+		response := autoAcquireResponse{
+			Kind:        "runtime",
+			Requirement: requirementID,
+			Extension:   extension.ID,
+			Acquisition: discoveredRuntimeAcquisition(&acquisition),
+		}
+		if runtimeRequirementProviderInstalled(mods, requirement.ProviderModTypes) {
+			s.logger.Info("extension runtime auto-acquire skipped; provider mod is already installed", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
+			continue
+		}
+		if runtimeRequirementSatisfied(ctx, game.GamePath, requirement) {
+			s.logger.Info("extension runtime auto-acquire skipped; runtime is already present", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
+			continue
+		}
+		acquisition.ID = strings.TrimSpace(acquisition.ID)
+		acquisition.Name = strings.TrimSpace(acquisition.Name)
+		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+		acquisition.URL = strings.TrimSpace(acquisition.URL)
+		if acquisition.URL == "" {
+			response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
+			responses = append(responses, response)
+			s.logger.Warn("extension runtime auto-acquire skipped; acquisition URL is empty", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
+			continue
+		}
+		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
+			URL:        acquisition.URL,
+			SteamAppID: appID,
+			Source:     "extension-runtime-auto-acquire:" + requirementID,
+			ProfileID:  profileID,
+		})
+		if err != nil {
+			response.Error = err.Error()
+			responses = append(responses, response)
+			s.logger.Warn("extension runtime auto-acquire failed", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+			continue
+		}
+		job := result.Job
+		response.Job = &job
+		response.Duplicate = result.Duplicate
+		response.DownloadStarted = result.DownloadStarted
+		response.AutoInstall = result.AutoInstall
+		responses = append(responses, response)
+		s.logger.Info("extension runtime auto-acquire queued", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "duplicate", result.Duplicate)
+	}
+	return responses, nil
+}
+
+func runtimeRequirementProviderInstalled(mods []storage.InstalledMod, providerModTypes []string) bool {
+	providers := map[string]struct{}{}
+	for _, modType := range providerModTypes {
+		modType = canonicalModType(modType)
+		if modType != "" {
+			providers[modType] = struct{}{}
+		}
+	}
+	if len(providers) == 0 {
+		return false
+	}
+	for _, mod := range mods {
+		if _, ok := providers[canonicalModType(installedModType(mod))]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeRequirementSatisfied(ctx context.Context, gamePath string, requirement gamehandler.RuntimeRequirementSpec) bool {
+	return requirement.Check != nil && len(requirement.Check(ctx, gamePath)) > 0
 }
 
 func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.Request) {
