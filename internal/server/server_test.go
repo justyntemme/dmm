@@ -39,6 +39,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
@@ -8506,6 +8507,69 @@ func TestGameDiagnosticsWarnsWhenRuntimeRequirementMissing(t *testing.T) {
 		t.Fatalf("runtime requirements = %+v", body.RuntimeRequirements)
 	}
 	if len(body.ValidationWarnings) == 0 || !strings.Contains(body.ValidationWarnings[0], "SMAPI runtime requirement is missing") {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
+func TestGameDiagnosticsIncludesExtensionHealthCheckWarnings(t *testing.T) {
+	srv := newTestServer(t)
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(xrebirth.Extension())})
+	gamePath := filepath.Join(t.TempDir(), "X Rebirth")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "XRebirth.exe"), []byte("game"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       xrebirth.SteamAppID,
+		Name:        "X Rebirth",
+		InstallDir:  "X Rebirth",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: xrebirth.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: xrebirth.VortexGameID,
+			ModID:      "broken",
+			FileID:     "1",
+		},
+		Name:         "Broken X Rebirth Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "xrebirth.zip"),
+		StagingPath:  filepath.Join(srv.cfg.DataDir, "staging", "xrebirth"),
+		ManifestJSON: `{"game_id":"xrebirth","mod_type":"xrebirth-dropin","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+xrebirth.SteamAppID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		HealthChecks []struct {
+			CheckID string `json:"check_id"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"health_checks"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.HealthChecks) != 3 {
+		t.Fatalf("health checks = %+v", body.HealthChecks)
+	}
+	if !strings.Contains(strings.Join(body.ValidationWarnings, "\n"), "Installer produced no files") {
 		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
 	}
 }

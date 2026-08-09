@@ -616,11 +616,70 @@ type HistoryStackSpec struct {
 }
 
 type HealthCheckSpec struct {
-	ID      string
-	Name    string
-	Status  string
-	Message string
+	ID       string
+	Name     string
+	Category string
+	Triggers []string
+	CheckMod ModHealthCheckFunc
+	Status   string
+	Message  string
 }
+
+type ModHealthCheckFunc func(context.Context, ModHealthCheckInput) (HealthCheckResult, error)
+
+type ModHealthCheckInput struct {
+	AppID       string
+	GameID      string
+	GamePath    string
+	LibraryPath string
+	Mod         ModHealthCheckMod
+}
+
+type ModHealthCheckMod struct {
+	ID        int64
+	Name      string
+	Catalog   string
+	SourceTag string
+	Version   string
+	ModType   string
+	Enabled   bool
+	Files     []ModHealthCheckFile
+	Metadata  []installplan.ModMetadata
+}
+
+type ModHealthCheckFile struct {
+	Path           string
+	TargetRoot     string
+	TargetRelative string
+	Size           int64
+	SHA256         string
+}
+
+type HealthCheckResult struct {
+	CheckID        string
+	CheckName      string
+	InstalledModID int64
+	ModName        string
+	Status         string
+	Severity       string
+	Message        string
+	Details        string
+}
+
+const (
+	HealthCheckCategoryMods = "mods"
+
+	HealthCheckTriggerModsChanged = "mods-changed"
+	HealthCheckTriggerManual      = "manual"
+
+	HealthCheckStatusPassed  = "passed"
+	HealthCheckStatusWarning = "warning"
+	HealthCheckStatusFailed  = "failed"
+
+	HealthCheckSeverityInfo    = "info"
+	HealthCheckSeverityWarning = "warning"
+	HealthCheckSeverityError   = "error"
+)
 
 type AttributeExtractorSpec struct {
 	ID      string

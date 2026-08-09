@@ -513,9 +513,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedScoped("history stack", extension.HistoryStacks, func(spec sdk.HistoryStackSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
-	errs = append(errs, validateStatusedNamed("health check", extension.HealthChecks, func(spec sdk.HealthCheckSpec) (string, string, string, string) {
-		return spec.ID, spec.Name, spec.Status, spec.Message
-	})...)
+	errs = append(errs, validateHealthChecks(extension.HealthChecks)...)
 	errs = append(errs, validateAttributeExtractors(extension.AttributeExtractors)...)
 	errs = append(errs, validateStartHooks(extension.StartHooks)...)
 	for _, handler := range extension.EventHandlers {
@@ -635,6 +633,26 @@ func validateGameInfoProviders(specs []sdk.GameInfoProviderSpec) []error {
 			if strings.ContainsAny(tag, "\x00\r\n") {
 				errs = append(errs, errors.New("game info provider "+id+" tag must not contain control line breaks"))
 			}
+		}
+	}
+	return errs
+}
+
+func validateHealthChecks(specs []sdk.HealthCheckSpec) []error {
+	errs := validateStatusedNamed("health check", specs, func(spec sdk.HealthCheckSpec) (string, string, string, string) {
+		return spec.ID, spec.Name, spec.Status, spec.Message
+	})
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status == sdk.CapabilityStatusReady && spec.CheckMod == nil {
+			errs = append(errs, errors.New("health check "+id+" check hook is required"))
 		}
 	}
 	return errs

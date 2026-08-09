@@ -1,6 +1,7 @@
 package xrebirth_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,8 +21,59 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.ModTypes) != 7 || len(summary.Capabilities.Installers) != 7 {
 		t.Fatalf("installer/mod-type capabilities = %+v", summary.Capabilities)
 	}
-	if len(summary.Capabilities.HealthChecks) != 1 {
+	if len(summary.Capabilities.HealthChecks) != 3 {
 		t.Fatalf("health checks = %+v", summary.Capabilities.HealthChecks)
+	}
+}
+
+func TestHealthChecksWarnForUnrecognisedEmptyInstallOutput(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(xrebirth.Extension())})
+	results, ran := registry.RunModHealthChecks(context.Background(), xrebirth.SteamAppID, []sdk.ModHealthCheckInput{{
+		Mod: sdk.ModHealthCheckMod{
+			ID:      42,
+			Name:    "Broken X Rebirth Mod",
+			ModType: "xrebirth-dropin",
+		},
+	}})
+	if !ran {
+		t.Fatal("health checks did not run")
+	}
+	warnings := 0
+	for _, result := range results {
+		if result.Status == sdk.HealthCheckStatusWarning {
+			warnings++
+		}
+	}
+	if warnings != 2 {
+		t.Fatalf("warnings = %d results = %+v", warnings, results)
+	}
+}
+
+func TestHealthChecksAcceptContentXMLMetadata(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(xrebirth.Extension())})
+	results, ran := registry.RunModHealthChecks(context.Background(), xrebirth.SteamAppID, []sdk.ModHealthCheckInput{{
+		Mod: sdk.ModHealthCheckMod{
+			ID:      7,
+			Name:    "Content XML Mod",
+			ModType: "xrebirth-content",
+			Files: []sdk.ModHealthCheckFile{{
+				Path:           "my_mod/content.xml",
+				TargetRelative: "extensions/my_mod/content.xml",
+			}},
+			Metadata: []installplan.ModMetadata{{
+				Kind:     "xrebirth-content",
+				Name:     "My Mod",
+				UniqueID: "my_mod",
+			}},
+		},
+	}})
+	if !ran {
+		t.Fatal("health checks did not run")
+	}
+	for _, result := range results {
+		if result.Status != sdk.HealthCheckStatusPassed {
+			t.Fatalf("result = %+v", result)
+		}
 	}
 }
 

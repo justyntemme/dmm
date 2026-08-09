@@ -52,12 +52,9 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
-	r.RegisterHealthCheck(sdk.HealthCheckSpec{
-		ID:      "xrebirth-mod-shape",
-		Name:    "X Rebirth mod shape",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex verifies deployed output through content.xml, stopPatterns, or known modType tags. DMM exposes the source-backed metadata and installer rules; runtime health-check execution is tracked as shared extension parity.",
-	})
+	for _, check := range healthChecks() {
+		r.RegisterHealthCheck(check)
+	}
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

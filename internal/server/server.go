@@ -629,7 +629,19 @@ type gameDiagnosticsResponse struct {
 	Deployment          deploymentStatusResponse         `json:"deployment"`
 	Preview             deployPreviewSummary             `json:"preview"`
 	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
+	HealthChecks        []gameHealthCheckResponse        `json:"health_checks,omitempty"`
 	ValidationWarnings  []string                         `json:"validation_warnings,omitempty"`
+}
+
+type gameHealthCheckResponse struct {
+	CheckID        string `json:"check_id"`
+	CheckName      string `json:"check_name"`
+	InstalledModID int64  `json:"installed_mod_id"`
+	ModName        string `json:"mod_name"`
+	Status         string `json:"status"`
+	Severity       string `json:"severity"`
+	Message        string `json:"message"`
+	Details        string `json:"details,omitempty"`
 }
 
 type gameResponse struct {
@@ -979,6 +991,7 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(r.Context(), appID, game.GamePath, runtimeModsForRequirements(mods))
+	resp.HealthChecks = s.extensionHealthChecks(r.Context(), game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
 			continue
@@ -998,6 +1011,65 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.ValidationWarnings = gameDiagnosticsWarnings(resp)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) extensionHealthChecks(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameHealthCheckResponse {
+	inputs := make([]sdk.ModHealthCheckInput, 0, len(mods))
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			s.logger.Warn("staged manifest parse failed for health checks", "app_id", game.SteamAppID, "installed_mod_id", mod.ID, "error", err)
+			continue
+		}
+		inputs = append(inputs, sdk.ModHealthCheckInput{
+			AppID:       strings.TrimSpace(game.SteamAppID),
+			GamePath:    strings.TrimSpace(game.GamePath),
+			LibraryPath: strings.TrimSpace(game.LibraryPath),
+			Mod: sdk.ModHealthCheckMod{
+				ID:        mod.ID,
+				Name:      strings.TrimSpace(mod.Name),
+				Catalog:   strings.TrimSpace(mod.Catalog),
+				SourceTag: normalizeCatalogID(mod.Catalog),
+				Version:   strings.TrimSpace(mod.Version),
+				ModType:   strings.TrimSpace(manifest.ModType),
+				Enabled:   mod.Enabled,
+				Files:     healthCheckFilesFromManifest(manifest.Files),
+				Metadata:  append([]installplan.ModMetadata(nil), manifest.Metadata...),
+			},
+		})
+	}
+	results, ran := s.games.RunModHealthChecks(ctx, game.SteamAppID, inputs)
+	if !ran || len(results) == 0 {
+		return nil
+	}
+	out := make([]gameHealthCheckResponse, 0, len(results))
+	for _, result := range results {
+		out = append(out, gameHealthCheckResponse{
+			CheckID:        strings.TrimSpace(result.CheckID),
+			CheckName:      strings.TrimSpace(result.CheckName),
+			InstalledModID: result.InstalledModID,
+			ModName:        strings.TrimSpace(result.ModName),
+			Status:         strings.TrimSpace(result.Status),
+			Severity:       strings.TrimSpace(result.Severity),
+			Message:        strings.TrimSpace(result.Message),
+			Details:        strings.TrimSpace(result.Details),
+		})
+	}
+	return out
+}
+
+func healthCheckFilesFromManifest(files []stagedManifestFile) []sdk.ModHealthCheckFile {
+	out := make([]sdk.ModHealthCheckFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, sdk.ModHealthCheckFile{
+			Path:           filepath.ToSlash(strings.TrimSpace(file.Path)),
+			TargetRoot:     strings.TrimSpace(file.TargetRoot),
+			TargetRelative: filepath.ToSlash(strings.TrimSpace(file.TargetRelative)),
+			Size:           file.Size,
+			SHA256:         strings.TrimSpace(file.SHA256),
+		})
+	}
+	return out
 }
 
 func (s *Server) handleGameTools(w http.ResponseWriter, r *http.Request) {
@@ -1480,6 +1552,21 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 		if requirement.Required && requirement.Status != gamehandler.RequirementOK {
 			warnings = append(warnings, requirement.Name+" "+requirementWarningKind(requirement.Kind)+" requirement is "+string(requirement.Status)+": "+requirement.Message)
 		}
+	}
+	for _, check := range resp.HealthChecks {
+		if check.Status == sdk.HealthCheckStatusPassed && check.Severity == sdk.HealthCheckSeverityInfo {
+			continue
+		}
+		modName := strings.TrimSpace(check.ModName)
+		prefix := strings.TrimSpace(check.CheckName)
+		if modName != "" {
+			prefix = strings.TrimSpace(prefix + " for " + modName)
+		}
+		message := strings.TrimSpace(check.Message)
+		if check.Details != "" {
+			message = strings.TrimSpace(message + ": " + check.Details)
+		}
+		warnings = append(warnings, strings.TrimSpace(prefix+": "+message))
 	}
 	return warnings
 }

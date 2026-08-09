@@ -786,6 +786,94 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 	return sdk.GameVersionResult{}, false, nil
 }
 
+func (r Registry) RunModHealthChecks(ctx context.Context, appID string, inputs []sdk.ModHealthCheckInput) ([]sdk.HealthCheckResult, bool) {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 || len(inputs) == 0 {
+		return nil, false
+	}
+	var results []sdk.HealthCheckResult
+	ran := false
+	for _, extension := range extensions {
+		for _, check := range extension.HealthChecks {
+			status := strings.TrimSpace(check.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if status != sdk.CapabilityStatusReady || check.CheckMod == nil {
+				continue
+			}
+			ran = true
+			for _, input := range inputs {
+				input.AppID = strings.TrimSpace(appID)
+				if input.GameID == "" {
+					input.GameID = strings.TrimSpace(extension.InstallPlan.VortexGameID)
+				}
+				result, err := check.CheckMod(ctx, input)
+				if err != nil {
+					result = sdk.HealthCheckResult{
+						CheckID:        strings.TrimSpace(check.ID),
+						CheckName:      strings.TrimSpace(check.Name),
+						InstalledModID: input.Mod.ID,
+						ModName:        input.Mod.Name,
+						Status:         sdk.HealthCheckStatusFailed,
+						Severity:       sdk.HealthCheckSeverityError,
+						Message:        "Health check failed",
+						Details:        err.Error(),
+					}
+				}
+				result = normalizeHealthCheckResult(check, input, result)
+				results = append(results, result)
+			}
+		}
+	}
+	return results, ran
+}
+
+func normalizeHealthCheckResult(check sdk.HealthCheckSpec, input sdk.ModHealthCheckInput, result sdk.HealthCheckResult) sdk.HealthCheckResult {
+	result.CheckID = firstNonEmpty(result.CheckID, strings.TrimSpace(check.ID))
+	result.CheckName = firstNonEmpty(result.CheckName, strings.TrimSpace(check.Name), result.CheckID)
+	if result.InstalledModID == 0 {
+		result.InstalledModID = input.Mod.ID
+	}
+	result.ModName = firstNonEmpty(result.ModName, strings.TrimSpace(input.Mod.Name))
+	status := strings.TrimSpace(result.Status)
+	if status == "" {
+		status = sdk.HealthCheckStatusPassed
+	}
+	switch status {
+	case sdk.HealthCheckStatusPassed, sdk.HealthCheckStatusWarning, sdk.HealthCheckStatusFailed:
+	default:
+		status = sdk.HealthCheckStatusFailed
+		result.Details = strings.TrimSpace(firstNonEmpty(result.Details, "extension returned unsupported health-check status"))
+	}
+	result.Status = status
+	severity := strings.TrimSpace(result.Severity)
+	if severity == "" {
+		if status == sdk.HealthCheckStatusPassed {
+			severity = sdk.HealthCheckSeverityInfo
+		} else if status == sdk.HealthCheckStatusWarning {
+			severity = sdk.HealthCheckSeverityWarning
+		} else {
+			severity = sdk.HealthCheckSeverityError
+		}
+	}
+	switch severity {
+	case sdk.HealthCheckSeverityInfo, sdk.HealthCheckSeverityWarning, sdk.HealthCheckSeverityError:
+	default:
+		severity = sdk.HealthCheckSeverityError
+	}
+	result.Severity = severity
+	if strings.TrimSpace(result.Message) == "" {
+		if result.Status == sdk.HealthCheckStatusPassed {
+			result.Message = "Health check passed"
+		} else {
+			result.Message = "Health check reported an issue"
+		}
+	}
+	result.Details = strings.TrimSpace(result.Details)
+	return result
+}
+
 func (r Registry) ResolveTargetRoot(ctx context.Context, appID, rootID string, input sdk.TargetRootInput) (sdk.TargetRootResult, bool, error) {
 	extensions := r.ExtensionsForSteamApp(appID)
 	if len(extensions) == 0 {
@@ -1657,4 +1745,13 @@ func sortFeatureSummaries(features []FeatureSummary) {
 		}
 		return features[i].ID < features[j].ID
 	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

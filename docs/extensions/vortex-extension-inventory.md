@@ -170,4 +170,4 @@ Source-backed catalog coverage:
 - [x] `game-worldoftanks` - DMM counterpart: `internal/extensions/worldoftanks`. Source-backed installer parity covers Vortex's dynamic `res_mods/<version>` target root resolved from `version.xml`, required executable/version metadata, and default archive-root deployment into that versioned target.
 - [x] `game-x4foundations` - DMM counterpart: `internal/extensions/x4foundations`.
 - [x] `game-xcom2` - DMM counterpart: `internal/extensions/xcom2`. Source-backed package exists; verify the package tests/spec before expanding War of the Chosen or load-order parity.
-- [x] `game-xrebirth` - DMM counterpart: `internal/extensions/xrebirth`.
+- [x] `game-xrebirth` - DMM counterpart: `internal/extensions/xrebirth`. Source-backed parity covers `content.xml` installers, X Rebirth stop-pattern/drop-in installers, savegame/shader/utility/save-patch/documentation mod types, and the Vortex mod health checks for empty output, content.xml metadata, and recognisable mod shape through DMM diagnostics.

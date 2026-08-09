@@ -68,7 +68,7 @@ DMM currently has first-party Go extension registration for:
 - Extension-declared Vortex `registerGame` metadata now covers executable path, required files, static or dynamic query-mod-path signals, merge mode, cleanup requirement, stop patterns, compatible download domains, and environment key/value metadata.
 - Vortex `supportedTools` are modeled separately from DMM primary/wrapper launch tools, so external tools such as FO4Edit, Wrye Bash, Creation Kit, Hammer, and Witcher Script Merger no longer pollute launch-option decisions. Ready tools with a concrete executable can now queue a Decky-owned Steam launch action; acquisition, tool-specific environment passing, and automated patch/merge execution remain separate capabilities.
 - Vortex `requiresLauncher` can be represented as source-backed launcher requirement metadata for store-specific launcher facts. Runtime application is still a separate capability.
-- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile features, profile files, reducers, persistors, history stacks, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
+- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile features, profile files, reducers, persistors, history stacks, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers. Mod health checks can now run through a typed hook fed by DMM staged manifests and surface warnings in game diagnostics.
 - Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions. `internal/extensions/vortexgamecatalog` is currently empty and remains only as a source-reviewed shim for future generated metadata if a verified Vortex entry cannot yet be promoted to a dedicated extension.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
@@ -108,7 +108,7 @@ Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-
 | `context.registerActionCheck` | 2 | `RegisterExtensionActionCheck` | Metadata-only | Generic action validation hooks. |
 | `context.registerControlWrapper` | 1 | `RegisterExtensionControlWrapper` | Metadata-only | UI wrapper/adornment equivalent, likely mapped to DMM row badges/actions. |
 | `context.registerHistoryStack` | 1 | `RegisterHistoryStack` | Metadata-only | Extension history/undo state runtime. |
-| `context.registerHealthCheck` | 1 | `RegisterHealthCheck` | Metadata-only | Runnable health checks surfaced through diagnostics. |
+| `context.registerHealthCheck` | 1 | `RegisterHealthCheck` | Partial runtime | Typed mod health checks now run from installed staged manifests and surface warnings through diagnostics. Non-mod/global health checks remain metadata-only until source requires them. |
 | `context.registerStartHook` | 1 | `RegisterStartHook` | Metadata-only | Startup hook scheduler with explicit safety boundaries. |
 
 Event and request/response gaps from actual source:
@@ -154,6 +154,7 @@ Remaining placeholder groups from direct source calls:
 Observed source-backed blocker details:
 
 - `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM ports the normal Documents mods installer, version parser, and this single-owner new-file adoption flow through reusable snapshot/adoption runtime plus BattleTech extension logic.
+- `game-xrebirth/src/diagnostic.ts` registers three mod health checks over Vortex installed-mod file output and attributes. DMM now runs equivalent extension-owned checks against staged manifest files, mod types, and install metadata, then exposes warnings in diagnostics.
 - `game-conanexiles/src/index.js` registers a load-order page and writes `ConanSandbox/Mods/modlist.txt` with staged `.pak` paths in user order. DMM now ports this through `internal/extensions/conanexiles` and the reusable `internal/extensions/loadorderfile` helper.
 - `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM now ports this through `internal/extensions/divinityoriginalsin2`, with source-domain-aware install planning, multi-extension target-root resolution for the shared Steam app, per-edition Proton Documents roots, and the source-backed `.pak` deploy reminder.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM now implements the managed DAZIP outer/inner installer flow and AddIns.xml generation path.

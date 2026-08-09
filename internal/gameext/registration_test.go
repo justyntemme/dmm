@@ -205,7 +205,18 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				}},
 			})
 			r.RegisterHistoryStack(sdk.HistoryStackSpec{ID: "plugins", Name: "Plugin history", Scope: "plugins"})
-			r.RegisterHealthCheck(sdk.HealthCheckSpec{ID: "sample-health", Name: "Sample health"})
+			r.RegisterHealthCheck(sdk.HealthCheckSpec{
+				ID:   "sample-health",
+				Name: "Sample health",
+				CheckMod: func(_ context.Context, input sdk.ModHealthCheckInput) (sdk.HealthCheckResult, error) {
+					return sdk.HealthCheckResult{
+						InstalledModID: input.Mod.ID,
+						Status:         sdk.HealthCheckStatusPassed,
+						Severity:       sdk.HealthCheckSeverityInfo,
+						Message:        "ok",
+					}, nil
+				},
+			})
 			r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{ID: "manifest", Name: "Manifest metadata", Target: "mods"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: "will-deploy",
