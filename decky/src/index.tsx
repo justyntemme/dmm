@@ -697,6 +697,7 @@ const deckyRuntimeStyles = `
   box-shadow: none !important;
   cursor: pointer;
   outline: none !important;
+  pointer-events: auto;
   -webkit-tap-highlight-color: transparent;
 }
 .dmm-decky-tab *,
@@ -3691,16 +3692,18 @@ const freshSectionStyle: CSSProperties = {
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
-  minHeight: "120px"
+  gridAutoRows: "auto",
+  minHeight: "132px",
+  overflow: "visible"
 };
 
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
   alignItems: "stretch",
-  gap: "10px",
+  gap: "12px",
   gridAutoRows: "auto",
-  minHeight: "88px",
+  minHeight: "96px",
   overflow: "visible"
 };
 
@@ -3744,6 +3747,7 @@ function freshTabStyle(active: boolean): CSSProperties {
     outline: "none",
     overflow: "hidden",
     padding: "0 4px",
+    pointerEvents: "auto",
     textTransform: "uppercase",
     userSelect: "none",
     width: "100%",
@@ -3768,10 +3772,10 @@ function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", di
     fontSize: "12px",
     fontWeight: 900,
     justifyContent: "center",
-    lineHeight: 1.12,
-    minHeight: "44px",
+    lineHeight: 1.22,
+    minHeight: "52px",
     opacity: disabled ? 0.52 : 1,
-    padding: "10px 8px",
+    padding: "12px 10px",
     textAlign: "center",
     whiteSpace: "normal"
   };
@@ -3856,10 +3860,10 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     color: disabled ? "#71717a" : "#f8fafc",
     display: "grid",
     gap: "10px",
-    gridTemplateColumns: "minmax(0, 1fr) 44px",
-    minHeight: "58px",
+    gridTemplateColumns: "minmax(0, 1fr) 48px",
+    minHeight: "64px",
     opacity: disabled ? 0.62 : 1,
-    padding: "10px",
+    padding: "12px",
     scrollMarginBlock: "18px",
     width: "100%"
   };
@@ -5279,6 +5283,7 @@ function FreshDeckyModManagerRoute() {
             className="dmm-decky-tab"
             aria-selected={tab === item.id}
             role="tab"
+            tabIndex={-1}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
           >
