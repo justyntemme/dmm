@@ -162,6 +162,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcherlegacy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/wolcen"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/worldoftanks"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xcom2"
@@ -344,6 +345,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(witcherlegacy.Extensions()[0]),
 		gameext.MustCompileExtension(witcherlegacy.Extensions()[1]),
 		gameext.MustCompileExtension(witcher3.Extension()),
+		gameext.MustCompileExtension(wolcen.Extension()),
 		gameext.MustCompileExtension(worldoftanks.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
 		gameext.MustCompileExtension(xrebirth.Extension()),

@@ -79,7 +79,7 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 3.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 2.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
@@ -93,7 +93,7 @@ Remaining placeholder groups from direct source calls:
 - DAZIP game entries promoted with a source-backed DMM `dazip` helper: `game-dragonage` and `game-dragonage2`. DMM supports Vortex `dazipInner` planning for extracted DAZIP contents, Dragon Age Origins AddIns.xml generation during `will-deploy`, and DA2 game-root addins deployment. Vortex `dazipOuter` nested submodules and historical DA2 purge migration remain blocked.
 - UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and records the blocked Unity Mod Manager tool download/patch runtime until a reusable external-tool flow exists.
 - Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, `game-divinityoriginalsin2` needs `will-deploy`/`did-deploy` in-game enable reminder after multi-variant support, and `game-untitledgoose` needs `emitAndAwait` plus migration.
-- Merge work: `game-wolcen` merges XML/MTL payloads. Dragon Age Origins AddIns.xml generation is now source-backed through the DAZIP helper.
+- Merge work: Wolcen XML/MTL payload merging is now source-backed through `internal/extensions/xmlmerge`; Dragon Age Origins AddIns.xml generation is source-backed through the DAZIP helper.
 
 Observed source-backed blocker details:
 
@@ -101,7 +101,7 @@ Observed source-backed blocker details:
 - `game-conanexiles/src/index.js` registers a load-order page and writes `ConanSandbox/Mods/modlist.txt` with staged `.pak` paths in user order. DMM now ports this through `internal/extensions/conanexiles` and the reusable `internal/extensions/loadorderfile` helper.
 - `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM needs a multi-logical-game-per-Steam-app resolver and source-backed deploy notification handler.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM now implements the managed DAZIP inner installer and AddIns.xml generation path, but nested outer `.dazip` submodules remain blocked.
-- `game-wolcen/src/index.js` registers an XML/MTL merge over the `Game` folder. DMM needs a generic extension merge runtime that can read current deployed files and write merged outputs.
+- `game-wolcen/src/index.js` registers an XML/MTL merge over the `Game` folder. DMM now ports this through `internal/extensions/wolcen` and the reusable `internal/extensions/xmlmerge` helper, which rewrites XML/MTL mappings during `will-deploy` into generated merged outputs.
 - `game-pathfinderkingmaker/src/index.js`, `game-pathfinderwrathoftherighteous/src/index.ts`, `game-gardenpaws/src/index.js`, and `game-oni/src/index.js` require `modtype-umm`. DMM now has a typed source-backed UMM helper and Mods-folder deployment for these games, but still needs Unity Mod Manager external-tool download/discovery/patch runtime before claiming full UMM runtime parity.
 - `game-untitledgoose/src/index.ts` uses BepInEx setup, an Epic launcher resolver, and a migration. DMM has BepInEx installer helpers but needs Epic discovery and migration runtime before claiming full parity.
 
@@ -112,7 +112,7 @@ Implementation priority from this audit:
 3. Add multi-logical-game-per-Steam-app selection, then port Divinity: Original Sin 2.
 4. Add nested `.dazip` submodule extraction and migration purge runtime to finish DAZIP parity beyond the current Dragon Age inner-archive support.
 5. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
-6. Add generic merge runtime for XML/MTL and source-backed patch-existing/setup runtime, then port Wolcen and similar merge/setup games.
+6. Extend the reusable XML/MTL merge helper as new source-backed merge shapes appear, and add source-backed patch-existing/setup runtime for games that modify existing user/game files outside the current deploy mapping model.
 7. Add new-file adoption runtime for `added-files`, then complete BattleTech lifecycle parity.
 
 ## MVP-Critical Gaps
@@ -183,7 +183,7 @@ DMM status:
 - Fallout: New Vegas, Fallout 4 VR, and Skyrim VR are promoted from catalog metadata into `internal/extensions/falloutnv`, `internal/extensions/fallout4vr`, and `internal/extensions/skyrimvr`. This covers Vortex `Data` root installers, script-extender installer/launch-tool metadata for NVSE/F4SEVR/SKSEVR, Gamebryo plugin activation metadata, archive invalidation target metadata, Fallout NV 4GB patch `dinput` routing, VR ESL-enabler routing, conflict-ignore metadata where Vortex declares it, and source-backed supported tools. The remaining verified gap is dynamic ESL plugin-support toggling from enabled `eslEnabler` mod metadata, which needs a reusable plugin-activation condition API.
 - Source-backed helpers now exist for Vortex `dazip` inner-archive planning/AddIns generation and UMM game opt-in metadata. Source-backed metadata remains blocked for shared Vortex mod types `dinput`, `enb`, and `gedosato`, plus DAZIP outer nested submodule extraction and UMM external tool execution.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
-- Needed helper APIs include source-backed versions of Vortex `testSupportedContent`, advanced `mergeMods` path transforms, broader wrapper-root normalization variants, and richer component-choice rules.
+- Needed helper APIs include source-backed versions of Vortex `testSupportedContent`, advanced `mergeMods` path transforms beyond the current XML/MTL helper, broader wrapper-root normalization variants, and richer component-choice rules.
 - Needed shared mod-type helpers include nested DAZIP extraction/submodule planning, executable-relative DLL deployment with unsafe-file confirmation, ENB game-root deployment, GeDoSaTo external tool discovery and texture targeting, and Unity Mod Manager external-tool download/discovery/patch execution.
 
 Priority: P0.
