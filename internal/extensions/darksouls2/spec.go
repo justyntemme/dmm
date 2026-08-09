@@ -2,6 +2,7 @@ package darksouls2
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -13,6 +14,9 @@ const (
 
 	executable = "Game/DarksoulsII.exe"
 	modType    = "darksouls2-root"
+
+	gedosatoRootID      = "darksouls2-gedosato-textures"
+	gedosatoTexturePath = "DarkSoulsII"
 )
 
 func Extension() sdk.Extension {
@@ -37,6 +41,10 @@ func Register(r sdk.Registrar) {
 		Environment:        map[string]string{"SteamAPPId": SteamAppIDOriginal},
 		Deployment:         installplan.DeploymentSpec{AllowNeedsReviewState: true},
 	})
+	r.RegisterTargetRoot(sharedmodtypes.GeDoSaToTargetRoot(gedosatoRootID, "Dark Souls II GeDoSaTo textures", gedosatoTexturePath))
+	r.RegisterModType(sharedmodtypes.GeDoSaToModTypeSpec(gedosatoRootID))
+	r.RegisterInstaller(sharedmodtypes.GeDoSaToInstaller("vortex:darksouls2:gedosato", 50, gedosatoRootID))
+	r.RegisterRuntimeRequirement(sharedmodtypes.GeDoSaToRuntimeRequirement("darksouls2-gedosato-installed", []string{sharedmodtypes.GeDoSaToType}))
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:darksouls2:root",

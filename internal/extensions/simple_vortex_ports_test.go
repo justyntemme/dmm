@@ -15,42 +15,52 @@ import (
 
 func TestSimpleVortexGamePortsExposeInstallers(t *testing.T) {
 	tests := []struct {
-		name          string
-		extension     gameext.Extension
-		appID         string
-		queryModPath  string
-		target        string
-		wantTools     int
-		wantPlatforms int
+		name           string
+		extension      gameext.Extension
+		appID          string
+		queryModPath   string
+		target         string
+		wantInstallers int
+		wantModTypes   int
+		wantTools      int
+		wantPlatforms  int
 	}{
 		{
-			name:         "Breaking Wheel",
-			extension:    gameext.MustCompileExtension(breakingwheel.Extension()),
-			appID:        breakingwheel.SteamAppID,
-			queryModPath: "ModdingTools",
-			target:       "ModdingTools/file.txt",
+			name:           "Breaking Wheel",
+			extension:      gameext.MustCompileExtension(breakingwheel.Extension()),
+			appID:          breakingwheel.SteamAppID,
+			queryModPath:   "ModdingTools",
+			target:         "ModdingTools/file.txt",
+			wantInstallers: 1,
+			wantModTypes:   1,
 		},
 		{
-			name:      "Dark Souls II",
-			extension: gameext.MustCompileExtension(darksouls2.Extension()),
-			appID:     darksouls2.SteamAppIDOriginal,
-			target:    "file.txt",
+			name:           "Dark Souls II",
+			extension:      gameext.MustCompileExtension(darksouls2.Extension()),
+			appID:          darksouls2.SteamAppIDOriginal,
+			target:         "file.txt",
+			wantInstallers: 2,
+			wantModTypes:   2,
 		},
 		{
-			name:         "Enderal",
-			extension:    gameext.MustCompileExtension(enderal.Extension()),
-			appID:        enderal.SteamAppID,
-			queryModPath: "Data",
-			target:       "Data/file.txt",
-			wantTools:    4,
+			name:           "Enderal",
+			extension:      gameext.MustCompileExtension(enderal.Extension()),
+			appID:          enderal.SteamAppID,
+			queryModPath:   "Data",
+			target:         "Data/file.txt",
+			wantInstallers: 1,
+			wantModTypes:   1,
+			wantTools:      4,
 		},
 		{
-			name:          "Kerbal Space Program",
-			extension:     gameext.MustCompileExtension(kerbalspaceprogram.Extension()),
-			appID:         kerbalspaceprogram.SteamAppID,
-			queryModPath:  "GameData",
-			target:        "GameData/file.txt",
-			wantPlatforms: 2,
+			name:           "Kerbal Space Program",
+			extension:      gameext.MustCompileExtension(kerbalspaceprogram.Extension()),
+			appID:          kerbalspaceprogram.SteamAppID,
+			queryModPath:   "GameData",
+			target:         "GameData/file.txt",
+			wantInstallers: 1,
+			wantModTypes:   1,
+			wantPlatforms:  2,
 		},
 	}
 	for _, tt := range tests {
@@ -63,7 +73,7 @@ func TestSimpleVortexGamePortsExposeInstallers(t *testing.T) {
 			if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != tt.queryModPath {
 				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 			}
-			if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.ModTypes) != 1 {
+			if len(summary.Capabilities.Installers) != tt.wantInstallers || len(summary.Capabilities.ModTypes) != tt.wantModTypes {
 				t.Fatalf("capabilities = %+v", summary.Capabilities)
 			}
 			if len(summary.Capabilities.SupportedTools) != tt.wantTools {

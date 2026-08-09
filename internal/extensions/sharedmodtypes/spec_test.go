@@ -1,6 +1,7 @@
 package sharedmodtypes
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,6 +80,72 @@ func TestDInputInstallerCopiesWrapperBesideGameExecutable(t *testing.T) {
 		if !seen {
 			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
 		}
+	}
+}
+
+func TestGeDoSaToInstallerCopiesTextureArchiveToDeclaredTargetRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "textures", "Armor", "diffuse.dds"), "dds")
+	writeFile(t, filepath.Join(root, "textures", "Armor", "normal.png"), "png")
+
+	spec := GeDoSaToInstaller("vortex:test:gedosato", 50, "test-gedosato-textures")
+	if !spec.CustomMatch(root) {
+		t.Fatal("GeDoSaTo installer did not match all-texture archive")
+	}
+	plan, err := spec.CustomBuild(installplan.BuildInput{
+		GameID:        "testgame",
+		ExtractedRoot: root,
+		Installer:     spec,
+		TargetRootID:  spec.TargetRootID,
+	})
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	if plan.ModType != GeDoSaToType || len(plan.Warnings) == 0 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	want := map[string]bool{
+		"diffuse.dds": false,
+		"normal.png":  false,
+	}
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRoot != "test-gedosato-textures" {
+			t.Fatalf("target root = %+v", instruction)
+		}
+		if _, ok := want[instruction.TargetRelative]; ok {
+			want[instruction.TargetRelative] = true
+		}
+	}
+	for target, seen := range want {
+		if !seen {
+			t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+		}
+	}
+}
+
+func TestGeDoSaToInstallerRejectsMixedArchive(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "texture.dds"), "dds")
+	writeFile(t, filepath.Join(root, "README.txt"), "readme")
+
+	spec := GeDoSaToInstaller("vortex:test:gedosato", 50, "test-gedosato-textures")
+	if spec.CustomMatch(root) {
+		t.Fatal("GeDoSaTo installer matched mixed archive")
+	}
+}
+
+func TestGeDoSaToTargetRootResolvesConfiguredInstallPath(t *testing.T) {
+	installPath := t.TempDir()
+	t.Setenv(GeDoSaToPathEnv, installPath)
+
+	root := GeDoSaToTargetRoot("gedosato-textures", "GeDoSaTo textures", "DarkSoulsII")
+	result, err := root.Resolver(context.Background(), sdk.TargetRootInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(installPath, "textures", "DarkSoulsII")
+	if result.Path != want {
+		t.Fatalf("target root = %q, want %q", result.Path, want)
 	}
 }
 

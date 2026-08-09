@@ -1,13 +1,16 @@
 package sharedmodtypes
 
 import (
+	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -24,6 +27,11 @@ const (
 	DInputModType = "dinput"
 	ENBModType    = "enb"
 	GeDoSaToType  = "gedosato"
+)
+
+const (
+	GeDoSaToPathEnv       = "DMM_GEDOSATO_PATH"
+	GeDoSaToLegacyPathEnv = "GEDOSATO_PATH"
 )
 
 func Extension() sdk.Extension {
@@ -160,6 +168,186 @@ func dinputReferenceFile(files []string) string {
 		}
 	}
 	return ""
+}
+
+func GeDoSaToTargetRoot(id, name, texturePath string) sdk.TargetRootSpec {
+	texturePath = cleanTexturePath(texturePath)
+	if strings.TrimSpace(name) == "" {
+		name = "GeDoSaTo textures"
+	}
+	return sdk.TargetRootSpec{
+		ID:   strings.TrimSpace(id),
+		Name: name,
+		Resolver: func(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+			if err := ctx.Err(); err != nil {
+				return sdk.TargetRootResult{}, err
+			}
+			base, source, err := GeDoSaToInstallPath()
+			if err != nil {
+				return sdk.TargetRootResult{}, err
+			}
+			if texturePath == "" {
+				return sdk.TargetRootResult{}, errors.New("GeDoSaTo texture path is required")
+			}
+			return sdk.TargetRootResult{
+				Path:   filepath.Join(base, "textures", filepath.FromSlash(texturePath)),
+				Source: source + " textures/" + texturePath,
+			}, nil
+		},
+	}
+}
+
+func GeDoSaToModTypeSpec(targetRootID string) installplan.ModTypeSpec {
+	return installplan.ModTypeSpec{
+		ID:           GeDoSaToType,
+		TargetRootID: strings.TrimSpace(targetRootID),
+		Message:      "Vortex GeDoSaTo support deploys texture files into the detected GeDoSaTo textures folder for the game.",
+	}
+}
+
+func GeDoSaToInstaller(id string, priority int, targetRootID string) installplan.InstallerSpec {
+	return installplan.InstallerSpec{
+		ID:                strings.TrimSpace(id),
+		VortexInstallerID: "gedosato",
+		Priority:          priority,
+		ModType:           GeDoSaToType,
+		NameSource:        installplan.NameSourceArchive,
+		TargetRootID:      strings.TrimSpace(targetRootID),
+		CustomMatch:       MatchGeDoSaToArchive,
+		CustomBuild:       BuildGeDoSaToArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	}
+}
+
+func GeDoSaToRuntimeRequirement(id string, modTypes []string) gamehandler.RuntimeRequirementSpec {
+	if strings.TrimSpace(id) == "" {
+		id = "gedosato-installed"
+	}
+	return gamehandler.RuntimeRequirementSpec{
+		ID:          id,
+		Name:        "GeDoSaTo",
+		Kind:        "external-tool",
+		Required:    true,
+		ModTypes:    modTypes,
+		Message:     "GeDoSaTo is required before enabled GeDoSaTo texture mods can deploy. Set DMM_GEDOSATO_PATH to the GeDoSaTo install folder.",
+		OKMessage:   "GeDoSaTo install path is configured.",
+		HelpURL:     "https://community.pcgamingwiki.com/files/file/897-gedosato/",
+		InstallHint: "Install GeDoSaTo, then set DMM_GEDOSATO_PATH to its install directory before deploying these texture mods.",
+		Check: func(ctx context.Context, gamePath string) []string {
+			if err := ctx.Err(); err != nil {
+				return nil
+			}
+			path, source, err := GeDoSaToInstallPath()
+			if err != nil {
+				return nil
+			}
+			return []string{source + ": " + path}
+		},
+	}
+}
+
+func MatchGeDoSaToArchive(root string) bool {
+	files, err := simplearchive.ListFiles(root)
+	if err != nil {
+		return false
+	}
+	textures := textureFiles(files)
+	return len(textures) > 0 && len(textures) == len(files)
+}
+
+func BuildGeDoSaToArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	textures := textureFiles(files)
+	if len(textures) == 0 || len(textures) != len(files) {
+		return installplan.Plan{}, installplan.Unsupported("Vortex GeDoSaTo installer matched only all-texture archives")
+	}
+	basePath := filepath.ToSlash(filepath.Dir(textures[0]))
+	if basePath == "." {
+		basePath = ""
+	}
+	instructions := make([]installplan.Instruction, 0, len(textures))
+	for _, file := range textures {
+		if !simplearchive.PathWithinRoot(file, basePath) {
+			continue
+		}
+		rel := simplearchive.StripRoot(file, basePath)
+		if strings.TrimSpace(rel) == "" || rel == "." {
+			continue
+		}
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
+			StagingRelative: filepath.ToSlash(rel),
+			TargetRoot:      strings.TrimSpace(input.TargetRootID),
+			TargetRelative:  filepath.ToSlash(rel),
+		})
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, errors.New("GeDoSaTo installer matched but produced no deployable files")
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return instructions[i].TargetRelative < instructions[j].TargetRelative
+	})
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    GeDoSaToType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-gedosato-installer",
+			Path:   textures[0],
+			Reason: "Vortex GeDoSaTo installer matched an all-texture archive and routes files into the game texture folder",
+		}},
+		Warnings:     []string{"GeDoSaTo texture mods require GeDoSaTo to be installed and configured before deployment."},
+		Instructions: instructions,
+	}, nil
+}
+
+func GeDoSaToInstallPath() (string, string, error) {
+	for _, key := range []string{GeDoSaToPathEnv, GeDoSaToLegacyPathEnv} {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value == "" {
+			continue
+		}
+		if !filepath.IsAbs(value) {
+			return "", "", errors.New(key + " must be an absolute path")
+		}
+		info, err := os.Stat(value)
+		if err != nil {
+			return "", "", err
+		}
+		if !info.IsDir() {
+			return "", "", errors.New(key + " does not point to a directory")
+		}
+		return filepath.Clean(value), key, nil
+	}
+	return "", "", errors.New("GeDoSaTo install path is not configured")
+}
+
+func textureFiles(files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, file := range files {
+		if strings.HasSuffix(file, "/") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(file))
+		if ext != ".dds" && ext != ".png" {
+			continue
+		}
+		out = append(out, file)
+	}
+	return out
+}
+
+func cleanTexturePath(value string) string {
+	value = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(value))))
+	if value == "." || value == ".." || strings.HasPrefix(value, "../") || strings.HasPrefix(value, "/") {
+		return ""
+	}
+	return value
 }
 
 func Sources() []sdk.SourceRef {
