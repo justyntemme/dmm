@@ -3,6 +3,7 @@ package falloutnv
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -48,7 +49,7 @@ func Register(r sdk.Registrar) {
 		r.RegisterModType(modType)
 	}
 	r.RegisterModType(installplan.ModTypeSpec{ID: scriptExtModType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: dinputModType, TargetRoot: ""})
+	r.RegisterModType(sharedmodtypes.DInputModTypeSpec())
 	for _, installer := range gamebryo.DataRootInstallers(dataRootInstallerOptions()) {
 		r.RegisterInstaller(installer)
 	}
@@ -61,6 +62,7 @@ func Register(r sdk.Registrar) {
 		ToolID:            "nvse",
 	}))
 	r.RegisterInstaller(fourGBPatchInstaller())
+	r.RegisterInstaller(sharedmodtypes.DInputInstaller("vortex:falloutnv:dinput", 50))
 	r.RegisterRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirementOptions{
 		ID:            "falloutnv-nvse-installed",
 		Name:          "New Vegas Script Extender",

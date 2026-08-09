@@ -646,10 +646,11 @@ func TestBuildInstallPlanPassesGamePathToCustomInstaller(t *testing.T) {
 		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
-				SteamAppIDs:  []string{"777777"},
-				NexusDomains: []string{"custompath"},
-				VortexGameID: "custom-path",
-				QueryModPath: "Mods",
+				SteamAppIDs:        []string{"777777"},
+				NexusDomains:       []string{"custompath"},
+				VortexGameID:       "custom-path",
+				ExecutableRelative: "bin/custom.exe",
+				QueryModPath:       "Mods",
 			})
 			r.RegisterModType(installplan.ModTypeSpec{ID: "custom-path-mod", TargetRoot: "Mods"})
 			r.RegisterInstaller(installplan.InstallerSpec{
@@ -660,6 +661,9 @@ func TestBuildInstallPlanPassesGamePathToCustomInstaller(t *testing.T) {
 				CustomBuild: func(input installplan.BuildInput) (installplan.Plan, error) {
 					if input.GamePath != gamePath {
 						t.Fatalf("game path = %q, want %q", input.GamePath, gamePath)
+					}
+					if input.ExecutableRelative != "bin/custom.exe" {
+						t.Fatalf("executable relative = %q", input.ExecutableRelative)
 					}
 					return installplan.Plan{
 						GameID:    input.GameID,

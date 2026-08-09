@@ -514,8 +514,25 @@ func (r Registry) buildInstallPlanWithPlatformApp(platformAppID, gameID, extract
 	}
 	options.ArchiveName = strings.TrimSpace(archiveName)
 	options.GamePath = strings.TrimSpace(gamePath)
+	if extension, ok := r.extensionForInstallPlan(platformAppID, gameID); ok {
+		options.ExecutableRelative = strings.TrimSpace(extension.GameMetadata.ExecutableRelative)
+	}
 	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
+}
+
+func (r Registry) extensionForInstallPlan(platformAppID, gameID string) (Extension, bool) {
+	gameID = canonical(gameID)
+	if gameID != "" {
+		for _, extension := range r.extensions {
+			if canonical(extension.ID) == gameID || canonical(extension.InstallPlan.VortexGameID) == gameID {
+				if extensionMatchesSteamApp(extension, platformAppID) {
+					return extension, true
+				}
+			}
+		}
+	}
+	return r.ExtensionForSteamApp(platformAppID)
 }
 
 func (r Registry) BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(appID, domain, extractedRoot, gamePath, archiveName string, selections map[string][]string) (installplan.Plan, error) {

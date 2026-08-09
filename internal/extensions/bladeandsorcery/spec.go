@@ -2,6 +2,7 @@ package bladeandsorcery
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -62,7 +63,7 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: officialModType, TargetRoot: officialRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Status: sdk.CapabilityStatusMetadata, Message: "Vortex keeps this legacy mod type for pre-8.4 installs and migrations."})
-	r.RegisterModType(installplan.ModTypeSpec{ID: dinputModType, TargetRoot: ""})
+	r.RegisterModType(sharedmodtypes.DInputModTypeSpec())
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:bladeandsorcery:mulle-blocked",
 		VortexInstallerID: "bas-mulledk19-mod",
@@ -85,6 +86,7 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildOfficialArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
+	r.RegisterInstaller(sharedmodtypes.DInputInstaller("vortex:bladeandsorcery:dinput", 50))
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bladeandsorcery-loadorder-json", Name: "Blade & Sorcery loadorder.json"})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "bladeandsorcery-loadorder-page",

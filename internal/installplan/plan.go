@@ -85,11 +85,12 @@ type Registry struct {
 }
 
 type BuildOptions struct {
-	PlatformID  string
-	ArchiveName string
-	GamePath    string
-	LibraryPath string
-	Selections  map[string][]string
+	PlatformID         string
+	ArchiveName        string
+	GamePath           string
+	LibraryPath        string
+	ExecutableRelative string
+	Selections         map[string][]string
 }
 
 type GameSpec struct {
@@ -163,15 +164,16 @@ type ComponentChoiceSpec struct {
 }
 
 type BuildInput struct {
-	GameID        string
-	ExtractedRoot string
-	Installer     InstallerSpec
-	TargetRoot    string
-	TargetRootID  string
-	ArchiveName   string
-	GamePath      string
-	LibraryPath   string
-	Selections    map[string][]string
+	GameID             string
+	ExtractedRoot      string
+	Installer          InstallerSpec
+	TargetRoot         string
+	TargetRootID       string
+	ArchiveName        string
+	GamePath           string
+	LibraryPath        string
+	ExecutableRelative string
+	Selections         map[string][]string
 }
 
 type CustomBuildFunc func(BuildInput) (Plan, error)
@@ -471,15 +473,16 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, requestedGameID,
 			return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " does not have a custom builder")
 		}
 		return installer.CustomBuild(BuildInput{
-			GameID:        plan.GameID,
-			ExtractedRoot: extractedRoot,
-			Installer:     installer,
-			TargetRoot:    installer.TargetRoot,
-			TargetRootID:  installer.TargetRootID,
-			ArchiveName:   options.ArchiveName,
-			GamePath:      options.GamePath,
-			LibraryPath:   options.LibraryPath,
-			Selections:    cloneSelections(options.Selections),
+			GameID:             plan.GameID,
+			ExtractedRoot:      extractedRoot,
+			Installer:          installer,
+			TargetRoot:         installer.TargetRoot,
+			TargetRootID:       installer.TargetRootID,
+			ArchiveName:        options.ArchiveName,
+			GamePath:           options.GamePath,
+			LibraryPath:        options.LibraryPath,
+			ExecutableRelative: options.ExecutableRelative,
+			Selections:         cloneSelections(options.Selections),
 		})
 	default:
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " uses an unsupported instruction mode")
