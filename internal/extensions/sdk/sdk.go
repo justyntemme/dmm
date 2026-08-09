@@ -12,10 +12,16 @@ import (
 type Extension struct {
 	ID       string
 	Name     string
+	Kind     string
 	Version  string
 	BuildID  string
 	Register RegistrationFunc
 }
+
+const (
+	ExtensionKindGame      = "game"
+	ExtensionKindFramework = "framework"
+)
 
 type RegistrationFunc func(Registrar)
 
@@ -39,6 +45,21 @@ type Registrar interface {
 	RegisterSource(SourceRef)
 	RegisterMerge(MergeSpec)
 	RegisterLoadOrder(LoadOrderSpec)
+	RegisterArchiveType(ArchiveTypeSpec)
+	RegisterInterpreter(InterpreterSpec)
+	RegisterGameStore(GameStoreSpec)
+	RegisterGameSetup(GameSetupSpec)
+	RegisterExtensionAction(ExtensionActionSpec)
+	RegisterExtensionSetting(ExtensionSettingSpec)
+	RegisterExtensionTest(ExtensionTestSpec)
+	RegisterExtensionToDo(ExtensionToDoSpec)
+	RegisterExtensionAPI(ExtensionAPISpec)
+	RegisterProfileFeature(ProfileFeatureSpec)
+	RegisterCollectionFeature(CollectionFeatureSpec)
+	RegisterStateStore(StateStoreSpec)
+	RegisterStateMigration(StateMigrationSpec)
+	RegisterHealthCheck(HealthCheckSpec)
+	RegisterAttributeExtractor(AttributeExtractorSpec)
 	RegisterEventHandler(EventHandlerSpec)
 }
 
@@ -263,6 +284,99 @@ type MergeSpec struct {
 type LoadOrderSpec struct {
 	ID   string
 	Name string
+}
+
+type ArchiveTypeSpec struct {
+	ID             string
+	Name           string
+	FileExtensions []string
+	Engine         string
+	SupportsWrite  bool
+}
+
+type InterpreterSpec struct {
+	ID             string
+	Name           string
+	FileExtensions []string
+	Command        string
+	Arguments      []string
+	Platforms      []string
+}
+
+type GameStoreSpec struct {
+	ID   string
+	Name string
+}
+
+type GameSetupSpec struct {
+	ID             string
+	Name           string
+	RequiredFiles  []string
+	GeneratedFiles []string
+}
+
+type ExtensionActionSpec struct {
+	ID    string
+	Name  string
+	Scope string
+	Kind  string
+}
+
+type ExtensionSettingSpec struct {
+	ID    string
+	Name  string
+	Scope string
+}
+
+type ExtensionTestSpec struct {
+	ID      string
+	Name    string
+	Trigger string
+}
+
+type ExtensionToDoSpec struct {
+	ID      string
+	Name    string
+	Trigger string
+}
+
+type ExtensionAPISpec struct {
+	ID   string
+	Name string
+}
+
+type ProfileFeatureSpec struct {
+	ID   string
+	Name string
+}
+
+type CollectionFeatureSpec struct {
+	ID   string
+	Name string
+}
+
+type StateStoreSpec struct {
+	ID    string
+	Name  string
+	Scope string
+}
+
+type StateMigrationSpec struct {
+	ID          string
+	Name        string
+	FromVersion string
+	ToVersion   string
+}
+
+type HealthCheckSpec struct {
+	ID   string
+	Name string
+}
+
+type AttributeExtractorSpec struct {
+	ID     string
+	Name   string
+	Target string
 }
 
 type EventHandlerSpec struct {

@@ -10,6 +10,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/civilizationvii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergenerals"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergeneralszerohour"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/commoninterpreters"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
@@ -88,6 +89,7 @@ import (
 
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
+		gameext.MustCompileExtension(commoninterpreters.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),

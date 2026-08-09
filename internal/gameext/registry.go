@@ -19,6 +19,7 @@ type Extension struct {
 	Name         string
 	Version      string
 	BuildID      string
+	Kind         string
 	SteamAppIDs  []string
 	NexusDomains []string
 
@@ -38,6 +39,21 @@ type Extension struct {
 	Sources                []sdk.SourceRef
 	Merges                 []sdk.MergeSpec
 	LoadOrders             []sdk.LoadOrderSpec
+	ArchiveTypes           []sdk.ArchiveTypeSpec
+	Interpreters           []sdk.InterpreterSpec
+	GameStores             []sdk.GameStoreSpec
+	GameSetups             []sdk.GameSetupSpec
+	ExtensionActions       []sdk.ExtensionActionSpec
+	ExtensionSettings      []sdk.ExtensionSettingSpec
+	ExtensionTests         []sdk.ExtensionTestSpec
+	ExtensionToDos         []sdk.ExtensionToDoSpec
+	ExtensionAPIs          []sdk.ExtensionAPISpec
+	ProfileFeatures        []sdk.ProfileFeatureSpec
+	CollectionFeatures     []sdk.CollectionFeatureSpec
+	StateStores            []sdk.StateStoreSpec
+	StateMigrations        []sdk.StateMigrationSpec
+	HealthChecks           []sdk.HealthCheckSpec
+	AttributeExtractors    []sdk.AttributeExtractorSpec
 	EventHandlers          []sdk.EventHandlerSpec
 }
 
@@ -62,6 +78,21 @@ type GameVersionInput = sdk.GameVersionInput
 type GameVersionResult = sdk.GameVersionResult
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
+type ArchiveTypeSpec = sdk.ArchiveTypeSpec
+type InterpreterSpec = sdk.InterpreterSpec
+type GameStoreSpec = sdk.GameStoreSpec
+type GameSetupSpec = sdk.GameSetupSpec
+type ExtensionActionSpec = sdk.ExtensionActionSpec
+type ExtensionSettingSpec = sdk.ExtensionSettingSpec
+type ExtensionTestSpec = sdk.ExtensionTestSpec
+type ExtensionToDoSpec = sdk.ExtensionToDoSpec
+type ExtensionAPISpec = sdk.ExtensionAPISpec
+type ProfileFeatureSpec = sdk.ProfileFeatureSpec
+type CollectionFeatureSpec = sdk.CollectionFeatureSpec
+type StateStoreSpec = sdk.StateStoreSpec
+type StateMigrationSpec = sdk.StateMigrationSpec
+type HealthCheckSpec = sdk.HealthCheckSpec
+type AttributeExtractorSpec = sdk.AttributeExtractorSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
@@ -84,6 +115,8 @@ const (
 	EventNoticeActionRunLaunchTool           = sdk.EventNoticeActionRunLaunchTool
 	PluginActivationFormatOriginal           = sdk.PluginActivationFormatOriginal
 	PluginActivationFormatAsterisked         = sdk.PluginActivationFormatAsterisked
+	ExtensionKindGame                        = sdk.ExtensionKindGame
+	ExtensionKindFramework                   = sdk.ExtensionKindFramework
 )
 
 type DeploymentMod = sdk.DeploymentMod
@@ -93,6 +126,7 @@ type ExtensionSummary struct {
 	Name          string                `json:"name"`
 	Version       string                `json:"version"`
 	BuildID       string                `json:"build_id"`
+	Kind          string                `json:"kind"`
 	SteamAppIDs   []string              `json:"steam_app_ids"`
 	NexusDomains  []string              `json:"nexus_domains"`
 	VortexGameID  string                `json:"vortex_game_id"`
@@ -120,6 +154,21 @@ type ExtensionCapabilities struct {
 	SteamWorkshop          *WorkshopSummary `json:"steam_workshop,omitempty"`
 	Merges                 []FeatureSummary `json:"merges,omitempty"`
 	LoadOrders             []FeatureSummary `json:"load_orders,omitempty"`
+	ArchiveTypes           []FeatureSummary `json:"archive_types,omitempty"`
+	Interpreters           []FeatureSummary `json:"interpreters,omitempty"`
+	GameStores             []FeatureSummary `json:"game_stores,omitempty"`
+	GameSetups             []FeatureSummary `json:"game_setups,omitempty"`
+	ExtensionActions       []FeatureSummary `json:"extension_actions,omitempty"`
+	ExtensionSettings      []FeatureSummary `json:"extension_settings,omitempty"`
+	ExtensionTests         []FeatureSummary `json:"extension_tests,omitempty"`
+	ExtensionToDos         []FeatureSummary `json:"extension_todos,omitempty"`
+	ExtensionAPIs          []FeatureSummary `json:"extension_apis,omitempty"`
+	ProfileFeatures        []FeatureSummary `json:"profile_features,omitempty"`
+	CollectionFeatures     []FeatureSummary `json:"collection_features,omitempty"`
+	StateStores            []FeatureSummary `json:"state_stores,omitempty"`
+	StateMigrations        []FeatureSummary `json:"state_migrations,omitempty"`
+	HealthChecks           []FeatureSummary `json:"health_checks,omitempty"`
+	AttributeExtractors    []FeatureSummary `json:"attribute_extractors,omitempty"`
 	EventHandlers          []FeatureSummary `json:"event_handlers,omitempty"`
 }
 
@@ -143,6 +192,18 @@ type FeatureSummary struct {
 	StateFileRelative  string                   `json:"state_file_relative,omitempty"`
 	TargetArchives     []string                 `json:"target_archives,omitempty"`
 	RequiresEngine     string                   `json:"requires_engine,omitempty"`
+	FileExtensions     []string                 `json:"file_extensions,omitempty"`
+	Engine             string                   `json:"engine,omitempty"`
+	SupportsWrite      bool                     `json:"supports_write,omitempty"`
+	Command            string                   `json:"command,omitempty"`
+	Scope              string                   `json:"scope,omitempty"`
+	Kind               string                   `json:"kind,omitempty"`
+	Trigger            string                   `json:"trigger,omitempty"`
+	Platforms          []string                 `json:"platforms,omitempty"`
+	GeneratedFiles     []string                 `json:"generated_files,omitempty"`
+	FromVersion        string                   `json:"from_version,omitempty"`
+	ToVersion          string                   `json:"to_version,omitempty"`
+	Target             string                   `json:"target,omitempty"`
 }
 
 type LaunchToolDynamicInput struct {
@@ -174,6 +235,7 @@ const (
 	CoverageBrowseOnly      = "browse_only"
 	CoverageWorkshopOnly    = "workshop_only"
 	CoverageMetadataOnly    = "metadata_only"
+	CoverageFramework       = "framework"
 )
 
 type Registry struct {
@@ -729,6 +791,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		Name:          extension.Name,
 		Version:       extension.Version,
 		BuildID:       extension.BuildID,
+		Kind:          extension.Kind,
 		SteamAppIDs:   appendClean([]string{}, extension.SteamAppIDs...),
 		NexusDomains:  appendClean([]string{}, extension.NexusDomains...),
 		VortexGameID:  extension.InstallPlan.VortexGameID,
@@ -828,6 +891,69 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	for _, loadOrder := range extension.LoadOrders {
 		summary.Capabilities.LoadOrders = append(summary.Capabilities.LoadOrders, FeatureSummary{ID: loadOrder.ID, Name: loadOrder.Name})
 	}
+	for _, archiveType := range extension.ArchiveTypes {
+		summary.Capabilities.ArchiveTypes = append(summary.Capabilities.ArchiveTypes, FeatureSummary{
+			ID:             archiveType.ID,
+			Name:           archiveType.Name,
+			FileExtensions: appendClean([]string{}, archiveType.FileExtensions...),
+			Engine:         archiveType.Engine,
+			SupportsWrite:  archiveType.SupportsWrite,
+		})
+	}
+	for _, interpreter := range extension.Interpreters {
+		summary.Capabilities.Interpreters = append(summary.Capabilities.Interpreters, FeatureSummary{
+			ID:             interpreter.ID,
+			Name:           interpreter.Name,
+			FileExtensions: appendClean([]string{}, interpreter.FileExtensions...),
+			Command:        interpreter.Command,
+			Arguments:      appendClean([]string{}, interpreter.Arguments...),
+			Platforms:      appendClean([]string{}, interpreter.Platforms...),
+		})
+	}
+	for _, store := range extension.GameStores {
+		summary.Capabilities.GameStores = append(summary.Capabilities.GameStores, FeatureSummary{ID: store.ID, Name: store.Name})
+	}
+	for _, setup := range extension.GameSetups {
+		summary.Capabilities.GameSetups = append(summary.Capabilities.GameSetups, FeatureSummary{
+			ID:             setup.ID,
+			Name:           setup.Name,
+			RequiredFiles:  appendClean([]string{}, setup.RequiredFiles...),
+			GeneratedFiles: appendClean([]string{}, setup.GeneratedFiles...),
+		})
+	}
+	for _, action := range extension.ExtensionActions {
+		summary.Capabilities.ExtensionActions = append(summary.Capabilities.ExtensionActions, FeatureSummary{ID: action.ID, Name: action.Name, Scope: action.Scope, Kind: action.Kind})
+	}
+	for _, setting := range extension.ExtensionSettings {
+		summary.Capabilities.ExtensionSettings = append(summary.Capabilities.ExtensionSettings, FeatureSummary{ID: setting.ID, Name: setting.Name, Scope: setting.Scope})
+	}
+	for _, test := range extension.ExtensionTests {
+		summary.Capabilities.ExtensionTests = append(summary.Capabilities.ExtensionTests, FeatureSummary{ID: test.ID, Name: test.Name, Trigger: test.Trigger})
+	}
+	for _, todo := range extension.ExtensionToDos {
+		summary.Capabilities.ExtensionToDos = append(summary.Capabilities.ExtensionToDos, FeatureSummary{ID: todo.ID, Name: todo.Name, Trigger: todo.Trigger})
+	}
+	for _, api := range extension.ExtensionAPIs {
+		summary.Capabilities.ExtensionAPIs = append(summary.Capabilities.ExtensionAPIs, FeatureSummary{ID: api.ID, Name: api.Name})
+	}
+	for _, feature := range extension.ProfileFeatures {
+		summary.Capabilities.ProfileFeatures = append(summary.Capabilities.ProfileFeatures, FeatureSummary{ID: feature.ID, Name: feature.Name})
+	}
+	for _, feature := range extension.CollectionFeatures {
+		summary.Capabilities.CollectionFeatures = append(summary.Capabilities.CollectionFeatures, FeatureSummary{ID: feature.ID, Name: feature.Name})
+	}
+	for _, store := range extension.StateStores {
+		summary.Capabilities.StateStores = append(summary.Capabilities.StateStores, FeatureSummary{ID: store.ID, Name: store.Name, Scope: store.Scope})
+	}
+	for _, migration := range extension.StateMigrations {
+		summary.Capabilities.StateMigrations = append(summary.Capabilities.StateMigrations, FeatureSummary{ID: migration.ID, Name: migration.Name, FromVersion: migration.FromVersion, ToVersion: migration.ToVersion})
+	}
+	for _, check := range extension.HealthChecks {
+		summary.Capabilities.HealthChecks = append(summary.Capabilities.HealthChecks, FeatureSummary{ID: check.ID, Name: check.Name})
+	}
+	for _, extractor := range extension.AttributeExtractors {
+		summary.Capabilities.AttributeExtractors = append(summary.Capabilities.AttributeExtractors, FeatureSummary{ID: extractor.ID, Name: extractor.Name, Target: extractor.Target})
+	}
 	for _, handler := range extension.EventHandlers {
 		summary.Capabilities.EventHandlers = append(summary.Capabilities.EventHandlers, FeatureSummary{ID: handler.Event, Name: handler.Name})
 	}
@@ -847,11 +973,29 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.TargetRoots)
 	sortFeatureSummaries(summary.Capabilities.Merges)
 	sortFeatureSummaries(summary.Capabilities.LoadOrders)
+	sortFeatureSummaries(summary.Capabilities.ArchiveTypes)
+	sortFeatureSummaries(summary.Capabilities.Interpreters)
+	sortFeatureSummaries(summary.Capabilities.GameStores)
+	sortFeatureSummaries(summary.Capabilities.GameSetups)
+	sortFeatureSummaries(summary.Capabilities.ExtensionActions)
+	sortFeatureSummaries(summary.Capabilities.ExtensionSettings)
+	sortFeatureSummaries(summary.Capabilities.ExtensionTests)
+	sortFeatureSummaries(summary.Capabilities.ExtensionToDos)
+	sortFeatureSummaries(summary.Capabilities.ExtensionAPIs)
+	sortFeatureSummaries(summary.Capabilities.ProfileFeatures)
+	sortFeatureSummaries(summary.Capabilities.CollectionFeatures)
+	sortFeatureSummaries(summary.Capabilities.StateStores)
+	sortFeatureSummaries(summary.Capabilities.StateMigrations)
+	sortFeatureSummaries(summary.Capabilities.HealthChecks)
+	sortFeatureSummaries(summary.Capabilities.AttributeExtractors)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
 	return summary
 }
 
 func ExtensionCoverage(extension Extension) (string, string) {
+	if extension.Kind == ExtensionKindFramework {
+		return CoverageFramework, "Framework capability"
+	}
 	supportedInstallers := 0
 	blockedInstallers := 0
 	for _, installer := range extension.InstallPlan.Installers {

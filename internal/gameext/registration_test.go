@@ -131,6 +131,38 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			})
 			r.RegisterMerge(sdk.MergeSpec{ID: "merge", Name: "Merge"})
 			r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "load-order", Name: "Load Order"})
+			r.RegisterArchiveType(sdk.ArchiveTypeSpec{
+				ID:             "ba2",
+				Name:           "Bethesda BA2",
+				FileExtensions: []string{"ba2"},
+				Engine:         "gamebryo-archive-support",
+				SupportsWrite:  true,
+			})
+			r.RegisterInterpreter(sdk.InterpreterSpec{
+				ID:             "jar",
+				Name:           "Java archive",
+				FileExtensions: []string{".jar"},
+				Command:        "java",
+				Arguments:      []string{"-jar", "{path}"},
+			})
+			r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG"})
+			r.RegisterGameSetup(sdk.GameSetupSpec{
+				ID:             "prepare",
+				Name:           "Prepare for modding",
+				RequiredFiles:  []string{"Game.exe"},
+				GeneratedFiles: []string{"Mods/.dmm-ready"},
+			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "manage-rules", Name: "Manage Rules", Scope: "profile", Kind: "dialog"})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{ID: "rules", Name: "Rules", Scope: "game"})
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "loader-missing", Name: "Loader missing", Trigger: "gamemode-activated"})
+			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "archive-invalidation", Name: "Archive invalidation", Trigger: "gamemode-activated"})
+			r.RegisterExtensionAPI(sdk.ExtensionAPISpec{ID: "lootSortAsync", Name: "LOOT sort"})
+			r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "plugins", Name: "Plugins"})
+			r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{ID: "rules", Name: "Rules"})
+			r.RegisterStateStore(sdk.StateStoreSpec{ID: "load-order", Name: "Load order", Scope: "profile"})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{ID: "load-order-1", Name: "Load order migration", FromVersion: "0.0.1", ToVersion: "0.0.2"})
+			r.RegisterHealthCheck(sdk.HealthCheckSpec{ID: "sample-health", Name: "Sample health"})
+			r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{ID: "manifest", Name: "Manifest metadata", Target: "mods"})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: "will-deploy",
 				Name:  "Prepare",
@@ -264,6 +296,51 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 1 {
 		t.Fatalf("workshop capabilities = %+v", summary.Capabilities.SteamWorkshop)
 	}
+	if len(summary.Capabilities.ArchiveTypes) != 1 || summary.Capabilities.ArchiveTypes[0].ID != "ba2" || !summary.Capabilities.ArchiveTypes[0].SupportsWrite {
+		t.Fatalf("archive type capabilities = %+v", summary.Capabilities.ArchiveTypes)
+	}
+	if len(summary.Capabilities.Interpreters) != 1 || summary.Capabilities.Interpreters[0].ID != "jar" || summary.Capabilities.Interpreters[0].Command != "java" {
+		t.Fatalf("interpreter capabilities = %+v", summary.Capabilities.Interpreters)
+	}
+	if len(summary.Capabilities.GameStores) != 1 || summary.Capabilities.GameStores[0].ID != "gog" {
+		t.Fatalf("game store capabilities = %+v", summary.Capabilities.GameStores)
+	}
+	if len(summary.Capabilities.GameSetups) != 1 || summary.Capabilities.GameSetups[0].ID != "prepare" || len(summary.Capabilities.GameSetups[0].GeneratedFiles) != 1 {
+		t.Fatalf("game setup capabilities = %+v", summary.Capabilities.GameSetups)
+	}
+	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Kind != "dialog" {
+		t.Fatalf("extension action capabilities = %+v", summary.Capabilities.ExtensionActions)
+	}
+	if len(summary.Capabilities.ExtensionSettings) != 1 || summary.Capabilities.ExtensionSettings[0].Scope != "game" {
+		t.Fatalf("extension setting capabilities = %+v", summary.Capabilities.ExtensionSettings)
+	}
+	if len(summary.Capabilities.ExtensionTests) != 1 || summary.Capabilities.ExtensionTests[0].Trigger != "gamemode-activated" {
+		t.Fatalf("extension test capabilities = %+v", summary.Capabilities.ExtensionTests)
+	}
+	if len(summary.Capabilities.ExtensionToDos) != 1 || summary.Capabilities.ExtensionToDos[0].ID != "archive-invalidation" {
+		t.Fatalf("extension todo capabilities = %+v", summary.Capabilities.ExtensionToDos)
+	}
+	if len(summary.Capabilities.ExtensionAPIs) != 1 || summary.Capabilities.ExtensionAPIs[0].ID != "lootSortAsync" {
+		t.Fatalf("extension api capabilities = %+v", summary.Capabilities.ExtensionAPIs)
+	}
+	if len(summary.Capabilities.ProfileFeatures) != 1 || summary.Capabilities.ProfileFeatures[0].ID != "plugins" {
+		t.Fatalf("profile feature capabilities = %+v", summary.Capabilities.ProfileFeatures)
+	}
+	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].ID != "rules" {
+		t.Fatalf("collection feature capabilities = %+v", summary.Capabilities.CollectionFeatures)
+	}
+	if len(summary.Capabilities.StateStores) != 1 || summary.Capabilities.StateStores[0].Scope != "profile" {
+		t.Fatalf("state store capabilities = %+v", summary.Capabilities.StateStores)
+	}
+	if len(summary.Capabilities.StateMigrations) != 1 || summary.Capabilities.StateMigrations[0].FromVersion != "0.0.1" {
+		t.Fatalf("state migration capabilities = %+v", summary.Capabilities.StateMigrations)
+	}
+	if len(summary.Capabilities.HealthChecks) != 1 || summary.Capabilities.HealthChecks[0].ID != "sample-health" {
+		t.Fatalf("health check capabilities = %+v", summary.Capabilities.HealthChecks)
+	}
+	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Target != "mods" {
+		t.Fatalf("attribute extractor capabilities = %+v", summary.Capabilities.AttributeExtractors)
+	}
 	if !registry.HasEventHandlerForSteamApp("100", "will-deploy") || registry.HasEventHandlerForSteamApp("100", "did-deploy") {
 		t.Fatalf("event handler predicates are wrong")
 	}
@@ -305,6 +382,37 @@ func TestCompileExtensionAllowsWorkshopOnlyGame(t *testing.T) {
 	workshop, ok := NewRegistry([]Extension{extension}).SteamWorkshopForSteamApp("108600")
 	if !ok || !workshop.AllowCoexistence || len(workshop.Actions) != 5 {
 		t.Fatalf("workshop capability = %+v ok=%v", workshop, ok)
+	}
+}
+
+func TestCompileExtensionAllowsFrameworkExtension(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "common-interpreters",
+		Name:    "Common Interpreters",
+		Kind:    sdk.ExtensionKindFramework,
+		Version: "0.1.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterInterpreter(sdk.InterpreterSpec{
+				ID:             "python",
+				Name:           "Python",
+				FileExtensions: []string{".py"},
+				Command:        "python",
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extension.Kind != ExtensionKindFramework || len(extension.SteamAppIDs) != 0 {
+		t.Fatalf("framework extension = %+v", extension)
+	}
+	summary := NewRegistry([]Extension{extension}).ExtensionSummaries()[0]
+	if summary.Kind != ExtensionKindFramework || summary.Coverage != CoverageFramework || summary.CoverageLabel != "Framework capability" {
+		t.Fatalf("framework summary = %+v", summary)
+	}
+	if len(summary.Capabilities.Interpreters) != 1 || summary.Capabilities.Interpreters[0].ID != "python" {
+		t.Fatalf("framework interpreter = %+v", summary.Capabilities.Interpreters)
 	}
 }
 

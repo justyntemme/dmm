@@ -21,10 +21,14 @@ func CompileExtension(spec sdk.Extension) (Extension, error) {
 			Name:    strings.TrimSpace(spec.Name),
 			Version: strings.TrimSpace(spec.Version),
 			BuildID: strings.TrimSpace(spec.BuildID),
+			Kind:    strings.TrimSpace(spec.Kind),
 		},
 	}
 	if spec.Register != nil {
 		spec.Register(registrar)
+	}
+	if registrar.extension.Kind == "" {
+		registrar.extension.Kind = defaultExtensionKind(registrar.extension)
 	}
 	return registrar.extension, validateExtension(registrar.extension)
 }
@@ -168,6 +172,111 @@ func (r *Registrar) RegisterLoadOrder(spec sdk.LoadOrderSpec) {
 	r.extension.LoadOrders = append(r.extension.LoadOrders, spec)
 }
 
+func (r *Registrar) RegisterArchiveType(spec sdk.ArchiveTypeSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ArchiveTypes = append(r.extension.ArchiveTypes, spec)
+}
+
+func (r *Registrar) RegisterInterpreter(spec sdk.InterpreterSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.Interpreters = append(r.extension.Interpreters, spec)
+}
+
+func (r *Registrar) RegisterGameStore(spec sdk.GameStoreSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.GameStores = append(r.extension.GameStores, spec)
+}
+
+func (r *Registrar) RegisterGameSetup(spec sdk.GameSetupSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.GameSetups = append(r.extension.GameSetups, spec)
+}
+
+func (r *Registrar) RegisterExtensionAction(spec sdk.ExtensionActionSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionActions = append(r.extension.ExtensionActions, spec)
+}
+
+func (r *Registrar) RegisterExtensionSetting(spec sdk.ExtensionSettingSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionSettings = append(r.extension.ExtensionSettings, spec)
+}
+
+func (r *Registrar) RegisterExtensionTest(spec sdk.ExtensionTestSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionTests = append(r.extension.ExtensionTests, spec)
+}
+
+func (r *Registrar) RegisterExtensionToDo(spec sdk.ExtensionToDoSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionToDos = append(r.extension.ExtensionToDos, spec)
+}
+
+func (r *Registrar) RegisterExtensionAPI(spec sdk.ExtensionAPISpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionAPIs = append(r.extension.ExtensionAPIs, spec)
+}
+
+func (r *Registrar) RegisterProfileFeature(spec sdk.ProfileFeatureSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ProfileFeatures = append(r.extension.ProfileFeatures, spec)
+}
+
+func (r *Registrar) RegisterCollectionFeature(spec sdk.CollectionFeatureSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.CollectionFeatures = append(r.extension.CollectionFeatures, spec)
+}
+
+func (r *Registrar) RegisterStateStore(spec sdk.StateStoreSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.StateStores = append(r.extension.StateStores, spec)
+}
+
+func (r *Registrar) RegisterStateMigration(spec sdk.StateMigrationSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.StateMigrations = append(r.extension.StateMigrations, spec)
+}
+
+func (r *Registrar) RegisterHealthCheck(spec sdk.HealthCheckSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.HealthChecks = append(r.extension.HealthChecks, spec)
+}
+
+func (r *Registrar) RegisterAttributeExtractor(spec sdk.AttributeExtractorSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.AttributeExtractors = append(r.extension.AttributeExtractors, spec)
+}
+
 func (r *Registrar) RegisterEventHandler(spec sdk.EventHandlerSpec) {
 	if strings.TrimSpace(spec.Event) == "" {
 		return
@@ -189,10 +298,22 @@ func validateExtension(extension Extension) error {
 	if strings.TrimSpace(extension.BuildID) == "" {
 		errs = append(errs, errors.New("extension build id is required"))
 	}
-	if len(extension.SteamAppIDs) == 0 {
-		errs = append(errs, errors.New("extension must register at least one Steam app id"))
+	switch strings.TrimSpace(extension.Kind) {
+	case sdk.ExtensionKindGame:
+		if len(extension.SteamAppIDs) == 0 {
+			errs = append(errs, errors.New("game extension must register at least one Steam app id"))
+		}
+	case sdk.ExtensionKindFramework:
+		if len(extension.SteamAppIDs) > 0 {
+			errs = append(errs, errors.New("framework extension must not register Steam app ids"))
+		}
+		if !hasFrameworkCapability(extension) {
+			errs = append(errs, errors.New("framework extension must register at least one framework capability"))
+		}
+	default:
+		errs = append(errs, errors.New("extension kind must be game or framework"))
 	}
-	if len(extension.NexusDomains) == 0 && !extension.SteamWorkshop.AllowCoexistence && len(extension.SteamWorkshop.Actions) == 0 && len(extension.Sources) == 0 {
+	if extension.Kind == sdk.ExtensionKindGame && len(extension.NexusDomains) == 0 && !extension.SteamWorkshop.AllowCoexistence && len(extension.SteamWorkshop.Actions) == 0 && len(extension.Sources) == 0 {
 		errs = append(errs, errors.New("extension must register at least one Nexus domain, Steam Workshop capability, or verified source reference"))
 	}
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
@@ -211,12 +332,51 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
+	errs = append(errs, validateArchiveTypes(extension.ArchiveTypes)...)
+	errs = append(errs, validateInterpreters(extension.Interpreters)...)
+	errs = append(errs, validateNamedAndNamed("game store", extension.GameStores, func(spec sdk.GameStoreSpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateGameSetups(extension.GameSetups)...)
+	errs = append(errs, validateNamedAndScoped("extension action", extension.ExtensionActions, func(spec sdk.ExtensionActionSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
+	errs = append(errs, validateNamedAndScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
+	errs = append(errs, validateTriggeredSpecs("extension test", extension.ExtensionTests, func(spec sdk.ExtensionTestSpec) (string, string, string) { return spec.ID, spec.Name, spec.Trigger })...)
+	errs = append(errs, validateTriggeredSpecs("extension todo", extension.ExtensionToDos, func(spec sdk.ExtensionToDoSpec) (string, string, string) { return spec.ID, spec.Name, spec.Trigger })...)
+	errs = append(errs, validateNamedAndNamed("extension api", extension.ExtensionAPIs, func(spec sdk.ExtensionAPISpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateNamedAndNamed("profile feature", extension.ProfileFeatures, func(spec sdk.ProfileFeatureSpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateNamedAndNamed("collection feature", extension.CollectionFeatures, func(spec sdk.CollectionFeatureSpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateNamedAndScoped("state store", extension.StateStores, func(spec sdk.StateStoreSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
+	errs = append(errs, validateStateMigrations(extension.StateMigrations)...)
+	errs = append(errs, validateNamedAndNamed("health check", extension.HealthChecks, func(spec sdk.HealthCheckSpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateAttributeExtractors(extension.AttributeExtractors)...)
 	for _, handler := range extension.EventHandlers {
 		if strings.TrimSpace(handler.Event) == "" {
 			errs = append(errs, errors.New("event handler event is required"))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func defaultExtensionKind(extension Extension) string {
+	if len(extension.SteamAppIDs) == 0 && hasFrameworkCapability(extension) {
+		return sdk.ExtensionKindFramework
+	}
+	return sdk.ExtensionKindGame
+}
+
+func hasFrameworkCapability(extension Extension) bool {
+	return len(extension.ArchiveTypes) > 0 ||
+		len(extension.Interpreters) > 0 ||
+		len(extension.GameStores) > 0 ||
+		len(extension.ExtensionActions) > 0 ||
+		len(extension.ExtensionSettings) > 0 ||
+		len(extension.ExtensionTests) > 0 ||
+		len(extension.ExtensionToDos) > 0 ||
+		len(extension.ExtensionAPIs) > 0 ||
+		len(extension.ProfileFeatures) > 0 ||
+		len(extension.CollectionFeatures) > 0 ||
+		len(extension.StateStores) > 0 ||
+		len(extension.StateMigrations) > 0 ||
+		len(extension.HealthChecks) > 0 ||
+		len(extension.AttributeExtractors) > 0
 }
 
 func validateSteamWorkshop(spec sdk.SteamWorkshopSpec) []error {
@@ -829,6 +989,280 @@ func validateNamedSpecs[T any](kind string, specs []T, id func(T) string) []erro
 		}
 	}
 	return errs
+}
+
+func validateNamedAndNamed[T any](kind string, specs []T, fields func(T) (string, string)) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id, name := fields(spec)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			errs = append(errs, errors.New(kind+" id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID(kind, id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New(kind+" "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(name) == "" {
+			errs = append(errs, errors.New(kind+" "+id+" name is required"))
+		}
+	}
+	return errs
+}
+
+func validateNamedAndScoped[T any](kind string, specs []T, fields func(T) (string, string, string)) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id, name, scope := fields(spec)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			errs = append(errs, errors.New(kind+" id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID(kind, id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New(kind+" "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(name) == "" {
+			errs = append(errs, errors.New(kind+" "+id+" name is required"))
+		}
+		if strings.ContainsAny(scope, "\x00\r\n") {
+			errs = append(errs, errors.New(kind+" "+id+" scope must not contain control line breaks"))
+		}
+	}
+	return errs
+}
+
+func validateTriggeredSpecs[T any](kind string, specs []T, fields func(T) (string, string, string)) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id, name, trigger := fields(spec)
+		id = strings.TrimSpace(id)
+		if id == "" {
+			errs = append(errs, errors.New(kind+" id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID(kind, id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New(kind+" "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(name) == "" {
+			errs = append(errs, errors.New(kind+" "+id+" name is required"))
+		}
+		if strings.TrimSpace(trigger) == "" {
+			errs = append(errs, errors.New(kind+" "+id+" trigger is required"))
+		}
+		if strings.ContainsAny(trigger, "\x00\r\n") {
+			errs = append(errs, errors.New(kind+" "+id+" trigger must not contain control line breaks"))
+		}
+	}
+	return errs
+}
+
+func validateArchiveTypes(specs []sdk.ArchiveTypeSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("archive type id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("archive type", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("archive type "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("archive type "+id+" name is required"))
+		}
+		if strings.TrimSpace(spec.Engine) == "" {
+			errs = append(errs, errors.New("archive type "+id+" engine is required"))
+		}
+		if len(spec.FileExtensions) == 0 {
+			errs = append(errs, errors.New("archive type "+id+" must declare file extensions"))
+		}
+		for _, extension := range spec.FileExtensions {
+			if err := validateFileExtension(extension); err != nil {
+				errs = append(errs, errors.New("archive type "+id+" file extension: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateInterpreters(specs []sdk.InterpreterSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("interpreter id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("interpreter", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("interpreter "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("interpreter "+id+" name is required"))
+		}
+		if len(spec.FileExtensions) == 0 {
+			errs = append(errs, errors.New("interpreter "+id+" must declare file extensions"))
+		}
+		for _, extension := range spec.FileExtensions {
+			if err := validateFileExtension(extension); err != nil {
+				errs = append(errs, errors.New("interpreter "+id+" file extension: "+err.Error()))
+			}
+		}
+		if strings.TrimSpace(spec.Command) != "" {
+			if err := validateLaunchArgument(spec.Command); err != nil {
+				errs = append(errs, errors.New("interpreter "+id+" command: "+err.Error()))
+			}
+		}
+		for _, argument := range spec.Arguments {
+			if err := validateLaunchArgument(argument); err != nil {
+				errs = append(errs, errors.New("interpreter "+id+" argument: "+err.Error()))
+			}
+		}
+		for _, platform := range spec.Platforms {
+			if err := validatePlatformID(platform); err != nil {
+				errs = append(errs, errors.New("interpreter "+id+" platform: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateGameSetups(specs []sdk.GameSetupSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("game setup id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("game setup", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("game setup "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("game setup "+id+" name is required"))
+		}
+		for _, path := range spec.RequiredFiles {
+			if err := validateRelativePath(path); err != nil {
+				errs = append(errs, errors.New("game setup "+id+" required file: "+err.Error()))
+			}
+		}
+		for _, path := range spec.GeneratedFiles {
+			if err := validateRelativePath(path); err != nil {
+				errs = append(errs, errors.New("game setup "+id+" generated file: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateStateMigrations(specs []sdk.StateMigrationSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("state migration id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("state migration", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("state migration "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("state migration "+id+" name is required"))
+		}
+		if strings.TrimSpace(spec.FromVersion) == "" {
+			errs = append(errs, errors.New("state migration "+id+" from version is required"))
+		}
+		if strings.TrimSpace(spec.ToVersion) == "" {
+			errs = append(errs, errors.New("state migration "+id+" to version is required"))
+		}
+	}
+	return errs
+}
+
+func validateAttributeExtractors(specs []sdk.AttributeExtractorSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("attribute extractor id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("attribute extractor", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("attribute extractor "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("attribute extractor "+id+" name is required"))
+		}
+		if strings.TrimSpace(spec.Target) == "" {
+			errs = append(errs, errors.New("attribute extractor "+id+" target is required"))
+		}
+		if strings.ContainsAny(spec.Target, "\x00\r\n") {
+			errs = append(errs, errors.New("attribute extractor "+id+" target must not contain control line breaks"))
+		}
+	}
+	return errs
+}
+
+func validateSimpleID(kind, id string) []error {
+	if strings.ContainsAny(id, "/\\") {
+		return []error{errors.New(kind + " " + id + " id must be a simple identifier")}
+	}
+	return nil
+}
+
+func validateFileExtension(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("file extension is required")
+	}
+	extension := strings.TrimPrefix(value, ".")
+	if extension == "" || strings.ContainsAny(extension, "/\\\x00\r\n") {
+		return errors.New("must be a file extension")
+	}
+	return nil
+}
+
+func validatePlatformID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("platform id is required")
+	}
+	if strings.ContainsAny(value, "/\\\x00\r\n") {
+		return errors.New("must be a simple identifier")
+	}
+	return nil
 }
 
 func validateRelativeOrRoot(value string) error {

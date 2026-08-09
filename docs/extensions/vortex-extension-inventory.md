@@ -25,14 +25,14 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 15
-  - Framework/shared counterparts: 6
+- DMM counterparts identified in the current pass: 16
+  - Framework/shared counterparts: 7
   - Game counterparts: 9
 
 ## Framework And Shared Extensions
 
 - [ ] `changelog-dashlet`
-- [ ] `common-interpreters`
+- [x] `common-interpreters` - DMM counterpart: `internal/extensions/commoninterpreters` framework extension. Current parity is registered interpreter metadata for `.jar`, `.py`, `.vbs`, `.cmd`, and `.bat`; runtime execution remains gated until a converted extension needs interpreter launching.
 - [ ] `documentation`
 - [ ] `extension-dashlet`
 - [ ] `feedback`

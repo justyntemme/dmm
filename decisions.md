@@ -23,6 +23,17 @@ Use this file only when an implementation path requires a meaningful architectur
 
 ## Decisions
 
+### Add Framework Extensions Beside Game Extensions
+
+- Date: 2026-08-08
+- Area: Extension framework and Vortex parity
+- Decision: DMM supports first-party framework extensions with `Kind: "framework"` in addition to game extensions. Framework extensions may register shared capabilities such as interpreters, archive types, game stores, extension APIs, UI actions/settings/tests, profile features, state stores, migrations, health checks, and attribute extractors without declaring a Steam app ID.
+- Options considered: keep all shared behavior as unregistered Go helper packages; force shared Vortex counterparts to fake a Steam app ID; add a first-class framework extension kind.
+- Rationale: Vortex has many shared extensions (`common-interpreters`, archive support, Gamebryo plugin management, QuickBMS, dependency management, game stores) that are not games but must still be audited and converted. A framework kind keeps those capabilities visible in `/api/extensions` and persisted snapshots without polluting the game list or moving shared behavior into generic core branches.
+- Tradeoffs: the first pass registers capability metadata only; executable engines such as BA2/BSA/QuickBMS and interpreter launch paths still need concrete runtime implementations before any extension can rely on them. This prevents no-op parity claims while giving conversion work a stable Go SDK shape.
+- Verification/source references: Vortex `common-interpreters/src/index.ts` registers `.jar`, `.vbs`, `.py`, `.cmd`, and `.bat`; DMM implementation in `internal/extensions/sdk`, `internal/gameext`, and `internal/extensions/commoninterpreters`.
+- Follow-up: convert archive/game-store/framework Vortex extensions into framework packages only after each runtime engine or integration path is source-verified and explicitly represented in the SDK.
+
 ### Model Extension-Owned Dynamic Launch Arguments
 
 - Date: 2026-08-08
