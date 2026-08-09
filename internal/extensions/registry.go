@@ -81,6 +81,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsroguesquadron"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/steinsgate"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/survivingmars"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thebindingofisaacrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/thedivision2"
@@ -192,6 +193,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(steinsgate.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(stacklands.Extension()),
+		gameext.MustCompileExtension(survivingmars.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),
 		gameext.MustCompileExtension(thedivision2.Extension()),

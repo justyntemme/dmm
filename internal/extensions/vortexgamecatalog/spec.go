@@ -272,7 +272,6 @@ var games = []GameSpec{
 	{VortexDir: "game-stateofdecay", ID: "stateofdecay", Name: "State of Decay", SteamAppIDs: []string{"241540"}},
 	{VortexDir: "game-subnautica", ID: "subnautica", Name: "Subnautica", VortexStub: true, SupportModID: "202"},
 	{VortexDir: "game-subnauticabelowzero", ID: "subnauticabelowzero", Name: "Subnautica: Below Zero", VortexStub: true, SupportModID: "203"},
-	{VortexDir: "game-survivingmars", ID: "survivingmars", Name: "Surviving Mars", SteamAppIDs: []string{"464920"}, HasCustomInstallers: true},
 	{VortexDir: "game-sw-kotor", ID: "kotor", Name: "Star Wars: Knights of the Old Republic", SteamAppIDs: []string{"32370"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-sw-kotor", ID: "kotor2", Name: "Star Wars: Knights of the Old Republic II", SteamAppIDs: []string{"208580"}, HasCustomInstallers: true, HasModTypes: true},
 	{
