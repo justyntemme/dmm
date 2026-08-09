@@ -1255,6 +1255,134 @@ func TestCheckGameModUpdatesPersistsUnsupportedCatalogResult(t *testing.T) {
 	}
 }
 
+func TestCheckGameModUpdatesRunsExtensionEventAndAutoAcquiresRuntime(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999019"
+	var eventSource string
+	var eventMods int
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(sdk.Extension{
+		ID:      "update-runtime",
+		Name:    "Update Runtime",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"updateruntime"},
+				VortexGameID: "updateruntime",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "consumer", TargetRoot: "Mods"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "provider", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               "runtime-provider",
+				Name:             "Runtime Provider",
+				Kind:             "mod-loader",
+				Required:         true,
+				ModTypes:         []string{"consumer"},
+				ProviderModTypes: []string{"provider"},
+				Message:          "Runtime provider is missing.",
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:          "runtime-provider-github",
+					Name:        "Runtime Provider",
+					Catalog:     "github",
+					URL:         "https://github.com/example/runtime/releases/latest",
+					ArchiveName: "runtime.zip",
+					Required:    true,
+					AutoAcquire: true,
+				},
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventCheckModsVersion,
+				Name:  "Check runtime provider version",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					eventSource = input.Source
+					eventMods = len(input.Mods)
+					return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+						Message: "Check-mods-version event ran.",
+					}}}, nil
+				},
+			})
+		},
+	})})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Update Runtime",
+		InstallDir:  "Update Runtime",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Update Runtime"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "direct",
+			SourceURL:  "https://example.invalid/consumer.zip",
+			GameDomain: "updateruntime",
+			ModID:      "consumer",
+			FileID:     "consumer.zip",
+		},
+		Name:         "Consumer Mod",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "consumer.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "consumer"),
+		ManifestJSON: `{"game_id":"` + appID + `","mod_type":"consumer","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("runtime archive"))
+	}))
+	t.Cleanup(downloadServer.Close)
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{resolved: catalog.ResolvedDownload{
+		Catalog:    "github",
+		SourceURL:  "https://github.com/example/runtime/releases/latest",
+		SteamAppID: appID,
+		GameDomain: "github",
+		ModID:      "example/runtime",
+		FileID:     githubReleaseFileID("latest", "runtime.zip"),
+		FileName:   "runtime.zip",
+		DownloadLinks: []catalog.DownloadLink{{
+			Name:      "GitHub release asset",
+			ShortName: "github",
+			URI:       downloadServer.URL + "/runtime.zip",
+		}},
+	}}}
+	srv.catalogMu.Unlock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.EventHandled || eventSource != "mod-update-check" || eventMods != 1 {
+		t.Fatalf("event handled=%v source=%q mods=%d body=%+v", body.EventHandled, eventSource, eventMods, body)
+	}
+	if len(body.Acquisitions) != 1 || body.Acquisitions[0].Kind != "runtime" || body.Acquisitions[0].Requirement != "runtime-provider" || body.Acquisitions[0].Job == nil {
+		t.Fatalf("acquisitions = %+v", body.Acquisitions)
+	}
+	waitForJobStatus(t, srv, body.Acquisitions[0].Job.ID, jobs.StatusWaiting)
+	foundNotice := false
+	for _, job := range srv.jobs.List() {
+		if job.Type == jobTypeExtensionNotice && strings.Contains(job.Message, "Check-mods-version event ran") {
+			foundNotice = true
+			break
+		}
+	}
+	if !foundNotice {
+		t.Fatalf("extension notice job was not queued: %+v", srv.jobs.List())
+	}
+}
+
 func TestModrinthUpdateProviderCachesAndQueuesLatestVersion(t *testing.T) {
 	srv := newTestServer(t)
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

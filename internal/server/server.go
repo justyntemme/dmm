@@ -5200,8 +5200,10 @@ func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetad
 }
 
 type modUpdateCheckResponse struct {
-	Checked int                          `json:"checked"`
-	Results []gameModUpdateCheckResponse `json:"results"`
+	Checked      int                          `json:"checked"`
+	EventHandled bool                         `json:"event_handled,omitempty"`
+	Acquisitions []autoAcquireResponse        `json:"acquisitions,omitempty"`
+	Results      []gameModUpdateCheckResponse `json:"results"`
 }
 
 type gameModUpdateCheckResponse struct {
@@ -5465,9 +5467,41 @@ func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	profileID, err := s.activeProfileID(r.Context(), appID, mods)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	eventHandled := s.games.HasEventHandlerForSteamApp(appID, gameext.EventCheckModsVersion)
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventCheckModsVersion,
+		Source:    "mod-update-check",
+		ProfileID: profileID,
+		ModIDs:    installedModIDs(mods),
+		Mods:      mods,
+	}); err != nil {
+		s.logger.Warn("mod update extension check event failed", "app_id", appID, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	toolAcquisitions, err := s.autoAcquireExtensionTools(r.Context(), appID, "mod-update-check", profileID)
+	if err != nil {
+		s.logger.Warn("mod update tool auto-acquisition failed", "app_id", appID, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	runtimeAcquisitions, err := s.autoAcquireExtensionRuntimes(r.Context(), appID, "mod-update-check", profileID)
+	if err != nil {
+		s.logger.Warn("mod update runtime auto-acquisition failed", "app_id", appID, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	checkedAt := time.Now().UTC().Format(time.RFC3339)
 	resp := modUpdateCheckResponse{
-		Results: make([]gameModUpdateCheckResponse, 0, len(mods)),
+		EventHandled: eventHandled,
+		Acquisitions: append(toolAcquisitions, runtimeAcquisitions...),
+		Results:      make([]gameModUpdateCheckResponse, 0, len(mods)),
 	}
 	for _, mod := range mods {
 		provider, ok := s.modUpdateProviderForCatalog(mod.Catalog)
@@ -5497,7 +5531,7 @@ func (s *Server) handleCheckGameModUpdates(w http.ResponseWriter, r *http.Reques
 		}
 		resp.Results = append(resp.Results, result)
 	}
-	s.logger.Info("game mod update check completed", "app_id", appID, "checked", resp.Checked, "results", len(resp.Results))
+	s.logger.Info("game mod update check completed", "app_id", appID, "checked", resp.Checked, "results", len(resp.Results), "event_handled", resp.EventHandled, "acquisitions", len(resp.Acquisitions))
 	s.publishGameEvent(events.TypeModUpdatesChanged, appID, map[string]any{
 		"checked": resp.Checked,
 	})
