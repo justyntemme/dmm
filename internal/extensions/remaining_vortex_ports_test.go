@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/battletech"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nehrim"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prisonarchitect"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -91,6 +93,49 @@ func TestBattleTechAndPrisonArchitectPortsExposeInstallers(t *testing.T) {
 			if !ok || version.Version != tt.wantVersion {
 				t.Fatalf("version result = %+v ok=%v", version, ok)
 			}
+		})
+	}
+}
+
+func TestDragonAgePortsExposeDAZIPSupport(t *testing.T) {
+	tests := []struct {
+		name          string
+		extension     gameext.Extension
+		appID         string
+		wantMerge     bool
+		wantMigration bool
+		wantManifest  string
+		wantERF       string
+	}{
+		{name: dragonage.Name, extension: gameext.MustCompileExtension(dragonage.Extension()), appID: dragonage.SteamAppID, wantMerge: true, wantManifest: "addins/DemoModule/manifest.xml", wantERF: "addins/DemoModule/demo_module.erf"},
+		{name: dragonage2.Name, extension: gameext.MustCompileExtension(dragonage2.Extension()), appID: dragonage2.SteamAppID, wantMigration: true, wantManifest: "addins/addins/DemoModule/manifest.xml", wantERF: "addins/addins/DemoModule/demo_module.erf"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := gameext.NewRegistry([]gameext.Extension{tt.extension})
+			summary := registry.ExtensionSummaries()[0]
+			if summary.Coverage != gameext.CoverageInstaller {
+				t.Fatalf("coverage = %q", summary.Coverage)
+			}
+			totalInstallers := len(summary.Capabilities.Installers) + len(summary.Capabilities.UnsupportedInstallers)
+			if len(summary.Capabilities.TargetRoots) == 0 || totalInstallers < 3 {
+				t.Fatalf("capabilities = %+v", summary.Capabilities)
+			}
+			if got := len(summary.Capabilities.Merges) > 0; got != tt.wantMerge {
+				t.Fatalf("merges = %+v", summary.Capabilities.Merges)
+			}
+			if got := len(summary.Capabilities.StateMigrations) > 0; got != tt.wantMigration {
+				t.Fatalf("migrations = %+v", summary.Capabilities.StateMigrations)
+			}
+			root := t.TempDir()
+			writeSimpleFile(t, filepath.Join(root, "manifest.xml"), `<Manifest><AddInsList><AddInItem UID="demo" /></AddInsList></Manifest>`)
+			writeSimpleFile(t, filepath.Join(root, "contents", "addins", "DemoModule", "demo_module.erf"), "erf")
+			plan, err := registry.BuildInstallPlan(tt.appID, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertSimpleTarget(t, plan, tt.wantManifest)
+			assertSimpleTarget(t, plan, tt.wantERF)
 		})
 	}
 }

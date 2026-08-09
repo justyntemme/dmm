@@ -27,9 +27,12 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darksouls2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dazip"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/devilmaycry5"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonage2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonsdogma"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/elex"
@@ -204,12 +207,15 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(daggerfallunity.Extension()),
 		gameext.MustCompileExtension(darkestdungeon.Extension()),
 		gameext.MustCompileExtension(darksouls.Extension()),
+		gameext.MustCompileExtension(dazip.Extension()),
 		gameext.MustCompileExtension(dawnofman.Extension()),
 		gameext.MustCompileExtension(darksouls2.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(devilmaycry5.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
+		gameext.MustCompileExtension(dragonage.Extension()),
+		gameext.MustCompileExtension(dragonage2.Extension()),
 		gameext.MustCompileExtension(dragonsdogma.Extension()),
 		gameext.MustCompileExtension(dwarffortress.Extension()),
 		gameext.MustCompileExtension(elex.Extension()),

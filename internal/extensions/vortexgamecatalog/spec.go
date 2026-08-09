@@ -163,8 +163,6 @@ func sourceURL(dir string) string {
 
 var games = []GameSpec{
 	{VortexDir: "game-divinityoriginalsin2", ID: "divinityoriginalsin2", Name: "Divinity: Original Sin 2", SteamAppIDs: []string{"435150"}, Notes: []string{"Vortex registers both Original and Definitive Edition against Steam app 435150; DMM needs a multi-variant-per-app resolver before representing both as selectable game records."}},
-	{VortexDir: "game-dragonage", ID: "dragonage", Name: "Dragon Age: Origins", SteamAppIDs: []string{"17450", "47810"}},
-	{VortexDir: "game-dragonage2", ID: "dragonage2", Name: "Dragon Age 2", SteamAppIDs: []string{"15543", "1238040"}},
 	{VortexDir: "game-untitledgoose", ID: "untitledgoosegame", Name: "Untitled Goose Game", AllowNoSteamAppID: true, Notes: []string{"Vortex discovers this game through Epic and wires BepInEx support plus a migration; DMM needs source-reviewed Epic discovery and BepInEx migration parity before full support."}},
 	{VortexDir: "game-wolcen", ID: "wolcenlordsofmayhem", Name: "Wolcen: Lords of Mayhem", SteamAppIDs: []string{"424370"}, Notes: []string{"Vortex declares merge behavior for XML/MTL files; DMM needs source-reviewed merge runtime before full support."}},
 }

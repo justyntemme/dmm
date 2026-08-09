@@ -32,7 +32,6 @@ func Register(r sdk.Registrar) {
 		r.RegisterSource(ref)
 	}
 	for _, modType := range []installplan.ModTypeSpec{
-		{ID: "dazip", TargetRoot: "", Message: "Dragon Age AddIn DAZIP support needs nested archive/submodule handling and Addins.xml registration."},
 		{ID: "dinput", TargetRoot: "", Message: "DInput injector support needs game-executable-relative placement and unsafe DLL confirmation flow."},
 		{ID: "enb", TargetRoot: "", Message: "ENB support needs game-root deployment plus unsafe DLL confirmation; the Vortex installer is currently commented out upstream."},
 		{ID: "gedosato", TargetRoot: "", Message: "GeDoSaTo support needs external tool discovery plus texture-folder targeting."},
@@ -44,8 +43,6 @@ func Register(r sdk.Registrar) {
 		r.RegisterModType(modType)
 	}
 	for _, installer := range []installplan.InstallerSpec{
-		{ID: "dazipOuter", VortexInstallerID: "dazipOuter", ModType: "dazip", UnsupportedReason: "Nested DAZIP extraction is not implemented in DMM yet."},
-		{ID: "dazipInner", VortexInstallerID: "dazipInner", ModType: "dazip", UnsupportedReason: "Inner DAZIP AddIn layout planning is not implemented in DMM yet."},
 		{ID: "dinput", VortexInstallerID: "dinput", ModType: "dinput", UnsupportedReason: "DInput injector installer planning is not implemented in DMM yet."},
 		{ID: "gedosato", VortexInstallerID: "gedosato", ModType: "gedosato", UnsupportedReason: "GeDoSaTo texture installer planning is not implemented in DMM yet."},
 	} {
@@ -58,10 +55,6 @@ func Register(r sdk.Registrar) {
 
 func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
-		{
-			Name: "Vortex modtype-dazip source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-dazip/src/index.ts",
-		},
 		{
 			Name: "Vortex modtype-dinput source",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-dinput/src/index.ts",
