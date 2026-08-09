@@ -551,6 +551,39 @@ class Plugin:
         self._log(f"plugin load order loaded app_id={app_id} supported={bool(result.get('supported'))} plugins={len(plugins)}")
         return {"ok": True, "load_order": result}
 
+    async def set_profile_plugin_activation(self, app_id, profile_id, activation_id, plugin_name, enabled):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        activation_id = str(activation_id or "").strip()
+        plugin_name = str(plugin_name or "").strip()
+        if not app_id or not profile_id or not activation_id or not plugin_name:
+            return {"ok": False, "error": "app_id, profile_id, activation_id, and plugin_name are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"name": plugin_name, "enabled": bool(enabled)}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/plugin-activation/{urllib.parse.quote(activation_id)}/plugins", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to update plugin activation."}
+        self._log(f"profile plugin activation updated app_id={app_id} profile_id={profile_id} activation_id={activation_id} plugin={plugin_name} enabled={bool(enabled)}")
+        return {"ok": True, "result": result}
+
+    async def set_profile_plugin_activation_order(self, app_id, profile_id, activation_id, plugins):
+        app_id = str(app_id or "").strip()
+        profile_id = str(profile_id or "").strip()
+        activation_id = str(activation_id or "").strip()
+        if not app_id or not profile_id or not activation_id:
+            return {"ok": False, "error": "app_id, profile_id, and activation_id are required."}
+        if not isinstance(plugins, list) or len(plugins) == 0:
+            return {"ok": False, "error": "plugins must be a non-empty list."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"plugins": plugins}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/plugin-activation/{urllib.parse.quote(activation_id)}/order", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to update plugin load order."}
+        self._log(f"profile plugin activation order updated app_id={app_id} profile_id={profile_id} activation_id={activation_id} plugins={len(plugins)}")
+        return {"ok": True, "result": result}
+
     async def game_deploy_preview(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

@@ -431,6 +431,11 @@ type ProfileApplyResult = {
   job?: Job;
 };
 
+type ProfilePluginActivationUpdateResult = {
+  load_order: PluginLoadOrder;
+  apply?: ProfileApplyResult;
+};
+
 type DeploymentStatus = {
   deployed: boolean;
   file_count: number;
@@ -4352,6 +4357,7 @@ function FreshDeckyModManagerRoute() {
   const [mods, setMods] = useState<ManagedMod[]>([]);
   const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
+  const [pluginLoadOrder, setPluginLoadOrder] = useState<PluginLoadOrder | null>(null);
   const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
   const [workshopItems, setWorkshopItems] = useState<WorkshopItem[]>([]);
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
@@ -4365,6 +4371,7 @@ function FreshDeckyModManagerRoute() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [busyPluginKey, setBusyPluginKey] = useState("");
   const [busyJobID, setBusyJobID] = useState("");
   const [modUpdateBusy, setModUpdateBusy] = useState(false);
   const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
@@ -4419,11 +4426,12 @@ function FreshDeckyModManagerRoute() {
       setMods([]);
       setGameDiagnostics(null);
       setDeploymentStatus(null);
+      setPluginLoadOrder(null);
       setInstallCandidates([]);
       setWorkshopItems([]);
       return;
     }
-    const [profilesResult, modsResult, diagnosticsResult, deploymentResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, diagnosticsResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -4444,6 +4452,11 @@ function FreshDeckyModManagerRoute() {
         error: err instanceof Error ? err.message : String(err),
         status: null
       })),
+      call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        load_order: undefined
+      })),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -4461,6 +4474,7 @@ function FreshDeckyModManagerRoute() {
     else setError(modsResult.error || "Unable to load mods.");
     setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
     setDeploymentStatus(deploymentResult.ok ? deploymentResult.status ?? null : null);
+    setPluginLoadOrder(loadOrderResult.ok ? loadOrderResult.load_order ?? null : null);
     setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
     setWorkshopItems(workshopResult.ok ? workshopResult.items : []);
     const failedSlices: string[] = [];
@@ -4468,6 +4482,7 @@ function FreshDeckyModManagerRoute() {
     if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
     if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
     if (!deploymentResult.ok) failedSlices.push(`deployment:${deploymentResult.error || ""}`);
+    if (!loadOrderResult.ok) failedSlices.push(`load_order:${loadOrderResult.error || ""}`);
     if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
     if (!workshopResult.ok) failedSlices.push(`workshop:${workshopResult.error || ""}`);
     if (failedSlices.length > 0) {
@@ -4663,6 +4678,78 @@ function FreshDeckyModManagerRoute() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setModUpdateBusy(false);
+    }
+  }
+
+  function pluginActivationRowKey(plugin: PluginLoadOrderEntry) {
+    return plugin.name.trim().toLowerCase();
+  }
+
+  function mutablePluginRows() {
+    return pluginLoadOrder?.plugins.filter((plugin) => plugin.mutable) ?? [];
+  }
+
+  async function setPluginActivationEnabled(plugin: PluginLoadOrderEntry, enabled: boolean) {
+    if (!selectedGameID || !selectedProfile || !pluginLoadOrder?.activation_id || !plugin.mutable || busyPluginKey) return;
+    const key = pluginActivationRowKey(plugin);
+    try {
+      setBusyPluginKey(key);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, string, string, boolean], { ok: boolean; error?: string; result?: ProfilePluginActivationUpdateResult }>(
+        "set_profile_plugin_activation",
+        selectedGameID,
+        selectedProfile.id,
+        pluginLoadOrder.activation_id,
+        plugin.name,
+        enabled
+      );
+      if (!result.ok || !result.result) {
+        setError(result.error || "Unable to update plugin file.");
+        return;
+      }
+      setPluginLoadOrder(result.result.load_order);
+      await maybeShowDeckyActionToast(result.result.apply?.job, "fresh-plugin-activation-toggle");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.result.apply?.message || `${enabled ? "Enabled" : "Disabled"} ${plugin.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyPluginKey("");
+    }
+  }
+
+  async function movePluginActivation(plugin: PluginLoadOrderEntry, direction: -1 | 1) {
+    if (!selectedGameID || !selectedProfile || !pluginLoadOrder?.activation_id || !plugin.mutable || busyPluginKey) return;
+    const rows = mutablePluginRows();
+    const from = rows.findIndex((item) => pluginActivationRowKey(item) === pluginActivationRowKey(plugin));
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= rows.length) return;
+    [rows[from], rows[to]] = [rows[to], rows[from]];
+    const key = pluginActivationRowKey(plugin);
+    try {
+      setBusyPluginKey(key);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, string, string[]], { ok: boolean; error?: string; result?: ProfilePluginActivationUpdateResult }>(
+        "set_profile_plugin_activation_order",
+        selectedGameID,
+        selectedProfile.id,
+        pluginLoadOrder.activation_id,
+        rows.map((item) => item.name)
+      );
+      if (!result.ok || !result.result) {
+        setError(result.error || "Unable to update plugin order.");
+        return;
+      }
+      setPluginLoadOrder(result.result.load_order);
+      await maybeShowDeckyActionToast(result.result.apply?.job, "fresh-plugin-activation-order");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.result.apply?.message || `Moved ${plugin.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyPluginKey("");
     }
   }
 
@@ -5362,6 +5449,70 @@ function FreshDeckyModManagerRoute() {
             </Focusable>
           );
         })}
+        {pluginLoadOrder?.supported && pluginLoadOrder.plugins.length > 0 && (
+          <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
+            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+              <div style={{ fontWeight: 900 }}>Plugin Files</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                {pluginLoadOrder.name || "Extension plugin activation"} · {pluginLoadOrder.plugins_file || "plugins.txt"}
+              </div>
+            </div>
+            {pluginLoadOrder.plugins.map((plugin, index) => {
+              const source = plugin.catalog || plugin.source || "dmm";
+              const key = pluginActivationRowKey(plugin);
+              const busy = busyPluginKey === key;
+              const mutableRows = mutablePluginRows();
+              const mutableIndex = mutableRows.findIndex((item) => pluginActivationRowKey(item) === key);
+              const row = (
+                <>
+                  <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
+                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{index + 1}. {plugin.name}</div>
+                    <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
+                  </div>
+                  <div style={{ color: plugin.active ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
+                    {busy ? "Working" : plugin.active ? "Enabled" : "Disabled"} · {plugin.mutable ? `Priority ${plugin.priority}` : "Read-only native file"}
+                  </div>
+                  {plugin.mutable ? (
+                    <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>
+                      A {plugin.active ? "Disable" : "Enable"} · Y Up · Options Down
+                    </div>
+                  ) : (
+                    <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>Managed by the game, not DMM.</div>
+                  )}
+                </>
+              );
+              if (!plugin.mutable) {
+                return <div key={key} style={freshModCardStyle(plugin.active)}>{row}</div>;
+              }
+              return (
+                <Focusable
+                  key={key}
+                  className="dmm-sidebar-row"
+                  focusClassName="dmm-sidebar-row-focused"
+                  onActivate={() => void setPluginActivationEnabled(plugin, !plugin.active)}
+                  onClick={() => void setPluginActivationEnabled(plugin, !plugin.active)}
+                  onSecondaryActionDescription="Move Up"
+                  onSecondaryButton={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void movePluginActivation(plugin, -1);
+                  }}
+                  onOptionsActionDescription="Move Down"
+                  onOptionsButton={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void movePluginActivation(plugin, 1);
+                  }}
+                  style={{ ...freshModCardStyle(plugin.active), opacity: busy ? 0.7 : 1 }}
+                >
+                  {row}
+                  {mutableIndex <= 0 && <div style={{ color: "#64748b", fontSize: "10px" }}>Already first in DMM plugin order.</div>}
+                  {mutableIndex >= mutableRows.length - 1 && <div style={{ color: "#64748b", fontSize: "10px" }}>Already last in DMM plugin order.</div>}
+                </Focusable>
+              );
+            })}
+          </div>
+        )}
         {workshopItems.map((item) => {
           const disabled = item.disabled_known && item.disabled_locally;
           return (
