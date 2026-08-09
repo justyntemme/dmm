@@ -18,8 +18,8 @@ MVP vertical slice in active testing:
 - Every installed mod carries a source/catalog identity so the phone/tablet UI and Decky UI can show source tags such as `Nexus`, `Steam Workshop`, `Thunderstore`, `Modrinth`, `GameBanana`, `mod.io`, `CurseForge`, `GitHub`, `Direct`, `Local`, and `Native`.
 - Captured install actions and active download/extraction work can be canceled from the phone/tablet UI.
 - Jobs persist structured source/game metadata for reliable game-scoped action and activity filtering after backend restarts.
-- Captured Nexus links download immediately so short-lived URLs are consumed while valid; when auto-install is disabled, Action Center gates the local install from the cached archive.
-- Decky Settings exposes "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, while auto-enable defaults off so newly installed mods remain disabled until the user enables them.
+- Nexus links download immediately so short-lived URLs are consumed while valid; when auto-install is disabled, Action Center gates the local install from the cached archive.
+- Decky Settings exposes "Auto-install downloaded mods" and "Auto-enable installed mods"; auto-install defaults on, while auto-enable defaults off so newly installed mods remain disabled until the user enables them.
 - The Decky plugin shows Gaming Mode notifications for Nexus captured-link and download job transitions while it is loaded.
 - Stardew Valley (`413150`) is the first supported deploy target.
 - Install planning uses Vortex-modeled metadata specs: the current Stardew slice handles manifest-based mods, root-folder `Content/` archives, and SMAPI installer archives with Linux embedded-payload extraction.

@@ -2117,7 +2117,7 @@
       } else {
         captureURL = "";
         captureBrowserPrompt = null;
-        bulkCaptureMessage = result.download_started ? "Mod link captured; downloading archive now." : result.job?.message || "Mod link captured.";
+        bulkCaptureMessage = result.download_started ? "Mod link added; downloading archive now." : result.job?.message || "Mod link added.";
       }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -2149,7 +2149,7 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
-      localArchiveMessage = result.install_started ? "Upload received; installing archive." : "Upload received; install it from Action Center.";
+      localArchiveMessage = result.install_started ? "Upload received; installing archive." : "Upload received; finish the install from Action Center.";
       localArchiveFile = null;
       if (localArchiveInput) localArchiveInput.value = "";
       await refreshJobsAndSelectedGame("local-archive");
@@ -2239,7 +2239,7 @@
       }
       const result = await response.json();
       if (result.job) upsertJob(result.job);
-      deckLocalArchiveMessage = result.install_started ? "Deck archive imported; installing archive." : "Deck archive imported; install it from Action Center.";
+      deckLocalArchiveMessage = result.install_started ? "Deck archive imported; installing archive." : "Deck archive imported; finish the install from Action Center.";
       await refreshJobsAndSelectedGame("deck-local-archive");
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -4014,7 +4014,7 @@
           </div>
         {/if}
         {#if capturedInstallActions.length > 0}
-          <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
+          <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Mod Installs</button>
         {/if}
         {#if globalActionCount === 0}
           <div class="action-home">
@@ -4164,7 +4164,7 @@
             <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
             <div><dt>Review</dt><dd>{reviewCount}</dd></div>
             <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
+            <div><dt>Downloaded mods</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
             <div><dt>Sources</dt><dd>{readySourceCatalogCount}/{sourceCatalogCount} ready</dd></div>
@@ -4248,7 +4248,7 @@
         <article class="workspace-panel">
           <h2>Install Behavior</h2>
           <dl class="settings-list">
-            <div><dt>Captured installs</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
+            <div><dt>Downloaded mods</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
             <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
             <div><dt>Per game</dt><dd>{status?.download?.max_concurrent_captured_downloads_per_game ?? 1} active download{(status?.download?.max_concurrent_captured_downloads_per_game ?? 1) === 1 ? "" : "s"}</dd></div>
@@ -5058,7 +5058,7 @@
             <span>{selectedGameActionItems.length} open · {installCandidates.length} review</span>
           </div>
           {#if selectedGameCapturedInstallActions.length > 0}
-            <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Install Actions</button>
+            <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Mod Installs</button>
           {/if}
           {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
             <div class="empty-action-panel">

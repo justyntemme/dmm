@@ -80,8 +80,8 @@ require_text "$DECKY_APP" "label: \"Games\"" \
   "Decky route tab must be labeled Games for the game-selection workflow"
 require_text "$DECKY_APP" "Dependencies" \
   "Decky plugin must retain dependency status"
-require_text "$DECKY_APP" "Auto-install captured downloads" \
-  "Decky plugin must expose automatic captured-install behavior"
+require_text "$DECKY_APP" "Auto-install downloaded mods" \
+  "Decky plugin must expose automatic downloaded-mod install behavior"
 require_text "$DECKY_APP" "Auto-enable installed mods" \
   "Decky plugin must expose automatic enable/deploy behavior"
 require_text "$DECKY_APP" "sourceForManagedMod(mod)" \

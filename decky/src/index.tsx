@@ -5146,7 +5146,7 @@ function FreshDeckyModManagerRoute() {
         </div>
         <div style={freshSettingsCardStyle}>
           <div style={{ fontWeight: 900 }}>Automation</div>
-          <ToggleField label="Auto-install captured downloads" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
+          <ToggleField label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
           <ToggleField label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <ToggleField label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>

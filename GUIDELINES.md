@@ -142,10 +142,10 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - The primary mod-management surface should be a profile mod list with clear enabled/disabled state, profile-scoped priority when relevant, pending/apply-needed state, and a simple apply action.
 - Avoid exposing backend pipeline terms such as "staged", "manifest", "install plan", or "target mapping" in primary user flows. Use them only in advanced/debug views and logs.
 - Nexus links can expire quickly, so DMM should download captured Nexus archives immediately after capture. Approval gates the local install step, not the network download.
-- Decky Settings should expose "Auto-install captured downloads" and "Auto-enable installed mods"; auto-install defaults on, auto-enable defaults off, and both must be explicit and easy to disable.
+- Decky Settings should expose "Auto-install downloaded mods" and "Auto-enable installed mods"; auto-install defaults on, auto-enable defaults off, and both must be explicit and easy to disable.
 - Auto-enable may install, enable, and deploy files when there are no conflicts. When auto-enable is off, newly installed mods must remain disabled until the user enables them.
 - The phone/tablet web app should not expose these Deck behavior switches. They belong in the Steam Deck plugin because they change Deck-side capture/install behavior.
-- Gaming Mode must show Decky notifications for Nexus request capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
+- Gaming Mode must show Decky notifications for Nexus link capture and install/download transitions, especially when the Nexus browser page only says that a download is starting.
 - FOMOD installer choices should be presented as clear touch-friendly forms in the browser UI and, for Deck-only flows, in a Decky modal rather than a crowded sidebar view.
 - If "Auto-enable installed mods" is enabled and a first-time FOMOD/installer-choice request is reached from a Deck-side flow, DMM should attempt to open a Decky-native choice modal automatically, even if the Decky sidebar tab is not already open.
 - If Decky/Steam overlay APIs cannot safely open that modal from the background, DMM should show a Decky notification explaining that installer choices are required and tell the user to open Decky Mod Manager and click the installer entry to continue. The same installer-choice request must also remain visible in the phone/tablet UI.
