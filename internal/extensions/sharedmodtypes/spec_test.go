@@ -2,6 +2,7 @@ package sharedmodtypes
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,11 +53,30 @@ func TestDInputInstallerCopiesWrapperBesideGameExecutable(t *testing.T) {
 	if !spec.CustomMatch(root) {
 		t.Fatal("DInput installer did not match dinput8.dll")
 	}
+	_, err := spec.CustomBuild(installplan.BuildInput{
+		GameID:             "testgame",
+		ExtractedRoot:      root,
+		Installer:          spec,
+		ExecutableRelative: "bin/Game.exe",
+	})
+	var choice installplan.ChoiceRequiredError
+	if !errors.As(err, &choice) || choice.Kind != "unsafe-dll-confirmation" {
+		t.Fatalf("expected unsafe dll confirmation, got %#v", err)
+	}
+	if len(choice.Installer.Steps) != 1 || len(choice.Installer.Steps[0].Groups) != 1 {
+		t.Fatalf("installer = %+v", choice.Installer)
+	}
+	group := choice.Installer.Steps[0].Groups[0]
+	if !group.Required || group.Type != "SelectAtLeastOne" || len(group.Plugins) != 1 || group.Plugins[0].EffectiveType != "Optional" {
+		t.Fatalf("confirmation group = %+v", group)
+	}
+
 	plan, err := spec.CustomBuild(installplan.BuildInput{
 		GameID:             "testgame",
 		ExtractedRoot:      root,
 		Installer:          spec,
 		ExecutableRelative: "bin/Game.exe",
+		Selections:         map[string][]string{dinputTrustGroupID: {dinputTrustChoiceID}},
 	})
 	if err != nil {
 		t.Fatalf("build plan: %v", err)

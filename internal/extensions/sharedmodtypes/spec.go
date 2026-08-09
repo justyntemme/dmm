@@ -32,6 +32,9 @@ const (
 const (
 	GeDoSaToPathEnv       = "DMM_GEDOSATO_PATH"
 	GeDoSaToLegacyPathEnv = "GEDOSATO_PATH"
+
+	dinputTrustGroupID  = "dinput-trust"
+	dinputTrustChoiceID = "dinput-trust-continue"
 )
 
 func Extension() sdk.Extension {
@@ -115,6 +118,9 @@ func BuildDInputArchive(input installplan.BuildInput) (installplan.Plan, error) 
 	if ref == "" {
 		return installplan.Plan{}, installplan.Unsupported("Vortex dinput installer matched but no dinput8.dll was found")
 	}
+	if !dinputTrustConfirmed(input.Selections) {
+		return installplan.Plan{}, dinputTrustChoiceRequired(ref)
+	}
 	basePath := filepath.ToSlash(filepath.Dir(ref))
 	if basePath == "." {
 		basePath = ""
@@ -159,6 +165,44 @@ func BuildDInputArchive(input installplan.BuildInput) (installplan.Plan, error) 
 		Warnings:     []string{"DInput mods run injected DLL code inside the game process. Install only from trusted sources."},
 		Instructions: instructions,
 	}, nil
+}
+
+func dinputTrustConfirmed(selections map[string][]string) bool {
+	for _, choice := range selections[dinputTrustGroupID] {
+		if choice == dinputTrustChoiceID {
+			return true
+		}
+	}
+	return false
+}
+
+func dinputTrustChoiceRequired(ref string) error {
+	return installplan.ChoiceRequired(
+		"unsafe-dll-confirmation",
+		"DInput injector mods run DLL code inside the game process. Confirm this mod came from a source you trust before DMM installs it.",
+		installplan.ChoiceInstaller{
+			Name: "Confirm DInput Injector",
+			Steps: []installplan.ChoiceStep{{
+				ID:   "dinput-confirmation",
+				Name: "Trust this injector",
+				Groups: []installplan.ChoiceGroup{{
+					ID:          dinputTrustGroupID,
+					Name:        "Injected DLL warning",
+					Type:        "SelectAtLeastOne",
+					Description: "This archive contains " + filepath.Base(ref) + ". It will run with the same access as the game process.",
+					Required:    true,
+					Plugins: []installplan.ChoiceOption{{
+						ID:            dinputTrustChoiceID,
+						Name:          "I trust this mod and want DMM to install it",
+						Description:   "Only continue for mods from authors and pages you trust.",
+						Type:          "Optional",
+						EffectiveType: "Optional",
+					}},
+				}},
+			}},
+		},
+		nil,
+	)
 }
 
 func dinputReferenceFile(files []string) string {
