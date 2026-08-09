@@ -21,6 +21,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/galacticcivilizations3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryoarchive"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamestores"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
@@ -134,6 +135,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(fallout4.Extension()),
 		gameext.MustCompileExtension(fez.Extension()),
 		gameext.MustCompileExtension(ghostreconbreakpoint.Extension()),
+		gameext.MustCompileExtension(galacticcivilizations3.Extension()),
 		gameext.MustCompileExtension(gnorpapologue.Extension()),
 		gameext.MustCompileExtension(godhood.Extension()),
 		gameext.MustCompileExtension(halflife.Extension()),

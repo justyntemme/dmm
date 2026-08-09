@@ -218,7 +218,6 @@ var games = []GameSpec{
 	{VortexDir: "game-fallout3", ID: "fallout3", Name: "Fallout 3", SteamAppIDs: []string{"22300", "22370"}},
 	{VortexDir: "game-fallout4vr", ID: "fallout4vr", Name: "Fallout 4 VR", SteamAppIDs: []string{"611660"}, NexusDomains: []string{"fallout4"}, HasCustomInstallers: true},
 	{VortexDir: "game-falloutnv", ID: "falloutnv", Name: "Fallout: New Vegas", SteamAppIDs: []string{"22380"}, NexusDomains: []string{"newvegas"}, HasCustomInstallers: true},
-	{VortexDir: "game-galciv3", ID: "galacticcivilizations3", Name: "Galactic Civilizations III", SteamAppIDs: []string{"976210"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-gardenpaws", ID: "gardenpaws", Name: "Garden Paws", SteamAppIDs: []string{"840010"}, Notes: []string{"Vortex requires modtype-umm and prompts for Unity Mod Manager; DMM needs typed UMM helper parity before claiming full support."}},
 	{VortexDir: "game-greedfall", ID: "greedfall", Name: "GreedFall", SteamAppIDs: []string{"606880"}, HasCustomInstallers: true},
 	{VortexDir: "game-grimdawn", ID: "grimdawn", Name: "Grim Dawn", SteamAppIDs: []string{"219990"}},
