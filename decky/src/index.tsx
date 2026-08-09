@@ -6643,6 +6643,1191 @@ function DeckyModManagerRoute() {
   );
 }
 
+type FreshDeckyTab = "actions" | "games" | "settings";
+
+const freshDeckyTabs: Array<{ id: FreshDeckyTab; label: string }> = [
+  { id: "actions", label: "Actions" },
+  { id: "games", label: "Games" },
+  { id: "settings", label: "Settings" }
+];
+
+const freshDeckyShellStyle: CSSProperties = {
+  background: "#090f1a",
+  boxSizing: "border-box",
+  color: "#f8fafc",
+  display: "grid",
+  gridTemplateRows: "40px minmax(0, 1fr)",
+  height: "100%",
+  minHeight: 0,
+  minWidth: 0,
+  overflow: "hidden",
+  padding: "40px 24px 0",
+  width: "100%"
+};
+
+const freshDeckyTabBarStyle: CSSProperties = {
+  display: "grid",
+  gap: "6px",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  minWidth: 0,
+  width: "100%"
+};
+
+const freshDeckyBodyStyle: CSSProperties = {
+  alignContent: "start",
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "10px",
+  minHeight: 0,
+  overflowX: "hidden",
+  overflowY: "auto",
+  padding: "12px 0 168px",
+  scrollPaddingBlock: "12px",
+  width: "100%"
+};
+
+const freshSectionStyle: CSSProperties = {
+  background: "rgba(15, 23, 42, 0.74)",
+  border: "1px solid rgba(71, 85, 105, 0.82)",
+  borderRadius: "7px",
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "8px",
+  minWidth: 0,
+  padding: "10px",
+  width: "100%"
+};
+
+const freshActionRowStyle: CSSProperties = {
+  display: "grid",
+  gap: "8px",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+  minWidth: 0,
+  width: "100%"
+};
+
+function freshTabStyle(active: boolean): CSSProperties {
+  return {
+    ...deckyFocusableCardBase,
+    alignItems: "center",
+    background: active ? "#0f766e" : "#192231",
+    border: `1px solid ${active ? "#5eead4" : "#334155"}`,
+    color: "#f8fafc",
+    display: "flex",
+    fontSize: "11px",
+    fontWeight: 900,
+    height: "34px",
+    justifyContent: "center",
+    lineHeight: 1,
+    padding: "0 4px",
+    textTransform: "uppercase",
+    whiteSpace: "nowrap"
+  };
+}
+
+function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", disabled = false): CSSProperties {
+  const palettes = {
+    primary: { background: "#0f766e", border: "#5eead4", color: "#f8fafc" },
+    neutral: { background: "#1f2937", border: "#475569", color: "#f8fafc" },
+    danger: { background: "#3f1d1d", border: "#7f1d1d", color: "#fecaca" }
+  };
+  const palette = palettes[kind];
+  return {
+    ...deckyFocusableCardBase,
+    alignItems: "center",
+    background: palette.background,
+    border: `1px solid ${palette.border}`,
+    color: palette.color,
+    display: "flex",
+    fontSize: "12px",
+    fontWeight: 900,
+    justifyContent: "center",
+    lineHeight: 1.12,
+    minHeight: "38px",
+    opacity: disabled ? 0.52 : 1,
+    padding: "8px 7px",
+    textAlign: "center",
+    whiteSpace: "normal"
+  };
+}
+
+function freshCardStyle(active = false): CSSProperties {
+  return {
+    ...deckyFocusableCardBase,
+    background: active ? "rgba(15, 118, 110, 0.22)" : "rgba(17, 24, 39, 0.78)",
+    border: `1px solid ${active ? "#0f766e" : "#334155"}`,
+    display: "grid",
+    gap: "6px",
+    padding: "10px"
+  };
+}
+
+function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kind?: "primary" | "neutral" | "danger"; onActivate: () => void }) {
+  return (
+    <Focusable
+      className="dmm-focus-card"
+      focusClassName="dmm-focus-card-focused"
+      onActivate={() => {
+        if (!props.disabled) props.onActivate();
+      }}
+      onClick={() => {
+        if (!props.disabled) props.onActivate();
+      }}
+      style={freshButtonStyle(props.kind ?? "neutral", props.disabled)}
+    >
+      {props.children}
+    </Focusable>
+  );
+}
+
+function FreshProfilePickerModal(props: {
+  appID: string;
+  profiles: Profile[];
+  activeProfileID: number;
+  onSelectProfile: (profile: Profile) => Promise<void>;
+  onChanged: () => Promise<void>;
+  closeModal: () => void;
+}) {
+  const [profileName, setProfileName] = useState("");
+  const [copyActive, setCopyActive] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function createProfile() {
+    const name = profileName.trim();
+    if (!name || busy) return;
+    try {
+      setBusy(true);
+      setMessage("");
+      const result = await call<[string, string, number], { ok: boolean; error?: string; profile?: Profile }>(
+        "create_game_profile",
+        props.appID,
+        name,
+        copyActive ? props.activeProfileID : 0
+      );
+      if (!result.ok || !result.profile) {
+        setMessage(result.error || "Unable to create profile.");
+        return;
+      }
+      await props.onChanged();
+      await props.onSelectProfile(result.profile);
+      props.closeModal();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "10px", minWidth: 0, padding: "4px", width: "100%" }}>
+        <div style={{ fontSize: "16px", fontWeight: 900 }}>Profiles</div>
+        <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
+          {props.profiles.map((profile) => (
+            <Focusable
+              key={profile.id}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => {
+                void props.onSelectProfile(profile).then(props.closeModal);
+              }}
+              onClick={() => {
+                void props.onSelectProfile(profile).then(props.closeModal);
+              }}
+              style={freshCardStyle(profile.id === props.activeProfileID)}
+            >
+              <div style={{ fontWeight: 900 }}>{profile.name}</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{profileCountText(profile)}</div>
+            </Focusable>
+          ))}
+        </Focusable>
+        <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Add New Profile</div>
+          <TextField label="Profile Name" value={profileName} bShowClearAction onChange={(event) => setProfileName(event.currentTarget.value)} />
+          <ToggleField label="Copy current profile" checked={copyActive} onChange={setCopyActive} />
+          <FreshActionButton kind="primary" disabled={!profileName.trim() || busy} onActivate={createProfile}>
+            {busy ? "Creating" : "Create Profile"}
+          </FreshActionButton>
+          {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
+        </div>
+        <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
+      </Focusable>
+    </ModalRoot>
+  );
+}
+
+function FreshLocalArchiveModal(props: {
+  appID: string;
+  profileID: number;
+  onImported: () => Promise<void>;
+  closeModal: () => void;
+}) {
+  const [entries, setEntries] = useState<LocalArchiveBrowseEntry[]>([]);
+  const [currentPath, setCurrentPath] = useState("");
+  const [parentPath, setParentPath] = useState("");
+  const [pathInput, setPathInput] = useState("");
+  const [busyPath, setBusyPath] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function browse(path = "") {
+    try {
+      setMessage("");
+      const result = await call<[string, string], { ok: boolean; error?: string; roots: string[]; entries: LocalArchiveBrowseEntry[]; current_path: string; parent_path?: string }>(
+        "browse_local_archives",
+        props.appID,
+        path
+      );
+      if (!result.ok) {
+        setMessage(result.error || "Unable to browse Deck Downloads.");
+        return;
+      }
+      setEntries(result.entries ?? []);
+      setCurrentPath(result.current_path ?? "");
+      setParentPath(result.parent_path ?? "");
+      setPathInput(result.current_path ?? "");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function importArchive(entry: LocalArchiveBrowseEntry) {
+    if (entry.kind !== "file" || busyPath) return;
+    try {
+      setBusyPath(entry.path);
+      setMessage("");
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job }; job?: Job }>(
+        "import_local_archive",
+        props.appID,
+        entry.path,
+        props.profileID
+      );
+      if (!result.ok) {
+        setMessage(result.error || "Unable to import archive.");
+        return;
+      }
+      const job = result.job ?? result.result?.job;
+      if (job) await maybeShowDeckyActionToast(job, "fresh-local-archive-import");
+      await props.onImported();
+      props.closeModal();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyPath("");
+    }
+  }
+
+  useEffect(() => {
+    void browse("");
+  }, []);
+
+  return (
+    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "10px", minWidth: 0, padding: "4px", width: "100%" }}>
+        <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
+          <div style={{ fontSize: "16px", fontWeight: 900 }}>Import Archive</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>{currentPath || "Deck Downloads"}</div>
+        </div>
+        <div style={freshActionRowStyle}>
+          <FreshActionButton disabled={!parentPath} onActivate={() => void browse(parentPath)}>Up</FreshActionButton>
+          <FreshActionButton onActivate={() => void browse("")}>Downloads</FreshActionButton>
+        </div>
+        <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
+          <TextField label="Path" value={pathInput} bShowClearAction onChange={(event) => setPathInput(event.currentTarget.value)} />
+          <FreshActionButton onActivate={() => void browse(pathInput.trim())}>Open Path</FreshActionButton>
+        </div>
+        <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "480px", overflowY: "auto", paddingRight: "4px" }}>
+          {entries.length === 0 && <div style={{ color: "#a1a1aa" }}>No folders or supported archives found here.</div>}
+          {entries.map((entry) => {
+            const isFile = entry.kind === "file";
+            const busy = busyPath === entry.path;
+            return (
+              <Focusable
+                key={entry.path}
+                className="dmm-sidebar-row"
+                focusClassName="dmm-sidebar-row-focused"
+                onActivate={() => {
+                  if (isFile) void importArchive(entry);
+                  else void browse(entry.path);
+                }}
+                onClick={() => {
+                  if (isFile) void importArchive(entry);
+                  else void browse(entry.path);
+                }}
+                style={freshCardStyle(false)}
+              >
+                <div style={{ display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+                  <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{entry.name}</div>
+                  {isFile && <span style={deckySourcePillStyle("local")}>Local</span>}
+                </div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
+                  {isFile ? `${formatBytes(entry.bytes)} · ${busy ? "Importing" : "A Import"}` : "A Open Folder"}
+                </div>
+              </Focusable>
+            );
+          })}
+        </Focusable>
+        {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
+        <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
+      </Focusable>
+    </ModalRoot>
+  );
+}
+
+function FreshDeckyModManagerRoute() {
+  const [initialReturnContext] = useState(() => consumeDMMDeckyReturnContext());
+  const [tab, setTab] = useState<FreshDeckyTab>(initialReturnContext?.tab === "games" ? "games" : "actions");
+  const [status, setStatus] = useState<BackendStatus | null>(null);
+  const [games, setGames] = useState<ManagedGame[]>([]);
+  const [catalogs, setCatalogs] = useState<CatalogStatus[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedGameID, setSelectedGameID] = useState(initialReturnContext?.appID ?? "");
+  const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [mods, setMods] = useState<ManagedMod[]>([]);
+  const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
+  const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
+  const [workshopItems, setWorkshopItems] = useState<WorkshopItem[]>([]);
+  const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
+  const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
+  const [gameSearch, setGameSearch] = useState("");
+  const [gameSort, setGameSortState] = useState<GameSort>("recent");
+  const [showDebug, setShowDebug] = useState(false);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Diagnostics | null>(null);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
+  const [nxm, setNXM] = useState<NXMStatus | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busyModID, setBusyModID] = useState<number | null>(null);
+  const [busyJobID, setBusyJobID] = useState("");
+  const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
+  const selectedGameRef = useRef<HTMLDivElement | null>(null);
+  const selectedGame = games.find((game) => game.app_id === selectedGameID) ?? null;
+  const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+  const selectedNexusDomain = (selectedGame?.nexus_domains ?? [])[0]?.trim().toLowerCase() ?? "";
+  const actionJobs = jobs.filter(isDeckyActionCenterJob);
+  const gameActionJobs = selectedGameID ? actionJobs.filter((job) => deckyJobBelongsToAppID(job, selectedGameID)) : [];
+  const runtimeWarnings = (diagnostics?.runtime_requirements ?? []).filter((requirement) => requirement.status !== "ok");
+  const validationWarnings = diagnostics?.validation_warnings ?? [];
+  const installedCount = mods.length + workshopItems.length;
+  const enabledCount = mods.filter((mod) => mod.enabled).length + workshopItems.filter((item) => item.disabled_known ? !item.disabled_locally : item.subscribed).length;
+
+  function applyUIPreferences(ui?: UISettings) {
+    setFavoriteGameIDs(new Set((ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== "")));
+    setGameRecent(ui?.recent_games ?? {});
+    setGameSortState(ui?.game_sort === "az" || ui?.game_sort === "za" ? ui.game_sort : "recent");
+  }
+
+  async function patchUIPreferences(patch: Record<string, string | number | boolean>) {
+    const result = await call<[Record<string, string | number | boolean>], { ok: boolean; error?: string; status?: BackendStatus }>("patch_ui_preferences", patch);
+    if (result.ok && result.status) {
+      setStatus(result.status);
+      applyUIPreferences(result.status.backend?.ui);
+    }
+  }
+
+  async function loadBaseState() {
+    const [nextStatus, gamesResult, jobsResult, catalogResult] = await Promise.all([
+      call<[], BackendStatus>("status"),
+      call<[], { ok: boolean; error?: string; games: ManagedGame[] }>("games"),
+      call<[], { ok: boolean; error?: string; jobs: Job[] }>("jobs"),
+      call<[], { ok: boolean; error?: string; catalogs: CatalogStatus[] }>("catalogs")
+    ]);
+    applyBackendAuthFromStatus(nextStatus);
+    setStatus(nextStatus);
+    applyUIPreferences(nextStatus.backend?.ui);
+    if (gamesResult.ok) setGames(gamesResult.games);
+    else setError(gamesResult.error || "Unable to load games.");
+    if (jobsResult.ok) setJobs(jobsResult.jobs);
+    if (catalogResult.ok) setCatalogs(catalogResult.catalogs);
+    const running = currentRunningGame();
+    setRunningGame(running);
+    return { games: gamesResult.ok ? gamesResult.games : [], running };
+  }
+
+  async function loadSelectedGameState(appID: string) {
+    if (!appID) {
+      setProfiles([]);
+      setMods([]);
+      setGameDiagnostics(null);
+      setInstallCandidates([]);
+      setWorkshopItems([]);
+      return;
+    }
+    const [profilesResult, modsResult, diagnosticsResult, candidatesResult, workshopResult] = await Promise.all([
+      call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
+      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
+      call<[string], { ok: boolean; error?: string; diagnostics?: GameDiagnostics | null }>("game_diagnostics", appID),
+      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
+      call<[string], { ok: boolean; error?: string; items: WorkshopItem[]; state?: WorkshopState }>("game_workshop", appID)
+    ]);
+    if (profilesResult.ok) setProfiles(profilesResult.profiles);
+    else setError(profilesResult.error || "Unable to load profiles.");
+    if (modsResult.ok) setMods(modsResult.mods);
+    else setError(modsResult.error || "Unable to load mods.");
+    setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
+    setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
+    setWorkshopItems(workshopResult.ok ? workshopResult.items : []);
+  }
+
+  async function refreshFreshState() {
+    try {
+      setError("");
+      const result = await loadBaseState();
+      const runningManageReady = result.running ? result.games.find((game) => game.app_id === result.running?.app_id && gameManageReady(game)) : null;
+      const nextSelected = selectedGameID || initialReturnContext?.appID || (!suppressRunningAutoOpen && runningManageReady ? runningManageReady.app_id : "");
+      if (nextSelected && result.games.some((game) => game.app_id === nextSelected)) {
+        setSelectedGameID(nextSelected);
+        await loadSelectedGameState(nextSelected);
+      } else {
+        await loadSelectedGameState("");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function selectGame(appID: string) {
+    try {
+      setError("");
+      setMessage("");
+      setSuppressRunningAutoOpen(false);
+      setSelectedGameID(appID);
+      const recentAt = Date.now();
+      setGameRecent((current) => ({ ...current, [appID]: recentAt }));
+      void patchUIPreferences({ recent_game_id: appID, recent_at: recentAt });
+      await loadSelectedGameState(appID);
+      focusDeckyRef(selectedGameRef, "fresh-selected-game", { app_id: appID });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function selectProfile(profile: Profile) {
+    if (!profile || profile.is_default) return;
+    try {
+      setError("");
+      setMessage("");
+      const result = await call<[number], { ok: boolean; error?: string; profile?: Profile; apply?: ProfileApplyResult }>("set_default_profile", profile.id);
+      if (!result.ok) {
+        setError(result.error || "Unable to select profile.");
+        return;
+      }
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.apply?.message || "Profile selected.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function openProfilePicker() {
+    if (!selectedGameID || !selectedProfile) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <FreshProfilePickerModal
+        appID={selectedGameID}
+        profiles={profiles}
+        activeProfileID={selectedProfile.id}
+        onSelectProfile={selectProfile}
+        onChanged={() => loadSelectedGameState(selectedGameID)}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Profiles", bNeverPopOut: true }
+    );
+  }
+
+  function openArchiveImport() {
+    if (!selectedGameID || !selectedProfile) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <FreshLocalArchiveModal appID={selectedGameID} profileID={selectedProfile.id} onImported={() => loadSelectedGameState(selectedGameID)} closeModal={closeModal} />,
+      window,
+      { strTitle: "Import Archive", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 720, popupHeight: 780 }
+    );
+  }
+
+  function openExploreMods() {
+    if (!selectedGameID || !selectedGame || !selectedProfile) return;
+    if (!selectedNexusDomain) {
+      setError("This game does not have a browse-capable source yet.");
+      return;
+    }
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <NexusBrowserModal
+        appID={selectedGameID}
+        gameName={selectedGame.name}
+        gameDomain={selectedNexusDomain}
+        profileID={selectedProfile.id}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Explore Mods", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
+    );
+  }
+
+  async function launchSelectedGame() {
+    if (!selectedGameID) return;
+    try {
+      setError("");
+      setMessage("");
+      const steamURL = `steam://run/${selectedGameID}`;
+      if (typeof SteamClient?.URL?.ExecuteSteamURL !== "function") {
+        setError("Steam launch API is unavailable in this Decky session.");
+        await logFrontendEvent("fresh launch game unavailable", { app_id: selectedGameID });
+        return;
+      }
+      SteamClient.URL.ExecuteSteamURL(steamURL);
+      setMessage(`Launching ${selectedGame?.name || selectedGameID}.`);
+      await logFrontendEvent("fresh launch game requested", { app_id: selectedGameID });
+    } catch (err) {
+      const next = err instanceof Error ? err.message : String(err);
+      setError(next);
+      await logFrontendEvent("fresh launch game failed", { app_id: selectedGameID, error: next });
+    }
+  }
+
+  async function toggleMod(mod: ManagedMod) {
+    if (!selectedGameID || !selectedProfile || busyModID) return;
+    try {
+      setBusyModID(mod.id);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string; apply?: ProfileApplyResult }>(
+        "set_profile_mod_enabled",
+        selectedGameID,
+        selectedProfile.id,
+        mod.id,
+        !mod.enabled
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to update mod.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.apply?.job, "fresh-toggle-mod");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.apply?.message || `${mod.enabled ? "Disabled" : "Enabled"} ${mod.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  async function reinstallMod(mod: ManagedMod, promptInstallerChoices = false) {
+    if (!selectedGameID || busyModID) return;
+    try {
+      setBusyModID(mod.id);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, boolean], { ok: boolean; error?: string; result?: { job?: Job; candidate?: InstallCandidate } }>(
+        "reinstall_game_mod",
+        selectedGameID,
+        mod.id,
+        promptInstallerChoices
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to reinstall mod.");
+        return;
+      }
+      const candidate = result.result?.candidate;
+      if (candidate && installerForCandidate(candidate)) {
+        await openInstallerChoiceModalForCandidate(selectedGameID, candidate, "fresh-reconfigure", () => {
+          void loadSelectedGameState(selectedGameID);
+        }, selectedProfile?.id ?? 0);
+      }
+      await maybeShowDeckyActionToast(result.result?.job, "fresh-reinstall-mod");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.result?.job?.message || (promptInstallerChoices ? "Installer choices opened." : "Reinstall started."));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  function askRemoveMod(mod: ManagedMod) {
+    if (!selectedGameID || !selectedProfile) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle={`Remove ${mod.name}`}
+        strDescription="DMM will remove this mod from the selected profile and apply the profile. Cached downloads are kept."
+        strOKButtonText="Remove"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void removeMod(mod);
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Remove Mod", bNeverPopOut: true }
+    );
+  }
+
+  async function removeMod(mod: ManagedMod) {
+    if (!selectedGameID || !selectedProfile || busyModID) return;
+    try {
+      setBusyModID(mod.id);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, number], { ok: boolean; error?: string; result?: { apply?: ProfileApplyResult } }>(
+        "remove_profile_mod",
+        selectedGameID,
+        selectedProfile.id,
+        mod.id
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to remove mod.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.result?.apply?.job, "fresh-remove-mod");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.result?.apply?.message || "Mod removed.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  async function activateActionJob(job: Job) {
+    try {
+      setBusyJobID(job.id);
+      setError("");
+      setMessage("");
+      const appID = String(job.app_id || job.payload?.app_id || "").trim();
+      if (job.type === "installer-choice" && appID) {
+        const result = await call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID);
+        const candidateID = Number(job.payload?.candidate_id ?? 0);
+        const candidate = result.ok ? result.candidates.find((item) => item.id === candidateID) ?? result.candidates[0] : null;
+        if (candidate && installerForCandidate(candidate)) {
+          await openInstallerChoiceModalForCandidate(appID, candidate, "fresh-actions", () => loadSelectedGameState(appID), selectedProfile?.id ?? 0);
+          await loadBaseState();
+          return;
+        }
+      }
+      if (job.type === "captured-install" && job.status === "waiting") {
+        const profileID = Number(job.payload?.profile_id || job.payload?.target_profile_id || selectedProfile?.id || 0);
+        const result = await call<[string, number], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("install_captured_install", job.id, profileID);
+        if (!result.ok) setError(result.error || "Unable to install.");
+        else await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-action-install");
+      } else if (job.type === "captured-install" && job.status === "failed") {
+        const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("retry_captured_install", job.id);
+        if (!result.ok) setError(result.error || "Unable to retry.");
+        else await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-action-retry");
+      } else if (appID) {
+        setTab("games");
+        setSelectedGameID(appID);
+        await loadSelectedGameState(appID);
+      }
+      await loadBaseState();
+      if (selectedGameID) await loadSelectedGameState(selectedGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyJobID("");
+    }
+  }
+
+  async function cancelActionJob(job: Job) {
+    if (!deckyJobCanCancel(job)) return;
+    try {
+      setBusyJobID(job.id);
+      const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: { job?: Job } }>("cancel_job", job.id);
+      if (!result.ok) setError(result.error || "Unable to cancel action.");
+      else await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-cancel-action");
+      await loadBaseState();
+      if (selectedGameID) await loadSelectedGameState(selectedGameID);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyJobID("");
+    }
+  }
+
+  async function setAutoInstallCapturedDownloads(autoInstall: boolean) {
+    const result = await call<[boolean], { ok: boolean; error?: string }>("set_auto_install_captured_downloads", autoInstall);
+    if (!result.ok) setError(result.error || "Unable to update install settings.");
+    await refreshFreshState();
+  }
+
+  async function setAutoEnableInstalledMods(autoEnable: boolean) {
+    const result = await call<[boolean], { ok: boolean; error?: string }>("set_auto_enable_installed_mods", autoEnable);
+    if (!result.ok) setError(result.error || "Unable to update enable settings.");
+    await refreshFreshState();
+  }
+
+  async function setAutoShowFOMODInstallers(autoShow: boolean) {
+    const result = await call<[boolean], { ok: boolean; error?: string }>("set_auto_show_fomod_installers", autoShow);
+    if (!result.ok) setError(result.error || "Unable to update installer settings.");
+    await refreshFreshState();
+  }
+
+  async function setLanOnly(lanOnly: boolean) {
+    const result = await call<[boolean], { ok: boolean; error?: string }>("set_lan_only", lanOnly);
+    if (!result.ok) setError(result.error || "Unable to update security settings.");
+    await refreshFreshState();
+  }
+
+  async function refreshDebugState() {
+    const [deps, nextNXM, logs] = await Promise.all([
+      call<[], Dependency[]>("dependencies"),
+      call<[], NXMStatus>("nxm_status"),
+      call<[], Diagnostics>("diagnostics")
+    ]);
+    setDependencies(deps);
+    setNXM(nextNXM);
+    setDiagnosticLogs(logs);
+  }
+
+  useEffect(() => {
+    void refreshFreshState();
+    const timer = window.setInterval(() => void refreshFreshState(), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!showDebug) return;
+    void refreshDebugState();
+    const timer = window.setInterval(() => void refreshDebugState(), 2500);
+    return () => window.clearInterval(timer);
+  }, [showDebug]);
+
+  useEffect(() => {
+    const listener = (rawEvent: Event) => {
+      const event = (rawEvent as CustomEvent<DomainEvent>).detail;
+      if (!event) return;
+      if (event.type === "ui.changed" && isUISettings(event.payload)) {
+        applyUIPreferences(event.payload);
+        return;
+      }
+      if (["job.updated", "jobs.snapshot", "profile_mods.changed", "deployment.changed", "install.changed", "launch.changed", "mod_updates.changed", "workshop.changed", "game.changed"].includes(event.type)) {
+        void refreshFreshState();
+      }
+    };
+    window.addEventListener(DMM_EVENT_NAME, listener);
+    return () => window.removeEventListener(DMM_EVENT_NAME, listener);
+  }, [selectedGameID, suppressRunningAutoOpen]);
+
+  useEffect(() => {
+    if (tab !== "games" || selectedGameID || suppressRunningAutoOpen || games.length === 0) return;
+    const running = currentRunningGame();
+    const runningReady = running ? games.find((game) => game.app_id === running.app_id && gameManageReady(game)) : null;
+    if (runningReady) void selectGame(runningReady.app_id);
+  }, [tab, selectedGameID, suppressRunningAutoOpen, games]);
+
+  const visibleGames = useMemo(() => {
+    const search = gameSearch.trim().toLowerCase();
+    const favorites = favoriteGameIDs;
+    return [...games]
+      .filter((game) => gameManageReady(game))
+      .filter((game) => !search || game.name.toLowerCase().includes(search) || game.app_id.includes(search))
+      .sort((a, b) => {
+        const favoriteDelta = Number(favorites.has(b.app_id)) - Number(favorites.has(a.app_id));
+        if (favoriteDelta !== 0) return favoriteDelta;
+        if (gameSort === "az") return a.name.localeCompare(b.name);
+        if (gameSort === "za") return b.name.localeCompare(a.name);
+        const recentDelta = (gameRecent[b.app_id] ?? 0) - (gameRecent[a.app_id] ?? 0);
+        if (recentDelta !== 0) return recentDelta;
+        return a.name.localeCompare(b.name);
+      });
+  }, [games, gameSearch, favoriteGameIDs, gameSort, gameRecent]);
+
+  function clearSelectedGame() {
+    setSelectedGameID("");
+    setSuppressRunningAutoOpen(true);
+    setProfiles([]);
+    setMods([]);
+    setGameDiagnostics(null);
+    setInstallCandidates([]);
+    setWorkshopItems([]);
+  }
+
+  function cycleTab(delta: -1 | 1) {
+    const index = Math.max(0, freshDeckyTabs.findIndex((item) => item.id === tab));
+    const next = freshDeckyTabs[(index + delta + freshDeckyTabs.length) % freshDeckyTabs.length];
+    setTab(next.id);
+    if (next.id !== "games") setSuppressRunningAutoOpen(false);
+  }
+
+  function handleRouteButtonDown(event: GamepadEvent) {
+    if (event.detail.button === GamepadButton.CANCEL && tab === "games" && selectedGameID) {
+      event.preventDefault();
+      event.stopPropagation();
+      clearSelectedGame();
+      return;
+    }
+    if (event.detail.button === GamepadButton.BUMPER_LEFT) {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleTab(-1);
+      return;
+    }
+    if (event.detail.button === GamepadButton.BUMPER_RIGHT) {
+      event.preventDefault();
+      event.stopPropagation();
+      cycleTab(1);
+    }
+  }
+
+  function renderActions() {
+    const runningReady = runningGame && games.find((game) => game.app_id === runningGame.app_id && gameManageReady(game));
+    return (
+      <>
+        {runningGame && (
+          <Focusable
+            className="dmm-sidebar-row"
+            focusClassName="dmm-sidebar-row-focused"
+            onActivate={() => {
+              if (runningReady) {
+                setTab("games");
+                void selectGame(runningGame.app_id);
+              }
+            }}
+            onClick={() => {
+              if (runningReady) {
+                setTab("games");
+                void selectGame(runningGame.app_id);
+              }
+            }}
+            style={freshCardStyle(Boolean(runningReady))}
+          >
+            <div style={{ color: runningReady ? "#99f6e4" : "#fbbf24", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>
+              {runningReady ? "Now Playing" : "Running"}
+            </div>
+            <div style={{ fontSize: "15px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{runningGame.name}</div>
+            <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{runningReady ? "A Open Game" : "No DMM install support yet"}</div>
+          </Focusable>
+        )}
+        {actionJobs.length === 0 && (
+          <div style={freshSectionStyle}>
+            <div style={{ color: "#99f6e4", fontWeight: 900 }}>All clear</div>
+            <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Downloads, installer choices, and Deck actions that need attention will appear here.</div>
+          </div>
+        )}
+        {actionJobs.map((job) => {
+          const source = sourceForJob(job);
+          const primary = deckyJobPrimaryActionLabel(job) || "Open";
+          return (
+            <Focusable
+              key={job.id}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => void activateActionJob(job)}
+              onClick={() => void activateActionJob(job)}
+              onSecondaryActionDescription={deckyJobCanCancel(job) ? "Cancel" : undefined}
+              onSecondaryButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void cancelActionJob(job);
+              }}
+              style={freshCardStyle(job.status === "waiting" || job.status === "running")}
+            >
+              <div style={{ display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{job.title}</div>
+                <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
+              </div>
+              <div style={{ color: job.status === "failed" ? "#f87171" : "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{deckyJobStatusLabel(job)}</div>
+              {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
+              <DeckyJobProgress job={job} />
+              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>
+                {busyJobID === job.id ? "Working" : `A ${primary}`}{deckyJobCanCancel(job) ? " · Y Cancel" : ""}
+              </div>
+            </Focusable>
+          );
+        })}
+      </>
+    );
+  }
+
+  function renderGameList() {
+    return (
+      <>
+        <TextField label="Search Games" value={gameSearch} bShowClearAction onChange={(event) => setGameSearch(event.currentTarget.value)} />
+        <FreshActionButton onActivate={() => {
+          const next = nextGameSort(gameSort);
+          setGameSortState(next);
+          void patchUIPreferences({ game_sort: next });
+        }}>
+          Sort: {gameSortLabel(gameSort)}
+        </FreshActionButton>
+        {visibleGames.length === 0 && <div style={freshSectionStyle}>No manage-ready games match this search.</div>}
+        {visibleGames.map((game) => {
+          const favorite = favoriteGameIDs.has(game.app_id);
+          return (
+            <Focusable
+              key={game.app_id}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => void selectGame(game.app_id)}
+              onClick={() => void selectGame(game.app_id)}
+              onSecondaryActionDescription={favorite ? "Unfavorite" : "Favorite"}
+              onSecondaryButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const next = new Set(favoriteGameIDs);
+                if (favorite) next.delete(game.app_id);
+                else next.add(game.app_id);
+                setFavoriteGameIDs(next);
+                void patchUIPreferences({ favorite_game_id: game.app_id, favorite: !favorite });
+              }}
+              style={freshCardStyle(favorite)}
+            >
+              <div style={{ alignItems: "center", display: "grid", gap: "8px", gridTemplateColumns: "54px minmax(0, 1fr)" }}>
+                <img src={steamHeaderImage(game.app_id)} style={{ borderRadius: "5px", height: "30px", objectFit: "cover", width: "54px" }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{favorite ? "★ " : ""}{game.name}</div>
+                  <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>A Open · Y {favorite ? "Unfavorite" : "Favorite"}</div>
+                </div>
+              </div>
+            </Focusable>
+          );
+        })}
+      </>
+    );
+  }
+
+  function renderSelectedGame() {
+    const canBrowse = Boolean(selectedNexusDomain && catalogs.find((catalog) => catalog.id === "nexus")?.status === "ready");
+    return (
+      <>
+        <Focusable
+          ref={selectedGameRef}
+          className="dmm-sidebar-row"
+          focusClassName="dmm-sidebar-row-focused"
+          preferredFocus
+          onCancelButton={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            clearSelectedGame();
+          }}
+          style={freshCardStyle(true)}
+        >
+          <div style={{ alignItems: "center", display: "grid", gap: "8px", gridTemplateColumns: "64px minmax(0, 1fr)" }}>
+            <img src={steamHeaderImage(selectedGameID)} style={{ borderRadius: "6px", height: "36px", objectFit: "cover", width: "64px" }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...deckyTwoLineTextStyle, fontSize: "15px", fontWeight: 900 }}>{selectedGame?.name || selectedGameID}</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{enabledCount} enabled / {installedCount} installed · B Games</div>
+            </div>
+          </div>
+        </Focusable>
+        <FreshActionButton onActivate={openProfilePicker} disabled={!selectedProfile}>
+          Profile: {selectedProfile?.name || "None"} ▼
+        </FreshActionButton>
+        <FreshActionButton kind="primary" onActivate={launchSelectedGame}>
+          Launch Game
+        </FreshActionButton>
+        <div style={freshActionRowStyle}>
+          <FreshActionButton disabled={!canBrowse} onActivate={openExploreMods}>Explore Mods</FreshActionButton>
+          <FreshActionButton disabled={!selectedProfile} onActivate={openArchiveImport}>Import Archive</FreshActionButton>
+        </div>
+        {runtimeWarnings.map((requirement) => {
+          const helpURL = runtimeRequirementHelpURL(requirement);
+          return (
+            <Focusable
+              key={requirement.id}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => {
+                if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
+                else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
+              }}
+              onClick={() => {
+                if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
+                else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
+              }}
+              style={{ ...freshCardStyle(false), borderColor: "#d97706" }}
+            >
+              <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
+              <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
+              {(requirement.kind === "launch-tool" || helpURL) && <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {requirement.kind === "launch-tool" ? "Retry Launch Setup" : "Open Help"}</div>}
+            </Focusable>
+          );
+        })}
+        {validationWarnings.map((warning, index) => (
+          <div key={`${warning}:${index}`} style={{ ...freshSectionStyle, borderColor: "#d97706", color: "#fbbf24" }}>Warning: {warning}</div>
+        ))}
+        {gameActionJobs.map((job) => (
+          <Focusable
+            key={job.id}
+            className="dmm-sidebar-row"
+            focusClassName="dmm-sidebar-row-focused"
+            onActivate={() => void activateActionJob(job)}
+            onClick={() => void activateActionJob(job)}
+            style={{ ...freshCardStyle(job.status === "waiting" || job.status === "running"), borderColor: job.status === "failed" ? "#7f1d1d" : "#334155" }}
+          >
+            <div style={{ color: job.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: 900 }}>{job.title}</div>
+            {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
+            <DeckyJobProgress job={job} />
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {deckyJobPrimaryActionLabel(job) || "Open"}</div>
+          </Focusable>
+        ))}
+        {installCandidates.filter((candidate) => candidate.status === "blocked").map((candidate) => (
+          <div key={candidate.id} style={{ ...freshSectionStyle, borderColor: "#7f1d1d" }}>
+            <div style={{ color: "#f87171", fontWeight: 900 }}>Warning: {candidate.name}</div>
+            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{candidate.reason}</div>
+          </div>
+        ))}
+        {mods.length === 0 && workshopItems.length === 0 && (
+          <div style={freshSectionStyle}>
+            <div style={{ fontWeight: 900 }}>No installed mods</div>
+            <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Use Explore Mods or Import Archive to add mods to this profile.</div>
+          </div>
+        )}
+        {mods.map((mod) => {
+          const source = sourceForManagedMod(mod);
+          const busy = busyModID === mod.id;
+          return (
+            <Focusable
+              key={mod.id}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => void toggleMod(mod)}
+              onClick={() => void toggleMod(mod)}
+              onSecondaryActionDescription={mod.update?.status === "available" ? "Update" : "Reinstall"}
+              onSecondaryButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void reinstallMod(mod, false);
+              }}
+              onOptionsActionDescription="Remove"
+              onOptionsButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                askRemoveMod(mod);
+              }}
+              onMenuActionDescription="Reconfigure"
+              onMenuButton={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void reinstallMod(mod, true);
+              }}
+              style={freshCardStyle(mod.enabled)}
+            >
+              <div style={{ alignItems: "start", display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{mod.name}</div>
+                <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
+              </div>
+              <div style={{ color: mod.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
+                {busy ? "Working" : mod.enabled ? "Enabled" : "Disabled"} · {deckyModStateLabel(mod)}
+              </div>
+              {mod.update?.status === "available" && <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 900 }}>Update available</div>}
+              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove · Menu Reconfigure</div>
+            </Focusable>
+          );
+        })}
+        {workshopItems.map((item) => {
+          const disabled = item.disabled_known && item.disabled_locally;
+          return (
+            <div key={item.published_file_id} style={freshCardStyle(!disabled)}>
+              <div style={{ alignItems: "start", display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{item.title || item.published_file_id}</div>
+                <span style={deckySourcePillStyle(item.source_tag || "steam_workshop")}>{sourceLabel(item.source_tag || "steam_workshop")}</span>
+              </div>
+              <div style={{ color: disabled ? "#a1a1aa" : "#99f6e4", fontSize: "11px", fontWeight: 900 }}>{item.disabled_known ? disabled ? "Disabled" : "Enabled" : "Steam managed"}</div>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  function renderGames() {
+    if (!status?.running) return <div style={freshSectionStyle}>Start the server before managing games.</div>;
+    return selectedGameID ? renderSelectedGame() : renderGameList();
+  }
+
+  function renderSettings() {
+    return (
+      <>
+        <div style={freshSectionStyle}>
+          <div style={{ fontWeight: 900 }}>Server</div>
+          <div>Status: {status?.running ? "Running" : "Stopped"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Phone URL: {status?.url || "Unavailable"}</div>
+          <FreshActionButton onActivate={async () => {
+            const next = await call<[], BackendStatus>(status?.running ? "stop_server" : "start_server");
+            applyBackendAuthFromStatus(next);
+            setStatus(next);
+            await refreshFreshState();
+          }}>
+            {status?.running ? "Stop Server" : "Start Server"}
+          </FreshActionButton>
+        </div>
+        <div style={freshSectionStyle}>
+          <div style={{ fontWeight: 900 }}>Security</div>
+          <ToggleField label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
+          <FreshActionButton disabled={!status?.auth?.enabled} onActivate={async () => {
+            const next = await call<[], BackendStatus>("reset_api_token");
+            applyBackendAuthFromStatus(next);
+            setStatus(next);
+            await refreshFreshState();
+          }}>
+            Reset Phone Pairing
+          </FreshActionButton>
+        </div>
+        <div style={freshSectionStyle}>
+          <div style={{ fontWeight: 900 }}>Automation</div>
+          <ToggleField label="Auto-install captured downloads" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
+          <ToggleField label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
+          <ToggleField label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
+        </div>
+        <div style={freshSectionStyle}>
+          <ToggleField label="Show Debug" checked={showDebug} onChange={setShowDebug} />
+        </div>
+        {showDebug && (
+          <div style={freshSectionStyle}>
+            <div style={{ fontWeight: 900 }}>Debug</div>
+            <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
+            <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
+            <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
+            <FreshActionButton onActivate={() => void refreshDebugState()}>Refresh Debug</FreshActionButton>
+            <pre style={{ background: "#020617", border: "1px solid #334155", borderRadius: "6px", color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, margin: 0, maxHeight: "340px", overflow: "auto", padding: "8px", whiteSpace: "pre-wrap" }}>
+              {diagnosticsTerminalText(diagnosticLogs)}
+            </pre>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  const content = tab === "actions" ? renderActions() : tab === "games" ? renderGames() : renderSettings();
+
+  return (
+    <Focusable flow-children="down" onButtonDown={handleRouteButtonDown} style={freshDeckyShellStyle}>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable flow-children="right" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={freshDeckyTabBarStyle}>
+        {freshDeckyTabs.map((item) => (
+          <Focusable
+            key={item.id}
+            className="dmm-focus-card"
+            focusClassName="dmm-focus-card-focused"
+            onActivate={() => setTab(item.id)}
+            onClick={() => setTab(item.id)}
+            style={freshTabStyle(tab === item.id)}
+          >
+            {item.label}
+          </Focusable>
+        ))}
+      </Focusable>
+      <Focusable key={`${tab}:${selectedGameID || "list"}`} flow-children="down" navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD} preferredFocus style={freshDeckyBodyStyle}>
+        {content}
+        {message && <div style={{ ...freshSectionStyle, color: "#99f6e4" }}>{message}</div>}
+        {error && <div style={{ ...freshSectionStyle, borderColor: "#7f1d1d", color: "#f87171" }}>{error}</div>}
+      </Focusable>
+    </Focusable>
+  );
+}
+
 function QuickAccessContent() {
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [error, setError] = useState("");
@@ -6721,7 +7906,7 @@ function QuickAccessContent() {
 export default definePlugin(() => {
   startBackgroundMonitors();
   routerHook.addRoute(DMM_BROWSER_ROUTE, () => <DMMNativeBrowserRoute />);
-  routerHook.addRoute(DMM_DECKY_ROUTE, () => <DeckyModManagerRoute />);
+  routerHook.addRoute(DMM_DECKY_ROUTE, () => <FreshDeckyModManagerRoute />);
   return {
     name: "Decky Mod Manager",
     title: <div className={staticClasses.Title}>Decky Mod Manager</div>,

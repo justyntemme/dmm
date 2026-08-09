@@ -491,6 +491,24 @@ class Plugin:
             return {"ok": True, "profiles": result}
         return {"ok": False, "error": "Unexpected profiles response.", "profiles": []}
 
+    async def create_game_profile(self, app_id, name, source_profile_id=0):
+        app_id = str(app_id or "").strip()
+        name = str(name or "").strip()
+        try:
+            source_profile_id = int(source_profile_id or 0)
+        except Exception:
+            source_profile_id = 0
+        if not app_id or not name:
+            return {"ok": False, "error": "app_id and name are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps({"name": name, "source_profile_id": source_profile_id}).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/profiles", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to create profile."}
+        self._log(f"profile created app_id={app_id} profile_id={result.get('id', '') if isinstance(result, dict) else ''} source_profile_id={source_profile_id}")
+        return {"ok": True, "profile": result}
+
     async def game_mods(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:
