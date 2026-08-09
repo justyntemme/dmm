@@ -4,6 +4,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ahatintime"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/bladeandsorcery"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bloodstainedritualofthenight"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/braid"
@@ -139,6 +140,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(ahatintime.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
+		gameext.MustCompileExtension(bladeandsorcery.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),
 		gameext.MustCompileExtension(bloodstainedritualofthenight.Extension()),
 		gameext.MustCompileExtension(braid.Extension()),
