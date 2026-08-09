@@ -17,11 +17,11 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 	if bg3.ID != "baldursgate3" {
 		t.Fatalf("extension id = %q, want baldursgate3", bg3.ID)
 	}
-	if coverage, _ := gameext.ExtensionCoverage(bg3); coverage != gameext.CoverageResearchBlocked {
-		t.Fatalf("coverage = %q, want %q", coverage, gameext.CoverageResearchBlocked)
+	if coverage, _ := gameext.ExtensionCoverage(bg3); coverage != gameext.CoverageInstaller {
+		t.Fatalf("coverage = %q, want %q", coverage, gameext.CoverageInstaller)
 	}
 	if len(bg3.InstallPlan.Installers) == 0 || len(bg3.InstallPlan.ModTypes) == 0 {
-		t.Fatalf("BG3 catalog extension did not expose blocked Vortex installer/mod-type metadata: %+v", bg3.InstallPlan)
+		t.Fatalf("BG3 extension did not expose Vortex installer/mod-type metadata: %+v", bg3.InstallPlan)
 	}
 	bg3Summary := summaryByID(t, registry, "baldursgate3")
 	if bg3Summary.Capabilities.GameRegistration == nil || bg3Summary.Capabilities.GameRegistration.ExecutableRelative != "bin/bg3_dx11.exe" || !bg3Summary.Capabilities.GameRegistration.QueryModPathDynamic {
@@ -29,6 +29,9 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 	}
 	if !featureIDsContain(bg3Summary.Capabilities.SupportedTools, "exevulkan") {
 		t.Fatalf("BG3 supported tools = %+v", bg3Summary.Capabilities.SupportedTools)
+	}
+	if !featureIDsContain(bg3Summary.Capabilities.ArchiveTypes, "bg3-pak") {
+		t.Fatalf("BG3 archive capabilities = %+v", bg3Summary.Capabilities.ArchiveTypes)
 	}
 
 	stardew, ok := registry.ExtensionForSteamApp("413150")

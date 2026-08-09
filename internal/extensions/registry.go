@@ -2,6 +2,7 @@ package extensions
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ahatintime"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/baldursgate3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bladeandsorcery"
@@ -150,6 +151,7 @@ func FirstParty() []gameext.Extension {
 	}
 	extensions = append(extensions,
 		gameext.MustCompileExtension(ahatintime.Extension()),
+		gameext.MustCompileExtension(baldursgate3.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(bladeandsorcery.Extension()),

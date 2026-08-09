@@ -162,27 +162,6 @@ func sourceURL(dir string) string {
 }
 
 var games = []GameSpec{
-	{
-		VortexDir:           "game-baldursgate3",
-		ID:                  "baldursgate3",
-		Name:                "Baldur's Gate 3",
-		SteamAppIDs:         []string{"1086940"},
-		ExecutableRelative:  "bin/bg3_dx11.exe",
-		RequiredFiles:       []string{"bin/bg3_dx11.exe"},
-		QueryModPathDynamic: true,
-		MergeMode:           sdk.GameMergeModeAll,
-		Environment:         map[string]string{"SteamAPPId": "1086940"},
-		SupportedTools: []sdk.SupportedToolSpec{{
-			ID:                 "exevulkan",
-			Name:               "Baldur's Gate 3 (Vulkan)",
-			ExecutableRelative: "bin/bg3.exe",
-			RequiredFiles:      []string{"bin/bg3.exe"},
-			Relative:           true,
-		}},
-		HasCustomInstallers: true,
-		HasModTypes:         true,
-		HasLoadOrder:        true,
-	},
 	{VortexDir: "game-battletech", ID: "battletech", Name: "BattleTech", SteamAppIDs: []string{"637090"}, Notes: []string{"Vortex listens for added-files and copies single-owner generated files back into the staged mod; DMM needs source-reviewed added-files parity before claiming full support."}},
 	{VortexDir: "game-breakingwheel", ID: "breakingwheel", Name: "Breaking Wheel", SteamAppIDs: []string{"545890"}},
 	{VortexDir: "game-conanexiles", ID: "conanexiles", Name: "Conan Exiles", SteamAppIDs: []string{"440900"}, Notes: []string{"Vortex writes a modlist.txt on deploy lifecycle events; DMM needs source-reviewed lifecycle/load-order generation before claiming full support."}},
