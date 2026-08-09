@@ -42,7 +42,7 @@ func TestOverrideTargetRootUsesSteamVariantByDefault(t *testing.T) {
 
 func TestInstallerKeepsManifestFolderWrapper(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "CoolMod", "manifest.json"), `{"Title":"Cool Mod"}`)
+	writeFile(t, filepath.Join(root, "CoolMod", "manifest.json"), `{"Title":"Cool Mod","SupportedGameVersion":{"min":"1.2","max":"3.4"}}`)
 	writeFile(t, filepath.Join(root, "CoolMod", "data.txt"), "payload")
 	writeFile(t, filepath.Join(root, "readme.txt"), "ignore")
 
@@ -56,6 +56,7 @@ func TestInstallerKeepsManifestFolderWrapper(t *testing.T) {
 	assertTarget(t, plan.Instructions, overrideRootID, "CoolMod/manifest.json")
 	assertTarget(t, plan.Instructions, overrideRootID, "CoolMod/data.txt")
 	assertNoTarget(t, plan.Instructions, "readme.txt")
+	assertManifestMetadata(t, plan.Metadata, "CoolMod/manifest.json", "1.2", "3.4")
 }
 
 func TestInstallerWrapsRootManifestWithArchiveName(t *testing.T) {
@@ -69,6 +70,7 @@ func TestInstallerWrapsRootManifestWithArchiveName(t *testing.T) {
 	}
 	assertTarget(t, plan.Instructions, overrideRootID, "Loose Root-123-1-0/manifest.json")
 	assertTarget(t, plan.Instructions, overrideRootID, "Loose Root-123-1-0/data.txt")
+	assertManifestMetadata(t, plan.Metadata, "Loose Root-123-1-0/manifest.json", "1.0", "9.0")
 }
 
 func TestWillDeployGeneratesModConfig(t *testing.T) {
@@ -134,6 +136,20 @@ func assertNoTarget(t *testing.T, instructions []installplan.Instruction, target
 			t.Fatalf("unexpected target %q in %+v", target, instructions)
 		}
 	}
+}
+
+func assertManifestMetadata(t *testing.T, metadata []installplan.ModMetadata, manifest, minVersion, maxVersion string) {
+	t.Helper()
+	for _, item := range metadata {
+		if item.Kind != poe2ManifestMetadataKind || item.StagingRelative != manifest {
+			continue
+		}
+		if item.MinGameVersion != minVersion || item.MaxGameVersion != maxVersion {
+			t.Fatalf("manifest metadata = %+v, want min=%q max=%q", item, minVersion, maxVersion)
+		}
+		return
+	}
+	t.Fatalf("missing manifest metadata for %q in %+v", manifest, metadata)
 }
 
 func entryNames(cfg modConfig) []string {

@@ -54,6 +54,8 @@ type ModMetadata struct {
 	Name                       string          `json:"name,omitempty"`
 	UniqueID                   string          `json:"unique_id,omitempty"`
 	Version                    string          `json:"version,omitempty"`
+	MinGameVersion             string          `json:"min_game_version,omitempty"`
+	MaxGameVersion             string          `json:"max_game_version,omitempty"`
 	EntryDLL                   string          `json:"entry_dll,omitempty"`
 	MinimumAPIVersion          string          `json:"minimum_api_version,omitempty"`
 	AdditionalLogicalFileNames []string        `json:"additional_logical_file_names,omitempty"`

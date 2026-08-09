@@ -102,7 +102,7 @@ Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-
 | `context.optional.registerCollectionFeature` | 3 | `RegisterCollectionFeature` | Metadata-only | Collection import/postprocess runtime. |
 | `context.registerPersistor` | 3 | `RegisterStatePersistor` | Metadata-only | Extension-owned persisted state runtime. |
 | `context.registerLoadOrderPage` | 3 | `RegisterExtensionLoadOrderPage` | Metadata-only | Load-order page renderer/editor. |
-| `context.registerAttributeExtractor` | 2 | `RegisterAttributeExtractor` | Metadata-only | Runnable metadata extraction hooks outside install planning. |
+| `context.registerAttributeExtractor` | 2 | `RegisterAttributeExtractor` | Partial runtime | Source-backed attributes can be extracted during extension-owned install planning, including Stardew SMAPI manifest metadata and Pillars II `SupportedGameVersion` ranges. A generic post-install extractor scheduler remains pending. |
 | `context.registerGameInfoProvider` | 2 | `RegisterGameInfoProvider` | Partial runtime | Ready providers can run through `/api/games/{appID}/info` with source-shaped priority/tags/cache metadata. Remaining gaps are persistent TTL caching, Steam Web API detail provider, and UI placement for provider details. |
 | `context.registerProfileFile` | 2 | `RegisterProfileFile` | Partial runtime | Extension-declared files resolve through `/api/profiles/{id}/files`; backup/switching execution remains pending. |
 | `context.registerActionCheck` | 2 | `RegisterExtensionActionCheck` | Metadata-only | Generic action validation hooks. |

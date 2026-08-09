@@ -5589,6 +5589,8 @@ type gameModMetadataSummary struct {
 	Name                       string                     `json:"name,omitempty"`
 	UniqueID                   string                     `json:"unique_id,omitempty"`
 	Version                    string                     `json:"version,omitempty"`
+	MinGameVersion             string                     `json:"min_game_version,omitempty"`
+	MaxGameVersion             string                     `json:"max_game_version,omitempty"`
 	EntryDLL                   string                     `json:"entry_dll,omitempty"`
 	MinimumAPIVersion          string                     `json:"minimum_api_version,omitempty"`
 	AdditionalLogicalFileNames []string                   `json:"additional_logical_file_names,omitempty"`
@@ -5660,6 +5662,8 @@ func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetad
 			Name:                       strings.TrimSpace(item.Name),
 			UniqueID:                   strings.TrimSpace(item.UniqueID),
 			Version:                    strings.TrimSpace(item.Version),
+			MinGameVersion:             strings.TrimSpace(item.MinGameVersion),
+			MaxGameVersion:             strings.TrimSpace(item.MaxGameVersion),
 			EntryDLL:                   strings.TrimSpace(item.EntryDLL),
 			MinimumAPIVersion:          strings.TrimSpace(item.MinimumAPIVersion),
 			AdditionalLogicalFileNames: append([]string(nil), item.AdditionalLogicalFileNames...),
@@ -5682,7 +5686,7 @@ func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetad
 				Required:       dependency.Required,
 			})
 		}
-		if next.Kind == "" && next.Name == "" && next.UniqueID == "" && len(next.Dependencies) == 0 && len(next.AdditionalLogicalFileNames) == 0 && next.ManifestVersion == "" && next.ContentPackFor == nil {
+		if next.Kind == "" && next.Name == "" && next.UniqueID == "" && next.Version == "" && next.MinGameVersion == "" && next.MaxGameVersion == "" && len(next.Dependencies) == 0 && len(next.AdditionalLogicalFileNames) == 0 && next.ManifestVersion == "" && next.ContentPackFor == nil {
 			continue
 		}
 		out = append(out, next)
@@ -12618,6 +12622,8 @@ func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.Mo
 			Name:                       metadata.Name,
 			UniqueID:                   metadata.UniqueID,
 			Version:                    metadata.Version,
+			MinGameVersion:             metadata.MinGameVersion,
+			MaxGameVersion:             metadata.MaxGameVersion,
 			EntryDLL:                   metadata.EntryDLL,
 			MinimumAPIVersion:          metadata.MinimumAPIVersion,
 			AdditionalLogicalFileNames: append([]string(nil), metadata.AdditionalLogicalFileNames...),

@@ -12619,9 +12619,11 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 		ModType:   "stardew-smapi-mod",
 		PlannerID: "vortex:stardewvalley:stardew-valley-installer",
 		Metadata: []installplan.ModMetadata{{
-			Kind:     stardewvalley.MetadataKindSMAPIManifest,
-			Name:     "Visible Fish",
-			UniqueID: "shekurika.WaterFish",
+			Kind:           stardewvalley.MetadataKindSMAPIManifest,
+			Name:           "Visible Fish",
+			UniqueID:       "shekurika.WaterFish",
+			MinGameVersion: "1.6",
+			MaxGameVersion: "1.6.99",
 			ContentPackFor: &installplan.ModDependency{
 				UniqueID:       "Pathoschild.ContentPatcher",
 				MinimumVersion: "2.0.0",
@@ -12670,6 +12672,8 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 		Metadata  []struct {
 			Name           string `json:"name"`
 			UniqueID       string `json:"unique_id"`
+			MinGameVersion string `json:"min_game_version"`
+			MaxGameVersion string `json:"max_game_version"`
 			ContentPackFor *struct {
 				UniqueID       string `json:"unique_id"`
 				MinimumVersion string `json:"minimum_version"`
@@ -12685,6 +12689,9 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 	}
 	if len(mods[0].Metadata) != 1 || mods[0].Metadata[0].UniqueID != "shekurika.WaterFish" || mods[0].Metadata[0].ContentPackFor == nil {
 		t.Fatalf("metadata = %+v", mods[0].Metadata)
+	}
+	if mods[0].Metadata[0].MinGameVersion != "1.6" || mods[0].Metadata[0].MaxGameVersion != "1.6.99" {
+		t.Fatalf("game version metadata = %+v", mods[0].Metadata[0])
 	}
 	if mods[0].Metadata[0].ContentPackFor.UniqueID != "Pathoschild.ContentPatcher" || !mods[0].Metadata[0].ContentPackFor.Required {
 		t.Fatalf("content pack metadata = %+v", mods[0].Metadata[0].ContentPackFor)

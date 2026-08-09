@@ -1,6 +1,9 @@
 package pillarsofeternity2
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -8,6 +11,8 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
+
+const poe2ManifestMetadataKind = "poe2-manifest"
 
 func matchOverrideArchive(root string) bool {
 	hasFile := false
@@ -42,6 +47,11 @@ func buildOverrideArchive(input installplan.BuildInput) (installplan.Plan, error
 		plan.Warnings = append(plan.Warnings, "Pillars II archive did not contain a manifest.json at a module root; DMM will stage it as an override folder but the game may ignore it.")
 	}
 	for _, root := range roots {
+		if metadata, ok, err := readPillarsManifestMetadata(root); err != nil {
+			plan.Warnings = append(plan.Warnings, err.Error())
+		} else if ok {
+			plan.Metadata = append(plan.Metadata, metadata)
+		}
 		if err := appendOverrideRoot(&plan, input, root); err != nil {
 			return installplan.Plan{}, err
 		}
@@ -53,6 +63,56 @@ func buildOverrideArchive(input installplan.BuildInput) (installplan.Plan, error
 		return plan.Instructions[i].StagingRelative < plan.Instructions[j].StagingRelative
 	})
 	return plan, nil
+}
+
+func readPillarsManifestMetadata(root overrideContentRoot) (installplan.ModMetadata, bool, error) {
+	manifestPath := filepath.Join(root.SourceRoot, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return installplan.ModMetadata{}, false, nil
+		}
+		return installplan.ModMetadata{}, false, err
+	}
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return installplan.ModMetadata{}, false, errors.New("Pillars II manifest.json is invalid; version compatibility metadata could not be extracted")
+	}
+	version := objectFieldCI(manifest, "SupportedGameVersion")
+	stagingRel := filepath.ToSlash(filepath.Join(root.TargetDir, "manifest.json"))
+	return installplan.ModMetadata{
+		Kind:            poe2ManifestMetadataKind,
+		SourcePath:      manifestPath,
+		StagingRelative: stagingRel,
+		TargetRelative:  stagingRel,
+		MinGameVersion:  stringFieldCIDefault(version, "min", "1.0"),
+		MaxGameVersion:  stringFieldCIDefault(version, "max", "9.0"),
+	}, true, nil
+}
+
+func objectFieldCI(data map[string]any, name string) map[string]any {
+	for key, value := range data {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		if object, ok := value.(map[string]any); ok {
+			return object
+		}
+	}
+	return nil
+}
+
+func stringFieldCIDefault(data map[string]any, name, fallback string) string {
+	for key, value := range data {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return fallback
 }
 
 type overrideContentRoot struct {

@@ -100,11 +100,9 @@ func Register(r sdk.Registrar) {
 		Message: "Vortex exposes a drag/drop load-order page. DMM writes modconfig.json from profile priority today; generic drag/drop load-order UI remains to be implemented.",
 	})
 	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
-		ID:      "poe2-manifest-version",
-		Name:    "Pillars II manifest game version range",
-		Target:  "mods",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex extracts SupportedGameVersion ranges from manifest.json. DMM deploys source-backed folders now and needs a reusable version-constraint UI before surfacing this to users.",
+		ID:     "poe2-manifest-version",
+		Name:   "Pillars II manifest game version range",
+		Target: "mods",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

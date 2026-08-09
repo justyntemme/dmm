@@ -38,6 +38,8 @@ type ModMetadata struct {
 	Name                       string
 	UniqueID                   string
 	Version                    string
+	MinGameVersion             string
+	MaxGameVersion             string
 	EntryDLL                   string
 	MinimumAPIVersion          string
 	AdditionalLogicalFileNames []string
