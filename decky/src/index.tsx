@@ -743,13 +743,14 @@ const deckyRuntimeStyles = `
 .dmm-settings-section {
   align-content: start;
   align-items: stretch;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  grid-auto-rows: max-content;
   min-height: auto !important;
   overflow: visible;
 }
 .dmm-settings-section > * {
+  flex: 0 0 auto;
   min-width: 0;
 }
 .dmm-settings-row {
@@ -761,6 +762,15 @@ const deckyRuntimeStyles = `
     border-color: #7dd3fc !important;
     box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
   }
+.dmm-sidebar-surface,
+.dmm-sidebar-surface-focused,
+.dmm-sidebar-surface:focus,
+.dmm-sidebar-surface:focus-visible,
+.dmm-sidebar-surface:focus-within {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
 .dmm-focus-card:focus,
 .dmm-focus-card:focus-visible,
 .dmm-focus-card:focus-within {
@@ -5299,7 +5309,7 @@ function FreshDeckyModManagerRoute() {
   const content = tab === "actions" ? renderActions() : tab === "games" ? renderGames() : renderSettings();
 
   return (
-    <Focusable flow-children="down" onButtonDown={handleRouteButtonDown} onCancelButton={handleRouteCancel} style={freshDeckyShellStyle}>
+    <Focusable className="dmm-sidebar-surface" focusClassName="dmm-sidebar-surface-focused" flow-children="down" onButtonDown={handleRouteButtonDown} onCancelButton={handleRouteCancel} style={freshDeckyShellStyle}>
       <style>{deckyRuntimeStyles}</style>
       <div style={freshDeckyTabBarStyle}>
         {freshDeckyTabs.map((item) => (
