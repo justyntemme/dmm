@@ -60,6 +60,7 @@ DMM currently has first-party Go extension registration for:
 - Plugin activation, unmanaged markers, conflict ignores, deploy ignores, packed archive mutation declarations, merge/load-order summaries, and lifecycle event handlers.
 - Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
 - Extension-declared archive type, game store, game version provider, and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines or platform integrations are executable.
+- Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, and attribute extractors.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -160,10 +161,8 @@ Vortex source examples:
 DMM status:
 
 - Has Action Center jobs, Decky notifications, runtime action notices, settings panes, debug logs, and backend diagnostics.
-- Missing extension-declared UI action schemas equivalent to `registerAction`.
-- Missing extension-declared settings schemas equivalent to `registerSettings`.
-- Missing extension-declared tests/health checks equivalent to `registerTest` and `registerHealthCheck`.
-- Missing extension-declared dialogs/main pages/table attributes/profile features that can be rendered without custom frontend code.
+- Has source-backed metadata declarations for Vortex UI/state registration surfaces, including `registerAction`, `registerSettings`, `registerTest`, `registerHealthCheck`, `registerDialog`, `registerMainPage`, `registerDashlet`, `registerTableAttribute`, `registerLoadOrderPage`, `registerProfileFile`, `registerReducer`, `registerPersistor`, and `registerStartHook`.
+- Missing the generic runtime renderer/executor for those declarations. Converted extensions can advertise blocked UI/state capabilities now, but DMM cannot yet render arbitrary extension dialogs/pages/table attributes or execute arbitrary extension actions.
 
 Priority: P1. Critical for polish and advanced parity, but less urgent than install/deploy correctness.
 

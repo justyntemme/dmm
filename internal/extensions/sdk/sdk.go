@@ -59,13 +59,23 @@ type Registrar interface {
 	RegisterExtensionSetting(ExtensionSettingSpec)
 	RegisterExtensionTest(ExtensionTestSpec)
 	RegisterExtensionToDo(ExtensionToDoSpec)
+	RegisterExtensionDialog(ExtensionDialogSpec)
+	RegisterExtensionDashlet(ExtensionDashletSpec)
+	RegisterExtensionMainPage(ExtensionMainPageSpec)
+	RegisterExtensionTableAttribute(ExtensionTableAttributeSpec)
+	RegisterExtensionLoadOrderPage(ExtensionLoadOrderPageSpec)
+	RegisterExtensionActionCheck(ExtensionActionCheckSpec)
 	RegisterExtensionAPI(ExtensionAPISpec)
 	RegisterProfileFeature(ProfileFeatureSpec)
+	RegisterProfileFile(ProfileFileSpec)
 	RegisterCollectionFeature(CollectionFeatureSpec)
+	RegisterStateReducer(StateReducerSpec)
 	RegisterStateStore(StateStoreSpec)
+	RegisterStatePersistor(StatePersistorSpec)
 	RegisterStateMigration(StateMigrationSpec)
 	RegisterHealthCheck(HealthCheckSpec)
 	RegisterAttributeExtractor(AttributeExtractorSpec)
+	RegisterStartHook(StartHookSpec)
 	RegisterEventHandler(EventHandlerSpec)
 }
 
@@ -328,28 +338,84 @@ type GameSetupSpec struct {
 }
 
 type ExtensionActionSpec struct {
-	ID    string
-	Name  string
-	Scope string
-	Kind  string
+	ID      string
+	Name    string
+	Scope   string
+	Kind    string
+	Status  string
+	Message string
 }
 
 type ExtensionSettingSpec struct {
-	ID    string
-	Name  string
-	Scope string
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
 }
 
 type ExtensionTestSpec struct {
 	ID      string
 	Name    string
 	Trigger string
+	Status  string
+	Message string
 }
 
 type ExtensionToDoSpec struct {
 	ID      string
 	Name    string
 	Trigger string
+	Status  string
+	Message string
+}
+
+type ExtensionDialogSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
+}
+
+type ExtensionDashletSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
+}
+
+type ExtensionMainPageSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
+}
+
+type ExtensionTableAttributeSpec struct {
+	ID      string
+	Name    string
+	Target  string
+	Status  string
+	Message string
+}
+
+type ExtensionLoadOrderPageSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
+}
+
+type ExtensionActionCheckSpec struct {
+	ID      string
+	Name    string
+	Target  string
+	Status  string
+	Message string
 }
 
 type ExtensionAPISpec struct {
@@ -360,19 +426,51 @@ type ExtensionAPISpec struct {
 }
 
 type ProfileFeatureSpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
+}
+
+type ProfileFileSpec struct {
+	ID      string
+	Name    string
+	GameID  string
+	Path    string
+	Status  string
+	Message string
 }
 
 type CollectionFeatureSpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
+}
+
+type StateReducerSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Path    string
+	Status  string
+	Message string
 }
 
 type StateStoreSpec struct {
-	ID    string
-	Name  string
-	Scope string
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
+}
+
+type StatePersistorSpec struct {
+	ID      string
+	Name    string
+	Scope   string
+	Status  string
+	Message string
 }
 
 type StateMigrationSpec struct {
@@ -380,17 +478,32 @@ type StateMigrationSpec struct {
 	Name        string
 	FromVersion string
 	ToVersion   string
+	Status      string
+	Message     string
 }
 
 type HealthCheckSpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
 }
 
 type AttributeExtractorSpec struct {
-	ID     string
-	Name   string
-	Target string
+	ID      string
+	Name    string
+	Target  string
+	Status  string
+	Message string
+}
+
+type StartHookSpec struct {
+	ID       string
+	Name     string
+	Trigger  string
+	Priority int
+	Status   string
+	Message  string
 }
 
 type EventHandlerSpec struct {

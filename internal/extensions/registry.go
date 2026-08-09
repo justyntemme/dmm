@@ -86,6 +86,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarrome2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/totalwarromeremastered"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/transportfever2"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexuisurfaces"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
@@ -102,6 +103,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mtframeworkarc.Extension()),
 		gameext.MustCompileExtension(quickbmssupport.Extension()),
 		gameext.MustCompileExtension(sharedmodtypes.Extension()),
+		gameext.MustCompileExtension(vortexuisurfaces.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),

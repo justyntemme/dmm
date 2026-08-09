@@ -23,38 +23,48 @@ type Extension struct {
 	SteamAppIDs  []string
 	NexusDomains []string
 
-	InstallPlan            installplan.GameSpec
-	RuntimeRequirements    gamehandler.GameSpec
-	InstallerChoices       []sdk.InstallerChoiceSpec
-	LaunchTools            []sdk.LaunchToolSpec
-	InstallPlatforms       []sdk.InstallPlatformSpec
-	GameVersionProviders   []sdk.GameVersionProviderSpec
-	PluginActivations      []sdk.PluginActivationSpec
-	UnmanagedMarkers       []sdk.UnmanagedMarkerSpec
-	ConflictIgnores        []sdk.ConflictIgnoreSpec
-	DeployIgnores          []sdk.DeployIgnoreSpec
-	PackedArchiveMutations []sdk.PackedArchiveMutationSpec
-	TargetRoots            []sdk.TargetRootSpec
-	SteamWorkshop          sdk.SteamWorkshopSpec
-	Sources                []sdk.SourceRef
-	Merges                 []sdk.MergeSpec
-	LoadOrders             []sdk.LoadOrderSpec
-	ArchiveTypes           []sdk.ArchiveTypeSpec
-	Interpreters           []sdk.InterpreterSpec
-	GameStores             []sdk.GameStoreSpec
-	GameSetups             []sdk.GameSetupSpec
-	ExtensionActions       []sdk.ExtensionActionSpec
-	ExtensionSettings      []sdk.ExtensionSettingSpec
-	ExtensionTests         []sdk.ExtensionTestSpec
-	ExtensionToDos         []sdk.ExtensionToDoSpec
-	ExtensionAPIs          []sdk.ExtensionAPISpec
-	ProfileFeatures        []sdk.ProfileFeatureSpec
-	CollectionFeatures     []sdk.CollectionFeatureSpec
-	StateStores            []sdk.StateStoreSpec
-	StateMigrations        []sdk.StateMigrationSpec
-	HealthChecks           []sdk.HealthCheckSpec
-	AttributeExtractors    []sdk.AttributeExtractorSpec
-	EventHandlers          []sdk.EventHandlerSpec
+	InstallPlan             installplan.GameSpec
+	RuntimeRequirements     gamehandler.GameSpec
+	InstallerChoices        []sdk.InstallerChoiceSpec
+	LaunchTools             []sdk.LaunchToolSpec
+	InstallPlatforms        []sdk.InstallPlatformSpec
+	GameVersionProviders    []sdk.GameVersionProviderSpec
+	PluginActivations       []sdk.PluginActivationSpec
+	UnmanagedMarkers        []sdk.UnmanagedMarkerSpec
+	ConflictIgnores         []sdk.ConflictIgnoreSpec
+	DeployIgnores           []sdk.DeployIgnoreSpec
+	PackedArchiveMutations  []sdk.PackedArchiveMutationSpec
+	TargetRoots             []sdk.TargetRootSpec
+	SteamWorkshop           sdk.SteamWorkshopSpec
+	Sources                 []sdk.SourceRef
+	Merges                  []sdk.MergeSpec
+	LoadOrders              []sdk.LoadOrderSpec
+	ArchiveTypes            []sdk.ArchiveTypeSpec
+	Interpreters            []sdk.InterpreterSpec
+	GameStores              []sdk.GameStoreSpec
+	GameSetups              []sdk.GameSetupSpec
+	ExtensionActions        []sdk.ExtensionActionSpec
+	ExtensionSettings       []sdk.ExtensionSettingSpec
+	ExtensionTests          []sdk.ExtensionTestSpec
+	ExtensionToDos          []sdk.ExtensionToDoSpec
+	ExtensionDialogs        []sdk.ExtensionDialogSpec
+	ExtensionDashlets       []sdk.ExtensionDashletSpec
+	ExtensionMainPages      []sdk.ExtensionMainPageSpec
+	ExtensionTableAttrs     []sdk.ExtensionTableAttributeSpec
+	ExtensionLoadOrderPages []sdk.ExtensionLoadOrderPageSpec
+	ExtensionActionChecks   []sdk.ExtensionActionCheckSpec
+	ExtensionAPIs           []sdk.ExtensionAPISpec
+	ProfileFeatures         []sdk.ProfileFeatureSpec
+	ProfileFiles            []sdk.ProfileFileSpec
+	CollectionFeatures      []sdk.CollectionFeatureSpec
+	StateReducers           []sdk.StateReducerSpec
+	StateStores             []sdk.StateStoreSpec
+	StatePersistors         []sdk.StatePersistorSpec
+	StateMigrations         []sdk.StateMigrationSpec
+	HealthChecks            []sdk.HealthCheckSpec
+	AttributeExtractors     []sdk.AttributeExtractorSpec
+	StartHooks              []sdk.StartHookSpec
+	EventHandlers           []sdk.EventHandlerSpec
 }
 
 type SourceRef = sdk.SourceRef
@@ -86,13 +96,23 @@ type ExtensionActionSpec = sdk.ExtensionActionSpec
 type ExtensionSettingSpec = sdk.ExtensionSettingSpec
 type ExtensionTestSpec = sdk.ExtensionTestSpec
 type ExtensionToDoSpec = sdk.ExtensionToDoSpec
+type ExtensionDialogSpec = sdk.ExtensionDialogSpec
+type ExtensionDashletSpec = sdk.ExtensionDashletSpec
+type ExtensionMainPageSpec = sdk.ExtensionMainPageSpec
+type ExtensionTableAttributeSpec = sdk.ExtensionTableAttributeSpec
+type ExtensionLoadOrderPageSpec = sdk.ExtensionLoadOrderPageSpec
+type ExtensionActionCheckSpec = sdk.ExtensionActionCheckSpec
 type ExtensionAPISpec = sdk.ExtensionAPISpec
 type ProfileFeatureSpec = sdk.ProfileFeatureSpec
+type ProfileFileSpec = sdk.ProfileFileSpec
 type CollectionFeatureSpec = sdk.CollectionFeatureSpec
+type StateReducerSpec = sdk.StateReducerSpec
 type StateStoreSpec = sdk.StateStoreSpec
+type StatePersistorSpec = sdk.StatePersistorSpec
 type StateMigrationSpec = sdk.StateMigrationSpec
 type HealthCheckSpec = sdk.HealthCheckSpec
 type AttributeExtractorSpec = sdk.AttributeExtractorSpec
+type StartHookSpec = sdk.StartHookSpec
 type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
@@ -156,39 +176,49 @@ type ExtensionSummary struct {
 }
 
 type ExtensionCapabilities struct {
-	ModTypes               []FeatureSummary `json:"mod_types,omitempty"`
-	Installers             []FeatureSummary `json:"installers,omitempty"`
-	UnsupportedInstallers  []FeatureSummary `json:"unsupported_installers,omitempty"`
-	InstallerChoices       []FeatureSummary `json:"installer_choices,omitempty"`
-	RuntimeRequirements    []FeatureSummary `json:"runtime_requirements,omitempty"`
-	LaunchTools            []FeatureSummary `json:"launch_tools,omitempty"`
-	InstallPlatforms       []FeatureSummary `json:"install_platforms,omitempty"`
-	GameVersions           []FeatureSummary `json:"game_versions,omitempty"`
-	PluginActivations      []FeatureSummary `json:"plugin_activations,omitempty"`
-	UnmanagedMarkers       []FeatureSummary `json:"unmanaged_markers,omitempty"`
-	ConflictIgnores        []FeatureSummary `json:"conflict_ignores,omitempty"`
-	DeployIgnores          []FeatureSummary `json:"deploy_ignores,omitempty"`
-	PackedArchiveMutations []FeatureSummary `json:"packed_archive_mutations,omitempty"`
-	TargetRoots            []FeatureSummary `json:"target_roots,omitempty"`
-	SteamWorkshop          *WorkshopSummary `json:"steam_workshop,omitempty"`
-	Merges                 []FeatureSummary `json:"merges,omitempty"`
-	LoadOrders             []FeatureSummary `json:"load_orders,omitempty"`
-	ArchiveTypes           []FeatureSummary `json:"archive_types,omitempty"`
-	Interpreters           []FeatureSummary `json:"interpreters,omitempty"`
-	GameStores             []FeatureSummary `json:"game_stores,omitempty"`
-	GameSetups             []FeatureSummary `json:"game_setups,omitempty"`
-	ExtensionActions       []FeatureSummary `json:"extension_actions,omitempty"`
-	ExtensionSettings      []FeatureSummary `json:"extension_settings,omitempty"`
-	ExtensionTests         []FeatureSummary `json:"extension_tests,omitempty"`
-	ExtensionToDos         []FeatureSummary `json:"extension_todos,omitempty"`
-	ExtensionAPIs          []FeatureSummary `json:"extension_apis,omitempty"`
-	ProfileFeatures        []FeatureSummary `json:"profile_features,omitempty"`
-	CollectionFeatures     []FeatureSummary `json:"collection_features,omitempty"`
-	StateStores            []FeatureSummary `json:"state_stores,omitempty"`
-	StateMigrations        []FeatureSummary `json:"state_migrations,omitempty"`
-	HealthChecks           []FeatureSummary `json:"health_checks,omitempty"`
-	AttributeExtractors    []FeatureSummary `json:"attribute_extractors,omitempty"`
-	EventHandlers          []FeatureSummary `json:"event_handlers,omitempty"`
+	ModTypes                []FeatureSummary `json:"mod_types,omitempty"`
+	Installers              []FeatureSummary `json:"installers,omitempty"`
+	UnsupportedInstallers   []FeatureSummary `json:"unsupported_installers,omitempty"`
+	InstallerChoices        []FeatureSummary `json:"installer_choices,omitempty"`
+	RuntimeRequirements     []FeatureSummary `json:"runtime_requirements,omitempty"`
+	LaunchTools             []FeatureSummary `json:"launch_tools,omitempty"`
+	InstallPlatforms        []FeatureSummary `json:"install_platforms,omitempty"`
+	GameVersions            []FeatureSummary `json:"game_versions,omitempty"`
+	PluginActivations       []FeatureSummary `json:"plugin_activations,omitempty"`
+	UnmanagedMarkers        []FeatureSummary `json:"unmanaged_markers,omitempty"`
+	ConflictIgnores         []FeatureSummary `json:"conflict_ignores,omitempty"`
+	DeployIgnores           []FeatureSummary `json:"deploy_ignores,omitempty"`
+	PackedArchiveMutations  []FeatureSummary `json:"packed_archive_mutations,omitempty"`
+	TargetRoots             []FeatureSummary `json:"target_roots,omitempty"`
+	SteamWorkshop           *WorkshopSummary `json:"steam_workshop,omitempty"`
+	Merges                  []FeatureSummary `json:"merges,omitempty"`
+	LoadOrders              []FeatureSummary `json:"load_orders,omitempty"`
+	ArchiveTypes            []FeatureSummary `json:"archive_types,omitempty"`
+	Interpreters            []FeatureSummary `json:"interpreters,omitempty"`
+	GameStores              []FeatureSummary `json:"game_stores,omitempty"`
+	GameSetups              []FeatureSummary `json:"game_setups,omitempty"`
+	ExtensionActions        []FeatureSummary `json:"extension_actions,omitempty"`
+	ExtensionSettings       []FeatureSummary `json:"extension_settings,omitempty"`
+	ExtensionTests          []FeatureSummary `json:"extension_tests,omitempty"`
+	ExtensionToDos          []FeatureSummary `json:"extension_todos,omitempty"`
+	ExtensionDialogs        []FeatureSummary `json:"extension_dialogs,omitempty"`
+	ExtensionDashlets       []FeatureSummary `json:"extension_dashlets,omitempty"`
+	ExtensionMainPages      []FeatureSummary `json:"extension_main_pages,omitempty"`
+	ExtensionTableAttrs     []FeatureSummary `json:"extension_table_attributes,omitempty"`
+	ExtensionLoadOrderPages []FeatureSummary `json:"extension_load_order_pages,omitempty"`
+	ExtensionActionChecks   []FeatureSummary `json:"extension_action_checks,omitempty"`
+	ExtensionAPIs           []FeatureSummary `json:"extension_apis,omitempty"`
+	ProfileFeatures         []FeatureSummary `json:"profile_features,omitempty"`
+	ProfileFiles            []FeatureSummary `json:"profile_files,omitempty"`
+	CollectionFeatures      []FeatureSummary `json:"collection_features,omitempty"`
+	StateReducers           []FeatureSummary `json:"state_reducers,omitempty"`
+	StateStores             []FeatureSummary `json:"state_stores,omitempty"`
+	StatePersistors         []FeatureSummary `json:"state_persistors,omitempty"`
+	StateMigrations         []FeatureSummary `json:"state_migrations,omitempty"`
+	HealthChecks            []FeatureSummary `json:"health_checks,omitempty"`
+	AttributeExtractors     []FeatureSummary `json:"attribute_extractors,omitempty"`
+	StartHooks              []FeatureSummary `json:"start_hooks,omitempty"`
+	EventHandlers           []FeatureSummary `json:"event_handlers,omitempty"`
 }
 
 type FeatureSummary struct {
@@ -220,11 +250,14 @@ type FeatureSummary struct {
 	Scope              string                   `json:"scope,omitempty"`
 	Kind               string                   `json:"kind,omitempty"`
 	Trigger            string                   `json:"trigger,omitempty"`
+	Priority           int                      `json:"priority,omitempty"`
 	Platforms          []string                 `json:"platforms,omitempty"`
 	GeneratedFiles     []string                 `json:"generated_files,omitempty"`
 	FromVersion        string                   `json:"from_version,omitempty"`
 	ToVersion          string                   `json:"to_version,omitempty"`
 	Target             string                   `json:"target,omitempty"`
+	Path               string                   `json:"path,omitempty"`
+	GameID             string                   `json:"game_id,omitempty"`
 }
 
 type LaunchToolDynamicInput struct {
@@ -966,16 +999,95 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, action := range extension.ExtensionActions {
-		summary.Capabilities.ExtensionActions = append(summary.Capabilities.ExtensionActions, FeatureSummary{ID: action.ID, Name: action.Name, Scope: action.Scope, Kind: action.Kind})
+		summary.Capabilities.ExtensionActions = append(summary.Capabilities.ExtensionActions, FeatureSummary{
+			ID:      action.ID,
+			Name:    action.Name,
+			Scope:   action.Scope,
+			Kind:    action.Kind,
+			Status:  defaultString(action.Status, sdk.CapabilityStatusReady),
+			Message: action.Message,
+		})
 	}
 	for _, setting := range extension.ExtensionSettings {
-		summary.Capabilities.ExtensionSettings = append(summary.Capabilities.ExtensionSettings, FeatureSummary{ID: setting.ID, Name: setting.Name, Scope: setting.Scope})
+		summary.Capabilities.ExtensionSettings = append(summary.Capabilities.ExtensionSettings, FeatureSummary{
+			ID:      setting.ID,
+			Name:    setting.Name,
+			Scope:   setting.Scope,
+			Status:  defaultString(setting.Status, sdk.CapabilityStatusReady),
+			Message: setting.Message,
+		})
 	}
 	for _, test := range extension.ExtensionTests {
-		summary.Capabilities.ExtensionTests = append(summary.Capabilities.ExtensionTests, FeatureSummary{ID: test.ID, Name: test.Name, Trigger: test.Trigger})
+		summary.Capabilities.ExtensionTests = append(summary.Capabilities.ExtensionTests, FeatureSummary{
+			ID:      test.ID,
+			Name:    test.Name,
+			Trigger: test.Trigger,
+			Status:  defaultString(test.Status, sdk.CapabilityStatusReady),
+			Message: test.Message,
+		})
 	}
 	for _, todo := range extension.ExtensionToDos {
-		summary.Capabilities.ExtensionToDos = append(summary.Capabilities.ExtensionToDos, FeatureSummary{ID: todo.ID, Name: todo.Name, Trigger: todo.Trigger})
+		summary.Capabilities.ExtensionToDos = append(summary.Capabilities.ExtensionToDos, FeatureSummary{
+			ID:      todo.ID,
+			Name:    todo.Name,
+			Trigger: todo.Trigger,
+			Status:  defaultString(todo.Status, sdk.CapabilityStatusReady),
+			Message: todo.Message,
+		})
+	}
+	for _, dialog := range extension.ExtensionDialogs {
+		summary.Capabilities.ExtensionDialogs = append(summary.Capabilities.ExtensionDialogs, FeatureSummary{
+			ID:      dialog.ID,
+			Name:    dialog.Name,
+			Scope:   dialog.Scope,
+			Status:  defaultString(dialog.Status, sdk.CapabilityStatusReady),
+			Message: dialog.Message,
+		})
+	}
+	for _, dashlet := range extension.ExtensionDashlets {
+		summary.Capabilities.ExtensionDashlets = append(summary.Capabilities.ExtensionDashlets, FeatureSummary{
+			ID:      dashlet.ID,
+			Name:    dashlet.Name,
+			Scope:   dashlet.Scope,
+			Status:  defaultString(dashlet.Status, sdk.CapabilityStatusReady),
+			Message: dashlet.Message,
+		})
+	}
+	for _, page := range extension.ExtensionMainPages {
+		summary.Capabilities.ExtensionMainPages = append(summary.Capabilities.ExtensionMainPages, FeatureSummary{
+			ID:      page.ID,
+			Name:    page.Name,
+			Scope:   page.Scope,
+			Status:  defaultString(page.Status, sdk.CapabilityStatusReady),
+			Message: page.Message,
+		})
+	}
+	for _, attr := range extension.ExtensionTableAttrs {
+		summary.Capabilities.ExtensionTableAttrs = append(summary.Capabilities.ExtensionTableAttrs, FeatureSummary{
+			ID:      attr.ID,
+			Name:    attr.Name,
+			Target:  attr.Target,
+			Status:  defaultString(attr.Status, sdk.CapabilityStatusReady),
+			Message: attr.Message,
+		})
+	}
+	for _, page := range extension.ExtensionLoadOrderPages {
+		summary.Capabilities.ExtensionLoadOrderPages = append(summary.Capabilities.ExtensionLoadOrderPages, FeatureSummary{
+			ID:      page.ID,
+			Name:    page.Name,
+			Scope:   page.Scope,
+			Status:  defaultString(page.Status, sdk.CapabilityStatusReady),
+			Message: page.Message,
+		})
+	}
+	for _, check := range extension.ExtensionActionChecks {
+		summary.Capabilities.ExtensionActionChecks = append(summary.Capabilities.ExtensionActionChecks, FeatureSummary{
+			ID:      check.ID,
+			Name:    check.Name,
+			Target:  check.Target,
+			Status:  defaultString(check.Status, sdk.CapabilityStatusReady),
+			Message: check.Message,
+		})
 	}
 	for _, api := range extension.ExtensionAPIs {
 		summary.Capabilities.ExtensionAPIs = append(summary.Capabilities.ExtensionAPIs, FeatureSummary{
@@ -986,22 +1098,95 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, feature := range extension.ProfileFeatures {
-		summary.Capabilities.ProfileFeatures = append(summary.Capabilities.ProfileFeatures, FeatureSummary{ID: feature.ID, Name: feature.Name})
+		summary.Capabilities.ProfileFeatures = append(summary.Capabilities.ProfileFeatures, FeatureSummary{
+			ID:      feature.ID,
+			Name:    feature.Name,
+			Status:  defaultString(feature.Status, sdk.CapabilityStatusReady),
+			Message: feature.Message,
+		})
+	}
+	for _, file := range extension.ProfileFiles {
+		summary.Capabilities.ProfileFiles = append(summary.Capabilities.ProfileFiles, FeatureSummary{
+			ID:      file.ID,
+			Name:    file.Name,
+			GameID:  file.GameID,
+			Path:    file.Path,
+			Status:  defaultString(file.Status, sdk.CapabilityStatusReady),
+			Message: file.Message,
+		})
 	}
 	for _, feature := range extension.CollectionFeatures {
-		summary.Capabilities.CollectionFeatures = append(summary.Capabilities.CollectionFeatures, FeatureSummary{ID: feature.ID, Name: feature.Name})
+		summary.Capabilities.CollectionFeatures = append(summary.Capabilities.CollectionFeatures, FeatureSummary{
+			ID:      feature.ID,
+			Name:    feature.Name,
+			Status:  defaultString(feature.Status, sdk.CapabilityStatusReady),
+			Message: feature.Message,
+		})
+	}
+	for _, reducer := range extension.StateReducers {
+		summary.Capabilities.StateReducers = append(summary.Capabilities.StateReducers, FeatureSummary{
+			ID:      reducer.ID,
+			Name:    reducer.Name,
+			Scope:   reducer.Scope,
+			Path:    reducer.Path,
+			Status:  defaultString(reducer.Status, sdk.CapabilityStatusReady),
+			Message: reducer.Message,
+		})
 	}
 	for _, store := range extension.StateStores {
-		summary.Capabilities.StateStores = append(summary.Capabilities.StateStores, FeatureSummary{ID: store.ID, Name: store.Name, Scope: store.Scope})
+		summary.Capabilities.StateStores = append(summary.Capabilities.StateStores, FeatureSummary{
+			ID:      store.ID,
+			Name:    store.Name,
+			Scope:   store.Scope,
+			Status:  defaultString(store.Status, sdk.CapabilityStatusReady),
+			Message: store.Message,
+		})
+	}
+	for _, persistor := range extension.StatePersistors {
+		summary.Capabilities.StatePersistors = append(summary.Capabilities.StatePersistors, FeatureSummary{
+			ID:      persistor.ID,
+			Name:    persistor.Name,
+			Scope:   persistor.Scope,
+			Status:  defaultString(persistor.Status, sdk.CapabilityStatusReady),
+			Message: persistor.Message,
+		})
 	}
 	for _, migration := range extension.StateMigrations {
-		summary.Capabilities.StateMigrations = append(summary.Capabilities.StateMigrations, FeatureSummary{ID: migration.ID, Name: migration.Name, FromVersion: migration.FromVersion, ToVersion: migration.ToVersion})
+		summary.Capabilities.StateMigrations = append(summary.Capabilities.StateMigrations, FeatureSummary{
+			ID:          migration.ID,
+			Name:        migration.Name,
+			FromVersion: migration.FromVersion,
+			ToVersion:   migration.ToVersion,
+			Status:      defaultString(migration.Status, sdk.CapabilityStatusReady),
+			Message:     migration.Message,
+		})
 	}
 	for _, check := range extension.HealthChecks {
-		summary.Capabilities.HealthChecks = append(summary.Capabilities.HealthChecks, FeatureSummary{ID: check.ID, Name: check.Name})
+		summary.Capabilities.HealthChecks = append(summary.Capabilities.HealthChecks, FeatureSummary{
+			ID:      check.ID,
+			Name:    check.Name,
+			Status:  defaultString(check.Status, sdk.CapabilityStatusReady),
+			Message: check.Message,
+		})
 	}
 	for _, extractor := range extension.AttributeExtractors {
-		summary.Capabilities.AttributeExtractors = append(summary.Capabilities.AttributeExtractors, FeatureSummary{ID: extractor.ID, Name: extractor.Name, Target: extractor.Target})
+		summary.Capabilities.AttributeExtractors = append(summary.Capabilities.AttributeExtractors, FeatureSummary{
+			ID:      extractor.ID,
+			Name:    extractor.Name,
+			Target:  extractor.Target,
+			Status:  defaultString(extractor.Status, sdk.CapabilityStatusReady),
+			Message: extractor.Message,
+		})
+	}
+	for _, hook := range extension.StartHooks {
+		summary.Capabilities.StartHooks = append(summary.Capabilities.StartHooks, FeatureSummary{
+			ID:       hook.ID,
+			Name:     hook.Name,
+			Trigger:  hook.Trigger,
+			Priority: hook.Priority,
+			Status:   defaultString(hook.Status, sdk.CapabilityStatusReady),
+			Message:  hook.Message,
+		})
 	}
 	for _, handler := range extension.EventHandlers {
 		summary.Capabilities.EventHandlers = append(summary.Capabilities.EventHandlers, FeatureSummary{ID: handler.Event, Name: handler.Name})
@@ -1030,13 +1215,23 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.ExtensionSettings)
 	sortFeatureSummaries(summary.Capabilities.ExtensionTests)
 	sortFeatureSummaries(summary.Capabilities.ExtensionToDos)
+	sortFeatureSummaries(summary.Capabilities.ExtensionDialogs)
+	sortFeatureSummaries(summary.Capabilities.ExtensionDashlets)
+	sortFeatureSummaries(summary.Capabilities.ExtensionMainPages)
+	sortFeatureSummaries(summary.Capabilities.ExtensionTableAttrs)
+	sortFeatureSummaries(summary.Capabilities.ExtensionLoadOrderPages)
+	sortFeatureSummaries(summary.Capabilities.ExtensionActionChecks)
 	sortFeatureSummaries(summary.Capabilities.ExtensionAPIs)
 	sortFeatureSummaries(summary.Capabilities.ProfileFeatures)
+	sortFeatureSummaries(summary.Capabilities.ProfileFiles)
 	sortFeatureSummaries(summary.Capabilities.CollectionFeatures)
+	sortFeatureSummaries(summary.Capabilities.StateReducers)
 	sortFeatureSummaries(summary.Capabilities.StateStores)
+	sortFeatureSummaries(summary.Capabilities.StatePersistors)
 	sortFeatureSummaries(summary.Capabilities.StateMigrations)
 	sortFeatureSummaries(summary.Capabilities.HealthChecks)
 	sortFeatureSummaries(summary.Capabilities.AttributeExtractors)
+	sortFeatureSummaries(summary.Capabilities.StartHooks)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
 	return summary
 }
