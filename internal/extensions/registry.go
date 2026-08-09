@@ -19,11 +19,13 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commoninterpreters"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/conanexiles"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/cyberpunk2077"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/daggerfallunity"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darkestdungeon"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/darksouls2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/devilmaycry5"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/discoelysium"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dragonsdogma"
@@ -71,12 +73,14 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/monsterhunterworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/morrowind"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade2bannerlord"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/neverwinter"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nomanssky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/palworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/pillarsofeternity2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/plagueincevolved"
@@ -88,6 +92,8 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/quake4"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/quickbmssupport"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/residentevil22019"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/residentevil32020"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
@@ -105,11 +111,14 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stacklands"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/starfield"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsbattlefrontii"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsroguesquadron"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/steinsgate"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stellaris"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/subnautica"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/subnauticabelowzero"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/survivingmars"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/tabletopsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/teamfortress2"
@@ -172,11 +181,13 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(commandconquergeneralszerohour.Extension()),
 		gameext.MustCompileExtension(conanexiles.Extension()),
 		gameext.MustCompileExtension(cultistsimulator.Extension()),
+		gameext.MustCompileExtension(cyberpunk2077.Extension()),
 		gameext.MustCompileExtension(daggerfallunity.Extension()),
 		gameext.MustCompileExtension(darkestdungeon.Extension()),
 		gameext.MustCompileExtension(dawnofman.Extension()),
 		gameext.MustCompileExtension(darksouls2.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
+		gameext.MustCompileExtension(devilmaycry5.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),
 		gameext.MustCompileExtension(dirtrally.Extension()),
 		gameext.MustCompileExtension(dragonsdogma.Extension()),
@@ -226,6 +237,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mountandblade.Extensions()[0]),
 		gameext.MustCompileExtension(mountandblade.Extensions()[1]),
 		gameext.MustCompileExtension(mountandblade.Extensions()[2]),
+		gameext.MustCompileExtension(mountandblade2bannerlord.Extension()),
 		gameext.MustCompileExtension(mrprepper.Extension()),
 		gameext.MustCompileExtension(neverwinter.Extensions()[0]),
 		gameext.MustCompileExtension(neverwinter.Extensions()[1]),
@@ -233,6 +245,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(nomanssky.Extension()),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
+		gameext.MustCompileExtension(palworld.Extension()),
 		gameext.MustCompileExtension(pillarsofeternity2.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
 		gameext.MustCompileExtension(portal2.Extension()),
@@ -243,6 +256,8 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(prototype2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
 		gameext.MustCompileExtension(quake4.Extension()),
+		gameext.MustCompileExtension(residentevil22019.Extension()),
+		gameext.MustCompileExtension(residentevil32020.Extension()),
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(ridersrepublic.Extension()),
 		gameext.MustCompileExtension(rometotalwar.Extension()),
@@ -257,12 +272,15 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(stardewvalley.Extension()),
 		gameext.MustCompileExtension(spidermanmilesmorales.Extension()),
 		gameext.MustCompileExtension(spelunky.Extension()),
+		gameext.MustCompileExtension(starfield.Extension()),
 		gameext.MustCompileExtension(starwarsbattlefrontii.Extension()),
 		gameext.MustCompileExtension(starwarsroguesquadron.Extension()),
 		gameext.MustCompileExtension(starwarsjedisurvivor.Extension()),
 		gameext.MustCompileExtension(steinsgate.Extension()),
 		gameext.MustCompileExtension(stellaris.Extension()),
 		gameext.MustCompileExtension(stacklands.Extension()),
+		gameext.MustCompileExtension(subnautica.Extension()),
+		gameext.MustCompileExtension(subnauticabelowzero.Extension()),
 		gameext.MustCompileExtension(survivingmars.Extension()),
 		gameext.MustCompileExtension(tabletopsimulator.Extension()),
 		gameext.MustCompileExtension(thebindingofisaacrebirth.Extension()),

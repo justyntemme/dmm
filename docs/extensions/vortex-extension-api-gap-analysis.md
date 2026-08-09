@@ -79,13 +79,13 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 32.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 23.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
 
 - Simple `registerGame` only: `game-darksouls`, `game-fallout3`, `game-grimdawn`, `game-grimrock`, `game-nehrim`, `game-oblivion`, `game-prisonarchitect`, `game-shadowrunreturns`, `game-sims3`, `game-skyrim`, `game-starbound`, `game-stateofdecay`, `game-teso`.
-- Source-backed `registerGameStub` support-mod entries: `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, `game-subnauticabelowzero`.
+- Source-backed `registerGameStub` support-mod entries: none remain in the catalog. `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, and `game-subnauticabelowzero` now have dedicated DMM extension packages that preserve Vortex support-mod metadata without claiming installer support.
 - Shared UMM/DAZIP/BepInEx dependency work: `game-dragonage`, `game-dragonage2`, `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, `game-pathfinderwrathoftherighteous`, `game-untitledgoose`.
 - Lifecycle and event-bus work: `game-battletech` (`added-files` adoption), `game-divinityoriginalsin2` (`will-deploy`/`did-deploy` in-game enable reminder), `game-untitledgoose` (`emitAndAwait` plus migration).
 - Merge work: `game-dragonage` merges DAZIP manifest data into `AddIns.xml`; `game-wolcen` merges XML/MTL payloads.
