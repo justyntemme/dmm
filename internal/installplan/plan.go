@@ -120,6 +120,7 @@ type ModTypeSpec struct {
 const (
 	ModTypeDeploymentDirect    = "direct"
 	ModTypeDeploymentEventHook = "event-hook"
+	ModTypeDeploymentToolOnly  = "tool-only"
 )
 
 type InstallerSpec struct {

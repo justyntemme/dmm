@@ -8998,6 +8998,83 @@ func TestDeployRejectsTargetlessManifestForDirectModType(t *testing.T) {
 	}
 }
 
+func TestDeployAllowsTargetlessManifestForToolOnlyModType(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Tool Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999003"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "toolgame",
+		Name:    "Tool Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"toolgame"},
+				VortexGameID: "toolgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "managed-tool", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Tool Game",
+		InstallDir:  "Tool Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(t.TempDir(), "staging", "toolgame")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "tool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "tool", "Tool.exe"), []byte("tool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "managed-tool",
+		PlannerID: "toolgame:tool",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "tool/Tool.exe",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "toolgame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:           "Managed Tool",
+		ArchivePath:    filepath.Join(t.TempDir(), "tool.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), appID)
+	if err != nil {
+		t.Fatalf("buildGameDeployPlan: %v", err)
+	}
+	if len(plan.Actions) != 0 {
+		t.Fatalf("tool-only deployment produced actions: %+v", plan.Actions)
+	}
+}
+
 func TestDeployReturnsPendingDeckyLaunchAction(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

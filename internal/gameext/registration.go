@@ -740,9 +740,9 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 			errs = append(errs, err)
 		}
 		switch strings.TrimSpace(modType.DeploymentMode) {
-		case "", installplan.ModTypeDeploymentDirect, installplan.ModTypeDeploymentEventHook:
+		case "", installplan.ModTypeDeploymentDirect, installplan.ModTypeDeploymentEventHook, installplan.ModTypeDeploymentToolOnly:
 		default:
-			errs = append(errs, errors.New("mod type "+id+" deployment mode must be direct or event-hook"))
+			errs = append(errs, errors.New("mod type "+id+" deployment mode must be direct, event-hook, or tool-only"))
 		}
 	}
 	for _, installer := range spec.Installers {

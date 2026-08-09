@@ -36,8 +36,11 @@ func TestUMMVortexPortsExposeModsInstallerAndBlockedRuntime(t *testing.T) {
 			if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Mods" {
 				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 			}
-			if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.ModTypes) != 1 {
+			if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.ModTypes) != 2 {
 				t.Fatalf("installer capability = installers %+v modtypes %+v", summary.Capabilities.Installers, summary.Capabilities.ModTypes)
+			}
+			if summary.Capabilities.ModTypes[1].ID != "umm" || summary.Capabilities.ModTypes[1].DeploymentMode != "tool-only" {
+				t.Fatalf("UMM tool mod type = %+v", summary.Capabilities.ModTypes)
 			}
 			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "blocked" {
 				t.Fatalf("UMM supported tool = %+v", summary.Capabilities.SupportedTools)

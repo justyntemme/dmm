@@ -11209,6 +11209,10 @@ func (s *Server) deployMappingsForInstalledMod(ctx context.Context, game storage
 	modType := strings.TrimSpace(manifest.ModType)
 	deploymentMode := s.games.ModTypeDeploymentModeForSteamApp(game.SteamAppID, modType)
 	eventHookOnly := deploymentMode == installplan.ModTypeDeploymentEventHook
+	toolOnly := deploymentMode == installplan.ModTypeDeploymentToolOnly
+	if toolOnly {
+		return nil, nil
+	}
 	if eventHookOnly && !s.games.HasEventHandlerForSteamApp(game.SteamAppID, gameext.EventWillDeploy) {
 		return nil, fmt.Errorf("installed mod %q uses event-hook deployment but the %s extension has no will-deploy handler", mod.Name, game.SteamAppID)
 	}

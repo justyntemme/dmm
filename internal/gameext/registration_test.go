@@ -812,7 +812,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"game compatible download domain must not contain control line breaks",
 		"game environment entries must not contain control line breaks",
 		"mod type mod target root: path traversal is not allowed",
-		"mod type mod deployment mode must be direct or event-hook",
+		"mod type mod deployment mode must be direct, event-hook, or tool-only",
 		"installer bad:installer custom builder is required",
 		"references undeclared mod type missing-type",
 		"generated source path: absolute path is not allowed",

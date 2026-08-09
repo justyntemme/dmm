@@ -660,6 +660,8 @@ func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string
 		switch strings.TrimSpace(registered.DeploymentMode) {
 		case installplan.ModTypeDeploymentEventHook:
 			return installplan.ModTypeDeploymentEventHook
+		case installplan.ModTypeDeploymentToolOnly:
+			return installplan.ModTypeDeploymentToolOnly
 		default:
 			return installplan.ModTypeDeploymentDirect
 		}
