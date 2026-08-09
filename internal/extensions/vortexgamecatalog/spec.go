@@ -162,7 +162,6 @@ func sourceURL(dir string) string {
 }
 
 var games = []GameSpec{
-	{VortexDir: "game-7daystodie", ID: "7daystodie", Name: "7 Days to Die", SteamAppIDs: []string{"251570"}, HasCustomInstallers: true, HasModTypes: true, HasLoadOrder: true},
 	{
 		VortexDir:           "game-baldursgate3",
 		ID:                  "baldursgate3",

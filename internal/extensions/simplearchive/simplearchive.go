@@ -2,6 +2,7 @@ package simplearchive
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,6 +34,25 @@ func ListFiles(root string) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+func ReadFileBounded(path string, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, errors.New("read limit must be positive")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, errors.New("file exceeds bounded read limit")
+	}
+	return data, nil
 }
 
 func ContainsFOMOD(files []string) bool {
