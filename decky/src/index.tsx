@@ -6646,8 +6646,8 @@ function DeckyModManagerRoute() {
 type FreshDeckyTab = "actions" | "games" | "settings";
 
 const freshDeckyTabs: Array<{ id: FreshDeckyTab; label: string }> = [
-  { id: "actions", label: "Actions" },
   { id: "games", label: "Games" },
+  { id: "actions", label: "Actions" },
   { id: "settings", label: "Settings" }
 ];
 
@@ -6759,6 +6759,47 @@ function freshCardStyle(active = false): CSSProperties {
     display: "grid",
     gap: "6px",
     padding: "10px"
+  };
+}
+
+function freshGameCardStyle(active = false): CSSProperties {
+  return {
+    ...freshCardStyle(active),
+    alignItems: "center",
+    boxSizing: "border-box",
+    minHeight: "74px",
+    overflow: "hidden",
+    width: "100%"
+  };
+}
+
+const freshGameCardContentStyle: CSSProperties = {
+  alignItems: "center",
+  boxSizing: "border-box",
+  display: "grid",
+  gap: "10px",
+  gridTemplateColumns: "78px minmax(0, 1fr)",
+  minHeight: "52px",
+  minWidth: 0,
+  width: "100%"
+};
+
+const freshGameImageStyle: CSSProperties = {
+  aspectRatio: "16 / 9",
+  borderRadius: "5px",
+  display: "block",
+  height: "44px",
+  objectFit: "cover",
+  width: "78px"
+};
+
+function freshModCardStyle(active = false): CSSProperties {
+  return {
+    ...freshCardStyle(active),
+    boxSizing: "border-box",
+    minHeight: "70px",
+    overflow: "hidden",
+    width: "100%"
   };
 }
 
@@ -6978,7 +7019,7 @@ function FreshLocalArchiveModal(props: {
 
 function FreshDeckyModManagerRoute() {
   const [initialReturnContext] = useState(() => consumeDMMDeckyReturnContext());
-  const [tab, setTab] = useState<FreshDeckyTab>(initialReturnContext?.tab === "games" ? "games" : "actions");
+  const [tab, setTab] = useState<FreshDeckyTab>(initialReturnContext?.tab === "settings" ? "settings" : "games");
   const [status, setStatus] = useState<BackendStatus | null>(null);
   const [games, setGames] = useState<ManagedGame[]>([]);
   const [catalogs, setCatalogs] = useState<CatalogStatus[]>([]);
@@ -7057,11 +7098,31 @@ function FreshDeckyModManagerRoute() {
       return;
     }
     const [profilesResult, modsResult, diagnosticsResult, candidatesResult, workshopResult] = await Promise.all([
-      call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID),
-      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID),
-      call<[string], { ok: boolean; error?: string; diagnostics?: GameDiagnostics | null }>("game_diagnostics", appID),
-      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID),
-      call<[string], { ok: boolean; error?: string; items: WorkshopItem[]; state?: WorkshopState }>("game_workshop", appID)
+      call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        profiles: []
+      })),
+      call<[string], { ok: boolean; error?: string; mods: ManagedMod[] }>("game_mods", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        mods: []
+      })),
+      call<[string], { ok: boolean; error?: string; diagnostics?: GameDiagnostics | null }>("game_diagnostics", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        diagnostics: null
+      })),
+      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        candidates: []
+      })),
+      call<[string], { ok: boolean; error?: string; items: WorkshopItem[]; state?: WorkshopState }>("game_workshop", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        items: []
+      }))
     ]);
     if (profilesResult.ok) setProfiles(profilesResult.profiles);
     else setError(profilesResult.error || "Unable to load profiles.");
@@ -7070,6 +7131,18 @@ function FreshDeckyModManagerRoute() {
     setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
     setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
     setWorkshopItems(workshopResult.ok ? workshopResult.items : []);
+    const failedSlices: string[] = [];
+    if (!profilesResult.ok) failedSlices.push(`profiles:${profilesResult.error || ""}`);
+    if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
+    if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
+    if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
+    if (!workshopResult.ok) failedSlices.push(`workshop:${workshopResult.error || ""}`);
+    if (failedSlices.length > 0) {
+      await logFrontendEvent("fresh selected game partial load failure", {
+        app_id: appID,
+        failed: failedSlices.join("; ")
+      });
+    }
   }
 
   async function refreshFreshState() {
@@ -7581,10 +7654,10 @@ function FreshDeckyModManagerRoute() {
                 setFavoriteGameIDs(next);
                 void patchUIPreferences({ favorite_game_id: game.app_id, favorite: !favorite });
               }}
-              style={freshCardStyle(favorite)}
+              style={freshGameCardStyle(favorite)}
             >
-              <div style={{ alignItems: "center", display: "grid", gap: "8px", gridTemplateColumns: "54px minmax(0, 1fr)" }}>
-                <img src={steamHeaderImage(game.app_id)} style={{ borderRadius: "5px", height: "30px", objectFit: "cover", width: "54px" }} />
+              <div style={freshGameCardContentStyle}>
+                <img src={steamHeaderImage(game.app_id)} style={freshGameImageStyle} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{favorite ? "★ " : ""}{game.name}</div>
                   <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>A Open · Y {favorite ? "Unfavorite" : "Favorite"}</div>
@@ -7611,10 +7684,10 @@ function FreshDeckyModManagerRoute() {
             event.stopPropagation();
             clearSelectedGame();
           }}
-          style={freshCardStyle(true)}
+          style={freshGameCardStyle(true)}
         >
-          <div style={{ alignItems: "center", display: "grid", gap: "8px", gridTemplateColumns: "64px minmax(0, 1fr)" }}>
-            <img src={steamHeaderImage(selectedGameID)} style={{ borderRadius: "6px", height: "36px", objectFit: "cover", width: "64px" }} />
+          <div style={freshGameCardContentStyle}>
+            <img src={steamHeaderImage(selectedGameID)} style={freshGameImageStyle} />
             <div style={{ minWidth: 0 }}>
               <div style={{ ...deckyTwoLineTextStyle, fontSize: "15px", fontWeight: 900 }}>{selectedGame?.name || selectedGameID}</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>{enabledCount} enabled / {installedCount} installed · B Games</div>
@@ -7712,9 +7785,9 @@ function FreshDeckyModManagerRoute() {
                 event.stopPropagation();
                 void reinstallMod(mod, true);
               }}
-              style={freshCardStyle(mod.enabled)}
+              style={freshModCardStyle(mod.enabled)}
             >
-              <div style={{ alignItems: "start", display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+              <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
                 <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{mod.name}</div>
                 <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
               </div>
@@ -7729,8 +7802,8 @@ function FreshDeckyModManagerRoute() {
         {workshopItems.map((item) => {
           const disabled = item.disabled_known && item.disabled_locally;
           return (
-            <div key={item.published_file_id} style={freshCardStyle(!disabled)}>
-              <div style={{ alignItems: "start", display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+            <div key={item.published_file_id} style={freshModCardStyle(!disabled)}>
+              <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
                 <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{item.title || item.published_file_id}</div>
                 <span style={deckySourcePillStyle(item.source_tag || "steam_workshop")}>{sourceLabel(item.source_tag || "steam_workshop")}</span>
               </div>
