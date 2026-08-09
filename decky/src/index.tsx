@@ -6700,6 +6700,12 @@ const freshSectionStyle: CSSProperties = {
   width: "100%"
 };
 
+const freshSettingsPrimaryCardStyle: CSSProperties = {
+  ...freshSectionStyle,
+  alignContent: "start",
+  minHeight: "112px"
+};
+
 const freshActionRowStyle: CSSProperties = {
   display: "grid",
   gap: "8px",
@@ -7851,7 +7857,7 @@ function FreshDeckyModManagerRoute() {
           focusClassName="dmm-sidebar-row-focused"
           onActivate={() => void toggleFreshServer()}
           onClick={() => void toggleFreshServer()}
-          style={freshSectionStyle}
+          style={freshSettingsPrimaryCardStyle}
         >
           <div style={{ fontWeight: 900 }}>Server</div>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
