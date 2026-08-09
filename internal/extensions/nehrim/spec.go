@@ -2,18 +2,20 @@ package nehrim
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 const (
-	SteamAppID       = "1014940"
-	OblivionSteamID  = "22330"
-	VortexGameID     = "nehrim"
-	Name             = "Nehrim: At Fate's Edge"
-	executable       = "Oblivion.exe"
-	launcher         = "NehrimLauncher.exe"
-	dataRoot         = "data"
-	blockedModTypeID = "nehrim-cross-app-data"
+	SteamAppID      = "1014940"
+	OblivionSteamID = "22330"
+	VortexGameID    = "nehrim"
+	Name            = "Nehrim: At Fate's Edge"
+	executable      = "Oblivion.exe"
+	launcher        = "NehrimLauncher.exe"
+	dataRoot        = "data"
+	targetRootID    = "nehrim-oblivion-root"
+	dataModTypeID   = "nehrim-data"
 )
 
 func Extension() sdk.Extension {
@@ -42,23 +44,26 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       targetRootID,
+		Name:     "Oblivion Steam install root",
+		Resolver: targetroots.SteamAppInstallRoot(OblivionSteamID),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{
-		ID:      blockedModTypeID,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex resolves Nehrim's deployment root to the Oblivion Steam app install path while detecting Nehrim app 1014940. DMM needs a reusable cross-app Steam root resolver before this can deploy safely.",
+		ID:           dataModTypeID,
+		TargetRoot:   dataRoot,
+		TargetRootID: targetRootID,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:nehrim:data",
 		VortexInstallerID: "game-query-mod-path",
 		Priority:          100,
-		ModType:           blockedModTypeID,
+		ModType:           dataModTypeID,
 		NameSource:        installplan.NameSourceArchive,
 		TargetRoot:        dataRoot,
+		TargetRootID:      targetRootID,
 		StripCommonRoot:   true,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Nehrim deployment must target the Oblivion app 22330 install path, not the selected Nehrim app 1014940 path. Add a generic extension-declared cross-app root resolver before enabling this installer.",
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           "Blocked until DMM supports Vortex's cross-app Nehrim-to-Oblivion game-root resolution.",
+		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "nehrim-launcher",
@@ -69,13 +74,6 @@ func Register(r sdk.Registrar) {
 		Exclusive:          true,
 		Status:             sdk.CapabilityStatusMetadata,
 		Message:            "Vortex exposes Nehrim Launcher as an exclusive supported tool.",
-	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "nehrim-cross-app-root",
-		Name:    "Nehrim cross-app Steam root",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Add a reusable extension capability that maps one detected Steam app to another app's game root, then enable Nehrim's data-root installer with copy deployment.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-nehrim extension source",

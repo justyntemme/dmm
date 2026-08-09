@@ -1,6 +1,7 @@
 package steam
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,6 +76,38 @@ func TestDetectExternalMarkers(t *testing.T) {
 	}
 }
 
+func TestDiscoverAppFindsInstallRootFromPreferredLibrary(t *testing.T) {
+	library := t.TempDir()
+	writeManifest(t, library, "22330", "Oblivion", "Oblivion", "123")
+	if err := os.MkdirAll(filepath.Join(library, "steamapps", "common", "Oblivion"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	game, ok, err := DiscoverApp(context.Background(), "22330", []Library{{Path: library}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("app not found")
+	}
+	if game.AppID != "22330" || game.InstallDir != "Oblivion" || game.LibraryPath != library {
+		t.Fatalf("game = %+v", game)
+	}
+	if game.Path != filepath.Join(library, "steamapps", "common", "Oblivion") {
+		t.Fatalf("path = %q", game.Path)
+	}
+}
+
+func TestDiscoverAppReturnsFalseForMissingManifest(t *testing.T) {
+	game, ok, err := DiscoverApp(context.Background(), "22330", []Library{{Path: t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok || game.AppID != "" {
+		t.Fatalf("game = %+v ok=%v", game, ok)
+	}
+}
+
 func TestDetectWorkshop(t *testing.T) {
 	library := t.TempDir()
 	content := filepath.Join(library, "steamapps", "workshop", "content", "377160")
@@ -104,5 +137,22 @@ func TestDetectWorkshop(t *testing.T) {
 	}
 	if len(info.ItemIDs) != 2 || info.ItemIDs[0] != "12345" || info.ItemIDs[1] != "67890" {
 		t.Fatalf("item ids = %+v", info.ItemIDs)
+	}
+}
+
+func writeManifest(t *testing.T, library, appID, name, installDir, buildID string) {
+	t.Helper()
+	path := filepath.Join(library, "steamapps", "appmanifest_"+appID+".acf")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`"AppState"
+{
+	"appid"		"`+appID+`"
+	"name"		"`+name+`"
+	"installdir"		"`+installDir+`"
+	"buildid"		"`+buildID+`"
+}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

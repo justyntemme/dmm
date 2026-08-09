@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/steam"
 )
 
 const protonUser = "steamuser"
@@ -40,6 +41,36 @@ func ProtonLocalAppData(appID string, rel ...string) sdk.TargetRootResolverFunc 
 func ProtonRoamingAppData(appID string, rel ...string) sdk.TargetRootResolverFunc {
 	segments := append([]string{"AppData", "Roaming"}, cleanSegments(rel...)...)
 	return protonUserPath(appID, "Vortex AppData path via Steam Proton prefix", segments...)
+}
+
+func SteamAppInstallRoot(appID string) sdk.TargetRootResolverFunc {
+	appID = strings.TrimSpace(appID)
+	return func(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+		if err := ctx.Err(); err != nil {
+			return sdk.TargetRootResult{}, err
+		}
+		if unsafePathSegment(appID) {
+			return sdk.TargetRootResult{}, errors.New("Steam app id is required to resolve cross-app install root")
+		}
+		libraries := preferredLibraries(input)
+		game, ok, err := steam.DiscoverApp(ctx, appID, libraries)
+		if err != nil {
+			return sdk.TargetRootResult{}, err
+		}
+		if !ok && len(libraries) > 0 {
+			game, ok, err = steam.DiscoverApp(ctx, appID, nil)
+			if err != nil {
+				return sdk.TargetRootResult{}, err
+			}
+		}
+		if !ok {
+			return sdk.TargetRootResult{}, errors.New("Steam app " + appID + " is not installed")
+		}
+		if strings.TrimSpace(game.Path) == "" {
+			return sdk.TargetRootResult{}, errors.New("Steam app " + appID + " resolved to an empty install path")
+		}
+		return sdk.TargetRootResult{Path: filepath.Clean(game.Path), Source: "Steam app " + appID + " install root"}, nil
+	}
 }
 
 func protonUserPath(appID, source string, rel ...string) sdk.TargetRootResolverFunc {
@@ -77,6 +108,14 @@ func SteamLibraryPath(input sdk.TargetRootInput) string {
 		return ""
 	}
 	return gamePath[:idx]
+}
+
+func preferredLibraries(input sdk.TargetRootInput) []steam.Library {
+	path := SteamLibraryPath(input)
+	if path == "" {
+		return nil
+	}
+	return []steam.Library{{Path: path}}
 }
 
 func cleanSegments(values ...string) []string {

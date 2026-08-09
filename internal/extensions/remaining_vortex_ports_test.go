@@ -2,7 +2,6 @@ package extensions_test
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nehrim"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prisonarchitect"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
-	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 func TestBattleTechAndPrisonArchitectPortsExposeInstallers(t *testing.T) {
@@ -140,11 +138,11 @@ func TestDragonAgePortsExposeDAZIPSupport(t *testing.T) {
 	}
 }
 
-func TestNehrimPortBlocksUntilCrossAppRootExists(t *testing.T) {
+func TestNehrimPortTargetsOblivionRoot(t *testing.T) {
 	extension := gameext.MustCompileExtension(nehrim.Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
 	summary := registry.ExtensionSummaries()[0]
-	if summary.Coverage != gameext.CoverageResearchBlocked {
+	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "data" {
@@ -154,15 +152,15 @@ func TestNehrimPortBlocksUntilCrossAppRootExists(t *testing.T) {
 		t.Fatalf("supported tools = %+v", summary.Capabilities.SupportedTools)
 	}
 	root := t.TempDir()
-	writeSimpleFile(t, filepath.Join(root, "Wrapper", "file.txt"), "data")
-	_, err := registry.BuildInstallPlan(nehrim.SteamAppID, root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) {
-		t.Fatalf("err = %v", err)
+	writeSimpleFile(t, filepath.Join(root, "Data", "Meshes", "weapon.nif"), "data")
+	plan, err := registry.BuildInstallPlan(nehrim.SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if unsupported.Reason == "" {
-		t.Fatal("missing unsupported reason")
+	if plan.ModType != "nehrim-data" {
+		t.Fatalf("plan = %+v", plan)
 	}
+	assertSimpleTarget(t, plan, "data/Meshes/weapon.nif")
 }
 
 func TestBattleTechVersionProviderIgnoresEmptyProductVersion(t *testing.T) {

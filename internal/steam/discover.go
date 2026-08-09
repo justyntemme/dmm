@@ -91,6 +91,59 @@ func Discover(ctx context.Context) ([]Game, error) {
 	return games, nil
 }
 
+func DiscoverApp(ctx context.Context, appID string, libraries []Library) (Game, bool, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return Game{}, false, nil
+	}
+	if len(libraries) == 0 {
+		discovered, err := DiscoverLibraries()
+		if err != nil {
+			return Game{}, false, err
+		}
+		libraries = discovered
+	}
+	for _, lib := range libraries {
+		select {
+		case <-ctx.Done():
+			return Game{}, false, ctx.Err()
+		default:
+		}
+		libPath := strings.TrimSpace(lib.Path)
+		if libPath == "" {
+			continue
+		}
+		manifest := filepath.Join(libPath, "steamapps", "appmanifest_"+appID+".acf")
+		values, err := parseACF(manifest)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return Game{}, false, err
+		}
+		installDir := values["installdir"]
+		if strings.TrimSpace(installDir) == "" {
+			continue
+		}
+		game := Game{
+			AppID:       appID,
+			Name:        values["name"],
+			InstallDir:  installDir,
+			LibraryPath: libPath,
+			Path:        filepath.Join(libPath, "steamapps", "common", installDir),
+			BuildID:     values["buildid"],
+			State:       "clean_candidate",
+			Workshop:    DetectWorkshop(libPath, appID),
+		}
+		game.Markers = detectExternalMarkers(game.Path)
+		if len(game.Markers) > 0 {
+			game.State = "needs_review"
+		}
+		return game, true, nil
+	}
+	return Game{}, false, nil
+}
+
 func DetectWorkshop(libraryPath, appID string) WorkshopInfo {
 	libraryPath = strings.TrimSpace(libraryPath)
 	appID = strings.TrimSpace(appID)
