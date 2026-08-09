@@ -539,6 +539,62 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 	}
 }
 
+func TestBuildInstallPlanPassesGamePathToCustomInstaller(t *testing.T) {
+	gamePath := t.TempDir()
+	extractRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(extractRoot, "mod.txt"), []byte("mod"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "custom-path",
+		Name:    "Custom Path",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"777777"},
+				NexusDomains: []string{"custompath"},
+				VortexGameID: "custom-path",
+				QueryModPath: "Mods",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "custom-path-mod", TargetRoot: "Mods"})
+			r.RegisterInstaller(installplan.InstallerSpec{
+				ID:                "custom-path-installer",
+				VortexInstallerID: "custom-path",
+				ModType:           "custom-path-mod",
+				InstructionMode:   installplan.InstructionCustom,
+				CustomBuild: func(input installplan.BuildInput) (installplan.Plan, error) {
+					if input.GamePath != gamePath {
+						t.Fatalf("game path = %q, want %q", input.GamePath, gamePath)
+					}
+					return installplan.Plan{
+						GameID:    input.GameID,
+						ModType:   input.Installer.ModType,
+						PlannerID: input.Installer.ID,
+						Instructions: []installplan.Instruction{{
+							Kind:            installplan.InstructionKindCopy,
+							SourcePath:      filepath.Join(input.ExtractedRoot, "mod.txt"),
+							StagingRelative: "mod.txt",
+							TargetRelative:  "Mods/mod.txt",
+						}},
+					}, nil
+				},
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := NewRegistry([]Extension{extension}).BuildInstallPlanWithGamePath("777777", extractRoot, gamePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+}
+
 func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 	_, err := CompileExtension(sdk.Extension{
 		ID:   "bad",

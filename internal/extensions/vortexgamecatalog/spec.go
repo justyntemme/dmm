@@ -189,7 +189,6 @@ var games = []GameSpec{
 	{VortexDir: "game-breakingwheel", ID: "breakingwheel", Name: "Breaking Wheel", SteamAppIDs: []string{"545890"}},
 	{VortexDir: "game-conanexiles", ID: "conanexiles", Name: "Conan Exiles", SteamAppIDs: []string{"440900"}, Notes: []string{"Vortex writes a modlist.txt on deploy lifecycle events; DMM needs source-reviewed lifecycle/load-order generation before claiming full support."}},
 	{VortexDir: "game-cyberpunk2077", ID: "cyberpunk2077", Name: "Cyberpunk 2077", VortexStub: true, SupportModID: "196"},
-	{VortexDir: "game-darkestdungeon", ID: "darkestdungeon", Name: "Darkest Dungeon", SteamAppIDs: []string{"262060"}, HasCustomInstallers: true},
 	{VortexDir: "game-darksouls", ID: "darksouls", Name: "Dark Souls", SteamAppIDs: []string{"211420"}, Notes: []string{"Vortex setup prompts for DSfix and opens Nexus mod 19; DMM needs a source-reviewed runtime/tool requirement before claiming full support."}},
 	{VortexDir: "game-darksouls2", ID: "darksouls2", Name: "Dark Souls II", SteamAppIDs: []string{"236430", "335300"}},
 	{VortexDir: "game-divinityoriginalsin2", ID: "divinityoriginalsin2", Name: "Divinity: Original Sin 2", SteamAppIDs: []string{"435150"}, Notes: []string{"Vortex registers both Original and Definitive Edition against Steam app 435150; DMM needs a multi-variant-per-app resolver before representing both as selectable game records."}},

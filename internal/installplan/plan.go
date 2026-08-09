@@ -87,6 +87,8 @@ type Registry struct {
 type BuildOptions struct {
 	PlatformID  string
 	ArchiveName string
+	GamePath    string
+	LibraryPath string
 	Selections  map[string][]string
 }
 
@@ -166,6 +168,8 @@ type BuildInput struct {
 	TargetRoot    string
 	TargetRootID  string
 	ArchiveName   string
+	GamePath      string
+	LibraryPath   string
 	Selections    map[string][]string
 }
 
@@ -472,6 +476,8 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, requestedGameID,
 			TargetRoot:    installer.TargetRoot,
 			TargetRootID:  installer.TargetRootID,
 			ArchiveName:   options.ArchiveName,
+			GamePath:      options.GamePath,
+			LibraryPath:   options.LibraryPath,
 			Selections:    cloneSelections(options.Selections),
 		})
 	default:

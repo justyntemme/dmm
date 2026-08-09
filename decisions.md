@@ -23,6 +23,17 @@ Use this file only when an implementation path requires a meaningful architectur
 
 ## Decisions
 
+### Pass Game Path Through Extension Install Planning
+
+- Date: 2026-08-08
+- Area: Extension framework and Vortex installer parity
+- Decision: Add resolved `GamePath` and reserved `LibraryPath` fields to `installplan.BuildOptions` and `installplan.BuildInput`, and pass `GamePath` through the game extension registry into custom installer builders.
+- Options considered: let custom installers rediscover the game folder; add game-specific server branches; expose the resolved game path through the generic extension planner boundary.
+- Rationale: verified Vortex installers can inspect the discovered game directory while classifying an archive. Darkest Dungeon maps no-project archives by comparing archive folders to the real game directory structure, so the game extension needs that state without moving Darkest Dungeon logic into core.
+- Tradeoffs: custom builders now receive more environment context and must avoid mutating game files during planning. This remains safer than rediscovery because the server already owns game-path discovery and can pass the exact path used for staging/deployment.
+- Verification/source references: Vortex `extensions/games/game-darkestdungeon/src/index.js` uses `prepareForModding`, `_DIRECTORY_STRUCT`, and `getModsFolder()` during installer matching/building; DMM implementation in `internal/installplan`, `internal/gameext`, and `internal/extensions/darkestdungeon`.
+- Follow-up: pass `LibraryPath` once a source-verified installer requires Steam-library-relative state, and keep planner-stage game-path access read-only.
+
 ### Add Framework Extensions Beside Game Extensions
 
 - Date: 2026-08-08

@@ -16,6 +16,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/commoninterpreters"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/daggerfallunity"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/darkestdungeon"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/davethediver"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
@@ -148,6 +149,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(commandconquergeneralszerohour.Extension()),
 		gameext.MustCompileExtension(cultistsimulator.Extension()),
 		gameext.MustCompileExtension(daggerfallunity.Extension()),
+		gameext.MustCompileExtension(darkestdungeon.Extension()),
 		gameext.MustCompileExtension(dawnofman.Extension()),
 		gameext.MustCompileExtension(davethediver.Extension()),
 		gameext.MustCompileExtension(discoelysium.Extension()),

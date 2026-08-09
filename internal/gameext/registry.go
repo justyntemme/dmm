@@ -460,6 +460,7 @@ func (r Registry) BuildInstallPlanWithGamePathArchiveAndSelections(gameID, extra
 		options.PlatformID = platform.ID
 	}
 	options.ArchiveName = strings.TrimSpace(archiveName)
+	options.GamePath = strings.TrimSpace(gamePath)
 	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
 }
