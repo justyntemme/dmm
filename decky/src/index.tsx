@@ -3621,7 +3621,19 @@ const freshSectionStyle: CSSProperties = {
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
-  minHeight: "112px"
+  minHeight: "120px"
+};
+
+const freshSettingsCardStyle: CSSProperties = {
+  ...freshSectionStyle,
+  alignContent: "start",
+  minHeight: "118px"
+};
+
+const freshSettingsToggleCardStyle: CSSProperties = {
+  ...freshSectionStyle,
+  alignContent: "center",
+  minHeight: "76px"
 };
 
 const freshActionRowStyle: CSSProperties = {
@@ -4952,7 +4964,7 @@ function FreshDeckyModManagerRoute() {
           <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
           <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
         </Focusable>
-        <div style={freshSectionStyle}>
+        <div style={freshSettingsCardStyle}>
           <div style={{ fontWeight: 900 }}>Security</div>
           <ToggleField label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
           <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
@@ -4967,17 +4979,17 @@ function FreshDeckyModManagerRoute() {
             Reset Phone Pairing
           </FreshActionButton>
         </div>
-        <div style={freshSectionStyle}>
+        <div style={freshSettingsCardStyle}>
           <div style={{ fontWeight: 900 }}>Automation</div>
           <ToggleField label="Auto-install captured downloads" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
           <ToggleField label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <ToggleField label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
-        <div style={freshSectionStyle}>
+        <div style={freshSettingsToggleCardStyle}>
           <ToggleField label="Show Debug" checked={showDebug} onChange={setShowDebug} />
         </div>
         {showDebug && (
-          <div style={freshSectionStyle}>
+          <div style={freshSettingsCardStyle}>
             <div style={{ fontWeight: 900 }}>Debug</div>
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
