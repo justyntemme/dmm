@@ -79,24 +79,24 @@ This is enough for the current Stardew Valley vertical slice and several partial
 Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 - Vortex game extension entry points found: 87.
-- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 8.
+- Remaining DMM catalog placeholders in `internal/extensions/vortexgamecatalog`: 5.
 - Remaining placeholders are source-backed, but they are not considered full parity. Each must either be promoted into a dedicated DMM game extension or replaced by a documented non-applicable decision.
 
 Remaining placeholder groups from direct source calls:
 
-- Remaining `registerGame` placeholders: `game-nehrim`, `game-prisonarchitect`.
+- Dedicated source-backed `registerGame` ports with remaining blocked runtime gaps: `game-battletech` keeps BattleTech Documents mod deployment and version parsing but blocks Vortex `added-files` adoption; `game-prisonarchitect` maps Vortex LocalAppData mod deployment to Proton LocalAppData and blocks native-Linux mod-path verification; `game-nehrim` preserves Vortex's Nehrim-to-Oblivion facts but blocks install until DMM has a cross-app Steam root resolver.
 - Documents/AppData `registerGame` entries promoted with shared DMM target-root support: `game-grimrock`, `game-sims3`, and `game-teso`.
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
 - Source-backed `registerGameStub` support-mod entries: none remain in the catalog. `game-cyberpunk2077`, `game-dmc5`, `game-mount-and-blade2`, `game-palworld`, `game-re2remake`, `game-re3remake`, `game-starfield`, `game-subnautica`, and `game-subnauticabelowzero` now have dedicated DMM extension packages that preserve Vortex support-mod metadata without claiming installer support.
 - Shared DAZIP/BepInEx dependency work: `game-dragonage`, `game-dragonage2`, `game-untitledgoose`.
 - UMM game entries promoted with a source-backed DMM `umm` helper: `game-gardenpaws`, `game-oni`, `game-pathfinderkingmaker`, and `game-pathfinderwrathoftherighteous`. DMM supports Vortex's Mods-folder deployment and records the blocked Unity Mod Manager tool download/patch runtime until a reusable external-tool flow exists.
-- Lifecycle and event-bus work: `game-battletech` (`added-files` adoption), `game-divinityoriginalsin2` (`will-deploy`/`did-deploy` in-game enable reminder), `game-untitledgoose` (`emitAndAwait` plus migration).
+- Lifecycle and event-bus work: `game-battletech` still needs reusable `added-files` adoption runtime, `game-divinityoriginalsin2` needs `will-deploy`/`did-deploy` in-game enable reminder after multi-variant support, and `game-untitledgoose` needs `emitAndAwait` plus migration.
 - Merge work: `game-dragonage` merges DAZIP manifest data into `AddIns.xml`; `game-wolcen` merges XML/MTL payloads.
 
 Observed source-backed blocker details:
 
-- `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM has the event constant but not the new-file adoption runtime.
+- `game-battletech/src/index.js` listens to `added-files` and copies single-owner generated files back into that mod's staging folder before removing the unmanaged game file. DMM ports the normal Documents mods installer and version parser, but not the new-file adoption runtime.
 - `game-conanexiles/src/index.js` registers a load-order page and writes `ConanSandbox/Mods/modlist.txt` with staged `.pak` paths in user order. DMM now ports this through `internal/extensions/conanexiles` and the reusable `internal/extensions/loadorderfile` helper.
 - `game-divinityoriginalsin2/src/index.js` registers Original and Definitive Edition against Steam app `435150`, writes mods to per-edition Documents folders, and shows a notification after newly deployed `.pak` files. DMM needs a multi-logical-game-per-Steam-app resolver and source-backed deploy notification handler.
 - `game-dragonage/src/index.js` requires `modtype-dazip`, registers a DAZIP merge, and merges `manifest.xml` AddIn items into `Settings/AddIns.xml`. DMM needs a shared DAZIP/AddIns merge capability.
@@ -112,7 +112,7 @@ Implementation priority from this audit:
 4. Add shared DAZIP/AddIns merge capability, then port Dragon Age and Dragon Age 2.
 5. Add Unity Mod Manager external-tool download/discovery/patch runtime for the already ported UMM-dependent Unity games.
 6. Add generic merge runtime for XML/MTL and source-backed patch-existing/setup runtime, then port Wolcen and similar merge/setup games.
-7. Add new-file adoption runtime for `added-files`, then port BattleTech.
+7. Add new-file adoption runtime for `added-files`, then complete BattleTech lifecycle parity.
 
 ## MVP-Critical Gaps
 

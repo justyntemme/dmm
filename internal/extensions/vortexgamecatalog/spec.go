@@ -162,12 +162,9 @@ func sourceURL(dir string) string {
 }
 
 var games = []GameSpec{
-	{VortexDir: "game-battletech", ID: "battletech", Name: "BattleTech", SteamAppIDs: []string{"637090"}, Notes: []string{"Vortex listens for added-files and copies single-owner generated files back into the staged mod; DMM needs source-reviewed added-files parity before claiming full support."}},
 	{VortexDir: "game-divinityoriginalsin2", ID: "divinityoriginalsin2", Name: "Divinity: Original Sin 2", SteamAppIDs: []string{"435150"}, Notes: []string{"Vortex registers both Original and Definitive Edition against Steam app 435150; DMM needs a multi-variant-per-app resolver before representing both as selectable game records."}},
 	{VortexDir: "game-dragonage", ID: "dragonage", Name: "Dragon Age: Origins", SteamAppIDs: []string{"17450", "47810"}},
 	{VortexDir: "game-dragonage2", ID: "dragonage2", Name: "Dragon Age 2", SteamAppIDs: []string{"15543", "1238040"}},
-	{VortexDir: "game-nehrim", ID: "nehrim", Name: "Nehrim: At Fate's Edge", SteamAppIDs: []string{"1014940"}, Notes: []string{"Vortex launches Oblivion.exe from the Oblivion install when Nehrim app 1014940 is present; DMM needs a source-reviewed cross-app game-root resolver before full support."}},
-	{VortexDir: "game-prisonarchitect", ID: "prisonarchitect", Name: "Prison Architect", SteamAppIDs: []string{"233450"}},
 	{VortexDir: "game-untitledgoose", ID: "untitledgoosegame", Name: "Untitled Goose Game", AllowNoSteamAppID: true, Notes: []string{"Vortex discovers this game through Epic and wires BepInEx support plus a migration; DMM needs source-reviewed Epic discovery and BepInEx migration parity before full support."}},
 	{VortexDir: "game-wolcen", ID: "wolcenlordsofmayhem", Name: "Wolcen: Lords of Mayhem", SteamAppIDs: []string{"424370"}, Notes: []string{"Vortex declares merge behavior for XML/MTL files; DMM needs source-reviewed merge runtime before full support."}},
 }

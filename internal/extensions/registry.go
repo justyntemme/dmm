@@ -4,6 +4,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ahatintime"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/baldursgate3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/battletech"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bladeandsorcery"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
@@ -81,6 +82,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade2bannerlord"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/nehrim"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/neverwinter"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nomanssky"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
@@ -96,6 +98,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/planetside2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/portal2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/potioncraft"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/prisonarchitect"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/projectzomboid"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype2"
@@ -182,6 +185,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(ahatintime.Extension()),
 		gameext.MustCompileExtension(baldursgate3.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
+		gameext.MustCompileExtension(battletech.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(bladeandsorcery.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),
@@ -259,6 +263,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mountandblade.Extensions()[2]),
 		gameext.MustCompileExtension(mountandblade2bannerlord.Extension()),
 		gameext.MustCompileExtension(mrprepper.Extension()),
+		gameext.MustCompileExtension(nehrim.Extension()),
 		gameext.MustCompileExtension(neverwinter.Extensions()[0]),
 		gameext.MustCompileExtension(neverwinter.Extensions()[1]),
 		gameext.MustCompileExtension(neverwinter.Extensions()[2]),
@@ -276,6 +281,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(plagueincevolved.Extension()),
 		gameext.MustCompileExtension(planetside2.Extension()),
 		gameext.MustCompileExtension(potioncraft.Extension()),
+		gameext.MustCompileExtension(prisonarchitect.Extension()),
 		gameext.MustCompileExtension(prototype.Extension()),
 		gameext.MustCompileExtension(prototype2.Extension()),
 		gameext.MustCompileExtension(projectzomboid.Extension()),
