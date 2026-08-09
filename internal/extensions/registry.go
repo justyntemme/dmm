@@ -108,9 +108,11 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsharedsystems"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexuisurfaces"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/warno"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/warthunder"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/wewhoareabouttodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcher3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcherlegacy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/worldoftanks"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -236,10 +238,12 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(totalwarromeremastered.Extension()),
 		gameext.MustCompileExtension(transportfever2.Extension()),
 		gameext.MustCompileExtension(warno.Extension()),
+		gameext.MustCompileExtension(warthunder.Extension()),
 		gameext.MustCompileExtension(wewhoareabouttodie.Extension()),
 		gameext.MustCompileExtension(witcherlegacy.Extensions()[0]),
 		gameext.MustCompileExtension(witcherlegacy.Extensions()[1]),
 		gameext.MustCompileExtension(witcher3.Extension()),
+		gameext.MustCompileExtension(worldoftanks.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
 		gameext.MustCompileExtension(xrebirth.Extension()),
 	)

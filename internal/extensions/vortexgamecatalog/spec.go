@@ -251,8 +251,6 @@ var games = []GameSpec{
 	{VortexDir: "game-teso", ID: "teso", Name: "The Elder Scrolls Online", SteamAppIDs: []string{"306130"}, NexusDomains: []string{"elderscrollsonline"}},
 	{VortexDir: "game-untitledgoose", ID: "untitledgoosegame", Name: "Untitled Goose Game", AllowNoSteamAppID: true, Notes: []string{"Vortex discovers this game through Epic and wires BepInEx support plus a migration; DMM needs source-reviewed Epic discovery and BepInEx migration parity before full support."}},
 	{VortexDir: "game-vtmbloodlines", ID: "vampirebloodlines", Name: "Vampire: The Masquerade - Bloodlines", SteamAppIDs: []string{"2600"}, HasModTypes: true},
-	{VortexDir: "game-warthunder", ID: "warthunder", Name: "War Thunder", SteamAppIDs: []string{"236390"}, HasModTypes: true},
 	{VortexDir: "game-wolcen", ID: "wolcenlordsofmayhem", Name: "Wolcen: Lords of Mayhem", SteamAppIDs: []string{"424370"}, Notes: []string{"Vortex declares merge behavior for XML/MTL files; DMM needs source-reviewed merge runtime before full support."}},
-	{VortexDir: "game-worldoftanks", ID: "worldoftanks", Name: "World of Tanks", AllowNoSteamAppID: true, Notes: []string{"Vortex uses Wargaming registry discovery and versioned res_mods targeting; DMM needs a verified Linux/Deck discovery path before full support."}},
 	{VortexDir: "game-xcom2", ID: "xcom2", Name: "XCOM 2", SteamAppIDs: []string{"268500"}, HasCustomInstallers: true, HasLoadOrder: true, Notes: []string{"Vortex also registers War of the Chosen against Steam app 268500; DMM needs a multi-variant-per-app resolver before exposing both separately."}},
 }
