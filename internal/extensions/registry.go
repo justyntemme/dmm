@@ -21,6 +21,8 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryoarchive"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamestores"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
@@ -94,6 +96,8 @@ func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
 		gameext.MustCompileExtension(commoninterpreters.Extension()),
 		gameext.MustCompileExtension(gamebryoarchive.Extension()),
+		gameext.MustCompileExtension(gamestores.Extension()),
+		gameext.MustCompileExtension(gameversionhash.Extension()),
 		gameext.MustCompileExtension(mtframeworkarc.Extension()),
 		gameext.MustCompileExtension(quickbmssupport.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),

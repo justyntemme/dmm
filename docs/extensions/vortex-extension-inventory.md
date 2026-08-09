@@ -25,8 +25,8 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 20
-  - Framework/shared counterparts: 11
+- DMM counterparts identified in the current pass: 25
+  - Framework/shared counterparts: 16
   - Game counterparts: 9
 
 ## Framework And Shared Extensions
@@ -46,11 +46,11 @@ Counts:
 - [ ] `gamebryo-savegame-management`
 - [ ] `gamebryo-test-settings`
 - [x] `gameinfo-steam` - DMM counterpart: core Steam library/app manifest discovery. This is core platform capability in DMM, not a separate game extension.
-- [ ] `gamestore-gog`
-- [ ] `gamestore-origin`
-- [ ] `gamestore-uplay`
-- [ ] `gamestore-xbox`
-- [ ] `gameversion-hash`
+- [x] `gamestore-gog` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows GOG Galaxy registry/client integration.
+- [x] `gamestore-origin` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows Origin/EA manifest and protocol integration.
+- [x] `gamestore-uplay` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows Ubisoft registry/protocol integration.
+- [x] `gamestore-xbox` - DMM counterpart: `internal/extensions/gamestores` framework extension. Current parity is source-backed metadata marked blocked because Vortex uses Windows Xbox app registry and shell launch integration.
+- [x] `gameversion-hash` - DMM counterpart: `internal/extensions/gameversionhash` framework extension. Current parity is source-backed provider/API metadata marked blocked until DMM supports extension-declared hash inputs and the Vortex backend hash map resolver.
 - [ ] `issue-tracker`
 - [ ] `local-gamesettings`
 - [ ] `meta-editor`

@@ -334,7 +334,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
 	errs = append(errs, validateArchiveTypes(extension.ArchiveTypes)...)
 	errs = append(errs, validateInterpreters(extension.Interpreters)...)
-	errs = append(errs, validateNamedAndNamed("game store", extension.GameStores, func(spec sdk.GameStoreSpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateGameStores(extension.GameStores)...)
 	errs = append(errs, validateGameSetups(extension.GameSetups)...)
 	errs = append(errs, validateNamedAndScoped("extension action", extension.ExtensionActions, func(spec sdk.ExtensionActionSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
 	errs = append(errs, validateNamedAndScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
@@ -407,8 +407,26 @@ func validateGameVersionProviders(specs []sdk.GameVersionProviderSpec) []error {
 			errs = append(errs, errors.New("game version provider id is required"))
 			continue
 		}
-		if spec.Provider == nil {
+		if err := validateCapabilityStatus("game version provider", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
+		status := strings.TrimSpace(spec.Status)
+		if spec.Provider == nil && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
 			errs = append(errs, errors.New("game version provider "+id+" function is required"))
+		}
+	}
+	return errs
+}
+
+func validateGameStores(specs []sdk.GameStoreSpec) []error {
+	errs := validateNamedAndNamed("game store", specs, func(spec sdk.GameStoreSpec) (string, string) { return spec.ID, spec.Name })
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		if err := validateCapabilityStatus("game store", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs

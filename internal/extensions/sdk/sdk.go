@@ -216,6 +216,8 @@ type GameVersionProviderSpec struct {
 	ID       string
 	Name     string
 	Provider GameVersionProviderFunc
+	Status   string
+	Message  string
 }
 
 type GameVersionProviderFunc func(context.Context, GameVersionInput) (GameVersionResult, error)
@@ -312,8 +314,10 @@ type InterpreterSpec struct {
 }
 
 type GameStoreSpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
 }
 
 type GameSetupSpec struct {

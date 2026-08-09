@@ -59,7 +59,7 @@ DMM currently has first-party Go extension registration for:
 - Runtime requirements, runtime metadata dependencies, launch tools, dynamic launch inputs/arguments, and game version providers.
 - Plugin activation, unmanaged markers, conflict ignores, deploy ignores, packed archive mutation declarations, merge/load-order summaries, and lifecycle event handlers.
 - Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
-- Extension-declared archive type metadata and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines are executable.
+- Extension-declared archive type, game store, game version provider, and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines or platform integrations are executable.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -178,6 +178,7 @@ Vortex source examples:
 DMM status:
 
 - First-party Go extensions can share normal Go packages, but there is no explicit registered extension API namespace, dependency graph, or import contract.
+- Source-backed metadata exists for Vortex `quickbms-support` APIs and `gameversion-hash`'s `getHashVersion` API, but both are blocked until executable/runtime behavior is implemented.
 - Missing extension-owned persistent state/persistor/migration contracts equivalent to `registerReducer`, `registerPersistor`, and `registerMigration`.
 
 Priority: P1 for full Vortex parity; P0 only when a converted MVP game needs cross-extension behavior.
@@ -195,7 +196,7 @@ Vortex source examples:
 DMM status:
 
 - Steam discovery is implemented in core for the Steam Deck MVP.
-- Missing DMM extension/provider equivalents for GOG, Origin/EA, Ubisoft/Uplay, and Xbox game-library discovery.
+- Source-backed framework metadata exists for GOG, Origin/EA, Ubisoft/Uplay, and Xbox game-library discovery, marked blocked because the verified Vortex implementations depend on Windows clients, registry state, or Xbox shell commands.
 - This should remain outside the Steam Deck MVP path unless the user explicitly broadens discovery beyond Steam Deck Steam libraries.
 
 Priority: P2 for MVP, P0 after Steam-only MVP.

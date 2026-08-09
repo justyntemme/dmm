@@ -866,7 +866,12 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.InstallPlatforms = append(summary.Capabilities.InstallPlatforms, FeatureSummary{ID: platform.ID, Name: platform.Name})
 	}
 	for _, provider := range extension.GameVersionProviders {
-		summary.Capabilities.GameVersions = append(summary.Capabilities.GameVersions, FeatureSummary{ID: provider.ID, Name: provider.Name})
+		summary.Capabilities.GameVersions = append(summary.Capabilities.GameVersions, FeatureSummary{
+			ID:      provider.ID,
+			Name:    provider.Name,
+			Status:  defaultString(provider.Status, sdk.CapabilityStatusReady),
+			Message: provider.Message,
+		})
 	}
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{ID: activation.ID, Name: activation.Name})
@@ -934,7 +939,12 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, store := range extension.GameStores {
-		summary.Capabilities.GameStores = append(summary.Capabilities.GameStores, FeatureSummary{ID: store.ID, Name: store.Name})
+		summary.Capabilities.GameStores = append(summary.Capabilities.GameStores, FeatureSummary{
+			ID:      store.ID,
+			Name:    store.Name,
+			Status:  defaultString(store.Status, sdk.CapabilityStatusReady),
+			Message: store.Message,
+		})
 	}
 	for _, setup := range extension.GameSetups {
 		summary.Capabilities.GameSetups = append(summary.Capabilities.GameSetups, FeatureSummary{
