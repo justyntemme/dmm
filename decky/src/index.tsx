@@ -25,6 +25,7 @@ import {
 } from "@decky/ui";
 import { call, definePlugin, routerHook, toaster } from "@decky/api";
 import { FaPowerOff } from "react-icons/fa";
+import qrcode from "qrcode-generator";
 import { ComponentType, CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 declare const SteamClient:
@@ -6829,6 +6830,60 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
   );
 }
 
+function pairingURLFromStatus(status: BackendStatus | null) {
+  return status?.url?.trim() ?? "";
+}
+
+function pairingDisplayAddress(status: BackendStatus | null) {
+  return status?.plain_url?.trim() || status?.url?.split("#")[0]?.trim() || "Unavailable";
+}
+
+function pairingQRCodeDataURL(value: string) {
+  if (!value) return "";
+  const qr = qrcode(0, "M");
+  qr.addData(value);
+  qr.make();
+  return qr.createDataURL(6, 2);
+}
+
+function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () => void }) {
+  const pairingURL = pairingURLFromStatus(props.status);
+  const qrDataURL = useMemo(() => {
+    try {
+      return pairingQRCodeDataURL(pairingURL);
+    } catch (err) {
+      void logFrontendEvent("decky pairing qr generation failed", { error: errorLogValue(err) });
+      return "";
+    }
+  }, [pairingURL]);
+
+  return (
+    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <style>{deckyRuntimeStyles}</style>
+      <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "12px", minWidth: 0, padding: "4px", width: "100%" }}>
+        <div style={{ fontSize: "16px", fontWeight: 900 }}>Pair Phone</div>
+        <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
+          Scan this QR code from your phone or tablet while connected to the same network.
+        </div>
+        <div style={{ alignItems: "center", background: "#f8fafc", borderRadius: "8px", display: "flex", justifyContent: "center", minHeight: "236px", padding: "12px", width: "100%" }}>
+          {qrDataURL ? (
+            <img alt="DMM phone pairing QR code" src={qrDataURL} style={{ display: "block", height: "212px", imageRendering: "pixelated", width: "212px" }} />
+          ) : (
+            <div style={{ color: "#991b1b", fontWeight: 900 }}>QR unavailable</div>
+          )}
+        </div>
+        <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Fallback URL</div>
+          <div style={{ color: "#f8fafc", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+            {pairingURL || "Start the server to generate a pairing URL."}
+          </div>
+        </div>
+        <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
+      </Focusable>
+    </ModalRoot>
+  );
+}
+
 function FreshProfilePickerModal(props: {
   appID: string;
   profiles: Profile[];
@@ -7231,6 +7286,13 @@ function FreshDeckyModManagerRoute() {
       window,
       { strTitle: "Import Archive", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 720, popupHeight: 780 }
     );
+  }
+
+  function openPairPhoneModal() {
+    if (!status?.auth?.enabled || !pairingURLFromStatus(status)) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(<PairPhoneModal status={status} closeModal={closeModal} />, window, { strTitle: "Pair Phone", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 520, popupHeight: 720 });
   }
 
   function openExploreMods() {
@@ -7861,12 +7923,15 @@ function FreshDeckyModManagerRoute() {
         >
           <div style={{ fontWeight: 900 }}>Server</div>
           <div>Status: {status?.running ? "Running" : "Stopped"}</div>
-          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Phone URL: {status?.url || "Unavailable"}</div>
+          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
           <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
         </Focusable>
         <div style={freshSectionStyle}>
           <div style={{ fontWeight: 900 }}>Security</div>
           <ToggleField label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
+          <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
+            Pair Phone
+          </FreshActionButton>
           <FreshActionButton disabled={!status?.auth?.enabled} onActivate={async () => {
             const next = await call<[], BackendStatus>("reset_api_token");
             applyBackendAuthFromStatus(next);
