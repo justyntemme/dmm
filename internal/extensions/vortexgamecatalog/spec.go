@@ -204,7 +204,6 @@ var games = []GameSpec{
 	{VortexDir: "game-kerbalspaceprogram", ID: "kerbalspaceprogram", Name: "Kerbal Space Program", SteamAppIDs: []string{"220200"}},
 	{VortexDir: "game-kingdomcome-deliverance", ID: "kingdomcomedeliverance", Name: "Kingdom Come: Deliverance", SteamAppIDs: []string{"379430"}, HasLoadOrder: true, Notes: []string{"Vortex writes Mods/mod_order.txt from extension state and registers actions/table attributes; DMM needs source-reviewed load-order UI/runtime parity."}},
 	{VortexDir: "game-microsoftflightsimulator", ID: "microsoftflightsimulator", Name: "Microsoft Flight Simulator", SteamAppIDs: []string{"1250410"}, HasCustomInstallers: true, HasModTypes: true},
-	{VortexDir: "game-monster-hunter-world", ID: "monsterhunterworld", Name: "Monster Hunter: World", SteamAppIDs: []string{"582010"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-morrowind", ID: "morrowind", Name: "Morrowind", SteamAppIDs: []string{"22320"}, HasLoadOrder: true},
 	{VortexDir: "game-mount-and-blade2", ID: "mountandblade2bannerlord", Name: "Mount & Blade II: Bannerlord", VortexStub: true, SupportModID: "875"},
 	{VortexDir: "game-nehrim", ID: "nehrim", Name: "Nehrim: At Fate's Edge", SteamAppIDs: []string{"1014940"}, Notes: []string{"Vortex launches Oblivion.exe from the Oblivion install when Nehrim app 1014940 is present; DMM needs a source-reviewed cross-app game-root resolver before full support."}},

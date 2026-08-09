@@ -58,6 +58,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/monsterhunterworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
@@ -193,6 +194,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(metroexodus.Extension()),
 		gameext.MustCompileExtension(mewgenics.Extension()),
 		gameext.MustCompileExtension(mirrorsedge.Extension()),
+		gameext.MustCompileExtension(monsterhunterworld.Extension()),
 		gameext.MustCompileExtension(mountandblade.Extensions()[0]),
 		gameext.MustCompileExtension(mountandblade.Extensions()[1]),
 		gameext.MustCompileExtension(mountandblade.Extensions()[2]),
