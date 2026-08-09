@@ -691,6 +691,16 @@ const deckyRuntimeStyles = `
 .dmm-focus-card > * {
   min-width: 0;
 }
+.dmm-decky-tab {
+  outline: none !important;
+}
+.dmm-decky-tab-focused,
+.dmm-decky-tab:focus,
+.dmm-decky-tab:focus-visible,
+.dmm-decky-tab:focus-within {
+  box-shadow: none !important;
+  outline: none !important;
+}
 .dmm-action-grid,
 .dmm-action-grid > *,
 .dmm-action-grid .dmm-focus-card {
@@ -708,11 +718,13 @@ const deckyRuntimeStyles = `
   flex-shrink: 0;
 }
 .dmm-sidebar-row span,
-.dmm-sidebar-row div {
+.dmm-sidebar-row div,
+.dmm-settings-row span,
+.dmm-settings-row div {
   min-width: 0;
 }
   .dmm-focus-card-focused,
-  .dmm-decky-tab-focused {
+  .dmm-settings-row-focused {
     background: #27364a !important;
     border-color: #7dd3fc !important;
     box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.45) !important;
@@ -3679,13 +3691,14 @@ const freshSettingsPrimaryCardStyle: CSSProperties = {
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
-  minHeight: "118px"
+  gap: "10px",
+  minHeight: "auto"
 };
 
 const freshSettingsToggleCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "center",
-  minHeight: "76px"
+  minHeight: "58px"
 };
 
 const freshActionRowStyle: CSSProperties = {
@@ -3807,6 +3820,66 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
       style={freshButtonStyle(props.kind ?? "neutral", props.disabled)}
     >
       {props.children}
+    </Focusable>
+  );
+}
+
+function freshToggleRowStyle(disabled = false): CSSProperties {
+  return {
+    ...deckyFocusableCardBase,
+    alignItems: "center",
+    background: "#111827",
+    border: "1px solid #334155",
+    color: disabled ? "#71717a" : "#f8fafc",
+    display: "grid",
+    gap: "10px",
+    gridTemplateColumns: "minmax(0, 1fr) 44px",
+    minHeight: "44px",
+    opacity: disabled ? 0.62 : 1,
+    padding: "8px 10px",
+    width: "100%"
+  };
+}
+
+function freshToggleSwitchStyle(checked: boolean, disabled = false): CSSProperties {
+  return {
+    alignItems: "center",
+    background: checked ? "#0f766e" : "#374151",
+    border: `1px solid ${checked ? "#5eead4" : "#64748b"}`,
+    borderRadius: "999px",
+    display: "flex",
+    height: "24px",
+    justifyContent: checked ? "flex-end" : "flex-start",
+    opacity: disabled ? 0.72 : 1,
+    padding: "2px",
+    width: "44px"
+  };
+}
+
+const freshToggleKnobStyle: CSSProperties = {
+  background: "#f8fafc",
+  borderRadius: "999px",
+  height: "18px",
+  width: "18px"
+};
+
+function FreshToggleRow(props: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <Focusable
+      className="dmm-settings-row"
+      focusClassName="dmm-settings-row-focused"
+      onActivate={() => {
+        if (!props.disabled) props.onChange(!props.checked);
+      }}
+      onClick={() => {
+        if (!props.disabled) props.onChange(!props.checked);
+      }}
+      style={freshToggleRowStyle(props.disabled)}
+    >
+      <span style={{ fontSize: "12px", fontWeight: 900, lineHeight: 1.2, overflowWrap: "anywhere" }}>{props.label}</span>
+      <span aria-hidden style={freshToggleSwitchStyle(props.checked, props.disabled)}>
+        <span style={freshToggleKnobStyle} />
+      </span>
     </Focusable>
   );
 }
@@ -5131,7 +5204,7 @@ function FreshDeckyModManagerRoute() {
         </Focusable>
         <div style={freshSettingsCardStyle}>
           <div style={{ fontWeight: 900 }}>Security</div>
-          <ToggleField label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
+          <FreshToggleRow label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
           <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
             Pair Phone
           </FreshActionButton>
@@ -5146,12 +5219,12 @@ function FreshDeckyModManagerRoute() {
         </div>
         <div style={freshSettingsCardStyle}>
           <div style={{ fontWeight: 900 }}>Automation</div>
-          <ToggleField label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
-          <ToggleField label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
-          <ToggleField label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
+          <FreshToggleRow label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
+          <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
+          <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
         <div style={freshSettingsToggleCardStyle}>
-          <ToggleField label="Show Debug" checked={showDebug} onChange={setShowDebug} />
+          <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
         </div>
         {showDebug && (
           <div style={freshSettingsCardStyle}>
@@ -5178,8 +5251,8 @@ function FreshDeckyModManagerRoute() {
         {freshDeckyTabs.map((item) => (
           <Focusable
             key={item.id}
-            className="dmm-focus-card"
-            focusClassName="dmm-focus-card-focused"
+            className="dmm-decky-tab"
+            focusClassName="dmm-decky-tab-focused"
             onActivate={() => setTab(item.id)}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
