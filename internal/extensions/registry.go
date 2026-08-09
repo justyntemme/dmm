@@ -126,6 +126,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/witcherlegacy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/worldoftanks"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/x4foundations"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/xcom2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
@@ -270,6 +271,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(worldoftanks.Extension()),
 		gameext.MustCompileExtension(x4foundations.Extension()),
 		gameext.MustCompileExtension(xrebirth.Extension()),
+		gameext.MustCompileExtension(xcom2.Extension()),
 	)
 	return extensions
 }
