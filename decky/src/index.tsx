@@ -3822,6 +3822,8 @@ function pairingQRCodeDataURL(value: string) {
 
 function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () => void }) {
   const pairingURL = pairingURLFromStatus(props.status);
+  const displayAddress = pairingDisplayAddress(props.status);
+  const [showManualURL, setShowManualURL] = useState(false);
   const qrDataURL = useMemo(() => {
     try {
       return pairingQRCodeDataURL(pairingURL);
@@ -3847,11 +3849,23 @@ function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () =>
           )}
         </div>
         <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Fallback URL</div>
-          <div style={{ color: "#f8fafc", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, overflowWrap: "anywhere" }}>
-            {pairingURL || "Start the server to generate a pairing URL."}
+          <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Server Address</div>
+          <div style={{ color: "#f8fafc", fontFamily: "monospace", fontSize: "11px", lineHeight: 1.35, overflowWrap: "anywhere" }}>{displayAddress}</div>
+          <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.35 }}>
+            The QR code includes the temporary pairing key. Only reveal the manual URL if scanning is unavailable.
           </div>
         </div>
+        <FreshActionButton disabled={!pairingURL} onActivate={() => setShowManualURL((current) => !current)}>
+          {showManualURL ? "Hide Manual URL" : "Show Manual URL"}
+        </FreshActionButton>
+        {showManualURL && (
+          <div style={{ ...freshSectionStyle, background: "#111827", borderColor: "#334155" }}>
+            <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Manual Pairing URL</div>
+            <div style={{ color: "#f8fafc", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+              {pairingURL || "Start the server to generate a pairing URL."}
+            </div>
+          </div>
+        )}
         <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
       </Focusable>
     </ModalRoot>
