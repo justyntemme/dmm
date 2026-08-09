@@ -114,7 +114,7 @@ fi
 section "Checking packaged UI content"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Server Access" "Decky server access UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Dependencies" "Decky dependency UI"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-install captured downloads" "Decky auto-install setting"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-install downloaded mods" "Decky auto-install setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-enable installed mods" "Decky auto-enable setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Commit:" "Decky build metadata UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Build Fingerprint" "Decky visual build marker"

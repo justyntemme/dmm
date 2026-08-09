@@ -35,7 +35,6 @@ Allowed passwordless commands:
   /usr/bin/systemctl restart plugin_loader.service
   /usr/bin/systemctl status plugin_loader.service
   /usr/bin/journalctl -u plugin_loader.service
-  /usr/bin/shutdown -r now
 
 After installation, run package installs with:
   sudo ${WRAPPER_TARGET}
@@ -90,7 +89,6 @@ deck ALL=(root) NOPASSWD: ${WRAPPER_TARGET}
 deck ALL=(root) NOPASSWD: /usr/bin/systemctl restart plugin_loader.service
 deck ALL=(root) NOPASSWD: /usr/bin/systemctl status plugin_loader.service
 deck ALL=(root) NOPASSWD: /usr/bin/journalctl -u plugin_loader.service
-deck ALL=(root) NOPASSWD: /usr/bin/shutdown -r now
 EOF
 
 sudo install -d -o root -g root -m 0755 "${PRIVILEGED_DIR}"

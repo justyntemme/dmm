@@ -108,9 +108,9 @@ The Deck-side installer validates the package shape before touching the live plu
 /home/deck/.local/share/decky-mod-manager/backups/plugin-installs/
 ```
 
-It then replaces `/home/deck/homebrew/plugins/decky-mod-manager` and reboots the Steam Deck. The reboot is intentional for this test installer because Gaming Mode sometimes keeps stale Decky frontend state after only restarting Decky Plugin Loader. DMM app data, logs, downloads, staging, and SQLite state under `/home/deck/.local/share/decky-mod-manager` and `/home/deck/.local/state/decky-mod-manager` are not removed by plugin installation.
+It then replaces `/home/deck/homebrew/plugins/decky-mod-manager` without rebooting by default. If Gaming Mode keeps stale Decky frontend state during manual testing, run the installer with `DMM_REBOOT_AFTER_INSTALL=1` or reboot manually after deciding the interruption is worth it. DMM app data, logs, downloads, staging, and SQLite state under `/home/deck/.local/share/decky-mod-manager` and `/home/deck/.local/state/decky-mod-manager` are not removed by plugin installation.
 
-Before rebooting, the installer runs `live_installed_package_check.sh` when that script is available. If the installed plugin does not match the package, it restores the backup and exits with an error instead of leaving a stale or partial plugin install.
+Before finishing, the installer runs `live_installed_package_check.sh` when that script is available. If the installed plugin does not match the package, it restores the backup and exits with an error instead of leaving a stale or partial plugin install.
 
 To install the ZIP instead of the tarball:
 
@@ -138,7 +138,7 @@ That command installs a root-owned wrapper and package installer under:
 ```
 
 It also installs a narrow sudoers drop-in that allows the `deck` user to run only
-that wrapper and a few fixed Decky/log/reboot commands without a password. The
+that wrapper and a few fixed Decky/log commands without a password. The
 wrapper refuses packages outside `~/.testing`, verifies the root-owned installer
 copy, checks the package mode, and then runs the normal installer. The package
 itself remains owned by `deck` so development builds can still be replaced by
@@ -448,7 +448,7 @@ REQUIRE_SMAPI_ROOT=1 REQUIRE_RUNTIME=1 ~/.testing/live_stardew_mod_files_check.s
 
 ## Auto-Install Live Check
 
-After installing the latest package and starting the server from Decky, use this script to verify the `Auto-install captured downloads` setting with a real Nexus capture:
+After installing the latest package and starting the server from Decky, use this script to verify the `Auto-install downloaded mods` setting with a real Nexus capture:
 
 ```sh
 ~/.testing/live_auto_install_check.sh

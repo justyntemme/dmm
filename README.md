@@ -123,7 +123,7 @@ and starts the existing root-owned test installer wrapper:
 /opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install
 ```
 
-That wrapper is intentionally narrow: it only installs the staged DMM package and reboots the Deck after a successful install. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
+That wrapper is intentionally narrow: it only installs the staged DMM package without rebooting by default. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
 
 GitHub Actions builds and publishes package artifacts only for version tags such as `v0.1.0`. Use `DMM_UPDATE_RELEASE=<tag>` or `DMM_UPDATE_PACKAGE_URL=<url>` to force the Decky updater or `testing/update_deck_from_dev_release.sh` to install a specific build.
 

@@ -103,5 +103,5 @@ if [[ ! -x "${WRAPPER}" ]]; then
 fi
 
 section "Installing latest Decky Mod Manager package"
-echo "The installer reboots the Steam Deck after a successful install."
+echo "The installer updates the Decky plugin package without rebooting by default."
 sudo "${WRAPPER}"

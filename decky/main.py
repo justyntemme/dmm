@@ -1352,7 +1352,7 @@ class Plugin:
             self._log(f"latest update installer started pid={process.pid} package={package_path} bytes={downloaded}")
             return {
                 "ok": True,
-                "message": "Latest package downloaded. The installer started and will reboot the Deck if installation succeeds.",
+                "message": "Latest package downloaded. The installer started and will update DMM without rebooting by default.",
                 "package": str(package_path),
                 "url": self._redact_url(package_url),
                 "bytes": downloaded,

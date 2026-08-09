@@ -22,10 +22,12 @@ Environment overrides:
   PACKAGE=/path/to/decky-mod-manager.tar.gz
   DECK_PLUGIN_DIR=/home/deck/homebrew/plugins/decky-mod-manager
   BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
+  DMM_REBOOT_AFTER_INSTALL=1
 
 The install requires sudo because Decky plugin files are root-owned and the
-Steam Deck is rebooted after a successful install so Gaming Mode reloads the
-Decky plugin bundle cleanly.
+default test path does not reboot the Steam Deck. Set DMM_REBOOT_AFTER_INSTALL=1
+only when Gaming Mode has stale Decky frontend state and an explicit reboot is
+worth the interruption.
 USAGE
 }
 
@@ -117,6 +119,10 @@ else
 fi
 
 echo "==> Installed ${PLUGIN_NAME}"
-echo "==> Rebooting Steam Deck so Steam, Decky Loader, and the plugin UI reload cleanly"
 sync
-sudo shutdown -r now
+if [[ "${DMM_REBOOT_AFTER_INSTALL:-0}" == "1" ]]; then
+  echo "==> Rebooting Steam Deck because DMM_REBOOT_AFTER_INSTALL=1"
+  sudo shutdown -r now
+else
+  echo "==> Reboot skipped. Open or reload Decky Mod Manager to use the new package."
+fi
