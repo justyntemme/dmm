@@ -4009,6 +4009,7 @@ function FreshDeckyModManagerRoute() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [mods, setMods] = useState<ManagedMod[]>([]);
   const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
+  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
   const [workshopItems, setWorkshopItems] = useState<WorkshopItem[]>([]);
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
@@ -4023,6 +4024,7 @@ function FreshDeckyModManagerRoute() {
   const [error, setError] = useState("");
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [busyJobID, setBusyJobID] = useState("");
+  const [modUpdateBusy, setModUpdateBusy] = useState(false);
   const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
@@ -4074,11 +4076,12 @@ function FreshDeckyModManagerRoute() {
       setProfiles([]);
       setMods([]);
       setGameDiagnostics(null);
+      setDeploymentStatus(null);
       setInstallCandidates([]);
       setWorkshopItems([]);
       return;
     }
-    const [profilesResult, modsResult, diagnosticsResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, diagnosticsResult, deploymentResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -4093,6 +4096,11 @@ function FreshDeckyModManagerRoute() {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         diagnostics: null
+      })),
+      call<[string], { ok: boolean; error?: string; status?: DeploymentStatus | null }>("game_deploy_status", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        status: null
       })),
       call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID).catch((err) => ({
         ok: false,
@@ -4110,12 +4118,14 @@ function FreshDeckyModManagerRoute() {
     if (modsResult.ok) setMods(modsResult.mods);
     else setError(modsResult.error || "Unable to load mods.");
     setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
+    setDeploymentStatus(deploymentResult.ok ? deploymentResult.status ?? null : null);
     setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
     setWorkshopItems(workshopResult.ok ? workshopResult.items : []);
     const failedSlices: string[] = [];
     if (!profilesResult.ok) failedSlices.push(`profiles:${profilesResult.error || ""}`);
     if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
     if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
+    if (!deploymentResult.ok) failedSlices.push(`deployment:${deploymentResult.error || ""}`);
     if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
     if (!workshopResult.ok) failedSlices.push(`workshop:${workshopResult.error || ""}`);
     if (failedSlices.length > 0) {
@@ -4254,6 +4264,66 @@ function FreshDeckyModManagerRoute() {
     }
   }
 
+  function askRestoreDeployment() {
+    if (!selectedGameID || !deploymentStatus?.restore_available) return;
+    let modal: { Close: () => void } | null = null;
+    const closeModal = () => modal?.Close();
+    modal = showModal(
+      <ConfirmModal
+        strTitle="Restore Last Applied State"
+        strDescription={deploymentStatus.restore_summary || deploymentStatus.recovery_summary || "DMM will restore the last DMM-applied deployment for this game. Only DMM-managed files recorded in the deployment manifest are touched."}
+        strOKButtonText="Restore"
+        strCancelButtonText="Cancel"
+        onOK={() => {
+          closeModal();
+          void restoreDeployment();
+        }}
+        onCancel={closeModal}
+        closeModal={closeModal}
+      />,
+      window,
+      { strTitle: "Restore Deployment", bNeverPopOut: true }
+    );
+  }
+
+  async function restoreDeployment() {
+    if (!selectedGameID || !deploymentStatus?.restore_available) return;
+    try {
+      setError("");
+      setMessage("");
+      const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: unknown }>("restore_game_deployment", selectedGameID);
+      if (!result.ok) {
+        setError(result.error || "Unable to restore deployment.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.job, "fresh-restore-deployment");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.job?.message || "Restore started.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function checkModUpdates() {
+    if (!selectedGameID || modUpdateBusy) return;
+    try {
+      setModUpdateBusy(true);
+      setError("");
+      setMessage("");
+      const result = await call<[string], { ok: boolean; error?: string; checked?: number; results: ModUpdate[] }>("check_game_mod_updates", selectedGameID);
+      if (!result.ok) {
+        setError(result.error || "Unable to check updates.");
+        return;
+      }
+      await loadSelectedGameState(selectedGameID);
+      setMessage(`Checked ${result.checked ?? result.results.length} mods for updates.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModUpdateBusy(false);
+    }
+  }
+
   async function toggleMod(mod: ManagedMod) {
     if (!selectedGameID || !selectedProfile || busyModID) return;
     try {
@@ -4274,6 +4344,27 @@ function FreshDeckyModManagerRoute() {
       await maybeShowDeckyActionToast(result.apply?.job, "fresh-toggle-mod");
       await loadSelectedGameState(selectedGameID);
       setMessage(result.apply?.message || `${mod.enabled ? "Disabled" : "Enabled"} ${mod.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
+  async function installModUpdate(mod: ManagedMod) {
+    if (!selectedGameID || busyModID || mod.update?.status !== "available") return;
+    try {
+      setBusyModID(mod.id);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { job?: Job; browser_required?: boolean; resolved?: { source_url?: string }; file_url?: string }; job?: Job }>("update_game_mod", selectedGameID, mod.id);
+      if (!result.ok) {
+        setError(result.error || "Unable to install update.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-update-mod");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.job?.message || result.result?.job?.message || "Update install started.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -4517,6 +4608,7 @@ function FreshDeckyModManagerRoute() {
     setProfiles([]);
     setMods([]);
     setGameDiagnostics(null);
+    setDeploymentStatus(null);
     setInstallCandidates([]);
     setWorkshopItems([]);
   }
@@ -4712,6 +4804,22 @@ function FreshDeckyModManagerRoute() {
           <FreshActionButton disabled={!canBrowse} onActivate={openExploreMods}>Explore Mods</FreshActionButton>
           <FreshActionButton disabled={!selectedProfile} onActivate={openArchiveImport}>Import Archive</FreshActionButton>
         </div>
+        <FreshActionButton disabled={modUpdateBusy || mods.length === 0} onActivate={checkModUpdates}>
+          {modUpdateBusy ? "Checking Updates" : "Check Updates"}
+        </FreshActionButton>
+        {deploymentStatus?.restore_available && (
+          <Focusable
+            className="dmm-sidebar-row"
+            focusClassName="dmm-sidebar-row-focused"
+            onActivate={askRestoreDeployment}
+            onClick={askRestoreDeployment}
+            style={{ ...freshCardStyle(false), borderColor: "#0f766e" }}
+          >
+            <div style={{ color: "#99f6e4", fontWeight: 900 }}>Recovery Available</div>
+            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{deploymentStatus.restore_summary || deploymentStatus.recovery_summary || "Restore the last DMM-applied state for this game."}</div>
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A Restore Last Applied State</div>
+          </Focusable>
+        )}
         {runtimeWarnings.map((requirement) => {
           const helpURL = runtimeRequirementHelpURL(requirement);
           return (
@@ -4779,7 +4887,8 @@ function FreshDeckyModManagerRoute() {
               onSecondaryButton={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void reinstallMod(mod, false);
+                if (mod.update?.status === "available") void installModUpdate(mod);
+                else void reinstallMod(mod, false);
               }}
               onOptionsActionDescription="Remove"
               onOptionsButton={(event) => {
@@ -4802,8 +4911,8 @@ function FreshDeckyModManagerRoute() {
               <div style={{ color: mod.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
                 {busy ? "Working" : mod.enabled ? "Enabled" : "Disabled"} · {deckyModStateLabel(mod)}
               </div>
-              {mod.update?.status === "available" && <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 900 }}>Update available</div>}
-              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y Reinstall · Options Remove · Menu Reconfigure</div>
+              {mod.update?.status === "available" && <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 900 }}>Update available{mod.update.latest_version ? ` · ${mod.update.latest_version}` : ""}</div>}
+              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y {mod.update?.status === "available" ? "Update" : "Reinstall"} · Options Remove · Menu Reconfigure</div>
             </Focusable>
           );
         })}
