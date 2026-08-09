@@ -198,6 +198,58 @@ func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
 	}
 }
 
+func TestRecordExtensionMigrationRunTracksCompletion(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	completed, err := db.ExtensionMigrationCompleted(context.Background(), "ext", "migration", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed {
+		t.Fatal("migration should not start completed")
+	}
+	if err := db.RecordExtensionMigrationRun(context.Background(), ExtensionMigrationRunParams{
+		ExtensionID: "ext",
+		MigrationID: "migration",
+		SteamAppID:  "100",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.0.0",
+		Status:      "failed",
+		Message:     "first failure",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err = db.ExtensionMigrationCompleted(context.Background(), "ext", "migration", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed {
+		t.Fatal("failed migration should be retried later")
+	}
+	if err := db.RecordExtensionMigrationRun(context.Background(), ExtensionMigrationRunParams{
+		ExtensionID: "ext",
+		MigrationID: "migration",
+		SteamAppID:  "100",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.0.0",
+		Status:      "completed",
+		Message:     "done",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completed, err = db.ExtensionMigrationCompleted(context.Background(), "ext", "migration", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("completed migration was not recorded")
+	}
+}
+
 func TestJobsPersistPayload(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

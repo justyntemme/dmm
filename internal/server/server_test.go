@@ -6928,6 +6928,133 @@ func TestPurgeModsInPathRemovesOnlyMatchingManagedFiles(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationRunsPurgeCommandOnce(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	legacyPath := filepath.Join(gamePath, "OldMods")
+	currentPath := filepath.Join(gamePath, "Mods")
+	if err := os.MkdirAll(legacyPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(currentPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999010"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationgame",
+		Name:    "Migration Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationgame"},
+				VortexGameID: "migrationgame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "purge-legacy",
+				Name:        "Purge legacy managed files",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.0",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:             "purge-oldmods",
+					Name:           "Purge OldMods",
+					Command:        sdk.StateMigrationCommandPurgeModsInPath,
+					ModType:        "legacy-type",
+					TargetRelative: "OldMods",
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Game",
+		InstallDir:  "Migration Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	legacyMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationgame", ModID: "legacy", FileID: "1"},
+		Name:         "Legacy Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "legacy.zip"),
+		StagingPath:  filepath.Join(root, "staging", "legacy"),
+		ManifestJSON: `{"mod_type":"legacy-type"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationgame", ModID: "current", FileID: "1"},
+		Name:         "Current Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "current.zip"),
+		StagingPath:  filepath.Join(root, "staging", "current"),
+		ManifestJSON: `{"mod_type":"current-type"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetLegacy := filepath.Join(legacyPath, "legacy.dll")
+	targetCurrent := filepath.Join(currentPath, "current.dll")
+	for _, path := range []string{targetLegacy, targetCurrent} {
+		if err := os.WriteFile(path, []byte("managed"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), appID, deploy.StrategyCopy, []deploy.AppliedFile{
+		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	if _, err := os.Stat(targetLegacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy target should be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(targetCurrent); err != nil {
+		t.Fatalf("current target should remain, stat err = %v", err)
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "purge-legacy", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].TargetPath != targetCurrent {
+		t.Fatalf("latest files after migration = %+v", files)
+	}
+
+	if err := os.WriteFile(targetLegacy, []byte("legacy-again"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("second runExtensionMigration: %v", err)
+	}
+	if _, err := os.Stat(targetLegacy); err != nil {
+		t.Fatalf("completed migration should not rerun, stat err = %v", err)
+	}
+}
+
 func TestDeploySingleModUpdatesOnlySelectedManagedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

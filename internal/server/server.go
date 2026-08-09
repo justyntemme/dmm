@@ -2733,6 +2733,7 @@ func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.
 	if err := s.db.SyncGames(ctx, games); err != nil {
 		return nil, false, err
 	}
+	s.runExtensionMigrationsForGames(ctx, games)
 	s.gameDiscoveryCache = cloneSteamGames(games)
 	s.gameDiscoveryCacheAt = time.Now()
 	return cloneSteamGames(games), false, nil

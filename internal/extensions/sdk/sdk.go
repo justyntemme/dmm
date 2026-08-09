@@ -564,8 +564,25 @@ type StateMigrationSpec struct {
 	Name        string
 	FromVersion string
 	ToVersion   string
+	Commands    []StateMigrationCommandSpec
 	Status      string
 	Message     string
+}
+
+const (
+	StateMigrationCommandPurgeModsInPath = "purge-mods-in-path"
+)
+
+type StateMigrationCommandSpec struct {
+	ID             string
+	Name           string
+	Command        string
+	SteamAppID     string
+	ModType        string
+	TargetRootID   string
+	TargetRelative string
+	Status         string
+	Message        string
 }
 
 type HistoryStackSpec struct {

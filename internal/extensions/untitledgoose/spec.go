@@ -88,8 +88,12 @@ func Register(r sdk.Registrar) {
 		Name:        "Untitled Goose Game VortexMods migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "0.2.0",
-		Status:      sdk.CapabilityStatusBlocked,
-		Message:     "Vortex migration 0.2.0 purges legacy " + migrationTarget + ". DMM needs generic migration/purge-mods-in-path runtime before this can execute.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:             "purge-vortexmods-managed-folder",
+			Name:           "Purge legacy VortexMods managed folder",
+			Command:        sdk.StateMigrationCommandPurgeModsInPath,
+			TargetRelative: migrationTarget,
+		}},
 	})
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 		ID:      "untitledgoosegame-auto-download-bepinex",

@@ -77,8 +77,12 @@ func Register(r sdk.Registrar) {
 		Name:        "Bloodstained load-order state migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
-		Status:      sdk.CapabilityStatusBlocked,
-		Message:     "Vortex migrates historical Bloodstained load-order state; DMM has no released pre-MVP state to migrate and will add migration runtime when needed.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:             "purge-legacy-singular-mod-folder",
+			Name:           "Purge legacy ~mod deployment",
+			Command:        sdk.StateMigrationCommandPurgeModsInPath,
+			TargetRelative: "BloodstainedRotN/Content/Paks/~mod",
+		}},
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

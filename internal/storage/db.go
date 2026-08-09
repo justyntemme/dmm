@@ -185,6 +185,16 @@ type ExtensionSnapshot struct {
 	CapabilitiesJSON string `json:"capabilities_json"`
 }
 
+type ExtensionMigrationRunParams struct {
+	ExtensionID string
+	MigrationID string
+	SteamAppID  string
+	FromVersion string
+	ToVersion   string
+	Status      string
+	Message     string
+}
+
 type SteamWorkshopItem struct {
 	ID              int64  `json:"id"`
 	GameID          int64  `json:"game_id"`
@@ -418,6 +428,64 @@ ORDER BY id
 		out = append(out, snapshot)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) ExtensionMigrationCompleted(ctx context.Context, extensionID, migrationID, steamAppID string) (bool, error) {
+	extensionID = strings.TrimSpace(extensionID)
+	migrationID = strings.TrimSpace(migrationID)
+	steamAppID = strings.TrimSpace(steamAppID)
+	if extensionID == "" || migrationID == "" || steamAppID == "" {
+		return false, errors.New("extension id, migration id, and steam app id are required")
+	}
+	var status string
+	err := db.conn.QueryRowContext(ctx, `
+SELECT status
+FROM extension_migration_runs
+WHERE extension_id = ? AND migration_id = ? AND steam_app_id = ?
+`, extensionID, migrationID, steamAppID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(status) == "completed", nil
+}
+
+func (db *DB) RecordExtensionMigrationRun(ctx context.Context, params ExtensionMigrationRunParams) error {
+	params.ExtensionID = strings.TrimSpace(params.ExtensionID)
+	params.MigrationID = strings.TrimSpace(params.MigrationID)
+	params.SteamAppID = strings.TrimSpace(params.SteamAppID)
+	params.FromVersion = strings.TrimSpace(params.FromVersion)
+	params.ToVersion = strings.TrimSpace(params.ToVersion)
+	params.Status = strings.TrimSpace(params.Status)
+	params.Message = strings.TrimSpace(params.Message)
+	if params.ExtensionID == "" || params.MigrationID == "" || params.SteamAppID == "" {
+		return errors.New("extension id, migration id, and steam app id are required")
+	}
+	if params.Status == "" {
+		return errors.New("extension migration status is required")
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO extension_migration_runs (
+	extension_id,
+	migration_id,
+	steam_app_id,
+	from_version,
+	to_version,
+	status,
+	message,
+	updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(extension_id, migration_id, steam_app_id) DO UPDATE SET
+	from_version = excluded.from_version,
+	to_version = excluded.to_version,
+	status = excluded.status,
+	message = excluded.message,
+	updated_at = CURRENT_TIMESTAMP
+`, params.ExtensionID, params.MigrationID, params.SteamAppID, params.FromVersion, params.ToVersion, params.Status, params.Message)
+	return err
 }
 
 func (db *DB) ReplaceSteamWorkshopItems(ctx context.Context, appID string, items []SteamWorkshopItem) ([]SteamWorkshopItem, bool, error) {

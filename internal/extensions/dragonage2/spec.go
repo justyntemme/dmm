@@ -15,6 +15,7 @@ const (
 
 	executable       = "bin_ship/dragonage2.exe"
 	overrideRootID   = "dragonage2-documents-override"
+	documentsRootID  = "dragonage2-documents"
 	overrideModType  = "dragonage2-override"
 	overrideQueryRel = "packages/core/override"
 	addinsRoot       = "addins"
@@ -47,6 +48,11 @@ func Register(r sdk.Registrar) {
 		Name:     "Dragon Age 2 Documents override",
 		Resolver: targetroots.ProtonDocuments("", "BioWare", "Dragon Age 2", overrideQueryRel),
 	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       documentsRootID,
+		Name:     "Dragon Age 2 Documents folder",
+		Resolver: targetroots.ProtonDocuments("", "BioWare", "Dragon Age 2"),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: overrideModType, TargetRootID: overrideRootID})
 	r.RegisterModType(installplan.ModTypeSpec{ID: dazip.ModType, TargetRoot: addinsRoot})
 	r.RegisterInstaller(dazip.OuterInstaller("vortex:dragonage2:dazip-outer", 15))
@@ -71,8 +77,13 @@ func Register(r sdk.Registrar) {
 		Name:        "Dragon Age 2 DAZIP migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
-		Status:      sdk.CapabilityStatusBlocked,
-		Message:     "Vortex modtype-dazip purges old DA2 DAZIP deployments during migration. DMM needs a generic migration/purge-mods-in-path runtime before this can execute.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:           "purge-legacy-dazip-documents",
+			Name:         "Purge legacy DAZIP Documents deployment",
+			Command:      sdk.StateMigrationCommandPurgeModsInPath,
+			ModType:      dazip.ModType,
+			TargetRootID: documentsRootID,
+		}},
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-dragonage2 extension source",

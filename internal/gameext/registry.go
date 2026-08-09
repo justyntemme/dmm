@@ -273,6 +273,7 @@ type FeatureSummary struct {
 	Status             string                   `json:"status,omitempty"`
 	Message            string                   `json:"message,omitempty"`
 	Command            string                   `json:"command,omitempty"`
+	Commands           []FeatureSummary         `json:"commands,omitempty"`
 	Scope              string                   `json:"scope,omitempty"`
 	Kind               string                   `json:"kind,omitempty"`
 	Trigger            string                   `json:"trigger,omitempty"`
@@ -1349,6 +1350,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Name:        migration.Name,
 			FromVersion: migration.FromVersion,
 			ToVersion:   migration.ToVersion,
+			Commands:    migrationCommandSummaries(migration.Commands),
 			Status:      defaultString(migration.Status, sdk.CapabilityStatusReady),
 			Message:     migration.Message,
 		})
@@ -1568,6 +1570,30 @@ func launchToolDynamicArguments(args []sdk.LaunchToolDynamicArgumentSpec) []Laun
 			RequireExactlyOne: arg.RequireExactlyOne,
 		})
 	}
+	return out
+}
+
+func migrationCommandSummaries(commands []sdk.StateMigrationCommandSpec) []FeatureSummary {
+	if len(commands) == 0 {
+		return nil
+	}
+	out := make([]FeatureSummary, 0, len(commands))
+	for _, command := range commands {
+		out = append(out, FeatureSummary{
+			ID:      command.ID,
+			Name:    command.Name,
+			Command: command.Command,
+			GameID:  command.SteamAppID,
+			ModTypes: appendClean([]string{},
+				command.ModType,
+			),
+			Target:  command.TargetRootID,
+			Path:    command.TargetRelative,
+			Status:  defaultString(command.Status, sdk.CapabilityStatusReady),
+			Message: command.Message,
+		})
+	}
+	sortFeatureSummaries(out)
 	return out
 }
 

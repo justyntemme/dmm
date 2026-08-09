@@ -511,7 +511,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedScoped("state persistor", extension.StatePersistors, func(spec sdk.StatePersistorSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
-	errs = append(errs, validateStateMigrations(extension.StateMigrations)...)
+	errs = append(errs, validateStateMigrations(extension.StateMigrations, extension.TargetRoots)...)
 	errs = append(errs, validateStatusedScoped("history stack", extension.HistoryStacks, func(spec sdk.HistoryStackSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
@@ -1835,9 +1835,15 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 	return errs
 }
 
-func validateStateMigrations(specs []sdk.StateMigrationSpec) []error {
+func validateStateMigrations(specs []sdk.StateMigrationSpec, targetRoots []sdk.TargetRootSpec) []error {
 	var errs []error
 	seen := map[string]struct{}{}
+	declaredRoots := map[string]struct{}{}
+	for _, root := range targetRoots {
+		if id := strings.TrimSpace(root.ID); id != "" {
+			declaredRoots[strings.ToLower(id)] = struct{}{}
+		}
+	}
 	for _, spec := range specs {
 		id := strings.TrimSpace(spec.ID)
 		if id == "" {
@@ -1860,6 +1866,51 @@ func validateStateMigrations(specs []sdk.StateMigrationSpec) []error {
 			errs = append(errs, errors.New("state migration "+id+" to version is required"))
 		}
 		if err := validateCapabilityStatus("state migration", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
+		errs = append(errs, validateStateMigrationCommands(id, spec.Commands, declaredRoots)...)
+	}
+	return errs
+}
+
+func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigrationCommandSpec, targetRoots map[string]struct{}) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, command := range commands {
+		id := strings.TrimSpace(command.ID)
+		if id == "" {
+			errs = append(errs, errors.New("state migration "+migrationID+" command id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("state migration "+migrationID+" command", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(command.Name) == "" {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
+		}
+		switch strings.TrimSpace(command.Command) {
+		case sdk.StateMigrationCommandPurgeModsInPath:
+		default:
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
+		}
+		if steamAppID := strings.TrimSpace(command.SteamAppID); steamAppID != "" && strings.ContainsAny(steamAppID, "/\\\x00\r\n") {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" steam app id must be a simple identifier"))
+		}
+		if modType := strings.TrimSpace(command.ModType); modType != "" && strings.ContainsAny(modType, "/\\\x00\r\n") {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" mod type must be a simple identifier"))
+		}
+		if rootID := strings.TrimSpace(command.TargetRootID); rootID != "" {
+			if _, ok := targetRoots[strings.ToLower(rootID)]; !ok {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" references undeclared target root "+rootID))
+			}
+		}
+		if err := validateRelativeOrRoot(command.TargetRelative); err != nil {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target relative path: "+err.Error()))
+		}
+		if err := validateCapabilityStatus("state migration "+migrationID+" command", id, command.Status, command.Message); err != nil {
 			errs = append(errs, err)
 		}
 	}

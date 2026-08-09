@@ -191,7 +191,19 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "plugins", Name: "Plugins"})
 			r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{ID: "rules", Name: "Rules"})
 			r.RegisterStateStore(sdk.StateStoreSpec{ID: "load-order", Name: "Load order", Scope: "profile"})
-			r.RegisterStateMigration(sdk.StateMigrationSpec{ID: "load-order-1", Name: "Load order migration", FromVersion: "0.0.1", ToVersion: "0.0.2"})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "load-order-1",
+				Name:        "Load order migration",
+				FromVersion: "0.0.1",
+				ToVersion:   "0.0.2",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:             "purge-old-mods",
+					Name:           "Purge old managed mods",
+					Command:        sdk.StateMigrationCommandPurgeModsInPath,
+					ModType:        "mod",
+					TargetRelative: "Mods/Legacy",
+				}},
+			})
 			r.RegisterHistoryStack(sdk.HistoryStackSpec{ID: "plugins", Name: "Plugin history", Scope: "plugins"})
 			r.RegisterHealthCheck(sdk.HealthCheckSpec{ID: "sample-health", Name: "Sample health"})
 			r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{ID: "manifest", Name: "Manifest metadata", Target: "mods"})
@@ -385,7 +397,8 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.StateStores) != 1 || summary.Capabilities.StateStores[0].Scope != "profile" {
 		t.Fatalf("state store capabilities = %+v", summary.Capabilities.StateStores)
 	}
-	if len(summary.Capabilities.StateMigrations) != 1 || summary.Capabilities.StateMigrations[0].FromVersion != "0.0.1" {
+	if len(summary.Capabilities.StateMigrations) != 1 || summary.Capabilities.StateMigrations[0].FromVersion != "0.0.1" ||
+		len(summary.Capabilities.StateMigrations[0].Commands) != 1 || summary.Capabilities.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandPurgeModsInPath {
 		t.Fatalf("state migration capabilities = %+v", summary.Capabilities.StateMigrations)
 	}
 	if len(summary.Capabilities.HistoryStacks) != 1 || summary.Capabilities.HistoryStacks[0].ID != "plugins" {
@@ -800,6 +813,21 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 					{ID: "bad-workshop", Kind: "delete"},
 				},
 			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "bad-migration",
+				Name:        "Bad migration",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.0",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:             "bad/command",
+					Name:           "Bad command",
+					Command:        "magic",
+					SteamAppID:     "bad\napp",
+					ModType:        "bad/type",
+					TargetRootID:   "missing-root",
+					TargetRelative: "../outside",
+				}},
+			})
 		},
 	})
 	if err == nil {
@@ -861,6 +889,12 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"conflict ignore ignore pattern: path traversal is not allowed",
 		"steam workshop action bad-workshop name is required",
 		"steam workshop action bad-workshop kind must be subscribe, unsubscribe, enable, disable, or order",
+		"state migration bad-migration command bad/command id must be a simple identifier",
+		"state migration bad-migration command bad/command has unsupported command magic",
+		"state migration bad-migration command bad/command steam app id must be a simple identifier",
+		"state migration bad-migration command bad/command mod type must be a simple identifier",
+		"state migration bad-migration command bad/command references undeclared target root missing-root",
+		"state migration bad-migration command bad/command target relative path: path traversal is not allowed",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)
