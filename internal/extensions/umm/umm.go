@@ -12,13 +12,15 @@ import (
 )
 
 const (
-	ModRoot      = "Mods"
-	ToolModType  = "umm"
-	ToolName     = "Unity Mod Manager"
-	ToolExe      = "UnityModManager.exe"
-	ToolModID    = "21"
-	ToolFileID   = "1359"
-	ToolFileName = "UnityModManager-21-0-24-2.zip"
+	ModRoot       = "Mods"
+	ToolModType   = "umm"
+	ToolName      = "Unity Mod Manager"
+	ToolExe       = "UnityModManager.exe"
+	ToolModID     = "21"
+	ToolFileID    = "1359"
+	ToolFileName  = "UnityModManager-21-0-24-2.zip"
+	ToolVersion   = "0.24.2"
+	ToolGitHubURL = "https://github.com/IDCs/unity-mod-manager/releases/download/0.24.2/UnityModManager-21-0-24-2.zip"
 )
 
 type GameOptions struct {
@@ -57,13 +59,27 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		ID:      "umm",
 		Name:    ToolName,
 		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex locates Unity Mod Manager through the Windows registry and registers it as a dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata and can queue them through the Decky extension-tool launch path.",
+		Message: "Vortex locates Unity Mod Manager through the Windows registry and registers it as a dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata, can acquire the source-verified UMM package, and can queue installed tools through the Decky extension-tool launch path.",
+		Acquisition: &sdk.ToolAcquisitionSpec{
+			ID:             "umm-" + ToolVersion,
+			Name:           ToolName + " " + ToolVersion,
+			Catalog:        "github",
+			URL:            ToolGitHubURL,
+			ArchiveName:    ToolFileName,
+			Required:       true,
+			AutoAcquire:    opts.AutoDownload,
+			SourceModID:    ToolModID,
+			SourceFileID:   ToolFileID,
+			SourceGame:     "site",
+			SourceProvider: "vortex-modtype-umm",
+			Message:        "Vortex modtype-umm uses Nexus site mod " + ToolModID + " file " + ToolFileID + " and falls back to GitHub release " + ToolVersion + ". DMM acquires the GitHub release asset through the shared captured-install pipeline.",
+		},
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "ummAddGame",
 		Name:    "Register Unity Mod Manager game support",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM supports the opt-in, Mods-folder installer, tool archive installer, managed tool discovery, and Decky tool launch path; automatic acquisition and patch execution remain separate runtime work.",
+		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM supports the opt-in, Mods-folder installer, tool archive installer, source-verified tool acquisition, managed tool discovery, and Decky tool launch path; patch execution remains separate runtime work.",
 	})
 	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
 		ID:      gameID + "-umm-support-dashlet",
@@ -74,7 +90,7 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 	})
 	message := "Vortex setup requires Unity Mod Manager to be installed from Nexus site mod " + ToolModID + " before " + gameName + " mods can function in game."
 	if opts.AutoDownload {
-		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM can install and launch managed UMM tool archives, but still needs source-backed automatic acquisition and patch execution before enabling the full Vortex setup flow."
+		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM now exposes source-backed acquisition for the same UMM package through GitHub, but still needs a verified Deck-safe patch execution contract before enabling the full Vortex setup flow."
 	}
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 		ID:      gameID + "-umm-runtime",

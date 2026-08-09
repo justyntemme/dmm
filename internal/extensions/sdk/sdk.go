@@ -224,6 +224,7 @@ type SupportedToolSpec struct {
 	Arguments          []string
 	Environment        map[string]string
 	RequiredFiles      []string
+	Acquisition        *ToolAcquisitionSpec
 	Relative           bool
 	Shell              bool
 	Detach             bool
@@ -231,6 +232,21 @@ type SupportedToolSpec struct {
 	DefaultPrimary     bool
 	Status             string
 	Message            string
+}
+
+type ToolAcquisitionSpec struct {
+	ID             string
+	Name           string
+	Catalog        string
+	URL            string
+	ArchiveName    string
+	Required       bool
+	AutoAcquire    bool
+	SourceModID    string
+	SourceFileID   string
+	SourceGame     string
+	SourceProvider string
+	Message        string
 }
 
 type LauncherRequirementSpec struct {

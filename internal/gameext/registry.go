@@ -81,6 +81,7 @@ type LaunchToolSpec = sdk.LaunchToolSpec
 type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
 type LaunchToolDynamicArgumentSpec = sdk.LaunchToolDynamicArgumentSpec
 type SupportedToolSpec = sdk.SupportedToolSpec
+type ToolAcquisitionSpec = sdk.ToolAcquisitionSpec
 type LauncherRequirementSpec = sdk.LauncherRequirementSpec
 type LauncherParameterSpec = sdk.LauncherParameterSpec
 type InstallPlatformSpec = sdk.InstallPlatformSpec
@@ -295,6 +296,7 @@ type FeatureSummary struct {
 	AppID              string                   `json:"app_id,omitempty"`
 	Parameters         []LauncherParameter      `json:"parameters,omitempty"`
 	Relative           bool                     `json:"relative,omitempty"`
+	Acquisition        *ToolAcquisitionSummary  `json:"acquisition,omitempty"`
 }
 
 type ActionTargetSummary struct {
@@ -305,6 +307,21 @@ type ActionTargetSummary struct {
 	FallbackBase     string `json:"fallback_base,omitempty"`
 	FallbackRootID   string `json:"fallback_root_id,omitempty"`
 	FallbackRelative string `json:"fallback_relative,omitempty"`
+}
+
+type ToolAcquisitionSummary struct {
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Catalog        string `json:"catalog,omitempty"`
+	URL            string `json:"url,omitempty"`
+	ArchiveName    string `json:"archive_name,omitempty"`
+	Required       bool   `json:"required,omitempty"`
+	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
+	SourceModID    string `json:"source_mod_id,omitempty"`
+	SourceFileID   string `json:"source_file_id,omitempty"`
+	SourceGame     string `json:"source_game,omitempty"`
+	SourceProvider string `json:"source_provider,omitempty"`
+	Message        string `json:"message,omitempty"`
 }
 
 type LauncherParameter struct {
@@ -1183,6 +1200,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			DefaultPrimary:     tool.DefaultPrimary,
 			Status:             defaultString(tool.Status, sdk.CapabilityStatusReady),
 			Message:            tool.Message,
+			Acquisition:        toolAcquisitionSummary(tool.Acquisition),
 		})
 	}
 	for _, requirement := range extension.LauncherRequirements {
@@ -1711,6 +1729,26 @@ func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
 		FallbackBase:     strings.TrimSpace(target.FallbackBase),
 		FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
 		FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+	}
+}
+
+func toolAcquisitionSummary(acquisition *sdk.ToolAcquisitionSpec) *ToolAcquisitionSummary {
+	if acquisition == nil {
+		return nil
+	}
+	return &ToolAcquisitionSummary{
+		ID:             strings.TrimSpace(acquisition.ID),
+		Name:           strings.TrimSpace(acquisition.Name),
+		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		URL:            strings.TrimSpace(acquisition.URL),
+		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Required:       acquisition.Required,
+		AutoAcquire:    acquisition.AutoAcquire,
+		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
+		Message:        strings.TrimSpace(acquisition.Message),
 	}
 }
 

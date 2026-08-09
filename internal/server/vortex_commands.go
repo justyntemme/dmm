@@ -50,6 +50,22 @@ type discoveredTool struct {
 	DefaultPrimary     bool              `json:"default_primary,omitempty"`
 	Status             string            `json:"status,omitempty"`
 	Message            string            `json:"message,omitempty"`
+	Acquisition        *toolAcquisition  `json:"acquisition,omitempty"`
+}
+
+type toolAcquisition struct {
+	ID             string `json:"id,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Catalog        string `json:"catalog,omitempty"`
+	URL            string `json:"url,omitempty"`
+	ArchiveName    string `json:"archive_name,omitempty"`
+	Required       bool   `json:"required,omitempty"`
+	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
+	SourceModID    string `json:"source_mod_id,omitempty"`
+	SourceFileID   string `json:"source_file_id,omitempty"`
+	SourceGame     string `json:"source_game,omitempty"`
+	SourceProvider string `json:"source_provider,omitempty"`
+	Message        string `json:"message,omitempty"`
 }
 
 type scopedPurgeResult struct {
@@ -169,6 +185,27 @@ func discoverSupportedTool(gamePath string, extension gameext.Extension, tool ga
 		DefaultPrimary:     tool.DefaultPrimary,
 		Status:             status,
 		Message:            strings.TrimSpace(tool.Message),
+		Acquisition:        discoveredToolAcquisition(tool.Acquisition),
+	}
+}
+
+func discoveredToolAcquisition(acquisition *gameext.ToolAcquisitionSpec) *toolAcquisition {
+	if acquisition == nil {
+		return nil
+	}
+	return &toolAcquisition{
+		ID:             strings.TrimSpace(acquisition.ID),
+		Name:           strings.TrimSpace(acquisition.Name),
+		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		URL:            strings.TrimSpace(acquisition.URL),
+		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Required:       acquisition.Required,
+		AutoAcquire:    acquisition.AutoAcquire,
+		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
+		Message:        strings.TrimSpace(acquisition.Message),
 	}
 }
 

@@ -2,6 +2,7 @@ package gameext
 
 import (
 	"errors"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -1195,7 +1196,50 @@ func validateSupportedTools(tools []sdk.SupportedToolSpec) []error {
 				errs = append(errs, errors.New("supported tool "+id+" required file: "+err.Error()))
 			}
 		}
+		if tool.Acquisition != nil {
+			errs = append(errs, validateToolAcquisition(id, *tool.Acquisition)...)
+		}
 		errs = append(errs, validateStringMap("supported tool "+id+" environment", tool.Environment)...)
+	}
+	return errs
+}
+
+func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []error {
+	var errs []error
+	id := strings.TrimSpace(spec.ID)
+	if id == "" {
+		errs = append(errs, errors.New("supported tool "+toolID+" acquisition id is required"))
+	} else {
+		errs = append(errs, validateSimpleID("supported tool "+toolID+" acquisition", id)...)
+	}
+	if strings.TrimSpace(spec.Name) == "" {
+		errs = append(errs, errors.New("supported tool "+toolID+" acquisition name is required"))
+	}
+	if strings.TrimSpace(spec.Catalog) == "" {
+		errs = append(errs, errors.New("supported tool "+toolID+" acquisition catalog is required"))
+	}
+	rawURL := strings.TrimSpace(spec.URL)
+	if rawURL == "" {
+		errs = append(errs, errors.New("supported tool "+toolID+" acquisition url is required"))
+	} else {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			errs = append(errs, errors.New("supported tool "+toolID+" acquisition url must be an http or https URL"))
+		}
+	}
+	for _, value := range []struct {
+		label string
+		text  string
+	}{
+		{label: "archive name", text: spec.ArchiveName},
+		{label: "source mod id", text: spec.SourceModID},
+		{label: "source file id", text: spec.SourceFileID},
+		{label: "source game", text: spec.SourceGame},
+		{label: "source provider", text: spec.SourceProvider},
+	} {
+		if strings.ContainsAny(value.text, "\x00\r\n") {
+			errs = append(errs, errors.New("supported tool "+toolID+" acquisition "+value.label+" must not contain control line breaks"))
+		}
 	}
 	return errs
 }

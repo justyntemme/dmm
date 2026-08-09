@@ -409,6 +409,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tool/actions", s.handleExtensionToolActions)
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/start", s.handleStartExtensionToolAction)
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
+	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/acquire", s.handleAcquireExtensionTool)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
 	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/start", s.handleStartOpenDirectoryAction)
@@ -710,6 +711,10 @@ type extensionNoticeActionReport struct {
 	Applied bool   `json:"applied"`
 	Error   string `json:"error"`
 	Source  string `json:"source"`
+}
+
+type extensionToolAcquireRequest struct {
+	ProfileID int64 `json:"profile_id,omitempty"`
 }
 
 type gameLaunchStatusResponse struct {
@@ -1815,6 +1820,39 @@ func (s *Server) extensionExecutableTool(appID, gamePath, toolID string) (gameex
 		return extension, launchToolFromSupportedTool(tool), "supported-tool", status, message, true
 	}
 	return gameext.Extension{}, gameext.LaunchToolSpec{}, "", "", "", false
+}
+
+func (s *Server) extensionToolAcquisition(ctx context.Context, appID, toolID string) (gameext.Extension, gameext.SupportedToolSpec, gameext.ToolAcquisitionSpec, error) {
+	appID = strings.TrimSpace(appID)
+	toolID = strings.ToLower(strings.TrimSpace(toolID))
+	if appID == "" || toolID == "" {
+		return gameext.Extension{}, gameext.SupportedToolSpec{}, gameext.ToolAcquisitionSpec{}, errors.New("app id and tool id are required")
+	}
+	if _, err := s.db.GameBySteamApp(ctx, appID); err != nil {
+		return gameext.Extension{}, gameext.SupportedToolSpec{}, gameext.ToolAcquisitionSpec{}, err
+	}
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return gameext.Extension{}, gameext.SupportedToolSpec{}, gameext.ToolAcquisitionSpec{}, errors.New("no game extension is registered for Steam app " + appID)
+	}
+	for _, tool := range extension.SupportedTools {
+		if strings.ToLower(strings.TrimSpace(tool.ID)) != toolID {
+			continue
+		}
+		if tool.Acquisition == nil {
+			return extension, tool, gameext.ToolAcquisitionSpec{}, errors.New("extension tool " + tool.ID + " does not declare an acquisition source")
+		}
+		acquisition := *tool.Acquisition
+		acquisition.ID = strings.TrimSpace(acquisition.ID)
+		acquisition.Name = strings.TrimSpace(acquisition.Name)
+		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+		acquisition.URL = strings.TrimSpace(acquisition.URL)
+		if acquisition.URL == "" {
+			return extension, tool, gameext.ToolAcquisitionSpec{}, errors.New("extension tool " + tool.ID + " acquisition URL is empty")
+		}
+		return extension, tool, acquisition, nil
+	}
+	return gameext.Extension{}, gameext.SupportedToolSpec{}, gameext.ToolAcquisitionSpec{}, errors.New("extension tool is not registered for this game")
 }
 
 func launchToolFromSupportedTool(tool gameext.SupportedToolSpec) gameext.LaunchToolSpec {
@@ -3617,6 +3655,58 @@ func (s *Server) handleCompleteExtensionNoticeAction(w http.ResponseWriter, r *h
 	job, _ = s.jobs.Fail(jobID, message)
 	s.logger.Warn("extension notice action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "error", message, "source", req.Source)
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	toolID := strings.TrimSpace(r.PathValue("toolID"))
+	if appID == "" || toolID == "" {
+		http.Error(w, "appID and toolID are required", http.StatusBadRequest)
+		return
+	}
+	var req extensionToolAcquireRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	extension, tool, acquisition, err := s.extensionToolAcquisition(r.Context(), appID, toolID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	if req.ProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
+		URL:        acquisition.URL,
+		SteamAppID: appID,
+		Source:     "extension-tool-acquisition:" + strings.TrimSpace(tool.ID),
+		ProfileID:  req.ProfileID,
+	})
+	if err != nil {
+		s.logger.Warn("extension tool acquisition failed", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("extension tool acquisition queued", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "target_profile_id", req.ProfileID)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"tool":         tool.ID,
+		"extension":    extension.ID,
+		"acquisition":  discoveredToolAcquisition(&acquisition),
+		"job":          result.Job,
+		"resolved":     result.Resolved,
+		"duplicate":    result.Duplicate,
+		"auto_install": result.AutoInstall,
+	})
 }
 
 func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.Request) {

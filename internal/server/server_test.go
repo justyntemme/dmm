@@ -10048,6 +10048,14 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 				Name:               "Game Runner",
 				ExecutableRelative: "Tools/Runner.exe",
 				RequiredFiles:      []string{"Tools/Runner.exe"},
+				Acquisition: &sdk.ToolAcquisitionSpec{
+					ID:          "runner-acquisition",
+					Name:        "Game Runner package",
+					Catalog:     "github",
+					URL:         "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
+					ArchiveName: "runner.zip",
+					Required:    true,
+				},
 			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "missing-loader",
@@ -10143,6 +10151,58 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 	if body.AppID != appID || len(body.Tools) != len(result.Tools) {
 		t.Fatalf("tools response = %+v", body)
+	}
+	bodyRunner := discoveredToolByIDSource(body.Tools, "runner", "extension-declared")
+	if bodyRunner == nil || bodyRunner.Acquisition == nil || bodyRunner.Acquisition.Catalog != "github" || bodyRunner.Acquisition.ArchiveName != "runner.zip" {
+		t.Fatalf("runner acquisition = %+v", bodyRunner)
+	}
+
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("runner archive"))
+	}))
+	defer downloadServer.Close()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
+		resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
+			SteamAppID: appID,
+			GameDomain: "github",
+			ModID:      "example/runner",
+			FileID:     "djEuMA.cnVubmVyLnppcA",
+			FileName:   "runner.zip",
+			Version:    "v1.0.0",
+			DownloadLinks: []catalog.DownloadLink{{
+				Name:      "GitHub release asset",
+				ShortName: "github",
+				URI:       downloadServer.URL + "/runner.zip",
+			}},
+		},
+	}}
+	srv.catalogMu.Unlock()
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/acquire", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /tools/runner/acquire status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var acquired struct {
+		Job         jobResponse              `json:"job"`
+		Resolved    catalog.ResolvedDownload `json:"resolved"`
+		Acquisition toolAcquisition          `json:"acquisition"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&acquired); err != nil {
+		t.Fatal(err)
+	}
+	if acquired.Job.Type != "captured-install" || acquired.Acquisition.ID != "runner-acquisition" || acquired.Resolved.Catalog != "github" {
+		t.Fatalf("tool acquisition response = %+v", acquired)
+	}
+	waitForJobStatus(t, srv, acquired.Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(acquired.Job.ID)
+	if !ok || pending.Source != "extension-tool-acquisition:runner" || pending.Resolved.ModID != "example/runner" || pending.ArchivePath == "" {
+		t.Fatalf("tool acquisition pending = %+v ok=%v", pending, ok)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/editor/launch", nil)

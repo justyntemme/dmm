@@ -62,6 +62,7 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
 	seenUMMModType := false
 	seenToolInstaller := false
+	seenToolAcquisition := false
 	for _, modType := range summary.Capabilities.ModTypes {
 		if modType.ID == umm.ToolModType {
 			seenUMMModType = true
@@ -72,8 +73,13 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 			seenToolInstaller = true
 		}
 	}
-	if !seenUMMModType || !seenToolInstaller {
-		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v summary=%+v", seenUMMModType, seenToolInstaller, summary.Capabilities)
+	for _, tool := range summary.Capabilities.SupportedTools {
+		if tool.ID == "umm" && tool.Acquisition != nil && tool.Acquisition.Catalog == "github" && tool.Acquisition.SourceModID == umm.ToolModID && tool.Acquisition.SourceFileID == umm.ToolFileID {
+			seenToolAcquisition = true
+		}
+	}
+	if !seenUMMModType || !seenToolInstaller || !seenToolAcquisition {
+		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v acquisition=%v summary=%+v", seenUMMModType, seenToolInstaller, seenToolAcquisition, summary.Capabilities)
 	}
 }
 
