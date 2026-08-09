@@ -393,6 +393,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/order", s.handleSetSteamWorkshopOrder)
 	mux.HandleFunc("POST /api/games/{appID}/workshop/items/{itemID}/actions/{kind}", s.handleQueueSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
+	mux.HandleFunc("GET /api/games/{appID}/tools", s.handleGameTools)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
@@ -960,6 +961,24 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 		resp.Preview = summarizeDeployPreview(plan)
 	}
 	resp.ValidationWarnings = gameDiagnosticsWarnings(resp)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleGameTools(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.discoverTools(r.Context(), appID, "api")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

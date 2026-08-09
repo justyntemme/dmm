@@ -15,7 +15,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "discover-tools")
 	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "registerGameInfoProvider")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
 	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "gamebryo-incompatible-mod-archives", "game-version-gamemode")

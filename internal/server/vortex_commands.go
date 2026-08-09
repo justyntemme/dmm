@@ -4,13 +4,53 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
+
+type toolDiscoveryResult struct {
+	AppID         string           `json:"app_id"`
+	GameName      string           `json:"game_name"`
+	ExtensionID   string           `json:"extension_id"`
+	ExtensionName string           `json:"extension_name"`
+	Source        string           `json:"source"`
+	Tools         []discoveredTool `json:"tools"`
+}
+
+type discoveredTool struct {
+	ID                 string            `json:"id"`
+	Name               string            `json:"name"`
+	ShortName          string            `json:"short_name,omitempty"`
+	Kind               string            `json:"kind"`
+	Source             string            `json:"source"`
+	SourceExtension    string            `json:"source_extension"`
+	InstalledModID     int64             `json:"installed_mod_id,omitempty"`
+	InstalledModName   string            `json:"installed_mod_name,omitempty"`
+	ModType            string            `json:"mod_type,omitempty"`
+	Version            string            `json:"version,omitempty"`
+	ExecutablePath     string            `json:"executable_path,omitempty"`
+	ExecutableRelative string            `json:"executable_relative,omitempty"`
+	Arguments          []string          `json:"arguments,omitempty"`
+	Environment        map[string]string `json:"environment,omitempty"`
+	RequiredFiles      []string          `json:"required_files,omitempty"`
+	MissingFiles       []string          `json:"missing_files,omitempty"`
+	Present            bool              `json:"present"`
+	Relative           bool              `json:"relative,omitempty"`
+	Shell              bool              `json:"shell,omitempty"`
+	Detach             bool              `json:"detach,omitempty"`
+	Exclusive          bool              `json:"exclusive,omitempty"`
+	DefaultPrimary     bool              `json:"default_primary,omitempty"`
+	Status             string            `json:"status,omitempty"`
+	Message            string            `json:"message,omitempty"`
+}
 
 type scopedPurgeResult struct {
 	Purged       []deploy.AppliedFile
@@ -23,6 +63,185 @@ type singleModDeploymentResult struct {
 	Removed      []deploy.AppliedFile
 	Remaining    []deploy.AppliedFile
 	DeploymentID int64
+}
+
+func (s *Server) discoverTools(ctx context.Context, appID, source string) (toolDiscoveryResult, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return toolDiscoveryResult{}, errors.New("steam app id is required")
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "discover-tools"
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return toolDiscoveryResult{}, err
+	}
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return toolDiscoveryResult{}, errors.New("no game extension is registered for Steam app " + appID)
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return toolDiscoveryResult{}, err
+	}
+	tools := make([]discoveredTool, 0, len(extension.LaunchTools)+len(extension.SupportedTools))
+	for _, tool := range extension.LaunchTools {
+		tools = append(tools, s.discoverLaunchTool(appID, game.GamePath, extension, tool))
+	}
+	for _, tool := range extension.SupportedTools {
+		tools = append(tools, discoverSupportedTool(game.GamePath, extension, tool))
+	}
+	tools = append(tools, s.discoverManagedTools(appID, mods, extension, game.GamePath)...)
+	sort.SliceStable(tools, func(i, j int) bool {
+		if tools[i].Present != tools[j].Present {
+			return tools[i].Present
+		}
+		if tools[i].Kind != tools[j].Kind {
+			return tools[i].Kind < tools[j].Kind
+		}
+		if tools[i].Name != tools[j].Name {
+			return tools[i].Name < tools[j].Name
+		}
+		if tools[i].ID != tools[j].ID {
+			return tools[i].ID < tools[j].ID
+		}
+		return tools[i].Source < tools[j].Source
+	})
+	s.logger.Info("vortex tool discovery completed", "app_id", appID, "source", source, "extension", extension.ID, "tools", len(tools), "present", countPresentTools(tools))
+	return toolDiscoveryResult{
+		AppID:         appID,
+		GameName:      game.Name,
+		ExtensionID:   extension.ID,
+		ExtensionName: extension.Name,
+		Source:        source,
+		Tools:         tools,
+	}, nil
+}
+
+func (s *Server) discoverLaunchTool(appID, gamePath string, extension gameext.Extension, tool gameext.LaunchToolSpec) discoveredTool {
+	resolved := s.games.ResolveLaunchToolForSteamApp(appID, gamePath, tool)
+	executablePath, missing := declaredToolFiles(gamePath, resolved.ExecutableRelative, resolved.RequiredFiles)
+	return discoveredTool{
+		ID:                 strings.TrimSpace(resolved.ID),
+		Name:               strings.TrimSpace(resolved.Name),
+		Kind:               "launch-tool",
+		Source:             "extension-declared",
+		SourceExtension:    extension.ID,
+		ExecutablePath:     executablePath,
+		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(resolved.ExecutableRelative)),
+		Arguments:          cleanStrings(resolved.Arguments),
+		RequiredFiles:      cleanStrings(resolved.RequiredFiles),
+		MissingFiles:       missing,
+		Present:            len(missing) == 0 && executablePath != "",
+		Shell:              resolved.Shell,
+		Detach:             resolved.Detach,
+		Exclusive:          resolved.Exclusive,
+		DefaultPrimary:     resolved.DefaultPrimary,
+	}
+}
+
+func discoverSupportedTool(gamePath string, extension gameext.Extension, tool gameext.SupportedToolSpec) discoveredTool {
+	executablePath, missing := declaredToolFiles(gamePath, tool.ExecutableRelative, tool.RequiredFiles)
+	status := strings.TrimSpace(tool.Status)
+	if status == "" {
+		status = "ready"
+	}
+	return discoveredTool{
+		ID:                 strings.TrimSpace(tool.ID),
+		Name:               strings.TrimSpace(tool.Name),
+		ShortName:          strings.TrimSpace(tool.ShortName),
+		Kind:               "supported-tool",
+		Source:             "extension-declared",
+		SourceExtension:    extension.ID,
+		ExecutablePath:     executablePath,
+		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(tool.ExecutableRelative)),
+		Arguments:          cleanStrings(tool.Arguments),
+		Environment:        cloneStringMap(tool.Environment),
+		RequiredFiles:      cleanStrings(tool.RequiredFiles),
+		MissingFiles:       missing,
+		Present:            len(missing) == 0 && executablePath != "",
+		Relative:           tool.Relative,
+		Shell:              tool.Shell,
+		Detach:             tool.Detach,
+		Exclusive:          tool.Exclusive,
+		DefaultPrimary:     tool.DefaultPrimary,
+		Status:             status,
+		Message:            strings.TrimSpace(tool.Message),
+	}
+}
+
+func (s *Server) discoverManagedTools(appID string, mods []storage.InstalledMod, extension gameext.Extension, gamePath string) []discoveredTool {
+	var tools []discoveredTool
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		for _, metadata := range manifest.Metadata {
+			tool, ok := s.managedToolFromMetadata(appID, mod, manifest, metadata, extension, gamePath)
+			if ok {
+				tools = append(tools, tool)
+			}
+		}
+	}
+	return tools
+}
+
+func (s *Server) managedToolFromMetadata(appID string, mod storage.InstalledMod, manifest stagedManifest, metadata installplan.ModMetadata, extension gameext.Extension, gamePath string) (discoveredTool, bool) {
+	kind := strings.TrimSpace(metadata.Kind)
+	if kind != "tool" && kind != "script-extender" {
+		return discoveredTool{}, false
+	}
+	id := strings.TrimSpace(metadata.UniqueID)
+	if id == "" {
+		id = strings.TrimSpace(metadata.Name)
+	}
+	if id == "" {
+		return discoveredTool{}, false
+	}
+	declaredRel := s.executableRelativeForManagedTool(appID, id, extension, gamePath)
+	executableRel := firstNonEmpty(metadata.StagingRelative, metadata.TargetRelative, declaredRel, metadata.SourcePath)
+	executablePath := ""
+	if rel, ok := safeRelative(executableRel); ok && strings.TrimSpace(mod.StagingPath) != "" {
+		path := filepath.Join(mod.StagingPath, filepath.FromSlash(rel))
+		if pathWithinRoot(filepath.Clean(mod.StagingPath), path) {
+			executablePath = path
+		}
+	}
+	present := false
+	if executablePath != "" {
+		if info, err := os.Stat(executablePath); err == nil && !info.IsDir() {
+			present = true
+		}
+	}
+	if !present && declaredRel != "" {
+		if rel, ok := safeRelative(declaredRel); ok {
+			path := filepath.Join(gamePath, filepath.FromSlash(rel))
+			if pathWithinRoot(filepath.Clean(gamePath), path) {
+				if info, err := os.Stat(path); err == nil && !info.IsDir() {
+					executablePath = path
+					executableRel = rel
+					present = true
+				}
+			}
+		}
+	}
+	return discoveredTool{
+		ID:                 id,
+		Name:               firstNonEmpty(metadata.Name, id),
+		Kind:               kind,
+		Source:             "managed-mod-metadata",
+		SourceExtension:    extension.ID,
+		InstalledModID:     mod.ID,
+		InstalledModName:   mod.Name,
+		ModType:            strings.TrimSpace(manifest.ModType),
+		Version:            strings.TrimSpace(metadata.Version),
+		ExecutablePath:     executablePath,
+		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(executableRel)),
+		Present:            present,
+	}, true
 }
 
 func (s *Server) deploySingleMod(ctx context.Context, appID string, installedModID int64, enable bool, source string) (singleModDeploymentResult, error) {
@@ -276,4 +495,120 @@ func pathWithinOrEqual(path, base string) bool {
 		return false
 	}
 	return !strings.HasPrefix(filepath.ToSlash(rel), "../")
+}
+
+func declaredToolFiles(gamePath, executableRelative string, requiredFiles []string) (string, []string) {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return "", nil
+	}
+	required := cleanStrings(requiredFiles)
+	if strings.TrimSpace(executableRelative) != "" && !stringSliceContainsFold(required, executableRelative) {
+		required = append([]string{executableRelative}, required...)
+	}
+	var executablePath string
+	var missing []string
+	for _, rel := range required {
+		cleanRel, ok := safeRelative(rel)
+		if !ok {
+			missing = append(missing, filepath.ToSlash(strings.TrimSpace(rel)))
+			continue
+		}
+		path := filepath.Join(gamePath, filepath.FromSlash(cleanRel))
+		if !pathWithinRoot(filepath.Clean(gamePath), path) {
+			missing = append(missing, cleanRel)
+			continue
+		}
+		if stringEqualFold(cleanRel, executableRelative) {
+			executablePath = path
+		}
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			missing = append(missing, cleanRel)
+		}
+	}
+	if executablePath == "" && strings.TrimSpace(executableRelative) != "" {
+		if rel, ok := safeRelative(executableRelative); ok {
+			path := filepath.Join(gamePath, filepath.FromSlash(rel))
+			if pathWithinRoot(filepath.Clean(gamePath), path) {
+				executablePath = path
+			}
+		}
+	}
+	return executablePath, missing
+}
+
+func (s *Server) executableRelativeForManagedTool(appID, id string, extension gameext.Extension, gamePath string) string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if id == "" {
+		return ""
+	}
+	for _, tool := range extension.LaunchTools {
+		if strings.ToLower(strings.TrimSpace(tool.ID)) == id {
+			return s.games.ResolveLaunchToolForSteamApp(appID, gamePath, tool).ExecutableRelative
+		}
+	}
+	for _, tool := range extension.SupportedTools {
+		if strings.ToLower(strings.TrimSpace(tool.ID)) == id {
+			return tool.ExecutableRelative
+		}
+	}
+	return ""
+}
+
+func safeRelative(value string) (string, bool) {
+	rel, err := cleanManifestRelative(value)
+	if err != nil {
+		return "", false
+	}
+	return rel, true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringEqualFold(left, right string) bool {
+	left, _ = safeRelative(left)
+	right, _ = safeRelative(right)
+	return strings.EqualFold(left, right)
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+func stringSliceContainsFold(values []string, value string) bool {
+	for _, existing := range values {
+		if strings.EqualFold(strings.TrimSpace(existing), strings.TrimSpace(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func countPresentTools(tools []discoveredTool) int {
+	count := 0
+	for _, tool := range tools {
+		if tool.Present {
+			count++
+		}
+	}
+	return count
 }

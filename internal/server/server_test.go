@@ -9431,6 +9431,148 @@ func TestDeployAllowsTargetlessManifestForToolOnlyModType(t *testing.T) {
 	}
 }
 
+func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Tool Discovery Game")
+	for _, rel := range []string{
+		filepath.Join("Tools", "Editor.exe"),
+		filepath.Join("Tools", "Helper.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("tool"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const appID = "999004"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "tooldiscovery",
+		Name:    "Tool Discovery",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"tooldiscovery"},
+				VortexGameID: "tooldiscovery",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "managed-tool", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                 "editor",
+				Name:               "Game Editor",
+				ExecutableRelative: "Tools/Editor.exe",
+				RequiredFiles:      []string{"Tools/Editor.exe", "Tools/Helper.dll"},
+				Environment:        map[string]string{"TOOL_MODE": "test"},
+				Relative:           true,
+			})
+			r.RegisterLaunchTool(sdk.LaunchToolSpec{
+				ID:                 "missing-loader",
+				Name:               "Missing Loader",
+				ExecutableRelative: "MissingLoader.exe",
+				RequiredFiles:      []string{"MissingLoader.exe"},
+				DefaultPrimary:     true,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Tool Discovery Game",
+		InstallDir:  "Tool Discovery Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(t.TempDir(), "staging", "umm")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "Managed"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "Managed", "UnityModManager.exe"), []byte("umm"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "managed-tool",
+		PlannerID: "tooldiscovery:umm",
+		Metadata: []installplan.ModMetadata{{
+			Kind:            "tool",
+			Name:            "Unity Mod Manager",
+			UniqueID:        "umm",
+			Version:         "1.2.3",
+			StagingRelative: "Managed/UnityModManager.exe",
+		}},
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Managed/UnityModManager.exe",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	installed, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "tooldiscovery",
+			ModID:      "21",
+			FileID:     "1359",
+		},
+		Name:           "Unity Mod Manager",
+		ArchivePath:    filepath.Join(t.TempDir(), "umm.zip"),
+		StagingPath:    stagingPath,
+		ManifestJSON:   manifestJSON,
+		DefaultEnabled: &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := srv.discoverTools(context.Background(), appID, "test")
+	if err != nil {
+		t.Fatalf("discoverTools: %v", err)
+	}
+	editor := discoveredToolByIDSource(result.Tools, "editor", "extension-declared")
+	if editor == nil || !editor.Present || editor.ExecutablePath != filepath.Join(gamePath, "Tools", "Editor.exe") || editor.Environment["TOOL_MODE"] != "test" {
+		t.Fatalf("declared editor discovery = %+v", editor)
+	}
+	missing := discoveredToolByIDSource(result.Tools, "missing-loader", "extension-declared")
+	if missing == nil || missing.Present || len(missing.MissingFiles) != 1 || missing.MissingFiles[0] != "MissingLoader.exe" {
+		t.Fatalf("missing launch tool discovery = %+v", missing)
+	}
+	managed := discoveredToolByIDSource(result.Tools, "umm", "managed-mod-metadata")
+	if managed == nil || !managed.Present || managed.InstalledModID != installed.ID || managed.Version != "1.2.3" || managed.ExecutablePath != filepath.Join(stagingPath, "Managed", "UnityModManager.exe") {
+		t.Fatalf("managed tool discovery = %+v", managed)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/tools", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tools status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var body toolDiscoveryResult
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.AppID != appID || len(body.Tools) != len(result.Tools) {
+		t.Fatalf("tools response = %+v", body)
+	}
+}
+
+func discoveredToolByIDSource(tools []discoveredTool, id, source string) *discoveredTool {
+	for i := range tools {
+		if tools[i].ID == id && tools[i].Source == source {
+			return &tools[i]
+		}
+	}
+	return nil
+}
+
 func TestDeployReturnsPendingDeckyLaunchAction(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
