@@ -68,9 +68,11 @@ reject_text "$WEB_APP" ">Server</button>" \
 reject_text "$WEB_APP" ">Dependencies</button>" \
   "mobile UI must not expose a Dependencies tab; dependency status belongs in Decky"
 
-require_text "$DECKY_APP" "Server Access" \
-  "Decky plugin must retain server access controls/status"
-require_text "$DECKY_APP" "games: \"Games\"" \
+require_text "$DECKY_APP" "Address: {pairingDisplayAddress(status)}" \
+  "Decky plugin must retain server access controls/status without exposing the pairing token by default"
+require_text "$DECKY_APP" "Pair Phone" \
+  "Decky plugin must expose QR-first phone pairing"
+require_text "$DECKY_APP" "label: \"Games\"" \
   "Decky route tab must be labeled Games for the game-selection workflow"
 require_text "$DECKY_APP" "Dependencies" \
   "Decky plugin must retain dependency status"
@@ -78,8 +80,10 @@ require_text "$DECKY_APP" "Auto-install captured downloads" \
   "Decky plugin must expose automatic captured-install behavior"
 require_text "$DECKY_APP" "Auto-enable installed mods" \
   "Decky plugin must expose automatic enable/deploy behavior"
-require_text "$DECKY_APP" "plugin.catalog || plugin.source" \
-  "Decky load-order rows must display provider/native source tags"
+require_text "$DECKY_APP" "sourceForManagedMod(mod)" \
+  "Decky mod rows must display provider/source tags"
+require_text "$DECKY_APP" "deckySourcePillStyle(source)" \
+  "Decky mod rows must render source pills"
 require_text "$DECKY_APP" "native: { border" \
   "Decky source-pill palette must include native plugin rows"
 reject_text "$DECKY_APP" "Open Nexus Mods" \
