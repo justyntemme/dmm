@@ -164,7 +164,6 @@ func sourceURL(dir string) string {
 var games = []GameSpec{
 	{VortexDir: "game-battletech", ID: "battletech", Name: "BattleTech", SteamAppIDs: []string{"637090"}, Notes: []string{"Vortex listens for added-files and copies single-owner generated files back into the staged mod; DMM needs source-reviewed added-files parity before claiming full support."}},
 	{VortexDir: "game-breakingwheel", ID: "breakingwheel", Name: "Breaking Wheel", SteamAppIDs: []string{"545890"}},
-	{VortexDir: "game-conanexiles", ID: "conanexiles", Name: "Conan Exiles", SteamAppIDs: []string{"440900"}, Notes: []string{"Vortex writes a modlist.txt on deploy lifecycle events; DMM needs source-reviewed lifecycle/load-order generation before claiming full support."}},
 	{VortexDir: "game-cyberpunk2077", ID: "cyberpunk2077", Name: "Cyberpunk 2077", VortexStub: true, SupportModID: "196"},
 	{VortexDir: "game-darksouls", ID: "darksouls", Name: "Dark Souls", SteamAppIDs: []string{"211420"}, Notes: []string{"Vortex setup prompts for DSfix and opens Nexus mod 19; DMM needs a source-reviewed runtime/tool requirement before claiming full support."}},
 	{VortexDir: "game-darksouls2", ID: "darksouls2", Name: "Dark Souls II", SteamAppIDs: []string{"236430", "335300"}},
