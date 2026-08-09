@@ -788,7 +788,7 @@ func manifestComponentChoiceDependencyDescriptions(manifest map[string]any) []st
 		if uniqueID == "" {
 			continue
 		}
-		label := "Requires " + uniqueID
+		label := "Recommended dependency " + uniqueID
 		if required, ok := jsonBoolField(dependency, "IsRequired"); ok && !required {
 			label = "Optional dependency " + uniqueID
 		}

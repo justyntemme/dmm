@@ -158,7 +158,7 @@ func TestStardewPlannerSupportsMultipleSMAPIModFolders(t *testing.T) {
 		"Version: 1.2.3",
 		"Entry: ModA.dll",
 		"Requires SMAPI: 4.0.0",
-		"Requires spacechase0.JsonAssets 1.11.0+",
+		"Recommended dependency spacechase0.JsonAssets 1.11.0+",
 		"Path: ModA",
 	} {
 		if !strings.Contains(modADescription, want) {
@@ -230,10 +230,10 @@ func TestStardewPlannerAcceptsRelaxedSMAPIManifest(t *testing.T) {
 	if metadata.ManifestVersion != "0.4.2" || len(metadata.AdditionalLogicalFileNames) != 1 || metadata.AdditionalLogicalFileNames[0] != "shekurika.waterfish" {
 		t.Fatalf("vortex attribute metadata = %+v", metadata)
 	}
-	if metadata.ContentPackFor == nil || metadata.ContentPackFor.UniqueID != "Pathoschild.ContentPatcher" || metadata.ContentPackFor.MinimumVersion != "2.0.0" || !metadata.ContentPackFor.Required {
+	if metadata.ContentPackFor == nil || metadata.ContentPackFor.UniqueID != "Pathoschild.ContentPatcher" || metadata.ContentPackFor.MinimumVersion != "2.0.0" || metadata.ContentPackFor.Required {
 		t.Fatalf("content pack metadata = %+v", metadata.ContentPackFor)
 	}
-	if len(metadata.Dependencies) != 2 || metadata.Dependencies[0].Required || !metadata.Dependencies[1].Required {
+	if len(metadata.Dependencies) != 2 || metadata.Dependencies[0].Required || metadata.Dependencies[1].Required {
 		t.Fatalf("dependencies = %+v", metadata.Dependencies)
 	}
 }

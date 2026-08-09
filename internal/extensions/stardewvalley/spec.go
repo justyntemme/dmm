@@ -74,7 +74,7 @@ func Register(r sdk.Registrar) {
 		MetadataKinds:       []string{MetadataKindSMAPIManifest},
 		RequirementIDPrefix: "stardew-mod-dependency:",
 		RequirementKind:     "mod-dependency",
-		RequirementMessage:  "Required mod dependency is not enabled in this profile.",
+		RequirementMessage:  "Recommended Stardew mod dependency is not enabled in this profile.",
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "smapi",
@@ -447,7 +447,7 @@ func smapiManifestMetadata(path string) installplan.ModMetadata {
 		metadata.ContentPackFor = &installplan.ModDependency{
 			UniqueID:       strings.TrimSpace(manifest.ContentPackFor.UniqueID),
 			MinimumVersion: strings.TrimSpace(manifest.ContentPackFor.MinimumVersion),
-			Required:       true,
+			Required:       false,
 		}
 	}
 	for _, dependency := range manifest.Dependencies {
@@ -455,14 +455,10 @@ func smapiManifestMetadata(path string) installplan.ModMetadata {
 		if uniqueID == "" {
 			continue
 		}
-		required := true
-		if dependency.IsRequired != nil {
-			required = *dependency.IsRequired
-		}
 		metadata.Dependencies = append(metadata.Dependencies, installplan.ModDependency{
 			UniqueID:       uniqueID,
 			MinimumVersion: strings.TrimSpace(dependency.MinimumVersion),
-			Required:       required,
+			Required:       false,
 		})
 	}
 	return metadata

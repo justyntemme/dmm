@@ -18,6 +18,7 @@
 - Nexus browsing and captured install pipeline are supported.
 - SMAPI installer and SMAPI mod folder planning are implemented by the extension.
 - SMAPI launch tool metadata is extension-owned and live-tested on the Deck.
+- SMAPI `manifest.json` dependency metadata is extracted for diagnostics, but DMM treats those dependencies as non-blocking recommendations to match the verified Vortex Stardew behavior where manifest recommendations are disabled by default and considered unreliable.
 - Generated SMAPI config files are preserved through an extension event hook.
 - Native Linux and Windows/Proton install platform matching are represented in the extension model.
 
