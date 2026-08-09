@@ -692,8 +692,13 @@ const deckyRuntimeStyles = `
   min-width: 0;
 }
 .dmm-decky-tab {
+  appearance: none;
+  box-shadow: none !important;
+  cursor: pointer;
   outline: none !important;
+  -webkit-tap-highlight-color: transparent;
 }
+.dmm-decky-tab *,
 .dmm-decky-tab-focused,
 .dmm-decky-tab:focus,
 .dmm-decky-tab:focus-visible,
@@ -3692,13 +3697,8 @@ const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignContent: "start",
   gap: "10px",
-  minHeight: "auto"
-};
-
-const freshSettingsToggleCardStyle: CSSProperties = {
-  ...freshSectionStyle,
-  alignContent: "center",
-  minHeight: "58px"
+  minHeight: "auto",
+  overflow: "visible"
 };
 
 const freshActionRowStyle: CSSProperties = {
@@ -3746,9 +3746,9 @@ function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", di
     fontWeight: 900,
     justifyContent: "center",
     lineHeight: 1.12,
-    minHeight: "38px",
+    minHeight: "44px",
     opacity: disabled ? 0.52 : 1,
-    padding: "8px 7px",
+    padding: "10px 8px",
     textAlign: "center",
     whiteSpace: "normal"
   };
@@ -3834,9 +3834,9 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     display: "grid",
     gap: "10px",
     gridTemplateColumns: "minmax(0, 1fr) 44px",
-    minHeight: "44px",
+    minHeight: "52px",
     opacity: disabled ? 0.62 : 1,
-    padding: "8px 10px",
+    padding: "10px",
     width: "100%"
   };
 }
@@ -5223,9 +5223,7 @@ function FreshDeckyModManagerRoute() {
           <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
         </div>
-        <div style={freshSettingsToggleCardStyle}>
-          <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
-        </div>
+        <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
         {showDebug && (
           <div style={freshSettingsCardStyle}>
             <div style={{ fontWeight: 900 }}>Debug</div>
@@ -5247,20 +5245,19 @@ function FreshDeckyModManagerRoute() {
   return (
     <Focusable flow-children="down" onButtonDown={handleRouteButtonDown} onCancelButton={handleRouteCancel} style={freshDeckyShellStyle}>
       <style>{deckyRuntimeStyles}</style>
-      <Focusable flow-children="right" navEntryPreferPosition={NavEntryPositionPreferences.FIRST} style={freshDeckyTabBarStyle}>
+      <div style={freshDeckyTabBarStyle}>
         {freshDeckyTabs.map((item) => (
-          <Focusable
+          <button
             key={item.id}
             className="dmm-decky-tab"
-            focusClassName="dmm-decky-tab-focused"
-            onActivate={() => setTab(item.id)}
+            tabIndex={-1}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
           >
             {item.label}
-          </Focusable>
+          </button>
         ))}
-      </Focusable>
+      </div>
       <Focusable
         key={`${tab}:${selectedGameID || "list"}`}
         ref={bodyRef}
