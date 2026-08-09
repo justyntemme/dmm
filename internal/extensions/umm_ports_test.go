@@ -13,7 +13,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestUMMVortexPortsExposeModsInstallerAndBlockedRuntime(t *testing.T) {
+func TestUMMVortexPortsExposeModsInstallerToolLaunchAndBlockedPatchRuntime(t *testing.T) {
 	tests := []struct {
 		name            string
 		extension       gameext.Extension
@@ -42,11 +42,14 @@ func TestUMMVortexPortsExposeModsInstallerAndBlockedRuntime(t *testing.T) {
 			if summary.Capabilities.ModTypes[1].ID != "umm" || summary.Capabilities.ModTypes[1].DeploymentMode != "tool-only" {
 				t.Fatalf("UMM tool mod type = %+v", summary.Capabilities.ModTypes)
 			}
-			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "blocked" {
+			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "metadata" {
 				t.Fatalf("UMM supported tool = %+v", summary.Capabilities.SupportedTools)
 			}
 			if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
 				t.Fatalf("UMM metadata = api %+v dashlets %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionDashlets, summary.Capabilities.ExtensionToDos)
+			}
+			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionToDos[0].Status != "blocked" {
+				t.Fatalf("UMM runtime split = api %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionToDos)
 			}
 			if len(summary.Capabilities.GameStores) != tt.wantGameStores {
 				t.Fatalf("game stores = %+v", summary.Capabilities.GameStores)

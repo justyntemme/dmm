@@ -47,6 +47,14 @@ func TestDesiredLaunchOptionsIncludesArguments(t *testing.T) {
 	}
 }
 
+func TestDesiredLaunchOptionsForExecutableKeepsAbsolutePath(t *testing.T) {
+	got := DesiredLaunchOptionsForExecutable("/home/deck/.local/share/decky-mod-manager/staging/umm/UnityModManager.exe")
+	want := `"/home/deck/.local/share/decky-mod-manager/staging/umm/UnityModManager.exe" %command%`
+	if got != want {
+		t.Fatalf("desired launch options = %q, want %q", got, want)
+	}
+}
+
 func TestLaunchOptionsFromVDFReportsAppWithoutLaunchOptions(t *testing.T) {
 	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LastPlayed" "1785361913" } } } } }`
 

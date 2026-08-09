@@ -1600,6 +1600,27 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 	if err != nil {
 		return payload, err
 	}
+	if tool, ok, err := s.managedExecutableTool(ctx, appID, game, toolID); err != nil {
+		return payload, err
+	} else if ok {
+		toolName := strings.TrimSpace(tool.Name)
+		if toolName == "" {
+			toolName = tool.ID
+		}
+		payload["tool_id"] = strings.TrimSpace(tool.ID)
+		payload["tool_name"] = toolName
+		payload["tool_kind"] = "managed-tool"
+		payload["tool_source_extension"] = strings.TrimSpace(tool.SourceExtension)
+		payload["tool_installed_mod_id"] = strconv.FormatInt(tool.InstalledModID, 10)
+		payload["tool_installed_mod_name"] = strings.TrimSpace(tool.InstalledModName)
+		payload["tool_executable_path"] = filepath.ToSlash(strings.TrimSpace(tool.ExecutablePath))
+		if !tool.Present || strings.TrimSpace(tool.ExecutablePath) == "" {
+			return payload, errors.New(toolName + ": installed tool executable is missing")
+		}
+		payload["tool_action_available"] = "true"
+		payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(tool.ExecutablePath)
+		return payload, nil
+	}
 	extension, tool, kind, status, message, ok := s.extensionExecutableTool(appID, game.GamePath, toolID)
 	if !ok {
 		return payload, errors.New("extension tool is not registered for this game")
@@ -1642,6 +1663,32 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 	payload["tool_action_available"] = "true"
 	payload["tool_launch_options"] = steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
 	return payload, nil
+}
+
+func (s *Server) managedExecutableTool(ctx context.Context, appID string, game storage.Game, toolID string) (discoveredTool, bool, error) {
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return discoveredTool{}, false, nil
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return discoveredTool{}, false, err
+	}
+	canonicalToolID := strings.ToLower(strings.TrimSpace(toolID))
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		for _, metadata := range manifest.Metadata {
+			tool, ok := s.managedToolFromMetadata(appID, mod, manifest, metadata, extension, game.GamePath)
+			if !ok || strings.ToLower(strings.TrimSpace(tool.ID)) != canonicalToolID {
+				continue
+			}
+			return tool, true, nil
+		}
+	}
+	return discoveredTool{}, false, nil
 }
 
 func (s *Server) extensionExecutableTool(appID, gamePath, toolID string) (gameext.Extension, gameext.LaunchToolSpec, string, string, string, bool) {

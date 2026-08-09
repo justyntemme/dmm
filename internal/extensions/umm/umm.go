@@ -56,14 +56,14 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:      "umm",
 		Name:    ToolName,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex locates Unity Mod Manager through the Windows registry and registers it as a dashboard tool. DMM needs a reusable external-tool path/download/launch flow before this can run.",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: "Vortex locates Unity Mod Manager through the Windows registry and registers it as a dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata and can queue them through the Decky extension-tool launch path.",
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "ummAddGame",
 		Name:    "Register Unity Mod Manager game support",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM records this requirement but does not yet run the UMM patcher.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex modtype-umm lets game extensions opt into UMM and optionally auto-download the UMM tool. DMM supports the opt-in, Mods-folder installer, tool archive installer, managed tool discovery, and Decky tool launch path; automatic acquisition and patch execution remain separate runtime work.",
 	})
 	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
 		ID:      gameID + "-umm-support-dashlet",
@@ -74,14 +74,14 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 	})
 	message := "Vortex setup requires Unity Mod Manager to be installed from Nexus site mod " + ToolModID + " before " + gameName + " mods can function in game."
 	if opts.AutoDownload {
-		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM needs a reusable UMM tool download/install/launch flow before enabling this behavior."
+		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM can install and launch managed UMM tool archives, but still needs source-backed automatic acquisition and patch execution before enabling the full Vortex setup flow."
 	}
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 		ID:      gameID + "-umm-runtime",
 		Name:    gameName + " Unity Mod Manager runtime",
 		Trigger: "setup",
 		Status:  sdk.CapabilityStatusBlocked,
-		Message: message,
+		Message: message + " After launch, the user still needs UMM's own patch/install flow until DMM has a verified noninteractive UMM patch contract.",
 	})
 }
 

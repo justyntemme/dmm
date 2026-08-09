@@ -10161,6 +10161,23 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		t.Fatalf("completed tool action = %+v", completed)
 	}
 
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/umm/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /tools/umm/launch status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Job.Type != jobTypeExtensionToolAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["tool_kind"] != "managed-tool" || queued.Job.Payload["tool_installed_mod_id"] != strconv.FormatInt(installed.ID, 10) || queued.Job.Payload["tool_action_available"] != "true" {
+		t.Fatalf("managed tool launch job = %+v", queued.Job)
+	}
+	if !strings.Contains(queued.Job.Payload["tool_launch_options"], filepath.ToSlash(filepath.Join(stagingPath, "Managed", "UnityModManager.exe"))) {
+		t.Fatalf("managed tool launch options = %q", queued.Job.Payload["tool_launch_options"])
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/missing-loader/launch", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec = httptest.NewRecorder()
