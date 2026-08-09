@@ -24,9 +24,19 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
-				SteamAppIDs:  []string{"100", "100"},
-				NexusDomains: []string{"samplegame", "samplegame"},
-				VortexGameID: "samplegame",
+				SteamAppIDs:        []string{"100", "100"},
+				NexusDomains:       []string{"samplegame", "samplegame"},
+				VortexGameID:       "samplegame",
+				ExecutableRelative: "Game.exe",
+				RequiredFiles:      []string{"Game.exe", "Data/sample.dat"},
+				QueryModPath:       "Mods",
+				MergeMode:          sdk.GameMergeModeAll,
+				RequiresCleanup:    true,
+				StopPatterns:       []string{"(^|/)Data/.+"},
+				CompatibleDownloads: []string{
+					"sampleaddon",
+				},
+				Environment: map[string]string{"SteamAPPId": "100"},
 			})
 			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "Mods"})
 			r.RegisterInstaller(installplan.InstallerSpec{
@@ -84,6 +94,27 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				DefaultPrimary:   true,
 				ModTypes:         []string{"mod"},
 				ProviderModTypes: []string{"loader-mod"},
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                 "sample-editor",
+				Name:               "Sample Editor",
+				ShortName:          "Editor",
+				ExecutableRelative: "Tools/Editor.exe",
+				Arguments:          []string{"--game", "{game_path}"},
+				RequiredFiles:      []string{"Tools/Editor.exe"},
+				Relative:           true,
+				Exclusive:          true,
+			})
+			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+				ID:       "sample-epic-launcher",
+				Name:     "Epic Games launcher",
+				Launcher: "epic",
+				Store:    "epic",
+				AppID:    "sample-epic-app",
+				Parameters: []sdk.LauncherParameterSpec{{
+					Name:  "appExecName",
+					Value: "Game",
+				}},
 			})
 			r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 				ID:   "sample-version",
@@ -224,6 +255,15 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.ID != "sample" || summary.VortexGameID != "samplegame" {
 		t.Fatalf("summary identity = %+v", summary)
 	}
+	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll || !summary.Capabilities.GameRegistration.RequiresCleanup {
+		t.Fatalf("game registration metadata = %+v", summary.Capabilities.GameRegistration)
+	}
+	if !contains(summary.Capabilities.GameRegistration.RequiredFiles, "Data/sample.dat") || !contains(summary.Capabilities.GameRegistration.CompatibleDownloads, "sampleaddon") {
+		t.Fatalf("game registration lists = %+v", summary.Capabilities.GameRegistration)
+	}
+	if summary.Capabilities.GameRegistration.Environment["SteamAPPId"] != "100" {
+		t.Fatalf("game environment = %+v", summary.Capabilities.GameRegistration.Environment)
+	}
 	if summary.Version != "1.2.3" || summary.BuildID != "test-build" {
 		t.Fatalf("summary version/build = %+v", summary)
 	}
@@ -244,6 +284,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
+	}
+	if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].ID != "sample-editor" || !summary.Capabilities.SupportedTools[0].Relative || !summary.Capabilities.SupportedTools[0].Exclusive {
+		t.Fatalf("supported tool capabilities = %+v", summary.Capabilities.SupportedTools)
+	}
+	if len(summary.Capabilities.LauncherRequirements) != 1 || summary.Capabilities.LauncherRequirements[0].Launcher != "epic" || len(summary.Capabilities.LauncherRequirements[0].Parameters) != 1 {
+		t.Fatalf("launcher requirement capabilities = %+v", summary.Capabilities.LauncherRequirements)
 	}
 	if !summary.Capabilities.LaunchTools[0].Shell || !summary.Capabilities.LaunchTools[0].Detach || !summary.Capabilities.LaunchTools[0].Exclusive {
 		t.Fatalf("launch tool flags = %+v", summary.Capabilities.LaunchTools[0])
@@ -495,9 +541,18 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		Name: "Bad Game",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
-				SteamAppIDs:  []string{"200"},
-				NexusDomains: []string{"badgame"},
-				VortexGameID: "badgame",
+				SteamAppIDs:        []string{"200"},
+				NexusDomains:       []string{"badgame"},
+				VortexGameID:       "badgame",
+				ExecutableRelative: "../Bad.exe",
+				RequiredFiles:      []string{"/Bad.dat"},
+				QueryModPath:       "bad\npath",
+				MergeMode:          "maybe",
+				StopPatterns:       []string{""},
+				CompatibleDownloads: []string{
+					"bad\ndomain",
+				},
+				Environment: map[string]string{"bad\nkey": "value"},
 			})
 			r.RegisterModType(installplan.ModTypeSpec{ID: "mod", TargetRoot: "../outside", DeploymentMode: "magic"})
 			r.RegisterInstaller(installplan.InstallerSpec{
@@ -540,6 +595,29 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 					Arguments:          []string{"bad\rarg"},
 				}},
 			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                 "bad/tool",
+				Name:               "Bad Tool",
+				ExecutableRelative: "../tool.exe",
+				Arguments:          []string{"bad\narg"},
+				Environment:        map[string]string{"bad\nkey": "value"},
+				RequiredFiles:      []string{"/bad.exe"},
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:     "no-exe",
+				Name:   "No Executable",
+				Status: sdk.CapabilityStatusReady,
+			})
+			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+				ID:       "bad/launcher",
+				Name:     "Bad Launcher",
+				Launcher: "",
+				Store:    "bad\nstore",
+				AppID:    "bad\napp",
+				Parameters: []sdk.LauncherParameterSpec{{
+					Value: "missing-name",
+				}},
+			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
 				ID:               "plugins",
 				Name:             "Plugins",
@@ -573,6 +651,13 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 	for _, want := range []string{
 		"extension version is required",
 		"extension build id is required",
+		"game executable path: path traversal is not allowed",
+		"game required file: absolute path is not allowed",
+		"game query mod path must not contain control line breaks",
+		"game merge mode must be none, all, or dynamic",
+		"game stop pattern is required",
+		"game compatible download domain must not contain control line breaks",
+		"game environment entries must not contain control line breaks",
 		"mod type mod target root: path traversal is not allowed",
 		"mod type mod deployment mode must be direct or event-hook",
 		"installer bad:installer custom builder is required",
@@ -596,6 +681,17 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"launch tool tool variant platform id must be a simple identifier",
 		"launch tool tool variant executable path: path traversal is not allowed",
 		"launch tool tool variant argument: must not contain control line breaks",
+		"supported tool bad/tool id must be a simple identifier",
+		"supported tool bad/tool executable path: path traversal is not allowed",
+		"supported tool bad/tool argument: must not contain control line breaks",
+		"supported tool bad/tool required file: absolute path is not allowed",
+		"supported tool bad/tool environment entries must not contain control line breaks",
+		"supported tool no-exe executable path is required",
+		"launcher requirement bad/launcher id must be a simple identifier",
+		"launcher requirement bad/launcher launcher is required",
+		"launcher requirement bad/launcher store must not contain control line breaks",
+		"launcher requirement bad/launcher app id must not contain control line breaks",
+		"launcher requirement bad/launcher parameter name is required",
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or asterisked",
 		"plugin activation plugins plugin extension must be a file extension",
@@ -613,4 +709,13 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 			t.Fatalf("error %q did not contain %q", err.Error(), want)
 		}
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

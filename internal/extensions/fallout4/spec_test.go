@@ -123,9 +123,35 @@ func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 
 func TestExtensionRegistersVortexTools(t *testing.T) {
 	extension := gameext.MustCompileExtension(fallout4.Extension())
-	for _, id := range []string{"f4se", "FO4Edit", "WryeBash", "bodyslide"} {
+	if !containsLaunchTool(extension, "f4se") {
+		t.Fatalf("missing primary launch tool f4se in %+v", extension.LaunchTools)
+	}
+	for _, id := range []string{"FO4Edit", "WryeBash", "bodyslide"} {
+		if !containsSupportedTool(extension, id) {
+			t.Fatalf("missing supported tool %q in %+v", id, extension.SupportedTools)
+		}
+	}
+	if len(extension.LauncherRequirements) != 2 {
+		t.Fatalf("launcher requirements = %+v", extension.LauncherRequirements)
+	}
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Data" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
+		t.Fatalf("game metadata = %+v", summary.Capabilities.GameRegistration)
+	}
+	for _, id := range []string{"FO4Edit", "WryeBash", "bodyslide"} {
+		if !containsFeature(summary.Capabilities.SupportedTools, id) {
+			t.Fatalf("missing supported tool summary %q in %+v", id, summary.Capabilities.SupportedTools)
+		}
+	}
+	for _, id := range []string{"fallout4-xbox-launcher", "fallout4-epic-launcher"} {
 		if !containsLaunchTool(extension, id) {
-			t.Fatalf("missing launch tool %q in %+v", id, extension.LaunchTools)
+			continue
+		}
+		t.Fatalf("launcher requirement %q leaked into launch tools: %+v", id, extension.LaunchTools)
+	}
+	for _, id := range []string{"fallout4-xbox-launcher", "fallout4-epic-launcher"} {
+		if !containsFeature(summary.Capabilities.LauncherRequirements, id) {
+			t.Fatalf("missing launcher requirement %q in %+v", id, summary.Capabilities.LauncherRequirements)
 		}
 	}
 	primary, ok := gameext.NewRegistry([]gameext.Extension{extension}).PrimaryLaunchToolForSteamApp(fallout4.SteamAppID)
@@ -248,6 +274,15 @@ func contains(values []string, want string) bool {
 
 func containsLaunchTool(extension gameext.Extension, want string) bool {
 	for _, tool := range extension.LaunchTools {
+		if tool.ID == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSupportedTool(extension gameext.Extension, want string) bool {
+	for _, tool := range extension.SupportedTools {
 		if tool.ID == want {
 			return true
 		}

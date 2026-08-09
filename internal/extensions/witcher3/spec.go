@@ -26,9 +26,15 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{SteamAppID, SteamAppIDDX},
-		NexusDomains: []string{VortexGameID},
-		VortexGameID: VortexGameID,
+		SteamAppIDs:        []string{SteamAppID, SteamAppIDDX},
+		NexusDomains:       []string{VortexGameID},
+		VortexGameID:       VortexGameID,
+		ExecutableRelative: "bin/x64/witcher3.exe",
+		RequiredFiles:      []string{"bin/x64/witcher3.exe"},
+		QueryModPath:       "Mods",
+		MergeMode:          sdk.GameMergeModeAll,
+		RequiresCleanup:    true,
+		Environment:        map[string]string{"SteamAPPId": SteamAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -43,7 +49,7 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 scriptMergerToolID,
 		Name:               "W3 Script Merger",
 		ExecutableRelative: "WitcherScriptMerger.exe",

@@ -15,18 +15,29 @@ const (
 )
 
 type GameSpec struct {
-	VortexDir           string
-	ID                  string
-	Name                string
-	SteamAppIDs         []string
-	NexusDomains        []string
-	VortexStub          bool
-	AllowNoSteamAppID   bool
-	SupportModID        string
-	HasCustomInstallers bool
-	HasModTypes         bool
-	HasLoadOrder        bool
-	Notes               []string
+	VortexDir            string
+	ID                   string
+	Name                 string
+	SteamAppIDs          []string
+	NexusDomains         []string
+	VortexStub           bool
+	AllowNoSteamAppID    bool
+	SupportModID         string
+	ExecutableRelative   string
+	RequiredFiles        []string
+	QueryModPath         string
+	QueryModPathDynamic  bool
+	MergeMode            string
+	RequiresCleanup      bool
+	StopPatterns         []string
+	CompatibleDownloads  []string
+	Environment          map[string]string
+	SupportedTools       []sdk.SupportedToolSpec
+	LauncherRequirements []sdk.LauncherRequirementSpec
+	HasCustomInstallers  bool
+	HasModTypes          bool
+	HasLoadOrder         bool
+	Notes                []string
 }
 
 func Extensions() []sdk.Extension {
@@ -49,14 +60,29 @@ func Extensions() []sdk.Extension {
 
 func Register(r sdk.Registrar, game GameSpec) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:       game.SteamAppIDs,
-		NexusDomains:      nexusDomains(game),
-		VortexGameID:      game.ID,
-		VortexStub:        game.VortexStub,
-		AllowNoSteamAppID: game.AllowNoSteamAppID,
-		SupportModID:      game.SupportModID,
-		Deployment:        installplan.DeploymentSpec{AllowNeedsReviewState: true},
+		SteamAppIDs:         game.SteamAppIDs,
+		NexusDomains:        nexusDomains(game),
+		VortexGameID:        game.ID,
+		VortexStub:          game.VortexStub,
+		AllowNoSteamAppID:   game.AllowNoSteamAppID,
+		SupportModID:        game.SupportModID,
+		ExecutableRelative:  game.ExecutableRelative,
+		RequiredFiles:       game.RequiredFiles,
+		QueryModPath:        game.QueryModPath,
+		QueryModPathDynamic: game.QueryModPathDynamic,
+		MergeMode:           game.MergeMode,
+		RequiresCleanup:     game.RequiresCleanup,
+		StopPatterns:        game.StopPatterns,
+		CompatibleDownloads: game.CompatibleDownloads,
+		Environment:         game.Environment,
+		Deployment:          installplan.DeploymentSpec{AllowNeedsReviewState: true},
 	})
+	for _, tool := range game.SupportedTools {
+		r.RegisterSupportedTool(tool)
+	}
+	for _, requirement := range game.LauncherRequirements {
+		r.RegisterLauncherRequirement(requirement)
+	}
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex " + game.VortexDir + " game extension source",
 		URL:  sourceURL(game.VortexDir),
@@ -135,10 +161,52 @@ func sourceURL(dir string) string {
 	return "https://github.com/Nexus-Mods/Vortex/tree/" + vortexCommit + "/extensions/games/" + strings.TrimSpace(dir) + "/src"
 }
 
+func xRebirthStopPatterns() []string {
+	return []string{
+		`[^/]*\.cat$`,
+		`[^/]*\.dat$`,
+		`(^|/)t/[^/]+\.xml$`,
+		`(^|/)lang\.dat$`,
+		`(^|/)assets/.+`,
+		`(^|/)libraries/.+\.xml$`,
+		`(^|/)maps/.+\.xml$`,
+		`(^|/)md/.+\.xml$`,
+		`(^|/)cinematics/.+`,
+		`(^|/)aiscripts/.+\.xml$`,
+		`(^|/)voice-[^/]+/.+\.(ogg|wav)$`,
+		`(^|/)ui/.+`,
+		`(^|/)sfx/.+`,
+		`[^/]*\.cur$`,
+		`[^/]*\.(ogg|mp3|wav)$`,
+		`[^/]*\.(mkv|mp4|webm)$`,
+		`[^/]*\.ini$`,
+	}
+}
+
 var games = []GameSpec{
 	{VortexDir: "game-7daystodie", ID: "7daystodie", Name: "7 Days to Die", SteamAppIDs: []string{"251570"}, HasCustomInstallers: true, HasModTypes: true, HasLoadOrder: true},
 	{VortexDir: "game-ahatintime", ID: "ahatintime", Name: "A Hat in Time", SteamAppIDs: []string{"253230"}, HasCustomInstallers: true},
-	{VortexDir: "game-baldursgate3", ID: "baldursgate3", Name: "Baldur's Gate 3", SteamAppIDs: []string{"1086940"}, HasCustomInstallers: true, HasModTypes: true, HasLoadOrder: true},
+	{
+		VortexDir:           "game-baldursgate3",
+		ID:                  "baldursgate3",
+		Name:                "Baldur's Gate 3",
+		SteamAppIDs:         []string{"1086940"},
+		ExecutableRelative:  "bin/bg3_dx11.exe",
+		RequiredFiles:       []string{"bin/bg3_dx11.exe"},
+		QueryModPathDynamic: true,
+		MergeMode:           sdk.GameMergeModeAll,
+		Environment:         map[string]string{"SteamAPPId": "1086940"},
+		SupportedTools: []sdk.SupportedToolSpec{{
+			ID:                 "exevulkan",
+			Name:               "Baldur's Gate 3 (Vulkan)",
+			ExecutableRelative: "bin/bg3.exe",
+			RequiredFiles:      []string{"bin/bg3.exe"},
+			Relative:           true,
+		}},
+		HasCustomInstallers: true,
+		HasModTypes:         true,
+		HasLoadOrder:        true,
+	},
 	{VortexDir: "game-battletech", ID: "battletech", Name: "BattleTech", SteamAppIDs: []string{"637090"}, Notes: []string{"Vortex listens for added-files and copies single-owner generated files back into the staged mod; DMM needs source-reviewed added-files parity before claiming full support."}},
 	{VortexDir: "game-bladeandsorcery", ID: "bladeandsorcery", Name: "Blade & Sorcery", SteamAppIDs: []string{"629730"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-bloodstainedritualofthenight", ID: "bloodstainedritualofthenight", Name: "Bloodstained: Ritual of the Night", SteamAppIDs: []string{"692850"}, HasCustomInstallers: true, HasLoadOrder: true},
@@ -158,7 +226,18 @@ var games = []GameSpec{
 	{VortexDir: "game-dragons-dogma", ID: "dragonsdogma", Name: "Dragon's Dogma", SteamAppIDs: []string{"367500"}, HasCustomInstallers: true},
 	{VortexDir: "game-elex", ID: "elex", Name: "Elex", SteamAppIDs: []string{"411300"}, HasCustomInstallers: true},
 	{VortexDir: "game-enderal", ID: "enderal", Name: "Enderal", SteamAppIDs: []string{"933480"}},
-	{VortexDir: "game-factorio", ID: "factorio", Name: "Factorio", SteamAppIDs: []string{"427520"}},
+	{
+		VortexDir:           "game-factorio",
+		ID:                  "factorio",
+		Name:                "Factorio",
+		SteamAppIDs:         []string{"427520"},
+		ExecutableRelative:  "bin/x64/factorio",
+		RequiredFiles:       []string{"data/core/graphics/factorio.ico"},
+		QueryModPathDynamic: true,
+		MergeMode:           sdk.GameMergeModeAll,
+		Environment:         map[string]string{"SteamAPPId": "427520"},
+		Notes:               []string{"Vortex queryModPath is platform-dependent: Windows uses AppData/Factorio/mods and Linux uses ~/.factorio/mods. DMM needs a source-reviewed external user-data target root before claiming installer support."},
+	},
 	{VortexDir: "game-fallout3", ID: "fallout3", Name: "Fallout 3", SteamAppIDs: []string{"22300", "22370"}},
 	{VortexDir: "game-fallout4vr", ID: "fallout4vr", Name: "Fallout 4 VR", SteamAppIDs: []string{"611660"}, NexusDomains: []string{"fallout4"}, HasCustomInstallers: true},
 	{VortexDir: "game-falloutnv", ID: "falloutnv", Name: "Fallout: New Vegas", SteamAppIDs: []string{"22380"}, NexusDomains: []string{"newvegas"}, HasCustomInstallers: true},
@@ -195,7 +274,25 @@ var games = []GameSpec{
 	{VortexDir: "game-sims3", ID: "thesims3", Name: "The Sims 3", SteamAppIDs: []string{"47890"}},
 	{VortexDir: "game-sims4", ID: "thesims4", Name: "The Sims 4", AllowNoSteamAppID: true, HasCustomInstallers: true, HasModTypes: true, Notes: []string{"Vortex uses Windows registry/Documents discovery and purges profile-local resource.cfg paths through purge-mods-in-path; DMM needs source-reviewed Sims profile-file parity before full support."}},
 	{VortexDir: "game-skyrim", ID: "skyrim", Name: "Skyrim", SteamAppIDs: []string{"72850"}},
-	{VortexDir: "game-skyrimvr", ID: "skyrimvr", Name: "Skyrim VR", SteamAppIDs: []string{"611670"}, NexusDomains: []string{"skyrimspecialedition"}, HasCustomInstallers: true},
+	{
+		VortexDir:           "game-skyrimvr",
+		ID:                  "skyrimvr",
+		Name:                "Skyrim VR",
+		SteamAppIDs:         []string{"611670"},
+		NexusDomains:        []string{"skyrimspecialedition"},
+		ExecutableRelative:  "SkyrimVR.exe",
+		RequiredFiles:       []string{"SkyrimVR.exe"},
+		QueryModPath:        "Data",
+		MergeMode:           sdk.GameMergeModeAll,
+		CompatibleDownloads: []string{"skyrimse"},
+		Environment:         map[string]string{"SteamAPPId": "611670"},
+		SupportedTools: []sdk.SupportedToolSpec{
+			{ID: "TES5VREdit", Name: "TES5VREdit", ExecutableRelative: "TES5VREdit.exe", RequiredFiles: []string{"TES5VREdit.exe"}},
+			{ID: "FNIS", Name: "Fores New Idles in Skyrim", ShortName: "FNIS", ExecutableRelative: "GenerateFNISForUsers.exe", RequiredFiles: []string{"GenerateFNISForUsers.exe"}, Relative: true},
+		},
+		HasCustomInstallers: true,
+		Notes:               []string{"Vortex treats sksevr as a supported tool and default primary launcher; DMM needs a Skyrim VR script-extender launch-tool extension before enabling SKSEVR-dependent mods."},
+	},
 	{VortexDir: "game-starbound", ID: "starbound", Name: "Starbound", SteamAppIDs: []string{"211820"}},
 	{VortexDir: "game-starfield", ID: "starfield", Name: "Starfield", VortexStub: true, SupportModID: "634"},
 	{VortexDir: "game-stateofdecay", ID: "stateofdecay", Name: "State of Decay", SteamAppIDs: []string{"241540"}},
@@ -204,7 +301,24 @@ var games = []GameSpec{
 	{VortexDir: "game-survivingmars", ID: "survivingmars", Name: "Surviving Mars", SteamAppIDs: []string{"464920"}, HasCustomInstallers: true},
 	{VortexDir: "game-sw-kotor", ID: "kotor", Name: "Star Wars: Knights of the Old Republic", SteamAppIDs: []string{"32370"}, HasCustomInstallers: true, HasModTypes: true},
 	{VortexDir: "game-sw-kotor", ID: "kotor2", Name: "Star Wars: Knights of the Old Republic II", SteamAppIDs: []string{"208580"}, HasCustomInstallers: true, HasModTypes: true},
-	{VortexDir: "game-teamfortress2", ID: "teamfortress2", Name: "Team Fortress 2", SteamAppIDs: []string{"440"}, HasCustomInstallers: true},
+	{
+		VortexDir:          "game-teamfortress2",
+		ID:                 "teamfortress2",
+		Name:               "Team Fortress 2",
+		SteamAppIDs:        []string{"440"},
+		ExecutableRelative: "tf_win64.exe",
+		RequiredFiles:      []string{"tf_win64.exe", "tf/gameinfo.txt"},
+		QueryModPath:       "tf/custom",
+		MergeMode:          sdk.GameMergeModeAll,
+		Environment:        map[string]string{"SteamAPPId": "440"},
+		SupportedTools: []sdk.SupportedToolSpec{{
+			ID:                 "hammer",
+			Name:               "Hammer",
+			ExecutableRelative: "hammer.exe",
+			RequiredFiles:      []string{"hammer.exe"},
+		}},
+		HasCustomInstallers: true,
+	},
 	{VortexDir: "game-teso", ID: "teso", Name: "The Elder Scrolls Online", SteamAppIDs: []string{"306130"}, NexusDomains: []string{"elderscrollsonline"}},
 	{VortexDir: "game-torchlight2", ID: "torchlight2", Name: "Torchlight II", SteamAppIDs: []string{"200710"}, HasCustomInstallers: true},
 	{VortexDir: "game-totalwarthreekingdoms", ID: "totalwarthreekingdoms", Name: "Total War: Three Kingdoms", SteamAppIDs: []string{"779340"}, HasCustomInstallers: true},
@@ -216,5 +330,18 @@ var games = []GameSpec{
 	{VortexDir: "game-wolcen", ID: "wolcenlordsofmayhem", Name: "Wolcen: Lords of Mayhem", SteamAppIDs: []string{"424370"}, Notes: []string{"Vortex declares merge behavior for XML/MTL files; DMM needs source-reviewed merge runtime before full support."}},
 	{VortexDir: "game-worldoftanks", ID: "worldoftanks", Name: "World of Tanks", AllowNoSteamAppID: true, Notes: []string{"Vortex uses Wargaming registry discovery and versioned res_mods targeting; DMM needs a verified Linux/Deck discovery path before full support."}},
 	{VortexDir: "game-xcom2", ID: "xcom2", Name: "XCOM 2", SteamAppIDs: []string{"268500"}, HasCustomInstallers: true, HasLoadOrder: true, Notes: []string{"Vortex also registers War of the Chosen against Steam app 268500; DMM needs a multi-variant-per-app resolver before exposing both separately."}},
-	{VortexDir: "game-xrebirth", ID: "xrebirth", Name: "X Rebirth", SteamAppIDs: []string{"2870"}, HasCustomInstallers: true, Notes: []string{"Vortex combines a hand-written content.xml installer with table-declared installers and health checks; DMM needs source-reviewed XML metadata extraction and health-check runtime parity."}},
+	{
+		VortexDir:           "game-xrebirth",
+		ID:                  "xrebirth",
+		Name:                "X Rebirth",
+		SteamAppIDs:         []string{"2870"},
+		ExecutableRelative:  "XRebirth.exe",
+		RequiredFiles:       []string{"XRebirth.exe"},
+		QueryModPath:        "extensions",
+		MergeMode:           sdk.GameMergeModeAll,
+		StopPatterns:        xRebirthStopPatterns(),
+		Environment:         map[string]string{"SteamAPPId": "2870"},
+		HasCustomInstallers: true,
+		Notes:               []string{"Vortex combines a hand-written content.xml installer with table-declared installers and health checks; DMM needs source-reviewed XML metadata extraction and health-check runtime parity."},
+	},
 }

@@ -23,6 +23,13 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 	if len(bg3.InstallPlan.Installers) == 0 || len(bg3.InstallPlan.ModTypes) == 0 {
 		t.Fatalf("BG3 catalog extension did not expose blocked Vortex installer/mod-type metadata: %+v", bg3.InstallPlan)
 	}
+	bg3Summary := summaryByID(t, registry, "baldursgate3")
+	if bg3Summary.Capabilities.GameRegistration == nil || bg3Summary.Capabilities.GameRegistration.ExecutableRelative != "bin/bg3_dx11.exe" || !bg3Summary.Capabilities.GameRegistration.QueryModPathDynamic {
+		t.Fatalf("BG3 game metadata = %+v", bg3Summary.Capabilities.GameRegistration)
+	}
+	if !featureIDsContain(bg3Summary.Capabilities.SupportedTools, "exevulkan") {
+		t.Fatalf("BG3 supported tools = %+v", bg3Summary.Capabilities.SupportedTools)
+	}
 
 	stardew, ok := registry.ExtensionForSteamApp("413150")
 	if !ok {
@@ -56,6 +63,11 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 	if !containsString(nwn.NexusDomains, "neverwinter") {
 		t.Fatalf("Neverwinter domains = %+v, want neverwinter", nwn.NexusDomains)
 	}
+
+	xrebirth := summaryByID(t, registry, "xrebirth")
+	if xrebirth.Capabilities.GameRegistration == nil || xrebirth.Capabilities.GameRegistration.QueryModPath != "extensions" || len(xrebirth.Capabilities.GameRegistration.StopPatterns) == 0 {
+		t.Fatalf("X Rebirth metadata = %+v", xrebirth.Capabilities.GameRegistration)
+	}
 }
 
 func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.ExtensionSummary {
@@ -72,6 +84,15 @@ func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.Ext
 func summarySourceContains(summary gameext.ExtensionSummary, needle string) bool {
 	for _, source := range summary.Sources {
 		if strings.Contains(source.URL, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func featureIDsContain(features []gameext.FeatureSummary, id string) bool {
+	for _, feature := range features {
+		if feature.ID == id {
 			return true
 		}
 	}

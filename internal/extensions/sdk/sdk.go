@@ -42,6 +42,8 @@ type Registrar interface {
 	RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec)
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
 	RegisterLaunchTool(LaunchToolSpec)
+	RegisterSupportedTool(SupportedToolSpec)
+	RegisterLauncherRequirement(LauncherRequirementSpec)
 	RegisterGameVersionProvider(GameVersionProviderSpec)
 	RegisterGameInfoProvider(GameInfoProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
@@ -82,15 +84,42 @@ type Registrar interface {
 }
 
 type GameRegistration struct {
-	SteamAppIDs       []string
-	NexusDomains      []string
-	VortexGameID      string
-	VortexStub        bool
-	AllowNoSteamAppID bool
-	SupportModID      string
-	Deployment        installplan.DeploymentSpec
-	Workshop          SteamWorkshopSpec
+	SteamAppIDs         []string
+	NexusDomains        []string
+	VortexGameID        string
+	VortexStub          bool
+	AllowNoSteamAppID   bool
+	SupportModID        string
+	ExecutableRelative  string
+	RequiredFiles       []string
+	QueryModPath        string
+	QueryModPathDynamic bool
+	MergeMode           string
+	RequiresCleanup     bool
+	StopPatterns        []string
+	CompatibleDownloads []string
+	Environment         map[string]string
+	Deployment          installplan.DeploymentSpec
+	Workshop            SteamWorkshopSpec
 }
+
+type GameRegistrationMetadata struct {
+	ExecutableRelative  string
+	RequiredFiles       []string
+	QueryModPath        string
+	QueryModPathDynamic bool
+	MergeMode           string
+	RequiresCleanup     bool
+	StopPatterns        []string
+	CompatibleDownloads []string
+	Environment         map[string]string
+}
+
+const (
+	GameMergeModeNone    = "none"
+	GameMergeModeAll     = "all"
+	GameMergeModeDynamic = "dynamic"
+)
 
 type SteamWorkshopSpec struct {
 	AllowCoexistence bool
@@ -184,6 +213,39 @@ type LaunchToolSpec struct {
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
+}
+
+type SupportedToolSpec struct {
+	ID                 string
+	Name               string
+	ShortName          string
+	ExecutableRelative string
+	Arguments          []string
+	Environment        map[string]string
+	RequiredFiles      []string
+	Relative           bool
+	Shell              bool
+	Detach             bool
+	Exclusive          bool
+	DefaultPrimary     bool
+	Status             string
+	Message            string
+}
+
+type LauncherRequirementSpec struct {
+	ID         string
+	Name       string
+	Launcher   string
+	Store      string
+	AppID      string
+	Parameters []LauncherParameterSpec
+	Status     string
+	Message    string
+}
+
+type LauncherParameterSpec struct {
+	Name  string
+	Value string
 }
 
 const (

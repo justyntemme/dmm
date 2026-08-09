@@ -25,11 +25,14 @@ type Extension struct {
 	VortexStub        bool
 	AllowNoSteamAppID bool
 	SupportModID      string
+	GameMetadata      sdk.GameRegistrationMetadata
 
 	InstallPlan              installplan.GameSpec
 	RuntimeRequirements      gamehandler.GameSpec
 	InstallerChoices         []sdk.InstallerChoiceSpec
 	LaunchTools              []sdk.LaunchToolSpec
+	SupportedTools           []sdk.SupportedToolSpec
+	LauncherRequirements     []sdk.LauncherRequirementSpec
 	InstallPlatforms         []sdk.InstallPlatformSpec
 	GameVersionProviders     []sdk.GameVersionProviderSpec
 	GameInfoProviders        []sdk.GameInfoProviderSpec
@@ -76,6 +79,9 @@ type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
 type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
 type LaunchToolDynamicArgumentSpec = sdk.LaunchToolDynamicArgumentSpec
+type SupportedToolSpec = sdk.SupportedToolSpec
+type LauncherRequirementSpec = sdk.LauncherRequirementSpec
+type LauncherParameterSpec = sdk.LauncherParameterSpec
 type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
@@ -186,59 +192,64 @@ type ExtensionSummary struct {
 }
 
 type ExtensionCapabilities struct {
-	ModTypes                 []FeatureSummary `json:"mod_types,omitempty"`
-	Installers               []FeatureSummary `json:"installers,omitempty"`
-	UnsupportedInstallers    []FeatureSummary `json:"unsupported_installers,omitempty"`
-	InstallerChoices         []FeatureSummary `json:"installer_choices,omitempty"`
-	RuntimeRequirements      []FeatureSummary `json:"runtime_requirements,omitempty"`
-	LaunchTools              []FeatureSummary `json:"launch_tools,omitempty"`
-	InstallPlatforms         []FeatureSummary `json:"install_platforms,omitempty"`
-	GameVersions             []FeatureSummary `json:"game_versions,omitempty"`
-	GameInfoProviders        []FeatureSummary `json:"game_info_providers,omitempty"`
-	PluginActivations        []FeatureSummary `json:"plugin_activations,omitempty"`
-	UnmanagedMarkers         []FeatureSummary `json:"unmanaged_markers,omitempty"`
-	ConflictIgnores          []FeatureSummary `json:"conflict_ignores,omitempty"`
-	DeployIgnores            []FeatureSummary `json:"deploy_ignores,omitempty"`
-	PackedArchiveMutations   []FeatureSummary `json:"packed_archive_mutations,omitempty"`
-	TargetRoots              []FeatureSummary `json:"target_roots,omitempty"`
-	SteamWorkshop            *WorkshopSummary `json:"steam_workshop,omitempty"`
-	Merges                   []FeatureSummary `json:"merges,omitempty"`
-	LoadOrders               []FeatureSummary `json:"load_orders,omitempty"`
-	ArchiveTypes             []FeatureSummary `json:"archive_types,omitempty"`
-	Interpreters             []FeatureSummary `json:"interpreters,omitempty"`
-	GameStores               []FeatureSummary `json:"game_stores,omitempty"`
-	GameSetups               []FeatureSummary `json:"game_setups,omitempty"`
-	ExtensionActions         []FeatureSummary `json:"extension_actions,omitempty"`
-	ExtensionSettings        []FeatureSummary `json:"extension_settings,omitempty"`
-	ExtensionTests           []FeatureSummary `json:"extension_tests,omitempty"`
-	ExtensionToDos           []FeatureSummary `json:"extension_todos,omitempty"`
-	ExtensionDialogs         []FeatureSummary `json:"extension_dialogs,omitempty"`
-	ExtensionDashlets        []FeatureSummary `json:"extension_dashlets,omitempty"`
-	ExtensionMainPages       []FeatureSummary `json:"extension_main_pages,omitempty"`
-	ExtensionTableAttrs      []FeatureSummary `json:"extension_table_attributes,omitempty"`
-	ExtensionLoadOrderPages  []FeatureSummary `json:"extension_load_order_pages,omitempty"`
-	ExtensionActionChecks    []FeatureSummary `json:"extension_action_checks,omitempty"`
-	ExtensionControlWrappers []FeatureSummary `json:"extension_control_wrappers,omitempty"`
-	ExtensionAPIs            []FeatureSummary `json:"extension_apis,omitempty"`
-	ProfileFeatures          []FeatureSummary `json:"profile_features,omitempty"`
-	ProfileFiles             []FeatureSummary `json:"profile_files,omitempty"`
-	CollectionFeatures       []FeatureSummary `json:"collection_features,omitempty"`
-	StateReducers            []FeatureSummary `json:"state_reducers,omitempty"`
-	StateStores              []FeatureSummary `json:"state_stores,omitempty"`
-	StatePersistors          []FeatureSummary `json:"state_persistors,omitempty"`
-	StateMigrations          []FeatureSummary `json:"state_migrations,omitempty"`
-	HealthChecks             []FeatureSummary `json:"health_checks,omitempty"`
-	AttributeExtractors      []FeatureSummary `json:"attribute_extractors,omitempty"`
-	StartHooks               []FeatureSummary `json:"start_hooks,omitempty"`
-	EventHandlers            []FeatureSummary `json:"event_handlers,omitempty"`
+	ModTypes                 []FeatureSummary         `json:"mod_types,omitempty"`
+	Installers               []FeatureSummary         `json:"installers,omitempty"`
+	UnsupportedInstallers    []FeatureSummary         `json:"unsupported_installers,omitempty"`
+	InstallerChoices         []FeatureSummary         `json:"installer_choices,omitempty"`
+	RuntimeRequirements      []FeatureSummary         `json:"runtime_requirements,omitempty"`
+	LaunchTools              []FeatureSummary         `json:"launch_tools,omitempty"`
+	SupportedTools           []FeatureSummary         `json:"supported_tools,omitempty"`
+	LauncherRequirements     []FeatureSummary         `json:"launcher_requirements,omitempty"`
+	InstallPlatforms         []FeatureSummary         `json:"install_platforms,omitempty"`
+	GameVersions             []FeatureSummary         `json:"game_versions,omitempty"`
+	GameInfoProviders        []FeatureSummary         `json:"game_info_providers,omitempty"`
+	PluginActivations        []FeatureSummary         `json:"plugin_activations,omitempty"`
+	UnmanagedMarkers         []FeatureSummary         `json:"unmanaged_markers,omitempty"`
+	ConflictIgnores          []FeatureSummary         `json:"conflict_ignores,omitempty"`
+	DeployIgnores            []FeatureSummary         `json:"deploy_ignores,omitempty"`
+	PackedArchiveMutations   []FeatureSummary         `json:"packed_archive_mutations,omitempty"`
+	TargetRoots              []FeatureSummary         `json:"target_roots,omitempty"`
+	SteamWorkshop            *WorkshopSummary         `json:"steam_workshop,omitempty"`
+	Merges                   []FeatureSummary         `json:"merges,omitempty"`
+	LoadOrders               []FeatureSummary         `json:"load_orders,omitempty"`
+	ArchiveTypes             []FeatureSummary         `json:"archive_types,omitempty"`
+	Interpreters             []FeatureSummary         `json:"interpreters,omitempty"`
+	GameStores               []FeatureSummary         `json:"game_stores,omitempty"`
+	GameSetups               []FeatureSummary         `json:"game_setups,omitempty"`
+	ExtensionActions         []FeatureSummary         `json:"extension_actions,omitempty"`
+	ExtensionSettings        []FeatureSummary         `json:"extension_settings,omitempty"`
+	ExtensionTests           []FeatureSummary         `json:"extension_tests,omitempty"`
+	ExtensionToDos           []FeatureSummary         `json:"extension_todos,omitempty"`
+	ExtensionDialogs         []FeatureSummary         `json:"extension_dialogs,omitempty"`
+	ExtensionDashlets        []FeatureSummary         `json:"extension_dashlets,omitempty"`
+	ExtensionMainPages       []FeatureSummary         `json:"extension_main_pages,omitempty"`
+	ExtensionTableAttrs      []FeatureSummary         `json:"extension_table_attributes,omitempty"`
+	ExtensionLoadOrderPages  []FeatureSummary         `json:"extension_load_order_pages,omitempty"`
+	ExtensionActionChecks    []FeatureSummary         `json:"extension_action_checks,omitempty"`
+	ExtensionControlWrappers []FeatureSummary         `json:"extension_control_wrappers,omitempty"`
+	ExtensionAPIs            []FeatureSummary         `json:"extension_apis,omitempty"`
+	ProfileFeatures          []FeatureSummary         `json:"profile_features,omitempty"`
+	ProfileFiles             []FeatureSummary         `json:"profile_files,omitempty"`
+	CollectionFeatures       []FeatureSummary         `json:"collection_features,omitempty"`
+	StateReducers            []FeatureSummary         `json:"state_reducers,omitempty"`
+	StateStores              []FeatureSummary         `json:"state_stores,omitempty"`
+	StatePersistors          []FeatureSummary         `json:"state_persistors,omitempty"`
+	StateMigrations          []FeatureSummary         `json:"state_migrations,omitempty"`
+	HealthChecks             []FeatureSummary         `json:"health_checks,omitempty"`
+	AttributeExtractors      []FeatureSummary         `json:"attribute_extractors,omitempty"`
+	StartHooks               []FeatureSummary         `json:"start_hooks,omitempty"`
+	EventHandlers            []FeatureSummary         `json:"event_handlers,omitempty"`
+	GameRegistration         *GameRegistrationSummary `json:"game_registration,omitempty"`
 }
 
 type FeatureSummary struct {
 	ID                 string                   `json:"id"`
 	Name               string                   `json:"name,omitempty"`
+	ShortName          string                   `json:"short_name,omitempty"`
 	DeploymentMode     string                   `json:"deployment_mode,omitempty"`
 	ExecutableRelative string                   `json:"executable_relative,omitempty"`
 	Arguments          []string                 `json:"arguments,omitempty"`
+	Environment        map[string]string        `json:"environment,omitempty"`
 	RequiredFiles      []string                 `json:"required_files,omitempty"`
 	DynamicInputs      []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
 	DynamicArguments   []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
@@ -272,6 +283,28 @@ type FeatureSummary struct {
 	GameID             string                   `json:"game_id,omitempty"`
 	Tags               []string                 `json:"tags,omitempty"`
 	CacheSeconds       int                      `json:"cache_seconds,omitempty"`
+	Launcher           string                   `json:"launcher,omitempty"`
+	Store              string                   `json:"store,omitempty"`
+	AppID              string                   `json:"app_id,omitempty"`
+	Parameters         []LauncherParameter      `json:"parameters,omitempty"`
+	Relative           bool                     `json:"relative,omitempty"`
+}
+
+type LauncherParameter struct {
+	Name  string `json:"name,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+type GameRegistrationSummary struct {
+	ExecutableRelative  string            `json:"executable_relative,omitempty"`
+	RequiredFiles       []string          `json:"required_files,omitempty"`
+	QueryModPath        string            `json:"query_mod_path,omitempty"`
+	QueryModPathDynamic bool              `json:"query_mod_path_dynamic,omitempty"`
+	MergeMode           string            `json:"merge_mode,omitempty"`
+	RequiresCleanup     bool              `json:"requires_cleanup,omitempty"`
+	StopPatterns        []string          `json:"stop_patterns,omitempty"`
+	CompatibleDownloads []string          `json:"compatible_downloads,omitempty"`
+	Environment         map[string]string `json:"environment,omitempty"`
 }
 
 type LaunchToolDynamicInput struct {
@@ -870,6 +903,9 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		CoverageLabel:     coverageLabel,
 		Sources:           append([]SourceRef(nil), extension.Sources...),
 	}
+	if gameSummary, ok := summarizeGameRegistration(extension.GameMetadata); ok {
+		summary.Capabilities.GameRegistration = &gameSummary
+	}
 	for _, modType := range extension.InstallPlan.ModTypes {
 		mode := strings.TrimSpace(modType.DeploymentMode)
 		if mode == "" {
@@ -921,6 +957,36 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			DefaultPrimary:     tool.DefaultPrimary,
 			ModTypes:           appendClean([]string{}, tool.ModTypes...),
 			ProviderModTypes:   appendClean([]string{}, tool.ProviderModTypes...),
+		})
+	}
+	for _, tool := range extension.SupportedTools {
+		summary.Capabilities.SupportedTools = append(summary.Capabilities.SupportedTools, FeatureSummary{
+			ID:                 tool.ID,
+			Name:               tool.Name,
+			ShortName:          tool.ShortName,
+			ExecutableRelative: tool.ExecutableRelative,
+			Arguments:          append([]string(nil), tool.Arguments...),
+			Environment:        copyStringMap(tool.Environment),
+			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+			Relative:           tool.Relative,
+			Shell:              tool.Shell,
+			Detach:             tool.Detach,
+			Exclusive:          tool.Exclusive,
+			DefaultPrimary:     tool.DefaultPrimary,
+			Status:             defaultString(tool.Status, sdk.CapabilityStatusReady),
+			Message:            tool.Message,
+		})
+	}
+	for _, requirement := range extension.LauncherRequirements {
+		summary.Capabilities.LauncherRequirements = append(summary.Capabilities.LauncherRequirements, FeatureSummary{
+			ID:         requirement.ID,
+			Name:       requirement.Name,
+			Launcher:   requirement.Launcher,
+			Store:      requirement.Store,
+			AppID:      requirement.AppID,
+			Parameters: launcherParameters(requirement.Parameters),
+			Status:     defaultString(requirement.Status, sdk.CapabilityStatusReady),
+			Message:    requirement.Message,
 		})
 	}
 	for _, platform := range extension.InstallPlatforms {
@@ -1234,6 +1300,8 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
+	sortFeatureSummaries(summary.Capabilities.SupportedTools)
+	sortFeatureSummaries(summary.Capabilities.LauncherRequirements)
 	sortFeatureSummaries(summary.Capabilities.InstallPlatforms)
 	sortFeatureSummaries(summary.Capabilities.GameVersions)
 	sortFeatureSummaries(summary.Capabilities.GameInfoProviders)
@@ -1310,6 +1378,62 @@ func HasSupportedInstallers(extension Extension) bool {
 		}
 	}
 	return false
+}
+
+func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegistrationSummary, bool) {
+	summary := GameRegistrationSummary{
+		ExecutableRelative:  strings.TrimSpace(metadata.ExecutableRelative),
+		RequiredFiles:       appendClean([]string{}, metadata.RequiredFiles...),
+		QueryModPath:        strings.TrimSpace(metadata.QueryModPath),
+		QueryModPathDynamic: metadata.QueryModPathDynamic,
+		MergeMode:           strings.TrimSpace(metadata.MergeMode),
+		RequiresCleanup:     metadata.RequiresCleanup,
+		StopPatterns:        appendClean([]string{}, metadata.StopPatterns...),
+		CompatibleDownloads: appendClean([]string{}, metadata.CompatibleDownloads...),
+		Environment:         copyStringMap(metadata.Environment),
+	}
+	ok := summary.ExecutableRelative != "" ||
+		len(summary.RequiredFiles) > 0 ||
+		summary.QueryModPath != "" ||
+		summary.QueryModPathDynamic ||
+		summary.MergeMode != "" ||
+		summary.RequiresCleanup ||
+		len(summary.StopPatterns) > 0 ||
+		len(summary.CompatibleDownloads) > 0 ||
+		len(summary.Environment) > 0
+	return summary, ok
+}
+
+func launcherParameters(parameters []sdk.LauncherParameterSpec) []LauncherParameter {
+	if len(parameters) == 0 {
+		return nil
+	}
+	out := make([]LauncherParameter, 0, len(parameters))
+	for _, parameter := range parameters {
+		out = append(out, LauncherParameter{
+			Name:  strings.TrimSpace(parameter.Name),
+			Value: strings.TrimSpace(parameter.Value),
+		})
+	}
+	return out
+}
+
+func copyStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func launchToolDynamicInputs(inputs []sdk.LaunchToolDynamicInputSpec) []LaunchToolDynamicInput {

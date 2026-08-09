@@ -47,6 +47,17 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.VortexStub = spec.VortexStub
 	r.extension.AllowNoSteamAppID = spec.AllowNoSteamAppID
 	r.extension.SupportModID = strings.TrimSpace(spec.SupportModID)
+	r.extension.GameMetadata = sdk.GameRegistrationMetadata{
+		ExecutableRelative:  spec.ExecutableRelative,
+		RequiredFiles:       append([]string(nil), spec.RequiredFiles...),
+		QueryModPath:        spec.QueryModPath,
+		QueryModPathDynamic: spec.QueryModPathDynamic,
+		MergeMode:           spec.MergeMode,
+		RequiresCleanup:     spec.RequiresCleanup,
+		StopPatterns:        append([]string(nil), spec.StopPatterns...),
+		CompatibleDownloads: append([]string(nil), spec.CompatibleDownloads...),
+		Environment:         copyRegistrationMap(spec.Environment),
+	}
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.RuntimeRequirements.SteamAppID = firstClean(spec.SteamAppIDs)
 	if gameID := strings.TrimSpace(spec.VortexGameID); gameID != "" {
@@ -107,6 +118,20 @@ func (r *Registrar) RegisterRuntimeMetadataDependencies(spec sdk.RuntimeDependen
 
 func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
+}
+
+func (r *Registrar) RegisterSupportedTool(spec sdk.SupportedToolSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.SupportedTools = append(r.extension.SupportedTools, spec)
+}
+
+func (r *Registrar) RegisterLauncherRequirement(spec sdk.LauncherRequirementSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.LauncherRequirements = append(r.extension.LauncherRequirements, spec)
 }
 
 func (r *Registrar) RegisterGameVersionProvider(spec sdk.GameVersionProviderSpec) {
@@ -404,10 +429,13 @@ func validateExtension(extension Extension) error {
 		errs = append(errs, errors.New("extension must register at least one Nexus domain, Steam Workshop capability, or verified source reference"))
 	}
 	errs = append(errs, validateInstallPlanSpec(extension.InstallPlan)...)
+	errs = append(errs, validateGameRegistrationMetadata(extension.GameMetadata)...)
 	errs = append(errs, validateInstallerChoices(extension.InstallerChoices, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateInstallPlatforms(extension.InstallPlatforms)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
+	errs = append(errs, validateSupportedTools(extension.SupportedTools)...)
+	errs = append(errs, validateLauncherRequirements(extension.LauncherRequirements)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
 	errs = append(errs, validateGameInfoProviders(extension.GameInfoProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
@@ -501,6 +529,8 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.InstallPlatforms) > 0 ||
 		len(extension.RuntimeRequirements.RuntimeRequirements) > 0 ||
 		len(extension.LaunchTools) > 0 ||
+		len(extension.SupportedTools) > 0 ||
+		len(extension.LauncherRequirements) > 0 ||
 		len(extension.GameInfoProviders) > 0 ||
 		len(extension.PluginActivations) > 0 ||
 		len(extension.UnmanagedMarkers) > 0 ||
@@ -1016,6 +1046,139 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 	return errs
 }
 
+func validateSupportedTools(tools []sdk.SupportedToolSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, tool := range tools {
+		id := strings.TrimSpace(tool.ID)
+		if id == "" {
+			errs = append(errs, errors.New("supported tool id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("supported tool", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("supported tool "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(tool.Name) == "" {
+			errs = append(errs, errors.New("supported tool "+id+" name is required"))
+		}
+		status := strings.TrimSpace(tool.Status)
+		if strings.TrimSpace(tool.ExecutableRelative) == "" && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
+			errs = append(errs, errors.New("supported tool "+id+" executable path is required"))
+		}
+		if strings.TrimSpace(tool.ExecutableRelative) != "" {
+			if err := validateRelativePath(tool.ExecutableRelative); err != nil {
+				errs = append(errs, errors.New("supported tool "+id+" executable path: "+err.Error()))
+			}
+		}
+		if err := validateCapabilityStatus("supported tool", id, tool.Status, tool.Message); err != nil {
+			errs = append(errs, err)
+		}
+		if strings.ContainsAny(tool.ShortName, "\x00\r\n") {
+			errs = append(errs, errors.New("supported tool "+id+" short name must not contain control line breaks"))
+		}
+		for _, argument := range tool.Arguments {
+			if err := validateLaunchArgument(argument); err != nil {
+				errs = append(errs, errors.New("supported tool "+id+" argument: "+err.Error()))
+			}
+		}
+		for _, path := range tool.RequiredFiles {
+			if err := validateRelativePath(path); err != nil {
+				errs = append(errs, errors.New("supported tool "+id+" required file: "+err.Error()))
+			}
+		}
+		errs = append(errs, validateStringMap("supported tool "+id+" environment", tool.Environment)...)
+	}
+	return errs
+}
+
+func validateLauncherRequirements(specs []sdk.LauncherRequirementSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("launcher requirement id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("launcher requirement", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("launcher requirement "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("launcher requirement "+id+" name is required"))
+		}
+		if strings.TrimSpace(spec.Launcher) == "" {
+			errs = append(errs, errors.New("launcher requirement "+id+" launcher is required"))
+		}
+		if strings.ContainsAny(spec.Launcher, "\x00\r\n") {
+			errs = append(errs, errors.New("launcher requirement "+id+" launcher must not contain control line breaks"))
+		}
+		if strings.ContainsAny(spec.Store, "\x00\r\n") {
+			errs = append(errs, errors.New("launcher requirement "+id+" store must not contain control line breaks"))
+		}
+		if strings.ContainsAny(spec.AppID, "\x00\r\n") {
+			errs = append(errs, errors.New("launcher requirement "+id+" app id must not contain control line breaks"))
+		}
+		if err := validateCapabilityStatus("launcher requirement", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
+		for _, parameter := range spec.Parameters {
+			if strings.TrimSpace(parameter.Name) == "" {
+				errs = append(errs, errors.New("launcher requirement "+id+" parameter name is required"))
+			}
+			if strings.ContainsAny(parameter.Name, "\x00\r\n") || strings.ContainsAny(parameter.Value, "\x00\r\n") {
+				errs = append(errs, errors.New("launcher requirement "+id+" parameter must not contain control line breaks"))
+			}
+		}
+	}
+	return errs
+}
+
+func validateGameRegistrationMetadata(metadata sdk.GameRegistrationMetadata) []error {
+	var errs []error
+	if strings.TrimSpace(metadata.ExecutableRelative) != "" {
+		if err := validateRelativePath(metadata.ExecutableRelative); err != nil {
+			errs = append(errs, errors.New("game executable path: "+err.Error()))
+		}
+	}
+	for _, path := range metadata.RequiredFiles {
+		if err := validateRelativePath(path); err != nil {
+			errs = append(errs, errors.New("game required file: "+err.Error()))
+		}
+	}
+	if strings.ContainsAny(metadata.QueryModPath, "\x00\r\n") {
+		errs = append(errs, errors.New("game query mod path must not contain control line breaks"))
+	}
+	switch strings.TrimSpace(metadata.MergeMode) {
+	case "", sdk.GameMergeModeNone, sdk.GameMergeModeAll, sdk.GameMergeModeDynamic:
+	default:
+		errs = append(errs, errors.New("game merge mode must be none, all, or dynamic"))
+	}
+	for _, pattern := range metadata.StopPatterns {
+		if strings.TrimSpace(pattern) == "" {
+			errs = append(errs, errors.New("game stop pattern is required"))
+		}
+		if strings.ContainsAny(pattern, "\x00\r\n") {
+			errs = append(errs, errors.New("game stop pattern must not contain control line breaks"))
+		}
+	}
+	for _, domain := range metadata.CompatibleDownloads {
+		if strings.TrimSpace(domain) == "" {
+			errs = append(errs, errors.New("game compatible download domain is required"))
+		}
+		if strings.ContainsAny(domain, "\x00\r\n") {
+			errs = append(errs, errors.New("game compatible download domain must not contain control line breaks"))
+		}
+	}
+	errs = append(errs, validateStringMap("game environment", metadata.Environment)...)
+	return errs
+}
+
 func validateLaunchToolDynamicArguments(toolID string, args []sdk.LaunchToolDynamicArgumentSpec) []error {
 	var errs []error
 	for _, arg := range args {
@@ -1105,6 +1268,19 @@ func validateLaunchArgument(argument string) error {
 	return nil
 }
 
+func validateStringMap(kind string, values map[string]string) []error {
+	var errs []error
+	for key, value := range values {
+		if strings.TrimSpace(key) == "" {
+			errs = append(errs, errors.New(kind+" key is required"))
+		}
+		if strings.ContainsAny(key, "\x00\r\n") || strings.ContainsAny(value, "\x00\r\n") {
+			errs = append(errs, errors.New(kind+" entries must not contain control line breaks"))
+		}
+	}
+	return errs
+}
+
 func validateConflictPattern(pattern string) error {
 	pattern = strings.TrimSpace(filepath.ToSlash(pattern))
 	if pattern == "" {
@@ -1182,6 +1358,17 @@ func defaultString(value, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func copyRegistrationMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func validateNamedSpecs[T any](kind string, specs []T, id func(T) string) []error {

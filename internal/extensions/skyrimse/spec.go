@@ -30,9 +30,14 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{SteamAppID},
-		NexusDomains: []string{NexusDomain},
-		VortexGameID: VortexGameID,
+		SteamAppIDs:        []string{SteamAppID},
+		NexusDomains:       []string{NexusDomain},
+		VortexGameID:       VortexGameID,
+		ExecutableRelative: "SkyrimSE.exe",
+		RequiredFiles:      []string{"SkyrimSE.exe"},
+		QueryModPath:       "Data",
+		MergeMode:          sdk.GameMergeModeAll,
+		Environment:        map[string]string{"SteamAPPId": SteamAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -84,31 +89,31 @@ func Register(r sdk.Registrar) {
 		Name:     "Existing Skyrim Special Edition plugin list",
 		Patterns: []string{"plugins.txt", "loadorder.txt"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "SSEEdit",
 		Name:               "SSEEdit",
 		ExecutableRelative: "SSEEdit.exe",
 		RequiredFiles:      []string{"SSEEdit.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "WryeBash",
 		Name:               "Wrye Bash",
 		ExecutableRelative: "Wrye Bash.exe",
 		RequiredFiles:      []string{"Wrye Bash.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "FNIS",
 		Name:               "Fores New Idles in Skyrim",
 		ExecutableRelative: "GenerateFNISForUsers.exe",
 		RequiredFiles:      []string{"GenerateFNISForUsers.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "bodyslide",
 		Name:               "BodySlide",
 		ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide.exe",
 		RequiredFiles:      []string{"Data/CalienteTools/BodySlide/BodySlide.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "creation-kit-64",
 		Name:               "Creation Kit",
 		ExecutableRelative: "CreationKit.exe",

@@ -110,9 +110,21 @@ func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 
 func TestExtensionRegistersVortexTools(t *testing.T) {
 	extension := gameext.MustCompileExtension(skyrimse.Extension())
-	for _, id := range []string{"skse64", "SSEEdit", "WryeBash", "FNIS", "bodyslide", "creation-kit-64"} {
-		if !containsLaunchTool(extension, id) {
-			t.Fatalf("missing launch tool %q in %+v", id, extension.LaunchTools)
+	if !containsLaunchTool(extension, "skse64") {
+		t.Fatalf("missing primary launch tool skse64 in %+v", extension.LaunchTools)
+	}
+	for _, id := range []string{"SSEEdit", "WryeBash", "FNIS", "bodyslide", "creation-kit-64"} {
+		if !containsSupportedTool(extension, id) {
+			t.Fatalf("missing supported tool %q in %+v", id, extension.SupportedTools)
+		}
+	}
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Data" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
+		t.Fatalf("game metadata = %+v", summary.Capabilities.GameRegistration)
+	}
+	for _, id := range []string{"SSEEdit", "WryeBash", "FNIS", "bodyslide", "creation-kit-64"} {
+		if !containsFeature(summary.Capabilities.SupportedTools, id) {
+			t.Fatalf("missing supported tool summary %q in %+v", id, summary.Capabilities.SupportedTools)
 		}
 	}
 	primary, ok := gameext.NewRegistry([]gameext.Extension{extension}).PrimaryLaunchToolForSteamApp(skyrimse.SteamAppID)
@@ -236,6 +248,15 @@ func containsFeature(features []gameext.FeatureSummary, want string) bool {
 
 func containsLaunchTool(extension gameext.Extension, want string) bool {
 	for _, tool := range extension.LaunchTools {
+		if tool.ID == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSupportedTool(extension gameext.Extension, want string) bool {
+	for _, tool := range extension.SupportedTools {
 		if tool.ID == want {
 			return true
 		}

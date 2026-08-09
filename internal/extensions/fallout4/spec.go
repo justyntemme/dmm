@@ -30,9 +30,15 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{SteamAppID},
-		NexusDomains: []string{VortexGameID, FalloutLondonNexusDomain},
-		VortexGameID: VortexGameID,
+		SteamAppIDs:         []string{SteamAppID},
+		NexusDomains:        []string{VortexGameID, FalloutLondonNexusDomain},
+		VortexGameID:        VortexGameID,
+		ExecutableRelative:  "Fallout4.exe",
+		RequiredFiles:       []string{"Fallout4.exe"},
+		QueryModPath:        "Data",
+		MergeMode:           sdk.GameMergeModeAll,
+		CompatibleDownloads: []string{FalloutLondonNexusDomain},
+		Environment:         map[string]string{"SteamAPPId": SteamAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -74,6 +80,24 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{"fallout4-script-extender"},
 		ProviderModTypes:   []string{"fallout4-script-extender"},
 	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "fallout4-xbox-launcher",
+		Name:     "Xbox app launcher",
+		Launcher: "xbox",
+		Store:    "xbox",
+		AppID:    "BethesdaSoftworks.Fallout4-PC",
+		Parameters: []sdk.LauncherParameterSpec{{
+			Name:  "appExecName",
+			Value: "Game",
+		}},
+	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "fallout4-epic-launcher",
+		Name:     "Epic Games launcher",
+		Launcher: "epic",
+		Store:    "epic",
+		AppID:    "61d52ce4d09d41e48800c22784d13ae8",
+	})
 	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
 		ID:       "fallout4-f4se-loader",
 		Name:     "Existing Fallout 4 Script Extender loader",
@@ -84,19 +108,19 @@ func Register(r sdk.Registrar) {
 		Name:     "Existing Fallout 4 plugin list",
 		Patterns: []string{"plugins.txt", "loadorder.txt"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "FO4Edit",
 		Name:               "FO4Edit",
 		ExecutableRelative: "FO4Edit.exe",
 		RequiredFiles:      []string{"FO4Edit.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "WryeBash",
 		Name:               "Wrye Bash",
 		ExecutableRelative: "Wrye Bash.exe",
 		RequiredFiles:      []string{"Wrye Bash.exe"},
 	})
-	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "bodyslide",
 		Name:               "BodySlide",
 		ExecutableRelative: "Data/Tools/BodySlide/BodySlide.exe",

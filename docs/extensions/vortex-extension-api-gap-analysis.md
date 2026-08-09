@@ -60,6 +60,9 @@ DMM currently has first-party Go extension registration for:
 - Plugin activation, unmanaged markers, conflict ignores, deploy ignores, packed archive mutation declarations, merge/load-order summaries, and lifecycle event handlers.
 - Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
 - Extension-declared archive type, game store, game version provider, and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines or platform integrations are executable.
+- Extension-declared Vortex `registerGame` metadata now covers executable path, required files, static or dynamic query-mod-path signals, merge mode, cleanup requirement, stop patterns, compatible download domains, and environment key/value metadata.
+- Vortex `supportedTools` are modeled separately from DMM primary/wrapper launch tools, so external tools such as FO4Edit, Wrye Bash, Creation Kit, Hammer, and Witcher Script Merger no longer pollute launch-option decisions.
+- Vortex `requiresLauncher` can be represented as source-backed launcher requirement metadata for store-specific launcher facts. Runtime application is still a separate capability.
 - Extension-declared UI/state registration surfaces now exist for source-backed metadata: actions, action checks, control wrappers, dialogs, dashlets, main pages, table attributes, load-order pages, profile files, reducers, persistors, start hooks, settings, tests, todos, state migrations, health checks, attribute extractors, and generic game-info providers.
 - Every bundled Vortex game extension now has a source-backed DMM counterpart. Rich MVP targets remain dedicated first-party Go game extensions, while `internal/extensions/vortexgamecatalog` covers the remaining Vortex games as metadata/research-blocked entries with verified game IDs, Nexus domains, Steam app IDs where Vortex declares them, source links, and blocked installer/mod-type/load-order capability summaries.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
@@ -82,13 +85,14 @@ Vortex game registrations commonly declare `queryModPath`, `requiredFiles`, `sup
 
 DMM status:
 
-- Supports Steam app IDs, Nexus domains, Vortex game IDs, target roots, tools, game version providers, installer specs, stop folders in installer-choice specs, and deployment defaults.
+- Supports Steam app IDs, Nexus domains, Vortex game IDs, target roots, primary/wrapper launch tools, external supported tools, game version providers, installer specs, stop folders in installer-choice specs, and deployment defaults.
+- `GameRegistration` now has source-backed fields for Vortex executable path, required files, query-mod-path metadata, merge mode, cleanup requirement, stop patterns, compatible download domains, and environment metadata.
 - Source-backed Vortex game catalog entries can now represent Vortex `registerGameStub` separately from normal `registerGame` entries that have no verified Steam app ID, so DMM does not invent Steam ownership for Windows/Epic/registry-only Vortex discovery paths.
-- Partial gap: no first-class setup/prep action contract equivalent to Vortex `setup`.
-- Partial gap: no explicit `requiredFiles`/`environment` declaration on `GameRegistration` for game discovery diagnostics.
-- Partial gap: no first-class `requiresLauncher` contract; DMM models the actionable subset through extension-declared launch tools and Decky launch-option requests.
-- Partial gap: no generic game details field for stop patterns shared across installers and diagnostics.
-- Partial gap: no explicit multi-logical-game-per-Steam-app resolver. Vortex uses this for cases such as XCOM 2/War of the Chosen and Divinity: Original Sin 2 variants, while DMM currently maps one app ID to one active extension.
+- Fallout 4, Skyrim SE, Witcher 3, Baldur's Gate 3, Factorio, Skyrim VR, Team Fortress 2, and X Rebirth now expose verified `registerGame` metadata or supported-tool metadata where the scanned Vortex source has static facts.
+- Remaining gap: no first-class setup/prep action runtime equivalent to Vortex `setup`, though setup can be advertised through `GameSetups`/blocked source metadata.
+- Remaining gap: `requiresLauncher` is represented as metadata, but store-specific launcher/runtime application is not yet executed outside existing Decky Steam launch-option requests.
+- Remaining gap: stop patterns are exposed as game metadata, but installers do not yet have a generic reusable `details.stopPatterns` matcher.
+- Remaining gap: no explicit multi-logical-game-per-Steam-app resolver. Vortex uses this for cases such as XCOM 2/War of the Chosen and Divinity: Original Sin 2 variants, while DMM currently maps one app ID to one active extension.
 
 Priority: P0 for more game conversions.
 
@@ -108,7 +112,7 @@ DMM status:
 - Supports declarative and custom Go installer rules, mod types, archive-root installs, common-root stripping, generated files, target policies, metadata extractors, custom builders, FOMOD, and generic component choices.
 - Source-backed metadata now exists for shared Vortex mod types `dazip`, `dinput`, `enb`, `gedosato`, and `umm`, plus their registered installers where Vortex has them. They are marked `blocked` until the reusable DMM helpers exist.
 - Remaining gaps are mostly breadth: more Vortex helper shapes must be represented as reusable SDK helpers rather than copied per game.
-- Needed helper APIs include source-backed versions of Vortex-style `queryModPath` defaults, `stopPatterns` matching, `testSupportedContent`, `mergeMods` path transforms, wrapper-root normalization, and component-choice rules.
+- Needed helper APIs include source-backed versions of Vortex-style `queryModPath` defaults at planning time, `stopPatterns` matching, `testSupportedContent`, `mergeMods` path transforms, wrapper-root normalization, and component-choice rules.
 - Needed shared mod-type helpers include nested DAZIP extraction/submodule planning, executable-relative DLL deployment with unsafe-file confirmation, ENB game-root deployment, GeDoSaTo external tool discovery and texture targeting, and Unity Mod Manager game opt-in/tool discovery.
 
 Priority: P0.
@@ -246,13 +250,12 @@ Priority: P2 for MVP unless needed to safely adopt dirty Vortex installs.
 
 ## Implementation Order
 
-1. Add missing extension SDK registration types that are safe to model now without claiming behavioral parity: archive types, interpreters, game stores, setup actions, UI actions/settings/tests, profile/collection features, state migrations/persistors, extension APIs, and health checks.
-2. Wire new SDK registrations into DMM capability summaries and persisted extension snapshots so every extension can advertise exact support without core game branches.
-3. Add runtime execution only for the subset needed by current MVP games, starting with lifecycle event parity around profile/mod install, enable, remove, purge, and deploy operations.
-4. Convert shared Vortex framework extensions into DMM shared helpers before converting more game extensions: common interpreters, archive engines, Gamebryo archive/plugin helpers, QuickBMS, BepInEx, UMM, dependency/rule primitives, and game-version helpers.
-5. Promote catalog entries into dedicated game extensions when a target game becomes MVP-critical, implementing the missing reusable SDK/runtime capability first and keeping every game-specific rule inside that game extension package.
-6. Add a multi-logical-game-per-app resolver before converting Vortex extensions that register multiple selectable game IDs against one Steam app.
-7. Only mark an extension as parity-complete when source-reviewed behavior is implemented, tested lightly, and exposed in `/api/extensions` with enough detail to audit support.
+1. Add runtime execution only for the subset needed by current MVP games, starting with lifecycle event parity around profile/mod install, enable, remove, purge, and deploy operations.
+2. Implement generic planner helpers for source-backed `queryModPath`, `details.stopPatterns`, wrapper-root normalization, component-choice rules, and merge-mode path transforms.
+3. Convert shared Vortex framework extensions into DMM shared helpers before converting more game extensions: common interpreters, archive engines, Gamebryo archive/plugin helpers, QuickBMS, BepInEx, UMM, dependency/rule primitives, and game-version helpers.
+4. Promote catalog entries into dedicated game extensions when a target game becomes MVP-critical, implementing the missing reusable SDK/runtime capability first and keeping every game-specific rule inside that game extension package.
+5. Add a multi-logical-game-per-app resolver before converting Vortex extensions that register multiple selectable game IDs against one Steam app.
+6. Only mark an extension as parity-complete when source-reviewed behavior is implemented, tested lightly, and exposed in `/api/extensions` with enough detail to audit support.
 
 ## Guardrails
 

@@ -83,7 +83,7 @@ Counts:
 Source-backed catalog coverage:
 
 - Remaining Vortex game entries are represented by `internal/extensions/vortexgamecatalog` unless a richer dedicated first-party DMM extension is listed.
-- The catalog preserves verified Vortex game IDs, Nexus domains, Steam app IDs when Vortex declares them, `registerGameStub` support-mod metadata, and source URLs pinned to the scanned Vortex commit.
+- The catalog preserves verified Vortex game IDs, Nexus domains, Steam app IDs when Vortex declares them, `registerGameStub` support-mod metadata, source-backed `registerGame` metadata when ported, external `supportedTools` metadata when ported, and source URLs pinned to the scanned Vortex commit.
 - Catalog entries do not claim executable install parity. When the Vortex source registers custom installers, mod types, load order, lifecycle behavior, or other game-specific runtime logic that DMM has not ported yet, the DMM extension exposes blocked metadata so the UI/API can report the gap instead of silently installing unsafely.
 
 - [x] `game-7daystodie` - DMM counterpart: `internal/extensions/vortexgamecatalog` source-backed catalog entry. Any Vortex custom installer, mod-type, load-order, or lifecycle surfaces remain blocked until ported into DMM extension capabilities.

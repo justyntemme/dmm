@@ -521,6 +521,7 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 			Installers          []featureResponse `json:"installers"`
 			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
 			LaunchTools         []featureResponse `json:"launch_tools"`
+			SupportedTools      []featureResponse `json:"supported_tools"`
 			TargetRoots         []featureResponse `json:"target_roots"`
 		} `json:"capabilities"`
 	}
@@ -535,6 +536,7 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 			Installers          []featureResponse `json:"installers"`
 			RuntimeRequirements []featureResponse `json:"runtime_requirements"`
 			LaunchTools         []featureResponse `json:"launch_tools"`
+			SupportedTools      []featureResponse `json:"supported_tools"`
 			TargetRoots         []featureResponse `json:"target_roots"`
 		} `json:"capabilities"`
 	}{}
@@ -573,17 +575,17 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	if !featureIDsContain(fallout.Capabilities.LaunchTools, "f4se") {
 		t.Fatalf("fallout launch tools = %+v", fallout.Capabilities.LaunchTools)
 	}
-	if !featureIDsContain(fallout.Capabilities.LaunchTools, "FO4Edit") || !featureIDsContain(fallout.Capabilities.LaunchTools, "WryeBash") {
-		t.Fatalf("fallout tool parity = %+v", fallout.Capabilities.LaunchTools)
+	if !featureIDsContain(fallout.Capabilities.SupportedTools, "FO4Edit") || !featureIDsContain(fallout.Capabilities.SupportedTools, "WryeBash") {
+		t.Fatalf("fallout tool parity = %+v", fallout.Capabilities.SupportedTools)
 	}
 	skyrim, ok := byID["skyrimse"]
 	if !ok {
 		t.Fatalf("extensions = %+v", body)
 	}
 	if !featureIDsContain(skyrim.Capabilities.LaunchTools, "skse64") ||
-		!featureIDsContain(skyrim.Capabilities.LaunchTools, "SSEEdit") ||
-		!featureIDsContain(skyrim.Capabilities.LaunchTools, "creation-kit-64") {
-		t.Fatalf("skyrim launch tools = %+v", skyrim.Capabilities.LaunchTools)
+		!featureIDsContain(skyrim.Capabilities.SupportedTools, "SSEEdit") ||
+		!featureIDsContain(skyrim.Capabilities.SupportedTools, "creation-kit-64") {
+		t.Fatalf("skyrim tools = launch:%+v supported:%+v", skyrim.Capabilities.LaunchTools, skyrim.Capabilities.SupportedTools)
 	}
 	zomboid, ok := byID["projectzomboid"]
 	if !ok {
