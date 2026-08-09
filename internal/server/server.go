@@ -407,6 +407,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/extensions/snapshots", s.handleExtensionSnapshots)
 	mux.HandleFunc("GET /api/extensions/settings", s.handleExtensionSettings)
 	mux.HandleFunc("PUT /api/extensions/{extensionID}/settings/{settingID}", s.handleSetExtensionSetting)
+	mux.HandleFunc("GET /api/interpreters/resolve", s.handleResolveInterpreter)
 	mux.HandleFunc("GET /api/games", s.handleGames)
 	mux.HandleFunc("GET /api/install-candidates", s.handleInstallCandidates)
 	mux.HandleFunc("POST /api/decky/browser/open", s.handleDeckyBrowserOpen)
@@ -2652,6 +2653,15 @@ type updateExtensionSettingRequest struct {
 	Value json.RawMessage `json:"value"`
 }
 
+type interpreterResolveResponse struct {
+	ExtensionID   string   `json:"extension_id"`
+	InterpreterID string   `json:"interpreter_id"`
+	Name          string   `json:"name"`
+	Command       string   `json:"command"`
+	Arguments     []string `json:"arguments"`
+	Platform      string   `json:"platform"`
+}
+
 type createProfileRequest struct {
 	Name            string `json:"name"`
 	SourceProfileID int64  `json:"source_profile_id,omitempty"`
@@ -3428,6 +3438,31 @@ func fallbackString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func (s *Server) handleResolveInterpreter(w http.ResponseWriter, r *http.Request) {
+	executablePath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if executablePath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+	platform := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("platform")))
+	if platform == "" {
+		platform = "linux"
+	}
+	resolution, ok := s.games.ResolveInterpreter(executablePath, platform)
+	if !ok {
+		http.Error(w, "no interpreter registered for path", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, interpreterResolveResponse{
+		ExtensionID:   resolution.ExtensionID,
+		InterpreterID: resolution.InterpreterID,
+		Name:          resolution.Name,
+		Command:       resolution.Command,
+		Arguments:     append([]string(nil), resolution.Arguments...),
+		Platform:      resolution.Platform,
+	})
 }
 
 func extensionSnapshotsFromSummaries(summaries []gameext.ExtensionSummary) []storage.ExtensionSnapshot {

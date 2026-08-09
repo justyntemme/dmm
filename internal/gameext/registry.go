@@ -103,6 +103,15 @@ type GameVersionResult = sdk.GameVersionResult
 type GameInfoInput = sdk.GameInfoInput
 type GameInfoResult = sdk.GameInfoResult
 type GameInfoDetail = sdk.GameInfoDetail
+
+type InterpreterResolution struct {
+	ExtensionID   string
+	InterpreterID string
+	Name          string
+	Command       string
+	Arguments     []string
+	Platform      string
+}
 type MergeSpec = sdk.MergeSpec
 type LoadOrderSpec = sdk.LoadOrderSpec
 type ArchiveTypeSpec = sdk.ArchiveTypeSpec
@@ -912,6 +921,62 @@ func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.Gam
 		}
 	}
 	return details, true, nil
+}
+
+func (r Registry) ResolveInterpreter(executablePath, platform string) (InterpreterResolution, bool) {
+	executablePath = strings.TrimSpace(executablePath)
+	if executablePath == "" {
+		return InterpreterResolution{}, false
+	}
+	platform = canonical(platform)
+	ext := strings.ToLower(filepath.Ext(executablePath))
+	if ext == "" {
+		return InterpreterResolution{}, false
+	}
+	for _, extension := range r.extensions {
+		for _, interpreter := range extension.Interpreters {
+			if !interpreterMatchesPlatform(interpreter, platform) || strings.TrimSpace(interpreter.Command) == "" {
+				continue
+			}
+			for _, candidate := range interpreter.FileExtensions {
+				if strings.EqualFold(strings.TrimSpace(candidate), ext) {
+					return InterpreterResolution{
+						ExtensionID:   strings.TrimSpace(extension.ID),
+						InterpreterID: strings.TrimSpace(interpreter.ID),
+						Name:          strings.TrimSpace(interpreter.Name),
+						Command:       strings.ReplaceAll(strings.TrimSpace(interpreter.Command), "{path}", executablePath),
+						Arguments:     substituteInterpreterArgs(interpreter.Arguments, executablePath),
+						Platform:      platform,
+					}, true
+				}
+			}
+		}
+	}
+	return InterpreterResolution{}, false
+}
+
+func interpreterMatchesPlatform(spec sdk.InterpreterSpec, platform string) bool {
+	if platform == "" || len(spec.Platforms) == 0 {
+		return true
+	}
+	for _, candidate := range spec.Platforms {
+		if canonical(candidate) == platform {
+			return true
+		}
+	}
+	return false
+}
+
+func substituteInterpreterArgs(args []string, executablePath string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		next := strings.TrimSpace(arg)
+		if next == "" {
+			continue
+		}
+		out = append(out, strings.ReplaceAll(next, "{path}", executablePath))
+	}
+	return out
 }
 
 func (r Registry) RunExtensionTests(ctx context.Context, appID, trigger string, input sdk.ExtensionTestInput) ([]sdk.ExtensionTestResult, bool) {

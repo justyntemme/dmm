@@ -96,7 +96,7 @@ Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-
 | `context.registerDashlet` | 7 | `RegisterExtensionDashlet` | Metadata-only | Product decision whether DMM keeps dashlet concept or maps to Action Center/diagnostics cards. |
 | `context.registerMainPage` | 7 | `RegisterExtensionMainPage` | Metadata-only | Generic extension page runtime, likely phone-first only. |
 | `context.registerMerge` | 5 | `RegisterMerge` plus shared helpers | Partial runtime | Broader merge helpers beyond current XML/MTL and DAZIP AddIns support. |
-| `context.registerInterpreter` | 5 | `RegisterInterpreter` | Metadata-only | Safe external interpreter/tool execution contract. |
+| `context.registerInterpreter` | 5 | `RegisterInterpreter` | Partial runtime | DMM resolves extension-declared interpreter commands/arguments by file extension and platform through `/api/interpreters/resolve`; actual execution remains a Decky/user action boundary. |
 | `context.registerArchiveType` | 4 | `RegisterArchiveType` | Metadata-only/blocked | BSA/BA2, ARC, and QuickBMS list/extract/write engines. |
 | `context.registerProfileFeature` | 4 | `RegisterProfileFeature` | Partial runtime | Per-profile boolean state persists and copies with profiles; profile file/savegame/settings feature execution remains pending. |
 | `context.optional.registerCollectionFeature` | 3 | `RegisterCollectionFeature` | Metadata-only | Collection import/postprocess runtime. |

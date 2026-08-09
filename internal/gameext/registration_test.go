@@ -597,6 +597,8 @@ func TestCompileExtensionAllowsFrameworkExtension(t *testing.T) {
 				Name:           "Python",
 				FileExtensions: []string{".py"},
 				Command:        "python",
+				Arguments:      []string{"{path}", "--verbose"},
+				Platforms:      []string{"linux"},
 			})
 		},
 	})
@@ -612,6 +614,13 @@ func TestCompileExtensionAllowsFrameworkExtension(t *testing.T) {
 	}
 	if len(summary.Capabilities.Interpreters) != 1 || summary.Capabilities.Interpreters[0].ID != "python" {
 		t.Fatalf("framework interpreter = %+v", summary.Capabilities.Interpreters)
+	}
+	resolved, ok := NewRegistry([]Extension{extension}).ResolveInterpreter("/tmp/install.py", "linux")
+	if !ok || resolved.Command != "python" || len(resolved.Arguments) != 2 || resolved.Arguments[0] != "/tmp/install.py" {
+		t.Fatalf("resolved interpreter = %+v ok=%v", resolved, ok)
+	}
+	if _, ok := NewRegistry([]Extension{extension}).ResolveInterpreter("/tmp/install.py", "windows"); ok {
+		t.Fatal("linux-only interpreter matched windows")
 	}
 }
 

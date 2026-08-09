@@ -754,6 +754,51 @@ func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
 	}
 }
 
+func TestResolveInterpreterEndpointUsesExtensionMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "interpretertest",
+		Name:    "Interpreter Test",
+		Kind:    sdk.ExtensionKindFramework,
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterInterpreter(sdk.InterpreterSpec{
+				ID:             "python",
+				Name:           "Python",
+				FileExtensions: []string{".py"},
+				Command:        "python",
+				Arguments:      []string{"{path}", "--safe"},
+				Platforms:      []string{"linux"},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/interpreters/resolve?path=/home/deck/Downloads/install.py&platform=linux", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body interpreterResolveResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ExtensionID != "interpretertest" || body.InterpreterID != "python" || body.Command != "python" || len(body.Arguments) != 2 || body.Arguments[0] != "/home/deck/Downloads/install.py" {
+		t.Fatalf("body = %+v", body)
+	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/interpreters/resolve?path=/home/deck/Downloads/install.py&platform=windows", nil)
+	missingReq.RemoteAddr = "127.0.0.1:1"
+	missingRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(missingRec, missingReq)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, body = %s", missingRec.Code, missingRec.Body.String())
+	}
+}
+
 func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	body, err := json.Marshal(gameResponse{
 		AppID:        "108600",
