@@ -10318,6 +10318,107 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 }
 
+func TestActivateGameAutoAcquiresExtensionTools(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999014"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "autoacquire",
+		Name:    "Auto Acquire",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"autoacquire"},
+				VortexGameID: "autoacquire",
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:     "runner",
+				Name:   "Game Runner",
+				Status: sdk.CapabilityStatusMetadata,
+				Acquisition: &sdk.ToolAcquisitionSpec{
+					ID:          "runner-auto",
+					Name:        "Game Runner package",
+					Catalog:     "github",
+					URL:         "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
+					ArchiveName: "runner.zip",
+					Required:    true,
+					AutoAcquire: true,
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Auto Acquire Game",
+		InstallDir:  "Auto Acquire Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Auto Acquire Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("runner archive"))
+	}))
+	defer downloadServer.Close()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
+		resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
+			SteamAppID: appID,
+			GameDomain: "github",
+			ModID:      "example/runner",
+			FileID:     "djEuMA.cnVubmVyLnppcA",
+			FileName:   "runner.zip",
+			Version:    "v1.0.0",
+			DownloadLinks: []catalog.DownloadLink{{
+				Name:      "GitHub release asset",
+				ShortName: "github",
+				URI:       downloadServer.URL + "/runner.zip",
+			}},
+		},
+	}}
+	srv.catalogMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/activate", bytes.NewBufferString(`{"source":"decky-test"}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /activate status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var activated gameActivationResponse
+	if err := json.NewDecoder(rec.Body).Decode(&activated); err != nil {
+		t.Fatal(err)
+	}
+	if activated.AppID != appID || len(activated.Acquisitions) != 1 || activated.Acquisitions[0].Tool != "runner" || activated.Acquisitions[0].Job == nil || !activated.Acquisitions[0].DownloadStarted {
+		t.Fatalf("activation response = %+v", activated)
+	}
+	waiting := waitForJobStatus(t, srv, activated.Acquisitions[0].Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(waiting.ID)
+	if !ok || pending.Source != "extension-tool-auto-acquire:runner" || pending.Resolved.ModID != "example/runner" || pending.ArchivePath == "" {
+		t.Fatalf("auto-acquire pending = %+v ok=%v", pending, ok)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/activate", bytes.NewBufferString(`{"source":"decky-test"}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("duplicate POST /activate status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&activated); err != nil {
+		t.Fatal(err)
+	}
+	if len(activated.Acquisitions) != 1 || !activated.Acquisitions[0].Duplicate || activated.Acquisitions[0].Job == nil || activated.Acquisitions[0].Job.ID != waiting.ID {
+		t.Fatalf("duplicate activation response = %+v", activated)
+	}
+}
+
 func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999005"

@@ -411,6 +411,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/acquire", s.handleAcquireExtensionTool)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
+	mux.HandleFunc("POST /api/games/{appID}/activate", s.handleActivateGame)
 	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/start", s.handleStartOpenDirectoryAction)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/complete", s.handleCompleteOpenDirectoryAction)
@@ -715,6 +716,29 @@ type extensionNoticeActionReport struct {
 
 type extensionToolAcquireRequest struct {
 	ProfileID int64 `json:"profile_id,omitempty"`
+}
+
+type gameActivationRequest struct {
+	ProfileID int64  `json:"profile_id,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+type gameActivationResponse struct {
+	AppID        string                    `json:"app_id"`
+	Event        string                    `json:"event"`
+	EventHandled bool                      `json:"event_handled"`
+	Acquisitions []toolAutoAcquireResponse `json:"acquisitions,omitempty"`
+}
+
+type toolAutoAcquireResponse struct {
+	Tool            string           `json:"tool"`
+	Extension       string           `json:"extension"`
+	Acquisition     *toolAcquisition `json:"acquisition,omitempty"`
+	Job             *jobResponse     `json:"job,omitempty"`
+	Duplicate       bool             `json:"duplicate,omitempty"`
+	DownloadStarted bool             `json:"download_started,omitempty"`
+	AutoInstall     bool             `json:"auto_install,omitempty"`
+	Error           string           `json:"error,omitempty"`
 }
 
 type gameLaunchStatusResponse struct {
@@ -3707,6 +3731,127 @@ func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Reque
 		"duplicate":    result.Duplicate,
 		"auto_install": result.AutoInstall,
 	})
+}
+
+func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	var req gameActivationRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	if req.ProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = "decky-active-game"
+	}
+	eventHandled := s.games.HasEventHandlerForSteamApp(appID, gameext.EventGamemodeActivated)
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventGamemodeActivated,
+		Source:    source,
+		ProfileID: req.ProfileID,
+	}); err != nil {
+		s.logger.Warn("game activation extension event failed", "app_id", appID, "source", source, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	acquisitions, err := s.autoAcquireExtensionTools(r.Context(), appID, source, req.ProfileID)
+	if err != nil {
+		s.logger.Warn("game activation tool auto-acquisition failed", "app_id", appID, "source", source, "error", err)
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("game activation processed", "app_id", appID, "source", source, "event_handled", eventHandled, "acquisitions", len(acquisitions))
+	writeJSON(w, http.StatusAccepted, gameActivationResponse{
+		AppID:        appID,
+		Event:        gameext.EventGamemodeActivated,
+		EventHandled: eventHandled,
+		Acquisitions: acquisitions,
+	})
+}
+
+func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source string, profileID int64) ([]toolAutoAcquireResponse, error) {
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil, nil
+	}
+	discovery, err := s.discoverTools(ctx, appID, "auto-acquire:"+source)
+	if err != nil {
+		return nil, err
+	}
+	present := make(map[string]struct{}, len(discovery.Tools))
+	for _, tool := range discovery.Tools {
+		if tool.Present {
+			present[strings.ToLower(strings.TrimSpace(tool.ID))] = struct{}{}
+		}
+	}
+	var responses []toolAutoAcquireResponse
+	for _, tool := range extension.SupportedTools {
+		toolID := strings.ToLower(strings.TrimSpace(tool.ID))
+		if toolID == "" || tool.Acquisition == nil || !tool.Acquisition.AutoAcquire {
+			continue
+		}
+		if _, ok := present[toolID]; ok {
+			s.logger.Info("extension tool auto-acquire skipped; tool is already present", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID)
+			continue
+		}
+		acquisition := *tool.Acquisition
+		acquisition.ID = strings.TrimSpace(acquisition.ID)
+		acquisition.Name = strings.TrimSpace(acquisition.Name)
+		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+		acquisition.URL = strings.TrimSpace(acquisition.URL)
+		response := toolAutoAcquireResponse{
+			Tool:        tool.ID,
+			Extension:   extension.ID,
+			Acquisition: discoveredToolAcquisition(&acquisition),
+		}
+		if acquisition.URL == "" {
+			response.Error = "extension tool " + tool.ID + " acquisition URL is empty"
+			responses = append(responses, response)
+			s.logger.Warn("extension tool auto-acquire skipped; acquisition URL is empty", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID)
+			continue
+		}
+		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
+			URL:        acquisition.URL,
+			SteamAppID: appID,
+			Source:     "extension-tool-auto-acquire:" + strings.TrimSpace(tool.ID),
+			ProfileID:  profileID,
+		})
+		if err != nil {
+			response.Error = err.Error()
+			responses = append(responses, response)
+			s.logger.Warn("extension tool auto-acquire failed", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+			continue
+		}
+		job := result.Job
+		response.Job = &job
+		response.Duplicate = result.Duplicate
+		response.DownloadStarted = result.DownloadStarted
+		response.AutoInstall = result.AutoInstall
+		responses = append(responses, response)
+		s.logger.Info("extension tool auto-acquire queued", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "duplicate", result.Duplicate)
+	}
+	return responses, nil
 }
 
 func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.Request) {

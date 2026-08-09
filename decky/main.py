@@ -303,6 +303,30 @@ class Plugin:
         self._log(f"add captured install accepted job={job}")
         return {"ok": True, "result": result}
 
+    async def activate_game(self, app_id, profile_id=0):
+        app_id = str(app_id or "").strip()
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        if not app_id:
+            return {"ok": False, "error": "app_id is required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = {"source": "decky-active-game"}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        result, error = self._backend_json_result(
+            "POST",
+            f"/api/games/{urllib.parse.quote(app_id)}/activate",
+            json.dumps(payload).encode("utf-8"),
+        )
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to report the active game."}
+        acquisitions = result.get("acquisitions")
+        self._log(f"game activation reported app_id={app_id} event_handled={bool(result.get('event_handled'))} acquisitions={len(acquisitions) if isinstance(acquisitions, list) else 0}")
+        return {"ok": True, "result": result}
+
     async def local_archives(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:

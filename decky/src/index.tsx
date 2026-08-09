@@ -4493,6 +4493,7 @@ function FreshDeckyModManagerRoute() {
   const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
+  const reportedActiveGameIDRef = useRef("");
   const selectedGame = games.find((game) => game.app_id === selectedGameID) ?? null;
   const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   const selectedNexusDomain = (selectedGame?.nexus_domains ?? [])[0]?.trim().toLowerCase() ?? "";
@@ -4533,7 +4534,30 @@ function FreshDeckyModManagerRoute() {
     if (catalogResult.ok) setCatalogs(catalogResult.catalogs);
     const running = currentRunningGame();
     setRunningGame(running);
+    void reportActiveGame(running, gamesResult.ok ? gamesResult.games : []);
     return { games: gamesResult.ok ? gamesResult.games : [], running };
+  }
+
+  async function reportActiveGame(running: RunningGame | null, loadedGames: ManagedGame[]) {
+    if (!running?.app_id) {
+      reportedActiveGameIDRef.current = "";
+      return;
+    }
+    const game = loadedGames.find((item) => item.app_id === running.app_id);
+    if (!gameManageReady(game)) return;
+    if (reportedActiveGameIDRef.current === running.app_id) return;
+    reportedActiveGameIDRef.current = running.app_id;
+    try {
+      const result = await call<[string], { ok: boolean; error?: string; result?: { acquisitions?: unknown[] } }>("activate_game", running.app_id);
+      if (!result.ok) {
+        await logFrontendEvent("active game report failed", { app_id: running.app_id, error: result.error || "" });
+        return;
+      }
+      const acquisitions = Array.isArray(result.result?.acquisitions) ? result.result.acquisitions.length : 0;
+      await logFrontendEvent("active game reported", { app_id: running.app_id, acquisitions });
+    } catch (err) {
+      await logFrontendEvent("active game report error", { app_id: running.app_id, error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   async function loadSelectedGameState(appID: string) {
