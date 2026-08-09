@@ -72,6 +72,10 @@ require_text "$DECKY_APP" "Address: {pairingDisplayAddress(status)}" \
   "Decky plugin must retain server access controls/status without exposing the pairing token by default"
 require_text "$DECKY_APP" "Pair Phone" \
   "Decky plugin must expose QR-first phone pairing"
+require_text "$DECKY_APP" "freshSettingsCardStyle" \
+  "Decky Settings cards must use fixed settings row sizing instead of generic collapsible sections"
+require_text "$DECKY_APP" "freshSettingsToggleCardStyle" \
+  "Decky Settings toggle rows must have an explicit minimum height for controller focus"
 require_text "$DECKY_APP" "label: \"Games\"" \
   "Decky route tab must be labeled Games for the game-selection workflow"
 require_text "$DECKY_APP" "Dependencies" \
