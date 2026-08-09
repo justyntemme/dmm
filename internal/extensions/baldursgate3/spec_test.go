@@ -10,6 +10,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -23,6 +24,18 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	}
 	if len(compiled.InstallPlan.Installers) != 6 {
 		t.Fatalf("installers = %+v", compiled.InstallPlan.Installers)
+	}
+	lslibModTypeSpec := modTypeByID(compiled.InstallPlan.ModTypes, lslibModType)
+	if lslibModTypeSpec == nil || lslibModTypeSpec.DeploymentMode != installplan.ModTypeDeploymentToolOnly {
+		t.Fatalf("lslib mod type = %+v", lslibModTypeSpec)
+	}
+	divineTool := supportedToolByID(compiled.SupportedTools, "bg3-lslib-divine")
+	if divineTool == nil || divineTool.Acquisition == nil || divineTool.Acquisition.Catalog != "github" || divineTool.ExecutableRelative != "tools/divine.exe" {
+		t.Fatalf("divine tool = %+v", divineTool)
+	}
+	divineRuntime := runtimeRequirementByID(compiled.RuntimeRequirements.RuntimeRequirements, "bg3-pak-metadata-engine")
+	if divineRuntime == nil || divineRuntime.Acquisition == nil || divineRuntime.Acquisition.Catalog != "github" || len(divineRuntime.ProviderModTypes) != 1 || divineRuntime.ProviderModTypes[0] != lslibModType {
+		t.Fatalf("divine runtime = %+v", divineRuntime)
 	}
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusBlocked {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
@@ -112,6 +125,9 @@ func TestBuildLSLibStagesToolsWithoutDeployTargets(t *testing.T) {
 	if plan.Metadata[0].Version != "1.19.5" {
 		t.Fatalf("version metadata = %+v", plan.Metadata)
 	}
+	if plan.Metadata[0].Kind != "tool" || plan.Metadata[0].UniqueID != "bg3-lslib-divine" || plan.Metadata[0].StagingRelative != "tools/divine.exe" {
+		t.Fatalf("tool metadata = %+v", plan.Metadata)
+	}
 }
 
 func TestWillDeployReportsPakMetadataGap(t *testing.T) {
@@ -142,6 +158,33 @@ func buildInput(root, archive string) installplan.BuildInput {
 		},
 		TargetRootID: bg3ModsRootID,
 	}
+}
+
+func modTypeByID(modTypes []installplan.ModTypeSpec, id string) *installplan.ModTypeSpec {
+	for idx := range modTypes {
+		if modTypes[idx].ID == id {
+			return &modTypes[idx]
+		}
+	}
+	return nil
+}
+
+func supportedToolByID(tools []sdk.SupportedToolSpec, id string) *sdk.SupportedToolSpec {
+	for idx := range tools {
+		if tools[idx].ID == id {
+			return &tools[idx]
+		}
+	}
+	return nil
+}
+
+func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirementSpec, id string) *gamehandler.RuntimeRequirementSpec {
+	for idx := range requirements {
+		if requirements[idx].ID == id {
+			return &requirements[idx]
+		}
+	}
+	return nil
 }
 
 func writeFile(t *testing.T, path, body string) {

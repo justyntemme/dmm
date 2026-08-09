@@ -236,6 +236,58 @@ func TestStardewRuntimeRequirementsSkipInstalledManifestDependency(t *testing.T)
 	}
 }
 
+func TestRuntimeRequirementsProviderModTypeSatisfiesRequirement(t *testing.T) {
+	registry := NewRegistry([]GameSpec{{
+		SteamAppID: "100",
+		RuntimeRequirements: []RuntimeRequirementSpec{{
+			ID:               "runtime-loader",
+			Name:             "Runtime Loader",
+			Kind:             "mod-loader",
+			Required:         true,
+			ModTypes:         []string{"consumer-mod"},
+			ProviderModTypes: []string{"runtime-provider"},
+			Message:          "Runtime Loader is missing.",
+		}},
+	}})
+
+	reqs := registry.RuntimeRequirements(context.Background(), "100", t.TempDir(), []RuntimeMod{
+		{Enabled: true, ModType: "consumer-mod"},
+		{Enabled: true, ModType: "runtime-provider"},
+	})
+
+	req, ok := reqByID(reqs, "runtime-loader")
+	if !ok {
+		t.Fatalf("runtime requirement was not reported")
+	}
+	if req.Status != RequirementOK || len(req.Details) != 1 || req.InstallHint != "" {
+		t.Fatalf("runtime requirement = %+v", req)
+	}
+}
+
+func TestRuntimeRequirementsDisabledProviderModTypeDoesNotSatisfyRequirement(t *testing.T) {
+	registry := NewRegistry([]GameSpec{{
+		SteamAppID: "100",
+		RuntimeRequirements: []RuntimeRequirementSpec{{
+			ID:               "runtime-loader",
+			Name:             "Runtime Loader",
+			Kind:             "mod-loader",
+			Required:         true,
+			ModTypes:         []string{"consumer-mod"},
+			ProviderModTypes: []string{"runtime-provider"},
+			Message:          "Runtime Loader is missing.",
+		}},
+	}})
+
+	reqs := registry.RuntimeRequirements(context.Background(), "100", t.TempDir(), []RuntimeMod{
+		{Enabled: true, ModType: "consumer-mod"},
+		{Enabled: false, ModType: "runtime-provider"},
+	})
+
+	if got := reqStatus(reqs, "runtime-loader"); got != RequirementMissing {
+		t.Fatalf("runtime requirement status = %q", got)
+	}
+}
+
 func TestStardewRuntimeRequirementsMatchAdditionalLogicalFileNames(t *testing.T) {
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
 		{

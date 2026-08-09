@@ -138,7 +138,13 @@ func buildLSLib(input installplan.BuildInput) (installplan.Plan, error) {
 	if len(plan.Instructions) == 0 {
 		return installplan.Plan{}, installplan.Unsupported("BG3 LSLib archive matched but no tools files were found")
 	}
-	plan.Metadata = append(plan.Metadata, installplan.ModMetadata{Kind: "bg3-lslib-divine-tool", Version: lslibVersionFromArchive(input.ArchiveName)})
+	plan.Metadata = append(plan.Metadata, installplan.ModMetadata{
+		Kind:            "tool",
+		Name:            "LSLib/Divine Tool",
+		UniqueID:        "bg3-lslib-divine",
+		Version:         lslibVersionFromArchive(input.ArchiveName),
+		StagingRelative: "tools/divine.exe",
+	})
 	sortPlan(&plan)
 	return plan, nil
 }

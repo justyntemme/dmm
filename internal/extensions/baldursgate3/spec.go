@@ -60,7 +60,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterTargetRoot(sdk.TargetRootSpec{ID: bg3ModsRootID, Name: "BG3 local Mods folder", Resolver: localModsRoot})
 	r.RegisterTargetRoot(sdk.TargetRootSpec{ID: bg3LocalDataRootID, Name: "BG3 local app data", Resolver: localDataRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRootID: bg3ModsRootID})
-	r.RegisterModType(installplan.ModTypeSpec{ID: lslibModType, DeploymentMode: installplan.ModTypeDeploymentEventHook})
+	r.RegisterModType(installplan.ModTypeSpec{ID: lslibModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly})
 	r.RegisterModType(installplan.ModTypeSpec{ID: bg3seModType, TargetRoot: "bin"})
 	r.RegisterModType(installplan.ModTypeSpec{ID: engineInjectorModType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: looseModType, TargetRoot: "Data"})
@@ -72,6 +72,24 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "bin/bg3.exe",
 		RequiredFiles:      []string{"bin/bg3.exe"},
 		Relative:           true,
+	})
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
+		ID:                 "bg3-lslib-divine",
+		Name:               "LSLib/Divine Tool",
+		ShortName:          "Divine",
+		ExecutableRelative: "tools/divine.exe",
+		RequiredFiles:      []string{"tools/divine.exe", "tools/LSLib.dll"},
+		Acquisition: &sdk.ToolAcquisitionSpec{
+			ID:          "bg3-lslib-divine-github",
+			Name:        "LSLib/Divine GitHub release",
+			Catalog:     "github",
+			URL:         "https://github.com/Norbyte/lslib/releases/latest",
+			ArchiveName: "ExportTool.zip",
+			Required:    true,
+			Message:     "DMM resolves the latest ExportTool archive from Norbyte/lslib, matching Vortex's LSLib downloader source.",
+		},
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Managed tool package used by BG3 pak metadata extraction.",
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:      "bg3-exe-version",
@@ -109,7 +127,20 @@ func Register(r sdk.Registrar) {
 		Message:     "BG3 pak load order requires LSLib/divine metadata extraction before DMM can generate modsettings.lsx for every pak.",
 		OKMessage:   "BG3 pak metadata engine is available.",
 		InstallHint: "Install or repair the BG3 LSLib/divine tool package.",
-		Check:       checkDivineTool,
+		ProviderModTypes: []string{
+			lslibModType,
+		},
+		Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+			ID:          "bg3-lslib-divine-github",
+			Name:        "LSLib/Divine GitHub release",
+			Catalog:     "github",
+			URL:         "https://github.com/Norbyte/lslib/releases/latest",
+			ArchiveName: "ExportTool.zip",
+			Required:    true,
+			AutoAcquire: true,
+			Message:     "DMM resolves the latest ExportTool archive from Norbyte/lslib, matching Vortex's LSLib downloader source.",
+		},
+		Check: checkDivineTool,
 	})
 	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
 		ID:      "bg3-pak-meta-lsx",

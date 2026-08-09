@@ -8512,6 +8512,120 @@ func TestGameDiagnosticsWarnsWhenRuntimeRequirementMissing(t *testing.T) {
 	}
 }
 
+func TestGameDiagnosticsTreatsEnabledProviderModAsRuntimePresent(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "555001"
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(sdk.Extension{
+		ID:      "runtime-provider-game",
+		Name:    "Runtime Provider Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"runtimeprovidergame"},
+				VortexGameID: "runtimeprovidergame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-consumer", TargetRoot: "Mods"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-provider", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               "runtime-loader",
+				Name:             "Runtime Loader",
+				Kind:             "mod-loader",
+				Required:         true,
+				ModTypes:         []string{"runtime-consumer"},
+				ProviderModTypes: []string{"runtime-provider"},
+				Message:          "Runtime Loader is missing.",
+			})
+		},
+	})})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Runtime Provider Game",
+		InstallDir:  "Runtime Provider Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Runtime Provider Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	for _, mod := range []struct {
+		name    string
+		modType string
+		fileID  string
+	}{
+		{name: "Consumer Mod", modType: "runtime-consumer", fileID: "1"},
+		{name: "Runtime Provider", modType: "runtime-provider", fileID: "2"},
+	} {
+		stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "runtime-provider-game", mod.fileID)
+		if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stagingPath, "payload.txt"), []byte(mod.name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+			GameID:    appID,
+			ModType:   mod.modType,
+			PlannerID: "test:" + mod.modType,
+			Instructions: []installplan.Instruction{{
+				StagingRelative: "payload.txt",
+				TargetRelative:  "payload.txt",
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+			SteamAppID: appID,
+			Resolved: catalog.ResolvedDownload{
+				Catalog:    "direct",
+				GameDomain: "runtimeprovidergame",
+				ModID:      mod.modType,
+				FileID:     mod.fileID,
+			},
+			Name:           mod.name,
+			Version:        "1.0.0",
+			ArchivePath:    filepath.Join(srv.cfg.DataDir, "downloads", mod.fileID+".zip"),
+			StagingPath:    stagingPath,
+			ManifestJSON:   manifestJSON,
+			DefaultEnabled: &enabled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		RuntimeRequirements []struct {
+			ID      string `json:"id"`
+			Status  string `json:"status"`
+			Message string `json:"message"`
+		} `json:"runtime_requirements"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	requirements := map[string]string{}
+	for _, requirement := range body.RuntimeRequirements {
+		requirements[requirement.ID] = requirement.Status
+	}
+	if requirements["runtime-loader"] != "ok" {
+		t.Fatalf("runtime requirements = %+v", body.RuntimeRequirements)
+	}
+	if len(body.ValidationWarnings) != 0 {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
 func TestGameDiagnosticsIncludesExtensionHealthCheckWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(xrebirth.Extension())})

@@ -130,7 +130,7 @@ func (r Registry) RuntimeRequirements(ctx context.Context, steamAppID, gamePath 
 	var requirements []RuntimeRequirement
 	for _, requirementSpec := range spec.RuntimeRequirements {
 		if runtimeRequirementApplies(requirementSpec, mods) {
-			requirements = append(requirements, evaluateRuntimeRequirement(ctx, gamePath, requirementSpec))
+			requirements = append(requirements, evaluateRuntimeRequirement(ctx, gamePath, requirementSpec, mods))
 		}
 	}
 	requirements = append(requirements, modDependencyRequirements(spec, mods)...)
@@ -153,7 +153,7 @@ func runtimeRequirementApplies(spec RuntimeRequirementSpec, mods []RuntimeMod) b
 	return false
 }
 
-func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec RuntimeRequirementSpec) RuntimeRequirement {
+func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec RuntimeRequirementSpec, mods []RuntimeMod) RuntimeRequirement {
 	req := RuntimeRequirement{
 		ID:          spec.ID,
 		Name:        spec.Name,
@@ -177,7 +177,48 @@ func evaluateRuntimeRequirement(ctx context.Context, gamePath string, spec Runti
 			return req
 		}
 	}
+	if details := enabledProviderModDetails(spec, mods); len(details) > 0 {
+		req.Status = RequirementOK
+		req.Message = spec.Name + " is present as an enabled DMM-managed mod."
+		if strings.TrimSpace(spec.OKMessage) != "" {
+			req.Message = strings.TrimSpace(spec.OKMessage)
+		}
+		req.Details = details
+		req.InstallHint = ""
+		return req
+	}
 	return req
+}
+
+func enabledProviderModDetails(spec RuntimeRequirementSpec, mods []RuntimeMod) []string {
+	providerTypes := map[string]struct{}{}
+	for _, modType := range spec.ProviderModTypes {
+		modType = strings.TrimSpace(modType)
+		if modType != "" {
+			providerTypes[modType] = struct{}{}
+		}
+	}
+	if len(providerTypes) == 0 {
+		return nil
+	}
+	var details []string
+	seen := map[string]struct{}{}
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		modType := strings.TrimSpace(mod.ModType)
+		if _, ok := providerTypes[modType]; !ok {
+			continue
+		}
+		if _, ok := seen[modType]; ok {
+			continue
+		}
+		seen[modType] = struct{}{}
+		details = append(details, "DMM-managed provider mod type "+modType+" is enabled.")
+	}
+	sort.Strings(details)
+	return details
 }
 
 func runtimeAcquisition(spec *RuntimeAcquisitionSpec) *RuntimeAcquisition {
