@@ -452,6 +452,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/mods/{installedModID}", s.handleRemoveProfileMod)
 	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/copy", s.handleCopyProfileMod)
 	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/move", s.handleMoveProfileMod)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/plugin-activation/{activationID}/plugins", s.handleSetProfilePluginActivation)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/plugin-activation/{activationID}/order", s.handleSetProfilePluginActivationOrder)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
@@ -514,6 +516,7 @@ type deploymentSettingsResponse struct {
 
 type pluginLoadOrderResponse struct {
 	AppID         string                 `json:"app_id"`
+	ProfileID     int64                  `json:"profile_id,omitempty"`
 	Supported     bool                   `json:"supported"`
 	ActivationID  string                 `json:"activation_id,omitempty"`
 	Name          string                 `json:"name,omitempty"`
@@ -532,6 +535,7 @@ type pluginLoadOrderEntry struct {
 	ModID          string `json:"mod_id,omitempty"`
 	Priority       int    `json:"priority"`
 	Active         bool   `json:"active"`
+	Mutable        bool   `json:"mutable"`
 }
 
 type deploymentStrategyCapability struct {
@@ -2187,6 +2191,16 @@ type updateProfileModOrderRequest struct {
 	ModIDs []int64 `json:"mod_ids"`
 }
 
+type updateProfilePluginActivationRequest struct {
+	Name     string `json:"name"`
+	Enabled  *bool  `json:"enabled"`
+	Priority *int   `json:"priority"`
+}
+
+type updateProfilePluginActivationOrderRequest struct {
+	Plugins []string `json:"plugins"`
+}
+
 type transferProfileModRequest struct {
 	TargetProfileID int64 `json:"target_profile_id"`
 	Enabled         *bool `json:"enabled,omitempty"`
@@ -2211,6 +2225,13 @@ type profileModUpdateResponse struct {
 type profileModOrderUpdateResponse struct {
 	Mods  []storage.InstalledMod `json:"mods"`
 	Apply profileApplyResponse   `json:"apply"`
+}
+
+type profilePluginActivationUpdateResponse struct {
+	LoadOrder pluginLoadOrderResponse                `json:"load_order"`
+	State     *storage.ProfilePluginActivationState  `json:"state,omitempty"`
+	States    []storage.ProfilePluginActivationState `json:"states,omitempty"`
+	Apply     profileApplyResponse                   `json:"apply"`
 }
 
 type fileConflictWinnerResponse struct {
@@ -7110,6 +7131,197 @@ func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, profileModOrderUpdateResponse{Mods: mods, Apply: apply})
 }
 
+func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http.Request) {
+	profileID, activationID, ok := profilePluginActivationPath(w, r)
+	if !ok {
+		return
+	}
+	var req updateProfilePluginActivationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Enabled == nil && req.Priority == nil {
+		http.Error(w, "enabled or priority is required", http.StatusBadRequest)
+		return
+	}
+	ctx, err := s.profilePluginActivationContext(r.Context(), profileID, activationID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	entry, ok := ctx.byKey[pluginActivationRequestKey(req.Name)]
+	if !ok {
+		http.Error(w, "plugin is not a mutable DMM plugin in this profile", http.StatusBadRequest)
+		return
+	}
+	priority := req.Priority
+	if priority == nil {
+		currentPriority := entry.Priority
+		priority = &currentPriority
+	}
+	state, err := s.db.SetProfilePluginActivationState(r.Context(), storage.SetProfilePluginActivationStateParams{
+		ProfileID:    profileID,
+		ActivationID: activationID,
+		PluginName:   entry.Name,
+		Enabled:      req.Enabled,
+		Priority:     priority,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var enabledLog any
+	if req.Enabled != nil {
+		enabledLog = *req.Enabled
+	}
+	priorityLog := *priority
+	s.logger.Info("profile plugin activation updated", "profile_id", profileID, "activation_id", activationID, "plugin", entry.Name, "enabled", enabledLog, "priority", priorityLog)
+	s.publishGameEvent(events.TypeProfileModsChanged, ctx.game.SteamAppID, map[string]any{
+		"action":        "plugin_activation_updated",
+		"profile_id":    profileID,
+		"activation_id": activationID,
+		"plugin":        entry.Name,
+		"enabled":       enabledLog,
+		"priority":      priorityLog,
+	})
+	loadOrder, err := s.profilePluginLoadOrder(r.Context(), ctx.game, profileID, ctx.mods)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	apply := s.applyProfileChangesForUserAction(r.Context(), ctx.game.SteamAppID, "plugin-activation-update")
+	writeJSON(w, http.StatusOK, profilePluginActivationUpdateResponse{LoadOrder: loadOrder, State: &state, Apply: apply})
+}
+
+func (s *Server) handleSetProfilePluginActivationOrder(w http.ResponseWriter, r *http.Request) {
+	profileID, activationID, ok := profilePluginActivationPath(w, r)
+	if !ok {
+		return
+	}
+	var req updateProfilePluginActivationOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.Plugins) == 0 {
+		http.Error(w, "plugins are required", http.StatusBadRequest)
+		return
+	}
+	ctx, err := s.profilePluginActivationContext(r.Context(), profileID, activationID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	seen := map[string]struct{}{}
+	ordered := make([]string, 0, len(ctx.entries))
+	for _, pluginName := range req.Plugins {
+		key := pluginActivationRequestKey(pluginName)
+		if key == "" {
+			http.Error(w, "plugin order contains an empty plugin name", http.StatusBadRequest)
+			return
+		}
+		if _, duplicate := seen[key]; duplicate {
+			http.Error(w, "plugin order contains a duplicate plugin", http.StatusBadRequest)
+			return
+		}
+		entry, ok := ctx.byKey[key]
+		if !ok {
+			http.Error(w, "plugin order contains a plugin outside this profile", http.StatusBadRequest)
+			return
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, entry.Name)
+	}
+	for _, entry := range ctx.entries {
+		key := pluginActivationRequestKey(entry.Name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		ordered = append(ordered, entry.Name)
+	}
+	states, err := s.db.SetProfilePluginActivationOrder(r.Context(), profileID, activationID, ordered)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile plugin activation order updated", "profile_id", profileID, "activation_id", activationID, "plugins", len(ordered))
+	s.publishGameEvent(events.TypeProfileModsChanged, ctx.game.SteamAppID, map[string]any{
+		"action":        "plugin_activation_order_updated",
+		"profile_id":    profileID,
+		"activation_id": activationID,
+		"plugins":       ordered,
+	})
+	loadOrder, err := s.profilePluginLoadOrder(r.Context(), ctx.game, profileID, ctx.mods)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	apply := s.applyProfileChangesForUserAction(r.Context(), ctx.game.SteamAppID, "plugin-activation-order")
+	writeJSON(w, http.StatusOK, profilePluginActivationUpdateResponse{LoadOrder: loadOrder, States: states, Apply: apply})
+}
+
+func profilePluginActivationPath(w http.ResponseWriter, r *http.Request) (int64, string, bool) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return 0, "", false
+	}
+	activationID := strings.TrimSpace(r.PathValue("activationID"))
+	if activationID == "" {
+		http.Error(w, "activationID is required", http.StatusBadRequest)
+		return 0, "", false
+	}
+	return profileID, activationID, true
+}
+
+type profilePluginActivationContextResult struct {
+	game    storage.Game
+	spec    gameext.PluginActivationSpec
+	mods    []storage.InstalledMod
+	entries []pluginActivationEntry
+	byKey   map[string]pluginActivationEntry
+}
+
+func (s *Server) profilePluginActivationContext(ctx context.Context, profileID int64, activationID string) (profilePluginActivationContextResult, error) {
+	appID, err := s.db.SteamAppIDForProfile(ctx, profileID)
+	if err != nil {
+		return profilePluginActivationContextResult{}, err
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return profilePluginActivationContextResult{}, err
+	}
+	spec, ok := s.games.PluginActivationForSteamApp(appID)
+	if !ok || spec.ID != activationID {
+		return profilePluginActivationContextResult{}, errors.New("plugin activation is not supported for this profile")
+	}
+	mods, err := s.db.InstalledModsForProfile(ctx, profileID)
+	if err != nil {
+		return profilePluginActivationContextResult{}, err
+	}
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		return profilePluginActivationContextResult{}, err
+	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		return profilePluginActivationContextResult{}, err
+	}
+	entries := pluginActivationEntries(spec, active.Mappings, native, states)
+	byKey := make(map[string]pluginActivationEntry, len(entries))
+	for _, entry := range entries {
+		byKey[pluginActivationRequestKey(entry.Name)] = entry
+	}
+	return profilePluginActivationContextResult{game: game, spec: spec, mods: mods, entries: entries, byKey: byKey}, nil
+}
+
+func pluginActivationRequestKey(pluginName string) string {
+	return strings.ToLower(strings.TrimSpace(pluginName))
+}
+
 func (s *Server) handleSetFileConflictWinner(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
 	if err != nil || profileID <= 0 {
@@ -11013,6 +11225,7 @@ type pluginActivationEntry struct {
 	InstalledModID int64
 	ModID          string
 	Priority       int
+	Active         bool
 }
 
 func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginLoadOrderResponse, error) {
@@ -11020,9 +11233,22 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 	if err != nil {
 		return pluginLoadOrderResponse{}, err
 	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
+	return s.profilePluginLoadOrder(ctx, game, profileID, mods)
+}
+
+func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, profileID int64, mods []storage.InstalledMod) (pluginLoadOrderResponse, error) {
 	resp := pluginLoadOrderResponse{
-		AppID:   strings.TrimSpace(game.SteamAppID),
-		Plugins: []pluginLoadOrderEntry{},
+		AppID:     strings.TrimSpace(game.SteamAppID),
+		ProfileID: profileID,
+		Plugins:   []pluginLoadOrderEntry{},
 	}
 	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
 	if !ok {
@@ -11048,16 +11274,16 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 			Active:   true,
 		})
 	}
-	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
-	if err != nil {
-		return pluginLoadOrderResponse{}, err
-	}
 	active, err := s.activeDeploymentMappings(ctx, game, mods)
 	if err != nil {
 		return pluginLoadOrderResponse{}, err
 	}
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		return pluginLoadOrderResponse{}, err
+	}
 	catalogsByModID := installedModCatalogsByID(mods)
-	for _, entry := range pluginActivationEntries(spec, active.Mappings, native) {
+	for _, entry := range pluginActivationEntries(spec, active.Mappings, native, states) {
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
 			Name:           entry.Name,
 			Source:         "dmm",
@@ -11065,7 +11291,8 @@ func (s *Server) gamePluginLoadOrder(ctx context.Context, appID string) (pluginL
 			InstalledModID: entry.InstalledModID,
 			ModID:          entry.ModID,
 			Priority:       entry.Priority,
-			Active:         true,
+			Active:         entry.Active,
+			Mutable:        true,
 		})
 	}
 	return resp, nil
@@ -11088,7 +11315,15 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 		return nil, nil
 	}
 	native := installedNativePluginNames(game.GamePath, spec)
-	entries := pluginActivationEntries(spec, mappings, native)
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		return nil, err
+	}
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		return nil, err
+	}
+	entries := pluginActivationEntries(spec, mappings, native, states)
 	if len(entries) == 0 {
 		if len(native) > 0 {
 			s.logger.Info("plugin activation generation skipped without DMM-managed plugins", "app_id", game.SteamAppID, "activation_id", spec.ID, "native_plugins", len(native))
@@ -11096,10 +11331,6 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 		return nil, nil
 	}
 	targetRoot, err := protonLocalAppDataTargetRoot(game, spec)
-	if err != nil {
-		return nil, err
-	}
-	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
 	if err != nil {
 		return nil, err
 	}
@@ -11210,7 +11441,7 @@ func inferSteamLibraryPath(gamePath string) string {
 	return gamePath[:idx]
 }
 
-func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping, nativePlugins []string) []pluginActivationEntry {
+func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping, nativePlugins []string, states map[string]storage.ProfilePluginActivationState) []pluginActivationEntry {
 	extensions := pluginExtensionSet(spec)
 	native := nativePluginSetFromNames(append(append([]string(nil), spec.NativePlugins...), nativePlugins...))
 	byName := map[string]pluginActivationEntry{}
@@ -11229,6 +11460,11 @@ func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deplo
 			InstalledModID: mapping.InstalledModID,
 			ModID:          mapping.ModID,
 			Priority:       mapping.Priority,
+			Active:         true,
+		}
+		if state, ok := states[key]; ok {
+			next.Active = state.Enabled
+			next.Priority = state.Priority
 		}
 		if !exists || next.Priority < current.Priority || (next.Priority == current.Priority && strings.ToLower(next.Name) < strings.ToLower(current.Name)) {
 			byName[key] = next
@@ -11397,13 +11633,19 @@ func pluginListLines(spec gameext.PluginActivationSpec, native []string, dynamic
 	case gameext.PluginActivationFormatOriginal:
 		out := append([]string(nil), native...)
 		for _, entry := range dynamic {
-			out = append(out, entry.Name)
+			if entry.Active {
+				out = append(out, entry.Name)
+			}
 		}
 		return out
 	case gameext.PluginActivationFormatAsterisked:
 		out := make([]string, 0, len(dynamic))
 		for _, entry := range dynamic {
-			out = append(out, "*"+entry.Name)
+			name := entry.Name
+			if entry.Active {
+				name = "*" + name
+			}
+			out = append(out, name)
 		}
 		return out
 	default:

@@ -607,6 +607,7 @@ type WorkshopState = {
 
 type PluginLoadOrder = {
   app_id?: string;
+  profile_id?: number;
   supported: boolean;
   activation_id?: string;
   name?: string;
@@ -625,6 +626,7 @@ type PluginLoadOrderEntry = {
   mod_id?: string;
   priority: number;
   active: boolean;
+  mutable?: boolean;
 };
 
 type WorkshopActionJob = Job & {

@@ -90,7 +90,7 @@ Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-
 | `context.registerDialog` | 12 | `RegisterExtensionDialog` | Metadata-only | Extension dialog schema/runtime. |
 | `context.registerAPI` | 10 | `RegisterExtensionAPI` plus shared Go helpers | Partial runtime | Explicit dependency graph/import contract for cross-extension APIs; QuickBMS and Gamebryo plugin APIs remain blocked. |
 | `context.registerTableAttribute` | 9 | `RegisterExtensionTableAttribute` | Metadata-only | Generic extension columns/attributes for phone and Deck surfaces. |
-| `context.registerLoadOrder` | 9 | `RegisterLoadOrder` | Partial runtime | Generic load-order models, persistence, conflict/rule UI, LOOT-backed Gamebryo sorting. |
+| `context.registerLoadOrder` | 9 | `RegisterLoadOrder` | Partial runtime | Generic load-order models, conflict/rule UI, LOOT-backed Gamebryo sorting, and extension-specific load-order page UX. |
 | `context.registerGameStub` | 9 | `VortexStub` game registration | Metadata-only | Keep source-backed but unsupported until each game has verified install/runtime support. |
 | `context.registerSettings` | 8 | `RegisterExtensionSetting` | Metadata-only | Extension-owned settings schema and persistence. |
 | `context.registerDashlet` | 7 | `RegisterExtensionDashlet` | Metadata-only | Product decision whether DMM keeps dashlet concept or maps to Action Center/diagnostics cards. |
@@ -352,8 +352,8 @@ Vortex source examples:
 
 DMM status:
 
-- Has load-order summaries, file winner overrides, basic plugin activation generation, Unreal sortable PAK helper, Witcher `mods.settings` generation, and some Gamebryo plugin activation support.
-- Missing LOOT/masterlist/userlist behavior, rule graph editing, dependency conflict graph, cycles, group editors, index locks, custom load-order pages, and extension-declared load-order UI models.
+- Has load-order summaries, profile-scoped file winner overrides, profile-scoped Gamebryo plugin row enable/order state, Vortex-format Gamebryo `plugins.txt`/`loadorder.txt` generation, Unreal sortable PAK helper, Witcher `mods.settings` generation, and several generated load-order file helpers.
+- Missing LOOT/masterlist/userlist behavior, rule graph editing, dependency conflict graph, cycles, group editors, index locks, custom load-order pages, and broader extension-declared load-order UI models.
 
 Priority: P0 for Bethesda parity, P1 for broader user-facing polish.
 

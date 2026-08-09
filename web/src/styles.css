@@ -1909,13 +1909,18 @@ h2 {
 
 .plugin-load-order-list article {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 9px;
   align-items: start;
   border: 1px solid #263243;
   border-radius: 8px;
   padding: 9px;
   background: #0d1422;
+}
+
+.plugin-load-order-list article.inactive-plugin {
+  border-color: #334155;
+  background: #10131b;
 }
 
 .plugin-load-order-list article > span {
@@ -1941,6 +1946,23 @@ h2 {
 .plugin-load-order-list small {
   margin-top: 3px;
   color: #a1a1aa;
+}
+
+.plugin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plugin-row-actions .mod-toggle {
+  min-height: 30px;
+}
+
+.plugin-row-actions .secondary-action.compact {
+  min-height: 30px;
+  padding: 5px 8px;
 }
 
 .preset-selection-note {
@@ -2950,8 +2972,13 @@ dd {
 
   .mod-list article,
   .action-list article,
-  .deployment-history-list article {
+  .deployment-history-list article,
+  .plugin-load-order-list article {
     grid-template-columns: 1fr;
+  }
+
+  .plugin-row-actions {
+    justify-content: flex-start;
   }
 
   .mod-list-controls {

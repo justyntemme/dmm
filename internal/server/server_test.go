@@ -8971,6 +8971,10 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err := os.WriteFile(pluginPath, []byte("plugin"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	otherPluginPath := filepath.Join(stagingPath, "Other.esp")
+	if err := os.WriteFile(otherPluginPath, []byte("other plugin"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
 		GameID:    fallout4.SteamAppID,
 		ModType:   "fallout4-data-root",
@@ -8978,6 +8982,9 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 		Instructions: []installplan.Instruction{{
 			StagingRelative: "Example.esp",
 			TargetRelative:  "Data/Example.esp",
+		}, {
+			StagingRelative: "Other.esp",
+			TargetRelative:  "Data/Other.esp",
 		}},
 	})
 	if err != nil {
@@ -9011,6 +9018,9 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if _, ok := targets["Data/Example.esp"]; !ok {
 		t.Fatalf("plan missing plugin deploy action: %+v", plan.Actions)
 	}
+	if _, ok := targets["Data/Other.esp"]; !ok {
+		t.Fatalf("plan missing second plugin deploy action: %+v", plan.Actions)
+	}
 	pluginsAction, ok := targets["plugins.txt"]
 	if !ok {
 		t.Fatalf("plan missing plugins.txt action: %+v", plan.Actions)
@@ -9023,7 +9033,7 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "*Example.esp") || strings.Contains(string(body), "Fallout4.esm") || strings.Contains(string(body), "ccExample.esl") {
+	if !strings.Contains(string(body), "*Example.esp") || !strings.Contains(string(body), "*Other.esp") || strings.Contains(string(body), "Fallout4.esm") || strings.Contains(string(body), "ccExample.esl") {
 		t.Fatalf("plugins.txt body = %q", string(body))
 	}
 	loadOrderAction, ok := targets["loadorder.txt"]
@@ -9034,7 +9044,7 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "ccExample.esl") || !strings.Contains(string(body), "Example.esp") {
+	if !strings.Contains(string(body), "Fallout4.esm") || !strings.Contains(string(body), "ccExample.esl") || !strings.Contains(string(body), "Example.esp") || !strings.Contains(string(body), "Other.esp") {
 		t.Fatalf("loadorder.txt body = %q", string(body))
 	}
 
@@ -9064,6 +9074,58 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	}
 	if pluginsByName["Example.esp"].Source != "dmm" || pluginsByName["Example.esp"].Catalog != "nexus" || pluginsByName["Example.esp"].InstalledModID == 0 || pluginsByName["Example.esp"].Priority != 0 {
 		t.Fatalf("managed plugin entry = %+v", pluginsByName["Example.esp"])
+	}
+
+	orderReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/order", bytes.NewBufferString(`{"plugins":["Other.esp"]}`))
+	orderReq.Header.Set("Content-Type", "application/json")
+	orderReq.RemoteAddr = "127.0.0.1:1"
+	orderRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(orderRec, orderReq)
+	if orderRec.Code != http.StatusOK {
+		t.Fatalf("plugin activation order status = %d, body = %s", orderRec.Code, orderRec.Body.String())
+	}
+	var orderUpdate profilePluginActivationUpdateResponse
+	if err := json.Unmarshal(orderRec.Body.Bytes(), &orderUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if len(orderUpdate.LoadOrder.Plugins) < 4 || orderUpdate.LoadOrder.Plugins[2].Name != "Other.esp" || orderUpdate.LoadOrder.Plugins[3].Name != "Example.esp" {
+		t.Fatalf("ordered load order = %+v", orderUpdate.LoadOrder.Plugins)
+	}
+
+	disableReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/plugins", bytes.NewBufferString(`{"name":"Example.esp","enabled":false}`))
+	disableReq.Header.Set("Content-Type", "application/json")
+	disableReq.RemoteAddr = "127.0.0.1:1"
+	disableRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(disableRec, disableReq)
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("plugin activation disable status = %d, body = %s", disableRec.Code, disableRec.Body.String())
+	}
+	var disableUpdate profilePluginActivationUpdateResponse
+	if err := json.Unmarshal(disableRec.Body.Bytes(), &disableUpdate); err != nil {
+		t.Fatal(err)
+	}
+	disabledByName := map[string]pluginLoadOrderEntry{}
+	for _, plugin := range disableUpdate.LoadOrder.Plugins {
+		disabledByName[plugin.Name] = plugin
+	}
+	if disabledByName["Example.esp"].Active || !disabledByName["Other.esp"].Active {
+		t.Fatalf("disabled load order = %+v", disableUpdate.LoadOrder.Plugins)
+	}
+	pluginsText, err := os.ReadFile(filepath.Join(wantRoot, "plugins.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(pluginsText), "*Example.esp") || !strings.Contains(string(pluginsText), "Example.esp") || !strings.Contains(string(pluginsText), "*Other.esp") {
+		t.Fatalf("plugins.txt after disable = %q", string(pluginsText))
+	}
+	loadOrderText, err := os.ReadFile(filepath.Join(wantRoot, "loadorder.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherIdx := strings.Index(string(loadOrderText), "Other.esp")
+	exampleIdx := strings.Index(string(loadOrderText), "Example.esp")
+	if otherIdx == -1 || exampleIdx == -1 || otherIdx > exampleIdx {
+		t.Fatalf("loadorder.txt after reorder = %q", string(loadOrderText))
 	}
 }
 

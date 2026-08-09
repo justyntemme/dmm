@@ -124,6 +124,23 @@ type FileConflictWinner struct {
 	UpdatedAt            string `json:"updated_at"`
 }
 
+type ProfilePluginActivationState struct {
+	ProfileID    int64  `json:"profile_id"`
+	ActivationID string `json:"activation_id"`
+	PluginName   string `json:"plugin_name"`
+	PluginKey    string `json:"plugin_key"`
+	Enabled      bool   `json:"enabled"`
+	Priority     int    `json:"priority"`
+}
+
+type SetProfilePluginActivationStateParams struct {
+	ProfileID    int64
+	ActivationID string
+	PluginName   string
+	Enabled      *bool
+	Priority     *int
+}
+
 type InstallCandidate struct {
 	ID                    int64  `json:"id"`
 	GameID                int64  `json:"game_id"`
@@ -2168,6 +2185,196 @@ ORDER BY COALESCE(pm.priority, 0) ASC, m.name ASC
 		mods = append(mods, mod)
 	}
 	return mods, rows.Err()
+}
+
+func (db *DB) ProfilePluginActivationStates(ctx context.Context, profileID int64, activationID string) (map[string]ProfilePluginActivationState, error) {
+	activationID = strings.TrimSpace(activationID)
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	if activationID == "" {
+		return nil, errors.New("activation id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority
+FROM profile_plugin_activations
+WHERE profile_id = ? AND activation_id = ?
+ORDER BY priority ASC, plugin_name ASC
+`, profileID, activationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]ProfilePluginActivationState{}
+	for rows.Next() {
+		state, err := scanProfilePluginActivationState(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[state.PluginKey] = state
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SetProfilePluginActivationState(ctx context.Context, params SetProfilePluginActivationStateParams) (ProfilePluginActivationState, error) {
+	params.ActivationID = strings.TrimSpace(params.ActivationID)
+	params.PluginName = strings.TrimSpace(params.PluginName)
+	pluginKey := pluginActivationStateKey(params.PluginName)
+	if params.ProfileID <= 0 {
+		return ProfilePluginActivationState{}, errors.New("profile id is required")
+	}
+	if params.ActivationID == "" {
+		return ProfilePluginActivationState{}, errors.New("activation id is required")
+	}
+	if pluginKey == "" {
+		return ProfilePluginActivationState{}, errors.New("plugin name is required")
+	}
+	if params.Enabled == nil && params.Priority == nil {
+		return ProfilePluginActivationState{}, errors.New("enabled or priority is required")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return ProfilePluginActivationState{}, err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE id = ?`, params.ProfileID).Scan(&exists); err != nil {
+		return ProfilePluginActivationState{}, err
+	}
+	if exists == 0 {
+		return ProfilePluginActivationState{}, errors.New("profile does not exist")
+	}
+
+	enabled := 1
+	priority := 0
+	displayName := params.PluginName
+	err = tx.QueryRowContext(ctx, `
+SELECT plugin_name, enabled, priority
+FROM profile_plugin_activations
+WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
+`, params.ProfileID, params.ActivationID, pluginKey).Scan(&displayName, &enabled, &priority)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return ProfilePluginActivationState{}, err
+	}
+	if params.Enabled != nil {
+		enabled = 0
+		if *params.Enabled {
+			enabled = 1
+		}
+	}
+	if params.Priority != nil {
+		priority = *params.Priority
+	}
+	if strings.TrimSpace(displayName) == "" {
+		displayName = params.PluginName
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, activation_id, plugin_key) DO UPDATE SET
+	plugin_name = excluded.plugin_name,
+	enabled = excluded.enabled,
+	priority = excluded.priority,
+	updated_at = CURRENT_TIMESTAMP
+`, params.ProfileID, params.ActivationID, displayName, pluginKey, enabled, priority); err != nil {
+		return ProfilePluginActivationState{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ProfilePluginActivationState{}, err
+	}
+	return db.profilePluginActivationState(ctx, params.ProfileID, params.ActivationID, pluginKey)
+}
+
+func (db *DB) SetProfilePluginActivationOrder(ctx context.Context, profileID int64, activationID string, pluginNames []string) ([]ProfilePluginActivationState, error) {
+	activationID = strings.TrimSpace(activationID)
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	if activationID == "" {
+		return nil, errors.New("activation id is required")
+	}
+	if len(pluginNames) == 0 {
+		return nil, errors.New("plugin order cannot be empty")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE id = ?`, profileID).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if exists == 0 {
+		return nil, errors.New("profile does not exist")
+	}
+	seen := map[string]struct{}{}
+	for priority, pluginName := range pluginNames {
+		pluginName = strings.TrimSpace(pluginName)
+		pluginKey := pluginActivationStateKey(pluginName)
+		if pluginKey == "" {
+			return nil, errors.New("plugin order contains an empty plugin name")
+		}
+		if _, ok := seen[pluginKey]; ok {
+			return nil, errors.New("plugin order contains a duplicate plugin")
+		}
+		seen[pluginKey] = struct{}{}
+		enabled := 1
+		if err := tx.QueryRowContext(ctx, `
+SELECT COALESCE(enabled, 1)
+FROM profile_plugin_activations
+WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
+`, profileID, activationID, pluginKey).Scan(&enabled); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, activation_id, plugin_key) DO UPDATE SET
+	plugin_name = excluded.plugin_name,
+	priority = excluded.priority,
+	updated_at = CURRENT_TIMESTAMP
+`, profileID, activationID, pluginName, pluginKey, enabled, priority); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	states, err := db.ProfilePluginActivationStates(ctx, profileID, activationID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProfilePluginActivationState, 0, len(pluginNames))
+	for _, name := range pluginNames {
+		if state, ok := states[pluginActivationStateKey(name)]; ok {
+			out = append(out, state)
+		}
+	}
+	return out, nil
+}
+
+func (db *DB) profilePluginActivationState(ctx context.Context, profileID int64, activationID, pluginKey string) (ProfilePluginActivationState, error) {
+	row := db.conn.QueryRowContext(ctx, `
+SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority
+FROM profile_plugin_activations
+WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
+`, profileID, activationID, pluginKey)
+	return scanProfilePluginActivationState(row)
+}
+
+func scanProfilePluginActivationState(row profileScanner) (ProfilePluginActivationState, error) {
+	var state ProfilePluginActivationState
+	var enabled int
+	err := row.Scan(&state.ProfileID, &state.ActivationID, &state.PluginName, &state.PluginKey, &enabled, &state.Priority)
+	state.Enabled = enabled != 0
+	return state, err
+}
+
+func pluginActivationStateKey(pluginName string) string {
+	return strings.ToLower(strings.TrimSpace(pluginName))
 }
 
 func (db *DB) SetProfileModOrder(ctx context.Context, profileID int64, installedModIDs []int64) ([]InstalledMod, error) {

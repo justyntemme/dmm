@@ -158,6 +158,19 @@ CREATE TABLE IF NOT EXISTS profile_mods (
 	UNIQUE(profile_id, installed_mod_id)
 );
 
+CREATE TABLE IF NOT EXISTS profile_plugin_activations (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+	activation_id TEXT NOT NULL,
+	plugin_name TEXT NOT NULL,
+	plugin_key TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	priority INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(profile_id, activation_id, plugin_key)
+);
+
 CREATE TABLE IF NOT EXISTS deployments (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,

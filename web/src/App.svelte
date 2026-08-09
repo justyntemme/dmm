@@ -457,6 +457,7 @@
 
   type PluginLoadOrder = {
     app_id: string;
+    profile_id?: number;
     supported: boolean;
     activation_id?: string;
     name?: string;
@@ -475,6 +476,7 @@
     mod_id?: string;
     priority: number;
     active: boolean;
+    mutable?: boolean;
   };
 
   type RuntimeRequirement = {
@@ -542,6 +544,22 @@
 
   type ProfileModOrderUpdateResult = {
     mods: InstalledMod[];
+    apply: ProfileApplyResult;
+  };
+
+  type ProfilePluginActivationState = {
+    profile_id: number;
+    activation_id: string;
+    plugin_name: string;
+    plugin_key: string;
+    enabled: boolean;
+    priority: number;
+  };
+
+  type ProfilePluginActivationUpdateResult = {
+    load_order: PluginLoadOrder;
+    state?: ProfilePluginActivationState;
+    states?: ProfilePluginActivationState[];
     apply: ProfileApplyResult;
   };
 
@@ -647,6 +665,7 @@
   let busyJobs: Record<string, boolean> = {};
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
+  let busyPluginActivationRows: Record<string, boolean> = {};
   let workshopOrderBusy = false;
   type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move";
 
@@ -1712,6 +1731,73 @@
     installedMods = result.mods.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
     handleProfileApplyResult(result.apply);
     await refreshSelectedGame({ refreshPreview: true });
+  }
+
+  function pluginActivationRowKey(plugin: PluginLoadOrderEntry) {
+    return plugin.name.trim().toLowerCase();
+  }
+
+  function mutablePluginRows() {
+    return pluginLoadOrder?.plugins.filter((plugin) => plugin.mutable) ?? [];
+  }
+
+  function mutablePluginIndex(plugin: PluginLoadOrderEntry) {
+    return mutablePluginRows().findIndex((item) => pluginActivationRowKey(item) === pluginActivationRowKey(plugin));
+  }
+
+  async function setPluginActivationEnabled(plugin: PluginLoadOrderEntry, enabled: boolean) {
+    if (!selectedProfile || !pluginLoadOrder?.activation_id || !plugin.mutable) return;
+    const key = pluginActivationRowKey(plugin);
+    busyPluginActivationRows = { ...busyPluginActivationRows, [key]: true };
+    error = "";
+    try {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/plugin-activation/${encodeURIComponent(pluginLoadOrder.activation_id)}/plugins`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: plugin.name, enabled })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: ProfilePluginActivationUpdateResult = await response.json();
+      pluginLoadOrder = result.load_order;
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } finally {
+      const { [key]: _removed, ...rest } = busyPluginActivationRows;
+      busyPluginActivationRows = rest;
+    }
+  }
+
+  async function movePluginActivation(plugin: PluginLoadOrderEntry, direction: -1 | 1) {
+    if (!selectedProfile || !pluginLoadOrder?.activation_id || !plugin.mutable) return;
+    const mutablePlugins = pluginLoadOrder.plugins.filter((item) => item.mutable);
+    const from = mutablePlugins.findIndex((item) => pluginActivationRowKey(item) === pluginActivationRowKey(plugin));
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= mutablePlugins.length) return;
+    [mutablePlugins[from], mutablePlugins[to]] = [mutablePlugins[to], mutablePlugins[from]];
+    const key = pluginActivationRowKey(plugin);
+    busyPluginActivationRows = { ...busyPluginActivationRows, [key]: true };
+    error = "";
+    try {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/plugin-activation/${encodeURIComponent(pluginLoadOrder.activation_id)}/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plugins: mutablePlugins.map((item) => item.name) })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: ProfilePluginActivationUpdateResult = await response.json();
+      pluginLoadOrder = result.load_order;
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } finally {
+      const { [key]: _removed, ...rest } = busyPluginActivationRows;
+      busyPluginActivationRows = rest;
+    }
   }
 
   async function removeInstalledMod(mod: InstalledMod) {
@@ -4955,15 +5041,27 @@
                 {#if pluginLoadOrder.plugins.length > 0}
                   <div class="plugin-load-order-list">
                     {#each pluginLoadOrder.plugins as plugin, index}
-                      <article>
+                      {@const mutableIndex = mutablePluginIndex(plugin)}
+                      {@const pluginBusy = busyPluginActivationRows[pluginActivationRowKey(plugin)]}
+                      <article class:inactive-plugin={!plugin.active}>
                         <span>{index + 1}</span>
                         <div>
                           <div class="mod-title-line">
                             <strong>{plugin.name}</strong>
                             <span class={`source-pill ${sourceClass(plugin.catalog ?? plugin.source)}`}>{sourceLabel(plugin.catalog ?? plugin.source)}</span>
                           </div>
-                          <small>{plugin.source === "native" ? "Game/native plugin" : `DMM mod ${plugin.mod_id ?? plugin.installed_mod_id ?? ""}`} · Priority {plugin.priority}</small>
+                          <small>{plugin.source === "native" ? "Game/native plugin" : `DMM mod ${plugin.mod_id ?? plugin.installed_mod_id ?? ""}`} · {plugin.active ? "Enabled" : "Disabled"} · Priority {plugin.priority}</small>
                         </div>
+                        {#if plugin.mutable}
+                          <div class="plugin-row-actions">
+                            <label class="mod-toggle">
+                              <input type="checkbox" checked={plugin.active} disabled={Boolean(pluginBusy)} on:change={(event) => setPluginActivationEnabled(plugin, event.currentTarget.checked)} />
+                              <em>{pluginBusy ? "Saving" : plugin.active ? "On" : "Off"}</em>
+                            </label>
+                            <button type="button" class="secondary-action compact" on:click={() => movePluginActivation(plugin, -1)} disabled={Boolean(pluginBusy) || mutableIndex <= 0}>Up</button>
+                            <button type="button" class="secondary-action compact" on:click={() => movePluginActivation(plugin, 1)} disabled={Boolean(pluginBusy) || mutableIndex < 0 || mutableIndex >= mutablePluginRows().length - 1}>Down</button>
+                          </div>
+                        {/if}
                       </article>
                     {/each}
                   </div>
