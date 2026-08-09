@@ -57,6 +57,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mountandblade"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/neverwinter"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
@@ -183,6 +184,9 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(mountandblade.Extensions()[1]),
 		gameext.MustCompileExtension(mountandblade.Extensions()[2]),
 		gameext.MustCompileExtension(mrprepper.Extension()),
+		gameext.MustCompileExtension(neverwinter.Extensions()[0]),
+		gameext.MustCompileExtension(neverwinter.Extensions()[1]),
+		gameext.MustCompileExtension(neverwinter.Extensions()[2]),
 		gameext.MustCompileExtension(nuclearoption.Extension()),
 		gameext.MustCompileExtension(nuclearthrone.Extension()),
 		gameext.MustCompileExtension(persona5royal.Extension()),
