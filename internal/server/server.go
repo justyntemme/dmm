@@ -104,6 +104,7 @@ var clientEventSensitiveQueryPattern = regexp.MustCompile(`(?i)((?:^|[?&\s])(?:k
 const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
 	jobTypeExtensionNotice     = "extension-notice"
+	jobTypeExtensionToolAction = "extension-tool-action"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
@@ -333,6 +334,16 @@ func normalizeRestoredJobs(storedJobs []jobs.Job, storedPending []storage.Captur
 			storedJobs[i] = job
 			continue
 		}
+		if job.Type == jobTypeExtensionToolAction {
+			switch job.Status {
+			case jobs.StatusQueued, jobs.StatusRunning:
+				job.Status = jobs.StatusWaiting
+				job.Message = "Interrupted; waiting for Decky to launch the extension tool"
+				job.UpdatedAt = time.Now().UTC()
+			}
+			storedJobs[i] = job
+			continue
+		}
 		pending, hasPending := pendingByID[job.ID]
 		if job.Type != "captured-install" || !hasPending {
 			continue
@@ -387,6 +398,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/workshop/actions/{jobID}/complete", s.handleCompleteSteamWorkshopAction)
 	mux.HandleFunc("POST /api/extension-notices/{jobID}/start", s.handleStartExtensionNoticeAction)
 	mux.HandleFunc("POST /api/extension-notices/{jobID}/complete", s.handleCompleteExtensionNoticeAction)
+	mux.HandleFunc("GET /api/tool/actions", s.handleExtensionToolActions)
+	mux.HandleFunc("POST /api/tool/actions/{jobID}/start", s.handleStartExtensionToolAction)
+	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
+	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
@@ -1524,61 +1539,141 @@ func (s *Server) addExtensionNoticeActionPayload(ctx context.Context, appID stri
 	if strings.TrimSpace(notice.ActionKind) != gameext.EventNoticeActionRunLaunchTool {
 		return
 	}
-	payload["tool_action_type"] = "run-steam-app-with-launch-options"
-	payload["tool_action_available"] = "false"
 	toolID := strings.TrimSpace(notice.ToolID)
 	if toolID == "" {
+		payload["tool_action_type"] = "run-steam-app-with-launch-options"
+		payload["tool_action_available"] = "false"
 		payload["tool_action_error"] = "extension notice did not declare a launch tool id"
 		return
 	}
-	extension, tool, ok := s.games.LaunchToolForSteamApp(appID, toolID)
-	if !ok {
-		payload["tool_action_error"] = "extension launch tool is not registered for this game"
+	s.addExtensionToolLaunchPayload(ctx, appID, toolID, payload)
+}
+
+func (s *Server) addExtensionToolLaunchPayload(ctx context.Context, appID, toolID string, payload jobs.JobPayload) {
+	payload["tool_action_type"] = "run-steam-app-with-launch-options"
+	payload["tool_action_available"] = "false"
+	resolved, err := s.extensionToolLaunchPayload(ctx, appID, toolID)
+	if err != nil {
+		payload["tool_action_error"] = err.Error()
+		for key, value := range resolved {
+			if strings.TrimSpace(payload[key]) == "" {
+				payload[key] = value
+			}
+		}
 		return
+	}
+	for key, value := range resolved {
+		payload[key] = value
+	}
+}
+
+func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID string) (jobs.JobPayload, error) {
+	appID = strings.TrimSpace(appID)
+	toolID = strings.TrimSpace(toolID)
+	payload := jobs.JobPayload{
+		"app_id":                appID,
+		"catalog":               "extension",
+		"action_kind":           gameext.EventNoticeActionRunLaunchTool,
+		"tool_id":               toolID,
+		"tool_action_type":      "run-steam-app-with-launch-options",
+		"tool_action_available": "false",
+	}
+	if appID == "" || toolID == "" {
+		return payload, errors.New("steam app id and tool id are required")
 	}
 	game, err := s.db.GameBySteamApp(ctx, appID)
 	if err != nil {
-		payload["tool_action_error"] = err.Error()
-		return
+		return payload, err
+	}
+	extension, tool, kind, status, message, ok := s.extensionExecutableTool(appID, game.GamePath, toolID)
+	if !ok {
+		return payload, errors.New("extension tool is not registered for this game")
+	}
+	toolName := strings.TrimSpace(tool.Name)
+	if toolName == "" {
+		toolName = tool.ID
+	}
+	payload["tool_id"] = strings.TrimSpace(tool.ID)
+	payload["tool_name"] = toolName
+	payload["tool_kind"] = kind
+	payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
+	payload["tool_executable_path"] = filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status != "" && status != "ready" {
+		if message == "" {
+			message = "extension tool is not ready"
+		}
+		return payload, fmt.Errorf("%s: %s", toolName, message)
+	}
+	missingFiles := gameext.MissingLaunchToolFiles(game.GamePath, tool)
+	if len(missingFiles) > 0 {
+		return payload, errors.New("extension launch-tool files are missing: " + strings.Join(missingFiles, ", "))
+	}
+	if missing := missingLaunchToolDynamicInputFiles(game.GamePath, tool); len(missing) > 0 {
+		return payload, errors.New("dynamic launch input files are missing: " + strings.Join(missing, ", "))
 	}
 	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
 	if err != nil {
-		payload["tool_action_error"] = err.Error()
-		return
-	}
-	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
-	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
-	missingFiles := gameext.MissingLaunchToolFiles(game.GamePath, tool)
-	if len(missingFiles) > 0 {
-		payload["tool_action_error"] = "extension launch-tool files are missing: " + strings.Join(missingFiles, ", ")
-		payload["tool_executable_path"] = executablePath
-		payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
-		return
-	}
-	if missing := missingLaunchToolDynamicInputFiles(game.GamePath, tool); len(missing) > 0 {
-		payload["tool_action_error"] = "dynamic launch input files are missing: " + strings.Join(missing, ", ")
-		payload["tool_executable_path"] = executablePath
-		payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
-		return
+		return payload, err
 	}
 	dynamicArguments, dynamicDetails := launchToolDynamicArguments(game, mods, tool)
 	if len(dynamicDetails) > 0 {
-		payload["tool_action_error"] = strings.Join(dynamicDetails, " ")
-		payload["tool_executable_path"] = executablePath
-		payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
-		return
+		return payload, errors.New(strings.Join(dynamicDetails, " "))
 	}
 	if unsupported, reason := unsupportedSteamLaunchToolBridge(tool); unsupported {
-		payload["tool_action_error"] = reason
-		payload["tool_executable_path"] = executablePath
-		payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
-		return
+		return payload, errors.New(reason)
 	}
 	arguments := launchToolArguments(game.GamePath, tool, dynamicArguments)
 	payload["tool_action_available"] = "true"
 	payload["tool_launch_options"] = steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
-	payload["tool_executable_path"] = executablePath
-	payload["tool_source_extension"] = strings.TrimSpace(extension.ID)
+	return payload, nil
+}
+
+func (s *Server) extensionExecutableTool(appID, gamePath, toolID string) (gameext.Extension, gameext.LaunchToolSpec, string, string, string, bool) {
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return gameext.Extension{}, gameext.LaunchToolSpec{}, "", "", "", false
+	}
+	canonicalToolID := strings.ToLower(strings.TrimSpace(toolID))
+	for _, tool := range extension.LaunchTools {
+		if strings.ToLower(strings.TrimSpace(tool.ID)) != canonicalToolID {
+			continue
+		}
+		return extension, s.games.ResolveLaunchToolForSteamApp(appID, gamePath, tool), "launch-tool", "ready", "", true
+	}
+	for _, tool := range extension.SupportedTools {
+		if strings.ToLower(strings.TrimSpace(tool.ID)) != canonicalToolID {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(tool.Status))
+		if status == "" {
+			status = "ready"
+		}
+		message := strings.TrimSpace(tool.Message)
+		if strings.TrimSpace(tool.ExecutableRelative) == "" {
+			status = "blocked"
+			message = "extension supported tool does not declare an executable path"
+		} else if len(tool.Environment) > 0 {
+			status = "blocked"
+			message = "DMM cannot pass extension supported-tool environment variables through the Decky Steam launch bridge yet."
+		}
+		return extension, launchToolFromSupportedTool(tool), "supported-tool", status, message, true
+	}
+	return gameext.Extension{}, gameext.LaunchToolSpec{}, "", "", "", false
+}
+
+func launchToolFromSupportedTool(tool gameext.SupportedToolSpec) gameext.LaunchToolSpec {
+	return gameext.LaunchToolSpec{
+		ID:                 tool.ID,
+		Name:               tool.Name,
+		ExecutableRelative: tool.ExecutableRelative,
+		Arguments:          append([]string(nil), tool.Arguments...),
+		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+		Shell:              tool.Shell,
+		Detach:             tool.Detach,
+		Exclusive:          tool.Exclusive,
+		DefaultPrimary:     tool.DefaultPrimary,
+	}
 }
 
 func extensionNoticeKey(appID, event string, notice gameext.EventNotice) string {
@@ -3336,6 +3431,140 @@ func (s *Server) handleCompleteExtensionNoticeAction(w http.ResponseWriter, r *h
 	job, _ = s.jobs.Fail(jobID, message)
 	s.logger.Warn("extension notice action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "error", message, "source", req.Source)
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	toolID := strings.TrimSpace(r.PathValue("toolID"))
+	if appID == "" || toolID == "" {
+		http.Error(w, "appID and toolID are required", http.StatusBadRequest)
+		return
+	}
+	if existing, ok := s.findActiveExtensionToolAction(appID, toolID); ok {
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
+		return
+	}
+	payload, err := s.extensionToolLaunchPayload(r.Context(), appID, toolID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	toolName := strings.TrimSpace(payload["tool_name"])
+	if toolName == "" {
+		toolName = toolID
+	}
+	job := s.jobs.CreateWithPayload(jobTypeExtensionToolAction, "Extension tool: "+toolName, payload)
+	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to launch "+toolName)
+	s.logger.Info("extension tool action queued", "job_id", job.ID, "app_id", appID, "tool_id", payload["tool_id"], "tool_kind", payload["tool_kind"], "source_extension", payload["tool_source_extension"])
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) handleExtensionToolActions(w http.ResponseWriter, r *http.Request) {
+	out := []jobResponse{}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeExtensionToolAction {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusWaiting:
+			out = append(out, jobAPIResponse(job))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actions": out})
+}
+
+func (s *Server) handleStartExtensionToolAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "extension tool action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeExtensionToolAction {
+		http.Error(w, "job is not an extension tool action", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(job.Payload["tool_action_available"]) != "true" {
+		message := strings.TrimSpace(job.Payload["tool_action_error"])
+		if message == "" {
+			message = "extension launch-tool action is not available"
+		}
+		http.Error(w, message, http.StatusConflict)
+		return
+	}
+	started, proceed := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusQueued, jobs.StatusWaiting, jobs.StatusFailed}, jobs.StatusRunning, "Launching extension tool through Decky")
+	if !proceed {
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(started), "proceed": false})
+		return
+	}
+	s.logger.Info("extension tool action started", "job_id", jobID, "app_id", started.Payload["app_id"], "tool_id", started.Payload["tool_id"], "tool_kind", started.Payload["tool_kind"])
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(started), "proceed": true})
+}
+
+func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "extension tool action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeExtensionToolAction {
+		http.Error(w, "job is not an extension tool action", http.StatusBadRequest)
+		return
+	}
+	var req extensionNoticeActionReport
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	if req.Applied {
+		job, _ = s.jobs.Complete(jobID, "Extension tool launch requested")
+		s.logger.Info("extension tool action completed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "source", req.Source)
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+		return
+	}
+	message := strings.TrimSpace(req.Error)
+	if message == "" {
+		message = "Extension tool launch failed"
+	}
+	job, _ = s.jobs.Fail(jobID, message)
+	s.logger.Warn("extension tool action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "error", message, "source", req.Source)
+	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) findActiveExtensionToolAction(appID, toolID string) (jobs.Job, bool) {
+	appID = strings.TrimSpace(appID)
+	toolID = strings.TrimSpace(toolID)
+	if appID == "" || toolID == "" {
+		return jobs.Job{}, false
+	}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeExtensionToolAction {
+			continue
+		}
+		if strings.TrimSpace(job.Payload["app_id"]) != appID || !strings.EqualFold(strings.TrimSpace(job.Payload["tool_id"]), toolID) {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
 }
 
 func (s *Server) steamWorkshopState(ctx context.Context, appID string) (steamWorkshopStateResponse, error) {
@@ -7297,7 +7526,7 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
-	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction && job.Type != "captured-install" {
+	if job.Status == jobs.StatusFailed && job.Type != jobTypeSteamWorkshopAction && job.Type != jobTypeExtensionToolAction && job.Type != "captured-install" {
 		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}

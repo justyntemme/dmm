@@ -966,6 +966,47 @@ class Plugin:
         self._log(f"extension notice action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
         return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
 
+    async def tool_actions(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "actions": []}
+        result, error = self._backend_json_result("GET", "/api/tool/actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load extension tool actions.", "actions": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected extension tool actions response.", "actions": []}
+        if actions:
+            self._log(f"extension tool actions available count={len(actions)}")
+        return {"ok": True, "actions": actions}
+
+    async def start_tool_action(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required.", "proceed": False}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "proceed": False}
+        result, error = self._backend_json_result("POST", f"/api/tool/actions/{urllib.parse.quote(job_id)}/start", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to start extension tool action.", "proceed": False}
+        proceed = bool(result.get("proceed")) if isinstance(result, dict) else False
+        self._log(f"extension tool action start job_id={job_id} proceed={proceed}")
+        return {"ok": True, "proceed": proceed, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def record_tool_action(self, job_id, report):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not isinstance(report, dict):
+            report = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps(report).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/tool/actions/{urllib.parse.quote(job_id)}/complete", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to record extension tool action."}
+        self._log(f"extension tool action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
+        return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
+
     async def launch_actions(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "actions": []}

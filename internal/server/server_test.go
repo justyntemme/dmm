@@ -9564,6 +9564,7 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	for _, rel := range []string{
 		filepath.Join("Tools", "Editor.exe"),
 		filepath.Join("Tools", "Helper.dll"),
+		filepath.Join("Tools", "Runner.exe"),
 	} {
 		path := filepath.Join(gamePath, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -9593,6 +9594,12 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 				RequiredFiles:      []string{"Tools/Editor.exe", "Tools/Helper.dll"},
 				Environment:        map[string]string{"TOOL_MODE": "test"},
 				Relative:           true,
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                 "runner",
+				Name:               "Game Runner",
+				ExecutableRelative: "Tools/Runner.exe",
+				RequiredFiles:      []string{"Tools/Runner.exe"},
 			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "missing-loader",
@@ -9688,6 +9695,94 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 	if body.AppID != appID || len(body.Tools) != len(result.Tools) {
 		t.Fatalf("tools response = %+v", body)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/editor/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "environment variables") {
+		t.Fatalf("environment-dependent tool launch status = %d body = %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /tools/runner/launch status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var queued struct {
+		Job       jobResponse `json:"job"`
+		Duplicate bool        `json:"duplicate"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Job.Type != jobTypeExtensionToolAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["tool_kind"] != "supported-tool" || queued.Job.Payload["tool_action_available"] != "true" {
+		t.Fatalf("extension tool launch job = %+v", queued.Job)
+	}
+	if !strings.Contains(queued.Job.Payload["tool_launch_options"], "Tools/Runner.exe") {
+		t.Fatalf("extension tool launch options = %q", queued.Job.Payload["tool_launch_options"])
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("duplicate tool launch status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if !queued.Duplicate || queued.Job.ID == "" {
+		t.Fatalf("duplicate launch response = %+v", queued)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/tool/actions", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /tool/actions status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var actions struct {
+		Actions []jobResponse `json:"actions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&actions); err != nil {
+		t.Fatal(err)
+	}
+	if len(actions.Actions) != 1 || actions.Actions[0].ID != queued.Job.ID {
+		t.Fatalf("tool actions = %+v", actions)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+queued.Job.ID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("tool action start status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+queued.Job.ID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tool action complete status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	completed, ok := srv.jobs.Get(queued.Job.ID)
+	if !ok || completed.Status != jobs.StatusCompleted {
+		t.Fatalf("completed tool action = %+v", completed)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/missing-loader/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "MissingLoader.exe") {
+		t.Fatalf("missing launch tool status = %d body = %s", rec.Code, rec.Body.String())
 	}
 }
 

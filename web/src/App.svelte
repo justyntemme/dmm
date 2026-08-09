@@ -713,7 +713,7 @@
   }
   $: capturedInstallActions = jobs.filter((job) => job.type === "captured-install" && !["completed", "canceled"].includes(job.status));
   $: actionItems = jobs.filter((job) =>
-    ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type) &&
+    ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice", "extension-tool-action"].includes(job.type) &&
     !["completed", "canceled"].includes(job.status) &&
     !jobHasInstallCandidateReview(job) &&
     !installerChoiceJobHasCandidateReview(job)
@@ -736,7 +736,7 @@
   $: selectedGameActivity = selectedGame
     ? jobs.filter((job) => {
         if (job.type === "captured-install") return actionMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
-        return ["installer-choice", "steam-workshop-action", "extension-notice", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
+        return ["installer-choice", "steam-workshop-action", "extension-notice", "extension-tool-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type) && jobMatchesGame(job, selectedGame) && !["completed", "canceled"].includes(job.status);
       })
     : [];
   $: manageableGameCount = games.filter(gameManageReady).length;
@@ -1184,7 +1184,7 @@
   }
 
   function isActionJob(job: Job) {
-    return ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice"].includes(job.type);
+    return ["captured-install", "installer-choice", "steam-workshop-action", "extension-notice", "extension-tool-action"].includes(job.type);
   }
 
   function eventMatchesSelectedGame(event: DomainEvent) {
@@ -3280,6 +3280,7 @@
 
   function canCancelJob(job: Job) {
     if (job.type === "steam-workshop-action" && job.status === "failed") return true;
+    if (job.type === "extension-tool-action" && job.status === "failed") return true;
     if (job.type === "captured-install" && job.status === "failed") return true;
     return !["completed", "failed", "canceled"].includes(job.status);
   }
@@ -3733,6 +3734,13 @@
   }
 
   function actionNextStep(action: Job) {
+    if (action.type === "extension-tool-action") {
+      const tool = extensionNoticeTool(action);
+      if (action.status === "waiting" || action.status === "queued") return `Waiting for Decky to launch ${tool || "the extension tool"} through Steam.`;
+      if (action.status === "running") return `Decky is launching ${tool || "the extension tool"} through Steam.`;
+      if (action.status === "failed") return `Decky could not launch ${tool || "the extension tool"}. Make sure Steam is running in Gaming Mode, then retry from Decky or cancel this action.`;
+      return "This extension tool action is retained in job history for diagnostics.";
+    }
     if (action.type === "extension-notice") {
       const tool = extensionNoticeTool(action);
       if (tool) return `${tool} is required for this extension note. Review the linked tool page or dismiss this action when the manual step is handled or not needed.`;
@@ -3767,6 +3775,8 @@
 
   function actionStatusLabel(action: Job) {
     if (action.type === "extension-notice" && action.status === "waiting") return "Needs review";
+    if (action.type === "extension-tool-action" && (action.status === "waiting" || action.status === "queued")) return "Waiting for Decky";
+    if (action.type === "extension-tool-action" && action.status === "running") return "Launching";
     if (action.type === "steam-workshop-action" && (action.status === "waiting" || action.status === "queued")) return "Waiting for Decky";
     if (action.type === "installer-choice" && action.status === "waiting") return "Needs choices";
     if (isModUpdateAction(action) && action.status === "waiting") return "Ready to update";
@@ -3814,7 +3824,7 @@
   function actionSource(action: Job) {
     if (action.source_tag) return action.source_tag;
     if (action.catalog) return action.catalog;
-    if (action.type === "extension-notice") return "extension";
+    if (action.type === "extension-notice" || action.type === "extension-tool-action") return "extension";
     if (action.type === "steam-workshop-action") return "steam_workshop";
     return action.payload?.catalog;
   }
@@ -4088,7 +4098,7 @@
                         {/if}
                       </div>
                     {/if}
-                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
+                    {#if (action.type === "extension-notice" || action.type === "extension-tool-action") && extensionNoticeTool(action)}
                       <small>Tool: {extensionNoticeTool(action)}</small>
                     {/if}
                     {#if modUpdateActionDetail(action)}
@@ -5109,7 +5119,7 @@
                         {/if}
                       </div>
                     {/if}
-                    {#if action.type === "extension-notice" && extensionNoticeTool(action)}
+                    {#if (action.type === "extension-notice" || action.type === "extension-tool-action") && extensionNoticeTool(action)}
                       <small>Tool: {extensionNoticeTool(action)}</small>
                     {/if}
                     {#if modUpdateActionDetail(action)}
