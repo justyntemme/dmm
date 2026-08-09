@@ -706,7 +706,10 @@ const deckyRuntimeStyles = `
 .dmm-decky-tab-focused,
 .dmm-decky-tab:focus,
 .dmm-decky-tab:focus-visible,
-.dmm-decky-tab:focus-within {
+.dmm-decky-tab:focus-within,
+.dmm-decky-tab:active,
+.dmm-decky-tab[aria-selected="true"]:focus,
+.dmm-decky-tab[aria-selected="true"]:focus-visible {
   background-image: none !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -3726,18 +3729,20 @@ const freshSectionStyle: CSSProperties = {
 
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
-  alignContent: "start",
-  gridAutoRows: "auto",
+  alignItems: "stretch",
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
   minHeight: "144px",
   overflow: "visible"
 };
 
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
-  alignContent: "start",
   alignItems: "stretch",
+  display: "flex",
+  flexDirection: "column",
   gap: "10px",
-  gridAutoRows: "auto",
   minHeight: "unset",
   overflow: "visible"
 };
@@ -5317,6 +5322,8 @@ function FreshDeckyModManagerRoute() {
             key={item.id}
             className="dmm-decky-tab"
             aria-selected={tab === item.id}
+            role="button"
+            tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
