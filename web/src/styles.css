@@ -745,6 +745,8 @@ h2 {
 
 .markers,
 .profile-list,
+.profile-feature-list,
+.profile-file-list,
 .mod-list,
 .deploy-list,
 .management-grid,
@@ -1099,6 +1101,78 @@ h2 {
 .profile-delete:disabled {
   color: #a1a1aa;
   background: #20262e;
+}
+
+.profile-feature-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-top: 1px solid #303741;
+  padding-top: 14px;
+}
+
+.profile-feature-list article,
+.profile-file-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid #365244;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #132018;
+}
+
+.profile-feature-list article.requirement-missing,
+.profile-file-list article.requirement-missing {
+  border-color: #7c5f21;
+  background: #2a2112;
+}
+
+.profile-feature-list p,
+.profile-file-list p {
+  margin: 5px 0;
+  color: #d4d4d8;
+  overflow-wrap: anywhere;
+}
+
+.profile-feature-list small,
+.profile-file-list small {
+  color: #a1a1aa;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-files-panel {
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 10px;
+  background: #171c22;
+}
+
+.profile-files-panel summary {
+  cursor: pointer;
+  color: #f4f4f5;
+  font-weight: 900;
+}
+
+.profile-file-list {
+  margin-top: 10px;
+}
+
+.profile-file-list > article > span {
+  border: 1px solid #365244;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #76dfa6;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.profile-file-list .requirement-missing > span {
+  border-color: #7c5f21;
+  color: #ffe6a3;
 }
 
 .mod-list article {
@@ -2368,6 +2442,9 @@ h2 {
 }
 
 .mod-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   justify-content: space-between;
   width: 100%;
   min-width: 74px;

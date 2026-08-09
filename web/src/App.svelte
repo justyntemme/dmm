@@ -118,6 +118,32 @@
     enabled_mod_count: number;
   };
 
+  type ProfileFeature = {
+    profile_id: number;
+    feature_id: string;
+    name: string;
+    enabled: boolean;
+    status: string;
+    message?: string;
+    extension?: string;
+  };
+
+  type ProfileFile = {
+    profile_id: number;
+    file_id: string;
+    name: string;
+    game_id: string;
+    base?: string;
+    path?: string;
+    feature_id?: string;
+    optional?: boolean;
+    sync_on_profile_switch?: boolean;
+    resolved_path?: string;
+    status: string;
+    message?: string;
+    extension?: string;
+  };
+
   type Job = {
     id: string;
     type: string;
@@ -676,6 +702,8 @@
   let jobs: Job[] = [];
   let selectedGame: Game | null = null;
   let profiles: Profile[] = [];
+  let profileFeatures: ProfileFeature[] = [];
+  let profileFiles: ProfileFile[] = [];
   let installedMods: InstalledMod[] = [];
   let installCandidates: InstallCandidate[] = [];
   let installerChoicePresets: InstallerChoicePreset[] = [];
@@ -755,6 +783,8 @@
   let busyInstallCandidates: Record<number, boolean> = {};
   let busyWorkshopActions: Record<string, boolean> = {};
   let busyPluginActivationRows: Record<string, boolean> = {};
+  let busyProfileFeatures: Record<string, boolean> = {};
+  let profileFeatureMessage = "";
   let lootRefreshBusy = false;
   let workshopOrderBusy = false;
   type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move";
@@ -812,6 +842,8 @@
   $: sourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform").length;
   $: readySourceCatalogCount = catalogs.filter((catalog) => catalog.kind !== "platform" && catalog.status === "ready").length;
   $: selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+  $: enabledProfileFeatureIDs = new Set(profileFeatures.filter((feature) => feature.enabled).map((feature) => feature.feature_id.toLowerCase()));
+  $: visibleProfileFiles = profileFiles.filter((file) => file.feature_id && enabledProfileFeatureIDs.has(file.feature_id.toLowerCase()));
   $: {
     const options = exploreSourceOptions();
     if (options.length > 0 && !options.some((catalog) => catalog.id === exploreSourceID)) {
@@ -1493,10 +1525,29 @@
 
   async function loadProfiles(game: Game) {
     profiles = await getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`);
+    const activeProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
+    await loadProfileCapabilities(activeProfile?.id ?? 0);
   }
 
   async function loadInstalledMods(game: Game) {
     installedMods = await getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`);
+  }
+
+  async function getProfileCapabilities(profileID: number) {
+    if (profileID <= 0) {
+      return { features: [] as ProfileFeature[], files: [] as ProfileFile[] };
+    }
+    const [features, files] = await Promise.all([
+      getJSON<ProfileFeature[]>(`/api/profiles/${profileID}/features`),
+      getJSON<ProfileFile[]>(`/api/profiles/${profileID}/files`)
+    ]);
+    return { features, files };
+  }
+
+  async function loadProfileCapabilities(profileID = defaultProfileID()) {
+    const { features, files } = await getProfileCapabilities(profileID);
+    profileFeatures = features;
+    profileFiles = files;
   }
 
   async function loadGameState(game: Game) {
@@ -1525,7 +1576,20 @@
       });
       return;
     }
+    const nextProfile = nextProfiles.find((profile) => profile.is_default) ?? nextProfiles[0] ?? null;
+    const nextProfileCapabilities = await getProfileCapabilities(nextProfile?.id ?? 0);
+    if (!selectedGame || selectedGame.app_id !== requestAppID || sequence !== selectedGameLoadSequence) {
+      logClientEvent("selected game capabilities discarded stale response", {
+        sequence,
+        latest_sequence: selectedGameLoadSequence,
+        request_app_id: requestAppID,
+        selected_app_id: selectedGame?.app_id ?? ""
+      });
+      return;
+    }
     profiles = nextProfiles;
+    profileFeatures = nextProfileCapabilities.features;
+    profileFiles = nextProfileCapabilities.files;
     installedMods = nextMods;
     installCandidates = nextCandidates;
     installerChoicePresets = nextPresets;
@@ -1778,6 +1842,42 @@
       danger: true,
       run: () => deleteProfile(profile)
     };
+  }
+
+  function profileFeatureKey(feature: ProfileFeature) {
+    return `${feature.profile_id}:${feature.feature_id}`;
+  }
+
+  function profileFeatureReady(feature: ProfileFeature) {
+    return !feature.status || feature.status === "ready";
+  }
+
+  async function setProfileFeatureEnabled(feature: ProfileFeature, enabled: boolean) {
+    if (!selectedProfile || feature.profile_id !== selectedProfile.id || !profileFeatureReady(feature)) return;
+    const key = profileFeatureKey(feature);
+    busyProfileFeatures = { ...busyProfileFeatures, [key]: true };
+    profileFeatureMessage = "";
+    error = "";
+    try {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/features/${encodeURIComponent(feature.feature_id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const updated = await response.json() as ProfileFeature;
+      profileFeatures = profileFeatures.map((item) => item.feature_id === updated.feature_id ? updated : item);
+      profileFeatureMessage = `${updated.name || updated.feature_id} ${updated.enabled ? "enabled" : "disabled"} for ${selectedProfile.name}.`;
+      await refreshSelectedGame({ refreshPreview: true, reason: "profile-feature-toggle" });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      const { [key]: _removed, ...rest } = busyProfileFeatures;
+      busyProfileFeatures = rest;
+    }
   }
 
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
@@ -6000,6 +6100,60 @@
               </article>
             {/each}
           </div>
+          {#if selectedProfile}
+            <section class="profile-feature-panel" aria-label="Profile extension features">
+              <div class="panel-heading compact-heading">
+                <h3>Extension Profile Features</h3>
+                <span>{profileFeatures.filter((feature) => feature.enabled).length} on / {profileFeatures.length} total</span>
+              </div>
+              <p class="hint">Advanced profile-scoped behaviors declared by game extensions, such as local settings files or load-order rules.</p>
+              {#if profileFeatureMessage}<p class="deploy-message success">{profileFeatureMessage}</p>{/if}
+              {#if profileFeatures.length === 0}
+                <p class="hint">No extension profile features are registered for this game.</p>
+              {:else}
+                <div class="profile-feature-list">
+                  {#each profileFeatures as feature}
+                    <article class:requirement-missing={!profileFeatureReady(feature)}>
+                      <div>
+                        <div class="mod-title-line">
+                          <strong>{feature.name || feature.feature_id}</strong>
+                          {#if feature.extension}<span class="source-pill source-extension">{feature.extension}</span>{/if}
+                        </div>
+                        <p>{feature.message || (feature.enabled ? "Enabled for this profile." : "Available for this profile.")}</p>
+                        <small>{feature.feature_id}</small>
+                      </div>
+                      <label class="mod-toggle">
+                        <input
+                          type="checkbox"
+                          checked={feature.enabled}
+                          disabled={!profileFeatureReady(feature) || Boolean(busyProfileFeatures[profileFeatureKey(feature)])}
+                          on:change={(event) => setProfileFeatureEnabled(feature, event.currentTarget.checked)}
+                        />
+                        <em>{feature.enabled ? "On" : profileFeatureReady(feature) ? "Off" : feature.status}</em>
+                      </label>
+                    </article>
+                  {/each}
+                </div>
+              {/if}
+              {#if visibleProfileFiles.length > 0}
+                <details class="profile-files-panel">
+                  <summary>Managed profile files</summary>
+                  <div class="profile-file-list">
+                    {#each visibleProfileFiles as file}
+                      <article class:requirement-missing={file.status !== "ready"}>
+                        <div>
+                          <strong>{file.name || file.file_id}</strong>
+                          <p>{file.resolved_path || `${file.base ?? "base"}/${file.path ?? ""}`}</p>
+                          {#if file.message}<small>{file.message}</small>{/if}
+                        </div>
+                        <span>{file.optional ? "Optional" : "Required"}</span>
+                      </article>
+                    {/each}
+                  </div>
+                </details>
+              {/if}
+            </section>
+          {/if}
         </article>
       {:else if activeGameModule === "review"}
         <article class="workspace-panel">
