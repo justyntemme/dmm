@@ -21,6 +21,9 @@ func TestExtensionRegistersVortexModTypes(t *testing.T) {
 	if len(summary.Capabilities.ModTypes) != 3 || len(summary.Capabilities.Installers) != 3 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
+	}
 }
 
 func TestPakArchiveTargetsDeprecatedPCBANKSMods(t *testing.T) {

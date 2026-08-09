@@ -8,7 +8,7 @@ import (
 
 func TestParseVersionInfoReadsFixedFileVersion(t *testing.T) {
 	data := versionInfoBlob(1, 6, 1170, 0)
-	version, err := parseVersionInfo(data)
+	version, err := parseFileVersionInfo(data)
 	if err != nil {
 		t.Fatalf("parseVersionInfo returned error: %v", err)
 	}
@@ -21,8 +21,19 @@ func TestParseVersionInfoRejectsInvalidSignature(t *testing.T) {
 	data := versionInfoBlob(1, 2, 3, 4)
 	offset := fixedFileInfoOffset(data)
 	binary.LittleEndian.PutUint32(data[offset:offset+4], 0)
-	if _, err := parseVersionInfo(data); err == nil {
+	if _, err := parseFileVersionInfo(data); err == nil {
 		t.Fatal("expected invalid signature error")
+	}
+}
+
+func TestParseProductVersionInfoReadsLocalizedString(t *testing.T) {
+	data := versionInfoBlobWithProductVersion("4.72.0.0")
+	version, err := parseProductVersionInfo(data)
+	if err != nil {
+		t.Fatalf("parseProductVersionInfo returned error: %v", err)
+	}
+	if version != "4.72.0.0" {
+		t.Fatalf("version = %q", version)
 	}
 }
 
@@ -47,14 +58,20 @@ func TestFindVersionResourceFindsNestedDataEntry(t *testing.T) {
 }
 
 func versionInfoBlob(major, minor, build, patch uint16) []byte {
-	data := make([]byte, 0, 96)
-	data = appendU16(data, 0)
-	data = appendU16(data, 52)
-	data = appendU16(data, 0)
-	data = appendUTF16Null(data, "VS_VERSION_INFO")
-	for len(data)%4 != 0 {
-		data = append(data, 0)
-	}
+	fixed := fixedFileInfoValue(major, minor, build, patch)
+	return buildVersionBlock("VS_VERSION_INFO", 0, fixed)
+}
+
+func versionInfoBlobWithProductVersion(version string) []byte {
+	fixed := fixedFileInfoValue(1, 2, 3, 4)
+	product := buildVersionBlock("ProductVersion", 1, utf16Value(version))
+	table := buildVersionBlock("040904b0", 1, nil, product)
+	stringFileInfo := buildVersionBlock("StringFileInfo", 1, nil, table)
+	return buildVersionBlock("VS_VERSION_INFO", 0, fixed, stringFileInfo)
+}
+
+func fixedFileInfoValue(major, minor, build, patch uint16) []byte {
+	data := make([]byte, 0, 52)
 	data = appendU32(data, vsFixedFileInfoSig)
 	data = appendU32(data, 0x00010000)
 	data = appendU32(data, uint32(major)<<16|uint32(minor))
@@ -62,8 +79,39 @@ func versionInfoBlob(major, minor, build, patch uint16) []byte {
 	for i := 0; i < 9; i++ {
 		data = appendU32(data, 0)
 	}
+	return data
+}
+
+func buildVersionBlock(key string, valueType uint16, value []byte, children ...[]byte) []byte {
+	data := make([]byte, 0, 64+len(value))
+	data = appendU16(data, 0)
+	valueLength := len(value)
+	if valueType == 1 {
+		valueLength /= 2
+	}
+	data = appendU16(data, uint16(valueLength))
+	data = appendU16(data, valueType)
+	data = appendUTF16Null(data, key)
+	for len(data)%4 != 0 {
+		data = append(data, 0)
+	}
+	data = append(data, value...)
+	for len(data)%4 != 0 {
+		data = append(data, 0)
+	}
+	for _, child := range children {
+		data = append(data, child...)
+		for len(data)%4 != 0 {
+			data = append(data, 0)
+		}
+	}
 	binary.LittleEndian.PutUint16(data[0:2], uint16(len(data)))
 	return data
+}
+
+func utf16Value(value string) []byte {
+	data := make([]byte, 0, len(value)*2+2)
+	return appendUTF16Null(data, value)
 }
 
 func fixedFileInfoOffset(data []byte) int {

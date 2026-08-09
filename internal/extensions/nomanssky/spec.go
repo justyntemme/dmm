@@ -1,6 +1,7 @@
 package nomanssky
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionpe"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -64,12 +65,12 @@ func Register(r sdk.Registrar) {
 			Value: "NoMansSky",
 		}},
 	})
-	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "nomanssky-exe-version",
-		Name:    "No Man's Sky executable product version",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex reads Binaries/NMS.exe through exe-version; DMM needs PE/product-version provider parity before executing this check.",
-	})
+	r.RegisterGameVersionProvider(gameversionpe.Provider(gameversionpe.Options{
+		ID:   "nomanssky-exe-version",
+		Name: "No Man's Sky executable product version",
+		Path: "Binaries/NMS.exe",
+		Kind: gameversionpe.KindProductVersion,
+	}))
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "nomanssky-1.0.1-deprecated-pak-migration",
 		Name:        "No Man's Sky deprecated PAK migration",

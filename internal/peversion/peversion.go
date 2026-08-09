@@ -21,37 +21,54 @@ const (
 
 // FileVersion returns the Windows VS_FIXEDFILEINFO file version embedded in a PE file.
 func FileVersion(path string) (string, error) {
+	data, err := versionResource(path)
+	if err != nil {
+		return "", err
+	}
+	return parseFileVersionInfo(data)
+}
+
+// ProductVersion returns the localized ProductVersion string embedded in a PE file.
+func ProductVersion(path string) (string, error) {
+	data, err := versionResource(path)
+	if err != nil {
+		return "", err
+	}
+	return parseProductVersionInfo(data)
+}
+
+func versionResource(path string) ([]byte, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return "", errors.New("PE file path is required")
+		return nil, errors.New("PE file path is required")
 	}
 	file, err := pe.Open(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer file.Close()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	root, err := resourceRoot(file, data)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	entry, err := findVersionResource(root)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	offset, err := rvaToFileOffset(file, entry.rva)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	end := offset + uint64(entry.size)
 	if offset >= uint64(len(data)) || end > uint64(len(data)) || end < offset {
-		return "", fmt.Errorf("version resource points outside %s", filepath.Base(path))
+		return nil, fmt.Errorf("version resource points outside %s", filepath.Base(path))
 	}
-	return parseVersionInfo(data[offset:end])
+	return data[offset:end], nil
 }
 
 type resourceDataEntry struct {
@@ -187,7 +204,7 @@ func resourceEntries(root []byte, dirOffset int) ([]resourceEntry, error) {
 	return entries, nil
 }
 
-func parseVersionInfo(data []byte) (string, error) {
+func parseFileVersionInfo(data []byte) (string, error) {
 	if len(data) < 6 {
 		return "", errors.New("VERSIONINFO resource is too short")
 	}
@@ -220,6 +237,119 @@ func parseVersionInfo(data []byte) (string, error) {
 		uint16(fileVersionLS),
 	}
 	return fmt.Sprintf("%d.%d.%d.%d", segments[0], segments[1], segments[2], segments[3]), nil
+}
+
+func parseProductVersionInfo(data []byte) (string, error) {
+	root, err := readVersionBlock(data, 0)
+	if err != nil {
+		return "", err
+	}
+	for offset := root.childrenOffset; offset < root.end; {
+		child, err := readVersionBlock(data, offset)
+		if err != nil {
+			return "", err
+		}
+		if child.key == "StringFileInfo" {
+			if version := productVersionFromStringFileInfo(data, child); version != "" {
+				return version, nil
+			}
+		}
+		next := align4(child.end)
+		if next <= offset {
+			break
+		}
+		offset = next
+	}
+	return "", errors.New("ProductVersion string is missing")
+}
+
+func productVersionFromStringFileInfo(data []byte, info versionBlock) string {
+	for tableOffset := info.childrenOffset; tableOffset < info.end; {
+		table, err := readVersionBlock(data, tableOffset)
+		if err != nil {
+			return ""
+		}
+		for stringOffset := table.childrenOffset; stringOffset < table.end; {
+			entry, err := readVersionBlock(data, stringOffset)
+			if err != nil {
+				return ""
+			}
+			if entry.key == "ProductVersion" {
+				return strings.TrimSpace(readTextValue(data, entry))
+			}
+			next := align4(entry.end)
+			if next <= stringOffset {
+				break
+			}
+			stringOffset = next
+		}
+		next := align4(table.end)
+		if next <= tableOffset {
+			break
+		}
+		tableOffset = next
+	}
+	return ""
+}
+
+type versionBlock struct {
+	key            string
+	valueOffset    int
+	valueLength    int
+	valueType      uint16
+	childrenOffset int
+	end            int
+}
+
+func readVersionBlock(data []byte, offset int) (versionBlock, error) {
+	if offset < 0 || offset+6 > len(data) {
+		return versionBlock{}, errors.New("VERSIONINFO block starts outside buffer")
+	}
+	length := int(binary.LittleEndian.Uint16(data[offset : offset+2]))
+	if length == 0 || offset+length > len(data) {
+		return versionBlock{}, errors.New("VERSIONINFO block length is invalid")
+	}
+	valueLength := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
+	valueType := binary.LittleEndian.Uint16(data[offset+4 : offset+6])
+	key, next, err := readUTF16String(data[:offset+length], offset+6)
+	if err != nil {
+		return versionBlock{}, err
+	}
+	valueOffset := align4(next)
+	valueBytes := valueLength
+	if valueType == 1 {
+		valueBytes *= 2
+	}
+	if valueOffset+valueBytes > offset+length {
+		return versionBlock{}, errors.New("VERSIONINFO value exceeds block")
+	}
+	return versionBlock{
+		key:            key,
+		valueOffset:    valueOffset,
+		valueLength:    valueLength,
+		valueType:      valueType,
+		childrenOffset: align4(valueOffset + valueBytes),
+		end:            offset + length,
+	}, nil
+}
+
+func readTextValue(data []byte, block versionBlock) string {
+	if block.valueType != 1 || block.valueLength == 0 {
+		return ""
+	}
+	end := block.valueOffset + block.valueLength*2
+	if block.valueOffset < 0 || end > len(data) || end < block.valueOffset {
+		return ""
+	}
+	units := make([]uint16, 0, block.valueLength)
+	for offset := block.valueOffset; offset+1 < end; offset += 2 {
+		unit := binary.LittleEndian.Uint16(data[offset : offset+2])
+		if unit == 0 {
+			break
+		}
+		units = append(units, unit)
+	}
+	return string(utf16.Decode(units))
 }
 
 func readUTF16String(data []byte, offset int) (string, int, error) {
