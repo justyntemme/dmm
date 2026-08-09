@@ -39,7 +39,7 @@ func Register(r sdk.Registrar) {
 
 func registerCrossExtensionAPIs(r sdk.Registrar) {
 	for _, api := range []sdk.ExtensionAPISpec{
-		blockedAPI("deploy-single-mod", "Deploy one mod through the deployment pipeline"),
+		readyAPI("deploy-single-mod", "Deploy one mod through the deployment pipeline"),
 		readyAPI("purge-mods-in-path", "Purge managed mods under a path"),
 		blockedAPI("browse-for-download", "Open a source-backed download browser"),
 		blockedAPI("discover-tools", "Discover extension-declared external tools"),

@@ -18,6 +18,110 @@ type scopedPurgeResult struct {
 	DeploymentID int64
 }
 
+type singleModDeploymentResult struct {
+	Applied      []deploy.AppliedFile
+	Removed      []deploy.AppliedFile
+	Remaining    []deploy.AppliedFile
+	DeploymentID int64
+}
+
+func (s *Server) deploySingleMod(ctx context.Context, appID string, installedModID int64, enable bool, source string) (singleModDeploymentResult, error) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return singleModDeploymentResult{}, errors.New("steam app id is required")
+	}
+	if installedModID <= 0 {
+		return singleModDeploymentResult{}, errors.New("installed mod id is required")
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "deploy-single-mod"
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	if err := s.deploymentAllowedForGame(game); err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	profile, err := s.activeProfile(ctx, appID, mods)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	mod, err := s.db.InstalledModForSteamApp(ctx, appID, installedModID)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	currentFiles, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	selectedFiles, otherFiles := splitAppliedFilesForInstalledMod(currentFiles, installedModID)
+	mappings := []deploy.FileMapping(nil)
+	if enable {
+		mappings, err = s.deployMappingsForInstalledMod(ctx, game, mod)
+		if err != nil {
+			return singleModDeploymentResult{}, err
+		}
+	}
+	stagingRoot := strings.TrimSpace(mod.StagingPath)
+	if stagingRoot == "" {
+		stagingRoot = filepath.Join(s.cfg.DataDir, "staging")
+	}
+	plan, err := deploy.BuildPlanWithOptions(stagingRoot, game.GamePath, s.deploymentStrategyForProfile(appID, profile), mappings, selectedFiles, deploy.BuildOptions{
+		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
+		IgnoreDeployPatterns:   s.games.DeployIgnorePatternsForSteamApp(appID),
+	})
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	if len(plan.Conflicts) > 0 {
+		return singleModDeploymentResult{}, fmt.Errorf("single mod deployment is blocked by %d unmanaged file conflict%s", len(plan.Conflicts), plural(len(plan.Conflicts)))
+	}
+	deployment, err := deploy.ApplyPrepared(plan)
+	if err != nil {
+		return singleModDeploymentResult{}, err
+	}
+	remaining := append([]deploy.AppliedFile(nil), otherFiles...)
+	remaining = append(remaining, deployment.Files...)
+	strategy := deploymentPointStrategy(remaining)
+	if strategy == "" {
+		strategy = deploymentPointStrategy(currentFiles)
+	}
+	if strategy == "" {
+		strategy = s.deploymentStrategyForProfile(appID, profile)
+	}
+	deploymentID, err := s.db.RecordDeployment(ctx, appID, strategy, remaining)
+	if err != nil {
+		rollbackErr := deployment.Rollback()
+		if rollbackErr != nil {
+			return singleModDeploymentResult{}, fmt.Errorf("record single mod deployment: %w; rollback failed: %v", err, rollbackErr)
+		}
+		return singleModDeploymentResult{}, fmt.Errorf("record single mod deployment: %w", err)
+	}
+	deployment.Commit()
+
+	removed := removedAppliedFiles(selectedFiles, deployment.Files)
+	if err := s.updateAddedFilesSnapshot(ctx, appID, profile.ID, nil); err != nil {
+		s.logger.Warn("new-file snapshot update after single mod deploy failed", "app_id", appID, "source", source, "installed_mod_id", installedModID, "enable", enable, "error", err)
+	}
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":           "single_mod_deploy",
+		"source":           source,
+		"installed_mod_id": installedModID,
+		"enabled":          enable,
+		"files":            len(deployment.Files),
+		"removed":          len(removed),
+		"remaining":        len(remaining),
+		"deployment_id":    deploymentID,
+	})
+	return singleModDeploymentResult{Applied: deployment.Files, Removed: removed, Remaining: remaining, DeploymentID: deploymentID}, nil
+}
+
 func (s *Server) purgeModsInPath(ctx context.Context, appID, modType, targetPath, source string) (scopedPurgeResult, error) {
 	appID = strings.TrimSpace(appID)
 	targetPath = strings.TrimSpace(targetPath)
@@ -109,6 +213,41 @@ func (s *Server) installedModTypesByID(ctx context.Context, appID string) (map[i
 		out[mod.ID] = canonicalModType(installedModType(mod))
 	}
 	return out, nil
+}
+
+func splitAppliedFilesForInstalledMod(files []deploy.AppliedFile, installedModID int64) (selected, other []deploy.AppliedFile) {
+	for _, file := range files {
+		if file.InstalledModID == installedModID {
+			selected = append(selected, file)
+			continue
+		}
+		other = append(other, file)
+	}
+	return selected, other
+}
+
+func removedAppliedFiles(previous, next []deploy.AppliedFile) []deploy.AppliedFile {
+	if len(previous) == 0 {
+		return nil
+	}
+	nextTargets := make(map[string]struct{}, len(next))
+	for _, file := range next {
+		target := strings.TrimSpace(file.TargetPath)
+		if target != "" {
+			nextTargets[filepath.Clean(target)] = struct{}{}
+		}
+	}
+	var removed []deploy.AppliedFile
+	for _, file := range previous {
+		target := strings.TrimSpace(file.TargetPath)
+		if target == "" {
+			continue
+		}
+		if _, ok := nextTargets[filepath.Clean(target)]; !ok {
+			removed = append(removed, file)
+		}
+	}
+	return removed
 }
 
 func deploymentFileMatchesScopedPurge(file deploy.AppliedFile, purgePath, modType string, typeByInstalledMod map[int64]string) bool {

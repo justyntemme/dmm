@@ -6928,6 +6928,109 @@ func TestPurgeModsInPathRemovesOnlyMatchingManagedFiles(t *testing.T) {
 	}
 }
 
+func TestDeploySingleModUpdatesOnlySelectedManagedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Mods"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	selectedStaging := filepath.Join(root, "staging", "selected")
+	otherStaging := filepath.Join(root, "staging", "other")
+	if err := os.MkdirAll(selectedStaging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherStaging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	selectedSource := filepath.Join(selectedStaging, "selected.txt")
+	otherSource := filepath.Join(otherStaging, "other.txt")
+	if err := os.WriteFile(selectedSource, []byte("selected"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(otherSource, []byte("other"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	selectedMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   "413150",
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "stardewvalley", ModID: "selected", FileID: "1"},
+		Name:         "Selected Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "selected.zip"),
+		StagingPath:  selectedStaging,
+		ManifestJSON: `{"mod_type":"stardewvalley","files":[{"path":"selected.txt","target_relative":"Mods/selected.txt","size":8,"sha256":"selected-sum"}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherMod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   "413150",
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "stardewvalley", ModID: "other", FileID: "1"},
+		Name:         "Other Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "other.zip"),
+		StagingPath:  otherStaging,
+		ManifestJSON: `{"mod_type":"stardewvalley","files":[{"path":"other.txt","target_relative":"Mods/other.txt","size":5,"sha256":"other-sum"}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTarget := filepath.Join(gamePath, "Mods", "other.txt")
+	if err := os.WriteFile(otherTarget, []byte("other"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{
+		{SourcePath: otherSource, TargetPath: otherTarget, Strategy: deploy.StrategyCopy, InstalledModID: otherMod.ID, Catalog: "nexus", ModID: "other"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	enabled, err := srv.deploySingleMod(context.Background(), "413150", selectedMod.ID, true, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedTarget := filepath.Join(gamePath, "Mods", "selected.txt")
+	if len(enabled.Applied) != 1 || enabled.Applied[0].TargetPath != selectedTarget || len(enabled.Remaining) != 2 || enabled.DeploymentID == 0 {
+		t.Fatalf("enabled result = %+v", enabled)
+	}
+	if body, err := os.ReadFile(selectedTarget); err != nil || string(body) != "selected" {
+		t.Fatalf("selected target body = %q, err = %v", string(body), err)
+	}
+
+	disabled, err := srv.deploySingleMod(context.Background(), "413150", selectedMod.ID, false, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(disabled.Applied) != 0 || len(disabled.Removed) != 1 || disabled.Removed[0].TargetPath != selectedTarget || len(disabled.Remaining) != 1 || disabled.DeploymentID == 0 {
+		t.Fatalf("disabled result = %+v", disabled)
+	}
+	if _, err := os.Stat(selectedTarget); !os.IsNotExist(err) {
+		t.Fatalf("selected target should be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(otherTarget); err != nil {
+		t.Fatalf("other target should remain: %v", err)
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].TargetPath != otherTarget {
+		t.Fatalf("latest files = %+v", files)
+	}
+}
+
 func createDuplicateEntryZip(path string) error {
 	file, err := os.Create(path)
 	if err != nil {
@@ -8719,7 +8822,7 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "hook-tool.exe"), []byte("tool"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	const appID = "999001"
+	const appID = "413150"
 	var willDeployCalls int
 	var didDeployCalls int
 	extension := gameext.MustCompileExtension(sdk.Extension{
