@@ -214,6 +214,8 @@ type FeatureSummary struct {
 	FileExtensions     []string                 `json:"file_extensions,omitempty"`
 	Engine             string                   `json:"engine,omitempty"`
 	SupportsWrite      bool                     `json:"supports_write,omitempty"`
+	Status             string                   `json:"status,omitempty"`
+	Message            string                   `json:"message,omitempty"`
 	Command            string                   `json:"command,omitempty"`
 	Scope              string                   `json:"scope,omitempty"`
 	Kind               string                   `json:"kind,omitempty"`
@@ -917,6 +919,8 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			FileExtensions: appendClean([]string{}, archiveType.FileExtensions...),
 			Engine:         archiveType.Engine,
 			SupportsWrite:  archiveType.SupportsWrite,
+			Status:         defaultString(archiveType.Status, sdk.CapabilityStatusReady),
+			Message:        archiveType.Message,
 		})
 	}
 	for _, interpreter := range extension.Interpreters {
@@ -953,7 +957,12 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.ExtensionToDos = append(summary.Capabilities.ExtensionToDos, FeatureSummary{ID: todo.ID, Name: todo.Name, Trigger: todo.Trigger})
 	}
 	for _, api := range extension.ExtensionAPIs {
-		summary.Capabilities.ExtensionAPIs = append(summary.Capabilities.ExtensionAPIs, FeatureSummary{ID: api.ID, Name: api.Name})
+		summary.Capabilities.ExtensionAPIs = append(summary.Capabilities.ExtensionAPIs, FeatureSummary{
+			ID:      api.ID,
+			Name:    api.Name,
+			Status:  defaultString(api.Status, sdk.CapabilityStatusReady),
+			Message: api.Message,
+		})
 	}
 	for _, feature := range extension.ProfileFeatures {
 		summary.Capabilities.ProfileFeatures = append(summary.Capabilities.ProfileFeatures, FeatureSummary{ID: feature.ID, Name: feature.Name})

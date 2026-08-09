@@ -296,7 +296,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.Capabilities.SteamWorkshop == nil || !summary.Capabilities.SteamWorkshop.AllowCoexistence || len(summary.Capabilities.SteamWorkshop.Actions) != 1 {
 		t.Fatalf("workshop capabilities = %+v", summary.Capabilities.SteamWorkshop)
 	}
-	if len(summary.Capabilities.ArchiveTypes) != 1 || summary.Capabilities.ArchiveTypes[0].ID != "ba2" || !summary.Capabilities.ArchiveTypes[0].SupportsWrite {
+	if len(summary.Capabilities.ArchiveTypes) != 1 || summary.Capabilities.ArchiveTypes[0].ID != "ba2" || !summary.Capabilities.ArchiveTypes[0].SupportsWrite || summary.Capabilities.ArchiveTypes[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("archive type capabilities = %+v", summary.Capabilities.ArchiveTypes)
 	}
 	if len(summary.Capabilities.Interpreters) != 1 || summary.Capabilities.Interpreters[0].ID != "jar" || summary.Capabilities.Interpreters[0].Command != "java" {

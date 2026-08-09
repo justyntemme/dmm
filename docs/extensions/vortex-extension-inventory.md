@@ -25,8 +25,8 @@ Counts:
 - Framework/shared Vortex extensions: 46
 - Game Vortex extensions: 86
 - Total Vortex extension entries: 132
-- DMM counterparts identified in the current pass: 16
-  - Framework/shared counterparts: 7
+- DMM counterparts identified in the current pass: 20
+  - Framework/shared counterparts: 11
   - Game counterparts: 9
 
 ## Framework And Shared Extensions
@@ -39,8 +39,8 @@ Counts:
 - [ ] `fnis-integration`
 - [ ] `gamebryo-archive-check`
 - [x] `gamebryo-archive-invalidation` - DMM counterpart: shared `internal/extensions/gamebryo` archive-invalidation handler.
-- [ ] `gamebryo-archive-support`
-- [ ] `gamebryo-bsa-support`
+- [x] `gamebryo-archive-support` - DMM counterpart: `internal/extensions/gamebryoarchive` framework extension. Current parity is source-backed BA2/BSA archive type metadata with blocked runtime status until native list/extract/write engines exist.
+- [x] `gamebryo-bsa-support` - DMM counterpart: `internal/extensions/gamebryoarchive` framework extension. Current parity is source-backed BSA archive type metadata with blocked runtime status until the native BSA engine exists.
 - [ ] `gamebryo-plugin-indexlock`
 - [x] `gamebryo-plugin-management` - DMM counterpart: shared `internal/extensions/gamebryo` plugin activation capability. Full Bethesda load-order/sorting parity remains tracked separately.
 - [ ] `gamebryo-savegame-management`
@@ -66,11 +66,11 @@ Counts:
 - [ ] `modtype-gedosato`
 - [ ] `modtype-umm`
 - [ ] `morrowind-plugin-management`
-- [ ] `mtframework-arc-support`
+- [x] `mtframework-arc-support` - DMM counterpart: `internal/extensions/mtframeworkarc` framework extension. Current parity is source-backed ARC archive type metadata with blocked runtime status until a Deck-safe ARCtool bridge or native ARC engine exists.
 - [ ] `new-file-monitor`
 - [ ] `nmm-import-tool`
 - [ ] `open-directory`
-- [ ] `quickbms-support`
+- [x] `quickbms-support` - DMM counterpart: `internal/extensions/quickbmssupport` framework extension. Current parity is source-backed QuickBMS API metadata for register/list/extract/write/reimport with blocked runtime status until the executable bridge exists.
 - [x] `script-extender-error-check` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender runtime requirement capability. Full Vortex parity still needs source review per game/tool.
 - [x] `script-extender-installer` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender installer capability.
 - [ ] `test-gameversion`

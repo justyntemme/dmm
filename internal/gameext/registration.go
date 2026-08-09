@@ -340,7 +340,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateNamedAndScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
 	errs = append(errs, validateTriggeredSpecs("extension test", extension.ExtensionTests, func(spec sdk.ExtensionTestSpec) (string, string, string) { return spec.ID, spec.Name, spec.Trigger })...)
 	errs = append(errs, validateTriggeredSpecs("extension todo", extension.ExtensionToDos, func(spec sdk.ExtensionToDoSpec) (string, string, string) { return spec.ID, spec.Name, spec.Trigger })...)
-	errs = append(errs, validateNamedAndNamed("extension api", extension.ExtensionAPIs, func(spec sdk.ExtensionAPISpec) (string, string) { return spec.ID, spec.Name })...)
+	errs = append(errs, validateExtensionAPIs(extension.ExtensionAPIs)...)
 	errs = append(errs, validateNamedAndNamed("profile feature", extension.ProfileFeatures, func(spec sdk.ProfileFeatureSpec) (string, string) { return spec.ID, spec.Name })...)
 	errs = append(errs, validateNamedAndNamed("collection feature", extension.CollectionFeatures, func(spec sdk.CollectionFeatureSpec) (string, string) { return spec.ID, spec.Name })...)
 	errs = append(errs, validateNamedAndScoped("state store", extension.StateStores, func(spec sdk.StateStoreSpec) (string, string, string) { return spec.ID, spec.Name, spec.Scope })...)
@@ -1090,6 +1090,9 @@ func validateArchiveTypes(specs []sdk.ArchiveTypeSpec) []error {
 		if strings.TrimSpace(spec.Engine) == "" {
 			errs = append(errs, errors.New("archive type "+id+" engine is required"))
 		}
+		if err := validateCapabilityStatus("archive type", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
 		if len(spec.FileExtensions) == 0 {
 			errs = append(errs, errors.New("archive type "+id+" must declare file extensions"))
 		}
@@ -1097,6 +1100,38 @@ func validateArchiveTypes(specs []sdk.ArchiveTypeSpec) []error {
 			if err := validateFileExtension(extension); err != nil {
 				errs = append(errs, errors.New("archive type "+id+" file extension: "+err.Error()))
 			}
+		}
+	}
+	return errs
+}
+
+func validateCapabilityStatus(kind, id, status, message string) error {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return nil
+	}
+	switch status {
+	case sdk.CapabilityStatusReady, sdk.CapabilityStatusMetadata:
+		return nil
+	case sdk.CapabilityStatusBlocked:
+		if strings.TrimSpace(message) == "" {
+			return errors.New(kind + " " + id + " blocked status requires a message")
+		}
+		return nil
+	default:
+		return errors.New(kind + " " + id + " status must be ready, metadata, or blocked")
+	}
+}
+
+func validateExtensionAPIs(specs []sdk.ExtensionAPISpec) []error {
+	errs := validateNamedAndNamed("extension api", specs, func(spec sdk.ExtensionAPISpec) (string, string) { return spec.ID, spec.Name })
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		if err := validateCapabilityStatus("extension api", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs

@@ -20,6 +20,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fez"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasyxx2hdremaster"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryoarchive"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ghostreconbreakpoint"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gnorpapologue"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/godhood"
@@ -43,6 +44,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mrprepper"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/mtframeworkarc"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearoption"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/nuclearthrone"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/persona5royal"
@@ -54,6 +56,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/prototype2"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/quake4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/quickbmssupport"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
@@ -90,6 +93,9 @@ import (
 func FirstParty() []gameext.Extension {
 	return []gameext.Extension{
 		gameext.MustCompileExtension(commoninterpreters.Extension()),
+		gameext.MustCompileExtension(gamebryoarchive.Extension()),
+		gameext.MustCompileExtension(mtframeworkarc.Extension()),
+		gameext.MustCompileExtension(quickbmssupport.Extension()),
 		gameext.MustCompileExtension(bastion.Extension()),
 		gameext.MustCompileExtension(besiege.Extension()),
 		gameext.MustCompileExtension(blasphemous.Extension()),

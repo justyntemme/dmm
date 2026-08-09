@@ -58,7 +58,8 @@ DMM currently has first-party Go extension registration for:
 - Install platforms, target roots, mod types, install planners, custom installer match/build hooks, installer choices, FOMOD-like choice persistence, and source-aware captured installs.
 - Runtime requirements, runtime metadata dependencies, launch tools, dynamic launch inputs/arguments, and game version providers.
 - Plugin activation, unmanaged markers, conflict ignores, deploy ignores, packed archive mutation declarations, merge/load-order summaries, and lifecycle event handlers.
-- Deploy lifecycle execution for `will-deploy`, `did-deploy`, and `did-purge` in the current product path.
+- Deploy lifecycle execution for `will-deploy`, `did-deploy`, `will-purge`, `did-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change` in the current product path.
+- Extension-declared archive type metadata and extension API metadata can now report `ready`, `metadata`, or `blocked` status in `/api/extensions` without pretending that unimplemented engines are executable.
 - Extension capability summaries exposed through `/api/extensions` and persisted non-behavioral snapshots.
 
 This is enough for the current Stardew Valley vertical slice and several partial source-backed extensions. It is not enough to claim full Vortex extension-framework parity.
@@ -119,8 +120,8 @@ DMM status:
 
 - Has generic ZIP/7z/RAR extraction through the download/install pipeline.
 - Has MGSV-specific QAR/FPK primitives exposed through extension-owned packed archive mutation.
-- Missing a generic extension-declared archive type registry for list/extract/write/reimport.
-- Missing BSA/BA2/ARC/QuickBMS engines and extension binding.
+- Has a generic extension-declared archive type registry and source-backed framework metadata for Vortex `gamebryo-archive-support`, `gamebryo-bsa-support`, `mtframework-arc-support`, and `quickbms-support`.
+- BSA, BA2, ARC, and QuickBMS are intentionally exposed as `blocked` capabilities until DMM implements native Deck-safe list/extract/write/reimport engines or verified external-tool bridges.
 
 Priority: P0 for Bethesda/MT Framework/QuickBMS games.
 
@@ -137,7 +138,8 @@ Vortex source examples:
 DMM status:
 
 - Supports extension handlers and generated deploy mappings for deploy/purge paths already wired in core.
-- Missing first-class event constants and execution points for `will-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, `profile-did-change`, and `added-files`.
+- First-class event constants and execution points now exist for `will-purge`, `will-remove-mods`, `did-remove-mod`, `did-remove-profile`, `did-install-mod`, `will-enable-mods`, `mod-enabled`, `mods-enabled`, `profile-will-change`, and `profile-did-change`.
+- Still missing execution points for `added-files`, `gamemode-activated`, `will-install-dependencies`, `check-mods-version`, and `update-conflicts-and-rules`.
 - Missing a generic request/response bus equivalent to Vortex `emitAndAwait` for extension-to-core operations such as `deploy-single-mod`, `purge-mods-in-path`, `browse-for-download`, `discover-tools`, and `bake-settings`.
 
 Priority: P0 for parity and safe profile transitions.

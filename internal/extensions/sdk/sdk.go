@@ -23,6 +23,12 @@ const (
 	ExtensionKindFramework = "framework"
 )
 
+const (
+	CapabilityStatusReady    = "ready"
+	CapabilityStatusMetadata = "metadata"
+	CapabilityStatusBlocked  = "blocked"
+)
+
 type RegistrationFunc func(Registrar)
 
 type Registrar interface {
@@ -292,6 +298,8 @@ type ArchiveTypeSpec struct {
 	FileExtensions []string
 	Engine         string
 	SupportsWrite  bool
+	Status         string
+	Message        string
 }
 
 type InterpreterSpec struct {
@@ -341,8 +349,10 @@ type ExtensionToDoSpec struct {
 }
 
 type ExtensionAPISpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
 }
 
 type ProfileFeatureSpec struct {
