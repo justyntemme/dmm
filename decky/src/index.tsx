@@ -7536,11 +7536,16 @@ function FreshDeckyModManagerRoute() {
     if (next.id !== "games") setSuppressRunningAutoOpen(false);
   }
 
-  function snapBodyToTopIfFocusIsNearTop() {
+  function snapBodyToTopIfFocusIsNearTop(event?: { target?: EventTarget | null }) {
     const body = bodyRef.current;
-    if (!body || body.scrollTop <= 0 || body.scrollTop > 96) return;
+    const target = event?.target instanceof HTMLElement ? event.target : null;
+    if (!body || !target || body.scrollTop <= 0 || !body.contains(target)) return;
+    const firstFocusable = Array.from(
+      body.querySelectorAll<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, input, textarea, button, [tabindex]:not([tabindex='-1'])")
+    ).find((element) => element.offsetParent !== null && !element.hasAttribute("disabled") && element.getAttribute("aria-disabled") !== "true");
+    if (!firstFocusable || (target !== firstFocusable && !firstFocusable.contains(target) && !target.contains(firstFocusable))) return;
     requestAnimationFrame(() => {
-      if (body.scrollTop > 0 && body.scrollTop <= 96) body.scrollTo({ top: 0, behavior: "auto" });
+      if (body.scrollTop > 0) body.scrollTo({ top: 0, behavior: "auto" });
     });
   }
 
