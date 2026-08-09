@@ -87,6 +87,8 @@ The packaged Decky plugin is built with the distribution layout documented by th
 ```text
 decky-mod-manager/
   bin/dmm-server
+  bin/dmm-nxm-handler
+  bin/dmm-loot-sorter
   dist/index.js
   package.json
   plugin.json
@@ -102,6 +104,8 @@ dist/decky-mod-manager.tar.gz
 ```
 
 Use the ZIP for the normal Decky Developer install flow. The tarball is only for the SSH-based test installer in `testing/`, which lets us update the test Deck quickly without navigating the Decky UI for every build.
+
+Tagged CI release packages require the `dmm-loot-sorter` helper, which wraps libloot for Bethesda/Gamebryo plugin sorting. Local developer packages built from macOS may omit that helper unless `bin/dmm-loot-sorter-linux-amd64` already exists; in that case the backend reports LOOT sorting as blocked instead of using an approximate sorter.
 
 ## Development Updates
 

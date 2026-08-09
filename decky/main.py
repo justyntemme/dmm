@@ -77,6 +77,10 @@ class Plugin:
 
         env = os.environ.copy()
         env.setdefault("DMM_DECKY_PLUGIN_DIR", str(plugin_dir))
+        loot_sorter = plugin_dir / "bin" / "dmm-loot-sorter"
+        if loot_sorter.exists():
+            env["DMM_LOOT_SORTER"] = str(loot_sorter)
+            env["PATH"] = f"{loot_sorter.parent}:{env.get('PATH', '')}"
         token = self._ensure_auth_token()
         env["DMM_AUTH_TOKEN"] = token
         env["DMM_AUTH_TOKEN_FILE"] = str(self.auth_token_file)

@@ -109,6 +109,11 @@ func (s Service) Sort(ctx context.Context, spec sdk.PluginActivationSpec, profil
 	if spec.LOOTPrelude && !fileExists(paths.preludePath) {
 		return SortOutput{}, errors.New("LOOT prelude is missing; refresh LOOT metadata before sorting")
 	}
+	if !fileExists(paths.userlistPathForProfile(profileID)) {
+		if _, err := s.WriteUserlistForProfile(spec, profileID, EmptyUserlist()); err != nil {
+			return SortOutput{}, fmt.Errorf("LOOT userlist initialisation failed: %w", err)
+		}
+	}
 	plugins, order, err := normalizeSortInput(input)
 	if err != nil {
 		return SortOutput{}, err

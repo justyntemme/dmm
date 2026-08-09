@@ -112,14 +112,15 @@ if [[ ! -f "${PACKAGE_DIR}/decky-mod-manager/build-info.json" ]]; then
 fi
 
 section "Checking packaged UI content"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Server Access" "Decky server access UI"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Dependencies" "Decky dependency UI"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Games" "Decky games tab"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Actions" "Decky actions tab"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Settings" "Decky settings tab"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Pair Phone" "Decky phone pairing UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-install downloaded mods" "Decky auto-install setting"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-enable installed mods" "Decky auto-enable setting"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Commit:" "Decky build metadata UI"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Build Fingerprint" "Decky visual build marker"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Live Logs" "Decky live log terminal"
-require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Show:" "Decky supported game filter"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Build:" "Decky build metadata UI"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Refresh Debug" "Decky debug refresh action"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Debug Tools" "Decky debug tools"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/build-info.json" "short_commit" "build metadata"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do

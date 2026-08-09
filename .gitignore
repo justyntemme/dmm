@@ -5,6 +5,7 @@ web/dist/
 web/node_modules/
 decky/dist/
 decky/node_modules/
+helpers/*/target/
 *.log
 .DS_Store
 notes.md
