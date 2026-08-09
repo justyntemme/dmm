@@ -420,6 +420,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
 	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/refresh", s.handleRefreshGameLoadOrderLOOT)
+	mux.HandleFunc("GET /api/games/{appID}/load-order/loot/userlist", s.handleGameLoadOrderLOOTUserlist)
+	mux.HandleFunc("PUT /api/games/{appID}/load-order/loot/userlist", s.handleUpdateGameLoadOrderLOOTUserlist)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/reinstall", s.handleReinstallGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/install-candidates", s.handleGameInstallCandidates)
 	mux.HandleFunc("DELETE /api/games/{appID}/install-candidates", s.handleClearGameInstallCandidates)
@@ -3888,23 +3890,8 @@ func (s *Server) handleGameLoadOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.Request) {
-	appID := strings.TrimSpace(r.PathValue("appID"))
-	if appID == "" {
-		http.Error(w, "appID is required", http.StatusBadRequest)
-		return
-	}
-	game, err := s.db.GameBySteamApp(r.Context(), appID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "game was not found", http.StatusNotFound)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	game, spec, ok := s.lootActivationForRequest(w, r)
 	if !ok {
-		writeError(w, http.StatusBadRequest, errors.New("plugin activation is not supported for this game"))
 		return
 	}
 	status, err := s.loot.Refresh(r.Context(), spec)
@@ -3923,6 +3910,81 @@ func (s *Server) handleRefreshGameLoadOrderLOOT(w http.ResponseWriter, r *http.R
 		"prelude_exists", status.Prelude.Exists,
 	)
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleGameLoadOrderLOOTUserlist(w http.ResponseWriter, r *http.Request) {
+	_, spec, ok := s.lootActivationForRequest(w, r)
+	if !ok {
+		return
+	}
+	userlist, err := s.loot.ReadUserlist(spec)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, userlist)
+}
+
+func (s *Server) handleUpdateGameLoadOrderLOOTUserlist(w http.ResponseWriter, r *http.Request) {
+	game, spec, ok := s.lootActivationForRequest(w, r)
+	if !ok {
+		return
+	}
+	var req lootmeta.Userlist
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	userlist, err := s.loot.WriteUserlist(spec, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info(
+		"LOOT userlist updated",
+		"app_id", game.SteamAppID,
+		"activation_id", spec.ID,
+		"plugins", len(userlist.Plugins),
+		"groups", len(userlist.Groups),
+	)
+	s.publishGameEvent(events.TypeProfileModsChanged, game.SteamAppID, map[string]any{
+		"action":        "loot_userlist_updated",
+		"activation_id": spec.ID,
+		"summary":       userlist.Summary(),
+	})
+	writeJSON(w, http.StatusOK, userlist)
+}
+
+func (s *Server) lootActivationForRequest(w http.ResponseWriter, r *http.Request) (storage.Game, gameext.PluginActivationSpec, bool) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return storage.Game{}, gameext.PluginActivationSpec{}, false
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "game was not found", http.StatusNotFound)
+			return storage.Game{}, gameext.PluginActivationSpec{}, false
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return storage.Game{}, gameext.PluginActivationSpec{}, false
+	}
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, errors.New("plugin activation is not supported for this game"))
+		return storage.Game{}, gameext.PluginActivationSpec{}, false
+	}
+	status, err := s.loot.Status(spec)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return storage.Game{}, gameext.PluginActivationSpec{}, false
+	}
+	if !status.Supported {
+		writeError(w, http.StatusBadRequest, errors.New("LOOT metadata is not supported for this game"))
+		return storage.Game{}, gameext.PluginActivationSpec{}, false
+	}
+	return game, spec, true
 }
 
 type gameModResponse struct {

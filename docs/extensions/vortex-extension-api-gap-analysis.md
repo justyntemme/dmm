@@ -352,8 +352,8 @@ Vortex source examples:
 
 DMM status:
 
-- Has load-order summaries, profile-scoped file winner overrides, profile-scoped Gamebryo plugin row enable/order state, Vortex-format Gamebryo `plugins.txt`/`loadorder.txt` generation, extension-declared LOOT game/masterlist IDs, DMM-owned LOOT masterlist/prelude/userlist cache paths, a refresh endpoint for Vortex's `v0.29` masterlist/prelude URLs, Unreal sortable PAK helper, Witcher `mods.settings` generation, and several generated load-order file helpers.
-- Missing the actual LOOT/libloot-compatible sorting engine, userlist rule editing, dependency conflict graph, cycles, group editors, index locks, custom load-order pages, and broader extension-declared load-order UI models.
+- Has load-order summaries, profile-scoped file winner overrides, profile-scoped Gamebryo plugin row enable/order state, Vortex-format Gamebryo `plugins.txt`/`loadorder.txt` generation, extension-declared LOOT game/masterlist IDs, DMM-owned LOOT masterlist/prelude/userlist cache paths, a refresh endpoint for Vortex's `v0.29` masterlist/prelude URLs, DMM-owned LOOT `userlist.yaml` read/write endpoints, Advanced UI for plugin rules/group assignments/group order rules, Unreal sortable PAK helper, Witcher `mods.settings` generation, and several generated load-order file helpers.
+- Missing the actual LOOT/libloot-compatible sorting engine, dependency conflict graph evaluation, cycle handling, index locks, full group editor parity, custom load-order pages, and broader extension-declared load-order UI models.
 
 Priority: P0 for Bethesda parity, P1 for broader user-facing polish.
 

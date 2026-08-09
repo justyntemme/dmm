@@ -1,0 +1,215 @@
+package lootmeta
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"gopkg.in/yaml.v3"
+)
+
+type Userlist struct {
+	Globals []map[string]any `json:"globals" yaml:"globals"`
+	Plugins []UserlistPlugin `json:"plugins" yaml:"plugins"`
+	Groups  []UserlistGroup  `json:"groups" yaml:"groups"`
+}
+
+type UserlistPlugin struct {
+	Name         string   `json:"name" yaml:"name"`
+	Group        string   `json:"group,omitempty" yaml:"group,omitempty"`
+	After        []string `json:"after,omitempty" yaml:"after,omitempty"`
+	Requires     []string `json:"requires,omitempty" yaml:"req,omitempty"`
+	Incompatible []string `json:"incompatible,omitempty" yaml:"inc,omitempty"`
+}
+
+type UserlistGroup struct {
+	Name  string   `json:"name" yaml:"name"`
+	After []string `json:"after,omitempty" yaml:"after,omitempty"`
+}
+
+type RuleSummary struct {
+	Plugins    int `json:"plugins"`
+	Rules      int `json:"rules"`
+	Groups     int `json:"groups"`
+	GroupRules int `json:"group_rules"`
+}
+
+func EmptyUserlist() Userlist {
+	return Userlist{
+		Globals: []map[string]any{},
+		Plugins: []UserlistPlugin{},
+		Groups:  []UserlistGroup{},
+	}
+}
+
+func (u Userlist) Summary() RuleSummary {
+	summary := RuleSummary{Plugins: len(u.Plugins), Groups: len(u.Groups)}
+	for _, plugin := range u.Plugins {
+		summary.Rules += len(plugin.After) + len(plugin.Requires) + len(plugin.Incompatible)
+	}
+	for _, group := range u.Groups {
+		summary.GroupRules += len(group.After)
+	}
+	return summary
+}
+
+func (s Service) ReadUserlist(spec sdk.PluginActivationSpec) (Userlist, error) {
+	paths, ok, err := s.paths(spec)
+	if err != nil {
+		return Userlist{}, err
+	}
+	if !ok {
+		return Userlist{}, errors.New("LOOT userlist is not supported")
+	}
+	body, err := os.ReadFile(paths.userlistPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return EmptyUserlist(), nil
+		}
+		return Userlist{}, err
+	}
+	if len(strings.TrimSpace(string(body))) <= 5 {
+		return EmptyUserlist(), nil
+	}
+	var userlist Userlist
+	if err := yaml.Unmarshal(body, &userlist); err != nil {
+		return Userlist{}, fmt.Errorf("LOOT userlist parse failed: %w", err)
+	}
+	return normalizeUserlist(userlist), nil
+}
+
+func (s Service) WriteUserlist(spec sdk.PluginActivationSpec, userlist Userlist) (Userlist, error) {
+	paths, ok, err := s.paths(spec)
+	if err != nil {
+		return Userlist{}, err
+	}
+	if !ok {
+		return Userlist{}, errors.New("LOOT userlist is not supported")
+	}
+	normalized := normalizeUserlist(userlist)
+	body, err := yaml.Marshal(normalized)
+	if err != nil {
+		return Userlist{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.userlistPath), 0o700); err != nil {
+		return Userlist{}, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(paths.userlistPath), ".dmm-userlist-*")
+	if err != nil {
+		return Userlist{}, err
+	}
+	tmpPath := tmp.Name()
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return Userlist{}, err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return Userlist{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		return Userlist{}, err
+	}
+	if err := os.Rename(tmpPath, paths.userlistPath); err != nil {
+		return Userlist{}, err
+	}
+	removeTmp = false
+	if s.Logger != nil {
+		s.Logger.Info("LOOT userlist written", "game_id", paths.gameID, "path", paths.userlistPath, "plugins", len(normalized.Plugins), "groups", len(normalized.Groups))
+	}
+	return normalized, nil
+}
+
+func normalizeUserlist(userlist Userlist) Userlist {
+	out := EmptyUserlist()
+	out.Globals = append([]map[string]any(nil), userlist.Globals...)
+	pluginByKey := map[string]int{}
+	for _, plugin := range userlist.Plugins {
+		plugin.Name = cleanName(plugin.Name)
+		if plugin.Name == "" {
+			continue
+		}
+		plugin.Group = cleanName(plugin.Group)
+		plugin.After = cleanList(plugin.After)
+		plugin.Requires = cleanList(plugin.Requires)
+		plugin.Incompatible = cleanList(plugin.Incompatible)
+		key := strings.ToUpper(plugin.Name)
+		if idx, ok := pluginByKey[key]; ok {
+			out.Plugins[idx] = mergePlugin(out.Plugins[idx], plugin)
+			continue
+		}
+		pluginByKey[key] = len(out.Plugins)
+		out.Plugins = append(out.Plugins, plugin)
+	}
+	sort.SliceStable(out.Plugins, func(i, j int) bool {
+		return strings.ToLower(out.Plugins[i].Name) < strings.ToLower(out.Plugins[j].Name)
+	})
+	groupByKey := map[string]int{}
+	for _, group := range userlist.Groups {
+		group.Name = cleanName(group.Name)
+		if group.Name == "" {
+			continue
+		}
+		group.After = cleanList(group.After)
+		key := strings.ToUpper(group.Name)
+		if idx, ok := groupByKey[key]; ok {
+			out.Groups[idx].After = cleanList(append(out.Groups[idx].After, group.After...))
+			continue
+		}
+		groupByKey[key] = len(out.Groups)
+		out.Groups = append(out.Groups, group)
+	}
+	sort.SliceStable(out.Groups, func(i, j int) bool {
+		return strings.ToLower(out.Groups[i].Name) < strings.ToLower(out.Groups[j].Name)
+	})
+	return out
+}
+
+func mergePlugin(left, right UserlistPlugin) UserlistPlugin {
+	if right.Group != "" {
+		left.Group = right.Group
+	}
+	left.After = cleanList(append(left.After, right.After...))
+	left.Requires = cleanList(append(left.Requires, right.Requires...))
+	left.Incompatible = cleanList(append(left.Incompatible, right.Incompatible...))
+	return left
+}
+
+func cleanList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = cleanName(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToUpper(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
+}
+
+func cleanName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "\x00", "")
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return strings.Join(strings.Fields(value), " ")
+}

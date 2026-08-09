@@ -62,6 +62,59 @@ func TestStatusRejectsUnsafeIDs(t *testing.T) {
 	}
 }
 
+func TestUserlistReadWriteNormalizesVortexShape(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	written, err := service.WriteUserlist(spec, Userlist{
+		Plugins: []UserlistPlugin{
+			{Name: " Example.esp ", After: []string{"A.esm", "a.esm"}, Requires: []string{"Base.esm"}},
+			{Name: "example.ESP", Group: "Late Loaders", Incompatible: []string{"Old.esp"}},
+		},
+		Groups: []UserlistGroup{
+			{Name: "Late Loaders", After: []string{"default", "DEFAULT"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteUserlist() error = %v", err)
+	}
+	if got := written.Summary(); got.Plugins != 1 || got.Rules != 3 || got.Groups != 1 || got.GroupRules != 1 {
+		t.Fatalf("summary = %+v", got)
+	}
+
+	read, err := service.ReadUserlist(spec)
+	if err != nil {
+		t.Fatalf("ReadUserlist() error = %v", err)
+	}
+	if len(read.Plugins) != 1 {
+		t.Fatalf("plugins = %+v", read.Plugins)
+	}
+	plugin := read.Plugins[0]
+	if plugin.Name != "Example.esp" || plugin.Group != "Late Loaders" {
+		t.Fatalf("plugin = %+v", plugin)
+	}
+	if len(plugin.After) != 1 || plugin.After[0] != "A.esm" {
+		t.Fatalf("after = %+v", plugin.After)
+	}
+	if len(plugin.Requires) != 1 || plugin.Requires[0] != "Base.esm" {
+		t.Fatalf("requires = %+v", plugin.Requires)
+	}
+	if len(plugin.Incompatible) != 1 || plugin.Incompatible[0] != "Old.esp" {
+		t.Fatalf("incompatible = %+v", plugin.Incompatible)
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, "loot", "fallout4", "userlist.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"plugins:", "after:", "req:", "inc:", "groups:"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("userlist.yaml missing %q:\n%s", want, string(body))
+		}
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

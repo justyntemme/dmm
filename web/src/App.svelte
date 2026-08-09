@@ -478,8 +478,36 @@
     sorter_message?: string;
     masterlist?: LOOTFileStatus;
     userlist?: LOOTFileStatus;
+    userlist_rules?: LOOTRuleSummary;
+    userlist_warning?: string;
     prelude?: LOOTFileStatus;
     last_refresh_warning?: string;
+  };
+
+  type LOOTRuleSummary = {
+    plugins: number;
+    rules: number;
+    groups: number;
+    group_rules: number;
+  };
+
+  type LOOTUserlist = {
+    globals: Record<string, unknown>[];
+    plugins: LOOTUserlistPlugin[];
+    groups: LOOTUserlistGroup[];
+  };
+
+  type LOOTUserlistPlugin = {
+    name: string;
+    group?: string;
+    after?: string[];
+    requires?: string[];
+    incompatible?: string[];
+  };
+
+  type LOOTUserlistGroup = {
+    name: string;
+    after?: string[];
   };
 
   type LOOTFileStatus = {
@@ -662,6 +690,16 @@
   let restorePointPreview: DeploymentRestorePreview | null = null;
   let restorePointPreviewBusy = 0;
   let pluginLoadOrder: PluginLoadOrder | null = null;
+  let lootUserlist: LOOTUserlist | null = null;
+  let lootRulePlugin = "";
+  let lootRuleReference = "";
+  let lootRuleType: "after" | "requires" | "incompatible" = "after";
+  let lootGroupName = "";
+  let lootGroupReference = "";
+  let lootGroupPlugin = "";
+  let lootGroupAssignment = "";
+  let lootUserlistBusy = false;
+  let lootUserlistMessage = "";
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
@@ -1345,6 +1383,9 @@
     restorePointPreviewBusy = 0;
     gameDiagnostics = null;
     gameLaunchStatus = null;
+    pluginLoadOrder = null;
+    lootUserlist = null;
+    lootUserlistMessage = "";
     installCandidates = [];
     installerChoicePresets = [];
     await loadGameState(game);
@@ -1467,6 +1508,7 @@
       restorePointPreview = null;
     }
     pluginLoadOrder = nextPluginLoadOrder;
+    await loadLOOTUserlist(game, nextPluginLoadOrder);
     gameDiagnostics = nextDiagnostics;
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
@@ -1828,6 +1870,203 @@
     const updated = file.updated_at ? new Date(file.updated_at).toLocaleString() : "unknown time";
     const size = file.size_bytes ? `${Math.round(file.size_bytes / 1024)} KB` : "0 KB";
     return `${size} · ${updated}`;
+  }
+
+  function emptyLOOTUserlist(): LOOTUserlist {
+    return { globals: [], plugins: [], groups: [] };
+  }
+
+  function lootSummaryFor(userlist: LOOTUserlist): LOOTRuleSummary {
+    return {
+      plugins: userlist.plugins.length,
+      groups: userlist.groups.length,
+      rules: userlist.plugins.reduce((sum, plugin) => sum + (plugin.after?.length ?? 0) + (plugin.requires?.length ?? 0) + (plugin.incompatible?.length ?? 0), 0),
+      group_rules: userlist.groups.reduce((sum, group) => sum + (group.after?.length ?? 0), 0)
+    };
+  }
+
+  async function loadLOOTUserlist(game: Game, loadOrder: PluginLoadOrder) {
+    lootUserlist = null;
+    lootUserlistMessage = "";
+    if (!loadOrder.loot?.supported) return;
+    try {
+      lootUserlist = await getJSON<LOOTUserlist>(`/api/games/${game.app_id}/load-order/loot/userlist`);
+    } catch (err) {
+      lootUserlistMessage = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function saveLOOTUserlist(next: LOOTUserlist, message: string) {
+    if (!selectedGame || lootUserlistBusy) return;
+    lootUserlistBusy = true;
+    lootUserlistMessage = "";
+    error = "";
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/load-order/loot/userlist`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next)
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const saved: LOOTUserlist = await response.json();
+      lootUserlist = saved;
+      lootUserlistMessage = message;
+      if (pluginLoadOrder?.loot) {
+        pluginLoadOrder = {
+          ...pluginLoadOrder,
+          loot: {
+            ...pluginLoadOrder.loot,
+            userlist_rules: lootSummaryFor(saved),
+            userlist_warning: ""
+          }
+        };
+      }
+    } finally {
+      lootUserlistBusy = false;
+    }
+  }
+
+  function cleanRuleText(value: string) {
+    return value.trim().replace(/\s+/g, " ");
+  }
+
+  function ruleListFor(plugin: LOOTUserlistPlugin, ruleType: "after" | "requires" | "incompatible") {
+    if (ruleType === "requires") return plugin.requires ?? [];
+    if (ruleType === "incompatible") return plugin.incompatible ?? [];
+    return plugin.after ?? [];
+  }
+
+  function withRuleList(plugin: LOOTUserlistPlugin, ruleType: "after" | "requires" | "incompatible", values: string[]) {
+    if (ruleType === "requires") return { ...plugin, requires: values };
+    if (ruleType === "incompatible") return { ...plugin, incompatible: values };
+    return { ...plugin, after: values };
+  }
+
+  function appendUnique(values: string[] | undefined, value: string) {
+    const cleaned = cleanRuleText(value);
+    if (!cleaned) return values ?? [];
+    const next = [...(values ?? [])];
+    if (!next.some((item) => item.toLowerCase() === cleaned.toLowerCase())) {
+      next.push(cleaned);
+    }
+    return next;
+  }
+
+  function removeRuleValue(values: string[] | undefined, value: string) {
+    const key = cleanRuleText(value).toLowerCase();
+    return (values ?? []).filter((item) => cleanRuleText(item).toLowerCase() !== key);
+  }
+
+  async function addLOOTPluginRule() {
+    const pluginName = cleanRuleText(lootRulePlugin);
+    const reference = cleanRuleText(lootRuleReference);
+    if (!pluginName || !reference) {
+      lootUserlistMessage = "Plugin and reference are required.";
+      return;
+    }
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const index = current.plugins.findIndex((plugin) => plugin.name.toLowerCase() === pluginName.toLowerCase());
+    const plugins = [...current.plugins];
+    if (index >= 0) {
+      plugins[index] = withRuleList(plugins[index], lootRuleType, appendUnique(ruleListFor(plugins[index], lootRuleType), reference));
+    } else {
+      plugins.push(withRuleList({ name: pluginName }, lootRuleType, [reference]));
+    }
+    await saveLOOTUserlist({ ...current, plugins }, "LOOT plugin rule saved.");
+    lootRuleReference = "";
+  }
+
+  async function removeLOOTPluginRule(plugin: LOOTUserlistPlugin, ruleType: "after" | "requires" | "incompatible", reference: string) {
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const plugins = current.plugins.map((item) => {
+      if (item.name.toLowerCase() !== plugin.name.toLowerCase()) return item;
+      return withRuleList(item, ruleType, removeRuleValue(ruleListFor(item, ruleType), reference));
+    }).filter((item) => item.group || (item.after?.length ?? 0) > 0 || (item.requires?.length ?? 0) > 0 || (item.incompatible?.length ?? 0) > 0);
+    await saveLOOTUserlist({ ...current, plugins }, "LOOT plugin rule removed.");
+  }
+
+  async function assignLOOTPluginGroup() {
+    const pluginName = cleanRuleText(lootGroupPlugin);
+    const group = cleanRuleText(lootGroupAssignment);
+    if (!pluginName || !group) {
+      lootUserlistMessage = "Plugin and group are required.";
+      return;
+    }
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const index = current.plugins.findIndex((plugin) => plugin.name.toLowerCase() === pluginName.toLowerCase());
+    const plugins = [...current.plugins];
+    if (index >= 0) {
+      plugins[index] = { ...plugins[index], group };
+    } else {
+      plugins.push({ name: pluginName, group });
+    }
+    const groups = current.groups.some((item) => item.name.toLowerCase() === group.toLowerCase())
+      ? current.groups
+      : [...current.groups, { name: group, after: [] }];
+    await saveLOOTUserlist({ ...current, plugins, groups }, "LOOT plugin group saved.");
+  }
+
+  async function clearLOOTPluginGroup(plugin: LOOTUserlistPlugin) {
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const plugins = current.plugins.map((item) => (
+      item.name.toLowerCase() === plugin.name.toLowerCase() ? { ...item, group: "" } : item
+    )).filter((item) => item.group || (item.after?.length ?? 0) > 0 || (item.requires?.length ?? 0) > 0 || (item.incompatible?.length ?? 0) > 0);
+    await saveLOOTUserlist({ ...current, plugins }, "LOOT plugin group cleared.");
+  }
+
+  async function addLOOTGroupRule() {
+    const group = cleanRuleText(lootGroupName);
+    const reference = cleanRuleText(lootGroupReference);
+    if (!group) {
+      lootUserlistMessage = "Group name is required.";
+      return;
+    }
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const index = current.groups.findIndex((item) => item.name.toLowerCase() === group.toLowerCase());
+    const groups = [...current.groups];
+    if (index >= 0) {
+      groups[index] = { ...groups[index], after: reference ? appendUnique(groups[index].after, reference) : groups[index].after ?? [] };
+    } else {
+      groups.push({ name: group, after: reference ? [reference] : [] });
+    }
+    await saveLOOTUserlist({ ...current, groups }, "LOOT group rule saved.");
+    lootGroupReference = "";
+  }
+
+  async function removeLOOTGroupRule(group: LOOTUserlistGroup, reference: string) {
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const groups = current.groups.map((item) => (
+      item.name.toLowerCase() === group.name.toLowerCase()
+        ? { ...item, after: removeRuleValue(item.after, reference) }
+        : item
+    ));
+    await saveLOOTUserlist({ ...current, groups }, "LOOT group rule removed.");
+  }
+
+  async function removeLOOTGroup(group: LOOTUserlistGroup) {
+    const current = lootUserlist ?? emptyLOOTUserlist();
+    const key = group.name.toLowerCase();
+    const groups = current.groups
+      .filter((item) => item.name.toLowerCase() !== key)
+      .map((item) => ({ ...item, after: removeRuleValue(item.after, group.name) }));
+    const plugins = current.plugins.map((plugin) => (
+      plugin.group?.toLowerCase() === key ? { ...plugin, group: "" } : plugin
+    )).filter((item) => item.group || (item.after?.length ?? 0) > 0 || (item.requires?.length ?? 0) > 0 || (item.incompatible?.length ?? 0) > 0);
+    await saveLOOTUserlist({ ...current, plugins, groups }, "LOOT group removed.");
+  }
+
+  function askClearLOOTUserlist() {
+    confirmation = {
+      title: "Clear LOOT rules",
+      message: "Remove all DMM-managed LOOT plugin rules and group assignments for this game.",
+      detail: "This updates DMM's userlist.yaml. It does not remove mods or game files.",
+      confirmLabel: "Clear Rules",
+      danger: true,
+      run: () => saveLOOTUserlist(emptyLOOTUserlist(), "LOOT userlist cleared.")
+    };
   }
 
   async function refreshLOOTMetadata() {
@@ -5131,6 +5370,124 @@
                     {#if pluginLoadOrder.loot.last_refresh_warning}
                       <p class="error-text">{pluginLoadOrder.loot.last_refresh_warning}</p>
                     {/if}
+                    {#if pluginLoadOrder.loot.userlist_warning}
+                      <p class="error-text">{pluginLoadOrder.loot.userlist_warning}</p>
+                    {/if}
+                    <div class="loot-userlist-panel">
+                      <div class="panel-heading compact-heading">
+                        <h4>User Rules</h4>
+                        <span>{pluginLoadOrder.loot.userlist_rules?.rules ?? 0} rules · {pluginLoadOrder.loot.userlist_rules?.groups ?? 0} groups</span>
+                      </div>
+                      <p class="hint">Rules are persisted in DMM's LOOT userlist for this game. Automatic sorting remains blocked until a real LOOT-compatible sorter is integrated.</p>
+                      {#if lootUserlistMessage}
+                        <p class={lootUserlistMessage.toLowerCase().includes("required") ? "error-text" : "deploy-message"}>{lootUserlistMessage}</p>
+                      {/if}
+                      {#if lootUserlist}
+                        <div class="loot-rule-editor">
+                          <label>
+                            <span>Plugin</span>
+                            <input type="text" bind:value={lootRulePlugin} placeholder="Example.esp" />
+                          </label>
+                          <label>
+                            <span>Rule</span>
+                            <select bind:value={lootRuleType}>
+                              <option value="after">Load after</option>
+                              <option value="requires">Requires</option>
+                              <option value="incompatible">Incompatible</option>
+                            </select>
+                          </label>
+                          <label>
+                            <span>Reference</span>
+                            <input type="text" bind:value={lootRuleReference} placeholder="OtherPlugin.esp" />
+                          </label>
+                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={addLOOTPluginRule}>
+                            {lootUserlistBusy ? "Saving" : "Add Rule"}
+                          </button>
+                        </div>
+                        <div class="loot-rule-editor group-editor">
+                          <label>
+                            <span>Group</span>
+                            <input type="text" bind:value={lootGroupName} placeholder="Late Loaders" />
+                          </label>
+                          <label>
+                            <span>After Group</span>
+                            <input type="text" bind:value={lootGroupReference} placeholder="default" />
+                          </label>
+                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={addLOOTGroupRule}>
+                            {lootUserlistBusy ? "Saving" : "Add Group Rule"}
+                          </button>
+                        </div>
+                        <div class="loot-rule-editor group-editor">
+                          <label>
+                            <span>Plugin</span>
+                            <input type="text" bind:value={lootGroupPlugin} placeholder="Example.esp" />
+                          </label>
+                          <label>
+                            <span>Assign Group</span>
+                            <input type="text" bind:value={lootGroupAssignment} placeholder="Late Loaders" />
+                          </label>
+                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={assignLOOTPluginGroup}>
+                            {lootUserlistBusy ? "Saving" : "Set Group"}
+                          </button>
+                        </div>
+                        {#if lootUserlist.plugins.length > 0 || lootUserlist.groups.length > 0}
+                          <div class="loot-userlist-rules">
+                            {#each lootUserlist.plugins as plugin}
+                              <article>
+                                <div>
+                                  <strong>{plugin.name}</strong>
+                                  {#if plugin.group}
+                                    <small>Group: {plugin.group}</small>
+                                  {/if}
+                                  {#if plugin.after?.length}
+                                    <small>after: {plugin.after.join(", ")}</small>
+                                  {/if}
+                                  {#if plugin.requires?.length}
+                                    <small>requires: {plugin.requires.join(", ")}</small>
+                                  {/if}
+                                  {#if plugin.incompatible?.length}
+                                    <small>incompatible: {plugin.incompatible.join(", ")}</small>
+                                  {/if}
+                                </div>
+                                <div class="loot-userlist-actions">
+                                  {#if plugin.group}
+                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => clearLOOTPluginGroup(plugin)}>Clear Group</button>
+                                  {/if}
+                                  {#each plugin.after ?? [] as reference}
+                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "after", reference)}>Remove after {reference}</button>
+                                  {/each}
+                                  {#each plugin.requires ?? [] as reference}
+                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "requires", reference)}>Remove requires {reference}</button>
+                                  {/each}
+                                  {#each plugin.incompatible ?? [] as reference}
+                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "incompatible", reference)}>Remove incompatible {reference}</button>
+                                  {/each}
+                                </div>
+                              </article>
+                            {/each}
+                            {#each lootUserlist.groups as group}
+                              <article>
+                                <div>
+                                  <strong>{group.name}</strong>
+                                  <small>{group.after?.length ? `After: ${group.after.join(", ")}` : "No group order rules"}</small>
+                                </div>
+                                <div class="loot-userlist-actions">
+                                  {#each group.after ?? [] as reference}
+                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTGroupRule(group, reference)}>Remove after {reference}</button>
+                                  {/each}
+                                  <button type="button" class="secondary-action compact danger-action" disabled={lootUserlistBusy} on:click={() => removeLOOTGroup(group)}>Remove Group</button>
+                                </div>
+                              </article>
+                            {/each}
+                          </div>
+                          <button type="button" class="secondary-action danger-action" disabled={lootUserlistBusy} on:click={askClearLOOTUserlist}>Clear LOOT Rules</button>
+                        {:else}
+                          <p class="hint">No user rules are stored yet.</p>
+                        {/if}
+                      {:else}
+                        <button type="button" class="secondary-action compact" on:click={() => selectedGame && pluginLoadOrder && loadLOOTUserlist(selectedGame, pluginLoadOrder)}>Load User Rules</button>
+                      {/if}
+                    </div>
                   </div>
                 {/if}
                 {#if pluginLoadOrder.plugins.length > 0}

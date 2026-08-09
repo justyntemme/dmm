@@ -28,16 +28,18 @@ type Service struct {
 }
 
 type Status struct {
-	Supported          bool       `json:"supported"`
-	Revision           string     `json:"revision,omitempty"`
-	GameID             string     `json:"game_id,omitempty"`
-	MasterlistGameID   string     `json:"masterlist_game_id,omitempty"`
-	SorterStatus       string     `json:"sorter_status,omitempty"`
-	SorterMessage      string     `json:"sorter_message,omitempty"`
-	Masterlist         FileStatus `json:"masterlist,omitempty"`
-	Userlist           FileStatus `json:"userlist,omitempty"`
-	Prelude            FileStatus `json:"prelude,omitempty"`
-	LastRefreshWarning string     `json:"last_refresh_warning,omitempty"`
+	Supported          bool        `json:"supported"`
+	Revision           string      `json:"revision,omitempty"`
+	GameID             string      `json:"game_id,omitempty"`
+	MasterlistGameID   string      `json:"masterlist_game_id,omitempty"`
+	SorterStatus       string      `json:"sorter_status,omitempty"`
+	SorterMessage      string      `json:"sorter_message,omitempty"`
+	Masterlist         FileStatus  `json:"masterlist,omitempty"`
+	Userlist           FileStatus  `json:"userlist,omitempty"`
+	UserlistRules      RuleSummary `json:"userlist_rules,omitempty"`
+	UserlistWarning    string      `json:"userlist_warning,omitempty"`
+	Prelude            FileStatus  `json:"prelude,omitempty"`
+	LastRefreshWarning string      `json:"last_refresh_warning,omitempty"`
 }
 
 type FileStatus struct {
@@ -56,6 +58,14 @@ func (s Service) Status(spec sdk.PluginActivationSpec) (Status, error) {
 	if !ok {
 		return Status{Supported: false}, nil
 	}
+	userlist, userlistErr := s.ReadUserlist(spec)
+	summary := RuleSummary{}
+	userlistWarning := ""
+	if userlistErr == nil {
+		summary = userlist.Summary()
+	} else {
+		userlistWarning = userlistErr.Error()
+	}
 	return Status{
 		Supported:        true,
 		Revision:         Revision,
@@ -65,6 +75,8 @@ func (s Service) Status(spec sdk.PluginActivationSpec) (Status, error) {
 		SorterMessage:    "LOOT masterlist/userlist caching is available, but automatic sorting is blocked until DMM integrates a real LOOT-compatible sorting engine instead of a simplified sorter.",
 		Masterlist:       fileStatus(paths.masterlistPath, paths.masterlistURL),
 		Userlist:         fileStatus(paths.userlistPath, ""),
+		UserlistRules:    summary,
+		UserlistWarning:  userlistWarning,
 		Prelude:          fileStatus(paths.preludePath, paths.preludeURL),
 	}, nil
 }

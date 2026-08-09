@@ -1950,6 +1950,92 @@ h2 {
   text-transform: uppercase;
 }
 
+.loot-userlist-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #243044;
+  border-radius: 8px;
+  padding: 10px;
+  background: #101827;
+}
+
+.loot-userlist-panel h4 {
+  margin: 0;
+}
+
+.loot-rule-editor {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 0.7fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.loot-rule-editor.group-editor {
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
+}
+
+.loot-rule-editor label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: #d4d4d8;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.loot-rule-editor label span {
+  color: #7dd3fc;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.loot-rule-editor input,
+.loot-rule-editor select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #f8fafc;
+  background: #0b1220;
+}
+
+.loot-userlist-rules {
+  display: grid;
+  gap: 8px;
+}
+
+.loot-userlist-rules article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, auto);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid #263243;
+  border-radius: 8px;
+  padding: 9px;
+  background: #0d1422;
+}
+
+.loot-userlist-rules strong,
+.loot-userlist-rules small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.loot-userlist-rules small {
+  margin-top: 3px;
+  color: #a1a1aa;
+}
+
+.loot-userlist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .plugin-load-order-list {
   display: grid;
   gap: 8px;
@@ -3021,11 +3107,21 @@ dd {
   .mod-list article,
   .action-list article,
   .deployment-history-list article,
-  .plugin-load-order-list article {
+  .plugin-load-order-list article,
+  .loot-userlist-rules article {
     grid-template-columns: 1fr;
   }
 
   .plugin-row-actions {
+    justify-content: flex-start;
+  }
+
+  .loot-rule-editor,
+  .loot-rule-editor.group-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .loot-userlist-actions {
     justify-content: flex-start;
   }
 
