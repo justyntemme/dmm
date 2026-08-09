@@ -60,6 +60,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metalgearsolidvtpp"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/metroexodus"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/microsoftflightsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/monsterhunterworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/morrowind"
@@ -207,6 +208,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(metroexodus.Extension()),
 		gameext.MustCompileExtension(mewgenics.Extension()),
 		gameext.MustCompileExtension(mirrorsedge.Extension()),
+		gameext.MustCompileExtension(microsoftflightsimulator.Extension()),
 		gameext.MustCompileExtension(monsterhunterworld.Extension()),
 		gameext.MustCompileExtension(morrowind.Extension()),
 		gameext.MustCompileExtension(mountandblade.Extensions()[0]),
