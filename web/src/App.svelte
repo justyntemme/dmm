@@ -543,6 +543,22 @@
     details?: string[];
     help_url?: string;
     install_hint?: string;
+    acquisition?: RuntimeAcquisition;
+  };
+
+  type RuntimeAcquisition = {
+    id?: string;
+    name?: string;
+    catalog?: string;
+    url?: string;
+    archive_name?: string;
+    required?: boolean;
+    auto_acquire?: boolean;
+    source_mod_id?: string;
+    source_file_id?: string;
+    source_game?: string;
+    source_provider?: string;
+    message?: string;
   };
 
   type GameLaunchStatus = {
@@ -3537,6 +3553,24 @@
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
 
+  async function acquireRuntimeRequirement(requirement: RuntimeRequirement) {
+    if (!selectedGame || !requirement.acquisition?.url) return;
+    error = "";
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/requirements/${encodeURIComponent(requirement.id)}/acquire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_id: selectedInstallProfileID() })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result: { job?: Job; result?: { job?: Job } } = await response.json();
+    if (result.job) upsertJob(result.job);
+    else if (result.result?.job) upsertJob(result.result.job);
+    await refreshJobsAndSelectedGame("runtime-requirement-acquire", true);
+  }
+
   async function recoverDownloads() {
     if (!selectedGame) return;
     error = "";
@@ -5996,6 +6030,12 @@
                         {#if gameLaunchStatus?.action?.risk === "replaces-existing-launch-options"}
                           <small>Existing Steam launch options will be replaced.</small>
                         {/if}
+                      </div>
+                    {/if}
+                    {#if requirement.status !== "ok" && requirement.kind !== "launch-tool" && requirement.acquisition?.url}
+                      <div class="requirement-actions">
+                        <button type="button" on:click={() => acquireRuntimeRequirement(requirement)}>Install Requirement</button>
+                        {#if requirement.acquisition.message}<small>{requirement.acquisition.message}</small>{/if}
                       </div>
                     {/if}
                   </div>

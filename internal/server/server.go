@@ -410,6 +410,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/start", s.handleStartExtensionToolAction)
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/acquire", s.handleAcquireExtensionTool)
+	mux.HandleFunc("POST /api/games/{appID}/requirements/{requirementID}/acquire", s.handleAcquireRuntimeRequirement)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
 	mux.HandleFunc("POST /api/games/{appID}/activate", s.handleActivateGame)
 	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
@@ -1879,6 +1880,39 @@ func (s *Server) extensionToolAcquisition(ctx context.Context, appID, toolID str
 		return extension, tool, acquisition, nil
 	}
 	return gameext.Extension{}, gameext.SupportedToolSpec{}, gameext.ToolAcquisitionSpec{}, errors.New("extension tool is not registered for this game")
+}
+
+func (s *Server) runtimeRequirementAcquisition(ctx context.Context, appID, requirementID string) (gameext.Extension, gamehandler.RuntimeRequirementSpec, gamehandler.RuntimeAcquisitionSpec, error) {
+	appID = strings.TrimSpace(appID)
+	requirementID = strings.ToLower(strings.TrimSpace(requirementID))
+	if appID == "" || requirementID == "" {
+		return gameext.Extension{}, gamehandler.RuntimeRequirementSpec{}, gamehandler.RuntimeAcquisitionSpec{}, errors.New("app id and requirement id are required")
+	}
+	if _, err := s.db.GameBySteamApp(ctx, appID); err != nil {
+		return gameext.Extension{}, gamehandler.RuntimeRequirementSpec{}, gamehandler.RuntimeAcquisitionSpec{}, err
+	}
+	extension, ok := s.games.ExtensionForSteamApp(appID)
+	if !ok {
+		return gameext.Extension{}, gamehandler.RuntimeRequirementSpec{}, gamehandler.RuntimeAcquisitionSpec{}, errors.New("no game extension is registered for Steam app " + appID)
+	}
+	for _, requirement := range extension.RuntimeRequirements.RuntimeRequirements {
+		if strings.ToLower(strings.TrimSpace(requirement.ID)) != requirementID {
+			continue
+		}
+		if requirement.Acquisition == nil {
+			return extension, requirement, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement " + requirement.ID + " does not declare an acquisition source")
+		}
+		acquisition := *requirement.Acquisition
+		acquisition.ID = strings.TrimSpace(acquisition.ID)
+		acquisition.Name = strings.TrimSpace(acquisition.Name)
+		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+		acquisition.URL = strings.TrimSpace(acquisition.URL)
+		if acquisition.URL == "" {
+			return extension, requirement, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement " + requirement.ID + " acquisition URL is empty")
+		}
+		return extension, requirement, acquisition, nil
+	}
+	return gameext.Extension{}, gamehandler.RuntimeRequirementSpec{}, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement is not registered for this game")
 }
 
 func launchToolFromSupportedTool(tool gameext.SupportedToolSpec) gameext.LaunchToolSpec {
@@ -3729,6 +3763,58 @@ func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Reque
 		"tool":         tool.ID,
 		"extension":    extension.ID,
 		"acquisition":  discoveredToolAcquisition(&acquisition),
+		"job":          result.Job,
+		"resolved":     result.Resolved,
+		"duplicate":    result.Duplicate,
+		"auto_install": result.AutoInstall,
+	})
+}
+
+func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	requirementID := strings.TrimSpace(r.PathValue("requirementID"))
+	if appID == "" || requirementID == "" {
+		http.Error(w, "appID and requirementID are required", http.StatusBadRequest)
+		return
+	}
+	var req extensionToolAcquireRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	extension, requirement, acquisition, err := s.runtimeRequirementAcquisition(r.Context(), appID, requirementID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	if req.ProfileID > 0 {
+		if err := s.validateTargetProfile(r.Context(), appID, req.ProfileID); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
+		URL:        acquisition.URL,
+		SteamAppID: appID,
+		Source:     "runtime-requirement-acquisition:" + strings.TrimSpace(requirement.ID),
+		ProfileID:  req.ProfileID,
+	})
+	if err != nil {
+		s.logger.Warn("runtime requirement acquisition failed", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("runtime requirement acquisition queued", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "target_profile_id", req.ProfileID)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"requirement":  requirement.ID,
+		"extension":    extension.ID,
+		"acquisition":  discoveredRuntimeAcquisition(&acquisition),
 		"job":          result.Job,
 		"resolved":     result.Resolved,
 		"duplicate":    result.Duplicate,

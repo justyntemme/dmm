@@ -401,6 +401,18 @@ type RuntimeRequirement = {
   details?: string[];
   help_url?: string;
   install_hint?: string;
+  acquisition?: RuntimeAcquisition;
+};
+
+type RuntimeAcquisition = {
+  id?: string;
+  name?: string;
+  catalog?: string;
+  url?: string;
+  archive_name?: string;
+  required?: boolean;
+  auto_acquire?: boolean;
+  message?: string;
 };
 
 type GameDiagnostics = {
@@ -1264,6 +1276,10 @@ function extensionNoticeHelpURL(job: Job) {
 
 function runtimeRequirementHelpURL(requirement: RuntimeRequirement) {
   return safeHTTPURL(requirement.help_url);
+}
+
+function runtimeRequirementAcquisitionURL(requirement: RuntimeRequirement) {
+  return safeHTTPURL(requirement.acquisition?.url);
 }
 
 function safeHTTPURL(value: unknown) {
@@ -4801,6 +4817,29 @@ function FreshDeckyModManagerRoute() {
     }
   }
 
+  async function acquireRuntimeRequirement(requirement: RuntimeRequirement) {
+    if (!selectedGameID) return;
+    try {
+      setError("");
+      setMessage("");
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job }; job?: Job }>(
+        "acquire_runtime_requirement",
+        selectedGameID,
+        requirement.id,
+        selectedProfile?.id ?? 0
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to install this requirement.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-runtime-requirement-acquire");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.job?.message || result.result?.job?.message || `${requirement.name} install started.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function checkModUpdates() {
     if (!selectedGameID || modUpdateBusy) return;
     try {
@@ -5501,6 +5540,8 @@ function FreshDeckyModManagerRoute() {
         )}
         {runtimeWarnings.map((requirement) => {
           const helpURL = runtimeRequirementHelpURL(requirement);
+          const acquisitionURL = runtimeRequirementAcquisitionURL(requirement);
+          const actionLabel = requirement.kind === "launch-tool" ? "Retry Launch Setup" : acquisitionURL ? "Install Requirement" : helpURL ? "Open Help" : "";
           return (
             <Focusable
               key={requirement.id}
@@ -5508,17 +5549,19 @@ function FreshDeckyModManagerRoute() {
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
+                else if (acquisitionURL) void acquireRuntimeRequirement(requirement);
                 else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
               }}
               onClick={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
+                else if (acquisitionURL) void acquireRuntimeRequirement(requirement);
                 else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
               }}
               style={{ ...freshCardStyle(false), borderColor: "#d97706" }}
             >
               <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
               <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
-              {(requirement.kind === "launch-tool" || helpURL) && <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {requirement.kind === "launch-tool" ? "Retry Launch Setup" : "Open Help"}</div>}
+              {actionLabel && <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {actionLabel}</div>}
             </Focusable>
           );
         })}

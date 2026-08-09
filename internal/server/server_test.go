@@ -10532,6 +10532,26 @@ func TestActivateGameAutoAcquiresExtensionRuntime(t *testing.T) {
 	if len(deployResp.Acquisitions) != 1 || !deployResp.Acquisitions[0].Duplicate || deployResp.Acquisitions[0].Job == nil || deployResp.Acquisitions[0].Job.ID != waiting.ID {
 		t.Fatalf("deploy runtime acquisitions = %+v", deployResp.Acquisitions)
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/requirements/"+requirementID+"/acquire", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /requirements/acquire status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var manualAcquire struct {
+		Requirement string          `json:"requirement"`
+		Job         jobs.Job        `json:"job"`
+		Duplicate   bool            `json:"duplicate"`
+		Acquisition toolAcquisition `json:"acquisition"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&manualAcquire); err != nil {
+		t.Fatal(err)
+	}
+	if manualAcquire.Requirement != requirementID || !manualAcquire.Duplicate || manualAcquire.Job.ID != waiting.ID || manualAcquire.Acquisition.ID != "runtime-loader-auto" {
+		t.Fatalf("manual runtime acquisition = %+v", manualAcquire)
+	}
 }
 
 func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {

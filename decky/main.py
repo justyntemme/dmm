@@ -327,6 +327,31 @@ class Plugin:
         self._log(f"game activation reported app_id={app_id} event_handled={bool(result.get('event_handled'))} acquisitions={len(acquisitions) if isinstance(acquisitions, list) else 0}")
         return {"ok": True, "result": result}
 
+    async def acquire_runtime_requirement(self, app_id, requirement_id, profile_id=0):
+        app_id = str(app_id or "").strip()
+        requirement_id = str(requirement_id or "").strip()
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        if not app_id or not requirement_id:
+            return {"ok": False, "error": "app_id and requirement_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = {}
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        result, error = self._backend_json_result(
+            "POST",
+            f"/api/games/{urllib.parse.quote(app_id)}/requirements/{urllib.parse.quote(requirement_id)}/acquire",
+            json.dumps(payload).encode("utf-8"),
+        )
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to acquire runtime requirement."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"runtime requirement acquisition requested app_id={app_id} requirement_id={requirement_id} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {"ok": True, "result": result, "job": job}
+
     async def local_archives(self, app_id):
         app_id = str(app_id or "").strip()
         if not app_id:
