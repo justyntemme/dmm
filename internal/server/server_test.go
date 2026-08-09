@@ -7214,6 +7214,20 @@ func lookupAnythingManifestJSON() string {
 	return `{"game_id":"413150","mod_type":"stardew-smapi-mod","planner_id":"vortex:stardewvalley:stardew-valley-installer","metadata":[{"kind":"smapi-manifest","name":"Lookup Anything","unique_id":"Pathoschild.LookupAnything","additional_logical_file_names":["pathoschild.lookupanything"]}],"files":[{"path":"LookupAnything/manifest.json","target_relative":"Mods/LookupAnything/manifest.json","size":26,"sha256":"test"}]}`
 }
 
+func stagedManifestJSONWithMetadata(t *testing.T, gameID, modType string, metadata ...installplan.ModMetadata) string {
+	t.Helper()
+	body, err := json.Marshal(stagedManifest{
+		GameID:   gameID,
+		ModType:  modType,
+		Metadata: metadata,
+		Files:    []stagedManifestFile{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
 func TestStardewRecoveredDownloadDeployAndPurgeEndpoints(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
@@ -8298,6 +8312,119 @@ func TestGameDiagnosticsWarnsWhenRuntimeRequirementMissing(t *testing.T) {
 	}
 	if len(body.ValidationWarnings) == 0 || !strings.Contains(body.ValidationWarnings[0], "SMAPI runtime requirement is missing") {
 		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
+func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	for _, rel := range []string{
+		"StardewValley",
+		"StardewModdingAPI",
+		"StardewModdingAPI.dll",
+		filepath.Join("smapi-internal", "SMAPI.Toolkit.CoreInterfaces.dll"),
+	} {
+		path := filepath.Join(gamePath, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("smapi"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSteamLaunchOptions(t, "413150", steam.DesiredLaunchOptions(gamePath, "StardewModdingAPI"))
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "100",
+			FileID:     "1000",
+		},
+		Name:        "Visible Fish",
+		Version:     "1.0.0",
+		ArchivePath: filepath.Join(srv.cfg.DataDir, "downloads", "visible-fish.zip"),
+		StagingPath: filepath.Join(srv.cfg.DataDir, "staging", "visible-fish"),
+		ManifestJSON: stagedManifestJSONWithMetadata(t, "413150", "stardew-smapi-mod", installplan.ModMetadata{
+			Kind:     stardewvalley.MetadataKindSMAPIManifest,
+			Name:     "Visible Fish",
+			UniqueID: "shekurika.WaterFish",
+			Dependencies: []installplan.ModDependency{
+				{UniqueID: "Pathoschild.ContentPatcher", MinimumVersion: "2.0.0", Required: true},
+				{UniqueID: "spacechase0.GenericModConfigMenu", Required: false},
+			},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "101",
+			FileID:     "1001",
+		},
+		Name:        "Content Patcher Alias",
+		Version:     "2.0.0",
+		ArchivePath: filepath.Join(srv.cfg.DataDir, "downloads", "content-patcher.zip"),
+		StagingPath: filepath.Join(srv.cfg.DataDir, "staging", "content-patcher"),
+		ManifestJSON: stagedManifestJSONWithMetadata(t, "413150", "stardew-smapi-mod", installplan.ModMetadata{
+			Kind:                       stardewvalley.MetadataKindSMAPIManifest,
+			Name:                       "Content Patcher Alias",
+			UniqueID:                   "Pathoschild.ContentPatcherRedux",
+			Version:                    "2.0.0",
+			AdditionalLogicalFileNames: []string{"Pathoschild.ContentPatcher"},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		RuntimeRequirements []struct {
+			ID       string `json:"id"`
+			Required bool   `json:"required"`
+			Status   string `json:"status"`
+			Message  string `json:"message"`
+		} `json:"runtime_requirements"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, warning := range body.ValidationWarnings {
+		if strings.Contains(warning, "ContentPatcher") || strings.Contains(warning, "GenericModConfigMenu") {
+			t.Fatalf("dependency recommendation should not become validation warning: %+v", body.ValidationWarnings)
+		}
+	}
+	var recommendationFound bool
+	for _, requirement := range body.RuntimeRequirements {
+		if requirement.ID == "stardew-mod-dependency:Pathoschild.ContentPatcher" {
+			t.Fatalf("required dependency should be satisfied by alias: %+v", body.RuntimeRequirements)
+		}
+		if requirement.ID == "stardew-mod-dependency:spacechase0.GenericModConfigMenu" {
+			recommendationFound = !requirement.Required && requirement.Status == "missing" && strings.Contains(requirement.Message, "Recommended")
+		}
+	}
+	if !recommendationFound {
+		t.Fatalf("recommended dependency not reported: %+v", body.RuntimeRequirements)
 	}
 }
 

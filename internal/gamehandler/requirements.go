@@ -166,10 +166,6 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 	if reqKind == "" {
 		reqKind = "mod-dependency"
 	}
-	message := strings.TrimSpace(spec.DependencyRequirementMessage)
-	if message == "" {
-		message = "Required mod dependency is not enabled in this profile."
-	}
 	installed := map[string]ModMetadata{}
 	for _, mod := range mods {
 		if !mod.Enabled {
@@ -179,13 +175,11 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 			if _, ok := kinds[strings.TrimSpace(metadata.Kind)]; !ok {
 				continue
 			}
-			uniqueID := strings.TrimSpace(metadata.UniqueID)
-			if uniqueID == "" {
-				continue
-			}
-			key := strings.ToLower(uniqueID)
-			if current, ok := installed[key]; !ok || semanticVersionLess(current.Version, metadata.Version) {
-				installed[key] = metadata
+			for _, logicalID := range metadataLogicalIDs(metadata) {
+				key := strings.ToLower(logicalID)
+				if current, ok := installed[key]; !ok || semanticVersionLess(current.Version, metadata.Version) {
+					installed[key] = metadata
+				}
 			}
 		}
 	}
@@ -199,7 +193,7 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 			if _, ok := kinds[strings.TrimSpace(metadata.Kind)]; !ok {
 				continue
 			}
-			for _, dependency := range requiredModDependencies(metadata) {
+			for _, dependency := range metadataModDependencies(metadata) {
 				uniqueID := strings.TrimSpace(dependency.UniqueID)
 				if uniqueID == "" {
 					continue
@@ -207,18 +201,20 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 				id := idPrefix + uniqueID
 				installedMetadata, ok := installed[strings.ToLower(uniqueID)]
 				if !ok {
-					if _, ok := problems[id]; ok {
-						continue
-					}
-					problems[id] = RuntimeRequirement{
+					next := RuntimeRequirement{
 						ID:       id,
 						Name:     uniqueID,
 						Kind:     reqKind,
-						Required: true,
+						Required: dependency.Required,
 						Status:   RequirementMissing,
-						Message:  message,
+						Message:  dependencyMessage(spec, dependency, RequirementMissing),
 						Details:  dependencyDetails(metadata, dependency),
 					}
+					if existing, ok := problems[id]; ok {
+						problems[id] = mergeDependencyRequirement(existing, next)
+						continue
+					}
+					problems[id] = next
 					continue
 				}
 
@@ -231,15 +227,20 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 				} else {
 					details = append(details, "Installed version unknown")
 				}
-				problems[id] = RuntimeRequirement{
+				next := RuntimeRequirement{
 					ID:       id,
 					Name:     uniqueID,
 					Kind:     reqKind,
-					Required: true,
+					Required: dependency.Required,
 					Status:   RequirementOutdated,
-					Message:  "Required mod dependency is enabled, but its version is too old for this profile.",
+					Message:  dependencyMessage(spec, dependency, RequirementOutdated),
 					Details:  details,
 				}
+				if existing, ok := problems[id]; ok {
+					problems[id] = mergeDependencyRequirement(existing, next)
+					continue
+				}
+				problems[id] = next
 			}
 		}
 	}
@@ -258,30 +259,104 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 	return requirements
 }
 
-func requiredModDependencies(metadata ModMetadata) []ModDependency {
+func metadataLogicalIDs(metadata ModMetadata) []string {
+	seen := map[string]struct{}{}
+	add := func(out []string, value string) []string {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return out
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return out
+		}
+		seen[key] = struct{}{}
+		return append(out, value)
+	}
+	var ids []string
+	ids = add(ids, metadata.UniqueID)
+	for _, logicalID := range metadata.AdditionalLogicalFileNames {
+		ids = add(ids, logicalID)
+	}
+	return ids
+}
+
+func metadataModDependencies(metadata ModMetadata) []ModDependency {
 	deps := []ModDependency{}
-	if metadata.ContentPackFor != nil && metadata.ContentPackFor.Required {
+	if metadata.ContentPackFor != nil {
 		deps = append(deps, *metadata.ContentPackFor)
 	}
 	for _, dependency := range metadata.Dependencies {
-		if dependency.Required {
-			deps = append(deps, dependency)
-		}
+		deps = append(deps, dependency)
 	}
 	return deps
 }
 
 func dependencyDetails(metadata ModMetadata, dependency ModDependency) []string {
 	var details []string
+	prefix := "Required by "
+	if !dependency.Required {
+		prefix = "Recommended by "
+	}
 	if metadata.Name != "" {
-		details = append(details, "Required by "+metadata.Name)
+		details = append(details, prefix+metadata.Name)
 	} else if metadata.UniqueID != "" {
-		details = append(details, "Required by "+metadata.UniqueID)
+		details = append(details, prefix+metadata.UniqueID)
 	}
 	if dependency.MinimumVersion != "" {
 		details = append(details, "Minimum version "+dependency.MinimumVersion)
 	}
 	return details
+}
+
+func dependencyMessage(spec GameSpec, dependency ModDependency, status RequirementStatus) string {
+	if dependency.Required {
+		if message := strings.TrimSpace(spec.DependencyRequirementMessage); message != "" && status == RequirementMissing {
+			return message
+		}
+		if status == RequirementOutdated {
+			return "Required mod dependency is enabled, but its version is too old for this profile."
+		}
+		return "Required mod dependency is not enabled in this profile."
+	}
+	if status == RequirementOutdated {
+		return "Recommended mod dependency is enabled, but its version is older than requested."
+	}
+	return "Recommended mod dependency is not enabled in this profile."
+}
+
+func mergeDependencyRequirement(existing, next RuntimeRequirement) RuntimeRequirement {
+	if next.Required && !existing.Required {
+		next.Details = uniqueStrings(append(next.Details, existing.Details...))
+		return next
+	}
+	if existing.Required && !next.Required {
+		existing.Details = uniqueStrings(append(existing.Details, next.Details...))
+		return existing
+	}
+	if existing.Status != RequirementOutdated && next.Status == RequirementOutdated {
+		next.Details = uniqueStrings(append(next.Details, existing.Details...))
+		return next
+	}
+	existing.Details = uniqueStrings(append(existing.Details, next.Details...))
+	return existing
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func dependencyVersionTooOld(installed ModMetadata, dependency ModDependency) bool {

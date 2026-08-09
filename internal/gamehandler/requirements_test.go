@@ -165,7 +165,7 @@ func TestStardewRuntimeRequirementsIgnoresOtherAppLaunchOption(t *testing.T) {
 	}
 }
 
-func TestStardewRuntimeRequirementsWarnForMissingRequiredManifestDependency(t *testing.T) {
+func TestStardewRuntimeRequirementsWarnForMissingManifestDependencies(t *testing.T) {
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{{
 		Enabled: true,
 		ModType: "stardew-smapi-mod",
@@ -184,10 +184,10 @@ func TestStardewRuntimeRequirementsWarnForMissingRequiredManifestDependency(t *t
 			},
 		}},
 	}})
-	if len(reqs) != 4 {
+	if len(reqs) != 5 {
 		t.Fatalf("requirements = %+v", reqs)
 	}
-	var missingFramework, missingDependency bool
+	var missingFramework, missingDependency, missingRecommendation bool
 	for _, req := range reqs {
 		if req.ID == "stardew-mod-dependency:Pathoschild.ContentPatcher" && req.Kind == "mod-dependency" && req.Status == RequirementMissing {
 			missingFramework = true
@@ -195,11 +195,11 @@ func TestStardewRuntimeRequirementsWarnForMissingRequiredManifestDependency(t *t
 		if req.ID == "stardew-mod-dependency:Pathoschild.LookupAnything" && len(req.Details) == 2 {
 			missingDependency = true
 		}
-		if strings.Contains(req.ID, "GenericModConfigMenu") {
-			t.Fatalf("optional dependency should not be required: %+v", req)
+		if req.ID == "stardew-mod-dependency:spacechase0.GenericModConfigMenu" && !req.Required && req.Status == RequirementMissing && strings.Contains(req.Message, "Recommended") {
+			missingRecommendation = true
 		}
 	}
-	if !missingFramework || !missingDependency {
+	if !missingFramework || !missingDependency || !missingRecommendation {
 		t.Fatalf("requirements = %+v", reqs)
 	}
 }
@@ -233,6 +233,71 @@ func TestStardewRuntimeRequirementsSkipInstalledManifestDependency(t *testing.T)
 		if strings.HasPrefix(req.ID, "stardew-mod-dependency:") {
 			t.Fatalf("dependency should be satisfied: %+v", reqs)
 		}
+	}
+}
+
+func TestStardewRuntimeRequirementsMatchAdditionalLogicalFileNames(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				Dependencies: []ModDependency{{
+					UniqueID:       "Pathoschild.ContentPatcher",
+					MinimumVersion: "2.0.0",
+					Required:       true,
+				}},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:                       "smapi-manifest",
+				Name:                       "Content Patcher",
+				UniqueID:                   "Pathoschild.ContentPatcherRedux",
+				Version:                    "2.0.0",
+				AdditionalLogicalFileNames: []string{"Pathoschild.ContentPatcher"},
+			}},
+		},
+	})
+	for _, req := range reqs {
+		if req.ID == "stardew-mod-dependency:Pathoschild.ContentPatcher" {
+			t.Fatalf("dependency alias should satisfy requirement: %+v", reqs)
+		}
+	}
+}
+
+func TestStardewRuntimeRequirementsTreatDisabledDependencyAsMissing(t *testing.T) {
+	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Visible Fish",
+				UniqueID: "shekurika.WaterFish",
+				Dependencies: []ModDependency{{
+					UniqueID: "Pathoschild.ContentPatcher",
+					Required: true,
+				}},
+			}},
+		},
+		{
+			Enabled: false,
+			ModType: "stardew-smapi-mod",
+			Metadata: []ModMetadata{{
+				Kind:     "smapi-manifest",
+				Name:     "Content Patcher",
+				UniqueID: "Pathoschild.ContentPatcher",
+			}},
+		},
+	})
+	if reqStatus(reqs, "stardew-mod-dependency:Pathoschild.ContentPatcher") != RequirementMissing {
+		t.Fatalf("disabled dependency should not satisfy requirement: %+v", reqs)
 	}
 }
 
