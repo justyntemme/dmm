@@ -67,6 +67,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/ridersrepublic"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rimworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sekiro"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/shieldwall"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/skyrimse"
@@ -182,6 +183,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(rimworld.Extension()),
 		gameext.MustCompileExtension(ridersrepublic.Extension()),
 		gameext.MustCompileExtension(rometotalwar.Extension()),
+		gameext.MustCompileExtension(sekiro.Extension()),
 		gameext.MustCompileExtension(shieldwall.Extension()),
 		gameext.MustCompileExtension(sleepingdogs.Extension()),
 		gameext.MustCompileExtension(skyrimse.Extension()),

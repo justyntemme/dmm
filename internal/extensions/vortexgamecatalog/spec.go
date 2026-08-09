@@ -242,7 +242,6 @@ var games = []GameSpec{
 	{VortexDir: "game-prisonarchitect", ID: "prisonarchitect", Name: "Prison Architect", SteamAppIDs: []string{"233450"}},
 	{VortexDir: "game-re2remake", ID: "residentevil22019", Name: "Resident Evil 2 (2019)", VortexStub: true, SupportModID: "432"},
 	{VortexDir: "game-re3remake", ID: "residentevil32020", Name: "Resident Evil 3 (2020)", VortexStub: true, SupportModID: "433"},
-	{VortexDir: "game-sekiro", ID: "sekiro", Name: "Sekiro", SteamAppIDs: []string{"814380"}, HasCustomInstallers: true},
 	{VortexDir: "game-shadowrunreturns", ID: "shadowrunreturns", Name: "Shadowrun Returns", SteamAppIDs: []string{"234650"}},
 	{VortexDir: "game-sims3", ID: "thesims3", Name: "The Sims 3", SteamAppIDs: []string{"47890"}},
 	{VortexDir: "game-sims4", ID: "thesims4", Name: "The Sims 4", AllowNoSteamAppID: true, HasCustomInstallers: true, HasModTypes: true, Notes: []string{"Vortex uses Windows registry/Documents discovery and purges profile-local resource.cfg paths through purge-mods-in-path; DMM needs source-reviewed Sims profile-file parity before full support."}},
