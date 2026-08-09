@@ -418,13 +418,32 @@ type GameSetupSpec struct {
 }
 
 type ExtensionActionSpec struct {
-	ID      string
-	Name    string
-	Scope   string
-	Kind    string
-	Status  string
-	Message string
+	ID            string
+	Name          string
+	Scope         string
+	Kind          string
+	OpenDirectory *OpenDirectoryActionSpec
+	Status        string
+	Message       string
 }
+
+type OpenDirectoryActionSpec struct {
+	Base             string
+	TargetRootID     string
+	RelativePath     string
+	FallbackBase     string
+	FallbackRootID   string
+	FallbackRelative string
+}
+
+const (
+	ExtensionActionKindOpenDirectory = "open-directory"
+
+	OpenDirectoryBaseGame       = "game"
+	OpenDirectoryBaseDownloads  = "downloads"
+	OpenDirectoryBaseStaging    = "staging"
+	OpenDirectoryBaseTargetRoot = "target-root"
+)
 
 type ExtensionSettingSpec struct {
 	ID      string

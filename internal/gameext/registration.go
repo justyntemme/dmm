@@ -463,9 +463,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInterpreters(extension.Interpreters)...)
 	errs = append(errs, validateGameStores(extension.GameStores)...)
 	errs = append(errs, validateGameSetups(extension.GameSetups)...)
-	errs = append(errs, validateStatusedScoped("extension action", extension.ExtensionActions, func(spec sdk.ExtensionActionSpec) (string, string, string, string, string) {
-		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
-	})...)
+	errs = append(errs, validateExtensionActions(extension.ExtensionActions, extension.TargetRoots)...)
 	errs = append(errs, validateStatusedScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
@@ -1853,6 +1851,70 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 		}
 	}
 	return errs
+}
+
+func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk.TargetRootSpec) []error {
+	errs := validateStatusedScoped("extension action", specs, func(spec sdk.ExtensionActionSpec) (string, string, string, string, string) {
+		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
+	})
+	declaredRoots := map[string]struct{}{}
+	for _, root := range targetRoots {
+		if id := strings.TrimSpace(root.ID); id != "" {
+			declaredRoots[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		if strings.TrimSpace(spec.Kind) != sdk.ExtensionActionKindOpenDirectory {
+			continue
+		}
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if spec.OpenDirectory == nil {
+			if status == sdk.CapabilityStatusReady {
+				errs = append(errs, errors.New("extension action "+id+" open-directory target is required"))
+			}
+			continue
+		}
+		errs = append(errs, validateOpenDirectoryActionTarget(id, "base", spec.OpenDirectory.Base, spec.OpenDirectory.TargetRootID, declaredRoots)...)
+		if err := validateRelativeOrRoot(spec.OpenDirectory.RelativePath); err != nil {
+			errs = append(errs, errors.New("extension action "+id+" open-directory relative path: "+err.Error()))
+		}
+		if strings.TrimSpace(spec.OpenDirectory.FallbackBase) != "" || strings.TrimSpace(spec.OpenDirectory.FallbackRootID) != "" || strings.TrimSpace(spec.OpenDirectory.FallbackRelative) != "" {
+			errs = append(errs, validateOpenDirectoryActionTarget(id, "fallback base", spec.OpenDirectory.FallbackBase, spec.OpenDirectory.FallbackRootID, declaredRoots)...)
+			if err := validateRelativeOrRoot(spec.OpenDirectory.FallbackRelative); err != nil {
+				errs = append(errs, errors.New("extension action "+id+" open-directory fallback relative path: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateOpenDirectoryActionTarget(actionID, label, base, rootID string, declaredRoots map[string]struct{}) []error {
+	base = strings.TrimSpace(base)
+	rootID = strings.TrimSpace(rootID)
+	switch base {
+	case sdk.OpenDirectoryBaseGame, sdk.OpenDirectoryBaseDownloads, sdk.OpenDirectoryBaseStaging:
+		if rootID != "" {
+			return []error{errors.New("extension action " + actionID + " open-directory " + label + " must not declare a target root id for base " + base)}
+		}
+		return nil
+	case sdk.OpenDirectoryBaseTargetRoot:
+		if rootID == "" {
+			return []error{errors.New("extension action " + actionID + " open-directory " + label + " target root id is required")}
+		}
+		if _, ok := declaredRoots[strings.ToLower(rootID)]; !ok {
+			return []error{errors.New("extension action " + actionID + " references undeclared target root " + rootID)}
+		}
+		return nil
+	default:
+		return []error{errors.New("extension action " + actionID + " open-directory " + label + " must be game, downloads, staging, or target-root")}
+	}
 }
 
 func validateStateMigrations(specs []sdk.StateMigrationSpec, targetRoots []sdk.TargetRootSpec) []error {

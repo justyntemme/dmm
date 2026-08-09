@@ -40,6 +40,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deps"
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -107,6 +108,7 @@ const (
 	jobTypeSteamWorkshopAction = "steam-workshop-action"
 	jobTypeExtensionNotice     = "extension-notice"
 	jobTypeExtensionToolAction = "extension-tool-action"
+	jobTypeOpenDirectoryAction = "open-directory-action"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
@@ -408,6 +410,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/start", s.handleStartExtensionToolAction)
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
+	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
+	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/start", s.handleStartOpenDirectoryAction)
+	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/complete", s.handleCompleteOpenDirectoryAction)
+	mux.HandleFunc("POST /api/games/{appID}/extension-actions/{actionID}/run", s.handleQueueExtensionAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/sync", s.handleSyncGameSteamWorkshop)
@@ -3639,6 +3645,228 @@ func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 }
 
+func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	actionID := strings.TrimSpace(r.PathValue("actionID"))
+	if appID == "" || actionID == "" {
+		http.Error(w, "appID and actionID are required", http.StatusBadRequest)
+		return
+	}
+	if existing, ok := s.findActiveOpenDirectoryAction(appID, actionID); ok {
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
+		return
+	}
+	payload, err := s.extensionActionPayload(r.Context(), appID, actionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	actionName := strings.TrimSpace(payload["action_name"])
+	if actionName == "" {
+		actionName = actionID
+	}
+	job := s.jobs.CreateWithPayload(jobTypeOpenDirectoryAction, "Open folder: "+actionName, payload)
+	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to open "+actionName)
+	s.logger.Info("open-directory action queued", "job_id", job.ID, "app_id", appID, "action_id", payload["action_id"], "path", payload["directory_path"], "source_extension", payload["source_extension"])
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) handleOpenDirectoryActions(w http.ResponseWriter, r *http.Request) {
+	out := []jobResponse{}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeOpenDirectoryAction {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusWaiting:
+			out = append(out, jobAPIResponse(job))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actions": out})
+}
+
+func (s *Server) handleStartOpenDirectoryAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "open-directory action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeOpenDirectoryAction {
+		http.Error(w, "job is not an open-directory action", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(job.Payload["directory_action_available"]) != "true" {
+		message := strings.TrimSpace(job.Payload["directory_action_error"])
+		if message == "" {
+			message = "open-directory action is not available"
+		}
+		http.Error(w, message, http.StatusConflict)
+		return
+	}
+	started, proceed := s.jobs.TransitionIf(jobID, []jobs.Status{jobs.StatusQueued, jobs.StatusWaiting, jobs.StatusFailed}, jobs.StatusRunning, "Opening folder through Decky")
+	if !proceed {
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(started), "proceed": false})
+		return
+	}
+	s.logger.Info("open-directory action started", "job_id", jobID, "app_id", started.Payload["app_id"], "action_id", started.Payload["action_id"], "path", started.Payload["directory_path"])
+	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(started), "proceed": true})
+}
+
+func (s *Server) handleCompleteOpenDirectoryAction(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("jobID"))
+	if jobID == "" {
+		http.Error(w, "jobID is required", http.StatusBadRequest)
+		return
+	}
+	job, ok := s.jobs.Get(jobID)
+	if !ok {
+		http.Error(w, "open-directory action was not found", http.StatusNotFound)
+		return
+	}
+	if job.Type != jobTypeOpenDirectoryAction {
+		http.Error(w, "job is not an open-directory action", http.StatusBadRequest)
+		return
+	}
+	var req extensionNoticeActionReport
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Applied {
+		job, _ = s.jobs.Complete(jobID, "Folder opened")
+		s.logger.Info("open-directory action completed", "job_id", jobID, "app_id", job.Payload["app_id"], "action_id", job.Payload["action_id"], "source", req.Source)
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+		return
+	}
+	message := strings.TrimSpace(req.Error)
+	if message == "" {
+		message = "Open folder failed"
+	}
+	job, _ = s.jobs.Fail(jobID, message)
+	s.logger.Warn("open-directory action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "action_id", job.Payload["action_id"], "error", message, "source", req.Source)
+	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) extensionActionPayload(ctx context.Context, appID, actionID string) (jobs.JobPayload, error) {
+	appID = strings.TrimSpace(appID)
+	actionID = strings.TrimSpace(actionID)
+	payload := jobs.JobPayload{
+		"app_id":                     appID,
+		"catalog":                    "extension",
+		"action_id":                  actionID,
+		"action_kind":                sdk.ExtensionActionKindOpenDirectory,
+		"directory_action_available": "false",
+	}
+	if appID == "" || actionID == "" {
+		return payload, errors.New("steam app id and action id are required")
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return payload, err
+	}
+	extension, action, ok := s.games.ExtensionActionForSteamApp(appID, actionID)
+	if !ok {
+		return payload, errors.New("extension action is not registered for this game")
+	}
+	payload["source_extension"] = strings.TrimSpace(extension.ID)
+	payload["action_id"] = strings.TrimSpace(action.ID)
+	payload["action_name"] = strings.TrimSpace(action.Name)
+	if strings.TrimSpace(action.Kind) != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil {
+		return payload, errors.New("extension action is not an executable open-directory action")
+	}
+	status := strings.ToLower(strings.TrimSpace(action.Status))
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	if status != sdk.CapabilityStatusReady {
+		message := strings.TrimSpace(action.Message)
+		if message == "" {
+			message = "extension action is not ready"
+		}
+		return payload, fmt.Errorf("%s: %s", firstNonEmpty(action.Name, action.ID), message)
+	}
+	path, err := s.resolveOpenDirectoryActionPath(ctx, game, *action.OpenDirectory)
+	if err != nil {
+		payload["directory_action_error"] = err.Error()
+		return payload, err
+	}
+	payload["directory_path"] = filepath.ToSlash(path)
+	payload["directory_action_available"] = "true"
+	return payload, nil
+}
+
+func (s *Server) resolveOpenDirectoryActionPath(ctx context.Context, game storage.Game, target sdk.OpenDirectoryActionSpec) (string, error) {
+	path, err := s.openDirectoryTargetPath(ctx, game, target.Base, target.TargetRootID, target.RelativePath)
+	if err != nil {
+		return "", err
+	}
+	if isExistingDirectory(path) {
+		return path, nil
+	}
+	if strings.TrimSpace(target.FallbackBase) != "" || strings.TrimSpace(target.FallbackRootID) != "" || strings.TrimSpace(target.FallbackRelative) != "" {
+		fallback, err := s.openDirectoryTargetPath(ctx, game, target.FallbackBase, target.FallbackRootID, target.FallbackRelative)
+		if err != nil {
+			return "", err
+		}
+		if isExistingDirectory(fallback) {
+			return fallback, nil
+		}
+	}
+	return "", errors.New("open-directory target does not exist or is not a directory: " + filepath.ToSlash(path))
+}
+
+func (s *Server) openDirectoryTargetPath(ctx context.Context, game storage.Game, base, rootID, rel string) (string, error) {
+	base = strings.TrimSpace(base)
+	rel = strings.TrimSpace(filepath.ToSlash(rel))
+	root := ""
+	switch base {
+	case sdk.OpenDirectoryBaseGame:
+		root = strings.TrimSpace(game.GamePath)
+	case sdk.OpenDirectoryBaseDownloads:
+		root = filepath.Join(s.cfg.DataDir, "downloads")
+	case sdk.OpenDirectoryBaseStaging:
+		root = filepath.Join(s.cfg.DataDir, "staging")
+	case sdk.OpenDirectoryBaseTargetRoot:
+		resolved, err := s.resolveManifestTargetRoot(ctx, game, rootID)
+		if err != nil {
+			return "", err
+		}
+		root = resolved
+	default:
+		return "", errors.New("unsupported open-directory base " + base)
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("open-directory base " + base + " resolved to an empty path")
+	}
+	root = filepath.Clean(root)
+	if rel == "" {
+		return root, nil
+	}
+	cleanRel, ok := safeRelative(rel)
+	if !ok {
+		return "", errors.New("open-directory relative path is unsafe")
+	}
+	path := filepath.Join(root, filepath.FromSlash(cleanRel))
+	if !pathWithinRoot(root, path) {
+		return "", errors.New("open-directory target escapes its declared root")
+	}
+	return filepath.Clean(path), nil
+}
+
+func isExistingDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
 func (s *Server) findActiveExtensionToolAction(appID, toolID string) (jobs.Job, bool) {
 	appID = strings.TrimSpace(appID)
 	toolID = strings.TrimSpace(toolID)
@@ -3650,6 +3878,27 @@ func (s *Server) findActiveExtensionToolAction(appID, toolID string) (jobs.Job, 
 			continue
 		}
 		if strings.TrimSpace(job.Payload["app_id"]) != appID || !strings.EqualFold(strings.TrimSpace(job.Payload["tool_id"]), toolID) {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
+			return job, true
+		}
+	}
+	return jobs.Job{}, false
+}
+
+func (s *Server) findActiveOpenDirectoryAction(appID, actionID string) (jobs.Job, bool) {
+	appID = strings.TrimSpace(appID)
+	actionID = strings.TrimSpace(actionID)
+	if appID == "" || actionID == "" {
+		return jobs.Job{}, false
+	}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeOpenDirectoryAction {
+			continue
+		}
+		if strings.TrimSpace(job.Payload["app_id"]) != appID || !strings.EqualFold(strings.TrimSpace(job.Payload["action_id"]), actionID) {
 			continue
 		}
 		switch job.Status {

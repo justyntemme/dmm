@@ -101,9 +101,13 @@ func Register(r sdk.Registrar) {
 		ID:      "bladeandsorcery-view-loadorder-file",
 		Name:    "View Blade & Sorcery load order file",
 		Scope:   VortexGameID,
-		Kind:    "open-directory",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex opens the StreamingAssets/Mods directory from a load-order action; DMM needs the Deck-safe open-directory action runtime.",
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex opens the StreamingAssets/Mods directory from a load-order action. DMM queues this as a Decky-owned open-directory action.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseGame,
+			RelativePath: officialRoot,
+		},
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:             "bladeandsorcery-prepare-for-modding",

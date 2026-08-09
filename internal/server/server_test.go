@@ -10187,6 +10187,108 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 }
 
+func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999005"
+	gamePath := filepath.Join(t.TempDir(), "Open Directory Game")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Mods"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "opendirectory",
+		Name:    "Open Directory",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"opendirectory"},
+				VortexGameID: "opendirectory",
+			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:     "open-mods",
+				Name:   "Open Mods Folder",
+				Scope:  "opendirectory",
+				Kind:   sdk.ExtensionActionKindOpenDirectory,
+				Status: sdk.CapabilityStatusReady,
+				OpenDirectory: &sdk.OpenDirectoryActionSpec{
+					Base:         sdk.OpenDirectoryBaseGame,
+					RelativePath: "Mods",
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Open Directory Game",
+		InstallDir:  "Open Directory Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/open-mods/run", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("queue status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var queued struct {
+		Job       jobResponse `json:"job"`
+		Duplicate bool        `json:"duplicate"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Job.Type != jobTypeOpenDirectoryAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["directory_action_available"] != "true" {
+		t.Fatalf("open-directory job = %+v", queued.Job)
+	}
+	if queued.Job.Payload["directory_path"] != filepath.ToSlash(filepath.Join(gamePath, "Mods")) {
+		t.Fatalf("directory path = %q", queued.Job.Payload["directory_path"])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/open-directory/actions", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("actions status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var actions struct {
+		Actions []jobResponse `json:"actions"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&actions); err != nil {
+		t.Fatal(err)
+	}
+	if len(actions.Actions) != 1 || actions.Actions[0].ID != queued.Job.ID {
+		t.Fatalf("open-directory actions = %+v", actions.Actions)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/open-directory/actions/"+queued.Job.ID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/open-directory/actions/"+queued.Job.ID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("complete status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	completed, ok := srv.jobs.Get(queued.Job.ID)
+	if !ok || completed.Status != jobs.StatusCompleted {
+		t.Fatalf("completed open-directory action = %+v", completed)
+	}
+}
+
 func discoveredToolByIDSource(tools []discoveredTool, id, source string) *discoveredTool {
 	for i := range tools {
 		if tools[i].ID == id && tools[i].Source == source {

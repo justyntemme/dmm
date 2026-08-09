@@ -283,6 +283,7 @@ type FeatureSummary struct {
 	FromVersion        string                   `json:"from_version,omitempty"`
 	ToVersion          string                   `json:"to_version,omitempty"`
 	Target             string                   `json:"target,omitempty"`
+	ActionTarget       *ActionTargetSummary     `json:"action_target,omitempty"`
 	Path               string                   `json:"path,omitempty"`
 	GameID             string                   `json:"game_id,omitempty"`
 	MasterlistGameID   string                   `json:"masterlist_game_id,omitempty"`
@@ -294,6 +295,16 @@ type FeatureSummary struct {
 	AppID              string                   `json:"app_id,omitempty"`
 	Parameters         []LauncherParameter      `json:"parameters,omitempty"`
 	Relative           bool                     `json:"relative,omitempty"`
+}
+
+type ActionTargetSummary struct {
+	Type             string `json:"type"`
+	Base             string `json:"base,omitempty"`
+	TargetRootID     string `json:"target_root_id,omitempty"`
+	RelativePath     string `json:"relative_path,omitempty"`
+	FallbackBase     string `json:"fallback_base,omitempty"`
+	FallbackRootID   string `json:"fallback_root_id,omitempty"`
+	FallbackRelative string `json:"fallback_relative,omitempty"`
 }
 
 type LauncherParameter struct {
@@ -662,6 +673,23 @@ func (r Registry) LaunchToolForSteamApp(appID, toolID string) (Extension, Launch
 		}
 	}
 	return Extension{}, LaunchToolSpec{}, false
+}
+
+func (r Registry) ExtensionActionForSteamApp(appID, actionID string) (Extension, sdk.ExtensionActionSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok {
+		return Extension{}, sdk.ExtensionActionSpec{}, false
+	}
+	actionID = canonical(actionID)
+	if actionID == "" {
+		return Extension{}, sdk.ExtensionActionSpec{}, false
+	}
+	for _, action := range extension.ExtensionActions {
+		if canonical(action.ID) == actionID {
+			return extension, action, true
+		}
+	}
+	return Extension{}, sdk.ExtensionActionSpec{}, false
 }
 
 func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
@@ -1191,12 +1219,13 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, action := range extension.ExtensionActions {
 		summary.Capabilities.ExtensionActions = append(summary.Capabilities.ExtensionActions, FeatureSummary{
-			ID:      action.ID,
-			Name:    action.Name,
-			Scope:   action.Scope,
-			Kind:    action.Kind,
-			Status:  defaultString(action.Status, sdk.CapabilityStatusReady),
-			Message: action.Message,
+			ID:           action.ID,
+			Name:         action.Name,
+			Scope:        action.Scope,
+			Kind:         action.Kind,
+			Status:       defaultString(action.Status, sdk.CapabilityStatusReady),
+			Message:      action.Message,
+			ActionTarget: actionTargetSummary(action),
 		})
 	}
 	for _, setting := range extension.ExtensionSettings {
@@ -1579,6 +1608,22 @@ func launchToolDynamicArguments(args []sdk.LaunchToolDynamicArgumentSpec) []Laun
 		})
 	}
 	return out
+}
+
+func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
+	if action.OpenDirectory == nil {
+		return nil
+	}
+	target := action.OpenDirectory
+	return &ActionTargetSummary{
+		Type:             strings.TrimSpace(action.Kind),
+		Base:             strings.TrimSpace(target.Base),
+		TargetRootID:     strings.TrimSpace(target.TargetRootID),
+		RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
+		FallbackBase:     strings.TrimSpace(target.FallbackBase),
+		FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
+		FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+	}
 }
 
 func migrationCommandSummaries(commands []sdk.StateMigrationCommandSpec) []FeatureSummary {

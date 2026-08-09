@@ -654,6 +654,17 @@ type ExtensionToolActionJob = Job & {
   };
 };
 
+type OpenDirectoryActionJob = Job & {
+  payload?: {
+    app_id?: string;
+    action_id?: string;
+    action_name?: string;
+    directory_path?: string;
+    directory_action_available?: string;
+    directory_action_error?: string;
+  };
+};
+
 type GameSort = "recent" | "az" | "za";
 type DeckyModSort = "profile" | "source" | "az" | "za" | "enabled";
 
@@ -1077,6 +1088,7 @@ function jobToastTitle(job: Job): string {
   if (job.type === "recover-downloads") return "DMM recovery";
   if (job.type === "extension-notice") return "DMM extension notice";
   if (job.type === "extension-tool-action") return "DMM extension tool";
+  if (job.type === "open-directory-action") return "DMM folder action";
   if (isDeckyModUpdateAction(job)) return "DMM mod update";
   return "Decky Mod Manager";
 }
@@ -1114,6 +1126,8 @@ const completedWorkshopActions = new Set<string>();
 const workshopActionAttempts = new Map<string, number>();
 const completedExtensionToolActions = new Set<string>();
 const extensionToolActionAttempts = new Map<string, number>();
+const completedOpenDirectoryActions = new Set<string>();
+const openDirectoryActionAttempts = new Map<string, number>();
 const workshopStateSyncLastAt = new Map<string, number>();
 const handledDeckyBrowserOpenEvents = new Set<number>();
 const DMM_TOAST_STORAGE_PREFIX = "decky-mod-manager:job-toast:";
@@ -1159,7 +1173,7 @@ function jobMatchesAppID(job: Job, appID: string) {
 
 function isDeckyActionCenterJob(job: Job) {
   if (job.status === "completed" || job.status === "canceled") return false;
-  return ["captured-install", "steam-workshop-action", "extension-notice", "extension-tool-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type);
+  return ["captured-install", "steam-workshop-action", "extension-notice", "extension-tool-action", "open-directory-action", "deploy", "purge", "repair", "recover-downloads", "rollback"].includes(job.type);
 }
 
 function deckyJobBelongsToAppID(job: Job, appID: string) {
@@ -1224,6 +1238,19 @@ function extensionNoticeRunToolError(job: Job) {
   return String(job.payload?.tool_action_error || "").trim();
 }
 
+function openDirectoryActionAvailable(job: Job) {
+  return job.type === "open-directory-action" && String(job.payload?.directory_action_available || "").trim() === "true";
+}
+
+function openDirectoryActionError(job: Job) {
+  return String(job.payload?.directory_action_error || "").trim();
+}
+
+function openDirectoryActionLabel(job: Job) {
+  const label = String(job.payload?.action_name || "").trim();
+  return label || "Open Folder";
+}
+
 function extensionNoticeActionLabel(job: Job) {
   const label = String(job.payload?.action_label || "").trim();
   if (label) return label;
@@ -1249,6 +1276,7 @@ function deckyJobPrimaryActionLabel(job: Job) {
   if (job.type === "captured-install" && job.status === "failed") return "Retry";
   if (job.type === "steam-workshop-action" && job.status === "failed") return "Retry";
   if (job.type === "extension-tool-action" && extensionNoticeRunToolAvailable(job)) return extensionNoticeActionLabel(job);
+  if (job.type === "open-directory-action" && openDirectoryActionAvailable(job)) return openDirectoryActionLabel(job);
   if (job.type === "extension-notice" && extensionNoticeRunToolAvailable(job)) return extensionNoticeActionLabel(job);
   if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) return extensionNoticeActionLabel(job);
   return "";
@@ -1256,7 +1284,7 @@ function deckyJobPrimaryActionLabel(job: Job) {
 
 function deckyJobCanCancel(job: Job) {
   if (job.status === "completed" || job.status === "canceled") return false;
-  if (job.status === "failed") return job.type === "captured-install" || job.type === "steam-workshop-action" || job.type === "extension-tool-action";
+  if (job.status === "failed") return job.type === "captured-install" || job.type === "steam-workshop-action" || job.type === "extension-tool-action" || job.type === "open-directory-action";
   return true;
 }
 
@@ -1271,6 +1299,11 @@ function eventShouldSyncWorkshopActions(event: DomainEvent) {
 function eventShouldSyncExtensionToolActions(event: DomainEvent) {
   if (event.type === "jobs.snapshot") return true;
   return event.type === "job.updated" && isJob(event.payload) && event.payload.type === "extension-tool-action";
+}
+
+function eventShouldSyncOpenDirectoryActions(event: DomainEvent) {
+  if (event.type === "jobs.snapshot") return true;
+  return event.type === "job.updated" && isJob(event.payload) && event.payload.type === "open-directory-action";
 }
 
 function deckyModStateLabel(mod: ManagedMod) {
@@ -2051,7 +2084,7 @@ async function handleDeckyBrowserOpenEvent(event: DomainEvent) {
 }
 
 function isNotifiableJob(job: Job) {
-  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action", "extension-notice", "extension-tool-action"].includes(job.type);
+  return ["captured-install", "installer-choice", "deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action", "extension-notice", "extension-tool-action", "open-directory-action"].includes(job.type);
 }
 
 function isJob(value: unknown): value is Job {
@@ -2062,7 +2095,7 @@ function jobStatusShouldToast(job: Job) {
   if (job.type === "captured-install") {
     return ["queued", "waiting", "running", "completed", "failed"].includes(job.status);
   }
-  if (job.type === "installer-choice" || job.type === "extension-notice" || job.type === "extension-tool-action") {
+  if (job.type === "installer-choice" || job.type === "extension-notice" || job.type === "extension-tool-action" || job.type === "open-directory-action") {
     return ["waiting", "completed", "failed"].includes(job.status);
   }
   if (["deploy", "purge", "repair", "recover-downloads", "rollback", "steam-workshop-action"].includes(job.type)) {
@@ -2725,6 +2758,85 @@ async function syncExtensionToolActions() {
     }
   } catch (err) {
     await logFrontendEvent("extension tool action sync failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function runOpenDirectoryActionJob(job: Job, source = "decky-auto") {
+  const payload = job.payload ?? {};
+  const appID = String(job.app_id || payload.app_id || "").trim();
+  const actionID = String(payload.action_id || "").trim();
+  const actionName = openDirectoryActionLabel(job);
+  const directoryPath = String(payload.directory_path || "").trim();
+  const unavailable = openDirectoryActionError(job);
+  if (!openDirectoryActionAvailable(job)) {
+    throw new Error(unavailable || "This open-folder action is not available.");
+  }
+  if (!directoryPath) {
+    throw new Error("Open-folder action did not include a directory path.");
+  }
+
+  const started = await call<[string], { ok: boolean; error?: string; proceed?: boolean; job?: Job }>("start_open_directory_action", job.id);
+  if (!started.ok) {
+    throw new Error(started.error || "Unable to start open-folder action.");
+  }
+  if (!started.proceed) {
+    await logFrontendEvent("open-directory action already handled", { job_id: job.id, app_id: appID, action_id: actionID, source });
+    return;
+  }
+
+  try {
+    await logFrontendEvent("open-directory action running", { job_id: job.id, app_id: appID, action_id: actionID, source });
+    const opened = await call<[string], { ok: boolean; error?: string }>("open_directory_path", directoryPath);
+    if (!opened.ok) {
+      throw new Error(opened.error || "Unable to open folder.");
+    }
+    const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_open_directory_action", job.id, {
+      applied: true,
+      source
+    });
+    if (!report.ok) {
+      throw new Error(report.error || "Unable to record open-folder action.");
+    }
+    await maybeShowDeckyActionToast(report.job, "open-directory-action");
+    showLaunchToast("DMM folder action", `${actionName} opened.`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await logFrontendEvent("open-directory action failed", { job_id: job.id, app_id: appID, action_id: actionID, error: message, source });
+    await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_open_directory_action", job.id, {
+      applied: false,
+      error: message,
+      source
+    });
+    throw err;
+  }
+}
+
+async function syncOpenDirectoryActions() {
+  try {
+    const result = await call<[], { ok: boolean; error?: string; actions: OpenDirectoryActionJob[] }>("open_directory_actions");
+    if (!result.ok) {
+      await logFrontendEvent("open-directory action sync returned not ok", { error: result.error || "" });
+      return;
+    }
+    if (result.actions.length > 0) {
+      await logFrontendEvent("open-directory action sync found actions", { count: result.actions.length });
+    }
+    for (const action of result.actions) {
+      const key = `${action.id}:${action.payload?.app_id || ""}:${action.payload?.action_id || ""}:${action.payload?.directory_path || ""}`;
+      if (completedOpenDirectoryActions.has(key)) continue;
+      const now = Date.now();
+      const previousAttempt = openDirectoryActionAttempts.get(key) ?? 0;
+      if (previousAttempt > 0 && now - previousAttempt < 30_000) continue;
+      openDirectoryActionAttempts.set(key, now);
+      try {
+        await runOpenDirectoryActionJob(action, "decky-auto");
+        completedOpenDirectoryActions.add(key);
+      } catch (err) {
+        showLaunchToast("DMM folder action failed", err instanceof Error ? err.message : String(err), true);
+      }
+    }
+  } catch (err) {
+    await logFrontendEvent("open-directory action sync failed", { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -3501,6 +3613,9 @@ async function handleDeckyDomainEvent(event: DomainEvent) {
   if (eventShouldSyncExtensionToolActions(event)) {
     await syncExtensionToolActions();
   }
+  if (eventShouldSyncOpenDirectoryActions(event)) {
+    await syncOpenDirectoryActions();
+  }
   window.dispatchEvent(new CustomEvent(DMM_EVENT_NAME, { detail: event }));
 }
 
@@ -3592,6 +3707,7 @@ function startBackgroundMonitors() {
     await syncLaunchActions();
     await syncWorkshopActions();
     await syncExtensionToolActions();
+    await syncOpenDirectoryActions();
     await seedWorkshopStateFromGames();
     connectEventMonitor();
   })();
@@ -4985,6 +5101,10 @@ function FreshDeckyModManagerRoute() {
         await runExtensionToolActionJob(job, "decky-manual");
       } else if (job.type === "extension-tool-action" && extensionNoticeRunToolError(job)) {
         setError(extensionNoticeRunToolError(job));
+      } else if (job.type === "open-directory-action" && openDirectoryActionAvailable(job)) {
+        await runOpenDirectoryActionJob(job, "decky-manual");
+      } else if (job.type === "open-directory-action" && openDirectoryActionError(job)) {
+        setError(openDirectoryActionError(job));
       } else if (job.type === "extension-notice" && extensionNoticeRunToolAvailable(job)) {
         await runExtensionNoticeLaunchTool(job, appID);
       } else if (job.type === "extension-notice" && extensionNoticeHelpURL(job)) {
@@ -5066,7 +5186,10 @@ function FreshDeckyModManagerRoute() {
     applyBackendAuthFromStatus(next);
     setStatus(next);
     await refreshFreshState();
-    if (next?.running) await syncExtensionToolActions();
+    if (next?.running) {
+      await syncExtensionToolActions();
+      await syncOpenDirectoryActions();
+    }
   }
 
   useEffect(() => {
@@ -5240,6 +5363,9 @@ function FreshDeckyModManagerRoute() {
               {(job.type === "extension-notice" || job.type === "extension-tool-action") && extensionNoticeRunToolError(job) && (
                 <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{extensionNoticeRunToolError(job)}</div>
               )}
+              {job.type === "open-directory-action" && openDirectoryActionError(job) && (
+                <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{openDirectoryActionError(job)}</div>
+              )}
               <DeckyJobProgress job={job} />
               <DeckyJobIssueReview job={job} />
               <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>
@@ -5388,6 +5514,9 @@ function FreshDeckyModManagerRoute() {
             {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
             {(job.type === "extension-notice" || job.type === "extension-tool-action") && extensionNoticeRunToolError(job) && (
               <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{extensionNoticeRunToolError(job)}</div>
+            )}
+            {job.type === "open-directory-action" && openDirectoryActionError(job) && (
+              <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{openDirectoryActionError(job)}</div>
             )}
             <DeckyJobProgress job={job} />
             <DeckyJobIssueReview job={job} />
@@ -5652,6 +5781,7 @@ function QuickAccessContent() {
         await seedJobNotifications({ seed: true });
         await syncLaunchActions();
         await syncExtensionToolActions();
+        await syncOpenDirectoryActions();
         connectEventMonitor();
       } else {
         closeEventMonitor();

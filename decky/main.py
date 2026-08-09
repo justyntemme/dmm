@@ -1044,6 +1044,70 @@ class Plugin:
         self._log(f"extension tool action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
         return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
 
+    async def open_directory_actions(self):
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "actions": []}
+        result, error = self._backend_json_result("GET", "/api/open-directory/actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load open-directory actions.", "actions": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected open-directory actions response.", "actions": []}
+        if actions:
+            self._log(f"open-directory actions available count={len(actions)}")
+        return {"ok": True, "actions": actions}
+
+    async def start_open_directory_action(self, job_id):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required.", "proceed": False}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "proceed": False}
+        result, error = self._backend_json_result("POST", f"/api/open-directory/actions/{urllib.parse.quote(job_id)}/start", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to start open-directory action.", "proceed": False}
+        proceed = bool(result.get("proceed")) if isinstance(result, dict) else False
+        self._log(f"open-directory action start job_id={job_id} proceed={proceed}")
+        return {"ok": True, "proceed": proceed, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def record_open_directory_action(self, job_id, report):
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return {"ok": False, "error": "job_id is required."}
+        if not isinstance(report, dict):
+            report = {}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = json.dumps(report).encode("utf-8")
+        result, error = self._backend_json_result("POST", f"/api/open-directory/actions/{urllib.parse.quote(job_id)}/complete", payload)
+        if result is None:
+            return {"ok": False, "error": error or "Unable to record open-directory action."}
+        self._log(f"open-directory action report job_id={job_id} applied={bool(report.get('applied'))} error={report.get('error', '')}")
+        return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
+
+    async def open_directory_path(self, path):
+        directory = Path(str(path or "")).expanduser()
+        if not directory.is_absolute():
+            return {"ok": False, "error": "Directory path must be absolute."}
+        try:
+            resolved = directory.resolve(strict=True)
+        except FileNotFoundError:
+            return {"ok": False, "error": "Directory does not exist."}
+        except Exception as exc:
+            return {"ok": False, "error": self._redact_url(str(exc))}
+        if not resolved.is_dir():
+            return {"ok": False, "error": "Path is not a directory."}
+        try:
+            subprocess.Popen(["xdg-open", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            self._log(f"open-directory launched path={resolved}")
+            return {"ok": True}
+        except FileNotFoundError:
+            return {"ok": False, "error": "xdg-open is not installed."}
+        except Exception as exc:
+            error = self._redact_url(str(exc))
+            self._log(f"open-directory launch failed path={resolved}: {error}")
+            return {"ok": False, "error": error}
+
     async def launch_actions(self):
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running.", "actions": []}

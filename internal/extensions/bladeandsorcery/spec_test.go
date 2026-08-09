@@ -87,6 +87,13 @@ func TestExtensionSummaryRecordsBlockedLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != "blocked" {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
 	}
+	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.ExtensionActions[0].ActionTarget == nil {
+		t.Fatalf("extension actions = %+v", summary.Capabilities.ExtensionActions)
+	}
+	target := summary.Capabilities.ExtensionActions[0].ActionTarget
+	if target.Type != sdk.ExtensionActionKindOpenDirectory || target.Base != sdk.OpenDirectoryBaseGame || target.RelativePath != officialRoot {
+		t.Fatalf("action target = %+v", target)
+	}
 	if len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
