@@ -1,6 +1,7 @@
 package bladeandsorcery
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/loadorderjson"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -15,6 +16,7 @@ const (
 	streamingAssets    = "BladeAndSorcery_Data/StreamingAssets"
 	officialRoot       = streamingAssets + "/Mods"
 	legacyRoot         = streamingAssets
+	loadOrderFile      = officialRoot + "/loadorder.json"
 	manifestFile       = "manifest.json"
 	mulleManifestFile  = "mod.json"
 
@@ -106,7 +108,24 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:             "bladeandsorcery-prepare-for-modding",
 		Name:           "Prepare Blade & Sorcery mod folders",
-		GeneratedFiles: []string{streamingAssets, officialRoot, streamingAssets + "/Default", officialRoot + "/loadorder.json"},
+		GeneratedFiles: []string{streamingAssets, officialRoot, streamingAssets + "/Default"},
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event: sdk.EventWillDeploy,
+		Name:  "Generate Blade & Sorcery loadorder.json",
+		Handler: loadorderjson.Handler(loadorderjson.Options{
+			ID:                     "bladeandsorcery-loadorder-json",
+			TargetRelative:         loadOrderFile,
+			EntryRoot:              officialRoot,
+			Key:                    "modNames",
+			ModTypes:               []string{officialModType},
+			ManifestFileName:       manifestFile,
+			ManifestParentModTypes: []string{dinputModType},
+			ExcludedNames:          []string{"default", "aa", "steamvr"},
+			EmptyMessage:           "Generated empty Blade & Sorcery load order because no managed official mods are enabled.",
+			SuccessMessage:         "Generated Blade & Sorcery loadorder.json from enabled DMM-managed mods.",
+			AlreadyPresentMessage:  "Blade & Sorcery loadorder.json is already up to date.",
+		}),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:      "bladeandsorcery-version",

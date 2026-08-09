@@ -1,11 +1,15 @@
 package bladeandsorcery
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -83,6 +87,48 @@ func TestExtensionSummaryRecordsBlockedLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != "blocked" {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
 	}
+	if len(summary.Capabilities.EventHandlers) != 1 {
+		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+}
+
+func TestWillDeployGeneratesLoadOrderJSON(t *testing.T) {
+	gamePath := t.TempDir()
+	stagingRoot := t.TempDir()
+	writeFile(t, filepath.Join(gamePath, loadOrderFile), `{"modNames":["old"]}`)
+
+	result, err := registry().RunEventHandlers(context.Background(), SteamAppID, sdk.EventWillDeploy, sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		ProfileID:   2,
+		StagingRoot: stagingRoot,
+		Mappings: []deploy.FileMapping{
+			{TargetRelative: officialRoot + "/Late/manifest.json", InstalledModID: 20, Priority: 20},
+			{TargetRelative: officialRoot + "/Early/manifest.json", InstalledModID: 10, Priority: 10},
+			{TargetRelative: streamingAssets + "/Default/manifest.json", InstalledModID: 30, Priority: 5},
+			{TargetRelative: streamingAssets + "/Managed/manifest.json", InstalledModID: 40, Priority: 15},
+		},
+		Mods: []sdk.DeploymentMod{
+			{ID: 10, Name: "Early", ModType: officialModType, Priority: 10},
+			{ID: 20, Name: "Late", ModType: officialModType, Priority: 20},
+			{ID: 30, Name: "Default", ModType: officialModType, Priority: 5},
+			{ID: 40, Name: "Injector", ModType: dinputModType, Priority: 15},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	if mapping.TargetRelative != loadOrderFile || mapping.TargetPolicy != deploy.TargetPolicyPatchExisting || mapping.RestorePath == "" {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	var body map[string][]string
+	if err := json.Unmarshal([]byte(readFile(t, mapping.SourcePath)), &body); err != nil {
+		t.Fatal(err)
+	}
+	assertEqualStrings(t, body["modNames"], []string{"Early", "Managed", "Late"})
 }
 
 func registry() gameext.Registry {
@@ -96,6 +142,27 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func assertEqualStrings(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("strings = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("strings = %+v, want %+v", got, want)
+		}
 	}
 }
 
