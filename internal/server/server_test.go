@@ -12521,6 +12521,12 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 				NexusDomains: []string{"lifecyclegame"},
 				VortexGameID: "lifecyclegame",
 			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "auto_run",
+				Name:      "Auto Run",
+				Scope:     "profile",
+				ValueType: sdk.ExtensionSettingValueBool,
+			})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: sdk.EventDidInstallMod,
 				Name:  "Observe install",
@@ -12542,6 +12548,9 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 		Path:        gamePath,
 		State:       "clean_candidate",
 	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetExtensionSettingValue(context.Background(), "lifecyclegame", "auto_run", []byte("true")); err != nil {
 		t.Fatal(err)
 	}
 	stagingPath := filepath.Join(t.TempDir(), "staging", "lifecyclegame")
@@ -12612,6 +12621,14 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	}
 	if len(captured.Mods[0].Metadata) != 1 || captured.Mods[0].Metadata[0].UniqueID != "lifecycle-metadata" {
 		t.Fatalf("captured mod metadata = %+v", captured.Mods[0].Metadata)
+	}
+	rawAutoRun := captured.ExtensionSettings["lifecyclegame"]["auto_run"]
+	var autoRun bool
+	if err := json.Unmarshal(rawAutoRun, &autoRun); err != nil {
+		t.Fatal(err)
+	}
+	if !autoRun {
+		t.Fatalf("captured extension settings = %+v", captured.ExtensionSettings)
 	}
 	if captured.WorkDir == "" {
 		t.Fatal("captured work dir is empty")

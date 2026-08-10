@@ -83,18 +83,23 @@ func (s *Server) runFileMonitorEventHandlers(ctx context.Context, game storage.G
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
 	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
-		AppID:        game.SteamAppID,
-		GamePath:     game.GamePath,
-		LibraryPath:  game.LibraryPath,
-		ProfileID:    profileID,
-		StagingRoot:  stagingRoot,
-		WorkDir:      workDir,
-		Source:       "new-file-monitor",
-		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
-		Mods:         deploymentModsForHooks(mods),
-		AddedFiles:   added,
-		RemovedFiles: removed,
+		AppID:             game.SteamAppID,
+		GamePath:          game.GamePath,
+		LibraryPath:       game.LibraryPath,
+		ProfileID:         profileID,
+		StagingRoot:       stagingRoot,
+		WorkDir:           workDir,
+		Source:            "new-file-monitor",
+		ExtensionSettings: settings,
+		ManagedFiles:      append([]deploy.AppliedFile(nil), managedFiles...),
+		Mods:              deploymentModsForHooks(mods),
+		AddedFiles:        added,
+		RemovedFiles:      removed,
 	})
 	if err != nil {
 		return gameext.EventHandlerResult{}, err

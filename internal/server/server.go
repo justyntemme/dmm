@@ -14550,18 +14550,23 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
 	result, err := s.games.RunEventHandlers(ctx, game.SteamAppID, event, gameext.EventHandlerInput{
-		AppID:        game.SteamAppID,
-		GamePath:     game.GamePath,
-		LibraryPath:  game.LibraryPath,
-		ProfileID:    profileID,
-		StagingRoot:  stagingRoot,
-		WorkDir:      workDir,
-		Source:       "deploy-plan",
-		Mappings:     append([]deploy.FileMapping(nil), mappings...),
-		ManagedFiles: append([]deploy.AppliedFile(nil), managedFiles...),
-		Mods:         deploymentModsForHooks(mods),
-		Progress:     progress,
+		AppID:             game.SteamAppID,
+		GamePath:          game.GamePath,
+		LibraryPath:       game.LibraryPath,
+		ProfileID:         profileID,
+		StagingRoot:       stagingRoot,
+		WorkDir:           workDir,
+		Source:            "deploy-plan",
+		ExtensionSettings: settings,
+		Mappings:          append([]deploy.FileMapping(nil), mappings...),
+		ManagedFiles:      append([]deploy.AppliedFile(nil), managedFiles...),
+		Mods:              deploymentModsForHooks(mods),
+		Progress:          progress,
 	})
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
@@ -14602,16 +14607,21 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return err
+	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
-		AppID:        appID,
-		GamePath:     game.GamePath,
-		LibraryPath:  game.LibraryPath,
-		ProfileID:    profileID,
-		StagingRoot:  stagingRoot,
-		WorkDir:      workDir,
-		Source:       source,
-		ManagedFiles: append([]deploy.AppliedFile(nil), applied...),
-		Mods:         deploymentModsForHooks(mods),
+		AppID:             appID,
+		GamePath:          game.GamePath,
+		LibraryPath:       game.LibraryPath,
+		ProfileID:         profileID,
+		StagingRoot:       stagingRoot,
+		WorkDir:           workDir,
+		Source:            source,
+		ExtensionSettings: settings,
+		ManagedFiles:      append([]deploy.AppliedFile(nil), applied...),
+		Mods:              deploymentModsForHooks(mods),
 	})
 	if err != nil {
 		return err
@@ -14670,6 +14680,10 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return err
+	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
 		AppID:              appID,
 		GamePath:           game.GamePath,
@@ -14678,6 +14692,7 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 		StagingRoot:        stagingRoot,
 		WorkDir:            workDir,
 		Source:             strings.TrimSpace(req.Source),
+		ExtensionSettings:  settings,
 		ManagedFiles:       append([]deploy.AppliedFile(nil), req.ManagedFiles...),
 		Mods:               deploymentModsForHooks(mods),
 		ModIDs:             append([]int64(nil), req.ModIDs...),

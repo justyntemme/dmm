@@ -1052,20 +1052,21 @@ const (
 type EventHandlerFunc func(context.Context, EventHandlerInput) (EventHandlerResult, error)
 
 type EventHandlerInput struct {
-	Event        string
-	AppID        string
-	GamePath     string
-	LibraryPath  string
-	ProfileID    int64
-	StagingRoot  string
-	WorkDir      string
-	Source       string
-	Mappings     []deploy.FileMapping
-	ManagedFiles []deploy.AppliedFile
-	Mods         []DeploymentMod
-	ModIDs       []int64
-	AddedFiles   []AddedFile
-	RemovedFiles []RemovedFile
+	Event             string
+	AppID             string
+	GamePath          string
+	LibraryPath       string
+	ProfileID         int64
+	StagingRoot       string
+	WorkDir           string
+	Source            string
+	ExtensionSettings map[string]map[string]json.RawMessage
+	Mappings          []deploy.FileMapping
+	ManagedFiles      []deploy.AppliedFile
+	Mods              []DeploymentMod
+	ModIDs            []int64
+	AddedFiles        []AddedFile
+	RemovedFiles      []RemovedFile
 	// CalculateOverrides mirrors Vortex's update-conflicts-and-rules event argument.
 	CalculateOverrides bool
 	Progress           EventProgressFunc
