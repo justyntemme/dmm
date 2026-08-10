@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -128,6 +129,90 @@ func TestBuildReplacerArchivePromptsWhenOfficialTargetIsAmbiguous(t *testing.T) 
 	if len(choice.Installer.Steps[0].Groups[0].Plugins) != 2 {
 		t.Fatalf("choice options = %+v", choice.Installer.Steps[0].Groups[0].Plugins)
 	}
+}
+
+func TestWillDeployPrefixesCommunityPackagesByPriority(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "first", "manifest.json")
+	second := filepath.Join(root, "second", "manifest.json")
+	writeFile(t, first, "{}")
+	writeFile(t, second, "{}")
+	result, err := willDeploy(context.Background(), gameext.EventHandlerInput{
+		WorkDir: root,
+		Mappings: []deploy.FileMapping{
+			{InstalledModID: 20, SourcePath: second, TargetRelative: "Second/manifest.json", Priority: 20},
+			{InstalledModID: 10, SourcePath: first, TargetRelative: "First/manifest.json", Priority: 10},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ReplaceMappings {
+		t.Fatal("MSFS hook should replace mappings with prefixed targets")
+	}
+	got := mappingTargets(result.Mappings)
+	want := []string{"AAA-First/manifest.json", "AAB-Second/manifest.json"}
+	assertEqualStringSlices(t, got, want)
+}
+
+func TestWillDeployMergesAircraftConfigIntoGeneratedPackage(t *testing.T) {
+	root := t.TempDir()
+	one := filepath.Join(root, "PackOne", "SimObjects", "Airplanes", "C152", "aircraft.cfg")
+	two := filepath.Join(root, "PackTwo", "SimObjects", "Airplanes", "C152", "aircraft.cfg")
+	writeFile(t, one, "[FLTSIM.0]\ntitle=Base\nui_variation=\"TT:Plane.Base\"\n")
+	writeFile(t, two, "[FLTSIM.0]\ntitle=Base\nui_variation=\"TT:Plane.Base\"\n[FLTSIM.1]\ntitle=Red\nui_variation=\"TT:Plane.Red\"\n")
+	writeFile(t, filepath.Join(root, "PackTwo", "en-US.locPak"), `{"LocalisationPackage":{"Language":"en-US","Strings":{"Plane.Red":"Red Livery"}}}`)
+	result, err := willDeploy(context.Background(), gameext.EventHandlerInput{
+		WorkDir: root,
+		Mappings: []deploy.FileMapping{
+			{InstalledModID: 10, SourcePath: one, TargetRelative: "PackOne/SimObjects/Airplanes/C152/aircraft.cfg", Priority: 10},
+			{InstalledModID: 20, SourcePath: two, TargetRelative: "PackTwo/SimObjects/Airplanes/C152/aircraft.cfg", Priority: 20},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := mappingTargets(result.Mappings)
+	want := []string{
+		"ZZZZ-merged-config/layout.json",
+		"ZZZZ-merged-config/SimObjects/Airplanes/C152/aircraft.cfg",
+		"ZZZZ-merged-config/en-US.locPak",
+	}
+	assertEqualStringSlices(t, got, want)
+	body, err := os.ReadFile(mappingSource(t, result.Mappings, "ZZZZ-merged-config/SimObjects/Airplanes/C152/aircraft.cfg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if !strings.Contains(text, "[FLTSIM.0]") || !strings.Contains(text, "[FLTSIM.1]") || !strings.Contains(text, "title=Red") {
+		t.Fatalf("merged aircraft.cfg =\n%s", text)
+	}
+	locPak, err := os.ReadFile(mappingSource(t, result.Mappings, "ZZZZ-merged-config/en-US.locPak"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(locPak), "Plane.Red.k") || !strings.Contains(string(locPak), "Red Livery") {
+		t.Fatalf("merged locPak = %s", locPak)
+	}
+}
+
+func mappingSource(t *testing.T, mappings []deploy.FileMapping, target string) string {
+	t.Helper()
+	for _, mapping := range mappings {
+		if mapping.TargetRelative == target {
+			return mapping.SourcePath
+		}
+	}
+	t.Fatalf("missing mapping target %q in %+v", target, mappings)
+	return ""
+}
+
+func mappingTargets(mappings []deploy.FileMapping) []string {
+	out := make([]string, 0, len(mappings))
+	for _, mapping := range mappings {
+		out = append(out, mapping.TargetRelative)
+	}
+	return out
 }
 
 func msfsPackagesFixture(t *testing.T) (string, string) {

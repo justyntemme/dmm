@@ -83,6 +83,11 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "msfs-aircraft-cfg", Name: "MSFS aircraft.cfg merge"})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    "Prepare MSFS Community load order and aircraft.cfg merge",
+		Handler: willDeploy,
+	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
 		ID:            "msfs-community-load-order",
 		Name:          "MSFS Community package load order",
@@ -100,8 +105,8 @@ func Register(r sdk.Registrar) {
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "msfs-aircraft-localization-merge",
 		Name:    "MSFS localization package merge",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex also merges locPak localization strings for aircraft.cfg conflicts; DMM records this source behavior while the first MSFS port focuses on Community package and replacer install parity.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM merges aircraft.cfg FLTSIM sections and generates a merged Community package layout. LocPak string merge is tracked by the same deploy hook when localization files are present.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "msfs-prepare-community",
