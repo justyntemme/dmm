@@ -2268,9 +2268,9 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 			}
 			actionSeen[actionKey] = struct{}{}
 			switch strings.TrimSpace(action.Kind) {
-			case sdk.GameSetupActionEnsureDirectory, sdk.GameSetupActionEnsureFile, sdk.GameSetupActionRequirePath, sdk.GameSetupActionRenameIfExists:
+			case sdk.GameSetupActionEnsureDirectory, sdk.GameSetupActionEnsureFile, sdk.GameSetupActionRequirePath, sdk.GameSetupActionRenameIfExists, sdk.GameSetupActionPatchText:
 			default:
-				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" kind must be ensure-directory, ensure-file, require-path, or rename-if-exists"))
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" kind must be ensure-directory, ensure-file, require-path, rename-if-exists, or patch-text"))
 			}
 			switch strings.TrimSpace(action.Base) {
 			case sdk.GameSetupBaseGame:
@@ -2290,6 +2290,13 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 			if strings.TrimSpace(action.Kind) == sdk.GameSetupActionRenameIfExists {
 				if err := validateRelativePath(action.DestinationRelative); err != nil {
 					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" destination path: "+err.Error()))
+				}
+			}
+			if strings.TrimSpace(action.Kind) == sdk.GameSetupActionPatchText {
+				if strings.TrimSpace(action.Pattern) == "" {
+					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" patch pattern is required"))
+				} else if _, err := regexp.Compile(action.Pattern); err != nil {
+					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" patch pattern: "+err.Error()))
 				}
 			}
 		}

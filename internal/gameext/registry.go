@@ -345,6 +345,7 @@ type SetupActionSummary struct {
 	TargetRootID        string `json:"target_root_id,omitempty"`
 	RelativePath        string `json:"relative_path,omitempty"`
 	DestinationRelative string `json:"destination_relative,omitempty"`
+	Pattern             string `json:"pattern,omitempty"`
 	OverwriteExisting   bool   `json:"overwrite_existing,omitempty"`
 }
 
@@ -2435,6 +2436,7 @@ func setupActionSummaries(actions []sdk.GameSetupActionSpec) []SetupActionSummar
 			TargetRootID:        strings.TrimSpace(action.TargetRootID),
 			RelativePath:        filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
 			DestinationRelative: filepath.ToSlash(strings.TrimSpace(action.DestinationRelative)),
+			Pattern:             strings.TrimSpace(action.Pattern),
 			OverwriteExisting:   action.OverwriteExisting,
 		})
 	}

@@ -874,6 +874,17 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				ID:      "bad/platform",
 				Markers: []string{"../Game.exe"},
 			})
+			r.RegisterGameSetup(sdk.GameSetupSpec{
+				ID:   "bad-setup",
+				Name: "Bad setup",
+				Actions: []sdk.GameSetupActionSpec{{
+					ID:           "bad-patch",
+					Kind:         sdk.GameSetupActionPatchText,
+					Base:         sdk.GameSetupBaseGame,
+					RelativePath: "config.txt",
+					Pattern:      "[",
+				}},
+			})
 			r.RegisterLaunchTool(sdk.LaunchToolSpec{
 				ID:                 "tool",
 				Name:               "Tool",
@@ -997,6 +1008,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"install platform bad/platform id must be a simple identifier",
 		"install platform bad/platform name is required",
 		"install platform bad/platform marker: path traversal is not allowed",
+		"game setup bad-setup action bad-patch patch pattern:",
 		"launch tool tool executable path: path traversal is not allowed",
 		"launch tool tool argument: must not contain control line breaks",
 		"launch tool tool dynamic input bad/id id must be a simple identifier",

@@ -14101,6 +14101,9 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "DISABLEMODS.TXT"), []byte("disabled"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "config.blk"), []byte("sound{\n  enable_mod:b=no\n}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	extension := gameext.MustCompileExtension(sdk.Extension{
 		ID:      "setupgame",
 		Name:    "Setup Game",
@@ -14127,6 +14130,7 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 			actions = append(actions, sdk.RenameGamePathIfExists("DISABLEMODS.TXT", "ENABLEMODS.TXT")...)
 			actions = append(actions, sdk.EnsureTargetRootDirectories("external-root", ".")...)
 			actions = append(actions, sdk.EnsureTargetRootFiles("external-root", "ready\n", "settings/config.txt")...)
+			actions = append(actions, sdk.PatchGameTextFile("config.blk", `(?m)^sound\{[\s\S]*?\}$`, "sound{\n  enable_mod:b=yes\n}")...)
 			r.RegisterGameSetup(sdk.GameSetupSpec{
 				ID:      "prepare",
 				Name:    "Prepare setup game",
@@ -14172,7 +14176,7 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 4 || applied.Result.Checked != 5 {
+	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 5 || applied.Result.Checked != 6 {
 		t.Fatalf("setup response = %+v", applied)
 	}
 	if _, err := os.Stat(filepath.Join(gamePath, "Mods")); err != nil {
@@ -14194,6 +14198,13 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	}
 	if string(content) != "ready\n" {
 		t.Fatalf("config content = %q", string(content))
+	}
+	patchedConfig, err := os.ReadFile(filepath.Join(gamePath, "config.blk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(patchedConfig) != "sound{\n  enable_mod:b=yes\n}" {
+		t.Fatalf("patched config = %q", string(patchedConfig))
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)

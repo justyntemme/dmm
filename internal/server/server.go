@@ -1865,6 +1865,30 @@ func (s *Server) gameSetupActionStatus(ctx context.Context, game storage.Game, a
 			resp.Message = "target exists but is a directory"
 			return resp
 		}
+	case sdk.GameSetupActionPatchText:
+		if info.IsDir() {
+			resp.Status = "blocked"
+			resp.Message = "target exists but is a directory"
+			return resp
+		}
+		current, err := os.ReadFile(target)
+		if err != nil {
+			resp.Status = "blocked"
+			resp.Message = err.Error()
+			return resp
+		}
+		compiled, err := regexp.Compile(action.Pattern)
+		if err != nil {
+			resp.Status = "blocked"
+			resp.Message = "patch pattern: " + err.Error()
+			return resp
+		}
+		patched := compiled.ReplaceAllString(string(current), action.Replacement)
+		if patched != string(current) {
+			resp.Status = "missing"
+			resp.Message = "text patch is pending"
+			return resp
+		}
 	}
 	resp.Status = "ready"
 	return resp
@@ -1950,6 +1974,15 @@ func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, s
 				s.logger.Info("game setup file already exists", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
 				return false, nil
 			}
+		case sdk.GameSetupActionPatchText:
+			if info.IsDir() {
+				return false, fmt.Errorf("game setup %s target exists but is a directory: %s", setupID, filepath.ToSlash(target))
+			}
+			applied, err := s.patchTextGameSetupAction(game, setupID, actionID, action, target, jobID, source, info.Mode().Perm())
+			if err != nil {
+				return false, err
+			}
+			return applied, nil
 		default:
 			return false, fmt.Errorf("game setup %s action %s has unsupported kind %q", setupID, actionID, kind)
 		}
@@ -1977,9 +2010,35 @@ func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, s
 		}
 		s.logger.Info("game setup file created", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "bytes", len(action.Content), "source", source)
 		return true, nil
+	case sdk.GameSetupActionPatchText:
+		return false, fmt.Errorf("game setup %s requires missing patch target %s", setupID, filepath.ToSlash(target))
 	default:
 		return false, fmt.Errorf("game setup %s action %s has unsupported kind %q", setupID, actionID, kind)
 	}
+}
+
+func (s *Server) patchTextGameSetupAction(game storage.Game, setupID, actionID string, action sdk.GameSetupActionSpec, target, jobID, source string, perm os.FileMode) (bool, error) {
+	compiled, err := regexp.Compile(action.Pattern)
+	if err != nil {
+		return false, fmt.Errorf("game setup %s action %s patch pattern: %w", setupID, actionID, err)
+	}
+	current, err := os.ReadFile(target)
+	if err != nil {
+		return false, err
+	}
+	patched := compiled.ReplaceAllString(string(current), action.Replacement)
+	if patched == string(current) {
+		s.logger.Info("game setup text patch already applied", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
+		return false, nil
+	}
+	if perm == 0 {
+		perm = 0o600
+	}
+	if err := os.WriteFile(target, []byte(patched), perm); err != nil {
+		return false, err
+	}
+	s.logger.Info("game setup text file patched", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "pattern", action.Pattern, "bytes", len(patched), "source", source)
+	return true, nil
 }
 
 func (s *Server) renameGameSetupAction(ctx context.Context, game storage.Game, setupID, actionID string, action sdk.GameSetupActionSpec, sourcePath, jobID, source string) (bool, error) {

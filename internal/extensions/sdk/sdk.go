@@ -551,6 +551,8 @@ type GameSetupActionSpec struct {
 	RelativePath        string
 	DestinationRelative string
 	Content             string
+	Pattern             string
+	Replacement         string
 	OverwriteExisting   bool
 }
 
@@ -559,6 +561,7 @@ const (
 	GameSetupActionEnsureFile      = "ensure-file"
 	GameSetupActionRequirePath     = "require-path"
 	GameSetupActionRenameIfExists  = "rename-if-exists"
+	GameSetupActionPatchText       = "patch-text"
 
 	GameSetupBaseGame       = "game"
 	GameSetupBaseTargetRoot = "target-root"
@@ -606,6 +609,30 @@ func RenameTargetRootPathIfExists(rootID, from, to string) []GameSetupActionSpec
 		TargetRootID:        strings.TrimSpace(rootID),
 		RelativePath:        strings.TrimSpace(from),
 		DestinationRelative: strings.TrimSpace(to),
+	}}
+}
+
+func PatchGameTextFile(path, pattern, replacement string) []GameSetupActionSpec {
+	return patchTextSetupActions(GameSetupBaseGame, "", path, pattern, replacement)
+}
+
+func PatchTargetRootTextFile(rootID, path, pattern, replacement string) []GameSetupActionSpec {
+	return patchTextSetupActions(GameSetupBaseTargetRoot, rootID, path, pattern, replacement)
+}
+
+func patchTextSetupActions(base, rootID, path, pattern, replacement string) []GameSetupActionSpec {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "."
+	}
+	return []GameSetupActionSpec{{
+		ID:           gameSetupActionID(GameSetupActionPatchText, base, rootID, path),
+		Kind:         GameSetupActionPatchText,
+		Base:         base,
+		TargetRootID: strings.TrimSpace(rootID),
+		RelativePath: path,
+		Pattern:      pattern,
+		Replacement:  replacement,
 	}}
 }
 
