@@ -38,6 +38,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "extension action", summary.Capabilities.ExtensionActions, "gamebryo-save-refresh")
 	assertReadyWithMessage(t, "extension action", summary.Capabilities.ExtensionActions, "gamebryo-save-open")
 	assertReadyWithMessage(t, "extension main page", summary.Capabilities.ExtensionMainPages, "gamebryo-savegames")
+	assertReadyWithMessage(t, "extension main page", summary.Capabilities.ExtensionMainPages, "morrowind-plugins")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "test-gameversion-state")
 	assertReady(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives", "oblivion-fonts", "skyrim-fonts")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "dependency-unsolved-conflicts")

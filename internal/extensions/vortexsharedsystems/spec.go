@@ -83,7 +83,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterExtensionAPI(readyAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "skyrim-fonts", Name: "Skyrim font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
-	r.RegisterExtensionMainPage(blockedMainPage("morrowind-plugins", "Morrowind plugins", "plugins"))
+	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
+		ID:      "morrowind-plugins",
+		Name:    "Morrowind plugins",
+		Scope:   "plugins",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM represents Vortex's Morrowind plugin page through the Morrowind extension's ESP/ESM activation runtime, generated Morrowind.ini Game Files output, timestamp ordering, and generic profile plugin-order UI/API instead of copying Vortex's desktop page.",
+	})
 	r.RegisterHistoryStack(sdk.HistoryStackSpec{
 		ID:      "plugins",
 		Name:    "Gamebryo plugin history stack",
