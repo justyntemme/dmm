@@ -2,6 +2,7 @@ package baldursgate3
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -307,11 +308,13 @@ func registerActions(r sdk.Registrar) {
 		})
 	}
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
-		ID:      "bg3-auto-export-load-order",
-		Name:    "Auto-export BG3 load order",
-		Scope:   VortexGameID,
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex defaults this on; DMM needs the BG3 load-order UI before exposing the setting.",
+		ID:           "bg3-auto-export-load-order",
+		Name:         "Auto-export BG3 load order",
+		Scope:        VortexGameID,
+		ValueType:    sdk.ExtensionSettingValueBool,
+		DefaultValue: json.RawMessage("true"),
+		Status:       sdk.CapabilityStatusReady,
+		Message:      "Vortex defaults autoExportLoadOrder on; DMM stores the same typed extension setting and uses it as the default extension state.",
 	})
 }
 

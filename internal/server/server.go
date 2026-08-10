@@ -3849,16 +3849,17 @@ type deckyBrowserOpenRequest struct {
 }
 
 type extensionSettingResponse struct {
-	ExtensionID string          `json:"extension_id"`
-	SettingID   string          `json:"setting_id"`
-	Name        string          `json:"name"`
-	Scope       string          `json:"scope,omitempty"`
-	ValueType   string          `json:"value_type,omitempty"`
-	Placeholder string          `json:"placeholder,omitempty"`
-	Status      string          `json:"status"`
-	Message     string          `json:"message,omitempty"`
-	Value       json.RawMessage `json:"value"`
-	UpdatedAt   string          `json:"updated_at,omitempty"`
+	ExtensionID  string          `json:"extension_id"`
+	SettingID    string          `json:"setting_id"`
+	Name         string          `json:"name"`
+	Scope        string          `json:"scope,omitempty"`
+	ValueType    string          `json:"value_type,omitempty"`
+	DefaultValue json.RawMessage `json:"default_value,omitempty"`
+	Placeholder  string          `json:"placeholder,omitempty"`
+	Status       string          `json:"status"`
+	Message      string          `json:"message,omitempty"`
+	Value        json.RawMessage `json:"value"`
+	UpdatedAt    string          `json:"updated_at,omitempty"`
 }
 
 type updateExtensionSettingRequest struct {
@@ -4627,16 +4628,17 @@ func (s *Server) handleSetExtensionSetting(w http.ResponseWriter, r *http.Reques
 		}),
 	})
 	writeJSON(w, http.StatusOK, extensionSettingResponse{
-		ExtensionID: value.ExtensionID,
-		SettingID:   value.SettingID,
-		Name:        fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
-		Scope:       setting.Scope,
-		ValueType:   fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
-		Placeholder: strings.TrimSpace(setting.Placeholder),
-		Status:      status,
-		Message:     setting.Message,
-		Value:       json.RawMessage(value.ValueJSON),
-		UpdatedAt:   value.UpdatedAt,
+		ExtensionID:  value.ExtensionID,
+		SettingID:    value.SettingID,
+		Name:         fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
+		Scope:        setting.Scope,
+		ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+		DefaultValue: cloneRawMessage(setting.DefaultValue),
+		Placeholder:  strings.TrimSpace(setting.Placeholder),
+		Status:       status,
+		Message:      setting.Message,
+		Value:        json.RawMessage(value.ValueJSON),
+		UpdatedAt:    value.UpdatedAt,
 	})
 }
 
@@ -4656,7 +4658,7 @@ func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValu
 			if settingID == "" {
 				continue
 			}
-			valueJSON := "null"
+			valueJSON := extensionSettingDefaultJSON(setting.DefaultValue)
 			updatedAt := ""
 			if stored, ok := valueByKey[extensionSettingKey(extension.ID, settingID)]; ok {
 				valueJSON = stored.ValueJSON
@@ -4666,16 +4668,17 @@ func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValu
 				valueJSON = "null"
 			}
 			responses = append(responses, extensionSettingResponse{
-				ExtensionID: extension.ID,
-				SettingID:   settingID,
-				Name:        fallbackString(strings.TrimSpace(setting.Name), settingID),
-				Scope:       setting.Scope,
-				ValueType:   fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
-				Placeholder: strings.TrimSpace(setting.Placeholder),
-				Status:      fallbackString(strings.TrimSpace(setting.Status), sdk.CapabilityStatusReady),
-				Message:     setting.Message,
-				Value:       json.RawMessage(valueJSON),
-				UpdatedAt:   updatedAt,
+				ExtensionID:  extension.ID,
+				SettingID:    settingID,
+				Name:         fallbackString(strings.TrimSpace(setting.Name), settingID),
+				Scope:        setting.Scope,
+				ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+				DefaultValue: cloneRawMessage(setting.DefaultValue),
+				Placeholder:  strings.TrimSpace(setting.Placeholder),
+				Status:       fallbackString(strings.TrimSpace(setting.Status), sdk.CapabilityStatusReady),
+				Message:      setting.Message,
+				Value:        json.RawMessage(valueJSON),
+				UpdatedAt:    updatedAt,
 			})
 		}
 	}
@@ -4720,6 +4723,20 @@ func validateExtensionSettingValue(setting sdk.ExtensionSettingSpec, value json.
 		return errors.New("unsupported extension setting value type")
 	}
 	return nil
+}
+
+func extensionSettingDefaultJSON(value json.RawMessage) string {
+	if len(value) == 0 || !json.Valid(value) {
+		return "null"
+	}
+	return string(value)
+}
+
+func cloneRawMessage(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), value...)
 }
 
 func extensionSettingKey(extensionID, settingID string) string {
@@ -16857,14 +16874,27 @@ func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Gam
 }
 
 func (s *Server) extensionSettingValueMap(ctx context.Context) (map[string]map[string]json.RawMessage, error) {
+	out := make(map[string]map[string]json.RawMessage)
+	for _, extension := range s.games.ExtensionSummaries() {
+		extensionID := strings.TrimSpace(strings.ToLower(extension.ID))
+		if extensionID == "" {
+			continue
+		}
+		for _, setting := range extension.Capabilities.ExtensionSettings {
+			settingID := strings.TrimSpace(strings.ToLower(setting.ID))
+			if settingID == "" || len(setting.DefaultValue) == 0 || !json.Valid(setting.DefaultValue) {
+				continue
+			}
+			if out[extensionID] == nil {
+				out[extensionID] = map[string]json.RawMessage{}
+			}
+			out[extensionID][settingID] = cloneRawMessage(setting.DefaultValue)
+		}
+	}
 	values, err := s.db.ExtensionSettingValues(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(values) == 0 {
-		return nil, nil
-	}
-	out := make(map[string]map[string]json.RawMessage)
 	for _, value := range values {
 		extensionID := strings.TrimSpace(strings.ToLower(value.ExtensionID))
 		settingID := strings.TrimSpace(strings.ToLower(value.SettingID))
@@ -16875,6 +16905,9 @@ func (s *Server) extensionSettingValueMap(ctx context.Context) (map[string]map[s
 			out[extensionID] = map[string]json.RawMessage{}
 		}
 		out[extensionID][settingID] = json.RawMessage(value.ValueJSON)
+	}
+	if len(out) == 0 {
+		return nil, nil
 	}
 	return out, nil
 }

@@ -49,6 +49,10 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
 		t.Fatalf("game setup = %+v", compiled.GameSetups)
 	}
+	autoExport := extensionSettingByID(compiled.ExtensionSettings, "bg3-auto-export-load-order")
+	if autoExport == nil || autoExport.Status != sdk.CapabilityStatusReady || autoExport.ValueType != sdk.ExtensionSettingValueBool || string(autoExport.DefaultValue) != "true" {
+		t.Fatalf("auto-export setting = %+v", autoExport)
+	}
 	registry := gameext.NewRegistry([]gameext.Extension{compiled})
 	if !registry.HasEventHandlerForSteamApp(SteamAppID, sdk.EventCheckModsVersion) {
 		t.Fatal("missing BG3 check-mods-version event handler")
@@ -342,6 +346,15 @@ func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirementSpec, i
 	for idx := range requirements {
 		if requirements[idx].ID == id {
 			return &requirements[idx]
+		}
+	}
+	return nil
+}
+
+func extensionSettingByID(settings []sdk.ExtensionSettingSpec, id string) *sdk.ExtensionSettingSpec {
+	for idx := range settings {
+		if settings[idx].ID == id {
+			return &settings[idx]
 		}
 	}
 	return nil

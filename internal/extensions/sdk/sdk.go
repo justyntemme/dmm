@@ -712,13 +712,14 @@ type AcquireToolActionSpec struct {
 }
 
 type ExtensionSettingSpec struct {
-	ID          string
-	Name        string
-	Scope       string
-	ValueType   string
-	Placeholder string
-	Status      string
-	Message     string
+	ID           string
+	Name         string
+	Scope        string
+	ValueType    string
+	DefaultValue json.RawMessage
+	Placeholder  string
+	Status       string
+	Message      string
 }
 
 const (

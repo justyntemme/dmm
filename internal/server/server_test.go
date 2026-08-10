@@ -651,9 +651,10 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
-				ID:    "merge_config",
-				Name:  "Merge Config",
-				Scope: "profile",
+				ID:           "merge_config",
+				Name:         "Merge Config",
+				Scope:        "profile",
+				DefaultValue: json.RawMessage(`{"enabled":false}`),
 			})
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 				ID:      "blocked_setting",
@@ -677,8 +678,15 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 2 || string(list[1].Value) != "null" || list[1].SettingID != "merge_config" {
+	if len(list) != 2 || string(list[1].Value) != `{"enabled":false}` || string(list[1].DefaultValue) != `{"enabled":false}` || list[1].SettingID != "merge_config" {
 		t.Fatalf("initial settings = %+v", list)
+	}
+	settingsMap, err := srv.extensionSettingValueMap(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(settingsMap["settingtest"]["merge_config"]) != `{"enabled":false}` {
+		t.Fatalf("default settings map = %+v", settingsMap)
 	}
 
 	putReq := httptest.NewRequest(http.MethodPut, "/api/extensions/settingtest/settings/merge_config", bytes.NewBufferString(`{"value":{"enabled":true,"mode":"safe"}}`))

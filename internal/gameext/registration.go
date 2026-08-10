@@ -1,6 +1,7 @@
 package gameext
 
 import (
+	"encoding/json"
 	"errors"
 	"net/url"
 	"path/filepath"
@@ -2228,8 +2229,48 @@ func validateExtensionSettings(specs []sdk.ExtensionSettingSpec) []error {
 		default:
 			errs = append(errs, errors.New("extension setting "+id+" value type must be json, string, path, bool, or number"))
 		}
+		if len(spec.DefaultValue) > 0 {
+			if !json.Valid(spec.DefaultValue) {
+				errs = append(errs, errors.New("extension setting "+id+" default value must be valid JSON"))
+				continue
+			}
+			if err := validateExtensionSettingJSONValue(spec.ValueType, spec.DefaultValue); err != nil {
+				errs = append(errs, errors.New("extension setting "+id+" default value "+err.Error()))
+			}
+		}
 	}
 	return errs
+}
+
+func validateExtensionSettingJSONValue(valueType string, value json.RawMessage) error {
+	if len(value) == 0 || string(value) == "null" {
+		return nil
+	}
+	switch strings.TrimSpace(valueType) {
+	case "", sdk.ExtensionSettingValueJSON:
+		return nil
+	case sdk.ExtensionSettingValueString, sdk.ExtensionSettingValuePath:
+		var decoded string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("must be a JSON string or null")
+		}
+		if strings.TrimSpace(valueType) == sdk.ExtensionSettingValuePath && decoded != "" && !filepath.IsAbs(decoded) {
+			return errors.New("must be an absolute path or empty string")
+		}
+	case sdk.ExtensionSettingValueBool:
+		var decoded bool
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("must be a JSON boolean or null")
+		}
+	case sdk.ExtensionSettingValueNumber:
+		var decoded float64
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("must be a JSON number or null")
+		}
+	default:
+		return errors.New("has unsupported value type")
+	}
+	return nil
 }
 
 func validateExtensionAPIs(specs []sdk.ExtensionAPISpec) []error {

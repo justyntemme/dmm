@@ -20,10 +20,12 @@
 - LSLib/Divine is modeled as a DMM-managed tool-only provider mod type.
 - The BG3 pak metadata runtime requirement can be satisfied by either files already present in the game path or an enabled DMM-managed LSLib/Divine provider mod.
 - DMM can auto-queue the source-verified Norbyte/lslib latest `ExportTool-vX.Y.Z.zip` archive through runtime acquisition when BG3 pak metadata support is required.
+- Vortex's `autoExportLoadOrder` reducer default is represented as a ready typed DMM extension setting with default value `true`, so extension runtime hooks see the same default state without requiring a persisted row first.
 
 ## Beta Gaps
 
 - `modsettings.lsx` generation uses the extension-owned Divine process bridge to list pak contents, extract `meta.lsx`, and generate the Public profile load-order file during deployment. BG3 load-order import/migration UI remains future parity work.
+- Remaining Vortex reducer fields still need runtime equivalents: `playerProfile`, `migration`, `settingsWritten`, and `extensionVersion`.
 - The source-backed `check-mods-version` event now checks Norbyte/lslib stable GitHub releases against the installed managed LSLib/Divine version and queues an Action Center notice when a newer tool release is available.
 - Live BG3 archive validation is still required on Steam Deck.
 

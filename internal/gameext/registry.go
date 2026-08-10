@@ -2,6 +2,7 @@ package gameext
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -308,6 +309,7 @@ type FeatureSummary struct {
 	Status               string                   `json:"status,omitempty"`
 	Message              string                   `json:"message,omitempty"`
 	ValueType            string                   `json:"value_type,omitempty"`
+	DefaultValue         json.RawMessage          `json:"default_value,omitempty"`
 	Placeholder          string                   `json:"placeholder,omitempty"`
 	Command              string                   `json:"command,omitempty"`
 	Commands             []FeatureSummary         `json:"commands,omitempty"`
@@ -1964,13 +1966,14 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, setting := range extension.ExtensionSettings {
 		summary.Capabilities.ExtensionSettings = append(summary.Capabilities.ExtensionSettings, FeatureSummary{
-			ID:          setting.ID,
-			Name:        setting.Name,
-			Scope:       setting.Scope,
-			ValueType:   defaultString(setting.ValueType, sdk.ExtensionSettingValueJSON),
-			Placeholder: setting.Placeholder,
-			Status:      defaultString(setting.Status, sdk.CapabilityStatusReady),
-			Message:     setting.Message,
+			ID:           setting.ID,
+			Name:         setting.Name,
+			Scope:        setting.Scope,
+			ValueType:    defaultString(setting.ValueType, sdk.ExtensionSettingValueJSON),
+			DefaultValue: cloneRawMessage(setting.DefaultValue),
+			Placeholder:  setting.Placeholder,
+			Status:       defaultString(setting.Status, sdk.CapabilityStatusReady),
+			Message:      setting.Message,
 		})
 	}
 	for _, test := range extension.ExtensionTests {
@@ -2529,6 +2532,13 @@ func sortFeatureSummaries(features []FeatureSummary) {
 		}
 		return features[i].ID < features[j].ID
 	})
+}
+
+func cloneRawMessage(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), value...)
 }
 
 func firstNonEmpty(values ...string) string {
