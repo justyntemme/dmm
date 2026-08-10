@@ -3,9 +3,11 @@ package untitledgoose
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -33,6 +35,12 @@ func TestUntitledGoosePortsEpicBepInExMetadata(t *testing.T) {
 	if requirement.Acquisition == nil || requirement.Acquisition.Catalog != "github" || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.SourceModID != bepinex.DefaultRuntimeModID {
 		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
 	}
+	if !hasSetupAction(summary.Capabilities.GameSetups, sdk.GameSetupActionEnsureFile, "BepInEx/config/BepInEx.cfg") {
+		t.Fatalf("game setup = %+v", summary.Capabilities.GameSetups)
+	}
+	if !strings.HasPrefix(bepinexConfig, "\ufeff[Caching]") || !strings.Contains(bepinexConfig, "Enabled = true") {
+		t.Fatalf("BepInEx config content does not match expected Vortex asset")
+	}
 }
 
 func TestUntitledGooseBepInExPluginInstallsToPlugins(t *testing.T) {
@@ -59,6 +67,17 @@ func assertTarget(t *testing.T, plan installplan.Plan, target string) {
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+}
+
+func hasSetupAction(setups []gameext.FeatureSummary, kind, relPath string) bool {
+	for _, setup := range setups {
+		for _, action := range setup.SetupActions {
+			if action.Kind == kind && action.RelativePath == relPath {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func writeFile(t *testing.T, path, body string) {
