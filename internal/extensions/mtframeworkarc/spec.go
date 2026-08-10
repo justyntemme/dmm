@@ -1,12 +1,21 @@
 package mtframeworkarc
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"errors"
+	"os"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/arctool"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+)
 
 const (
 	ID      = "mtframework-arc-support"
 	Name    = "Capcom MT Framework ARC Support"
 	Version = "0.1.0"
 	BuildID = "first-party-go"
+
+	ARCToolPathEnv = "DMM_ARCTOOL_PATH"
 )
 
 func Extension() sdk.Extension {
@@ -32,9 +41,17 @@ func Register(r sdk.Registrar) {
 		FileExtensions: []string{".arc"},
 		Engine:         ID,
 		SupportsWrite:  true,
-		Status:         sdk.CapabilityStatusMetadata,
-		Message:        "DMM has a typed ARCtool process bridge for Vortex list/extract/create semantics; converted game extensions still need to wire this bridge where ARC support is required.",
+		Status:         sdk.CapabilityStatusReady,
+		Message:        "DMM runs Vortex-compatible ARCtool list/extract/create operations when " + ARCToolPathEnv + " points at ARCtool.exe.",
 	})
+}
+
+func RunnerFromEnvironment() (arctool.Runner, error) {
+	path := strings.TrimSpace(os.Getenv(ARCToolPathEnv))
+	if path == "" {
+		return arctool.Runner{}, errors.New(ARCToolPathEnv + " must point at ARCtool.exe before DMM can merge MT Framework ARC archives")
+	}
+	return arctool.Runner{ExecutablePath: path}, nil
 }
 
 func Sources() []sdk.SourceRef {

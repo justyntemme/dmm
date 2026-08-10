@@ -63,13 +63,19 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildInvalidArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
+	r.RegisterPackedArchiveMutation(sdk.PackedArchiveMutationSpec{
+		ID:             "dragonsdogma:mtframework-arc-merge",
+		Name:           "Dragon's Dogma selective ARC merge",
+		PackageFormat:  "mtframework-arc",
+		TargetArchives: []string{"nativePC/**/game_main.arc", "nativePC/**/title.arc"},
+		RequiresEngine: "mtframework-arc-support",
+		ModTypes:       []string{modType, invalidModType},
+	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "dragonsdogma-arc-merge", Name: "Dragon's Dogma selective ARC merge"})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "dragonsdogma-mtframework-arc-merge",
-		Name:    "MT Framework ARC merge parity",
-		Trigger: "deploy",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex requires mtframework-arc-support and selectively merges game_main.arc and title.arc. DMM records the dependency but cannot merge ARC archives until the shared MT Framework ARC engine is implemented.",
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    "Merge Dragon's Dogma ARC archives",
+		Handler: willDeployARCMerges,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "dragonsdogma-prepare-nativepc",
