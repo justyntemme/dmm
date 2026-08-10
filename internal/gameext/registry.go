@@ -304,6 +304,8 @@ type FeatureSummary struct {
 	SupportsWrite        bool                     `json:"supports_write,omitempty"`
 	Status               string                   `json:"status,omitempty"`
 	Message              string                   `json:"message,omitempty"`
+	ValueType            string                   `json:"value_type,omitempty"`
+	Placeholder          string                   `json:"placeholder,omitempty"`
 	Command              string                   `json:"command,omitempty"`
 	Commands             []FeatureSummary         `json:"commands,omitempty"`
 	Scope                string                   `json:"scope,omitempty"`
@@ -1918,11 +1920,13 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, setting := range extension.ExtensionSettings {
 		summary.Capabilities.ExtensionSettings = append(summary.Capabilities.ExtensionSettings, FeatureSummary{
-			ID:      setting.ID,
-			Name:    setting.Name,
-			Scope:   setting.Scope,
-			Status:  defaultString(setting.Status, sdk.CapabilityStatusReady),
-			Message: setting.Message,
+			ID:          setting.ID,
+			Name:        setting.Name,
+			Scope:       setting.Scope,
+			ValueType:   defaultString(setting.ValueType, sdk.ExtensionSettingValueJSON),
+			Placeholder: setting.Placeholder,
+			Status:      defaultString(setting.Status, sdk.CapabilityStatusReady),
+			Message:     setting.Message,
 		})
 	}
 	for _, test := range extension.ExtensionTests {

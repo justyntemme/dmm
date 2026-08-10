@@ -3530,6 +3530,8 @@ type extensionSettingResponse struct {
 	SettingID   string          `json:"setting_id"`
 	Name        string          `json:"name"`
 	Scope       string          `json:"scope,omitempty"`
+	ValueType   string          `json:"value_type,omitempty"`
+	Placeholder string          `json:"placeholder,omitempty"`
 	Status      string          `json:"status"`
 	Message     string          `json:"message,omitempty"`
 	Value       json.RawMessage `json:"value"`
@@ -4283,6 +4285,10 @@ func (s *Server) handleSetExtensionSetting(w http.ResponseWriter, r *http.Reques
 		http.Error(w, message, http.StatusConflict)
 		return
 	}
+	if err := validateExtensionSettingValue(setting, req.Value); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	value, err := s.db.SetExtensionSettingValue(r.Context(), extension.ID, setting.ID, req.Value)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -4302,6 +4308,8 @@ func (s *Server) handleSetExtensionSetting(w http.ResponseWriter, r *http.Reques
 		SettingID:   value.SettingID,
 		Name:        fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
 		Scope:       setting.Scope,
+		ValueType:   fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+		Placeholder: strings.TrimSpace(setting.Placeholder),
 		Status:      status,
 		Message:     setting.Message,
 		Value:       json.RawMessage(value.ValueJSON),
@@ -4339,6 +4347,8 @@ func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValu
 				SettingID:   settingID,
 				Name:        fallbackString(strings.TrimSpace(setting.Name), settingID),
 				Scope:       setting.Scope,
+				ValueType:   fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+				Placeholder: strings.TrimSpace(setting.Placeholder),
 				Status:      fallbackString(strings.TrimSpace(setting.Status), sdk.CapabilityStatusReady),
 				Message:     setting.Message,
 				Value:       json.RawMessage(valueJSON),
@@ -4353,6 +4363,40 @@ func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValu
 		return responses[i].ExtensionID < responses[j].ExtensionID
 	})
 	return responses
+}
+
+func validateExtensionSettingValue(setting sdk.ExtensionSettingSpec, value json.RawMessage) error {
+	if len(value) == 0 {
+		return errors.New("value is required")
+	}
+	if string(value) == "null" {
+		return nil
+	}
+	switch strings.TrimSpace(setting.ValueType) {
+	case "", sdk.ExtensionSettingValueJSON:
+		return nil
+	case sdk.ExtensionSettingValueString, sdk.ExtensionSettingValuePath:
+		var decoded string
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("setting value must be a JSON string or null")
+		}
+		if strings.TrimSpace(setting.ValueType) == sdk.ExtensionSettingValuePath && decoded != "" && !filepath.IsAbs(decoded) {
+			return errors.New("path setting value must be absolute or empty")
+		}
+	case sdk.ExtensionSettingValueBool:
+		var decoded bool
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("setting value must be a JSON boolean or null")
+		}
+	case sdk.ExtensionSettingValueNumber:
+		var decoded float64
+		if err := json.Unmarshal(value, &decoded); err != nil {
+			return errors.New("setting value must be a JSON number or null")
+		}
+	default:
+		return errors.New("unsupported extension setting value type")
+	}
+	return nil
 }
 
 func extensionSettingKey(extensionID, settingID string) string {

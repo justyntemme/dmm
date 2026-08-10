@@ -683,12 +683,22 @@ type AcquireToolActionSpec struct {
 }
 
 type ExtensionSettingSpec struct {
-	ID      string
-	Name    string
-	Scope   string
-	Status  string
-	Message string
+	ID          string
+	Name        string
+	Scope       string
+	ValueType   string
+	Placeholder string
+	Status      string
+	Message     string
 }
+
+const (
+	ExtensionSettingValueJSON   = "json"
+	ExtensionSettingValueString = "string"
+	ExtensionSettingValuePath   = "path"
+	ExtensionSettingValueBool   = "bool"
+	ExtensionSettingValueNumber = "number"
+)
 
 type ExtensionTestSpec struct {
 	ID      string

@@ -2837,6 +2837,58 @@ h2 {
   color: #a1a1aa;
 }
 
+.extension-settings-list,
+.extension-setting-group {
+  display: grid;
+  gap: 10px;
+}
+
+.extension-setting-group {
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 10px;
+  background: #171c22;
+}
+
+.extension-setting-group article {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #20262e;
+}
+
+.extension-setting-group article.disabled-setting {
+  opacity: 0.72;
+}
+
+.extension-setting-title,
+.setting-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.extension-setting-title strong,
+.extension-setting-title p {
+  overflow-wrap: anywhere;
+}
+
+.extension-setting-title p {
+  margin: 4px 0 0;
+  color: #a1a1aa;
+}
+
+.compact-setting-control {
+  margin-top: 0;
+}
+
+.setting-actions small {
+  color: #a1a1aa;
+}
+
 dt {
   color: #a1a1aa;
 }

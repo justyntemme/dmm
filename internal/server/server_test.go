@@ -696,6 +696,65 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	}
 }
 
+func TestExtensionSettingsEndpointValidatesTypedValues(t *testing.T) {
+	srv := newTestServer(t)
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "typedsettings",
+		Name:    "Typed Settings",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "content_root",
+				Name:      "Content Root",
+				Scope:     "game",
+				ValueType: sdk.ExtensionSettingValuePath,
+			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "enabled",
+				Name:      "Enabled",
+				Scope:     "game",
+				ValueType: sdk.ExtensionSettingValueBool,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+
+	relativePathReq := httptest.NewRequest(http.MethodPut, "/api/extensions/typedsettings/settings/content_root", bytes.NewBufferString(`{"value":"relative/path"}`))
+	relativePathReq.Header.Set("Content-Type", "application/json")
+	relativePathReq.RemoteAddr = "127.0.0.1:1"
+	relativePathRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(relativePathRec, relativePathReq)
+	if relativePathRec.Code != http.StatusBadRequest {
+		t.Fatalf("relative path status = %d, body = %s", relativePathRec.Code, relativePathRec.Body.String())
+	}
+
+	absolutePathReq := httptest.NewRequest(http.MethodPut, "/api/extensions/typedsettings/settings/content_root", bytes.NewBufferString(`{"value":"/home/deck/Mods"}`))
+	absolutePathReq.Header.Set("Content-Type", "application/json")
+	absolutePathReq.RemoteAddr = "127.0.0.1:1"
+	absolutePathRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(absolutePathRec, absolutePathReq)
+	if absolutePathRec.Code != http.StatusOK {
+		t.Fatalf("absolute path status = %d, body = %s", absolutePathRec.Code, absolutePathRec.Body.String())
+	}
+	var pathSetting extensionSettingResponse
+	if err := json.Unmarshal(absolutePathRec.Body.Bytes(), &pathSetting); err != nil {
+		t.Fatal(err)
+	}
+	if pathSetting.ValueType != sdk.ExtensionSettingValuePath || string(pathSetting.Value) != `"/home/deck/Mods"` {
+		t.Fatalf("path setting = %+v", pathSetting)
+	}
+
+	boolStringReq := httptest.NewRequest(http.MethodPut, "/api/extensions/typedsettings/settings/enabled", bytes.NewBufferString(`{"value":"true"}`))
+	boolStringReq.Header.Set("Content-Type", "application/json")
+	boolStringReq.RemoteAddr = "127.0.0.1:1"
+	boolStringRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(boolStringRec, boolStringReq)
+	if boolStringRec.Code != http.StatusBadRequest {
+		t.Fatalf("bool string status = %d, body = %s", boolStringRec.Code, boolStringRec.Body.String())
+	}
+}
+
 func TestResolveManifestTargetRootProvidesExtensionSettings(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999031"

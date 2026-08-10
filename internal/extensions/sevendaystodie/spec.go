@@ -116,10 +116,12 @@ func Register(r sdk.Registrar) {
 		Message:  "When a User Data Folder is configured, Steam launch options must pass it to 7 Days to Die.",
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
-		ID:      udfSettingID,
-		Name:    "7 Days to Die User Data Folder",
-		Scope:   "game",
-		Message: "Optional absolute User Data Folder path. If unset, DMM follows Vortex's fallback game-root Mods path.",
+		ID:          udfSettingID,
+		Name:        "7 Days to Die User Data Folder",
+		Scope:       "game",
+		ValueType:   sdk.ExtensionSettingValuePath,
+		Placeholder: "/home/deck/.local/share/7DaysToDie",
+		Message:     "Optional absolute User Data Folder path. If unset, DMM follows Vortex's fallback game-root Mods path.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "7daystodie-prefix-offset",

@@ -42,6 +42,19 @@
     notes?: string[];
   };
 
+  type ExtensionSetting = {
+    extension_id: string;
+    setting_id: string;
+    name: string;
+    scope?: string;
+    value_type?: "json" | "string" | "path" | "bool" | "number" | string;
+    placeholder?: string;
+    status: string;
+    message?: string;
+    value: unknown;
+    updated_at?: string;
+  };
+
   type Game = {
     app_id: string;
     name: string;
@@ -758,13 +771,14 @@
   type Drawer = "games" | "settings" | null;
   type Surface = "actions" | "game" | "settings";
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
-  type SettingsPage = "overview" | "jobs" | "install" | "sources" | "nexus";
+  type SettingsPage = "overview" | "jobs" | "install" | "sources" | "extensions" | "nexus";
   type GameSort = "recent" | "az" | "za";
   type GameVisibility = "manageable" | "extensions" | "all";
   type ModListSort = "profile" | "source" | "az" | "enabled";
 
   let status: Status | null = null;
   let catalogs: CatalogStatus[] = [];
+  let extensionSettings: ExtensionSetting[] = [];
   let games: Game[] = [];
   let jobs: Job[] = [];
   let selectedGame: Game | null = null;
@@ -868,6 +882,9 @@
   let curseForgeAPIKey = "";
   let catalogSettingsBusy = "";
   let catalogSettingsMessage = "";
+  let extensionSettingDrafts: Record<string, string> = {};
+  let extensionSettingBusy = "";
+  let extensionSettingsMessage = "";
   let initialRefreshComplete = false;
   let selectedGameRefreshTimer: number | null = null;
   let selectedGameRefreshNeedsPreview = false;
@@ -1075,10 +1092,11 @@
     logClientEvent("full refresh started", { sequence, reason, selected_app_id: selectedGame?.app_id ?? "", surface });
     error = "";
     try {
-      const [nextStatus, nextGames, nextCatalogs] = await Promise.all([
+      const [nextStatus, nextGames, nextCatalogs, nextExtensionSettings] = await Promise.all([
         getJSON<Status>("/api/status"),
         getJSON<Game[]>("/api/games"),
-        getJSON<CatalogStatus[]>("/api/catalogs")
+        getJSON<CatalogStatus[]>("/api/catalogs"),
+        getJSON<ExtensionSetting[]>("/api/extensions/settings")
       ]);
       if (sequence !== fullRefreshSequence) {
         logClientEvent("full refresh discarded stale response", { sequence, latest_sequence: fullRefreshSequence, reason });
@@ -1088,6 +1106,7 @@
       applyUIPreferences(nextStatus);
       games = nextGames;
       catalogs = nextCatalogs;
+      setExtensionSettings(nextExtensionSettings);
       const previousSelection = selectedGame?.app_id;
       selectedGame = nextGames.find((game) => game.app_id === previousSelection) ?? null;
       if (selectedGame) await loadGameState(selectedGame);
@@ -1096,6 +1115,7 @@
         reason,
         games: nextGames.length,
         catalogs: nextCatalogs.length,
+        extension_settings: nextExtensionSettings.length,
         selected_app_id: selectedGame?.app_id ?? ""
       });
     } catch (err) {
@@ -1338,6 +1358,10 @@
     if (event.id > lastEventID) lastEventID = event.id;
     if (event.type === "ui.changed") {
       if (isUISettings(event.payload)) applyUIPreferencesFromUI(event.payload);
+      return;
+    }
+    if (event.type === "extension_settings.changed") {
+      void loadExtensionSettings("extension_settings.changed");
       return;
     }
     if (event.type === "jobs.snapshot") {
@@ -1834,6 +1858,127 @@
       error = err instanceof Error ? err.message : String(err);
     } finally {
       catalogSettingsBusy = "";
+    }
+  }
+
+  function extensionSettingKey(setting: ExtensionSetting) {
+    return `${setting.extension_id}\u0000${setting.setting_id}`;
+  }
+
+  function extensionSettingValueType(setting: ExtensionSetting) {
+    const valueType = (setting.value_type || "json").trim().toLowerCase();
+    if (["string", "path", "bool", "number"].includes(valueType)) return valueType;
+    return "json";
+  }
+
+  function extensionSettingReady(setting: ExtensionSetting) {
+    return (setting.status || "ready").trim() === "ready";
+  }
+
+  function extensionSettingDisplayValue(setting: ExtensionSetting) {
+    const value = setting.value;
+    if (value === null || value === undefined) return "";
+    const valueType = extensionSettingValueType(setting);
+    if (valueType === "bool") return value === true ? "true" : "false";
+    if (valueType === "number") return typeof value === "number" ? String(value) : "";
+    if (valueType === "string" || valueType === "path") return typeof value === "string" ? value : "";
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function setExtensionSettings(nextSettings: ExtensionSetting[]) {
+    extensionSettings = nextSettings;
+    const nextKeys = new Set(nextSettings.map(extensionSettingKey));
+    const nextDrafts: Record<string, string> = {};
+    for (const setting of nextSettings) {
+      const key = extensionSettingKey(setting);
+      nextDrafts[key] = extensionSettingDrafts[key] ?? extensionSettingDisplayValue(setting);
+    }
+    for (const [key, value] of Object.entries(extensionSettingDrafts)) {
+      if (nextKeys.has(key)) nextDrafts[key] = value;
+    }
+    extensionSettingDrafts = nextDrafts;
+  }
+
+  async function loadExtensionSettings(reason = "manual") {
+    try {
+      const nextSettings = await getJSON<ExtensionSetting[]>("/api/extensions/settings");
+      setExtensionSettings(nextSettings);
+      logClientEvent("extension settings refreshed", { reason, settings: nextSettings.length });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      logClientEvent("extension settings refresh failed", { reason, error: compactLogValue(error) });
+    }
+  }
+
+  function extensionSettingDraft(setting: ExtensionSetting) {
+    return extensionSettingDrafts[extensionSettingKey(setting)] ?? extensionSettingDisplayValue(setting);
+  }
+
+  function updateExtensionSettingDraft(setting: ExtensionSetting, value: string) {
+    extensionSettingDrafts = { ...extensionSettingDrafts, [extensionSettingKey(setting)]: value };
+  }
+
+  function extensionSettingGroups() {
+    const groups = new Map<string, ExtensionSetting[]>();
+    for (const setting of extensionSettings) {
+      const key = setting.extension_id || "extension";
+      groups.set(key, [...(groups.get(key) ?? []), setting]);
+    }
+    return Array.from(groups.entries()).map(([extensionID, settings]) => ({
+      extensionID,
+      settings: settings.sort((a, b) => a.name.localeCompare(b.name) || a.setting_id.localeCompare(b.setting_id))
+    })).sort((a, b) => a.extensionID.localeCompare(b.extensionID));
+  }
+
+  function readyExtensionSettingCount() {
+    return extensionSettings.filter(extensionSettingReady).length;
+  }
+
+  function extensionSettingPayload(setting: ExtensionSetting) {
+    const valueType = extensionSettingValueType(setting);
+    const draft = extensionSettingDraft(setting);
+    if (valueType === "path") return draft.trim() === "" ? null : draft.trim();
+    if (valueType === "string") return draft;
+    if (valueType === "bool") return draft === "true";
+    if (valueType === "number") {
+      if (draft.trim() === "") return null;
+      const parsed = Number(draft);
+      if (!Number.isFinite(parsed)) throw new Error(`${setting.name} must be a number.`);
+      return parsed;
+    }
+    if (draft.trim() === "") return null;
+    return JSON.parse(draft);
+  }
+
+  async function saveExtensionSetting(setting: ExtensionSetting) {
+    const key = extensionSettingKey(setting);
+    extensionSettingBusy = key;
+    extensionSettingsMessage = "";
+    error = "";
+    try {
+      const value = extensionSettingPayload(setting);
+      const response = await apiFetch(`/api/extensions/${encodeURIComponent(setting.extension_id)}/settings/${encodeURIComponent(setting.setting_id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const updated = await response.json() as ExtensionSetting;
+      setExtensionSettings(extensionSettings.map((item) => extensionSettingKey(item) === key ? updated : item));
+      extensionSettingDrafts = { ...extensionSettingDrafts, [key]: extensionSettingDisplayValue(updated) };
+      extensionSettingsMessage = `${updated.name} saved.`;
+      if (selectedGame) await refreshSelectedGame({ refreshPreview: true, reason: "extension-setting" });
+    } catch (err) {
+      error = err instanceof SyntaxError ? "Setting value must be valid JSON." : err instanceof Error ? err.message : String(err);
+    } finally {
+      extensionSettingBusy = "";
     }
   }
 
@@ -4013,6 +4158,7 @@
     if (page === "jobs") return "Jobs";
     if (page === "install") return "Install";
     if (page === "sources") return "Sources";
+    if (page === "extensions") return "Extension Settings";
     if (page === "nexus") return "Nexus";
     return "Settings";
   }
@@ -4680,6 +4826,7 @@
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
           <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
           <button type="button" class:active={activeSettingsPage === "sources"} on:click={() => openSettings("sources")}>Sources</button>
+          <button type="button" class:active={activeSettingsPage === "extensions"} on:click={() => openSettings("extensions")}>Extension Settings</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
         </nav>
       {/if}
@@ -4885,6 +5032,7 @@
             <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
             <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
             <div><dt>Sources</dt><dd>{readySourceCatalogCount}/{sourceCatalogCount} ready</dd></div>
+            <div><dt>Extension settings</dt><dd>{readyExtensionSettingCount()}/{extensionSettings.length} editable</dd></div>
           </dl>
         </article>
       {:else if activeSettingsPage === "jobs"}
@@ -5040,6 +5188,84 @@
               </article>
             {/each}
           </div>
+        </article>
+      {:else if activeSettingsPage === "extensions"}
+        <article class="workspace-panel">
+          <div class="panel-heading">
+            <h2>Extension Settings</h2>
+            <span>{readyExtensionSettingCount()} editable</span>
+          </div>
+          <p class="hint">Advanced settings declared by game/framework extensions. These values can affect target roots, launch arguments, setup actions, and extension-owned install behavior.</p>
+          {#if extensionSettingsMessage}<p class="hint success-copy">{extensionSettingsMessage}</p>{/if}
+          {#if extensionSettings.length === 0}
+            <p class="hint">No extension settings are registered.</p>
+          {:else}
+            <div class="extension-settings-list">
+              {#each extensionSettingGroups() as group}
+                <section class="extension-setting-group">
+                  <div class="panel-heading compact-heading">
+                    <h3>{group.extensionID}</h3>
+                    <span>{group.settings.length}</span>
+                  </div>
+                  {#each group.settings as setting}
+                    {@const valueType = extensionSettingValueType(setting)}
+                    {@const ready = extensionSettingReady(setting)}
+                    {@const busy = extensionSettingBusy === extensionSettingKey(setting)}
+                    <article class:disabled-setting={!ready}>
+                      <div class="extension-setting-title">
+                        <div>
+                          <strong>{setting.name || setting.setting_id}</strong>
+                          <p>{setting.scope || "global"} · {valueType}</p>
+                        </div>
+                        <span class={`catalog-status ${ready ? "catalog-status-ready" : "catalog-status-deferred"}`}>{ready ? "Ready" : setting.status}</span>
+                      </div>
+                      {#if setting.message}<p class="hint">{setting.message}</p>{/if}
+                      {#if valueType === "bool"}
+                        <label class="settings-control compact-setting-control">
+                          <span>Value</span>
+                          <select
+                            value={extensionSettingDraft(setting) || "false"}
+                            disabled={!ready || busy}
+                            on:change={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
+                          >
+                            <option value="true">On</option>
+                            <option value="false">Off</option>
+                          </select>
+                        </label>
+                      {:else if valueType === "json"}
+                        <label class="settings-control compact-setting-control">
+                          <span>JSON Value</span>
+                          <textarea
+                            rows="4"
+                            spellcheck="false"
+                            value={extensionSettingDraft(setting)}
+                            placeholder={setting.placeholder || "null"}
+                            disabled={!ready || busy}
+                            on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
+                          ></textarea>
+                        </label>
+                      {:else}
+                        <label class="settings-control compact-setting-control">
+                          <span>{valueType === "path" ? "Path" : valueType === "number" ? "Number" : "Value"}</span>
+                          <input
+                            type={valueType === "number" ? "number" : "text"}
+                            value={extensionSettingDraft(setting)}
+                            placeholder={setting.placeholder || (valueType === "path" ? "/absolute/path" : "")}
+                            disabled={!ready || busy}
+                            on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
+                          />
+                        </label>
+                      {/if}
+                      <div class="setting-actions">
+                        {#if setting.updated_at}<small>Updated {new Date(setting.updated_at).toLocaleString()}</small>{:else}<small>Not set</small>{/if}
+                        <button type="button" on:click={() => saveExtensionSetting(setting)} disabled={!ready || busy}>{busy ? "Saving..." : "Save"}</button>
+                      </div>
+                    </article>
+                  {/each}
+                </section>
+              {/each}
+            </div>
+          {/if}
         </article>
       {:else}
         <article class="workspace-panel">

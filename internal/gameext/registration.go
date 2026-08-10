@@ -477,6 +477,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
+	errs = append(errs, validateExtensionSettings(extension.ExtensionSettings)...)
 	errs = append(errs, validateStatusedTriggered("extension test", extension.ExtensionTests, func(spec sdk.ExtensionTestSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Trigger, spec.Status, spec.Message
 	})...)
@@ -2141,6 +2142,26 @@ func validateCapabilityStatus(kind, id, status, message string) error {
 	default:
 		return errors.New(kind + " " + id + " status must be ready, metadata, or blocked")
 	}
+}
+
+func validateExtensionSettings(specs []sdk.ExtensionSettingSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		valueType := strings.TrimSpace(spec.ValueType)
+		if valueType == "" {
+			continue
+		}
+		switch valueType {
+		case sdk.ExtensionSettingValueJSON, sdk.ExtensionSettingValueString, sdk.ExtensionSettingValuePath, sdk.ExtensionSettingValueBool, sdk.ExtensionSettingValueNumber:
+		default:
+			errs = append(errs, errors.New("extension setting "+id+" value type must be json, string, path, bool, or number"))
+		}
+	}
+	return errs
 }
 
 func validateExtensionAPIs(specs []sdk.ExtensionAPISpec) []error {
