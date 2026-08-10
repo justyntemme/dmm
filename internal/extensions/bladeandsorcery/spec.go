@@ -102,7 +102,16 @@ func Register(r sdk.Registrar) {
 		Name:    "Blade & Sorcery load order page",
 		Scope:   VortexGameID,
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM exposes managed loadorder.json order through generic extension load-order profile controls. Vortex's unmanaged external mod refresh remains blocked until DMM has a safe unmanaged adoption/runtime refresh flow.",
+		Message: "DMM exposes managed loadorder.json order through generic extension load-order profile controls and can adopt manually added manifest-based mod folders through the generic external-mod adoption runtime.",
+	})
+	r.RegisterExternalModAdoption(sdk.ExternalModAdoptionSpec{
+		ID:             "bladeandsorcery-external-official-mods",
+		Name:           "Import manually added Blade & Sorcery mods",
+		TargetRelative: officialRoot,
+		ModType:        officialModType,
+		RootMarkerFile: manifestFile,
+		DeleteOriginal: true,
+		Message:        "Source-backed Vortex load-order refresh parity: manually added folders under StreamingAssets/Mods that contain manifest.json can be adopted into DMM-owned staging and removed from the game folder.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "bladeandsorcery-view-loadorder-file",
@@ -175,9 +184,9 @@ func supportedTools() []sdk.SupportedToolSpec {
 
 func migrations() []sdk.StateMigrationSpec {
 	return []sdk.StateMigrationSpec{
-		{ID: "bladeandsorcery-migration-0.1.0", Name: "Blade & Sorcery migration guard", FromVersion: "0.0.0", ToVersion: "0.1.0", Status: sdk.CapabilityStatusBlocked, Message: "Vortex suppresses later staged-mod migration for users already on correctly installed pre-0.1.x state; DMM has no released pre-MVP state to migrate."},
-		{ID: "bladeandsorcery-migration-0.2.0", Name: "Blade & Sorcery load-order folder migration", FromVersion: "0.1.0", ToVersion: "0.2.0", Status: sdk.CapabilityStatusBlocked, Message: "Vortex migrates staged official mods into per-mod folders for the load-order system. DMM has no released pre-MVP state to migrate."},
-		{ID: "bladeandsorcery-migration-0.2.12", Name: "Blade & Sorcery official mod-type migration", FromVersion: "0.2.0", ToVersion: "0.2.12", Status: sdk.CapabilityStatusBlocked, Message: "Vortex purges legacy deployment and retypes old mods when the game version requires official mods. DMM needs generic version-aware mod-type migration runtime before executing this."},
+		{ID: "bladeandsorcery-migration-0.1.0", Name: "Blade & Sorcery migration guard", FromVersion: "0.0.0", ToVersion: "0.1.0", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex suppresses later staged-mod migration for users already on correctly installed pre-0.1.x Vortex state. This is not applicable to DMM-created state because DMM has no pre-0.1.x Blade & Sorcery release state; post-MVP Vortex import must detect this historical state explicitly."},
+		{ID: "bladeandsorcery-migration-0.2.0", Name: "Blade & Sorcery load-order folder migration", FromVersion: "0.1.0", ToVersion: "0.2.0", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex migrates staged official mods into per-mod folders for its load-order system. This is not applicable to DMM-created state because DMM's first Blade & Sorcery installer already stages official mods in per-mod folders; post-MVP Vortex import must implement a real repair for old Vortex staging."},
+		{ID: "bladeandsorcery-migration-0.2.12", Name: "Blade & Sorcery official mod-type migration", FromVersion: "0.2.0", ToVersion: "0.2.12", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex purges legacy deployment and retypes old mods when the detected game version requires official mods. This is not applicable to DMM-created state because DMM's installer chooses the current official mod type from the start; post-MVP Vortex import must implement version-aware retyping for imported old Vortex state."},
 	}
 }
 

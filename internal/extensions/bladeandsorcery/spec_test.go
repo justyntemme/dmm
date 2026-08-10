@@ -90,6 +90,9 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
 	}
+	if len(summary.Capabilities.ExternalModAdoptions) != 1 || summary.Capabilities.ExternalModAdoptions[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("external adoptions = %+v", summary.Capabilities.ExternalModAdoptions)
+	}
 	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.ExtensionActions[0].ActionTarget == nil {
 		t.Fatalf("extension actions = %+v", summary.Capabilities.ExtensionActions)
 	}
@@ -102,6 +105,14 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	}
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status == sdk.CapabilityStatusBlocked {
 		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
+	}
+	if len(summary.Capabilities.StateMigrations) != 3 {
+		t.Fatalf("state migrations = %+v", summary.Capabilities.StateMigrations)
+	}
+	for _, migration := range summary.Capabilities.StateMigrations {
+		if migration.Status != sdk.CapabilityStatusNotApplicable {
+			t.Fatalf("state migration should be not applicable: %+v", migration)
+		}
 	}
 	if len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("extension todos = %+v", summary.Capabilities.ExtensionToDos)

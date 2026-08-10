@@ -5422,6 +5422,100 @@ func TestExternalModAdoptionListsAndImportsUnmanagedFiles(t *testing.T) {
 	}
 }
 
+func TestExternalModAdoptionImportsManifestMarkedDirectories(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "External Folder Game")
+	externalDir := filepath.Join(gamePath, "Mods", "CoolFolder")
+	if err := os.MkdirAll(externalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(externalDir, "manifest.json"), []byte(`{"Name":"Cool Folder"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(externalDir, "asset.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "externalfoldergame",
+		Name:    "External Folder Game",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"999778"},
+				NexusDomains: []string{"externalfoldergame"},
+				VortexGameID: "externalfoldergame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "external-folder", TargetRoot: "Mods"})
+			r.RegisterExternalModAdoption(sdk.ExternalModAdoptionSpec{
+				ID:             "external-folders",
+				Name:           "External Folders",
+				TargetRelative: "Mods",
+				ModType:        "external-folder",
+				RootMarkerFile: "manifest.json",
+				DeleteOriginal: true,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:      "999778",
+		Name:       "External Folder Game",
+		InstallDir: "External Folder Game",
+		Path:       gamePath,
+		State:      "installed",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/games/999778/external-mods", nil)
+	listReq.RemoteAddr = "127.0.0.1:1"
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var listed externalModListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].Path != externalDir || listed.Items[0].RelativePath != "Mods/CoolFolder" {
+		t.Fatalf("listed = %+v", listed.Items)
+	}
+
+	body := `{"adoption_id":"external-folders","paths":[` + strconv.Quote(externalDir) + `]}`
+	adoptReq := httptest.NewRequest(http.MethodPost, "/api/games/999778/external-mods/adopt", strings.NewReader(body))
+	adoptReq.Header.Set("Content-Type", "application/json")
+	adoptReq.RemoteAddr = "127.0.0.1:1"
+	adoptRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(adoptRec, adoptReq)
+	if adoptRec.Code != http.StatusCreated {
+		t.Fatalf("adopt status = %d, body = %s", adoptRec.Code, adoptRec.Body.String())
+	}
+	if _, err := os.Stat(externalDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("external directory should be removed, stat err = %v", err)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "999778")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Catalog != "external" || mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+	var manifest stagedManifest
+	if err := json.Unmarshal([]byte(mods[0].ManifestJSON), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	targets := map[string]bool{}
+	for _, file := range manifest.Files {
+		targets[file.TargetRelative] = true
+	}
+	if manifest.ModType != "external-folder" || !targets["Mods/CoolFolder/manifest.json"] || !targets["Mods/CoolFolder/asset.json"] {
+		t.Fatalf("manifest = %+v", manifest)
+	}
+}
+
 func TestProfileCollectionExportImportAppliesModState(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

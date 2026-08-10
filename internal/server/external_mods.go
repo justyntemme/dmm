@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -49,6 +52,7 @@ type externalModCandidate struct {
 	rootPath     string
 	info         os.FileInfo
 	sha256       string
+	directory    bool
 }
 
 func (s *Server) handleListExternalMods(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +179,7 @@ func (s *Server) listExternalModCandidatesForSpec(ctx context.Context, spec sdk.
 	} else if !info.IsDir() {
 		return nil, nil
 	}
+	seenDirectories := map[string]struct{}{}
 	var out []externalModCandidate
 	err := filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -194,24 +199,41 @@ func (s *Server) listExternalModCandidatesForSpec(ctx context.Context, spec sdk.
 			return nil
 		}
 		cleanPath := filepath.Clean(path)
+		directory := false
+		candidatePath := cleanPath
+		candidateInfo := info
+		if marker := strings.TrimSpace(spec.RootMarkerFile); marker != "" && externalModRootMarkerMatches(marker, cleanPath) {
+			directory = true
+			candidatePath = filepath.Dir(cleanPath)
+			if _, ok := seenDirectories[candidatePath]; ok {
+				return nil
+			}
+			seenDirectories[candidatePath] = struct{}{}
+			dirInfo, err := os.Stat(candidatePath)
+			if err != nil {
+				return err
+			}
+			candidateInfo = dirInfo
+		}
 		if _, ok := managedTargets[cleanPath]; ok {
 			return nil
 		}
-		rel, err := filepath.Rel(root, cleanPath)
+		rel, err := filepath.Rel(root, candidatePath)
 		if err != nil {
 			return err
 		}
-		sum, err := fileSHA256(cleanPath)
+		sum, err := externalModCandidateSHA256(candidatePath, directory)
 		if err != nil {
 			return err
 		}
 		out = append(out, externalModCandidate{
 			spec:         spec,
-			path:         cleanPath,
+			path:         candidatePath,
 			relativePath: filepath.ToSlash(rel),
 			rootPath:     root,
-			info:         info,
+			info:         candidateInfo,
 			sha256:       sum,
+			directory:    directory,
 		})
 		return nil
 	})
@@ -260,22 +282,35 @@ func (s *Server) adoptExternalMod(ctx context.Context, game storage.Game, candid
 	fileID := localArchiveFileID(candidate.sha256)
 	modID := "external-" + localArchiveModID(sourceName, candidate.sha256)
 	stagingDir := filepath.Join(s.cfg.DataDir, "staging", safeSnapshotSegment(game.SteamAppID), "external", modID, fileID)
-	stagingFile := filepath.Join(stagingDir, sourceName)
-	if err := copyFile(candidate.path, stagingFile); err != nil {
-		return storage.InstalledMod{}, err
+	var files []stagedManifestFile
+	if candidate.directory {
+		if err := copyExternalDirectory(candidate.path, filepath.Join(stagingDir, sourceName)); err != nil {
+			return storage.InstalledMod{}, err
+		}
+		var err error
+		files, err = externalDirectoryManifestFiles(candidate.path, sourceName, candidate.relativePath, candidate.spec.TargetRootID)
+		if err != nil {
+			return storage.InstalledMod{}, err
+		}
+	} else {
+		stagingFile := filepath.Join(stagingDir, sourceName)
+		if err := copyFile(candidate.path, stagingFile); err != nil {
+			return storage.InstalledMod{}, err
+		}
+		files = []stagedManifestFile{{
+			Path:           sourceName,
+			TargetRoot:     candidate.spec.TargetRootID,
+			TargetRelative: candidate.relativePath,
+			Size:           candidate.info.Size(),
+			SHA256:         candidate.sha256,
+		}}
 	}
 	manifest := stagedManifest{
 		GameID:     game.SteamAppID,
 		ModType:    candidate.spec.ModType,
 		PlannerID:  "external-adoption:" + candidate.spec.ID,
 		NameSource: "external",
-		Files: []stagedManifestFile{{
-			Path:           sourceName,
-			TargetRoot:     candidate.spec.TargetRootID,
-			TargetRelative: candidate.relativePath,
-			Size:           candidate.info.Size(),
-			SHA256:         candidate.sha256,
-		}},
+		Files:      files,
 	}
 	body, err := json.Marshal(manifest)
 	if err != nil {
@@ -307,7 +342,11 @@ func (s *Server) adoptExternalMod(ctx context.Context, game storage.Game, candid
 		return storage.InstalledMod{}, err
 	}
 	if candidate.spec.DeleteOriginal {
-		if err := os.Remove(candidate.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		remove := os.Remove
+		if candidate.directory {
+			remove = os.RemoveAll
+		}
+		if err := remove(candidate.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return storage.InstalledMod{}, err
 		}
 	}
@@ -325,6 +364,9 @@ func (s *Server) externalModAdoptionRoot(ctx context.Context, game storage.Game,
 }
 
 func externalModAdoptionMatches(spec sdk.ExternalModAdoptionSpec, base, path string) bool {
+	if marker := strings.TrimSpace(spec.RootMarkerFile); marker != "" && externalModRootMarkerMatches(marker, path) {
+		return true
+	}
 	ext := strings.ToLower(filepath.Ext(path))
 	for _, allowed := range spec.FileExtensions {
 		allowed = strings.ToLower(strings.TrimSpace(allowed))
@@ -353,6 +395,123 @@ func externalModAdoptionMatches(spec sdk.ExternalModAdoptionSpec, base, path str
 		}
 	}
 	return false
+}
+
+func externalModRootMarkerMatches(marker, path string) bool {
+	marker = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(marker))))
+	if marker == "" || marker == "." || filepath.IsAbs(marker) || strings.HasPrefix(marker, "../") {
+		return false
+	}
+	return strings.EqualFold(filepath.ToSlash(filepath.Base(path)), filepath.Base(marker))
+}
+
+func externalModCandidateSHA256(path string, directory bool) (string, error) {
+	if !directory {
+		return fileSHA256(path)
+	}
+	hash := sha256.New()
+	err := filepath.WalkDir(path, func(current string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(path, current)
+		if err != nil {
+			return err
+		}
+		hash.Write([]byte(filepath.ToSlash(rel)))
+		hash.Write([]byte{0})
+		file, err := os.Open(current)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(hash, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func copyExternalDirectory(source, target string) error {
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(target, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(dst, 0o700)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		return copyFile(path, dst)
+	})
+}
+
+func externalDirectoryManifestFiles(source, stagingRoot, targetRoot, targetRootID string) ([]stagedManifestFile, error) {
+	var files []stagedManifestFile
+	err := filepath.WalkDir(source, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		sum, err := fileSHA256(path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		files = append(files, stagedManifestFile{
+			Path:           filepath.ToSlash(filepath.Join(stagingRoot, rel)),
+			TargetRoot:     targetRootID,
+			TargetRelative: filepath.ToSlash(filepath.Join(targetRoot, rel)),
+			Size:           info.Size(),
+			SHA256:         sum,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(files, func(a, b stagedManifestFile) int {
+		return strings.Compare(a.TargetRelative, b.TargetRelative)
+	})
+	return files, nil
 }
 
 func externalModDisplayName(path string) string {

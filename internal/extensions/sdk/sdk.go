@@ -957,6 +957,7 @@ type ExternalModAdoptionSpec struct {
 	TargetRootID   string
 	TargetRelative string
 	ModType        string
+	RootMarkerFile string
 	FileExtensions []string
 	GlobPatterns   []string
 	DeleteOriginal bool

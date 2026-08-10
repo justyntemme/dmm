@@ -1357,8 +1357,13 @@ func validateExternalModAdoptions(specs []sdk.ExternalModAdoptionSpec, modTypes 
 				errs = append(errs, errors.New("external mod adoption "+id+" references undeclared target root "+rootID))
 			}
 		}
-		if len(spec.FileExtensions) == 0 && len(spec.GlobPatterns) == 0 {
-			errs = append(errs, errors.New("external mod adoption "+id+" requires at least one file extension or glob pattern"))
+		if len(spec.FileExtensions) == 0 && len(spec.GlobPatterns) == 0 && strings.TrimSpace(spec.RootMarkerFile) == "" {
+			errs = append(errs, errors.New("external mod adoption "+id+" requires at least one file extension, glob pattern, or root marker file"))
+		}
+		if marker := strings.TrimSpace(spec.RootMarkerFile); marker != "" {
+			if err := validateRelativePath(marker); err != nil {
+				errs = append(errs, errors.New("external mod adoption "+id+" root marker file: "+err.Error()))
+			}
 		}
 		for _, ext := range spec.FileExtensions {
 			ext = strings.TrimSpace(ext)
