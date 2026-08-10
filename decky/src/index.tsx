@@ -415,8 +415,23 @@ type RuntimeAcquisition = {
   message?: string;
 };
 
+type LauncherRequirement = {
+  id: string;
+  name: string;
+  launcher: string;
+  store?: string;
+  app_id?: string;
+  status: string;
+  required: boolean;
+  satisfied: boolean;
+  message?: string;
+  details?: string[];
+  source_extension: string;
+};
+
 type GameDiagnostics = {
   runtime_requirements?: RuntimeRequirement[];
+  launcher_requirements?: LauncherRequirement[];
   validation_warnings?: string[];
 };
 
@@ -4677,6 +4692,7 @@ function FreshDeckyModManagerRoute() {
   const actionJobs = jobs.filter(isDeckyActionCenterJob);
   const gameActionJobs = selectedGameID ? actionJobs.filter((job) => deckyJobBelongsToAppID(job, selectedGameID)) : [];
   const runtimeWarnings = (diagnostics?.runtime_requirements ?? []).filter((requirement) => requirement.status !== "ok");
+  const launcherWarnings = (diagnostics?.launcher_requirements ?? []).filter((requirement) => requirement.required && !requirement.satisfied);
   const validationWarnings = diagnostics?.validation_warnings ?? [];
   const installedCount = mods.length + workshopItems.length;
   const enabledCount = mods.filter((mod) => mod.enabled).length + workshopItems.filter((item) => item.disabled_known ? !item.disabled_locally : item.subscribed).length;
@@ -5877,6 +5893,13 @@ function FreshDeckyModManagerRoute() {
             </Focusable>
           );
         })}
+        {launcherWarnings.map((requirement) => (
+          <div key={requirement.id} style={{ ...freshSectionStyle, borderColor: "#d97706" }}>
+            <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
+            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message || "This game extension requires a launcher DMM cannot currently verify."}</div>
+            {requirement.details?.length ? <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.details.join(" · ")}</div> : null}
+          </div>
+        ))}
         {validationWarnings.map((warning, index) => (
           <div key={`${warning}:${index}`} style={{ ...freshSectionStyle, borderColor: "#d97706", color: "#fbbf24" }}>Warning: {warning}</div>
         ))}

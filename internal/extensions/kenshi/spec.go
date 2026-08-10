@@ -68,6 +68,15 @@ func Register(r sdk.Registrar) {
 			"OpenConstructionSet.dll",
 		},
 	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "kenshi-steam-launcher",
+		Name:     "Kenshi Steam launcher requirement",
+		Launcher: "steam",
+		Store:    "steam",
+		AppID:    SteamAppID,
+		Status:   sdk.CapabilityStatusMetadata,
+		Message:  "Vortex requires Steam copies of Kenshi to launch through Steam so Workshop mods are available.",
+	})
 	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
 		ID:        "kenshi-current-version",
 		Name:      "currentVersion.txt",

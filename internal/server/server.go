@@ -677,24 +677,45 @@ type deploymentRestorePreviewResponse struct {
 }
 
 type gameDiagnosticsResponse struct {
-	AppID               string                           `json:"app_id"`
-	Game                storage.Game                     `json:"game"`
-	SteamWorkshop       *steam.WorkshopInfo              `json:"steam_workshop,omitempty"`
-	Profiles            []storage.Profile                `json:"profiles"`
-	ProfileCount        int                              `json:"profile_count"`
-	DefaultProfile      string                           `json:"default_profile,omitempty"`
-	InstalledMods       int                              `json:"installed_mods"`
-	EnabledMods         int                              `json:"enabled_mods"`
-	BlockedCandidates   int                              `json:"blocked_candidates"`
-	ActiveInstallJobs   int                              `json:"active_install_jobs"`
-	ActiveDeployJobs    int                              `json:"active_deploy_jobs"`
-	Deployment          deploymentStatusResponse         `json:"deployment"`
-	Preview             deployPreviewSummary             `json:"preview"`
-	GameSetups          []gameSetupStatusResponse        `json:"game_setups,omitempty"`
-	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
-	ExtensionTests      []gameExtensionTestResponse      `json:"extension_tests,omitempty"`
-	HealthChecks        []gameHealthCheckResponse        `json:"health_checks,omitempty"`
-	ValidationWarnings  []string                         `json:"validation_warnings,omitempty"`
+	AppID                string                           `json:"app_id"`
+	Game                 storage.Game                     `json:"game"`
+	SteamWorkshop        *steam.WorkshopInfo              `json:"steam_workshop,omitempty"`
+	Profiles             []storage.Profile                `json:"profiles"`
+	ProfileCount         int                              `json:"profile_count"`
+	DefaultProfile       string                           `json:"default_profile,omitempty"`
+	InstalledMods        int                              `json:"installed_mods"`
+	EnabledMods          int                              `json:"enabled_mods"`
+	BlockedCandidates    int                              `json:"blocked_candidates"`
+	ActiveInstallJobs    int                              `json:"active_install_jobs"`
+	ActiveDeployJobs     int                              `json:"active_deploy_jobs"`
+	Deployment           deploymentStatusResponse         `json:"deployment"`
+	Preview              deployPreviewSummary             `json:"preview"`
+	GameSetups           []gameSetupStatusResponse        `json:"game_setups,omitempty"`
+	RuntimeRequirements  []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
+	LauncherRequirements []launcherRequirementResponse    `json:"launcher_requirements,omitempty"`
+	ExtensionTests       []gameExtensionTestResponse      `json:"extension_tests,omitempty"`
+	HealthChecks         []gameHealthCheckResponse        `json:"health_checks,omitempty"`
+	ValidationWarnings   []string                         `json:"validation_warnings,omitempty"`
+}
+
+type launcherRequirementResponse struct {
+	ID              string                         `json:"id"`
+	Name            string                         `json:"name"`
+	Launcher        string                         `json:"launcher"`
+	Store           string                         `json:"store,omitempty"`
+	AppID           string                         `json:"app_id,omitempty"`
+	Status          string                         `json:"status"`
+	Required        bool                           `json:"required"`
+	Satisfied       bool                           `json:"satisfied"`
+	Message         string                         `json:"message,omitempty"`
+	Details         []string                       `json:"details,omitempty"`
+	Parameters      []launcherRequirementParameter `json:"parameters,omitempty"`
+	SourceExtension string                         `json:"source_extension"`
+}
+
+type launcherRequirementParameter struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type recomputeConflictsAndRulesRequest struct {
@@ -1347,6 +1368,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 		}
 	}
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
+	resp.LauncherRequirements = s.launcherRequirementStatuses(game)
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
@@ -2377,6 +2399,71 @@ func (s *Server) gameLaunchOptionRequirementStatus(ctx context.Context, game sto
 	return gameLaunchStatusResponse{}, false, nil
 }
 
+func (s *Server) launcherRequirementStatuses(game storage.Game) []launcherRequirementResponse {
+	extension, requirements, ok := s.games.LauncherRequirementsForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil
+	}
+	out := make([]launcherRequirementResponse, 0, len(requirements))
+	for _, requirement := range requirements {
+		out = append(out, launcherRequirementStatusForGame(game, extension.ID, requirement))
+	}
+	return out
+}
+
+func launcherRequirementStatusForGame(game storage.Game, extensionID string, requirement sdk.LauncherRequirementSpec) launcherRequirementResponse {
+	status := strings.TrimSpace(requirement.Status)
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	resp := launcherRequirementResponse{
+		ID:              strings.TrimSpace(requirement.ID),
+		Name:            strings.TrimSpace(requirement.Name),
+		Launcher:        strings.TrimSpace(requirement.Launcher),
+		Store:           strings.TrimSpace(requirement.Store),
+		AppID:           strings.TrimSpace(requirement.AppID),
+		Status:          status,
+		Message:         strings.TrimSpace(requirement.Message),
+		SourceExtension: strings.TrimSpace(extensionID),
+	}
+	for _, parameter := range requirement.Parameters {
+		resp.Parameters = append(resp.Parameters, launcherRequirementParameter{
+			Name:  strings.TrimSpace(parameter.Name),
+			Value: strings.TrimSpace(parameter.Value),
+		})
+	}
+	if resp.Name == "" {
+		resp.Name = resp.ID
+	}
+	launcher := strings.ToLower(resp.Launcher)
+	store := strings.ToLower(resp.Store)
+	requirementAppID := strings.TrimSpace(resp.AppID)
+	if launcher == "steam" && (store == "" || store == "steam") && (requirementAppID == "" || requirementAppID == game.SteamAppID) {
+		resp.Required = true
+		resp.Satisfied = true
+		resp.Status = string(gamehandler.RequirementOK)
+		if resp.Message == "" {
+			resp.Message = "This Vortex launcher requirement is satisfied because DMM discovered the game as a Steam app."
+		}
+		resp.Details = append(resp.Details, "Steam app "+game.SteamAppID+" is managed through the Steam Deck launcher.")
+		return resp
+	}
+	if status == sdk.CapabilityStatusBlocked {
+		resp.Status = sdk.CapabilityStatusBlocked
+		if resp.Message == "" {
+			resp.Message = "This Vortex launcher requirement is blocked until DMM supports the launcher."
+		}
+		return resp
+	}
+	resp.Status = sdk.CapabilityStatusMetadata
+	resp.Required = false
+	resp.Satisfied = false
+	if resp.Message == "" {
+		resp.Message = "DMM recorded this Vortex launcher requirement as metadata for a non-Steam store variant."
+	}
+	return resp
+}
+
 func baseGameLaunchStatus(game storage.Game) gameLaunchStatusResponse {
 	return gameLaunchStatusResponse{
 		AppID:          game.SteamAppID,
@@ -2667,6 +2754,15 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 	for _, requirement := range resp.RuntimeRequirements {
 		if requirement.Required && requirement.Status != gamehandler.RequirementOK {
 			warnings = append(warnings, requirement.Name+" "+requirementWarningKind(requirement.Kind)+" requirement is "+string(requirement.Status)+": "+requirement.Message)
+		}
+	}
+	for _, requirement := range resp.LauncherRequirements {
+		if requirement.Required && !requirement.Satisfied {
+			message := strings.TrimSpace(requirement.Message)
+			if message == "" {
+				message = "launcher requirement is " + requirement.Status
+			}
+			warnings = append(warnings, strings.TrimSpace(requirement.Name+": "+message))
 		}
 	}
 	for _, setup := range resp.GameSetups {

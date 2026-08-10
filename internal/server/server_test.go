@@ -9468,6 +9468,149 @@ func TestGameDiagnosticsWarnsWhenRuntimeRequirementMissing(t *testing.T) {
 	}
 }
 
+func TestGameDiagnosticsReportsSatisfiedSteamLauncherRequirement(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "555101"
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(sdk.Extension{
+		ID:      "launcher-game",
+		Name:    "Launcher Game",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"launcher-game"},
+				VortexGameID: "launcher-game",
+			})
+			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+				ID:       "launcher-game-steam",
+				Name:     "Steam launcher",
+				Launcher: "steam",
+				Store:    "steam",
+				AppID:    appID,
+				Status:   sdk.CapabilityStatusMetadata,
+				Message:  "Vortex requires this Steam copy to launch through Steam.",
+			})
+		},
+	})})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Launcher Game",
+		InstallDir:  "Launcher Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Launcher Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		LauncherRequirements []struct {
+			ID        string   `json:"id"`
+			Status    string   `json:"status"`
+			Required  bool     `json:"required"`
+			Satisfied bool     `json:"satisfied"`
+			Details   []string `json:"details"`
+		} `json:"launcher_requirements"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.LauncherRequirements) != 1 {
+		t.Fatalf("launcher requirements = %+v", body.LauncherRequirements)
+	}
+	requirement := body.LauncherRequirements[0]
+	if requirement.ID != "launcher-game-steam" || requirement.Status != "ok" || !requirement.Required || !requirement.Satisfied || len(requirement.Details) == 0 {
+		t.Fatalf("launcher requirement = %+v", requirement)
+	}
+	if len(body.ValidationWarnings) != 0 {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
+func TestGameDiagnosticsKeepsNonSteamLauncherRequirementMetadataOnly(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "555102"
+	srv.games = gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(sdk.Extension{
+		ID:      "metadata-launcher-game",
+		Name:    "Metadata Launcher Game",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"metadata-launcher-game"},
+				VortexGameID: "metadata-launcher-game",
+			})
+			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+				ID:       "metadata-launcher-game-epic",
+				Name:     "Epic launcher",
+				Launcher: "epic",
+				Store:    "epic",
+				AppID:    "sample-epic-app",
+				Parameters: []sdk.LauncherParameterSpec{{
+					Name:  "appId",
+					Value: "sample-epic-app",
+				}},
+				Message: "Vortex declares this for the Epic store variant.",
+			})
+		},
+	})})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Metadata Launcher Game",
+		InstallDir:  "Metadata Launcher Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Metadata Launcher Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		LauncherRequirements []struct {
+			Status     string `json:"status"`
+			Required   bool   `json:"required"`
+			Satisfied  bool   `json:"satisfied"`
+			Parameters []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"parameters"`
+		} `json:"launcher_requirements"`
+		ValidationWarnings []string `json:"validation_warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.LauncherRequirements) != 1 {
+		t.Fatalf("launcher requirements = %+v", body.LauncherRequirements)
+	}
+	requirement := body.LauncherRequirements[0]
+	if requirement.Status != sdk.CapabilityStatusMetadata || requirement.Required || requirement.Satisfied || len(requirement.Parameters) != 1 {
+		t.Fatalf("launcher requirement = %+v", requirement)
+	}
+	if len(body.ValidationWarnings) != 0 {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
 func TestGameDiagnosticsTreatsEnabledProviderModAsRuntimePresent(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "555001"

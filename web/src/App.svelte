@@ -630,6 +630,21 @@
     message?: string;
   };
 
+  type LauncherRequirement = {
+    id: string;
+    name: string;
+    launcher: string;
+    store?: string;
+    app_id?: string;
+    status: string;
+    required: boolean;
+    satisfied: boolean;
+    message?: string;
+    details?: string[];
+    parameters?: { name: string; value: string }[];
+    source_extension: string;
+  };
+
   type GameLaunchStatus = {
     required: boolean;
     configured: boolean;
@@ -664,6 +679,7 @@
   type GameDiagnostics = {
     steam_workshop?: SteamWorkshop;
     runtime_requirements?: RuntimeRequirement[];
+    launcher_requirements?: LauncherRequirement[];
     validation_warnings?: string[];
   };
 
@@ -6661,6 +6677,38 @@
                         {#if requirement.acquisition.message}<small>{requirement.acquisition.message}</small>{/if}
                       </div>
                     {/if}
+                  </div>
+                  <span>{requirement.status}</span>
+                </article>
+              {/each}
+            </section>
+          {/if}
+          {#if gameDiagnostics?.launcher_requirements?.length}
+            <section class="requirement-list" aria-label="Launcher requirements">
+              <div class="panel-heading compact-heading">
+                <h3>Launcher Requirements</h3>
+                <span>{gameDiagnostics.launcher_requirements.length}</span>
+              </div>
+              {#each gameDiagnostics.launcher_requirements as requirement}
+                <article class:requirement-missing={requirement.required && !requirement.satisfied}>
+                  <div>
+                    <strong>{requirement.name}</strong>
+                    <p>{requirement.message}</p>
+                    {#if requirement.details?.length}
+                      <ul class="requirement-details">
+                        {#each requirement.details as detail}
+                          <li>{detail}</li>
+                        {/each}
+                      </ul>
+                    {/if}
+                    {#if requirement.parameters?.length}
+                      <ul class="requirement-details">
+                        {#each requirement.parameters as parameter}
+                          <li>{parameter.name}: {parameter.value}</li>
+                        {/each}
+                      </ul>
+                    {/if}
+                    {#if requirement.source_extension}<small>{requirement.source_extension}</small>{/if}
                   </div>
                   <span>{requirement.status}</span>
                 </article>

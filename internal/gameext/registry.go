@@ -795,6 +795,14 @@ func (r Registry) LaunchOptionRequirementsForSteamApp(appID string) (Extension, 
 	return extension, append([]LaunchOptionRequirementSpec(nil), extension.LaunchOptionRequirements...), true
 }
 
+func (r Registry) LauncherRequirementsForSteamApp(appID string) (Extension, []sdk.LauncherRequirementSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok || len(extension.LauncherRequirements) == 0 {
+		return Extension{}, nil, false
+	}
+	return extension, append([]sdk.LauncherRequirementSpec(nil), extension.LauncherRequirements...), true
+}
+
 func (r Registry) ExtensionActionForSteamApp(appID, actionID string) (Extension, sdk.ExtensionActionSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
