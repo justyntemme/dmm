@@ -51,6 +51,16 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	registerSupportedTools(r)
+	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
+		GameID:      VortexGameID,
+		MyGamesPath: "Enderal",
+		SaveININame: "Enderal.ini",
+		SavePath:    "../Enderal/Saves/{profile_id}/",
+		Files: []gamebryo.LocalGameSettingFile{
+			{Name: "Enderal.ini"},
+			{Name: "EnderalPrefs.ini"},
+		},
+	})
 	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-enderal extension source",
@@ -59,6 +69,14 @@ func Register(r sdk.Registrar) {
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex Gamebryo settings tests",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-test-settings/src",
+	})
+	r.RegisterSource(sdk.SourceRef{
+		Name: "Vortex local game settings support",
+		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src/util/gameSupport.ts",
+	})
+	r.RegisterSource(sdk.SourceRef{
+		Name: "Vortex Gamebryo savegame management support",
+		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-savegame-management/src/util/profileSavePath.ts",
 	})
 }
 
