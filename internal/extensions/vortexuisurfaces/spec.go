@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source uses this extension surface, but DMM has not implemented the generic renderer, executor, or state runtime for it yet."
+const surfaceMessage = "Vortex source uses this desktop UI/state surface. DMM's Steam Deck MVP uses Decky-native and phone/tablet UI surfaces instead, so this desktop renderer is not applicable to DMM-created state; source references remain for future parity review when a concrete extension needs equivalent UX."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -29,127 +29,127 @@ func Register(r sdk.Registrar) {
 		r.RegisterSource(ref)
 	}
 	for _, api := range []sdk.ExtensionAPISpec{
-		blockedAPI("registerAction", "Register extension action"),
-		blockedAPI("registerActionCheck", "Register extension action reducer guard"),
-		blockedAPI("registerDialog", "Register extension dialog"),
-		blockedAPI("registerDashlet", "Register dashboard tile"),
-		blockedAPI("registerMainPage", "Register main page"),
-		blockedAPI("registerTableAttribute", "Register table attribute"),
-		blockedAPI("registerLoadOrderPage", "Register load-order page"),
-		blockedAPI("registerControlWrapper", "Register UI control wrapper"),
-		blockedAPI("registerProfileFile", "Register profile-managed file"),
-		blockedAPI("registerReducer", "Register extension state reducer"),
-		blockedAPI("registerPersistor", "Register extension state persistor"),
+		surfaceAPI("registerAction", "Register extension action"),
+		surfaceAPI("registerActionCheck", "Register extension action reducer guard"),
+		surfaceAPI("registerDialog", "Register extension dialog"),
+		surfaceAPI("registerDashlet", "Register dashboard tile"),
+		surfaceAPI("registerMainPage", "Register main page"),
+		surfaceAPI("registerTableAttribute", "Register table attribute"),
+		surfaceAPI("registerLoadOrderPage", "Register load-order page"),
+		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
+		surfaceAPI("registerProfileFile", "Register profile-managed file"),
+		surfaceAPI("registerReducer", "Register extension state reducer"),
+		surfaceAPI("registerPersistor", "Register extension state persistor"),
 	} {
 		r.RegisterExtensionAPI(api)
 	}
-	r.RegisterExtensionAction(blockedAction("registerAction", "Vortex registerAction", "extension-ui", "action"))
+	r.RegisterExtensionAction(surfaceAction("registerAction", "Vortex registerAction", "extension-ui", "action"))
 	r.RegisterExtensionActionCheck(sdk.ExtensionActionCheckSpec{
 		ID:      "registerActionCheck",
 		Name:    "Vortex registerActionCheck",
 		Target:  "extension-state",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	})
 	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
 		ID:       "registerControlWrapper",
 		Name:     "Vortex registerControlWrapper",
 		Target:   "extension-ui",
 		Priority: 0,
-		Status:   sdk.CapabilityStatusBlocked,
-		Message:  blockedMessage,
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  surfaceMessage,
 	})
-	r.RegisterExtensionDialog(blockedDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
-	r.RegisterExtensionDashlet(blockedDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
-	r.RegisterExtensionMainPage(blockedMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
+	r.RegisterExtensionDialog(surfaceDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
+	r.RegisterExtensionDashlet(surfaceDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
+	r.RegisterExtensionMainPage(surfaceMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "registerTableAttribute",
 		Name:    "Vortex registerTableAttribute",
 		Target:  "table",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "registerLoadOrderPage",
 		Name:    "Vortex registerLoadOrderPage",
 		Scope:   "load-order",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "Vortex custom desktop load-order pages map to DMM's generic profile-order Decky and phone/tablet controls for DMM-created state; game extensions register concrete ready load-order pages when they need one.",
 	})
 	r.RegisterProfileFile(sdk.ProfileFileSpec{
 		ID:      "registerProfileFile",
 		Name:    "Vortex registerProfileFile",
 		GameID:  "dynamic",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "The generic profile-file runtime is implemented through concrete extension declarations. The unbound Vortex desktop registration surface itself is not applicable without a concrete game extension.",
 	})
-	r.RegisterStateReducer(blockedReducer("registerReducer", "Vortex registerReducer", "extension-state"))
+	r.RegisterStateReducer(surfaceReducer("registerReducer", "Vortex registerReducer", "extension-state"))
 	r.RegisterStatePersistor(sdk.StatePersistorSpec{
 		ID:      "registerPersistor",
 		Name:    "Vortex registerPersistor",
 		Scope:   "extension-state",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	})
 }
 
-func blockedAPI(id, name string) sdk.ExtensionAPISpec {
+func surfaceAPI(id, name string) sdk.ExtensionAPISpec {
 	return sdk.ExtensionAPISpec{
 		ID:      id,
 		Name:    name,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
-func blockedAction(id, name, scope, kind string) sdk.ExtensionActionSpec {
+func surfaceAction(id, name, scope, kind string) sdk.ExtensionActionSpec {
 	return sdk.ExtensionActionSpec{
 		ID:      id,
 		Name:    name,
 		Scope:   scope,
 		Kind:    kind,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
-func blockedDialog(id, name, scope string) sdk.ExtensionDialogSpec {
+func surfaceDialog(id, name, scope string) sdk.ExtensionDialogSpec {
 	return sdk.ExtensionDialogSpec{
 		ID:      id,
 		Name:    name,
 		Scope:   scope,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
-func blockedDashlet(id, name, scope string) sdk.ExtensionDashletSpec {
+func surfaceDashlet(id, name, scope string) sdk.ExtensionDashletSpec {
 	return sdk.ExtensionDashletSpec{
 		ID:      id,
 		Name:    name,
 		Scope:   scope,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
-func blockedMainPage(id, name, scope string) sdk.ExtensionMainPageSpec {
+func surfaceMainPage(id, name, scope string) sdk.ExtensionMainPageSpec {
 	return sdk.ExtensionMainPageSpec{
 		ID:      id,
 		Name:    name,
 		Scope:   scope,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
-func blockedReducer(id, name, scope string) sdk.StateReducerSpec {
+func surfaceReducer(id, name, scope string) sdk.StateReducerSpec {
 	return sdk.StateReducerSpec{
 		ID:      id,
 		Name:    name,
 		Scope:   scope,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: surfaceMessage,
 	}
 }
 
