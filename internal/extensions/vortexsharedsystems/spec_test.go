@@ -17,7 +17,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	}
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "browse-for-download", "nexus-download", "discover-tools", "unfulfilled-rules", "registerGameInfoProvider", "new-file-single-owner-adoption")
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
-	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "new-file-ambiguous-adoption")
+	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "new-file-ambiguous-adoption")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "dependency-manage-rules")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-gamemode")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-mod-installed")

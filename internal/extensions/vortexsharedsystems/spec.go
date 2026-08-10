@@ -139,8 +139,8 @@ func registerNewFileMonitor(r sdk.Registrar) {
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "new-file-ambiguous-adoption",
 		Name:    "Resolve ambiguous generated file adoption",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "DMM can detect generated-file changes and lets source-backed extensions adopt single-owner files. Ambiguous multi-owner adoption still needs a user-facing resolver before it can safely change managed staging state.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM passes Vortex-style candidate owner lists to extension added-files/removed-files handlers and persists extension-selected adopted files into managed staging. A generic user-facing unmanaged adoption wizard remains a separate product UI feature.",
 	})
 }
 
