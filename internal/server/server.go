@@ -573,6 +573,8 @@ type pluginLoadOrderEntry struct {
 	InstalledModID int64  `json:"installed_mod_id,omitempty"`
 	ModID          string `json:"mod_id,omitempty"`
 	Priority       int    `json:"priority"`
+	ModIndex       int    `json:"mod_index"`
+	LockedIndex    *int   `json:"locked_index,omitempty"`
 	Active         bool   `json:"active"`
 	Mutable        bool   `json:"mutable"`
 }
@@ -3306,9 +3308,11 @@ type updateProfileModOrderRequest struct {
 }
 
 type updateProfilePluginActivationRequest struct {
-	Name     string `json:"name"`
-	Enabled  *bool  `json:"enabled"`
-	Priority *int   `json:"priority"`
+	Name             string `json:"name"`
+	Enabled          *bool  `json:"enabled"`
+	Priority         *int   `json:"priority"`
+	LockedIndex      *int   `json:"locked_index"`
+	ClearLockedIndex bool   `json:"clear_locked_index,omitempty"`
 }
 
 type updateProfilePluginActivationOrderRequest struct {
@@ -9785,8 +9789,8 @@ func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.Enabled == nil && req.Priority == nil {
-		http.Error(w, "enabled or priority is required", http.StatusBadRequest)
+	if req.Enabled == nil && req.Priority == nil && req.LockedIndex == nil && !req.ClearLockedIndex {
+		http.Error(w, "enabled, priority, or locked index is required", http.StatusBadRequest)
 		return
 	}
 	ctx, err := s.profilePluginActivationContext(r.Context(), profileID, activationID)
@@ -9810,6 +9814,8 @@ func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http
 		PluginName:   entry.Name,
 		Enabled:      req.Enabled,
 		Priority:     priority,
+		LockedIndex:  req.LockedIndex,
+		ClearLock:    req.ClearLockedIndex,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -9820,7 +9826,13 @@ func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http
 		enabledLog = *req.Enabled
 	}
 	priorityLog := *priority
-	s.logger.Info("profile plugin activation updated", "profile_id", profileID, "activation_id", activationID, "plugin", entry.Name, "enabled", enabledLog, "priority", priorityLog)
+	var lockedIndexLog any
+	if req.ClearLockedIndex {
+		lockedIndexLog = "cleared"
+	} else if req.LockedIndex != nil {
+		lockedIndexLog = *req.LockedIndex
+	}
+	s.logger.Info("profile plugin activation updated", "profile_id", profileID, "activation_id", activationID, "plugin", entry.Name, "enabled", enabledLog, "priority", priorityLog, "locked_index", lockedIndexLog)
 	s.publishGameEvent(events.TypeProfileModsChanged, ctx.game.SteamAppID, map[string]any{
 		"action":        "plugin_activation_updated",
 		"profile_id":    profileID,
@@ -9828,6 +9840,7 @@ func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http
 		"plugin":        entry.Name,
 		"enabled":       enabledLog,
 		"priority":      priorityLog,
+		"locked_index":  lockedIndexLog,
 	})
 	loadOrder, err := s.profilePluginLoadOrder(r.Context(), ctx.game, profileID, ctx.mods)
 	if err != nil {
@@ -13899,6 +13912,7 @@ type pluginActivationEntry struct {
 	InstalledModID int64
 	ModID          string
 	Priority       int
+	LockedIndex    *int
 	Active         bool
 }
 
@@ -13970,9 +13984,13 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 			InstalledModID: entry.InstalledModID,
 			ModID:          entry.ModID,
 			Priority:       entry.Priority,
+			LockedIndex:    entry.LockedIndex,
 			Active:         entry.Active,
 			Mutable:        true,
 		})
+	}
+	for idx := range resp.Plugins {
+		resp.Plugins[idx].ModIndex = idx
 	}
 	return resp, nil
 }
@@ -14172,6 +14190,7 @@ func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deplo
 		if state, ok := states[key]; ok {
 			next.Active = state.Enabled
 			next.Priority = state.Priority
+			next.LockedIndex = state.LockedIndex
 		}
 		if !exists || next.Priority < current.Priority || (next.Priority == current.Priority && strings.ToLower(next.Name) < strings.ToLower(current.Name)) {
 			byName[key] = next
@@ -14187,7 +14206,62 @@ func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deplo
 		}
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
+	return applyPluginIndexLocks(spec, out)
+}
+
+func applyPluginIndexLocks(spec gameext.PluginActivationSpec, entries []pluginActivationEntry) []pluginActivationEntry {
+	lockedCount := 0
+	for _, entry := range entries {
+		if entry.LockedIndex != nil {
+			lockedCount++
+		}
+	}
+	if lockedCount == 0 {
+		return entries
+	}
+	regular := make([]pluginActivationEntry, 0, len(entries)-lockedCount)
+	locked := make([]pluginActivationEntry, 0, lockedCount)
+	for _, entry := range entries {
+		if entry.LockedIndex == nil {
+			regular = append(regular, entry)
+			continue
+		}
+		locked = append(locked, entry)
+	}
+	sort.SliceStable(locked, func(i, j int) bool {
+		if *locked[i].LockedIndex != *locked[j].LockedIndex {
+			return *locked[i].LockedIndex < *locked[j].LockedIndex
+		}
+		if locked[i].Priority != locked[j].Priority {
+			return locked[i].Priority < locked[j].Priority
+		}
+		return strings.ToLower(locked[i].Name) < strings.ToLower(locked[j].Name)
+	})
+
+	out := make([]pluginActivationEntry, 0, len(entries))
+	currentIndex := 0
+	for len(locked) > 0 && *locked[0].LockedIndex <= currentIndex {
+		out = append(out, locked[0])
+		locked = locked[1:]
+		currentIndex++
+	}
+	for _, entry := range regular {
+		out = append(out, entry)
+		if !entry.Active || pluginActivationEntryIsLight(spec, entry) {
+			continue
+		}
+		currentIndex++
+		for len(locked) > 0 && *locked[0].LockedIndex <= currentIndex {
+			out = append(out, locked[0])
+			locked = locked[1:]
+		}
+	}
+	out = append(out, locked...)
 	return out
+}
+
+func pluginActivationEntryIsLight(spec gameext.PluginActivationSpec, entry pluginActivationEntry) bool {
+	return spec.SupportsLightPlugins && strings.EqualFold(filepath.Ext(entry.Name), ".esl")
 }
 
 func sourcePathForPluginActivationEntry(spec gameext.PluginActivationSpec, entry pluginActivationEntry, mappings []deploy.FileMapping) (string, bool) {

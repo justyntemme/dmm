@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS profile_plugin_activations (
 	plugin_key TEXT NOT NULL,
 	enabled INTEGER NOT NULL DEFAULT 1,
 	priority INTEGER NOT NULL DEFAULT 0,
+	locked_index INTEGER,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE(profile_id, activation_id, plugin_key)

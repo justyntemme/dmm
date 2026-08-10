@@ -131,6 +131,7 @@ type ProfilePluginActivationState struct {
 	PluginKey    string `json:"plugin_key"`
 	Enabled      bool   `json:"enabled"`
 	Priority     int    `json:"priority"`
+	LockedIndex  *int   `json:"locked_index,omitempty"`
 }
 
 type ProfileFeatureState struct {
@@ -145,6 +146,8 @@ type SetProfilePluginActivationStateParams struct {
 	PluginName   string
 	Enabled      *bool
 	Priority     *int
+	LockedIndex  *int
+	ClearLock    bool
 }
 
 type InstallCandidate struct {
@@ -299,6 +302,7 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "install_candidates", name: "replace_staging_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "install_candidates", name: "target_profile_id", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "profile_mods", name: "priority", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "profile_plugin_activations", name: "locked_index", definition: "INTEGER"},
 		{table: "deployed_files", name: "restore_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "deployed_files", name: "restore_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "deployed_files", name: "installed_mod_id", definition: "INTEGER NOT NULL DEFAULT 0"},
@@ -2350,7 +2354,7 @@ func (db *DB) ProfilePluginActivationStates(ctx context.Context, profileID int64
 		return nil, errors.New("activation id is required")
 	}
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority
+SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority, locked_index
 FROM profile_plugin_activations
 WHERE profile_id = ? AND activation_id = ?
 ORDER BY priority ASC, plugin_name ASC
@@ -2383,8 +2387,11 @@ func (db *DB) SetProfilePluginActivationState(ctx context.Context, params SetPro
 	if pluginKey == "" {
 		return ProfilePluginActivationState{}, errors.New("plugin name is required")
 	}
-	if params.Enabled == nil && params.Priority == nil {
-		return ProfilePluginActivationState{}, errors.New("enabled or priority is required")
+	if params.Enabled == nil && params.Priority == nil && params.LockedIndex == nil && !params.ClearLock {
+		return ProfilePluginActivationState{}, errors.New("enabled, priority, or locked index is required")
+	}
+	if params.LockedIndex != nil && (*params.LockedIndex < 0 || *params.LockedIndex > 0xff) {
+		return ProfilePluginActivationState{}, errors.New("locked index must be between 0 and 255")
 	}
 	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -2403,11 +2410,12 @@ func (db *DB) SetProfilePluginActivationState(ctx context.Context, params SetPro
 	enabled := 1
 	priority := 0
 	displayName := params.PluginName
+	var lockedIndex sql.NullInt64
 	err = tx.QueryRowContext(ctx, `
-SELECT plugin_name, enabled, priority
+SELECT plugin_name, enabled, priority, locked_index
 FROM profile_plugin_activations
 WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
-`, params.ProfileID, params.ActivationID, pluginKey).Scan(&displayName, &enabled, &priority)
+`, params.ProfileID, params.ActivationID, pluginKey).Scan(&displayName, &enabled, &priority, &lockedIndex)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return ProfilePluginActivationState{}, err
 	}
@@ -2420,18 +2428,24 @@ WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
 	if params.Priority != nil {
 		priority = *params.Priority
 	}
+	if params.ClearLock {
+		lockedIndex = sql.NullInt64{}
+	} else if params.LockedIndex != nil {
+		lockedIndex = sql.NullInt64{Int64: int64(*params.LockedIndex), Valid: true}
+	}
 	if strings.TrimSpace(displayName) == "" {
 		displayName = params.PluginName
 	}
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, locked_index, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(profile_id, activation_id, plugin_key) DO UPDATE SET
 	plugin_name = excluded.plugin_name,
 	enabled = excluded.enabled,
 	priority = excluded.priority,
+	locked_index = excluded.locked_index,
 	updated_at = CURRENT_TIMESTAMP
-`, params.ProfileID, params.ActivationID, displayName, pluginKey, enabled, priority); err != nil {
+`, params.ProfileID, params.ActivationID, displayName, pluginKey, enabled, priority, lockedIndex); err != nil {
 		return ProfilePluginActivationState{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -2476,21 +2490,23 @@ func (db *DB) SetProfilePluginActivationOrder(ctx context.Context, profileID int
 		}
 		seen[pluginKey] = struct{}{}
 		enabled := 1
+		var lockedIndex sql.NullInt64
 		if err := tx.QueryRowContext(ctx, `
-SELECT COALESCE(enabled, 1)
+SELECT COALESCE(enabled, 1), locked_index
 FROM profile_plugin_activations
 WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
-`, profileID, activationID, pluginKey).Scan(&enabled); err != nil && !errors.Is(err, sql.ErrNoRows) {
+`, profileID, activationID, pluginKey).Scan(&enabled, &lockedIndex); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO profile_plugin_activations (profile_id, activation_id, plugin_name, plugin_key, enabled, priority, locked_index, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(profile_id, activation_id, plugin_key) DO UPDATE SET
 	plugin_name = excluded.plugin_name,
 	priority = excluded.priority,
+	locked_index = excluded.locked_index,
 	updated_at = CURRENT_TIMESTAMP
-`, profileID, activationID, pluginName, pluginKey, enabled, priority); err != nil {
+`, profileID, activationID, pluginName, pluginKey, enabled, priority, lockedIndex); err != nil {
 			return nil, err
 		}
 	}
@@ -2512,7 +2528,7 @@ ON CONFLICT(profile_id, activation_id, plugin_key) DO UPDATE SET
 
 func (db *DB) profilePluginActivationState(ctx context.Context, profileID int64, activationID, pluginKey string) (ProfilePluginActivationState, error) {
 	row := db.conn.QueryRowContext(ctx, `
-SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority
+SELECT profile_id, activation_id, plugin_name, plugin_key, enabled, priority, locked_index
 FROM profile_plugin_activations
 WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
 `, profileID, activationID, pluginKey)
@@ -2522,8 +2538,13 @@ WHERE profile_id = ? AND activation_id = ? AND plugin_key = ?
 func scanProfilePluginActivationState(row profileScanner) (ProfilePluginActivationState, error) {
 	var state ProfilePluginActivationState
 	var enabled int
-	err := row.Scan(&state.ProfileID, &state.ActivationID, &state.PluginName, &state.PluginKey, &enabled, &state.Priority)
+	var lockedIndex sql.NullInt64
+	err := row.Scan(&state.ProfileID, &state.ActivationID, &state.PluginName, &state.PluginKey, &enabled, &state.Priority, &lockedIndex)
 	state.Enabled = enabled != 0
+	if lockedIndex.Valid {
+		value := int(lockedIndex.Int64)
+		state.LockedIndex = &value
+	}
 	return state, err
 }
 

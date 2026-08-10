@@ -10705,6 +10705,40 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 		t.Fatalf("ordered load order = %+v", orderUpdate.LoadOrder.Plugins)
 	}
 
+	lockReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/plugins", bytes.NewBufferString(`{"name":"Example.esp","locked_index":0}`))
+	lockReq.Header.Set("Content-Type", "application/json")
+	lockReq.RemoteAddr = "127.0.0.1:1"
+	lockRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(lockRec, lockReq)
+	if lockRec.Code != http.StatusOK {
+		t.Fatalf("plugin activation lock status = %d, body = %s", lockRec.Code, lockRec.Body.String())
+	}
+	var lockUpdate profilePluginActivationUpdateResponse
+	if err := json.Unmarshal(lockRec.Body.Bytes(), &lockUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if len(lockUpdate.LoadOrder.Plugins) < 4 || lockUpdate.LoadOrder.Plugins[2].Name != "Example.esp" || lockUpdate.LoadOrder.Plugins[2].LockedIndex == nil || *lockUpdate.LoadOrder.Plugins[2].LockedIndex != 0 || lockUpdate.LoadOrder.Plugins[2].ModIndex != 2 {
+		t.Fatalf("locked load order = %+v", lockUpdate.LoadOrder.Plugins)
+	}
+	loadOrderText, err := os.ReadFile(filepath.Join(wantRoot, "loadorder.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exampleIdx := strings.Index(string(loadOrderText), "Example.esp")
+	otherIdx := strings.Index(string(loadOrderText), "Other.esp")
+	if exampleIdx == -1 || otherIdx == -1 || exampleIdx > otherIdx {
+		t.Fatalf("loadorder.txt after index lock = %q", string(loadOrderText))
+	}
+
+	clearLockReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/plugins", bytes.NewBufferString(`{"name":"Example.esp","clear_locked_index":true}`))
+	clearLockReq.Header.Set("Content-Type", "application/json")
+	clearLockReq.RemoteAddr = "127.0.0.1:1"
+	clearLockRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(clearLockRec, clearLockReq)
+	if clearLockRec.Code != http.StatusOK {
+		t.Fatalf("plugin activation clear lock status = %d, body = %s", clearLockRec.Code, clearLockRec.Body.String())
+	}
+
 	disableReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/plugins", bytes.NewBufferString(`{"name":"Example.esp","enabled":false}`))
 	disableReq.Header.Set("Content-Type", "application/json")
 	disableReq.RemoteAddr = "127.0.0.1:1"
@@ -10731,12 +10765,12 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if strings.Contains(string(pluginsText), "*Example.esp") || !strings.Contains(string(pluginsText), "Example.esp") || !strings.Contains(string(pluginsText), "*Other.esp") {
 		t.Fatalf("plugins.txt after disable = %q", string(pluginsText))
 	}
-	loadOrderText, err := os.ReadFile(filepath.Join(wantRoot, "loadorder.txt"))
+	loadOrderText, err = os.ReadFile(filepath.Join(wantRoot, "loadorder.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherIdx := strings.Index(string(loadOrderText), "Other.esp")
-	exampleIdx := strings.Index(string(loadOrderText), "Example.esp")
+	otherIdx = strings.Index(string(loadOrderText), "Other.esp")
+	exampleIdx = strings.Index(string(loadOrderText), "Example.esp")
 	if otherIdx == -1 || exampleIdx == -1 || otherIdx > exampleIdx {
 		t.Fatalf("loadorder.txt after reorder = %q", string(loadOrderText))
 	}
