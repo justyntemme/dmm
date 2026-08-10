@@ -24,11 +24,13 @@
 - Save archives deploy through an extension-owned Proton Documents target root:
   `Documents/My Games/FINAL FANTASY VII REBIRTH/Steam/{numericUserId}` when that directory exists, otherwise the Steam save folder itself.
 - Multi-option pak-family archives produce an installer-choice request, mirroring Vortex's prompt when the archive contains more pak/ucas/utoc files than a normal IO Store set.
+- UE4SS-dependent script, DLL, LogicMods, and combo mods declare a runtime requirement for UE4SS. The requirement is satisfied by either a DMM-managed UE4SS provider mod or a live `End/Binaries/Win64/dwmapi.dll` marker in the game folder.
+- UE4SS acquisition is extension-owned runtime behavior: DMM mirrors the Vortex `Download UE4SS` action from cached extension v0.4.0 by declaring Nexus mod `267`, file `1351`, and routing it through the generic captured-install/runtime-provider pipeline with auto-acquire enabled.
 
 ## Beta Gaps
 
 - Live FF7 Rebirth archive validation is still needed for pak, FF7RML, UE4SS, config, save, and root/binaries variants.
-- Vortex's optional UE4SS auto-download action is not implemented as an automatic DMM runtime helper yet; the cached source is v0.4.0 and the current public manifest points at v0.5.2, so this must wait for source/package inspection instead of guessing the helper behavior.
+- Live UE4SS acquisition validation is still needed against a real Deck FF7 Rebirth runtime-provider install.
 - Package-specific load-order semantics need validation against real FF7 Rebirth pak archives.
 
 ## Validation Targets

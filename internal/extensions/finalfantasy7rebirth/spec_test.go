@@ -11,6 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -178,6 +179,50 @@ func TestExtensionRegistersGameAndCapabilitySources(t *testing.T) {
 	if len(summary.Capabilities.EventHandlers) == 0 {
 		t.Fatalf("summary event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
+	if len(summary.Capabilities.RuntimeRequirements) != 1 {
+		t.Fatalf("summary runtime requirements = %+v", summary.Capabilities.RuntimeRequirements)
+	}
+}
+
+func TestExtensionEvaluatesUE4SSRuntimeRequirement(t *testing.T) {
+	extension := gameext.MustCompileExtension(finalfantasy7rebirth.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	gamePath := t.TempDir()
+
+	requirements := registry.RuntimeRequirements(context.Background(), finalfantasy7rebirth.SteamAppID, gamePath, []gamehandler.RuntimeMod{{
+		ModType: "finalfantasy7rebirth-scripts",
+		Enabled: true,
+	}})
+	requirement, ok := runtimeRequirementByID(requirements, "finalfantasy7rebirth-ue4ss-installed")
+	if !ok {
+		t.Fatalf("requirements = %+v", requirements)
+	}
+	if requirement.Status != gamehandler.RequirementMissing || requirement.Acquisition == nil {
+		t.Fatalf("missing requirement = %+v", requirement)
+	}
+	if requirement.Acquisition.Catalog != "nexus" || requirement.Acquisition.SourceGame != finalfantasy7rebirth.VortexGameID || requirement.Acquisition.SourceModID != "267" || requirement.Acquisition.SourceFileID != "1351" || !requirement.Acquisition.AutoAcquire {
+		t.Fatalf("acquisition = %+v", requirement.Acquisition)
+	}
+
+	requirements = registry.RuntimeRequirements(context.Background(), finalfantasy7rebirth.SteamAppID, gamePath, []gamehandler.RuntimeMod{
+		{ModType: "finalfantasy7rebirth-scripts", Enabled: true},
+		{ModType: "finalfantasy7rebirth-ue4ss", Enabled: true},
+	})
+	requirement, ok = runtimeRequirementByID(requirements, "finalfantasy7rebirth-ue4ss-installed")
+	if !ok || requirement.Status != gamehandler.RequirementOK {
+		t.Fatalf("provider requirement = %+v ok=%v", requirement, ok)
+	}
+
+	marker := filepath.Join(gamePath, "End", "Binaries", "Win64", "dwmapi.dll")
+	writeFile(t, marker, "proxy")
+	requirements = registry.RuntimeRequirements(context.Background(), finalfantasy7rebirth.SteamAppID, gamePath, []gamehandler.RuntimeMod{{
+		ModType: "finalfantasy7rebirth-logicmods",
+		Enabled: true,
+	}})
+	requirement, ok = runtimeRequirementByID(requirements, "finalfantasy7rebirth-ue4ss-installed")
+	if !ok || requirement.Status != gamehandler.RequirementOK || len(requirement.Details) != 1 {
+		t.Fatalf("file marker requirement = %+v ok=%v", requirement, ok)
+	}
 }
 
 func TestExtensionAppliesPakLoadOrderPrefixesDuringWillDeploy(t *testing.T) {
@@ -263,6 +308,15 @@ func assertNoTarget(t *testing.T, instructions []installplan.Instruction, target
 			t.Fatalf("unexpected target %q in %+v", target, instructions)
 		}
 	}
+}
+
+func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirement, id string) (gamehandler.RuntimeRequirement, bool) {
+	for _, requirement := range requirements {
+		if requirement.ID == id {
+			return requirement, true
+		}
+	}
+	return gamehandler.RuntimeRequirement{}, false
 }
 
 func assertTarget(t *testing.T, got, want string) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/unreal"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -39,6 +40,9 @@ const (
 
 	configRootID = "finalfantasy7rebirth-config-root"
 	saveRootID   = "finalfantasy7rebirth-save-root"
+
+	ue4ssNexusModID  = "267"
+	ue4ssNexusFileID = "1351"
 )
 
 func Extension() sdk.Extension {
@@ -80,6 +84,9 @@ func Register(r sdk.Registrar) {
 	}
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
+	}
+	for _, requirement := range runtimeRequirements() {
+		r.RegisterRuntimeRequirement(requirement)
 	}
 	r.RegisterMerge(sdk.MergeSpec{ID: "ff7rebirth-unreal-pak-load-order", Name: "Final Fantasy VII Rebirth pak load order"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
@@ -242,6 +249,51 @@ func installers() []installplan.InstallerSpec {
 			InstructionMode:   installplan.InstructionCustom,
 		},
 	}
+}
+
+func runtimeRequirements() []gamehandler.RuntimeRequirementSpec {
+	return []gamehandler.RuntimeRequirementSpec{{
+		ID:               "finalfantasy7rebirth-ue4ss-installed",
+		Name:             "UE4SS",
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         []string{ue4ssComboType, logicModsType, scriptsType, dllType},
+		ProviderModTypes: []string{ue4ssRootType},
+		Message:          "UE4SS is required before Final Fantasy VII Rebirth UE4SS script, DLL, LogicMods, or combo mods can work in game.",
+		OKMessage:        "UE4SS is present.",
+		HelpURL:          "https://www.nexusmods.com/finalfantasy7rebirth/mods/" + ue4ssNexusModID,
+		InstallHint:      "Install UE4SS from Nexus Mods before enabling UE4SS-dependent Final Fantasy VII Rebirth mods.",
+		Check:            checkUE4SSRoot,
+		Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+			ID:             "finalfantasy7rebirth-ue4ss-nexus",
+			Name:           "UE4SS",
+			Catalog:        "nexus",
+			Mode:           "nexus-download",
+			SourceGame:     VortexGameID,
+			SourceModID:    ue4ssNexusModID,
+			SourceFileID:   ue4ssNexusFileID,
+			SourceProvider: "vortex-finalfantasy7rebirth-download-ue4ss",
+			Instructions:   "Vortex registers a Download UE4SS action that resolves Nexus mod 267 file 1351 and installs it as the Final Fantasy VII Rebirth UE4SS provider. DMM routes the same source through the captured-install pipeline.",
+			Required:       true,
+			AutoAcquire:    true,
+			Message:        "DMM mirrors the Vortex Final Fantasy VII Rebirth Download UE4SS action with a runtime provider acquisition from Nexus mod 267 file 1351.",
+		},
+	}}
+}
+
+func checkUE4SSRoot(ctx context.Context, gamePath string) []string {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return nil
+	}
+	marker := filepath.Join(gamePath, filepath.FromSlash(binariesRoot), "dwmapi.dll")
+	if info, err := os.Stat(marker); err == nil && !info.IsDir() {
+		return []string{filepath.ToSlash(marker)}
+	}
+	return nil
 }
 
 func configRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
