@@ -43,7 +43,7 @@ func TestUMMVortexPortsExposeModsInstallerToolLaunchAndRuntimeRequirement(t *tes
 			if summary.Capabilities.ModTypes[1].ID != "umm" || summary.Capabilities.ModTypes[1].DeploymentMode != "tool-only" {
 				t.Fatalf("UMM tool mod type = %+v", summary.Capabilities.ModTypes)
 			}
-			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "metadata" {
+			if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].Status != "ready" || summary.Capabilities.SupportedTools[0].Acquisition == nil {
 				t.Fatalf("UMM supported tool = %+v", summary.Capabilities.SupportedTools)
 			}
 			if len(summary.Capabilities.RuntimeRequirements) != 1 || summary.Capabilities.RuntimeRequirements[0].ID == "" || summary.Capabilities.RuntimeRequirements[0].Acquisition == nil {
@@ -52,7 +52,7 @@ func TestUMMVortexPortsExposeModsInstallerToolLaunchAndRuntimeRequirement(t *tes
 			if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
 				t.Fatalf("UMM metadata = api %+v dashlets %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionDashlets, summary.Capabilities.ExtensionToDos)
 			}
-			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionToDos[0].Status != "metadata" {
+			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionToDos[0].Status != "ready" {
 				t.Fatalf("UMM runtime split = api %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionToDos)
 			}
 			if len(summary.Capabilities.GameStores) != tt.wantGameStores {
