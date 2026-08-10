@@ -90,6 +90,50 @@ func TestResolveLatestUsesLatestReleaseMatchingCurrentAsset(t *testing.T) {
 	}
 }
 
+func TestResolveLatestMatchesDeclaredAssetPatternAndVersionConstraint(t *testing.T) {
+	api := newGitHubFlexibleTestAPI(t, map[string]any{
+		"/repos/BepInEx/BepInEx/releases": []releaseResponse{
+			{
+				TagName: "v6.0.0",
+				Assets: []releaseAsset{{
+					Name:               "BepInEx_win_x64_6.0.0.zip",
+					BrowserDownloadURL: "https://github.com/BepInEx/BepInEx/releases/download/v6.0.0/BepInEx_win_x64_6.0.0.zip",
+				}},
+			},
+			{
+				TagName: "v5.4.23.5",
+				Assets: []releaseAsset{{
+					Name:               "BepInEx_win_x64_5.4.23.5.zip",
+					BrowserDownloadURL: "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip",
+				}},
+			},
+			{
+				TagName: "v5.4.22",
+				Assets: []releaseAsset{{
+					Name:               "BepInEx_x64_5.4.22.0.zip",
+					BrowserDownloadURL: "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip",
+				}},
+			},
+		},
+	})
+	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveLatest(context.Background(), catalog.UpdateResolveRequest{
+		SteamAppID:         "367520",
+		ModID:              "BepInEx/BepInEx",
+		Version:            "5.4.22",
+		LatestAssetPattern: `^BepInEx_win_x64_5\.4\.23\.5\.zip$`,
+		VersionConstraint:  "^5.4.23.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.FileID != releaseFileID("v5.4.23.5", "BepInEx_win_x64_5.4.23.5.zip") || resolved.FileName != "BepInEx_win_x64_5.4.23.5.zip" {
+		t.Fatalf("resolved latest = %#v", resolved)
+	}
+	if resolved.DownloadLinks[0].URI != "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip" {
+		t.Fatalf("download URL = %q", resolved.DownloadLinks[0].URI)
+	}
+}
+
 func TestResolveFileUsesEncodedReleaseAsset(t *testing.T) {
 	api := newGitHubTestAPI(t, map[string]releaseResponse{
 		"/repos/owner/mod/releases/tags/v2.0.0": {
@@ -156,14 +200,23 @@ func TestResolveURLRejectsNonGitHubURLAsUnsupported(t *testing.T) {
 
 func newGitHubTestAPI(t *testing.T, releases map[string]releaseResponse) *httptest.Server {
 	t.Helper()
+	responses := make(map[string]any, len(releases))
+	for path, release := range releases {
+		responses[path] = release
+	}
+	return newGitHubFlexibleTestAPI(t, responses)
+}
+
+func newGitHubFlexibleTestAPI(t *testing.T, responses map[string]any) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		release, ok := releases[r.URL.Path]
+		response, ok := responses[r.URL.Path]
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(release); err != nil {
+		if err := json.NewEncoder(w).Encode(response); err != nil {
 			t.Fatal(err)
 		}
 	}))

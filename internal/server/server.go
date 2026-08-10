@@ -5951,7 +5951,13 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		acquisitionURL := runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
+		resolved, acquisitionURL, err := s.resolveRuntimeAcquisitionTarget(ctx, appID, storage.InstalledMod{}, false, acquisition)
+		if err != nil {
+			response.Error = err.Error()
+			responses = append(responses, response)
+			s.logger.Warn("extension runtime auto-acquire resolve failed", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+			continue
+		}
 		if acquisitionURL == "" {
 			response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
 			responses = append(responses, response)
@@ -5976,7 +5982,7 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 		response.DownloadStarted = result.DownloadStarted
 		response.AutoInstall = result.AutoInstall
 		responses = append(responses, response)
-		s.logger.Info("extension runtime auto-acquire queued", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "duplicate", result.Duplicate)
+		s.logger.Info("extension runtime auto-acquire queued", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "job_id", result.Job.ID, "duplicate", result.Duplicate)
 	}
 	return responses, nil
 }
@@ -5987,25 +5993,15 @@ func (s *Server) queueRuntimeProviderUpdateIfNeeded(ctx context.Context, appID s
 		return response, false
 	}
 
-	acquisition.ID = strings.TrimSpace(acquisition.ID)
-	acquisition.Name = strings.TrimSpace(acquisition.Name)
-	acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
-	acquisition.URL = strings.TrimSpace(acquisition.URL)
-	acquisitionURL := runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
-	if acquisitionURL == "" {
-		response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
-		s.logger.Warn("extension runtime auto-update skipped; acquisition URL is empty", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID)
-		return response, true
-	}
-
-	resolved, err := s.resolveCatalogURL(ctx, catalog.ResolveRequest{
-		URL:        acquisitionURL,
-		SteamAppID: appID,
-		Source:     "extension-runtime-auto-update:" + requirementID,
-	})
+	resolved, acquisitionURL, err := s.resolveRuntimeAcquisitionTarget(ctx, appID, providerMod, true, acquisition)
 	if err != nil {
 		response.Error = err.Error()
 		s.logger.Warn("extension runtime auto-update resolve failed", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", acquisition.Catalog, "error", err)
+		return response, true
+	}
+	if acquisitionURL == "" {
+		response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
+		s.logger.Warn("extension runtime auto-update skipped; acquisition URL is empty", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID)
 		return response, true
 	}
 	if runtimeAcquisitionMatchesInstalledProvider(providerMod, acquisition, resolved) {
@@ -6037,6 +6033,91 @@ func (s *Server) queueRuntimeProviderUpdateIfNeeded(ctx context.Context, appID s
 	response.AutoInstall = result.AutoInstall
 	s.logger.Info("extension runtime auto-update queued", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "job_id", result.Job.ID, "duplicate", result.Duplicate)
 	return response, true
+}
+
+func (s *Server) resolveRuntimeAcquisitionTarget(ctx context.Context, appID string, providerMod storage.InstalledMod, hasProvider bool, acquisition gamehandler.RuntimeAcquisitionSpec) (catalog.ResolvedDownload, string, error) {
+	acquisition.ID = strings.TrimSpace(acquisition.ID)
+	acquisition.Name = strings.TrimSpace(acquisition.Name)
+	acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+	acquisition.URL = strings.TrimSpace(acquisition.URL)
+	if runtimeAcquisitionUsesLatestResolution(acquisition) {
+		resolved, err := s.resolveRuntimeAcquisitionLatest(ctx, appID, providerMod, hasProvider, acquisition)
+		if err != nil {
+			return catalog.ResolvedDownload{}, "", err
+		}
+		downloadURL := firstResolvedDownloadURL(resolved)
+		if downloadURL == "" {
+			return resolved, "", errors.New("extension runtime " + strings.TrimSpace(acquisition.ID) + " resolved without a downloadable archive")
+		}
+		return resolved, downloadURL, nil
+	}
+	acquisitionURL := runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
+	if acquisitionURL == "" {
+		return catalog.ResolvedDownload{}, "", nil
+	}
+	resolved, err := s.resolveCatalogURL(ctx, catalog.ResolveRequest{
+		URL:        acquisitionURL,
+		SteamAppID: appID,
+		Source:     "extension-runtime-acquisition:" + strings.TrimSpace(acquisition.ID),
+	})
+	return resolved, acquisitionURL, err
+}
+
+func runtimeAcquisitionUsesLatestResolution(acquisition gamehandler.RuntimeAcquisitionSpec) bool {
+	return strings.TrimSpace(acquisition.LatestAssetPattern) != "" || strings.TrimSpace(acquisition.VersionConstraint) != ""
+}
+
+func (s *Server) resolveRuntimeAcquisitionLatest(ctx context.Context, appID string, providerMod storage.InstalledMod, hasProvider bool, acquisition gamehandler.RuntimeAcquisitionSpec) (catalog.ResolvedDownload, error) {
+	catalogName := normalizeCatalogID(acquisition.Catalog)
+	if catalogName == "" {
+		return catalog.ResolvedDownload{}, errors.New("extension runtime acquisition catalog is required for latest resolution")
+	}
+	var updateResolver catalog.UpdateModCatalog
+	for _, resolver := range s.catalogResolvers() {
+		if normalizeCatalogID(resolver.Name()) != catalogName {
+			continue
+		}
+		candidate, ok := resolver.(catalog.UpdateModCatalog)
+		if !ok {
+			return catalog.ResolvedDownload{}, errors.New(catalogDisplayLabel(acquisition.Catalog) + " does not support latest runtime acquisition resolution")
+		}
+		updateResolver = candidate
+		break
+	}
+	if updateResolver == nil {
+		return catalog.ResolvedDownload{}, errors.New("no catalog resolver is configured for " + catalogDisplayLabel(acquisition.Catalog))
+	}
+	fileID := strings.TrimSpace(acquisition.SourceFileID)
+	fileName := strings.TrimSpace(acquisition.ArchiveName)
+	version := strings.TrimSpace(acquisition.Version)
+	if hasProvider {
+		if value := strings.TrimSpace(providerMod.SourceFileID); value != "" {
+			fileID = value
+		}
+		if value := strings.TrimSpace(providerMod.Version); value != "" {
+			version = value
+		}
+	}
+	return updateResolver.ResolveLatest(ctx, catalog.UpdateResolveRequest{
+		SteamAppID:         strings.TrimSpace(appID),
+		SourceURL:          strings.TrimSpace(acquisition.URL),
+		GameDomain:         strings.TrimSpace(acquisition.SourceGame),
+		ModID:              strings.TrimSpace(acquisition.SourceModID),
+		FileID:             fileID,
+		FileName:           fileName,
+		Version:            version,
+		LatestAssetPattern: strings.TrimSpace(acquisition.LatestAssetPattern),
+		VersionConstraint:  strings.TrimSpace(acquisition.VersionConstraint),
+	})
+}
+
+func firstResolvedDownloadURL(resolved catalog.ResolvedDownload) string {
+	for _, link := range resolved.DownloadLinks {
+		if value := strings.TrimSpace(link.URI); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func runtimeAutoAcquireSourceIsUpdateCheck(source string) bool {

@@ -14,13 +14,15 @@ type ResolveRequest struct {
 }
 
 type UpdateResolveRequest struct {
-	SteamAppID string
-	SourceURL  string
-	GameDomain string
-	ModID      string
-	FileID     string
-	FileName   string
-	Version    string
+	SteamAppID         string
+	SourceURL          string
+	GameDomain         string
+	ModID              string
+	FileID             string
+	FileName           string
+	Version            string
+	LatestAssetPattern string
+	VersionConstraint  string
 }
 
 type RemoteModCatalog interface {

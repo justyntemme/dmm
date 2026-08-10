@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -84,6 +86,9 @@ func (r Resolver) ResolveURL(ctx context.Context, req catalog.ResolveRequest) (c
 }
 
 func (r Resolver) ResolveLatest(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	if strings.TrimSpace(req.LatestAssetPattern) != "" || strings.TrimSpace(req.VersionConstraint) != "" {
+		return r.resolveLatestMatching(ctx, req)
+	}
 	ref, err := releaseRefFromUpdateRequest(req)
 	if err != nil {
 		return catalog.ResolvedDownload{}, err
@@ -123,6 +128,52 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	ref.AssetName = strings.TrimSpace(asset.Name)
 	ref.DownloadURL = strings.TrimSpace(asset.BrowserDownloadURL)
 	return resolvedDownload("https://github.com/"+ref.Owner+"/"+ref.Repo+"/releases/tag/"+url.PathEscape(ref.Tag), strings.TrimSpace(req.SteamAppID), ref), nil
+}
+
+func (r Resolver) resolveLatestMatching(ctx context.Context, req catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	ref, err := releaseRefForPatternUpdate(req)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	matcher, err := archiveAssetMatcher(req.LatestAssetPattern, req.FileName)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	releases, err := r.resolveReleases(ctx, ref)
+	if err != nil {
+		return catalog.ResolvedDownload{}, err
+	}
+	sort.SliceStable(releases, func(i, j int) bool {
+		return compareGitHubVersions(releases[i].TagName, releases[j].TagName) > 0
+	})
+	currentVersion := strings.TrimSpace(req.Version)
+	if currentVersion == "" {
+		if tag, _, ok := parseReleaseFileID(req.FileID); ok {
+			currentVersion = tag
+		}
+	}
+	constraint := strings.TrimSpace(req.VersionConstraint)
+	for _, release := range releases {
+		tag := strings.TrimSpace(release.TagName)
+		if tag == "" {
+			continue
+		}
+		if currentVersion != "" && compareGitHubVersions(tag, currentVersion) == 0 {
+			continue
+		}
+		if !gitHubVersionMatchesConstraint(tag, constraint) {
+			continue
+		}
+		asset, ok := firstMatchingArchiveAsset(release.Assets, matcher)
+		if !ok {
+			continue
+		}
+		ref.Tag = tag
+		ref.AssetName = strings.TrimSpace(asset.Name)
+		ref.DownloadURL = strings.TrimSpace(asset.BrowserDownloadURL)
+		return resolvedDownload("https://github.com/"+ref.Owner+"/"+ref.Repo+"/releases/tag/"+url.PathEscape(ref.Tag), strings.TrimSpace(req.SteamAppID), ref), nil
+	}
+	return catalog.ResolvedDownload{}, errors.New("GitHub releases did not contain a matching archive asset")
 }
 
 type releaseRef struct {
@@ -217,26 +268,43 @@ func validateRef(ref releaseRef) (releaseRef, error) {
 }
 
 func releaseRefFromUpdateRequest(req catalog.UpdateResolveRequest) (releaseRef, error) {
-	modID := strings.TrimSpace(req.ModID)
-	parts := strings.Split(modID, "/")
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return releaseRef{}, errors.New("GitHub update checks require owner/repo source metadata")
+	ref, err := releaseRefForPatternUpdate(req)
+	if err != nil {
+		return releaseRef{}, err
 	}
 	tag, assetName, ok := parseReleaseFileID(req.FileID)
 	if !ok {
 		assetName = strings.TrimSpace(req.FileName)
 	}
-	ref, err := validateRef(releaseRef{
-		Owner:     strings.TrimSpace(parts[0]),
-		Repo:      strings.TrimSpace(parts[1]),
-		Tag:       tag,
-		AssetName: assetName,
-	})
+	ref.Tag = tag
+	ref.AssetName = assetName
+	ref, err = validateRef(ref)
 	if err != nil {
 		return releaseRef{}, err
 	}
 	if strings.TrimSpace(ref.AssetName) == "" {
 		return releaseRef{}, errors.New("GitHub update checks require a release asset name")
+	}
+	return ref, nil
+}
+
+func releaseRefForPatternUpdate(req catalog.UpdateResolveRequest) (releaseRef, error) {
+	modID := strings.TrimSpace(req.ModID)
+	if modID == "" && strings.TrimSpace(req.SourceURL) != "" {
+		if ref, err := parseURL(req.SourceURL); err == nil {
+			modID = ref.Owner + "/" + ref.Repo
+		}
+	}
+	parts := strings.Split(modID, "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return releaseRef{}, errors.New("GitHub update checks require owner/repo source metadata")
+	}
+	ref, err := validateRef(releaseRef{
+		Owner: strings.TrimSpace(parts[0]),
+		Repo:  strings.TrimSpace(parts[1]),
+	})
+	if err != nil {
+		return releaseRef{}, err
 	}
 	return ref, nil
 }
@@ -253,6 +321,14 @@ func (r Resolver) resolveRelease(ctx context.Context, ref releaseRef) (releaseRe
 		return releaseResponse{}, err
 	}
 	return release, nil
+}
+
+func (r Resolver) resolveReleases(ctx context.Context, ref releaseRef) ([]releaseResponse, error) {
+	var releases []releaseResponse
+	if err := r.getJSON(ctx, "/repos/"+url.PathEscape(ref.Owner)+"/"+url.PathEscape(ref.Repo)+"/releases", &releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
 }
 
 func (r Resolver) getJSON(ctx context.Context, requestPath string, out any) error {
@@ -317,6 +393,38 @@ func matchingArchiveAsset(assets []releaseAsset, preferredName string) (releaseA
 	return singleArchiveAsset(assets)
 }
 
+func archiveAssetMatcher(pattern, preferredName string) (func(string) bool, error) {
+	pattern = strings.TrimSpace(pattern)
+	if pattern != "" {
+		rgx, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("GitHub asset pattern is invalid: %w", err)
+		}
+		return func(name string) bool {
+			name = strings.TrimSpace(name)
+			return name != "" && rgx.MatchString(name)
+		}, nil
+	}
+	preferredName = strings.TrimSpace(preferredName)
+	return func(name string) bool {
+		name = strings.TrimSpace(name)
+		return preferredName == "" || name == preferredName
+	}, nil
+}
+
+func firstMatchingArchiveAsset(assets []releaseAsset, matcher func(string) bool) (releaseAsset, bool) {
+	for _, asset := range assets {
+		name := strings.TrimSpace(asset.Name)
+		if name == "" || strings.TrimSpace(asset.BrowserDownloadURL) == "" || !isArchiveName(name) {
+			continue
+		}
+		if matcher == nil || matcher(name) {
+			return asset, true
+		}
+	}
+	return releaseAsset{}, false
+}
+
 func isArchiveName(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	return strings.HasSuffix(name, ".zip") ||
@@ -379,4 +487,107 @@ func unescapePathPart(value string) string {
 		return value
 	}
 	return out
+}
+
+func gitHubVersionMatchesConstraint(version, constraint string) bool {
+	constraint = strings.TrimSpace(constraint)
+	if constraint == "" {
+		return true
+	}
+	if base, ok := strings.CutPrefix(constraint, "^"); ok {
+		return gitHubVersionMatchesCaret(version, base)
+	}
+	return compareGitHubVersions(version, constraint) == 0
+}
+
+func gitHubVersionMatchesCaret(version, base string) bool {
+	current, ok := coerceGitHubVersion(version)
+	if !ok {
+		return false
+	}
+	minimum, ok := coerceGitHubVersion(base)
+	if !ok {
+		return false
+	}
+	maximum := minimum
+	switch {
+	case minimum[0] > 0:
+		maximum[0]++
+		maximum[1] = 0
+		maximum[2] = 0
+	case minimum[1] > 0:
+		maximum[1]++
+		maximum[2] = 0
+	default:
+		maximum[2]++
+	}
+	return compareVersionParts(current, minimum) >= 0 && compareVersionParts(current, maximum) < 0
+}
+
+func compareGitHubVersions(lhs, rhs string) int {
+	left, leftOK := coerceGitHubVersion(lhs)
+	right, rightOK := coerceGitHubVersion(rhs)
+	switch {
+	case leftOK && rightOK:
+		return compareVersionParts(left, right)
+	case leftOK:
+		return 1
+	case rightOK:
+		return -1
+	default:
+		return strings.Compare(strings.TrimSpace(lhs), strings.TrimSpace(rhs))
+	}
+}
+
+func coerceGitHubVersion(input string) ([3]int, bool) {
+	var out [3]int
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return out, false
+	}
+	for i, r := range s {
+		if (r == 'v' || r == 'V') && i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9' {
+			s = s[i+1:]
+			break
+		}
+		if r >= '0' && r <= '9' {
+			s = s[i:]
+			break
+		}
+	}
+	for i := 0; i < len(out); i++ {
+		end := 0
+		for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+			end++
+		}
+		if end == 0 {
+			if i == 0 {
+				return out, false
+			}
+			return out, true
+		}
+		n, err := strconv.Atoi(s[:end])
+		if err != nil {
+			return out, false
+		}
+		out[i] = n
+		s = s[end:]
+		if !strings.HasPrefix(s, ".") {
+			return out, true
+		}
+		s = strings.TrimPrefix(s, ".")
+	}
+	return out, true
+}
+
+func compareVersionParts(lhs, rhs [3]int) int {
+	for i := range lhs {
+		switch {
+		case lhs[i] < rhs[i]:
+			return -1
+		case lhs[i] > rhs[i]:
+			return 1
+		}
+	}
+	return 0
 }

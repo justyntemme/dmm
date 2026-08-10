@@ -65,21 +65,23 @@ type toolVariant struct {
 }
 
 type toolAcquisition struct {
-	ID             string `json:"id,omitempty"`
-	Name           string `json:"name,omitempty"`
-	Version        string `json:"version,omitempty"`
-	Catalog        string `json:"catalog,omitempty"`
-	Mode           string `json:"mode,omitempty"`
-	URL            string `json:"url,omitempty"`
-	ArchiveName    string `json:"archive_name,omitempty"`
-	Instructions   string `json:"instructions,omitempty"`
-	Required       bool   `json:"required,omitempty"`
-	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
-	SourceModID    string `json:"source_mod_id,omitempty"`
-	SourceFileID   string `json:"source_file_id,omitempty"`
-	SourceGame     string `json:"source_game,omitempty"`
-	SourceProvider string `json:"source_provider,omitempty"`
-	Message        string `json:"message,omitempty"`
+	ID                 string `json:"id,omitempty"`
+	Name               string `json:"name,omitempty"`
+	Version            string `json:"version,omitempty"`
+	Catalog            string `json:"catalog,omitempty"`
+	Mode               string `json:"mode,omitempty"`
+	URL                string `json:"url,omitempty"`
+	ArchiveName        string `json:"archive_name,omitempty"`
+	LatestAssetPattern string `json:"latest_asset_pattern,omitempty"`
+	VersionConstraint  string `json:"version_constraint,omitempty"`
+	Instructions       string `json:"instructions,omitempty"`
+	Required           bool   `json:"required,omitempty"`
+	AutoAcquire        bool   `json:"auto_acquire,omitempty"`
+	SourceModID        string `json:"source_mod_id,omitempty"`
+	SourceFileID       string `json:"source_file_id,omitempty"`
+	SourceGame         string `json:"source_game,omitempty"`
+	SourceProvider     string `json:"source_provider,omitempty"`
+	Message            string `json:"message,omitempty"`
 }
 
 type scopedPurgeResult struct {
@@ -250,21 +252,23 @@ func discoveredRuntimeAcquisition(acquisition *gamehandler.RuntimeAcquisitionSpe
 		return nil
 	}
 	return &toolAcquisition{
-		ID:             strings.TrimSpace(acquisition.ID),
-		Name:           strings.TrimSpace(acquisition.Name),
-		Version:        strings.TrimSpace(acquisition.Version),
-		Catalog:        strings.TrimSpace(acquisition.Catalog),
-		Mode:           strings.TrimSpace(acquisition.Mode),
-		URL:            strings.TrimSpace(acquisition.URL),
-		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
-		Instructions:   strings.TrimSpace(acquisition.Instructions),
-		Required:       acquisition.Required,
-		AutoAcquire:    acquisition.AutoAcquire,
-		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
-		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
-		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
-		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
-		Message:        strings.TrimSpace(acquisition.Message),
+		ID:                 strings.TrimSpace(acquisition.ID),
+		Name:               strings.TrimSpace(acquisition.Name),
+		Version:            strings.TrimSpace(acquisition.Version),
+		Catalog:            strings.TrimSpace(acquisition.Catalog),
+		Mode:               strings.TrimSpace(acquisition.Mode),
+		URL:                strings.TrimSpace(acquisition.URL),
+		ArchiveName:        strings.TrimSpace(acquisition.ArchiveName),
+		LatestAssetPattern: strings.TrimSpace(acquisition.LatestAssetPattern),
+		VersionConstraint:  strings.TrimSpace(acquisition.VersionConstraint),
+		Instructions:       strings.TrimSpace(acquisition.Instructions),
+		Required:           acquisition.Required,
+		AutoAcquire:        acquisition.AutoAcquire,
+		SourceModID:        strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:       strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:         strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider:     strings.TrimSpace(acquisition.SourceProvider),
+		Message:            strings.TrimSpace(acquisition.Message),
 	}
 }
 

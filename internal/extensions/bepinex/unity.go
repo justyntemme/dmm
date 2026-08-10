@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -36,21 +37,23 @@ const (
 )
 
 type RuntimeAcquisitionOptions struct {
-	ID             string
-	Name           string
-	Version        string
-	Catalog        string
-	Mode           string
-	URL            string
-	ArchiveName    string
-	Instructions   string
-	Required       bool
-	AutoAcquire    bool
-	SourceModID    string
-	SourceFileID   string
-	SourceGame     string
-	SourceProvider string
-	Message        string
+	ID                 string
+	Name               string
+	Version            string
+	Catalog            string
+	Mode               string
+	URL                string
+	ArchiveName        string
+	LatestAssetPattern string
+	VersionConstraint  string
+	Instructions       string
+	Required           bool
+	AutoAcquire        bool
+	SourceModID        string
+	SourceFileID       string
+	SourceGame         string
+	SourceProvider     string
+	Message            string
 }
 
 // UnityGameSpec captures the Vortex modtype-bepinex boundary for games whose
@@ -176,18 +179,21 @@ func GitHubRuntimeAcquisition(autoAcquire bool, version, archiveName string) gam
 		urlValue = "https://github.com/BepInEx/BepInEx/releases/download/" + url.PathEscape(tag) + "/" + url.PathEscape(archiveName)
 	}
 	return RuntimeAcquisition(RuntimeAcquisitionOptions{
-		ID:             "bepinex-" + acquisitionIDPart(version) + "-" + acquisitionIDPart(strings.TrimSuffix(archiveName, filepath.Ext(archiveName))),
-		Name:           "BepInEx " + version,
-		Version:        version,
-		Catalog:        "github",
-		Mode:           "direct",
-		URL:            urlValue,
-		ArchiveName:    archiveName,
-		Instructions:   "Vortex modtype-bepinex resolves this game-pinned BepInEx runtime from the BepInEx GitHub release assets. DMM resolves the same source-verified release asset through the captured-install pipeline.",
-		Required:       true,
-		AutoAcquire:    autoAcquire,
-		SourceProvider: "vortex-modtype-bepinex",
-		Message:        "Vortex modtype-bepinex uses BepInEx " + version + " from GitHub for this game. DMM acquires the same release asset through the shared captured-install pipeline.",
+		ID:                 "bepinex-" + acquisitionIDPart(version) + "-" + acquisitionIDPart(strings.TrimSuffix(archiveName, filepath.Ext(archiveName))),
+		Name:               "BepInEx " + version,
+		Version:            version,
+		Catalog:            "github",
+		Mode:               "direct",
+		URL:                urlValue,
+		ArchiveName:        archiveName,
+		LatestAssetPattern: bepinexGitHubAssetPattern(version, archiveName),
+		VersionConstraint:  bepinexGitHubVersionConstraint(version),
+		SourceModID:        "BepInEx/BepInEx",
+		Instructions:       "Vortex modtype-bepinex resolves this game-pinned BepInEx runtime from the BepInEx GitHub release assets. DMM resolves the same source-verified release asset through the captured-install pipeline.",
+		Required:           true,
+		AutoAcquire:        autoAcquire,
+		SourceProvider:     "vortex-modtype-bepinex",
+		Message:            "Vortex modtype-bepinex uses BepInEx " + version + " from GitHub for this game. DMM acquires the same release asset through the shared captured-install pipeline.",
 	})
 }
 
@@ -204,22 +210,40 @@ func RuntimeAcquisition(opts RuntimeAcquisitionOptions) gamehandler.RuntimeAcqui
 		required = true
 	}
 	return gamehandler.RuntimeAcquisitionSpec{
-		ID:             strings.TrimSpace(opts.ID),
-		Name:           strings.TrimSpace(opts.Name),
-		Version:        strings.TrimSpace(opts.Version),
-		Catalog:        strings.TrimSpace(opts.Catalog),
-		Mode:           strings.TrimSpace(opts.Mode),
-		URL:            strings.TrimSpace(opts.URL),
-		ArchiveName:    strings.TrimSpace(opts.ArchiveName),
-		Instructions:   strings.TrimSpace(opts.Instructions),
-		Required:       required,
-		AutoAcquire:    opts.AutoAcquire,
-		SourceModID:    strings.TrimSpace(opts.SourceModID),
-		SourceFileID:   strings.TrimSpace(opts.SourceFileID),
-		SourceGame:     strings.TrimSpace(opts.SourceGame),
-		SourceProvider: strings.TrimSpace(opts.SourceProvider),
-		Message:        strings.TrimSpace(opts.Message),
+		ID:                 strings.TrimSpace(opts.ID),
+		Name:               strings.TrimSpace(opts.Name),
+		Version:            strings.TrimSpace(opts.Version),
+		Catalog:            strings.TrimSpace(opts.Catalog),
+		Mode:               strings.TrimSpace(opts.Mode),
+		URL:                strings.TrimSpace(opts.URL),
+		ArchiveName:        strings.TrimSpace(opts.ArchiveName),
+		LatestAssetPattern: strings.TrimSpace(opts.LatestAssetPattern),
+		VersionConstraint:  strings.TrimSpace(opts.VersionConstraint),
+		Instructions:       strings.TrimSpace(opts.Instructions),
+		Required:           required,
+		AutoAcquire:        opts.AutoAcquire,
+		SourceModID:        strings.TrimSpace(opts.SourceModID),
+		SourceFileID:       strings.TrimSpace(opts.SourceFileID),
+		SourceGame:         strings.TrimSpace(opts.SourceGame),
+		SourceProvider:     strings.TrimSpace(opts.SourceProvider),
+		Message:            strings.TrimSpace(opts.Message),
 	}
+}
+
+func bepinexGitHubAssetPattern(version, archiveName string) string {
+	archiveName = strings.TrimSpace(archiveName)
+	if archiveName == "" {
+		return ""
+	}
+	return "^" + regexp.QuoteMeta(archiveName) + "$"
+}
+
+func bepinexGitHubVersionConstraint(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return ""
+	}
+	return "^" + version
 }
 
 func RuntimeAcquisitionPtr(spec gamehandler.RuntimeAcquisitionSpec) *gamehandler.RuntimeAcquisitionSpec {

@@ -171,6 +171,12 @@ func TestGitHubRuntimeAcquisitionBuildsPinnedAssetURL(t *testing.T) {
 	if acquisition.URL != "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip" {
 		t.Fatalf("url = %q", acquisition.URL)
 	}
+	if acquisition.SourceModID != "BepInEx/BepInEx" {
+		t.Fatalf("source mod id = %q", acquisition.SourceModID)
+	}
+	if acquisition.LatestAssetPattern != `^BepInEx_win_x64_5\.4\.23\.5\.zip$` || acquisition.VersionConstraint != "^5.4.23.5" {
+		t.Fatalf("latest resolution = pattern %q constraint %q", acquisition.LatestAssetPattern, acquisition.VersionConstraint)
+	}
 }
 
 func assertTarget(t *testing.T, plan installplan.Plan, target string) {
