@@ -15,7 +15,7 @@ func TestExtensionRegistersBlockedVortexUISurfaceMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "registerAction", "registerDialog", "registerReducer", "registerStartHook")
+	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "registerAction", "registerDialog", "registerReducer")
 	assertBlocked(t, "dialog", summary.Capabilities.ExtensionDialogs, "registerDialog")
 	assertBlocked(t, "dashlet", summary.Capabilities.ExtensionDashlets, "registerDashlet")
 	assertBlocked(t, "main page", summary.Capabilities.ExtensionMainPages, "registerMainPage")
@@ -25,7 +25,9 @@ func TestExtensionRegistersBlockedVortexUISurfaceMetadata(t *testing.T) {
 	assertBlocked(t, "profile file", summary.Capabilities.ProfileFiles, "registerProfileFile")
 	assertBlocked(t, "state reducer", summary.Capabilities.StateReducers, "registerReducer")
 	assertBlocked(t, "state persistor", summary.Capabilities.StatePersistors, "registerPersistor")
-	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "registerStartHook")
+	if len(summary.Capabilities.StartHooks) != 0 {
+		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
+	}
 }
 
 func assertBlocked(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {

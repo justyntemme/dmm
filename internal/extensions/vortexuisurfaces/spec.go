@@ -40,7 +40,6 @@ func Register(r sdk.Registrar) {
 		blockedAPI("registerProfileFile", "Register profile-managed file"),
 		blockedAPI("registerReducer", "Register extension state reducer"),
 		blockedAPI("registerPersistor", "Register extension state persistor"),
-		blockedAPI("registerStartHook", "Register startup hook"),
 	} {
 		r.RegisterExtensionAPI(api)
 	}
@@ -91,14 +90,6 @@ func Register(r sdk.Registrar) {
 		Scope:   "extension-state",
 		Status:  sdk.CapabilityStatusBlocked,
 		Message: blockedMessage,
-	})
-	r.RegisterStartHook(sdk.StartHookSpec{
-		ID:       "registerStartHook",
-		Name:     "Vortex registerStartHook",
-		Trigger:  "startup",
-		Priority: 0,
-		Status:   sdk.CapabilityStatusBlocked,
-		Message:  blockedMessage,
 	})
 }
 
