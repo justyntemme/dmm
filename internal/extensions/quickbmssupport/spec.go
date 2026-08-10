@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source exposes this QuickBMS API, but DMM has not implemented the QuickBMS executable bridge/runtime yet."
+const metadataMessage = "DMM has a typed QuickBMS process bridge, but no converted extension has wired this Vortex API through a DMM extension API namespace yet."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -35,8 +35,8 @@ func Register(r sdk.Registrar) {
 		{ID: "qbmsWrite", Name: "Write QuickBMS archive entries"},
 		{ID: "qbmsReimport", Name: "Reimport QuickBMS archive entries"},
 	} {
-		api.Status = sdk.CapabilityStatusBlocked
-		api.Message = blockedMessage
+		api.Status = sdk.CapabilityStatusMetadata
+		api.Message = metadataMessage
 		r.RegisterExtensionAPI(api)
 	}
 }

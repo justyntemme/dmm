@@ -20,7 +20,7 @@ func TestExtensionRegistersSourceBackedQuickBMSAPIMetadata(t *testing.T) {
 		byID[api.ID] = api
 	}
 	for _, id := range []string{"qbmsRegisterGame", "qbmsList", "qbmsExtract", "qbmsWrite", "qbmsReimport"} {
-		if byID[id].Status != sdk.CapabilityStatusBlocked || byID[id].Message == "" {
+		if byID[id].Status != sdk.CapabilityStatusMetadata || byID[id].Message == "" {
 			t.Fatalf("%s capability = %+v", id, byID[id])
 		}
 	}
