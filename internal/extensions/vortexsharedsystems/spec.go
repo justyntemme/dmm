@@ -126,7 +126,13 @@ func registerLocalGameSettings(r sdk.Registrar) {
 }
 
 func registerNewFileMonitor(r sdk.Registrar) {
-	r.RegisterExtensionAPI(blockedAPI("new-file-adoption", "Adopt newly created game files into a managed mod"))
+	r.RegisterExtensionAPI(readyAPI("new-file-single-owner-adoption", "Adopt single-owner generated game files into a managed mod"))
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "new-file-ambiguous-adoption",
+		Name:    "Resolve ambiguous generated file adoption",
+		Status:  sdk.CapabilityStatusBlocked,
+		Message: "DMM can detect generated-file changes and lets source-backed extensions adopt single-owner files. Ambiguous multi-owner adoption still needs a user-facing resolver before it can safely change managed staging state.",
+	})
 }
 
 func registerVortexTests(r sdk.Registrar) {
