@@ -105,8 +105,8 @@ func Register(r sdk.Registrar) {
 		ID:      "poe2-load-order-page",
 		Name:    "Pillars II Load Order",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes a drag/drop load-order page. DMM writes modconfig.json from profile priority today; generic drag/drop load-order UI remains to be implemented.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes modconfig.json order through generic extension load-order profile controls.",
 	})
 	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
 		ID:     "poe2-manifest-version",

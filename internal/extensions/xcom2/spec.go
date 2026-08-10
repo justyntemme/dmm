@@ -89,8 +89,8 @@ func Register(r sdk.Registrar) {
 		ID:      "xcom2-load-order-page",
 		Name:    "XCOM 2 Load Order",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes separate load-order pages for base XCOM 2 and War of the Chosen. DMM generates DefaultModOptions.ini from profile priority today; generic multi-variant load-order UI remains to be implemented.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes DefaultModOptions.ini order through generic extension load-order profile controls. Vortex's separate base/WOTC logical-game selection remains tracked by the multi-variant selector gap.",
 	})
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 		ID:      "xcom2-multi-variant-selector",

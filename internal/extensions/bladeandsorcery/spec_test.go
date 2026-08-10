@@ -75,7 +75,7 @@ func TestMulleModJSONArchivesAreBlocked(t *testing.T) {
 	}
 }
 
-func TestExtensionSummaryRecordsBlockedLoadOrderParity(t *testing.T) {
+func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	extension := gameext.MustCompileExtension(Extension())
 	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != officialRoot || !summary.Capabilities.GameRegistration.RequiresCleanup {
@@ -84,7 +84,7 @@ func TestExtensionSummaryRecordsBlockedLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) != 1 {
 		t.Fatalf("load orders = %+v", summary.Capabilities.LoadOrders)
 	}
-	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != "blocked" {
+	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
 	}
 	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.ExtensionActions[0].ActionTarget == nil {

@@ -96,8 +96,8 @@ func Register(r sdk.Registrar) {
 		ID:      "morrowind-plugins-page",
 		Name:    "Morrowind Plugins",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes a Morrowind plugin page. DMM writes Morrowind.ini from profile priority today; generic plugin drag/drop UI remains to be implemented.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes managed Morrowind.ini plugin order through generic extension load-order profile controls. Vortex filesystem watcher state and collection import/export remain separate blocked parity items.",
 	})
 	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
 		ID:      "morrowind-collection-data",

@@ -101,8 +101,8 @@ func Register(r sdk.Registrar) {
 		ID:      "bladeandsorcery-loadorder-page",
 		Name:    "Blade & Sorcery load order page",
 		Scope:   VortexGameID,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "DMM generates StreamingAssets/Mods/loadorder.json for managed mods, but the Vortex drag/drop load-order page and unmanaged external mod refresh remain blocked until DMM has a generic load-order page runtime.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes managed loadorder.json order through generic extension load-order profile controls. Vortex's unmanaged external mod refresh remains blocked until DMM has a safe unmanaged adoption/runtime refresh flow.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "bladeandsorcery-view-loadorder-file",

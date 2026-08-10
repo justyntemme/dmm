@@ -80,8 +80,8 @@ func Register(r sdk.Registrar) {
 		ID:      "conanexiles-load-order-page",
 		Name:    "Conan Exiles Load Order",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes a load-order page with mod-author ordering guidance. DMM generates modlist.txt from profile priority today; generic drag/drop load-order UI remains to be implemented.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes Conan modlist.txt order through the generic extension load-order profile controls. Vortex's explanatory mod-author guidance remains documented in extension metadata.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "conanexiles-ensure-mods-folder",

@@ -96,8 +96,8 @@ func Register(r sdk.Registrar) {
 		ID:      "kingdomcomedeliverance-load-order-page",
 		Name:    "Kingdom Come Load Order",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes a drag/drop load-order page. DMM writes mod_order.txt from profile priority today; generic drag/drop load-order UI remains to be implemented.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes mod_order.txt order through generic extension load-order profile controls. Vortex collection import/export remains tracked as a separate blocked collection feature.",
 	})
 	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
 		ID:      "kingdomcomedeliverance-collection-data",
