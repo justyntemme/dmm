@@ -26,6 +26,9 @@ func TestExtensionRegistersPillarsCapabilities(t *testing.T) {
 	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if !hasSetupFile(summary.Capabilities.GameSetups, configRootID, modConfigFile) {
+		t.Fatalf("setup actions = %+v", summary.Capabilities.GameSetups)
+	}
 }
 
 func TestOverrideTargetRootUsesSteamVariantByDefault(t *testing.T) {
@@ -177,4 +180,15 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func hasSetupFile(setups []gameext.FeatureSummary, rootID, rel string) bool {
+	for _, setup := range setups {
+		for _, action := range setup.SetupActions {
+			if action.Kind == sdk.GameSetupActionEnsureFile && action.TargetRootID == rootID && action.RelativePath == rel {
+				return true
+			}
+		}
+	}
+	return false
 }
