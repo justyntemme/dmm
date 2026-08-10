@@ -26,6 +26,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertStatusWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "test-setup-uninstall-entry", sdk.CapabilityStatusMetadata)
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames")
+	assertBlocked(t, "event handler", summary.Capabilities.EventHandlers, "fnis-will-deploy", "fnis-did-deploy")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_game_settings")
 	assertReady(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-plugin-index-lock")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "test-gameversion-state")

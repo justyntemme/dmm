@@ -967,9 +967,12 @@ type StartHookSpec struct {
 }
 
 type EventHandlerSpec struct {
+	ID      string
 	Event   string
 	Name    string
 	Handler EventHandlerFunc
+	Status  string
+	Message string
 }
 
 const (

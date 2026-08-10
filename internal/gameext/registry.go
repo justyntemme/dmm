@@ -2087,7 +2087,17 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		})
 	}
 	for _, handler := range extension.EventHandlers {
-		summary.Capabilities.EventHandlers = append(summary.Capabilities.EventHandlers, FeatureSummary{ID: handler.Event, Name: handler.Name})
+		id := strings.TrimSpace(handler.ID)
+		if id == "" {
+			id = handler.Event
+		}
+		summary.Capabilities.EventHandlers = append(summary.Capabilities.EventHandlers, FeatureSummary{
+			ID:      id,
+			Name:    handler.Name,
+			Trigger: handler.Event,
+			Status:  defaultString(handler.Status, sdk.CapabilityStatusReady),
+			Message: handler.Message,
+		})
 	}
 	sortFeatureSummaries(summary.Capabilities.ModTypes)
 	sortFeatureSummaries(summary.Capabilities.Installers)

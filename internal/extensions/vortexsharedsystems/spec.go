@@ -63,6 +63,8 @@ func registerFNIS(r sdk.Registrar) {
 	r.RegisterExtensionToDo(blockedToDo("fnis-install", "Install FNIS integration", "gamemode-activated"))
 	r.RegisterExtensionAction(blockedAction("fnis-generate", "Generate FNIS for Users", "mod-icons", "tool"))
 	r.RegisterExtensionTest(blockedTest("fnis-integration", "FNIS integration check", "gamemode-activated"))
+	r.RegisterEventHandler(blockedEventHandler("fnis-will-deploy", sdk.EventWillDeploy, "FNIS animation checksum pre-deploy hook"))
+	r.RegisterEventHandler(blockedEventHandler("fnis-did-deploy", sdk.EventDidDeploy, "FNIS generator post-deploy hook"))
 }
 
 func registerGamebryoSystems(r sdk.Registrar) {
@@ -234,6 +236,10 @@ func blockedDialog(id, name, scope string) sdk.ExtensionDialogSpec {
 
 func blockedMainPage(id, name, scope string) sdk.ExtensionMainPageSpec {
 	return sdk.ExtensionMainPageSpec{ID: id, Name: name, Scope: scope, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
+}
+
+func blockedEventHandler(id, event, name string) sdk.EventHandlerSpec {
+	return sdk.EventHandlerSpec{ID: id, Event: event, Name: name, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
 }
 
 func Sources() []sdk.SourceRef {
