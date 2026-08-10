@@ -10824,10 +10824,11 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
-			AppID:     appID,
-			Event:     gameext.EventProfileWillChange,
-			Source:    "profile-delete-switch",
-			ProfileID: replacement.ID,
+			AppID:        appID,
+			Event:        gameext.EventProfileWillChange,
+			Source:       "profile-delete-switch",
+			ProfileID:    replacement.ID,
+			OldProfileID: profile.ID,
 		}); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
@@ -10929,15 +10930,6 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
-		AppID:     appID,
-		Event:     gameext.EventProfileWillChange,
-		Source:    "profile-switch",
-		ProfileID: profileID,
-	}); err != nil {
-		writeError(w, http.StatusConflict, err)
-		return
-	}
 	currentProfile, hasCurrentProfile, err := s.defaultProfileForSteamApp(r.Context(), appID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -10949,7 +10941,27 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:        appID,
+			Event:        gameext.EventProfileWillChange,
+			Source:       "profile-switch",
+			ProfileID:    profileID,
+			OldProfileID: currentProfile.ID,
+		}); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		if err := s.switchProfileSettings(r.Context(), appID, "profile-switch", currentProfile, targetProfile, true); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+	} else {
+		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+			AppID:     appID,
+			Event:     gameext.EventProfileWillChange,
+			Source:    "profile-switch",
+			ProfileID: profileID,
+		}); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
 		}
@@ -16103,6 +16115,7 @@ type lifecycleEventRequest struct {
 	Event              string
 	Source             string
 	ProfileID          int64
+	OldProfileID       int64
 	ManagedFiles       []deploy.AppliedFile
 	ModIDs             []int64
 	Mods               []storage.InstalledMod
@@ -16156,6 +16169,7 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 		GamePath:           game.GamePath,
 		LibraryPath:        game.LibraryPath,
 		ProfileID:          profileID,
+		OldProfileID:       req.OldProfileID,
 		ProfileName:        profile.Name,
 		StagingRoot:        stagingRoot,
 		WorkDir:            workDir,

@@ -24,13 +24,14 @@
 - Basic managed `mods.settings` generation exists through an extension deploy hook.
 - Menu `.part.txt` fragments are merged by the Witcher 3 extension during `will-deploy`: DMM scans enabled `witcher3menumodroot` staging folders, ignores `input.xml` fragments like Vortex, merges fragment INI keys over the current or `.vortex_backup` Documents settings file, and returns restore-aware `patch-existing` mappings for files such as `input.settings`, `user.settings`, and `dx12user.settings`.
 - Config-matrix XML files are merged by the Witcher 3 extension during `will-deploy`: DMM removes the raw config XML deployment mapping, reads the native or `.vortex_backup` game file, merges `UserConfig.Group` nodes by `id`, replaces matching `VisibleVars.Var` nodes by `id`, appends missing vars/groups, and returns one restore-aware `patch-existing` mapping.
+- Script Merger profile-local artifact sync mirrors Vortex `local_merges`: on profile changes the extension stores/restores `MergeInventory.xml`, the generated `mods.settings`, and the configured merged scripts folder under DMM profile artifact storage. Core only passes generic old/new profile lifecycle data; Witcher-specific artifact names and paths remain in the Witcher extension.
+- Script Merger live validation is exposed as a runnable DMM extension diagnostic. It checks the DMM-managed Script Merger executable/config paths and reports a warning if script-relevant mods are enabled without a managed Script Merger install.
 
 ## Beta Gaps
 
 - Vortex hidden menu-mod cache/adoption behavior is incomplete.
-- Script Merger execution still needs live validation on Deck after a managed tool install.
-- Manual load-order preservation and full load-order UI semantics are incomplete.
-- Collection/profile data behavior needs parity review.
+- Full collection import/export UI semantics need integration with DMM collection workflows; the runtime pieces for load-order/menu/Script Merger profile artifacts are represented.
+- Manual load-order UI semantics need final UX parity review against DMM's profile priority controls.
 - Live archive validation is required.
 
 ## Validation Targets

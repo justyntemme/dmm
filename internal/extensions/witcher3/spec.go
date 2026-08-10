@@ -127,6 +127,30 @@ func Register(r sdk.Registrar) {
 		Name:    "Configure Witcher 3 Script Merger",
 		Handler: didInstallScriptMerger,
 	})
+	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
+		ID:      "witcher3-script-merges",
+		Name:    "Witcher 3 profile-local Script Merger output",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex local_merges behavior by storing Script Merger inventory, load order, and merged scripts per profile during profile changes.",
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "witcher3-script-merger-install",
+		Name:    "Witcher 3 Script Merger installation check",
+		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Validates the DMM-managed Witcher 3 Script Merger executable and config file before launch.",
+		Check:   checkScriptMergerInstall,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventProfileWillChange,
+		Name:    "Store Witcher 3 Script Merger output in the old profile",
+		Handler: profileWillChangeScriptMergerArtifacts,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventProfileDidChange,
+		Name:    "Restore Witcher 3 Script Merger output from the active profile",
+		Handler: profileDidChangeScriptMergerArtifacts,
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "did-deploy",
 		Name:    "Remind about Witcher 3 Script Merger after mod changes",

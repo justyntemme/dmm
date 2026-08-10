@@ -215,6 +215,112 @@ func TestExtensionDidInstallConfiguresScriptMerger(t *testing.T) {
 	}
 }
 
+func TestExtensionSyncsScriptMergerArtifactsAcrossProfileLifecycle(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	library := filepath.Join(root, "library")
+	gamePath := filepath.Join(library, "steamapps", "common", "The Witcher 3")
+	stagingRoot := filepath.Join(root, "data", "staging")
+	toolStaging := filepath.Join(stagingRoot, "tools", "script-merger")
+	writeFile(t, filepath.Join(toolStaging, "WitcherScriptMerger.exe"), "tool")
+	writeFile(t, filepath.Join(toolStaging, "WitcherScriptMerger.exe.config"), `<configuration><appSettings><add key="MergedModName" value="mod0000_CustomMerged"/></appSettings></configuration>`)
+	writeFile(t, filepath.Join(toolStaging, "MergeInventory.xml"), "<merge/>")
+	writeFile(t, filepath.Join(library, "steamapps", "compatdata", witcher3.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "The Witcher 3", "mods.settings"), "[modA]\nEnabled=1\n")
+	writeFile(t, filepath.Join(gamePath, "Mods", "mod0000_CustomMerged", "content", "scripts", "merged.ws"), "merged")
+
+	input := sdk.EventHandlerInput{
+		AppID:        witcher3.SteamAppID,
+		GamePath:     gamePath,
+		LibraryPath:  library,
+		StagingRoot:  stagingRoot,
+		ProfileID:    2,
+		OldProfileID: 1,
+		Mods: []sdk.DeploymentMod{{
+			ID:          99,
+			Name:        "W3 Script Merger",
+			ModType:     "witcher3-script-merger-tool",
+			StagingPath: toolStaging,
+			Metadata: []installplan.ModMetadata{{
+				Kind:            "tool",
+				Name:            "W3 Script Merger",
+				UniqueID:        "W3ScriptMerger",
+				StagingRelative: "WitcherScriptMerger.exe",
+			}},
+		}},
+	}
+	if _, err := registry.RunEventHandlers(context.Background(), witcher3.SteamAppID, sdk.EventProfileWillChange, input); err != nil {
+		t.Fatal(err)
+	}
+	artifactRoot := filepath.Join(root, "data", "profile-artifacts", witcher3.SteamAppID, "profiles", "1", "witcher3-script-merges")
+	if got := readFile(t, filepath.Join(artifactRoot, "MergeInventory.xml")); got != "<merge/>" {
+		t.Fatalf("merge inventory artifact = %q", got)
+	}
+	if got := readFile(t, filepath.Join(artifactRoot, "mod0000_CustomMerged", "content", "scripts", "merged.ws")); got != "merged" {
+		t.Fatalf("merged script artifact = %q", got)
+	}
+	writeFile(t, filepath.Join(artifactRoot, "MergeInventory.xml"), "<restored/>")
+	writeFile(t, filepath.Join(artifactRoot, "mod0000_CustomMerged", "content", "scripts", "merged.ws"), "restored")
+	input.ProfileID = 1
+	input.OldProfileID = 2
+	if _, err := registry.RunEventHandlers(context.Background(), witcher3.SteamAppID, sdk.EventProfileDidChange, input); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(toolStaging, "MergeInventory.xml")); got != "<restored/>" {
+		t.Fatalf("restored merge inventory = %q", got)
+	}
+	if got := readFile(t, filepath.Join(gamePath, "Mods", "mod0000_CustomMerged", "content", "scripts", "merged.ws")); got != "restored" {
+		t.Fatalf("restored merged script = %q", got)
+	}
+}
+
+func TestExtensionDiagnosesScriptMergerInstall(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging", "script-merger")
+	writeFile(t, filepath.Join(staging, "WitcherScriptMerger.exe"), "tool")
+	writeFile(t, filepath.Join(staging, "WitcherScriptMerger.exe.config"), "<configuration/>")
+	results, ran := registry.RunExtensionTests(context.Background(), witcher3.SteamAppID, sdk.EventGamemodeActivated, sdk.ExtensionTestInput{
+		Trigger: sdk.EventGamemodeActivated,
+		Mods: []sdk.DeploymentMod{{
+			ID:          99,
+			Name:        "W3 Script Merger",
+			ModType:     "witcher3-script-merger-tool",
+			StagingPath: staging,
+			Metadata: []installplan.ModMetadata{{
+				Kind:            "tool",
+				Name:            "W3 Script Merger",
+				UniqueID:        "W3ScriptMerger",
+				StagingRelative: "WitcherScriptMerger.exe",
+			}},
+		}},
+	})
+	if !ran || len(results) == 0 {
+		t.Fatalf("script merger diagnostics ran=%v results=%+v", ran, results)
+	}
+	if results[0].TestID != "witcher3-script-merger-install" || results[0].Status != sdk.HealthCheckStatusPassed {
+		t.Fatalf("script merger diagnostic = %+v", results[0])
+	}
+	os.Remove(filepath.Join(staging, "WitcherScriptMerger.exe.config"))
+	results, ran = registry.RunExtensionTests(context.Background(), witcher3.SteamAppID, sdk.EventGamemodeActivated, sdk.ExtensionTestInput{
+		Trigger: sdk.EventGamemodeActivated,
+		Mods: []sdk.DeploymentMod{{
+			ID:          99,
+			Name:        "W3 Script Merger",
+			ModType:     "witcher3-script-merger-tool",
+			StagingPath: staging,
+			Metadata: []installplan.ModMetadata{{
+				Kind:            "tool",
+				Name:            "W3 Script Merger",
+				UniqueID:        "W3ScriptMerger",
+				StagingRelative: "WitcherScriptMerger.exe",
+			}},
+		}},
+	})
+	if !ran || len(results) == 0 || results[0].Status != sdk.HealthCheckStatusFailed {
+		t.Fatalf("script merger diagnostic after removing config ran=%v results=%+v", ran, results)
+	}
+}
+
 func TestExtensionWillDeployGeneratesManagedModsSettings(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
 	if !registry.HasEventHandlerForSteamApp("292030", "will-deploy") {

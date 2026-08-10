@@ -196,3 +196,78 @@ func scriptMergerToolMetadata(version, sourceRel, stagingRel string) installplan
 		StagingRelative: stagingRel,
 	}
 }
+
+func checkScriptMergerInstall(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.ExtensionTestResult{}, err
+	}
+	toolDir, ok := scriptMergerToolDirectory(input.Mods)
+	if !ok {
+		if !witcherModsMayNeedScriptMerger(input.Mods) {
+			return sdk.ExtensionTestResult{
+				TestID:   "witcher3-script-merger-install",
+				TestName: "Witcher 3 Script Merger installation check",
+				Trigger:  input.Trigger,
+				Status:   sdk.HealthCheckStatusPassed,
+				Severity: sdk.HealthCheckSeverityInfo,
+				Message:  "No installed Witcher 3 mods currently require Script Merger validation.",
+			}, nil
+		}
+		return sdk.ExtensionTestResult{
+			TestID:   "witcher3-script-merger-install",
+			TestName: "Witcher 3 Script Merger installation check",
+			Trigger:  input.Trigger,
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "Witcher 3 Script Merger is not installed through DMM.",
+			Details:  "Install Script Merger before launching if enabled Witcher 3 mods add or change scripts.",
+			Actions:  []string{"Install Script Merger from the Witcher 3 game tools."},
+		}, nil
+	}
+	exe := filepath.Join(toolDir, scriptMergerToolExe)
+	config := filepath.Join(toolDir, scriptMergerConfigFile)
+	missing := []string{}
+	for _, path := range []string{exe, config} {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			missing = append(missing, filepath.ToSlash(path))
+		}
+	}
+	if len(missing) > 0 {
+		return sdk.ExtensionTestResult{
+			TestID:   "witcher3-script-merger-install",
+			TestName: "Witcher 3 Script Merger installation check",
+			Trigger:  input.Trigger,
+			Status:   sdk.HealthCheckStatusFailed,
+			Severity: sdk.HealthCheckSeverityError,
+			Message:  "Witcher 3 Script Merger is incomplete.",
+			Details:  strings.Join(missing, "\n"),
+			Actions:  []string{"Reinstall Script Merger from DMM."},
+		}, nil
+	}
+	return sdk.ExtensionTestResult{
+		TestID:   "witcher3-script-merger-install",
+		TestName: "Witcher 3 Script Merger installation check",
+		Trigger:  input.Trigger,
+		Status:   sdk.HealthCheckStatusPassed,
+		Severity: sdk.HealthCheckSeverityInfo,
+		Message:  "Witcher 3 Script Merger is installed and has a readable config file.",
+		Details:  filepath.ToSlash(exe),
+	}, nil
+}
+
+func witcherModsMayNeedScriptMerger(mods []sdk.DeploymentMod) bool {
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		if _, ok := scriptMergeRelevantModTypes[mod.ModType]; ok {
+			return true
+		}
+		for _, file := range mod.Files {
+			if witcherTargetMayNeedScriptMerge(file.TargetRelative) || witcherTargetMayNeedScriptMerge(file.Path) {
+				return true
+			}
+		}
+	}
+	return false
+}
