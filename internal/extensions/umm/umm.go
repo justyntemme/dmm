@@ -65,11 +65,13 @@ func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
 		modType = gameID + "-umm-mod"
 	}
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
-		ID:             "umm",
-		Name:           ToolName,
-		DefaultPrimary: true,
-		Status:         sdk.CapabilityStatusMetadata,
-		Message:        "Vortex locates Unity Mod Manager through the Windows registry and registers it as a default-primary dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata, can acquire the source-verified UMM package, and can queue installed tools through the Decky extension-tool launch path.",
+		ID:                 "umm",
+		Name:               ToolName,
+		ExecutableRelative: ToolExe,
+		RequiredFiles:      []string{ToolExe},
+		DefaultPrimary:     true,
+		Status:             sdk.CapabilityStatusReady,
+		Message:            "Vortex locates Unity Mod Manager through the Windows registry and registers it as a default-primary dashboard tool. DMM discovers installed UMM tool archives from managed tool metadata, can acquire the source-verified UMM package, and can queue installed tools through the Decky extension-tool launch path.",
 		Acquisition: &sdk.ToolAcquisitionSpec{
 			ID:             "umm-" + ToolVersion,
 			Name:           ToolName + " " + ToolVersion,
@@ -130,13 +132,13 @@ func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
 	})
 	message := "Vortex setup requires Unity Mod Manager to be installed from Nexus site mod " + ToolModID + " before " + gameName + " mods can function in game."
 	if opts.AutoDownload {
-		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM now exposes source-backed acquisition for the same UMM package through GitHub, but still needs a verified Deck-safe patch execution contract before enabling the full Vortex setup flow."
+		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM exposes source-backed acquisition for the same UMM package through GitHub and launches the managed UMM tool through Decky when user-side patch/configuration is required."
 	}
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 		ID:      gameID + "-umm-runtime",
 		Name:    gameName + " Unity Mod Manager runtime",
 		Trigger: "setup",
-		Status:  sdk.CapabilityStatusMetadata,
+		Status:  sdk.CapabilityStatusReady,
 		Message: message + " Source review shows Vortex installs/locates UMM and registers it as a tool; the actual patch/configuration step remains inside UMM's own UI.",
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gardenpaws"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/umm"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -63,6 +64,7 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 	seenUMMModType := false
 	seenToolInstaller := false
 	seenToolAcquisition := false
+	seenSetupToDo := false
 	for _, modType := range summary.Capabilities.ModTypes {
 		if modType.ID == umm.ToolModType {
 			seenUMMModType = true
@@ -74,12 +76,17 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 		}
 	}
 	for _, tool := range summary.Capabilities.SupportedTools {
-		if tool.ID == "umm" && tool.DefaultPrimary && tool.Acquisition != nil && tool.Acquisition.Catalog == "github" && tool.Acquisition.SourceModID == umm.ToolModID && tool.Acquisition.SourceFileID == umm.ToolFileID {
+		if tool.ID == "umm" && tool.Status == sdk.CapabilityStatusReady && tool.DefaultPrimary && tool.Acquisition != nil && tool.Acquisition.Catalog == "github" && tool.Acquisition.SourceModID == umm.ToolModID && tool.Acquisition.SourceFileID == umm.ToolFileID {
 			seenToolAcquisition = true
 		}
 	}
-	if !seenUMMModType || !seenToolInstaller || !seenToolAcquisition {
-		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v acquisition=%v summary=%+v", seenUMMModType, seenToolInstaller, seenToolAcquisition, summary.Capabilities)
+	for _, todo := range summary.Capabilities.ExtensionToDos {
+		if todo.ID == "gardenpaws-umm-runtime" && todo.Status == sdk.CapabilityStatusReady && todo.Message != "" {
+			seenSetupToDo = true
+		}
+	}
+	if !seenUMMModType || !seenToolInstaller || !seenToolAcquisition || !seenSetupToDo {
+		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v acquisition=%v todo=%v summary=%+v", seenUMMModType, seenToolInstaller, seenToolAcquisition, seenSetupToDo, summary.Capabilities)
 	}
 }
 
