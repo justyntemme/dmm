@@ -19,6 +19,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "new-file-ambiguous-adoption")
 	assertReadyWithMessage(t, "extension action", summary.Capabilities.ExtensionActions, "dependency-manage-rules")
+	assertReadyWithMessage(t, "extension setting", summary.Capabilities.ExtensionSettings, "dependency-workarounds")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-gamemode")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-mod-installed")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "local-game-settings-global-files")

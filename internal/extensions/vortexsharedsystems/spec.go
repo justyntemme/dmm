@@ -119,7 +119,13 @@ func registerDependencyManager(r sdk.Registrar) {
 		Status:   sdk.CapabilityStatusBlocked,
 		Message:  blockedMessage,
 	})
-	r.RegisterExtensionSetting(blockedSetting("dependency-workarounds", "Dependency workarounds settings", "settings"))
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:      "dependency-workarounds",
+		Name:    "Dependency workarounds settings",
+		Scope:   "profile-mod-rules",
+		Status:  sdk.CapabilityStatusReady,
+		Message: dependencyRuleMessage + " DMM stores these as profile-scoped mod rules instead of a Vortex global settings page.",
+	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "dependency-unsolved-conflicts", Name: "Unsolved dependency conflicts check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterStartHook(sdk.StartHookSpec{
 		ID:       "dependency-check-unsolved-conflicts",
