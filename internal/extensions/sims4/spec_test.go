@@ -24,6 +24,9 @@ func TestExtensionRegistersSims4VortexCapabilities(t *testing.T) {
 	if len(compiled.InstallPlan.Installers) != 2 {
 		t.Fatalf("installers = %+v", compiled.InstallPlan.Installers)
 	}
+	if !hasSetupDirectory(compiled.GameSetups, "Mods") || !hasSetupDirectory(compiled.GameSetups, "Mods/Vortex Mods") {
+		t.Fatalf("setup actions = %+v", compiled.GameSetups)
+	}
 	if !compiled.AllowNoSteamAppID {
 		t.Fatalf("expected source-compatible no-steam registration")
 	}
@@ -163,4 +166,15 @@ func assertEqualStringSlices(t *testing.T, got, want []string) {
 			t.Fatalf("got %+v, want %+v", got, want)
 		}
 	}
+}
+
+func hasSetupDirectory(setups []sdk.GameSetupSpec, rel string) bool {
+	for _, setup := range setups {
+		for _, action := range setup.Actions {
+			if action.Kind == sdk.GameSetupActionEnsureDirectory && action.TargetRootID == userDataRootID && action.RelativePath == rel {
+				return true
+			}
+		}
+	}
+	return false
 }
