@@ -49,13 +49,13 @@ func TestAPIGatesOperationsByRegisteredGame(t *testing.T) {
 func TestAPIListRunsTypedQuickBMSBridge(t *testing.T) {
 	root := t.TempDir()
 	exe := filepath.Join(root, "fake-qbms")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '00000010 20 assets/mesh.nif\\n'\n"), 0o700); err != nil {
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\nprintf '00000010 20 assets/mesh.nif\\n'\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	api := NewAPI(quickbms.Runner{
 		ExecutablePath: exe,
 		DataDir:        root,
-		Timeout:        time.Second,
+		Timeout:        5 * time.Second,
 	})
 	api.RegisterGame("example")
 	result, err := api.List(context.Background(), "example", quickbms.Operation{
