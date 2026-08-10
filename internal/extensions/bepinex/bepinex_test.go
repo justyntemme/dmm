@@ -36,6 +36,7 @@ func TestInjectorPlannerTargetsGameRoot(t *testing.T) {
 	plan, err := bepinex.BuildInjector("Example Game")(installplan.BuildInput{
 		GameID:        "100",
 		ExtractedRoot: root,
+		ArchiveName:   "BepInEx_x64_5.4.22.0.zip",
 		Installer: installplan.InstallerSpec{
 			ID:      "vortex:example:bepinex-injector",
 			ModType: "example-bepinex-injector",
@@ -47,6 +48,9 @@ func TestInjectorPlannerTargetsGameRoot(t *testing.T) {
 	assertTarget(t, plan, "BepInEx/core/BepInEx.dll")
 	assertTarget(t, plan, "winhttp.dll")
 	assertFileMode(t, plan, "run_bepinex.sh", "0755")
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != bepinex.MetadataKindRuntime || plan.Metadata[0].UniqueID != bepinex.MetadataUniqueID || plan.Metadata[0].Version != "5.4.22" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
 }
 
 func TestPluginPlannerStripsWrapperAndIgnoresExcludedDLLsAsMarkers(t *testing.T) {

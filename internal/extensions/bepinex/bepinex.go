@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -15,10 +16,14 @@ const (
 	rootFolder         = "BepInEx"
 	configManagerFile  = "configurationmanager.dll"
 	defaultPluginError = "archive does not contain a BepInEx plugin DLL"
+
+	MetadataKindRuntime = "bepinex-runtime"
+	MetadataUniqueID    = "bepinex"
 )
 
 var (
-	injectorFiles = map[string]struct{}{
+	runtimeArchiveVersion = regexp.MustCompile(`(?i)bepinex.*?([0-9]+\.[0-9]+\.[0-9]+)(?:\.[0-9]+)?`)
+	injectorFiles         = map[string]struct{}{
 		"0harmony.dll":                {},
 		"0harmony.xml":                {},
 		"0harmony20.dll":              {},
@@ -84,7 +89,19 @@ func BuildInjector(gameName string) installplan.CustomBuildFunc {
 				break
 			}
 		}
-		return buildFromContentRoot(input, rootRel, "", "vortex-bepinex-injector", rootFolder, "Vortex modtype-bepinex injector installer matched the BepInEx runtime package", gameName, true)
+		plan, err := buildFromContentRoot(input, rootRel, "", "vortex-bepinex-injector", rootFolder, "Vortex modtype-bepinex injector installer matched the BepInEx runtime package", gameName, true)
+		if err != nil {
+			return installplan.Plan{}, err
+		}
+		if version := runtimeVersionFromArchive(input.ArchiveName); version != "" {
+			plan.Metadata = append(plan.Metadata, installplan.ModMetadata{
+				Kind:     MetadataKindRuntime,
+				Name:     "BepInEx",
+				UniqueID: MetadataUniqueID,
+				Version:  version,
+			})
+		}
+		return plan, nil
 	}
 }
 
@@ -398,4 +415,12 @@ func listFiles(root string) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+func runtimeVersionFromArchive(archiveName string) string {
+	match := runtimeArchiveVersion.FindStringSubmatch(strings.TrimSpace(archiveName))
+	if match == nil {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
 }
