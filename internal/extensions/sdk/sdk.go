@@ -419,10 +419,17 @@ type PluginActivationSpec struct {
 	NativePluginManifests  []string
 	NativePluginPatterns   []string
 	SupportsLightPlugins   bool
+	LightPluginsCondition  *PluginActivationMetadataConditionSpec
 	SupportsMediumMasters  bool
 	SupportsBlueprintFiles bool
 	ArchiveCheckType       string
 	ArchiveCheckVersions   []int
+}
+
+type PluginActivationMetadataConditionSpec struct {
+	MetadataKind     string
+	MetadataName     string
+	MetadataUniqueID string
 }
 
 type UnmanagedMarkerSpec struct {

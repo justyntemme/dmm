@@ -1495,6 +1495,7 @@ func (s *Server) gamebryoArchiveCompatibilityTests(ctx context.Context, game sto
 		s.logger.Warn("Gamebryo archive compatibility check skipped because plugin activation state failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
 		return nil
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
 	native := installedNativePluginNames(game.GamePath, spec)
 	plugins := pluginActivationEntries(spec, active.Mappings, native, states)
 	activePlugins := make([]string, 0, len(plugins))
@@ -6547,6 +6548,7 @@ func (s *Server) lootSortInput(ctx context.Context, game storage.Game, profileID
 	if err != nil {
 		return lootmeta.SortInput{}, nil, err
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
 	native := installedNativePluginNames(game.GamePath, spec)
 	entries := pluginActivationEntries(spec, active.Mappings, native, states)
 	input := lootmeta.SortInput{
@@ -8494,7 +8496,7 @@ func (s *Server) fomodFileDependencyResolver(ctx context.Context, game storage.G
 		if state, ok := profilePluginStates[key]; ok {
 			return state
 		}
-		if state, ok := s.fomodDeployedPluginDependencyState(game, targetRel); ok {
+		if state, ok := s.fomodDeployedPluginDependencyState(ctx, game, targetRel); ok {
 			return state
 		}
 		return fomodFileDependencyState(targetBase, "", targetRel)
@@ -8506,12 +8508,13 @@ func (s *Server) fomodProfilePluginDependencyStates(ctx context.Context, game st
 	if !ok {
 		return nil
 	}
-	extensions := pluginExtensionSet(spec)
 	mods, err := s.db.InstalledModsForSteamApp(ctx, game.SteamAppID)
 	if err != nil {
 		s.logger.Warn("FOMOD profile plugin dependency state unavailable", "app_id", game.SteamAppID, "error", err)
 		return nil
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
+	extensions := pluginExtensionSet(spec)
 	states := map[string]string{}
 	for _, mod := range mods {
 		mappings, err := s.deployMappingsForInstalledMod(ctx, game, mod)
@@ -8532,10 +8535,15 @@ func (s *Server) fomodProfilePluginDependencyStates(ctx context.Context, game st
 	return states
 }
 
-func (s *Server) fomodDeployedPluginDependencyState(game storage.Game, targetRel string) (string, bool) {
+func (s *Server) fomodDeployedPluginDependencyState(ctx context.Context, game storage.Game, targetRel string) (string, bool) {
 	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
 	if !ok {
 		return "", false
+	}
+	if mods, err := s.db.InstalledModsForSteamApp(ctx, game.SteamAppID); err == nil {
+		spec = effectivePluginActivationSpec(spec, mods)
+	} else {
+		s.logger.Warn("FOMOD deployed plugin dependency state could not evaluate profile metadata conditions", "app_id", game.SteamAppID, "error", err)
 	}
 	pluginName, ok := pluginNameFromTarget(spec, targetRel, pluginExtensionSet(spec))
 	if !ok {
@@ -10400,11 +10408,12 @@ func (s *Server) profilePluginActivationContext(ctx context.Context, profileID i
 	if err != nil {
 		return profilePluginActivationContextResult{}, err
 	}
-	native := installedNativePluginNames(game.GamePath, spec)
 	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
 	if err != nil {
 		return profilePluginActivationContextResult{}, err
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
+	native := installedNativePluginNames(game.GamePath, spec)
 	entries := pluginActivationEntries(spec, active.Mappings, native, states)
 	byKey := make(map[string]pluginActivationEntry, len(entries))
 	for _, entry := range entries {
@@ -14424,6 +14433,7 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	if err != nil {
 		return pluginLoadOrderResponse{}, err
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
 	catalogsByModID := installedModCatalogsByID(mods)
 	for _, entry := range pluginActivationEntries(spec, active.Mappings, native, states) {
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
@@ -14460,7 +14470,6 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 	if !ok {
 		return nil, nil
 	}
-	native := installedNativePluginNames(game.GamePath, spec)
 	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
 	if err != nil {
 		return nil, err
@@ -14469,6 +14478,8 @@ func (s *Server) pluginActivationMappings(ctx context.Context, game storage.Game
 	if err != nil {
 		return nil, err
 	}
+	spec = effectivePluginActivationSpec(spec, mods)
+	native := installedNativePluginNames(game.GamePath, spec)
 	entries := pluginActivationEntries(spec, mappings, native, states)
 	if len(entries) == 0 {
 		if len(native) > 0 {
@@ -14613,6 +14624,68 @@ func inferSteamLibraryPath(gamePath string) string {
 		return ""
 	}
 	return gamePath[:idx]
+}
+
+func effectivePluginActivationSpec(spec gameext.PluginActivationSpec, mods []storage.InstalledMod) gameext.PluginActivationSpec {
+	if spec.SupportsLightPlugins || pluginActivationMetadataConditionSatisfied(spec.LightPluginsCondition, mods) {
+		spec.SupportsLightPlugins = true
+		spec.PluginExtensions = ensurePluginExtension(spec.PluginExtensions, ".esl")
+	}
+	return spec
+}
+
+func pluginActivationMetadataConditionSatisfied(condition *gameext.PluginActivationMetadataConditionSpec, mods []storage.InstalledMod) bool {
+	if condition == nil {
+		return false
+	}
+	kind := strings.TrimSpace(condition.MetadataKind)
+	name := strings.TrimSpace(condition.MetadataName)
+	uniqueID := strings.TrimSpace(condition.MetadataUniqueID)
+	if kind == "" && name == "" && uniqueID == "" {
+		return false
+	}
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		for _, metadata := range manifest.Metadata {
+			if metadataConditionMatches(kind, name, uniqueID, metadata) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func metadataConditionMatches(kind, name, uniqueID string, metadata installplan.ModMetadata) bool {
+	if kind != "" && !strings.EqualFold(strings.TrimSpace(metadata.Kind), kind) {
+		return false
+	}
+	if name != "" && !strings.EqualFold(strings.TrimSpace(metadata.Name), name) {
+		return false
+	}
+	if uniqueID != "" && !strings.EqualFold(strings.TrimSpace(metadata.UniqueID), uniqueID) {
+		return false
+	}
+	return true
+}
+
+func ensurePluginExtension(extensions []string, extension string) []string {
+	extension = strings.ToLower(strings.TrimSpace(extension))
+	if extension == "" {
+		return extensions
+	}
+	for _, existing := range extensions {
+		if strings.EqualFold(strings.TrimSpace(existing), extension) {
+			return extensions
+		}
+	}
+	out := append([]string(nil), extensions...)
+	return append(out, extension)
 }
 
 func pluginActivationEntries(spec gameext.PluginActivationSpec, mappings []deploy.FileMapping, nativePlugins []string, states map[string]storage.ProfilePluginActivationState) []pluginActivationEntry {

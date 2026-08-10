@@ -125,6 +125,11 @@ func Register(r sdk.Registrar) {
 		LOOTMasterlistGameID: "skyrimse",
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
+		LightPluginsCondition: &sdk.PluginActivationMetadataConditionSpec{
+			MetadataKind:     "vortex-attribute",
+			MetadataName:     "eslEnabler",
+			MetadataUniqueID: "true",
+		},
 		ArchiveCheckType:     "BSA",
 		ArchiveCheckVersions: []int{105},
 	})
@@ -154,12 +159,6 @@ func Register(r sdk.Registrar) {
 			ININame:     "SkyrimVR.ini",
 			DataRoot:    "Data",
 		}),
-	})
-	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
-		ID:      "skyrimvr-dynamic-esl-support",
-		Name:    "Skyrim VR dynamic ESL support",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex toggles Skyrim VR ESL plugin support when an enabled mod has the eslEnabler attribute. DMM records the attribute but still needs a generic metadata-driven plugin-activation toggle.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

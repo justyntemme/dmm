@@ -27,14 +27,28 @@ func TestESLEnablerRoutesFilesUnderData(t *testing.T) {
 }
 
 func TestSummaryRecordsSkyrimVRCapabilities(t *testing.T) {
-	summary := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extension())}).ExtensionSummaries()[0]
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extension())})
+	summary := registry.ExtensionSummaries()[0]
 	if len(summary.Capabilities.PluginActivations) != 1 {
 		t.Fatalf("plugin activations = %+v", summary.Capabilities.PluginActivations)
+	}
+	activation, ok := registry.PluginActivationForSteamApp(SteamAppID)
+	if !ok {
+		t.Fatal("missing plugin activation")
+	}
+	if activation.SupportsLightPlugins {
+		t.Fatalf("Skyrim VR light plugins should be conditional, not static: %+v", activation)
+	}
+	if activation.LightPluginsCondition == nil ||
+		activation.LightPluginsCondition.MetadataKind != "vortex-attribute" ||
+		activation.LightPluginsCondition.MetadataName != "eslEnabler" ||
+		activation.LightPluginsCondition.MetadataUniqueID != "true" {
+		t.Fatalf("light plugin condition = %+v", activation.LightPluginsCondition)
 	}
 	if len(summary.Capabilities.SupportedTools) != 2 {
 		t.Fatalf("supported tools = %+v", summary.Capabilities.SupportedTools)
 	}
-	if len(summary.Capabilities.ExtensionAPIs) != 1 || summary.Capabilities.ExtensionAPIs[0].Status != "blocked" {
+	if len(summary.Capabilities.ExtensionAPIs) != 0 {
 		t.Fatalf("extension APIs = %+v", summary.Capabilities.ExtensionAPIs)
 	}
 }

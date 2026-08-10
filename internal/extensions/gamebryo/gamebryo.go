@@ -27,6 +27,7 @@ type PluginActivationOptions struct {
 	NativePluginManifests  []string
 	NativePluginPatterns   []string
 	SupportsLightPlugins   bool
+	LightPluginsCondition  *sdk.PluginActivationMetadataConditionSpec
 	SupportsMediumMasters  bool
 	SupportsBlueprintFiles bool
 	ArchiveCheckType       string
@@ -72,11 +73,20 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 		NativePluginManifests:  append([]string(nil), opts.NativePluginManifests...),
 		NativePluginPatterns:   append([]string(nil), opts.NativePluginPatterns...),
 		SupportsLightPlugins:   opts.SupportsLightPlugins,
+		LightPluginsCondition:  cloneMetadataCondition(opts.LightPluginsCondition),
 		SupportsMediumMasters:  opts.SupportsMediumMasters,
 		SupportsBlueprintFiles: opts.SupportsBlueprintFiles,
 		ArchiveCheckType:       strings.TrimSpace(opts.ArchiveCheckType),
 		ArchiveCheckVersions:   append([]int(nil), opts.ArchiveCheckVersions...),
 	}
+}
+
+func cloneMetadataCondition(condition *sdk.PluginActivationMetadataConditionSpec) *sdk.PluginActivationMetadataConditionSpec {
+	if condition == nil {
+		return nil
+	}
+	clone := *condition
+	return &clone
 }
 
 func defaultPluginFile(value, fallback string) string {

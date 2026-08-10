@@ -117,6 +117,11 @@ func Register(r sdk.Registrar) {
 		LOOTMasterlistGameID: "fallout4",
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"fallout4.esm", "fallout4_vr.esm"},
+		LightPluginsCondition: &sdk.PluginActivationMetadataConditionSpec{
+			MetadataKind:     "vortex-attribute",
+			MetadataName:     "eslEnabler",
+			MetadataUniqueID: "true",
+		},
 		ArchiveCheckType:     "BA2",
 		ArchiveCheckVersions: []int{1},
 	})
@@ -149,12 +154,6 @@ func Register(r sdk.Registrar) {
 			ININame:     "Fallout4Custom.ini",
 			DataRoot:    "Data",
 		}),
-	})
-	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
-		ID:      "fallout4vr-dynamic-esl-support",
-		Name:    "Fallout 4 VR dynamic ESL support",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex toggles Fallout 4 VR ESL plugin support when an enabled mod has the eslEnabler attribute. DMM records the attribute but still needs a generic metadata-driven plugin-activation toggle.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

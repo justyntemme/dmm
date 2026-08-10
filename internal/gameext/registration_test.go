@@ -840,12 +840,13 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				}},
 			})
 			r.RegisterPluginActivation(sdk.PluginActivationSpec{
-				ID:               "plugins",
-				Name:             "Plugins",
-				GameDataRoot:     "../Data",
-				AppDataPath:      "Bad",
-				Format:           "weird",
-				PluginExtensions: []string{"esp"},
+				ID:                    "plugins",
+				Name:                  "Plugins",
+				GameDataRoot:          "../Data",
+				AppDataPath:           "Bad",
+				Format:                "weird",
+				PluginExtensions:      []string{"esp"},
+				LightPluginsCondition: &sdk.PluginActivationMetadataConditionSpec{},
 				NativePluginManifests: []string{
 					"/Bad.ccc",
 				},
@@ -931,6 +932,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"plugin activation plugins game data root: path traversal is not allowed",
 		"plugin activation plugins format must be original or asterisked",
 		"plugin activation plugins plugin extension must be a file extension",
+		"plugin activation plugins light-plugin condition must declare metadata kind, name, or unique id",
 		"plugin activation plugins native plugin manifest: absolute path is not allowed",
 		"unmanaged marker bad/marker id must be a simple identifier",
 		"unmanaged marker bad/marker name is required",

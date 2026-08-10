@@ -34,6 +34,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/download"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fallout4vr"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -10895,6 +10896,140 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if otherIdx == -1 || exampleIdx == -1 || otherIdx > exampleIdx {
 		t.Fatalf("loadorder.txt after reorder = %q", string(loadOrderText))
 	}
+}
+
+func TestGamebryoPluginActivationEnablesLightPluginsFromProfileMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	libraryPath := filepath.Join(root, "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4 VR")
+	if err := os.MkdirAll(filepath.Join(gamePath, "Data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Fallout4.esm"), []byte("native"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4vr.SteamAppID,
+		Name:        fallout4vr.Name,
+		InstallDir:  "Fallout 4 VR",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	pluginStaging := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "fallout4", "mods", "light-plugin", "files", "1")
+	pluginPath := filepath.Join(pluginStaging, "Lightweight.esl")
+	if err := os.MkdirAll(filepath.Dir(pluginPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pluginPath, []byte("plugin"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pluginManifest, err := stagedManifestJSONWithPlan(pluginStaging, installplan.Plan{
+		GameID:    fallout4vr.SteamAppID,
+		ModType:   "fallout4vr-data-root",
+		PlannerID: "test:data-root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Lightweight.esl",
+			TargetRelative:  "Data/Lightweight.esl",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: fallout4vr.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "light-plugin",
+			FileID:     "1",
+		},
+		Name:         "Lightweight Plugin",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "light.zip"),
+		StagingPath:  pluginStaging,
+		ManifestJSON: pluginManifest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := srv.buildGameDeployPlan(context.Background(), fallout4vr.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := deployActionsByTarget(plan.Actions)["plugins.txt"]; ok {
+		t.Fatalf("plugins.txt should not be generated before ESL enabler metadata is active: %+v", plan.Actions)
+	}
+
+	enablerStaging := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "fallout4", "mods", "esl-enabler", "files", "1")
+	enablerPath := filepath.Join(enablerStaging, "Daytripper4.dll")
+	if err := os.MkdirAll(filepath.Dir(enablerPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(enablerPath, []byte("dll"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	enablerManifest, err := stagedManifestJSONWithPlan(enablerStaging, installplan.Plan{
+		GameID:    fallout4vr.SteamAppID,
+		ModType:   "dinput",
+		PlannerID: "vortex:fallout4vr:esl-enabler",
+		Metadata: []installplan.ModMetadata{{
+			Kind:     "vortex-attribute",
+			Name:     "eslEnabler",
+			UniqueID: "true",
+		}},
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "Daytripper4.dll",
+			TargetRelative:  "Data/Daytripper4.dll",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: fallout4vr.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "fallout4",
+			ModID:      "esl-enabler",
+			FileID:     "1",
+		},
+		Name:         "ESL Enabler",
+		Version:      "1",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "enabler.zip"),
+		StagingPath:  enablerStaging,
+		ManifestJSON: enablerManifest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err = srv.buildGameDeployPlan(context.Background(), fallout4vr.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pluginsAction, ok := deployActionsByTarget(plan.Actions)["plugins.txt"]
+	if !ok {
+		t.Fatalf("plugins.txt should be generated once ESL enabler metadata is active: %+v", plan.Actions)
+	}
+	body, err := os.ReadFile(pluginsAction.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "*Lightweight.esl") {
+		t.Fatalf("plugins.txt body = %q", string(body))
+	}
+}
+
+func deployActionsByTarget(actions []deploy.Action) map[string]deploy.Action {
+	out := make(map[string]deploy.Action, len(actions))
+	for _, action := range actions {
+		out[action.TargetRelative] = action
+	}
+	return out
 }
 
 func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {

@@ -90,6 +90,7 @@ type LauncherParameterSpec = sdk.LauncherParameterSpec
 type InstallPlatformSpec = sdk.InstallPlatformSpec
 type InstallerChoiceSpec = sdk.InstallerChoiceSpec
 type PluginActivationSpec = sdk.PluginActivationSpec
+type PluginActivationMetadataConditionSpec = sdk.PluginActivationMetadataConditionSpec
 type ConflictIgnoreSpec = sdk.ConflictIgnoreSpec
 type DeployIgnoreSpec = sdk.DeployIgnoreSpec
 type PackedArchiveMutationSpec = sdk.PackedArchiveMutationSpec

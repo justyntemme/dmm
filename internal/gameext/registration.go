@@ -1057,6 +1057,11 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 				errs = append(errs, errors.New("plugin activation "+id+" plugin extension must be a file extension"))
 			}
 		}
+		if condition := spec.LightPluginsCondition; condition != nil {
+			if strings.TrimSpace(condition.MetadataKind) == "" && strings.TrimSpace(condition.MetadataName) == "" && strings.TrimSpace(condition.MetadataUniqueID) == "" {
+				errs = append(errs, errors.New("plugin activation "+id+" light-plugin condition must declare metadata kind, name, or unique id"))
+			}
+		}
 		for _, manifest := range spec.NativePluginManifests {
 			if err := validateRelativePath(manifest); err != nil {
 				errs = append(errs, errors.New("plugin activation "+id+" native plugin manifest: "+err.Error()))
