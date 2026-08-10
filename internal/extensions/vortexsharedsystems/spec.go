@@ -121,7 +121,12 @@ func registerDependencyManager(r sdk.Registrar) {
 }
 
 func registerLocalGameSettings(r sdk.Registrar) {
-	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "local-game-settings", Name: "Local game settings profile feature", Status: sdk.CapabilityStatusBlocked, Message: blockedMessage})
+	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
+		ID:      "local_game_settings",
+		Name:    "Local game settings profile feature",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM supports Vortex-style profile-local game settings through extension-declared profile files, per-profile feature state, profile-switch sync, and the bake-settings lifecycle event.",
+	})
 	r.RegisterExtensionTest(blockedTest("local-game-settings-global-files", "Global local game settings check", "gamemode-activated"))
 }
 
