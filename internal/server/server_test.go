@@ -11442,16 +11442,16 @@ func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {
 		t.Fatalf("extension orders = %+v", resp.ExtensionOrders)
 	}
 	order := resp.ExtensionOrders[0]
-	if order.ID != "conanexiles-modlist" || order.TargetRelative != "ConanSandbox/Mods/modlist.txt" || order.TargetRoot != "ConanSandbox/Mods" {
+	if order.ID != "conanexiles-modlist" || order.TargetRelative != "ConanSandbox/Mods/modlist.txt" || order.TargetRoot != "ConanSandbox/Mods" || !order.Mutable {
 		t.Fatalf("extension order metadata = %+v", order)
 	}
 	if len(order.Entries) != 2 {
 		t.Fatalf("extension order entries = %+v", order.Entries)
 	}
-	if order.Entries[0].InstalledModID != second.ID || order.Entries[0].Active || order.Entries[0].SourceTag != "github" {
+	if order.Entries[0].InstalledModID != second.ID || order.Entries[0].Active || order.Entries[0].SourceTag != "github" || !order.Entries[0].Mutable {
 		t.Fatalf("first extension order entry = %+v", order.Entries[0])
 	}
-	if order.Entries[1].InstalledModID != first.ID || !order.Entries[1].Active || order.Entries[1].SourceTag != "nexus" {
+	if order.Entries[1].InstalledModID != first.ID || !order.Entries[1].Active || order.Entries[1].SourceTag != "nexus" || !order.Entries[1].Mutable {
 		t.Fatalf("second extension order entry = %+v", order.Entries[1])
 	}
 	if len(order.Entries[1].Targets) != 1 || order.Entries[1].Targets[0] != "ConanSandbox/Mods/First.pak" {

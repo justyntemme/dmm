@@ -14690,6 +14690,12 @@ func (s *Server) extensionLoadOrdersForProfile(game storage.Game, profileID int6
 			}
 			return order.Entries[i].ID < order.Entries[j].ID
 		})
+		for idx := range order.Entries {
+			if order.Status == sdk.CapabilityStatusReady && order.Entries[idx].InstalledModID > 0 {
+				order.Entries[idx].Mutable = true
+				order.Mutable = true
+			}
+		}
 		out = append(out, order)
 	}
 	return out, warnings
@@ -14725,7 +14731,6 @@ func extensionLoadOrderEntryForMod(spec gameext.LoadOrderSpec, mod storage.Insta
 		ModType:        modType,
 		Priority:       mod.Priority,
 		Active:         mod.Enabled,
-		Mutable:        false,
 		Targets:        targets,
 	}, true, nil
 }

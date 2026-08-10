@@ -1958,6 +1958,42 @@
     await refreshSelectedGame({ refreshPreview: true });
   }
 
+  async function moveExtensionLoadOrderEntry(order: ExtensionLoadOrder, entry: ExtensionLoadOrderEntry, direction: -1 | 1) {
+    if (!selectedProfile || !entry.mutable || !entry.installed_mod_id) return;
+    const orderedEntries = order.entries.filter((item) => item.mutable && item.installed_mod_id);
+    const from = orderedEntries.findIndex((item) => item.installed_mod_id === entry.installed_mod_id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= orderedEntries.length) return;
+    const targetID = orderedEntries[to].installed_mod_id;
+    const current = [...installedMods].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    const movingIndex = current.findIndex((item) => item.id === entry.installed_mod_id);
+    const targetIndex = current.findIndex((item) => item.id === targetID);
+    if (movingIndex < 0 || targetIndex < 0) return;
+    const [moving] = current.splice(movingIndex, 1);
+    const adjustedTarget = current.findIndex((item) => item.id === targetID);
+    if (adjustedTarget < 0) return;
+    current.splice(direction < 0 ? adjustedTarget : adjustedTarget + 1, 0, moving);
+    error = "";
+    setBusyMod(entry.installed_mod_id, "order");
+    try {
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mod_ids: current.map((item) => item.id) })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: ProfileModOrderUpdateResult = await response.json();
+      installedMods = result.mods.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+      handleProfileApplyResult(result.apply);
+      await refreshSelectedGame({ refreshPreview: true });
+    } finally {
+      clearBusyMod(entry.installed_mod_id);
+    }
+  }
+
   function pluginActivationRowKey(plugin: PluginLoadOrderEntry) {
     return plugin.name.trim().toLowerCase();
   }
@@ -5772,6 +5808,8 @@
                       </div>
                     </article>
                     {#each order.entries as entry, index}
+                      {@const mutableEntries = order.entries.filter((item) => item.mutable && item.installed_mod_id)}
+                      {@const mutableIndex = mutableEntries.findIndex((item) => item.installed_mod_id === entry.installed_mod_id)}
                       <article class:inactive-plugin={!entry.active}>
                         <span>{index + 1}</span>
                         <div>
@@ -5784,6 +5822,12 @@
                             <small>{entry.targets.slice(0, 3).join(", ")}{entry.targets.length > 3 ? ` +${entry.targets.length - 3} more` : ""}</small>
                           {/if}
                         </div>
+                        {#if order.mutable && entry.mutable}
+                          <div class="plugin-row-actions">
+                            <button type="button" class="secondary-action compact" on:click={() => moveExtensionLoadOrderEntry(order, entry, -1)} disabled={mutableIndex <= 0}>Up</button>
+                            <button type="button" class="secondary-action compact" on:click={() => moveExtensionLoadOrderEntry(order, entry, 1)} disabled={mutableIndex < 0 || mutableIndex >= mutableEntries.length - 1}>Down</button>
+                          </div>
+                        {/if}
                       </article>
                     {/each}
                   {/each}
