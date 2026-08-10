@@ -2368,9 +2368,9 @@ func validateCapabilityStatus(kind, id, status, message string) error {
 	switch status {
 	case sdk.CapabilityStatusReady, sdk.CapabilityStatusMetadata:
 		return nil
-	case sdk.CapabilityStatusBlocked:
+	case sdk.CapabilityStatusBlocked, sdk.CapabilityStatusNotApplicable:
 		if strings.TrimSpace(message) == "" {
-			return errors.New(kind + " " + id + " blocked status requires a message")
+			return errors.New(kind + " " + id + " " + status + " status requires a message")
 		}
 		return nil
 	default:

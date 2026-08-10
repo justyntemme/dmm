@@ -390,6 +390,8 @@ These are important for the release after MVP, but should not block the first ve
 - Auth, pairing, HTTPS, or token-based access for non-LAN use.
 - Tailscale/non-LAN setup guidance beyond the current LAN-only toggle.
 - Full Vortex environment cleanup/import wizard.
+  - Include a source-verified migration audit for every Vortex extension behavior marked not applicable to DMM-created state. Historical Vortex staging repairs, including Dragon's Dogma's rom-only broken-installer migration, must become real detection/repair logic if DMM imports existing Vortex environments. Do not represent these as no-ops.
+  - Include a source-verified migration audit for every Vortex extension behavior marked not applicable to DMM-created state. Historical Vortex staging repairs, including Dragon's Dogma's rom-only broken-installer migration, must become real detection/repair logic if DMM imports existing Vortex environments. Do not represent these as no-ops.
 - Existing manual mod adoption.
 - Multiple mod upstreams such as ModDB, Thunderstore, GitHub Releases, direct URL, and local archive import.
 - Nexus browsing/search inside DMM.

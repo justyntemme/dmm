@@ -26,9 +26,10 @@ const (
 )
 
 const (
-	CapabilityStatusReady    = "ready"
-	CapabilityStatusMetadata = "metadata"
-	CapabilityStatusBlocked  = "blocked"
+	CapabilityStatusReady         = "ready"
+	CapabilityStatusMetadata      = "metadata"
+	CapabilityStatusBlocked       = "blocked"
+	CapabilityStatusNotApplicable = "not-applicable"
 )
 
 type RegistrationFunc func(Registrar)

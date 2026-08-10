@@ -87,8 +87,8 @@ func Register(r sdk.Registrar) {
 		Name:        "Dragon's Dogma nativePC/rom migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.1",
-		Status:      sdk.CapabilityStatusReady,
-		Message:     "Vortex migrates historical staged mods after an old rom-only packaging bug. DMM's source-backed installer never emitted that broken staging shape, so this migration is recorded as a ready no-op for DMM state.",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex migrates historical staged mods after an old rom-only packaging bug. This is not applicable to DMM-created state because DMM's first-party installer has always staged the full nativePC layout and never emitted the affected rom-only broken layout. If DMM later imports historical Vortex staging, that importer must implement a real repair instead of treating this migration as complete.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
