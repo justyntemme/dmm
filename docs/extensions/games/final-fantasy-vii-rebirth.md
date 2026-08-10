@@ -10,6 +10,7 @@
 
 - Cached Vortex extension package on the Steam Deck: `/home/deck/.vortex-linux/compatdata/pfx/drive_c/users/steamuser/AppData/Roaming/Vortex/plugins/Vortex Extension Update - Final Fantasy VII Rebirth Vortex Extension v0.4.0/index.js`
 - Nexus Vortex extension page: `https://www.nexusmods.com/site/mods/1150`
+- Public Vortex extension manifest entry: `Final Fantasy VII Rebirth Vortex Extension` v0.5.2, Nexus site mod `1150`, file `6893`.
 - Proton AppID/executable layout evidence: `https://github.com/ValveSoftware/Proton/issues/8408`
 
 ## Current DMM Capability
@@ -27,7 +28,7 @@
 ## Beta Gaps
 
 - Live FF7 Rebirth archive validation is still needed for pak, FF7RML, UE4SS, config, save, and root/binaries variants.
-- Vortex's optional UE4SS auto-download action is not implemented as an automatic DMM runtime helper yet.
+- Vortex's optional UE4SS auto-download action is not implemented as an automatic DMM runtime helper yet; the cached source is v0.4.0 and the current public manifest points at v0.5.2, so this must wait for source/package inspection instead of guessing the helper behavior.
 - Package-specific load-order semantics need validation against real FF7 Rebirth pak archives.
 
 ## Validation Targets

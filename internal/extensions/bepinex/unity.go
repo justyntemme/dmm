@@ -148,6 +148,7 @@ func DefaultRuntimeAcquisition(autoAcquire bool) gamehandler.RuntimeAcquisitionS
 	return RuntimeAcquisition(RuntimeAcquisitionOptions{
 		ID:             "bepinex-" + strings.ReplaceAll(DefaultRuntimeVersion, ".", "-") + "-x64",
 		Name:           "BepInEx " + DefaultRuntimeVersion + " x64",
+		Version:        DefaultRuntimeVersion,
 		Catalog:        "github",
 		Mode:           "direct",
 		URL:            DefaultRuntimeGitHubURL,
@@ -205,6 +206,7 @@ func RuntimeAcquisition(opts RuntimeAcquisitionOptions) gamehandler.RuntimeAcqui
 	return gamehandler.RuntimeAcquisitionSpec{
 		ID:             strings.TrimSpace(opts.ID),
 		Name:           strings.TrimSpace(opts.Name),
+		Version:        strings.TrimSpace(opts.Version),
 		Catalog:        strings.TrimSpace(opts.Catalog),
 		Mode:           strings.TrimSpace(opts.Mode),
 		URL:            strings.TrimSpace(opts.URL),

@@ -81,6 +81,7 @@ type RuntimeRequirementSpec struct {
 type RuntimeAcquisitionSpec struct {
 	ID             string
 	Name           string
+	Version        string
 	Catalog        string
 	Mode           string
 	URL            string
@@ -98,6 +99,7 @@ type RuntimeAcquisitionSpec struct {
 type RuntimeAcquisition struct {
 	ID             string `json:"id,omitempty"`
 	Name           string `json:"name,omitempty"`
+	Version        string `json:"version,omitempty"`
 	Catalog        string `json:"catalog,omitempty"`
 	Mode           string `json:"mode,omitempty"`
 	URL            string `json:"url,omitempty"`
@@ -234,6 +236,7 @@ func runtimeAcquisition(spec *RuntimeAcquisitionSpec) *RuntimeAcquisition {
 	return &RuntimeAcquisition{
 		ID:             strings.TrimSpace(spec.ID),
 		Name:           strings.TrimSpace(spec.Name),
+		Version:        strings.TrimSpace(spec.Version),
 		Catalog:        strings.TrimSpace(spec.Catalog),
 		Mode:           strings.TrimSpace(spec.Mode),
 		URL:            strings.TrimSpace(spec.URL),

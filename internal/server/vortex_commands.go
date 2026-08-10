@@ -67,6 +67,7 @@ type toolVariant struct {
 type toolAcquisition struct {
 	ID             string `json:"id,omitempty"`
 	Name           string `json:"name,omitempty"`
+	Version        string `json:"version,omitempty"`
 	Catalog        string `json:"catalog,omitempty"`
 	Mode           string `json:"mode,omitempty"`
 	URL            string `json:"url,omitempty"`
@@ -251,6 +252,7 @@ func discoveredRuntimeAcquisition(acquisition *gamehandler.RuntimeAcquisitionSpe
 	return &toolAcquisition{
 		ID:             strings.TrimSpace(acquisition.ID),
 		Name:           strings.TrimSpace(acquisition.Name),
+		Version:        strings.TrimSpace(acquisition.Version),
 		Catalog:        strings.TrimSpace(acquisition.Catalog),
 		Mode:           strings.TrimSpace(acquisition.Mode),
 		URL:            strings.TrimSpace(acquisition.URL),

@@ -1703,6 +1703,243 @@ func TestCheckGameModUpdatesRunsExtensionEventAndAutoAcquiresRuntime(t *testing.
 	}
 }
 
+func TestCheckGameModUpdatesQueuesRuntimeProviderReplacement(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999021"
+	const requirementID = "runtime-provider"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "runtime-replace",
+		Name:    "Runtime Replace",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"runtimereplace"},
+				VortexGameID: "runtimereplace",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "consumer", TargetRoot: "Mods"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "provider", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               requirementID,
+				Name:             "Runtime Provider",
+				Kind:             "mod-loader",
+				Required:         true,
+				ModTypes:         []string{"consumer"},
+				ProviderModTypes: []string{"provider"},
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:          "runtime-provider-new",
+					Name:        "Runtime Provider",
+					Version:     "2.0.0",
+					Catalog:     "github",
+					URL:         "https://github.com/example/runtime/releases/download/v2.0.0/runtime.zip",
+					ArchiveName: "runtime.zip",
+					Required:    true,
+					AutoAcquire: true,
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Runtime Replace",
+		InstallDir:  "Runtime Replace",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Runtime Replace"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "direct",
+			SourceURL:  "https://example.invalid/consumer.zip",
+			GameDomain: "runtimereplace",
+			ModID:      "consumer",
+			FileID:     "consumer.zip",
+		},
+		Name:         "Consumer Mod",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "consumer.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "consumer"),
+		ManifestJSON: `{"game_id":"` + appID + `","mod_type":"consumer","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://github.com/example/runtime/releases/download/v1.0.0/runtime.zip",
+			SteamAppID: appID,
+			GameDomain: "github",
+			ModID:      "example/runtime",
+			FileID:     githubReleaseFileID("v1.0.0", "runtime.zip"),
+		},
+		Name:         "Runtime Provider",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "runtime-old.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "runtime-old"),
+		ManifestJSON: `{"game_id":"` + appID + `","mod_type":"provider","files":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("runtime archive"))
+	}))
+	t.Cleanup(downloadServer.Close)
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{resolved: catalog.ResolvedDownload{
+		Catalog:    "github",
+		SourceURL:  "https://github.com/example/runtime/releases/download/v2.0.0/runtime.zip",
+		SteamAppID: appID,
+		GameDomain: "github",
+		ModID:      "example/runtime",
+		FileID:     githubReleaseFileID("v2.0.0", "runtime.zip"),
+		FileName:   "runtime.zip",
+		Version:    "2.0.0",
+		DownloadLinks: []catalog.DownloadLink{{
+			Name:      "GitHub release asset",
+			ShortName: "github",
+			URI:       downloadServer.URL + "/runtime.zip",
+		}},
+	}}}
+	srv.catalogMu.Unlock()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Acquisitions) != 1 || body.Acquisitions[0].Kind != "runtime" || body.Acquisitions[0].Requirement != requirementID || body.Acquisitions[0].Job == nil {
+		t.Fatalf("acquisitions = %+v", body.Acquisitions)
+	}
+	waiting := waitForJobStatus(t, srv, body.Acquisitions[0].Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(waiting.ID)
+	if !ok {
+		t.Fatalf("captured install %s missing", waiting.ID)
+	}
+	if pending.ReplaceInstalledModID != provider.ID || pending.ReplaceStagingPath != provider.StagingPath || pending.TargetProfileID != provider.ProfileID {
+		t.Fatalf("runtime update pending replacement = %+v provider = %+v", pending, provider)
+	}
+}
+
+func TestCheckGameModUpdatesSkipsRuntimeProviderWhenDeclaredSourceMatches(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999022"
+	const requirementID = "bepinex-runtime"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "runtime-source-match",
+		Name:    "Runtime Source Match",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"runtimesourcematch"},
+				VortexGameID: "runtimesourcematch",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "consumer", TargetRoot: "Mods"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "provider", DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               requirementID,
+				Name:             "BepInEx",
+				Kind:             "mod-loader",
+				Required:         true,
+				ModTypes:         []string{"consumer"},
+				ProviderModTypes: []string{"provider"},
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:           "bepinex-5-4-22-x64",
+					Name:         "BepInEx 5.4.22 x64",
+					Version:      "5.4.22",
+					Catalog:      "github",
+					URL:          "https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInEx_x64_5.4.22.0.zip",
+					ArchiveName:  "BepInEx_x64_5.4.22.0.zip",
+					Required:     true,
+					AutoAcquire:  true,
+					SourceGame:   "site",
+					SourceModID:  "115",
+					SourceFileID: "2526",
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Runtime Source Match",
+		InstallDir:  "Runtime Source Match",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Runtime Source Match"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "direct",
+			SourceURL:  "https://example.invalid/consumer.zip",
+			GameDomain: "runtimesourcematch",
+			ModID:      "consumer",
+			FileID:     "consumer.zip",
+		},
+		Name:         "Consumer Mod",
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(t.TempDir(), "consumer.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "consumer"),
+		ManifestJSON: `{"game_id":"` + appID + `","mod_type":"consumer","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			SourceURL:  "https://www.nexusmods.com/site/mods/115?tab=files&file_id=2526",
+			SteamAppID: appID,
+			GameDomain: "site",
+			ModID:      "115",
+			FileID:     "2526",
+		},
+		Name:         "BepInEx 5.4.22 x64",
+		Version:      "5.4.22",
+		ArchivePath:  filepath.Join(t.TempDir(), "bepinex.zip"),
+		StagingPath:  filepath.Join(t.TempDir(), "bepinex"),
+		ManifestJSON: `{"game_id":"` + appID + `","mod_type":"provider","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{err: errors.New("unexpected runtime acquisition resolve")}}
+	srv.catalogMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/mods/check-updates", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body modUpdateCheckResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Acquisitions) != 0 {
+		t.Fatalf("expected no runtime acquisition for matching declared source, got %+v", body.Acquisitions)
+	}
+}
+
 func TestModrinthUpdateProviderCachesAndQueuesLatestVersion(t *testing.T) {
 	srv := newTestServer(t)
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

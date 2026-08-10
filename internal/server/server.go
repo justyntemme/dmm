@@ -5924,8 +5924,23 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 			Extension:   extension.ID,
 			Acquisition: discoveredRuntimeAcquisition(&acquisition),
 		}
-		if runtimeRequirementProviderInstalled(mods, requirement.ProviderModTypes) {
-			s.logger.Info("extension runtime auto-acquire skipped; provider mod is already installed", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
+		if providerMod, ok := runtimeRequirementProviderMod(mods, requirement.ProviderModTypes, false, profileID); ok {
+			if runtimeAutoAcquireSourceIsUpdateCheck(source) {
+				if !providerMod.Enabled {
+					if enabledProvider, enabledOK := runtimeRequirementProviderMod(mods, requirement.ProviderModTypes, true, profileID); enabledOK {
+						providerMod = enabledProvider
+					} else {
+						s.logger.Info("extension runtime auto-update skipped; provider mod is installed but disabled", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
+						continue
+					}
+				}
+				updateResponse, queued := s.queueRuntimeProviderUpdateIfNeeded(ctx, appID, profileID, extension.ID, requirementID, providerMod, acquisition, response)
+				if queued {
+					responses = append(responses, updateResponse)
+				}
+				continue
+			}
+			s.logger.Info("extension runtime auto-acquire skipped; provider mod is already installed", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID, "installed_mod_id", providerMod.ID)
 			continue
 		}
 		if runtimeRequirementSatisfied(ctx, game.GamePath, requirement) {
@@ -5966,7 +5981,74 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 	return responses, nil
 }
 
+func (s *Server) queueRuntimeProviderUpdateIfNeeded(ctx context.Context, appID string, profileID int64, extensionID, requirementID string, providerMod storage.InstalledMod, acquisition gamehandler.RuntimeAcquisitionSpec, response autoAcquireResponse) (autoAcquireResponse, bool) {
+	if runtimeAcquisitionSourceMatchesInstalledProvider(providerMod, acquisition) {
+		s.logger.Info("extension runtime auto-update skipped; installed provider matches declared source", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID)
+		return response, false
+	}
+
+	acquisition.ID = strings.TrimSpace(acquisition.ID)
+	acquisition.Name = strings.TrimSpace(acquisition.Name)
+	acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
+	acquisition.URL = strings.TrimSpace(acquisition.URL)
+	acquisitionURL := runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
+	if acquisitionURL == "" {
+		response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
+		s.logger.Warn("extension runtime auto-update skipped; acquisition URL is empty", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID)
+		return response, true
+	}
+
+	resolved, err := s.resolveCatalogURL(ctx, catalog.ResolveRequest{
+		URL:        acquisitionURL,
+		SteamAppID: appID,
+		Source:     "extension-runtime-auto-update:" + requirementID,
+	})
+	if err != nil {
+		response.Error = err.Error()
+		s.logger.Warn("extension runtime auto-update resolve failed", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", acquisition.Catalog, "error", err)
+		return response, true
+	}
+	if runtimeAcquisitionMatchesInstalledProvider(providerMod, acquisition, resolved) {
+		s.logger.Info("extension runtime auto-update skipped; installed provider matches resolved target", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
+		return response, false
+	}
+
+	targetProfileID := profileID
+	if providerMod.ProfileID > 0 {
+		targetProfileID = providerMod.ProfileID
+	}
+	result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
+		URL:                   acquisitionURL,
+		SteamAppID:            appID,
+		Source:                "extension-runtime-auto-update:" + requirementID,
+		ProfileID:             targetProfileID,
+		ReplaceInstalledModID: providerMod.ID,
+		ReplaceStagingPath:    providerMod.StagingPath,
+	})
+	if err != nil {
+		response.Error = err.Error()
+		s.logger.Warn("extension runtime auto-update queue failed", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", acquisition.Catalog, "error", err)
+		return response, true
+	}
+	job := result.Job
+	response.Job = &job
+	response.Duplicate = result.Duplicate
+	response.DownloadStarted = result.DownloadStarted
+	response.AutoInstall = result.AutoInstall
+	s.logger.Info("extension runtime auto-update queued", "app_id", appID, "requirement_id", requirementID, "source_extension", extensionID, "installed_mod_id", providerMod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID, "job_id", result.Job.ID, "duplicate", result.Duplicate)
+	return response, true
+}
+
+func runtimeAutoAcquireSourceIsUpdateCheck(source string) bool {
+	return strings.EqualFold(strings.TrimSpace(source), "mod-update-check")
+}
+
 func runtimeRequirementProviderInstalled(mods []storage.InstalledMod, providerModTypes []string) bool {
+	_, ok := runtimeRequirementProviderMod(mods, providerModTypes, false, 0)
+	return ok
+}
+
+func runtimeRequirementProviderMod(mods []storage.InstalledMod, providerModTypes []string, requireEnabled bool, preferredProfileID int64) (storage.InstalledMod, bool) {
 	providers := map[string]struct{}{}
 	for _, modType := range providerModTypes {
 		modType = canonicalModType(modType)
@@ -5975,18 +6057,89 @@ func runtimeRequirementProviderInstalled(mods []storage.InstalledMod, providerMo
 		}
 	}
 	if len(providers) == 0 {
-		return false
+		return storage.InstalledMod{}, false
 	}
+	var fallback storage.InstalledMod
+	hasFallback := false
 	for _, mod := range mods {
+		if requireEnabled && !mod.Enabled {
+			continue
+		}
 		if _, ok := providers[canonicalModType(installedModType(mod))]; ok {
-			return true
+			if preferredProfileID > 0 && mod.ProfileID == preferredProfileID {
+				return mod, true
+			}
+			if !hasFallback {
+				fallback = mod
+				hasFallback = true
+			}
 		}
 	}
-	return false
+	if hasFallback {
+		return fallback, true
+	}
+	return storage.InstalledMod{}, false
 }
 
 func runtimeRequirementSatisfied(ctx context.Context, gamePath string, requirement gamehandler.RuntimeRequirementSpec) bool {
 	return requirement.Check != nil && len(requirement.Check(ctx, gamePath)) > 0
+}
+
+func runtimeAcquisitionMatchesInstalledProvider(mod storage.InstalledMod, acquisition gamehandler.RuntimeAcquisitionSpec, resolved catalog.ResolvedDownload) bool {
+	if runtimeAcquisitionSourceMatchesInstalledProvider(mod, acquisition) {
+		return true
+	}
+	if runtimeAcquisitionResolvedMatchesInstalledProvider(mod, resolved) {
+		return true
+	}
+	if runtimeAcquisitionHasConcreteIdentity(acquisition, resolved) {
+		return false
+	}
+	return runtimeAcquisitionVersionMatchesInstalledProvider(mod, acquisition)
+}
+
+func runtimeAcquisitionSourceMatchesInstalledProvider(mod storage.InstalledMod, acquisition gamehandler.RuntimeAcquisitionSpec) bool {
+	sourceModID := strings.TrimSpace(acquisition.SourceModID)
+	sourceFileID := strings.TrimSpace(acquisition.SourceFileID)
+	if sourceModID == "" || sourceFileID == "" {
+		return false
+	}
+	if !sameCatalogID(mod.SourceModID, sourceModID) || !sameCatalogID(mod.SourceFileID, sourceFileID) {
+		return false
+	}
+	sourceGame := strings.TrimSpace(acquisition.SourceGame)
+	return sourceGame == "" || sameCatalogID(mod.SourceGameDomain, sourceGame)
+}
+
+func runtimeAcquisitionResolvedMatchesInstalledProvider(mod storage.InstalledMod, resolved catalog.ResolvedDownload) bool {
+	if strings.TrimSpace(resolved.Catalog) == "" || strings.TrimSpace(resolved.ModID) == "" || strings.TrimSpace(resolved.FileID) == "" {
+		return false
+	}
+	if !sameCatalogID(mod.Catalog, resolved.Catalog) || !sameCatalogID(mod.SourceModID, resolved.ModID) || !sameCatalogID(mod.SourceFileID, resolved.FileID) {
+		return false
+	}
+	gameDomain := strings.TrimSpace(resolved.GameDomain)
+	return gameDomain == "" || sameCatalogID(mod.SourceGameDomain, gameDomain)
+}
+
+func runtimeAcquisitionHasConcreteIdentity(acquisition gamehandler.RuntimeAcquisitionSpec, resolved catalog.ResolvedDownload) bool {
+	if strings.TrimSpace(acquisition.SourceModID) != "" && strings.TrimSpace(acquisition.SourceFileID) != "" {
+		return true
+	}
+	if strings.TrimSpace(acquisition.URL) != "" {
+		return true
+	}
+	return strings.TrimSpace(resolved.Catalog) != "" && strings.TrimSpace(resolved.ModID) != "" && strings.TrimSpace(resolved.FileID) != ""
+}
+
+func runtimeAcquisitionVersionMatchesInstalledProvider(mod storage.InstalledMod, acquisition gamehandler.RuntimeAcquisitionSpec) bool {
+	version := strings.TrimSpace(acquisition.Version)
+	installed := strings.TrimSpace(mod.Version)
+	return version != "" && installed != "" && gamehandler.CompareSemanticVersions(installed, version) == 0
+}
+
+func sameCatalogID(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func (s *Server) queueRequiredRuntimeAcquisitionsForDeploy(ctx context.Context, appID string, job jobs.Job, source string) ([]autoAcquireResponse, bool, jobs.Job, error) {
@@ -11815,10 +11968,12 @@ func (s *Server) handleClearCapturedInstalls(w http.ResponseWriter, r *http.Requ
 }
 
 type capturedInstallURLRequest struct {
-	URL        string `json:"url"`
-	SteamAppID string `json:"steam_app_id"`
-	Source     string `json:"source"`
-	ProfileID  int64  `json:"profile_id,omitempty"`
+	URL                   string `json:"url"`
+	SteamAppID            string `json:"steam_app_id"`
+	Source                string `json:"source"`
+	ProfileID             int64  `json:"profile_id,omitempty"`
+	ReplaceInstalledModID int64  `json:"-"`
+	ReplaceStagingPath    string `json:"-"`
 }
 
 type capturedInstallBulkRequest struct {
@@ -12860,9 +13015,17 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
 		if req.ProfileID > 0 && pending.TargetProfileID != req.ProfileID {
 			pending.TargetProfileID = req.ProfileID
-			s.rememberCapturedInstall(job.ID, pending)
 			s.logger.Info("captured install duplicate target profile updated", "job_id", job.ID, "target_profile_id", req.ProfileID)
 		}
+		if req.ReplaceInstalledModID > 0 {
+			pending.ReplaceInstalledModID = req.ReplaceInstalledModID
+			pending.ReplaceStagingPath = strings.TrimSpace(req.ReplaceStagingPath)
+			if req.ProfileID > 0 {
+				pending.TargetProfileID = req.ProfileID
+			}
+			s.logger.Info("captured install duplicate replacement target updated", "job_id", job.ID, "replace_installed_mod_id", req.ReplaceInstalledModID, "target_profile_id", pending.TargetProfileID)
+		}
+		s.rememberCapturedInstall(job.ID, pending)
 		s.logger.Info("captured install duplicate reused", "job_id", job.ID, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "file_id", resolved.FileID)
 		resp := capturedInstallResponse{
 			Job:             jobAPIResponse(job),
@@ -12880,7 +13043,11 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 		return resp, nil
 	}
 
-	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), capturedInstallJobPayloadForTarget(s.games, resolved, req.ProfileID))
+	jobPayload := capturedInstallJobPayloadForTarget(s.games, resolved, req.ProfileID)
+	if req.ReplaceInstalledModID > 0 {
+		jobPayload["installed_mod_id"] = strconv.FormatInt(req.ReplaceInstalledModID, 10)
+	}
+	job := s.jobs.CreateWithPayload("captured-install", capturedInstallTitle(resolved), jobPayload)
 	resp := capturedInstallResponse{
 		Job:             jobAPIResponse(job),
 		Resolved:        resolved,
@@ -12900,11 +13067,13 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
 		resp.Job = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
-			Resolved:        resolved,
-			DownloadLinks:   resolved.DownloadLinks,
-			Source:          source,
-			ArchiveFileName: resolved.FileName,
-			TargetProfileID: req.ProfileID,
+			Resolved:              resolved,
+			DownloadLinks:         resolved.DownloadLinks,
+			Source:                source,
+			ArchiveFileName:       resolved.FileName,
+			ReplaceInstalledModID: req.ReplaceInstalledModID,
+			ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
+			TargetProfileID:       req.ProfileID,
 		})
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
@@ -12959,11 +13128,13 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 		job, _ = s.jobs.Wait(job.ID, "Captured; downloading archive from "+catalogDisplayName(resolved))
 		resp.Job = jobAPIResponse(job)
 		s.rememberCapturedInstall(job.ID, capturedInstall{
-			Resolved:        resolved,
-			DownloadLinks:   links,
-			Source:          source,
-			ArchiveFileName: archiveFileName,
-			TargetProfileID: req.ProfileID,
+			Resolved:              resolved,
+			DownloadLinks:         links,
+			Source:                source,
+			ArchiveFileName:       archiveFileName,
+			ReplaceInstalledModID: req.ReplaceInstalledModID,
+			ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
+			TargetProfileID:       req.ProfileID,
 		})
 		s.cfgMu.RLock()
 		autoInstall := s.cfg.Install.AutoInstallCapturedDownloads
@@ -12983,9 +13154,11 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 	job, _ = s.jobs.Wait(job.ID, "Captured; configure Nexus API key to resolve download links")
 	resp.Job = jobAPIResponse(job)
 	s.rememberCapturedInstall(job.ID, capturedInstall{
-		Resolved:        resolved,
-		Source:          source,
-		TargetProfileID: req.ProfileID,
+		Resolved:              resolved,
+		Source:                source,
+		ReplaceInstalledModID: req.ReplaceInstalledModID,
+		ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
+		TargetProfileID:       req.ProfileID,
 	})
 	return resp, nil
 }

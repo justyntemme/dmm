@@ -363,6 +363,7 @@ type ActionTargetSummary struct {
 type ToolAcquisitionSummary struct {
 	ID             string `json:"id,omitempty"`
 	Name           string `json:"name,omitempty"`
+	Version        string `json:"version,omitempty"`
 	Catalog        string `json:"catalog,omitempty"`
 	URL            string `json:"url,omitempty"`
 	ArchiveName    string `json:"archive_name,omitempty"`
@@ -2473,6 +2474,7 @@ func runtimeAcquisitionSummary(acquisition *gamehandler.RuntimeAcquisitionSpec) 
 	return &ToolAcquisitionSummary{
 		ID:             strings.TrimSpace(acquisition.ID),
 		Name:           strings.TrimSpace(acquisition.Name),
+		Version:        strings.TrimSpace(acquisition.Version),
 		Catalog:        strings.TrimSpace(acquisition.Catalog),
 		URL:            strings.TrimSpace(acquisition.URL),
 		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
