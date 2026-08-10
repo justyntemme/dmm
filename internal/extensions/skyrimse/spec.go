@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -125,6 +126,7 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "CreationKit.exe",
 		RequiredFiles:      []string{"CreationKit.exe"},
 	})
+	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrimspecialedition", NexusModID: "3038", PatchListName: "PatchListSE.txt"})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "skyrimse-gamebryo-plugins",
 		Name:          "Skyrim Special Edition plugins.txt activation",

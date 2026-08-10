@@ -1,6 +1,7 @@
 package skyrim
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -54,6 +55,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{ID: "vortex:skyrim:fomod", Name: "FOMOD installer", Kind: "fomod", ModType: dataRootModType, TargetRoot: "Data", StopFolders: gamebryo.StopFolders("skse", "SkyProc Patchers")})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{ID: "skse", Name: "Skyrim Script Extender", ExecutableRelative: "skse_loader.exe", RequiredFiles: []string{"skse_loader.exe", "TESV.exe"}, DefaultPrimary: true, ModTypes: []string{scriptExtModType}, ProviderModTypes: []string{scriptExtModType}})
 	registerSupportedTools(r)
+	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrim", NexusModID: "11811", PatchListName: "PatchList.txt"})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{ID: "skyrim-gamebryo-plugins", Name: "Skyrim plugins.txt activation", GameID: VortexGameID, AppDataPath: "Skyrim", Format: gamebryo.FormatOriginal, LOOTGameID: VortexGameID, LOOTPrelude: true, NativePlugins: []string{"skyrim.esm", "update.esm"}, ArchiveCheckType: "BSA", ArchiveCheckVersions: []int{104, 103}})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
@@ -115,6 +116,7 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"GenerateFNISForUsers.exe"},
 		Relative:           true,
 	})
+	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrimspecialedition", NexusModID: "3038", PatchListName: "PatchListVR.txt"})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:                   "skyrimvr-gamebryo-plugins",
 		Name:                 "Skyrim VR plugins.txt activation",

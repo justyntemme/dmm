@@ -9664,6 +9664,12 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 				NexusDomains: []string{"extensiontestgame"},
 				VortexGameID: "extensiontestgame",
 			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "runtime_enabled",
+				Name:      "Runtime Enabled",
+				Scope:     "profile",
+				ValueType: sdk.ExtensionSettingValueBool,
+			})
 			r.RegisterExtensionTest(sdk.ExtensionTestSpec{
 				ID:      "runtime-test",
 				Name:    "Runtime Test",
@@ -9690,6 +9696,9 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 		Path:        gamePath,
 		State:       "clean_candidate",
 	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetExtensionSettingValue(context.Background(), "extensiontestgame", "runtime_enabled", []byte("true")); err != nil {
 		t.Fatal(err)
 	}
 	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
@@ -9731,6 +9740,13 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 	}
 	if len(captured.Mods) != 1 || captured.Mods[0].ID != mod.ID || captured.Mods[0].Name != "Test Mod" {
 		t.Fatalf("captured mods = %+v", captured.Mods)
+	}
+	var runtimeEnabled bool
+	if err := json.Unmarshal(captured.ExtensionSettings["extensiontestgame"]["runtime_enabled"], &runtimeEnabled); err != nil {
+		t.Fatal(err)
+	}
+	if !runtimeEnabled {
+		t.Fatalf("captured extension settings = %+v", captured.ExtensionSettings)
 	}
 	if len(body.ExtensionTests) != 1 {
 		t.Fatalf("extension tests = %+v", body.ExtensionTests)

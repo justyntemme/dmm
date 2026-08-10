@@ -1,6 +1,7 @@
 package enderal
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -51,6 +52,7 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	registerSupportedTools(r)
+	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrim", NexusModID: "11811", PatchListName: "PatchList.txt"})
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
 		GameID:         VortexGameID,
 		MyGamesPath:    "Enderal",

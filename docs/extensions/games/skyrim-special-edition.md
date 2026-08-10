@@ -23,6 +23,7 @@
 - SSEEdit, Wrye Bash, FNIS, BodySlide, and Creation Kit tool metadata are registered.
 - BodySlide x64 is preferred when present, with BodySlide.exe kept as the fallback executable, matching the Vortex extension source.
 - Gamebryo plugin activation generation is represented.
+- FNIS integration settings, patch-list parsing, and the FNIS installed/version diagnostic are source-backed through the reusable DMM FNIS helper.
 
 ## Beta Gaps
 
@@ -30,7 +31,7 @@
 - LOOT-style sorting is not implemented.
 - Plugin dependency validation is not complete.
 - Archive invalidation needs live verification.
-- BodySlide/FNIS generated output workflows are not implemented.
+- BodySlide/FNIS generated output workflows are not complete. FNIS still needs the generic Decky wait-for-tool-exit and generated profile-mod runtime before DMM can mirror Vortex's automatic generator deploy path.
 
 ## Validation Targets
 

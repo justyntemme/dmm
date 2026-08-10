@@ -1,0 +1,275 @@
+package fnis
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
+	"github.com/justyntemme/decky-mod-manager/internal/peversion"
+)
+
+const (
+	SettingAutoRun = "fnis_auto_run"
+	SettingPatches = "fnis_patches"
+
+	ToolID         = "FNIS"
+	ToolName       = "Fores New Idles in Skyrim"
+	ToolExecutable = "GenerateFNISForUsers.exe"
+)
+
+type SupportOptions struct {
+	GameID        string
+	NexusSection  string
+	NexusModID    string
+	PatchListName string
+}
+
+type Patch struct {
+	ID                       string `json:"id"`
+	Description              string `json:"description"`
+	RequiredBehaviorsPattern string `json:"required_behaviors_pattern,omitempty"`
+	RequiredFile             string `json:"required_file,omitempty"`
+}
+
+func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:        SettingAutoRun,
+		Name:      "Run FNIS automatically",
+		Scope:     "profile",
+		ValueType: sdk.ExtensionSettingValueBool,
+		Message:   "Matches Vortex's settings.fnis.autoRun flag. The setting is ready, but automatic FNIS generation remains gated on the generated-tool runtime.",
+	})
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:        SettingPatches,
+		Name:      "FNIS profile patches",
+		Scope:     "profile",
+		ValueType: sdk.ExtensionSettingValueJSON,
+		Message:   "Stores Vortex-style selected FNIS patch IDs per profile. DMM can parse FNIS patch lists; the profile patch picker UI is still pending.",
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "fnis-configure-patches",
+		Name:    "Configure FNIS patches",
+		Scope:   "profile",
+		Kind:    "dialog",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: "Vortex opens a checkbox dialog from PatchList*.txt. DMM has the source-backed patch parser, but still needs a generic extension dialog renderer before this action can be interactive.",
+	})
+	r.RegisterExtensionTest(FNISTest(opts))
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		ID:      "fnis-will-deploy",
+		Event:   sdk.EventWillDeploy,
+		Name:    "FNIS animation checksum pre-deploy hook",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: "Vortex disables the generated FNIS Data profile mod and hashes animation-related deployed files before deploy. DMM still needs the generated-tool runtime before this hook can mutate deployment state.",
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		ID:      "fnis-did-deploy",
+		Event:   sdk.EventDidDeploy,
+		Name:    "FNIS generator post-deploy hook",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: "Vortex runs GenerateFNISForUsers.exe with RedirectFiles pointed at a profile-generated FNIS Data mod, then deploys that single generated mod. DMM still needs a Decky wait-for-tool-exit plus generated-profile-mod primitive.",
+	})
+	for _, ref := range Sources() {
+		r.RegisterSource(ref)
+	}
+}
+
+func FNISTest(opts SupportOptions) sdk.ExtensionTestSpec {
+	return sdk.ExtensionTestSpec{
+		ID:      "fnis-integration",
+		Name:    "FNIS integration check",
+		Trigger: sdk.EventGamemodeActivated,
+		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+			return checkFNIS(ctx, opts, input), nil
+		},
+	}
+}
+
+func DataModName(profileName string) string {
+	profileName = strings.TrimSpace(profileName)
+	if profileName == "" {
+		profileName = "Default"
+	}
+	replacer := strings.NewReplacer(":", "_", "/", "_", "\\", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
+	return "FNIS Data (" + replacer.Replace(profileName) + ")"
+}
+
+func ReadPatches(path string) ([]Patch, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var patches []Patch
+	scanner := bufio.NewScanner(file)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		if lineNo == 1 {
+			continue
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "'") {
+			continue
+		}
+		patch, ok := parsePatchLine(line)
+		if ok {
+			patches = append(patches, patch)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return patches, nil
+}
+
+func PatchListPath(gamePath string, opts SupportOptions) string {
+	name := strings.TrimSpace(opts.PatchListName)
+	if name == "" {
+		name = "PatchList.txt"
+	}
+	return filepath.Join(strings.TrimSpace(gamePath), name)
+}
+
+func NexusPageURL(opts SupportOptions) string {
+	section := strings.TrimSpace(opts.NexusSection)
+	modID := strings.TrimSpace(opts.NexusModID)
+	if section == "" || modID == "" {
+		return ""
+	}
+	return "https://www.nexusmods.com/" + section + "/mods/" + modID
+}
+
+func Sources() []sdk.SourceRef {
+	return []sdk.SourceRef{
+		{Name: "Vortex FNIS integration source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/fnis-integration/src"},
+	}
+}
+
+func checkFNIS(ctx context.Context, opts SupportOptions, input sdk.ExtensionTestInput) sdk.ExtensionTestResult {
+	if err := ctx.Err(); err != nil {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusFailed,
+			Severity: sdk.HealthCheckSeverityError,
+			Message:  "FNIS integration check was canceled.",
+			Details:  err.Error(),
+		}
+	}
+	if !settingBool(input.ExtensionSettings, input.GameID, SettingAutoRun) {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusPassed,
+			Severity: sdk.HealthCheckSeverityInfo,
+			Message:  "FNIS automatic integration is disabled for this profile.",
+		}
+	}
+	toolPath, ok := resolveToolPath(input.GamePath)
+	if !ok {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "FNIS automatic integration is enabled, but FNIS is not installed for this game.",
+			Details:  installDetails(opts),
+			Actions:  []string{"Install FNIS and add it as a managed tool before enabling automatic generation."},
+		}
+	}
+	if info, err := os.Stat(toolPath); err != nil || info.IsDir() {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "FNIS automatic integration is enabled, but the FNIS tool path is not runnable.",
+			Details:  toolPath,
+			Actions:  []string{"Reinstall FNIS or repair the tool files."},
+		}
+	}
+	version, err := peversion.FileVersion(toolPath)
+	if err != nil || strings.TrimSpace(version) == "" {
+		details := toolPath
+		if err != nil {
+			details += ": " + err.Error()
+		}
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "FNIS automatic integration is enabled, but DMM could not read the FNIS executable version.",
+			Details:  details,
+			Actions:  []string{"Reinstall FNIS 7.4 or newer."},
+		}
+	}
+	if gamehandler.CompareSemanticVersions(version, "7.4.0") < 0 {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "FNIS is older than the Vortex-supported embedded automation version.",
+			Details:  "Installed version: " + version + "; required version: 7.4 or newer. " + installDetails(opts),
+			Actions:  []string{"Update FNIS before enabling automatic generation."},
+		}
+	}
+	return sdk.ExtensionTestResult{
+		Status:   sdk.HealthCheckStatusPassed,
+		Severity: sdk.HealthCheckSeverityInfo,
+		Message:  "FNIS tool files are present.",
+		Details:  "Installed version: " + version + "; path: " + toolPath,
+	}
+}
+
+func parsePatchLine(line string) (Patch, bool) {
+	parts := strings.Split(line, "#")
+	if len(parts) < 3 {
+		return Patch{}, false
+	}
+	id := strings.TrimSpace(parts[0])
+	if id == "" {
+		return Patch{}, false
+	}
+	hidden := strings.TrimSpace(parts[1]) == "1"
+	numBones, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+	if err != nil {
+		return Patch{}, false
+	}
+	if hidden || numBones != 0 {
+		return Patch{}, false
+	}
+	patch := Patch{ID: id}
+	if len(parts) > 3 {
+		patch.RequiredBehaviorsPattern = strings.TrimSpace(parts[3])
+	}
+	if len(parts) > 4 {
+		patch.Description = strings.TrimSpace(parts[4])
+	}
+	if len(parts) > 5 {
+		patch.RequiredFile = strings.TrimSpace(parts[5])
+	}
+	return patch, true
+}
+
+func settingBool(settings map[string]map[string]json.RawMessage, extensionID, settingID string) bool {
+	extensionID = strings.ToLower(strings.TrimSpace(extensionID))
+	settingID = strings.ToLower(strings.TrimSpace(settingID))
+	raw := settings[extensionID][settingID]
+	var value bool
+	return json.Unmarshal(raw, &value) == nil && value
+}
+
+func resolveToolPath(gamePath string) (string, bool) {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return "", false
+	}
+	path := filepath.Join(gamePath, ToolExecutable)
+	return path, true
+}
+
+func installDetails(opts SupportOptions) string {
+	url := NexusPageURL(opts)
+	if url == "" {
+		return "Vortex requires FNIS 7.4 or newer for embedded automatic generation."
+	}
+	return "Vortex requires FNIS 7.4 or newer for embedded automatic generation. Source page: " + url
+}

@@ -1201,12 +1201,20 @@ func (s *Server) handleRepairExtensionTest(w http.ResponseWriter, r *http.Reques
 	payload["test_id"] = testID
 	job := s.jobs.CreateWithPayload(jobTypeExtensionTestRepair, "Repair diagnostic: "+testID, payload)
 	job, _ = s.jobs.Run(job.ID, "Running extension diagnostic repair")
+	settings, err := s.extensionSettingValueMap(r.Context())
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		s.logger.Warn("extension test repair failed to load settings", "job_id", job.ID, "app_id", appID, "test_id", testID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"job": jobAPIResponse(job), "error": err.Error()})
+		return
+	}
 	result, found, err := s.games.RepairExtensionTest(r.Context(), appID, testID, sdk.ExtensionTestInput{
-		AppID:       appID,
-		GamePath:    strings.TrimSpace(game.GamePath),
-		LibraryPath: strings.TrimSpace(game.LibraryPath),
-		ProfileID:   profileID,
-		Mods:        deploymentModsForHooks(mods),
+		AppID:             appID,
+		GamePath:          strings.TrimSpace(game.GamePath),
+		LibraryPath:       strings.TrimSpace(game.LibraryPath),
+		ProfileID:         profileID,
+		ExtensionSettings: settings,
+		Mods:              deploymentModsForHooks(mods),
 	})
 	if !found {
 		job, _ = s.jobs.Fail(job.ID, "Extension diagnostic repair is not registered")
@@ -1466,13 +1474,19 @@ func (s *Server) extensionTestsWithContext(ctx context.Context, game storage.Gam
 	if err != nil {
 		s.logger.Debug("extension tests running without active profile context", "app_id", game.SteamAppID, "error", err)
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		s.logger.Warn("extension tests failed to load settings", "app_id", game.SteamAppID, "trigger", trigger, "error", err)
+		settings = nil
+	}
 	results, ran := s.games.RunExtensionTests(ctx, game.SteamAppID, trigger, sdk.ExtensionTestInput{
-		AppID:       strings.TrimSpace(game.SteamAppID),
-		GamePath:    strings.TrimSpace(game.GamePath),
-		LibraryPath: strings.TrimSpace(game.LibraryPath),
-		ProfileID:   profileID,
-		Trigger:     trigger,
-		Mods:        deploymentModsForHooks(mods),
+		AppID:             strings.TrimSpace(game.SteamAppID),
+		GamePath:          strings.TrimSpace(game.GamePath),
+		LibraryPath:       strings.TrimSpace(game.LibraryPath),
+		ProfileID:         profileID,
+		Trigger:           trigger,
+		ExtensionSettings: settings,
+		Mods:              deploymentModsForHooks(mods),
 	})
 	if !ran || len(results) == 0 {
 		return nil

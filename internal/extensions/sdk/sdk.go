@@ -714,13 +714,14 @@ type ExtensionTestFunc func(context.Context, ExtensionTestInput) (ExtensionTestR
 type ExtensionTestRepairFunc func(context.Context, ExtensionTestInput) (ExtensionTestRepairResult, error)
 
 type ExtensionTestInput struct {
-	AppID       string
-	GameID      string
-	GamePath    string
-	LibraryPath string
-	ProfileID   int64
-	Trigger     string
-	Mods        []DeploymentMod
+	AppID             string
+	GameID            string
+	GamePath          string
+	LibraryPath       string
+	ProfileID         int64
+	Trigger           string
+	ExtensionSettings map[string]map[string]json.RawMessage
+	Mods              []DeploymentMod
 }
 
 type ExtensionTestResult struct {
