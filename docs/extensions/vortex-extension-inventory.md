@@ -32,7 +32,7 @@ Counts:
 ## Framework And Shared Extensions
 
 - [x] `changelog-dashlet` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed dashlet/state metadata marked blocked until DMM has a generic extension UI/state runtime.
-- [x] `common-interpreters` - DMM counterpart: `internal/extensions/commoninterpreters` framework extension. Current parity is registered interpreter metadata for `.jar`, `.py`, `.vbs`, `.cmd`, and `.bat`; runtime execution remains gated until a converted extension needs interpreter launching.
+- [x] `common-interpreters` - DMM counterpart: `internal/extensions/commoninterpreters` framework extension. Source-backed parity covers Vortex interpreter registration for `.jar`, `.py`, `.vbs`, `.cmd`, and `.bat`, including Java discovery from `JAVA_HOME`/PATH, Python discovery from PATH, Vortex-style run-argument transformation for Java/Python scripts, and Windows script host metadata for Windows-only script types.
 - [x] `documentation` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed main-page/action/todo metadata marked blocked until DMM has a generic extension UI runtime.
 - [x] `extension-dashlet` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed dashlet metadata marked blocked until DMM has a generic extension UI runtime.
 - [x] `feedback` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed feedback main-page/dialog/action/state metadata marked blocked; public feedback submission is not part of Steam Deck MVP.

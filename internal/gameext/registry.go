@@ -1152,11 +1152,28 @@ func (r Registry) ResolveInterpreter(executablePath, platform string) (Interpret
 	}
 	for _, extension := range r.extensions {
 		for _, interpreter := range extension.Interpreters {
-			if !interpreterMatchesPlatform(interpreter, platform) || strings.TrimSpace(interpreter.Command) == "" {
+			if !interpreterMatchesPlatform(interpreter, platform) || (strings.TrimSpace(interpreter.Command) == "" && interpreter.Resolver == nil) {
 				continue
 			}
 			for _, candidate := range interpreter.FileExtensions {
 				if strings.EqualFold(strings.TrimSpace(candidate), ext) {
+					if interpreter.Resolver != nil {
+						result, err := interpreter.Resolver(sdk.InterpreterInput{
+							ExecutablePath: executablePath,
+							Platform:       platform,
+						})
+						if err != nil || strings.TrimSpace(result.Command) == "" {
+							return InterpreterResolution{}, false
+						}
+						return InterpreterResolution{
+							ExtensionID:   strings.TrimSpace(extension.ID),
+							InterpreterID: strings.TrimSpace(interpreter.ID),
+							Name:          strings.TrimSpace(interpreter.Name),
+							Command:       strings.TrimSpace(result.Command),
+							Arguments:     appendClean([]string{}, result.Arguments...),
+							Platform:      platform,
+						}, true
+					}
 					return InterpreterResolution{
 						ExtensionID:   strings.TrimSpace(extension.ID),
 						InterpreterID: strings.TrimSpace(interpreter.ID),

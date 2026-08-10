@@ -527,6 +527,20 @@ type InterpreterSpec struct {
 	Command        string
 	Arguments      []string
 	Platforms      []string
+	Resolver       InterpreterResolverFunc
+}
+
+type InterpreterResolverFunc func(InterpreterInput) (InterpreterResult, error)
+
+type InterpreterInput struct {
+	ExecutablePath string
+	Platform       string
+	Arguments      []string
+}
+
+type InterpreterResult struct {
+	Command   string
+	Arguments []string
 }
 
 type GameStoreSpec struct {

@@ -1,6 +1,14 @@
 package commoninterpreters
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+)
 
 const (
 	ID      = "common-interpreters"
@@ -30,6 +38,7 @@ func Register(r sdk.Registrar) {
 		Command:        "java",
 		Arguments:      []string{"-jar", "{path}"},
 		Platforms:      []string{"linux", "windows"},
+		Resolver:       resolveJava,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "python",
@@ -38,6 +47,7 @@ func Register(r sdk.Registrar) {
 		Command:        "python",
 		Arguments:      []string{"{path}"},
 		Platforms:      []string{"linux", "windows"},
+		Resolver:       resolvePython,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "vbs",
@@ -63,4 +73,32 @@ func Register(r sdk.Registrar) {
 		Arguments:      []string{"/K", "{path}"},
 		Platforms:      []string{"windows"},
 	})
+}
+
+func resolveJava(input sdk.InterpreterInput) (sdk.InterpreterResult, error) {
+	javaHome := strings.TrimSpace(os.Getenv("JAVA_HOME"))
+	if javaHome != "" {
+		candidate := filepath.Join(javaHome, "bin", executableName("java", input.Platform))
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return sdk.InterpreterResult{Command: candidate, Arguments: []string{"-jar", input.ExecutablePath}}, nil
+		}
+	}
+	if path, err := exec.LookPath(executableName("java", input.Platform)); err == nil {
+		return sdk.InterpreterResult{Command: path, Arguments: []string{"-jar", input.ExecutablePath}}, nil
+	}
+	return sdk.InterpreterResult{}, errors.New("java interpreter is not installed")
+}
+
+func resolvePython(input sdk.InterpreterInput) (sdk.InterpreterResult, error) {
+	if path, err := exec.LookPath(executableName("python", input.Platform)); err == nil {
+		return sdk.InterpreterResult{Command: path, Arguments: []string{input.ExecutablePath}}, nil
+	}
+	return sdk.InterpreterResult{}, errors.New("python interpreter is not installed")
+}
+
+func executableName(name, platform string) string {
+	if strings.EqualFold(strings.TrimSpace(platform), "windows") {
+		return name + ".exe"
+	}
+	return name
 }
