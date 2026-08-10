@@ -66,6 +66,7 @@ func registerFNIS(r sdk.Registrar) {
 
 func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "gamebryo-incompatible-mod-archives", Name: "Gamebryo incompatible archive check", Trigger: "plugins-changed", Status: sdk.CapabilityStatusReady})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "oblivion-fonts", Name: "Oblivion font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-plugin-index-lock", Name: "Gamebryo plugin index lock state", Scope: "profile_plugin_activations.locked_index", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionTableAttribute(blockedTableAttribute("gamebryo-plugin-index-lock", "Gamebryo plugin index lock table attribute", "gamebryo-plugins"))
 	r.RegisterStateReducer(blockedReducer("gamebryo-save-session", "Gamebryo savegame session state", "session/saves"))
@@ -75,7 +76,7 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionAction(blockedAction("gamebryo-save-open", "Open save games", "savegames-icons", "open"))
 	r.RegisterExtensionMainPage(blockedMainPage("gamebryo-savegames", "Save games", "savegame"))
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusBlocked, Message: blockedMessage})
-	r.RegisterExtensionTest(blockedTest("gamebryo-oblivion-fonts", "Oblivion font settings check", "gamemode-activated"))
+	r.RegisterExtensionAPI(blockedAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
 	r.RegisterExtensionTest(blockedTest("gamebryo-skyrim-fonts", "Skyrim font settings check", "gamemode-activated"))
 	r.RegisterExtensionMainPage(blockedMainPage("morrowind-plugins", "Morrowind plugins", "plugins"))
 	r.RegisterHistoryStack(sdk.HistoryStackSpec{

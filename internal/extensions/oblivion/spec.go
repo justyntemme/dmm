@@ -18,6 +18,14 @@ const (
 	scriptExtModType  = "oblivion-script-extender"
 )
 
+var defaultFonts = map[string]string{
+	"sfontfile_1": "Data\\Fonts\\Kingthings_Regular.fnt",
+	"sfontfile_2": "Data\\Fonts\\Kingthings_Shadowed.fnt",
+	"sfontfile_3": "Data\\Fonts\\Tahoma_Bold_Small.fnt",
+	"sfontfile_4": "Data\\Fonts\\Daedric_Font.fnt",
+	"sfontfile_5": "Data\\Fonts\\Handwritten.fnt",
+}
+
 func Extension() sdk.Extension {
 	return sdk.Extension{ID: VortexGameID, Name: Name, Kind: sdk.ExtensionKindGame, Version: "1.0.0-dmm.1", BuildID: "first-party-go", Register: Register}
 }
@@ -73,6 +81,12 @@ func Register(r sdk.Registrar) {
 			{Name: "Oblivion.ini"},
 		},
 	})
+	gamebryo.RegisterOblivionFontSettingsTest(r, gamebryo.OblivionFontSettingsOptions{
+		GameID:       VortexGameID,
+		MyGamesPath:  "Oblivion",
+		ININame:      "Oblivion.ini",
+		DefaultFonts: defaultFonts,
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Oblivion archive invalidation settings",
@@ -112,5 +126,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
 		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
+		{Name: "Vortex Gamebryo settings tests", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-test-settings/src"},
 	}
 }
