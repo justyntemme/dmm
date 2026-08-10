@@ -669,6 +669,28 @@
     source?: string;
   };
 
+  type GameExtensionAction = {
+    id: string;
+    name?: string;
+    scope?: string;
+    kind?: string;
+    status?: string;
+    message?: string;
+    source_extension?: string;
+    action_target?: GameExtensionActionTarget;
+  };
+
+  type GameExtensionActionTarget = {
+    type?: string;
+    base?: string;
+    target_root_id?: string;
+    relative_path?: string;
+    fallback_base?: string;
+    fallback_root_id?: string;
+    fallback_relative?: string;
+    tool_id?: string;
+  };
+
   type ProfileApplyResult = {
     status: "applied" | "blocked" | "failed" | string;
     message: string;
@@ -804,6 +826,7 @@
   let lootUserlistMessage = "";
   let gameDiagnostics: GameDiagnostics | null = null;
   let gameInfo: GameInfo | null = null;
+  let gameExtensionActions: GameExtensionAction[] = [];
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
   let workshopItems: WorkshopItem[] = [];
@@ -1491,6 +1514,7 @@
     restorePointPreviewBusy = 0;
     gameDiagnostics = null;
     gameInfo = null;
+    gameExtensionActions = [];
     gameLaunchStatus = null;
     pluginLoadOrder = null;
     lootUserlist = null;
@@ -1600,7 +1624,7 @@
   async function loadGameState(game: Game) {
     const sequence = ++selectedGameLoadSequence;
     const requestAppID = game.app_id;
-    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextGameInfo, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextGameInfo, nextExtensionActions, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
@@ -1612,6 +1636,7 @@
       getJSON<PluginLoadOrder>(`/api/games/${game.app_id}/load-order`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
       getJSON<GameInfo>(`/api/games/${game.app_id}/info`),
+      getJSON<{ actions: GameExtensionAction[] }>(`/api/games/${game.app_id}/extension-actions`),
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
       getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
     ]);
@@ -1653,6 +1678,7 @@
     await loadLOOTUserlist(game, nextPluginLoadOrder);
     gameDiagnostics = nextDiagnostics;
     gameInfo = nextGameInfo;
+    gameExtensionActions = nextExtensionActions.actions ?? [];
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
     workshopItems = nextWorkshopState.items ?? [];
@@ -4495,6 +4521,32 @@
     }
   }
 
+  function executableGameExtensionActions() {
+    return gameExtensionActions.filter((action) => {
+      const status = (action.status || "ready").trim();
+      const kind = (action.kind || "").trim();
+      return status === "ready" && (kind === "open-directory" || kind === "acquire-tool");
+    });
+  }
+
+  async function runGameExtensionAction(action: GameExtensionAction) {
+    if (!selectedGame) return;
+    error = "";
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/extension-actions/${encodeURIComponent(action.id)}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_id: selectedInstallProfileID() })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const result: { job?: Job; result?: { job?: Job }; duplicate?: boolean } = await response.json();
+    if (result.job) upsertJob(result.job);
+    else if (result.result?.job) upsertJob(result.result.job);
+    await refreshJobsAndSelectedGame("extension-action", true);
+  }
+
   function displayValidationWarnings(diagnostics: GameDiagnostics | null) {
     const warnings = diagnostics?.validation_warnings ?? [];
     const requirements = diagnostics?.runtime_requirements ?? [];
@@ -6330,6 +6382,25 @@
               {/each}
             </section>
           {/if}
+          {#if executableGameExtensionActions().length}
+            <section class="requirement-list" aria-label="Extension actions">
+              <div class="panel-heading compact-heading">
+                <h3>Extension Actions</h3>
+                <span>{executableGameExtensionActions().length}</span>
+              </div>
+              {#each executableGameExtensionActions() as action}
+                <article>
+                  <div>
+                    <strong>{action.name || action.id}</strong>
+                    <p>{action.kind === "open-directory" ? "Open a source-backed extension folder." : "Install or reacquire a source-backed extension tool."}</p>
+                    {#if action.message}<small>{action.message}</small>{/if}
+                    {#if action.source_extension}<small>{action.source_extension}</small>{/if}
+                  </div>
+                  <button type="button" on:click={() => runGameExtensionAction(action)}>Run</button>
+                </article>
+              {/each}
+            </section>
+          {/if}
           {#if gameDiagnostics?.runtime_requirements?.length}
             <section class="requirement-list" aria-label="Runtime requirements">
               <div class="panel-heading compact-heading">
@@ -6422,7 +6493,7 @@
                 <span>{marker}</span>
               {/each}
             </div>
-          {:else if !gameInfo?.details?.length && !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
+          {:else if !gameInfo?.details?.length && executableGameExtensionActions().length === 0 && !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
             <p class="hint">No review markers for this game.</p>
           {/if}
         </article>

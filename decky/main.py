@@ -618,6 +618,45 @@ class Plugin:
         self._log(f"game info loaded app_id={app_id} ran={bool(result.get('ran'))} details={detail_count}")
         return {"ok": True, "info": result}
 
+    async def game_extension_actions(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "actions": []}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "actions": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/extension-actions")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load extension actions.", "actions": []}
+        actions = result.get("actions")
+        if not isinstance(actions, list):
+            return {"ok": False, "error": "Unexpected extension actions response.", "actions": []}
+        self._log(f"extension actions loaded app_id={app_id} actions={len(actions)}")
+        return {"ok": True, "actions": actions}
+
+    async def run_game_extension_action(self, app_id, action_id, profile_id=0):
+        app_id = str(app_id or "").strip()
+        action_id = str(action_id or "").strip()
+        if not app_id or not action_id:
+            return {"ok": False, "error": "app_id and action_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        payload = {}
+        try:
+            profile_id = int(profile_id or 0)
+        except (TypeError, ValueError):
+            profile_id = 0
+        if profile_id > 0:
+            payload["profile_id"] = profile_id
+        result, error = self._backend_json_result(
+            "POST",
+            f"/api/games/{urllib.parse.quote(app_id)}/extension-actions/{urllib.parse.quote(action_id)}/run",
+            json.dumps(payload).encode("utf-8"),
+        )
+        if result is None:
+            return {"ok": False, "error": error or "Unable to run extension action."}
+        self._log(f"extension action queued app_id={app_id} action_id={action_id} profile_id={profile_id}")
+        return {"ok": True, "result": result}
+
     async def set_profile_plugin_activation(self, app_id, profile_id, activation_id, plugin_name, enabled):
         app_id = str(app_id or "").strip()
         profile_id = str(profile_id or "").strip()

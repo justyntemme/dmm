@@ -13181,6 +13181,14 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 					RelativePath: "Mods",
 				},
 			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:      "blocked-action",
+				Name:    "Blocked Action",
+				Scope:   "opendirectory",
+				Kind:    "dialog",
+				Status:  sdk.CapabilityStatusBlocked,
+				Message: "Dialog actions are metadata-only in this test.",
+			})
 		},
 	})
 	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
@@ -13195,9 +13203,33 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/open-mods/run", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/extension-actions", nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("extension action list status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var listed gameExtensionActionsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if listed.AppID != appID || len(listed.Actions) != 2 {
+		t.Fatalf("listed actions = %+v", listed)
+	}
+	if listed.Actions[0].ID != "open-mods" || listed.Actions[0].Status != sdk.CapabilityStatusReady || listed.Actions[0].Kind != sdk.ExtensionActionKindOpenDirectory || listed.Actions[0].SourceExtension != "opendirectory" {
+		t.Fatalf("ready action = %+v", listed.Actions[0])
+	}
+	if listed.Actions[0].ActionTarget == nil || listed.Actions[0].ActionTarget.Base != sdk.OpenDirectoryBaseGame || listed.Actions[0].ActionTarget.RelativePath != "Mods" {
+		t.Fatalf("ready action target = %+v", listed.Actions[0].ActionTarget)
+	}
+	if listed.Actions[1].ID != "blocked-action" || listed.Actions[1].Status != sdk.CapabilityStatusBlocked {
+		t.Fatalf("blocked action = %+v", listed.Actions[1])
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/open-mods/run", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("queue status = %d body = %s", rec.Code, rec.Body.String())

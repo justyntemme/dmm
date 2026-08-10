@@ -435,6 +435,28 @@ type GameInfoDetail = {
   source?: string;
 };
 
+type GameExtensionAction = {
+  id: string;
+  name?: string;
+  scope?: string;
+  kind?: string;
+  status?: string;
+  message?: string;
+  source_extension?: string;
+  action_target?: GameExtensionActionTarget;
+};
+
+type GameExtensionActionTarget = {
+  type?: string;
+  base?: string;
+  target_root_id?: string;
+  relative_path?: string;
+  fallback_base?: string;
+  fallback_root_id?: string;
+  fallback_relative?: string;
+  tool_id?: string;
+};
+
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 type GameVisibility = "manageable" | "extensions" | "all";
@@ -4562,6 +4584,7 @@ function FreshDeckyModManagerRoute() {
   const [mods, setMods] = useState<ManagedMod[]>([]);
   const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
+  const [extensionActions, setExtensionActions] = useState<GameExtensionAction[]>([]);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [pluginLoadOrder, setPluginLoadOrder] = useState<PluginLoadOrder | null>(null);
   const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
@@ -4656,13 +4679,14 @@ function FreshDeckyModManagerRoute() {
       setMods([]);
       setGameDiagnostics(null);
       setGameInfo(null);
+      setExtensionActions([]);
       setDeploymentStatus(null);
       setPluginLoadOrder(null);
       setInstallCandidates([]);
       setWorkshopItems([]);
       return;
     }
-    const [profilesResult, modsResult, diagnosticsResult, infoResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, diagnosticsResult, infoResult, actionsResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -4682,6 +4706,11 @@ function FreshDeckyModManagerRoute() {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         info: null
+      })),
+      call<[string], { ok: boolean; error?: string; actions: GameExtensionAction[] }>("game_extension_actions", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        actions: []
       })),
       call<[string], { ok: boolean; error?: string; status?: DeploymentStatus | null }>("game_deploy_status", appID).catch((err) => ({
         ok: false,
@@ -4710,6 +4739,7 @@ function FreshDeckyModManagerRoute() {
     else setError(modsResult.error || "Unable to load mods.");
     setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
     setGameInfo(infoResult.ok ? infoResult.info ?? null : null);
+    setExtensionActions(actionsResult.ok ? actionsResult.actions : []);
     setDeploymentStatus(deploymentResult.ok ? deploymentResult.status ?? null : null);
     setPluginLoadOrder(loadOrderResult.ok ? loadOrderResult.load_order ?? null : null);
     setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
@@ -4719,6 +4749,7 @@ function FreshDeckyModManagerRoute() {
     if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
     if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
     if (!infoResult.ok) failedSlices.push(`info:${infoResult.error || ""}`);
+    if (!actionsResult.ok) failedSlices.push(`extension_actions:${actionsResult.error || ""}`);
     if (!deploymentResult.ok) failedSlices.push(`deployment:${deploymentResult.error || ""}`);
     if (!loadOrderResult.ok) failedSlices.push(`load_order:${loadOrderResult.error || ""}`);
     if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
@@ -4939,6 +4970,43 @@ function FreshDeckyModManagerRoute() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setModUpdateBusy(false);
+    }
+  }
+
+  function executableExtensionActions() {
+    return extensionActions.filter((action) => {
+      const status = String(action.status || "ready").trim();
+      const kind = String(action.kind || "").trim();
+      return status === "ready" && (kind === "open-directory" || kind === "acquire-tool");
+    });
+  }
+
+  async function runSelectedGameExtensionAction(action: GameExtensionAction) {
+    if (!selectedGameID || busyJobID) return;
+    try {
+      setBusyJobID(`extension-action:${action.id}`);
+      setError("");
+      setMessage("");
+      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job; duplicate?: boolean; result?: { job?: Job } } }>(
+        "run_game_extension_action",
+        selectedGameID,
+        action.id,
+        selectedProfile?.id ?? 0
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to run extension action.");
+        return;
+      }
+      const job = result.result?.job ?? result.result?.result?.job;
+      if (job) {
+        await maybeShowDeckyActionToast(job, "fresh-extension-action");
+      }
+      await loadSelectedGameState(selectedGameID);
+      setMessage(`${action.name || action.id} started.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyJobID("");
     }
   }
 
@@ -5677,6 +5745,34 @@ function FreshDeckyModManagerRoute() {
             </div>
           </div>
         ) : null}
+        {executableExtensionActions().length > 0 && (
+          <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
+            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+              <div style={{ color: "#f8fafc", fontWeight: 900 }}>Extension Actions</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Source-backed tools and folders from the game extension.</div>
+            </div>
+            {executableExtensionActions().map((action) => {
+              const busy = busyJobID === `extension-action:${action.id}`;
+              return (
+                <Focusable
+                  key={action.id}
+                  className="dmm-sidebar-row"
+                  focusClassName="dmm-sidebar-row-focused"
+                  onActivate={() => void runSelectedGameExtensionAction(action)}
+                  onClick={() => void runSelectedGameExtensionAction(action)}
+                  style={{ ...freshCardStyle(false), opacity: busy ? 0.7 : 1 }}
+                >
+                  <div style={{ color: "#f8fafc", fontWeight: 900 }}>{action.name || action.id}</div>
+                  <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                    {action.kind === "open-directory" ? "Open folder" : "Acquire tool"}{action.source_extension ? ` · ${action.source_extension}` : ""}
+                  </div>
+                  {action.message && <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{action.message}</div>}
+                  <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {busy ? "Working" : "Run"}</div>
+                </Focusable>
+              );
+            })}
+          </div>
+        )}
         {deploymentStatus?.restore_available && (
           <Focusable
             className="dmm-sidebar-row"

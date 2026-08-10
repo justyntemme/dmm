@@ -433,6 +433,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/start", s.handleStartOpenDirectoryAction)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/complete", s.handleCompleteOpenDirectoryAction)
+	mux.HandleFunc("GET /api/games/{appID}/extension-actions", s.handleGameExtensionActions)
 	mux.HandleFunc("POST /api/games/{appID}/extension-actions/{actionID}/run", s.handleQueueExtensionAction)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/info", s.handleGameInfo)
@@ -806,6 +807,33 @@ type gameInfoDetailResponse struct {
 	Type   string `json:"type,omitempty"`
 	Value  any    `json:"value"`
 	Source string `json:"source,omitempty"`
+}
+
+type gameExtensionActionsResponse struct {
+	AppID   string                        `json:"app_id"`
+	Actions []gameExtensionActionResponse `json:"actions"`
+}
+
+type gameExtensionActionResponse struct {
+	ID              string                         `json:"id"`
+	Name            string                         `json:"name,omitempty"`
+	Scope           string                         `json:"scope,omitempty"`
+	Kind            string                         `json:"kind,omitempty"`
+	Status          string                         `json:"status,omitempty"`
+	Message         string                         `json:"message,omitempty"`
+	SourceExtension string                         `json:"source_extension,omitempty"`
+	ActionTarget    *gameExtensionActionTargetInfo `json:"action_target,omitempty"`
+}
+
+type gameExtensionActionTargetInfo struct {
+	Type             string `json:"type,omitempty"`
+	Base             string `json:"base,omitempty"`
+	TargetRootID     string `json:"target_root_id,omitempty"`
+	RelativePath     string `json:"relative_path,omitempty"`
+	FallbackBase     string `json:"fallback_base,omitempty"`
+	FallbackRootID   string `json:"fallback_root_id,omitempty"`
+	FallbackRelative string `json:"fallback_relative,omitempty"`
+	ToolID           string `json:"tool_id,omitempty"`
 }
 
 type gameExtensionInfo struct {
@@ -5686,6 +5714,82 @@ func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *htt
 	job, _ = s.jobs.Fail(jobID, message)
 	s.logger.Warn("extension tool action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "error", message, "source", req.Source)
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) handleGameExtensionActions(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GameBySteamApp(r.Context(), appID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	actions := []gameExtensionActionResponse{}
+	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
+		for _, action := range extension.ExtensionActions {
+			status := strings.TrimSpace(action.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			actions = append(actions, gameExtensionActionResponse{
+				ID:              strings.TrimSpace(action.ID),
+				Name:            strings.TrimSpace(action.Name),
+				Scope:           strings.TrimSpace(action.Scope),
+				Kind:            strings.TrimSpace(action.Kind),
+				Status:          status,
+				Message:         strings.TrimSpace(action.Message),
+				SourceExtension: strings.TrimSpace(extension.ID),
+				ActionTarget:    gameExtensionActionTarget(action),
+			})
+		}
+	}
+	sort.SliceStable(actions, func(i, j int) bool {
+		if actions[i].Status != actions[j].Status {
+			return actions[i].Status == sdk.CapabilityStatusReady
+		}
+		if strings.ToLower(actions[i].Name) != strings.ToLower(actions[j].Name) {
+			return strings.ToLower(actions[i].Name) < strings.ToLower(actions[j].Name)
+		}
+		if actions[i].SourceExtension != actions[j].SourceExtension {
+			return actions[i].SourceExtension < actions[j].SourceExtension
+		}
+		return actions[i].ID < actions[j].ID
+	})
+	writeJSON(w, http.StatusOK, gameExtensionActionsResponse{
+		AppID:   appID,
+		Actions: actions,
+	})
+}
+
+func gameExtensionActionTarget(action sdk.ExtensionActionSpec) *gameExtensionActionTargetInfo {
+	switch strings.TrimSpace(action.Kind) {
+	case sdk.ExtensionActionKindOpenDirectory:
+		if action.OpenDirectory == nil {
+			return nil
+		}
+		target := action.OpenDirectory
+		return &gameExtensionActionTargetInfo{
+			Type:             sdk.ExtensionActionKindOpenDirectory,
+			Base:             strings.TrimSpace(target.Base),
+			TargetRootID:     strings.TrimSpace(target.TargetRootID),
+			RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
+			FallbackBase:     strings.TrimSpace(target.FallbackBase),
+			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
+			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+		}
+	case sdk.ExtensionActionKindAcquireTool:
+		if action.AcquireTool == nil {
+			return nil
+		}
+		return &gameExtensionActionTargetInfo{
+			Type:   sdk.ExtensionActionKindAcquireTool,
+			ToolID: strings.TrimSpace(action.AcquireTool.ToolID),
+		}
+	default:
+		return nil
+	}
 }
 
 func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Request) {
