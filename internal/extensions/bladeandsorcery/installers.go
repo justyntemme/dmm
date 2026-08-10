@@ -23,6 +23,7 @@ type officialModule struct {
 	manifestRel string
 	rootRel     string
 	modName     string
+	gameVersion string
 }
 
 func matchMulleArchive(root string) bool {
@@ -72,6 +73,7 @@ func buildOfficialArchive(input installplan.BuildInput) (installplan.Plan, error
 			TargetRelative:  filepath.ToSlash(filepath.Join(officialRoot, module.modName, manifestFile)),
 			Name:            module.modName,
 			UniqueID:        module.modName,
+			MinGameVersion:  module.gameVersion,
 		})
 	}
 	if len(instructions) == 0 {
@@ -123,7 +125,11 @@ func officialModules(root string, manifests []string) ([]officialModule, error) 
 			return nil, installplan.Unsupported("Blade & Sorcery manifest has an invalid Name value")
 		}
 		used[name] = struct{}{}
-		modules = append(modules, officialModule{manifestRel: manifestRel, rootRel: rootRel, modName: name})
+		manifest, err := readManifest(root, manifestRel)
+		if err != nil {
+			return nil, err
+		}
+		modules = append(modules, officialModule{manifestRel: manifestRel, rootRel: rootRel, modName: name, gameVersion: strings.TrimSpace(manifest.GameVersion)})
 	}
 	return modules, nil
 }

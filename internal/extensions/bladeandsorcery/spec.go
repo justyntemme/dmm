@@ -139,17 +139,10 @@ func Register(r sdk.Registrar) {
 		}),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "bladeandsorcery-version",
-		Name:    "Blade & Sorcery game/minimum mod version",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex derives game and min-mod versions from the executable or Game.json extracted from bas.jsondb. DMM needs source-backed bas.jsondb extraction/version validation before enforcing this.",
-	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "bladeandsorcery-version-deploy-validation",
-		Name:    "Blade & Sorcery version/mod-type deploy validation",
-		Trigger: sdk.EventWillDeploy,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex blocks deployment when the installed game version changes mod type expectations. DMM needs generic game-version validation before executing this hook.",
+		ID:       "bladeandsorcery-version",
+		Name:     "Blade & Sorcery game/minimum mod version",
+		Provider: gameVersion,
+		Message:  "Source-backed Vortex parity reads Game.json/global.json when present and exposes minModVersion/gameVersion to DMM's generic game-version diagnostics.",
 	})
 	for _, migration := range migrations() {
 		r.RegisterStateMigration(migration)

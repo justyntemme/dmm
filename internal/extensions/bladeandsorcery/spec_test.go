@@ -26,6 +26,9 @@ func TestOfficialArchiveUsesFolderNameAndStreamingAssetsModsRoot(t *testing.T) {
 	if plan.ModType != officialModType {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
+	if len(plan.Metadata) != 1 || plan.Metadata[0].MinGameVersion != "8.4" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
 	assertTargets(t, plan, []string{
 		"BladeAndSorcery_Data/StreamingAssets/Mods/CoolSword/Item.json",
 		"BladeAndSorcery_Data/StreamingAssets/Mods/CoolSword/manifest.json",
@@ -96,6 +99,26 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	}
 	if len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status == sdk.CapabilityStatusBlocked {
+		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
+	}
+	if len(summary.Capabilities.ExtensionToDos) != 0 {
+		t.Fatalf("extension todos = %+v", summary.Capabilities.ExtensionToDos)
+	}
+}
+
+func TestGameVersionProviderReadsGameJSON(t *testing.T) {
+	gamePath := t.TempDir()
+	writeFile(t, filepath.Join(gamePath, streamingAssets, "Default", "Game.json"), `{"gameVersion":"8,4","minModVersion":"9.2"}`)
+	result, ran, err := registry().DetectGameVersion(context.Background(), SteamAppID, sdk.GameVersionInput{
+		GamePath: gamePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ran || result.Version != "9.2" || result.Source != "BladeAndSorcery_Data/StreamingAssets/Default/Game.json" {
+		t.Fatalf("version = %+v, ran = %v", result, ran)
 	}
 }
 
