@@ -20,6 +20,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "new-file-ambiguous-adoption")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
 	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "game-version-gamemode")
+	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "local-game-settings-global-files")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_game_settings")

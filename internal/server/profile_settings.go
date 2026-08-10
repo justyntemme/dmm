@@ -201,6 +201,59 @@ func (s *Server) profileFeatureEnabledMap(ctx context.Context, profileID int64) 
 	return out, nil
 }
 
+func (s *Server) localGameSettingsGlobalFileDiagnostics(ctx context.Context, game storage.Game) []gameExtensionTestResponse {
+	mods, err := s.db.InstalledModsForSteamApp(ctx, game.SteamAppID)
+	if err != nil {
+		s.logger.Warn("profile-local game settings diagnostics skipped because installed mods could not be loaded", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil || profileID <= 0 {
+		return nil
+	}
+	files, err := s.profileFilesForSwitch(game)
+	if err != nil {
+		return []gameExtensionTestResponse{{
+			TestID:   "local-game-settings-global-files",
+			TestName: "Global local game settings check",
+			Trigger:  sdk.EventGamemodeActivated,
+			Status:   sdk.HealthCheckStatusFailed,
+			Severity: sdk.HealthCheckSeverityError,
+			Message:  "Failed to resolve profile-local game settings files.",
+			Details:  err.Error(),
+		}}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	features, err := s.profileFeatureEnabledMap(ctx, profileID)
+	if err != nil {
+		return []gameExtensionTestResponse{{
+			TestID:   "local-game-settings-global-files",
+			TestName: "Global local game settings check",
+			Trigger:  sdk.EventGamemodeActivated,
+			Status:   sdk.HealthCheckStatusFailed,
+			Severity: sdk.HealthCheckSeverityError,
+			Message:  "Failed to inspect profile-local game settings state.",
+			Details:  err.Error(),
+		}}
+	}
+	missing := missingRequiredProfileSettingPaths(files, features)
+	if len(missing) == 0 {
+		return nil
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "local-game-settings-global-files",
+		TestName: "Global local game settings check",
+		Trigger:  sdk.EventGamemodeActivated,
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "Files are missing or not readable.",
+		Details:  strings.Join(missing, "\n") + "\n\nSome games need to be run at least once before profile-local settings can be enabled.",
+		Actions:  []string{"Run the game once, then refresh diagnostics."},
+	}}
+}
+
 func profileFilesHaveEnabledFeature(files []profileFileForSwitch, states map[string]bool) bool {
 	for _, file := range files {
 		if profileFileFeatureEnabled(file.Spec, states) {
@@ -218,24 +271,39 @@ func profileFileFeatureEnabled(spec sdk.ProfileFileSpec, states map[string]bool)
 	return states[featureID]
 }
 
-func checkRequiredGlobalProfileFiles(files []profileFileForSwitch, oldFeatures, newFeatures map[string]bool) error {
-	missing := []string{}
+func missingRequiredProfileSettingPaths(files []profileFileForSwitch, states map[string]bool) []string {
+	var missing []string
 	seen := map[string]struct{}{}
 	for _, file := range files {
-		if file.Spec.Optional || (!profileFileFeatureEnabled(file.Spec, oldFeatures) && !profileFileFeatureEnabled(file.Spec, newFeatures)) {
+		if file.Spec.Optional || !profileFileFeatureEnabled(file.Spec, states) {
 			continue
-		}
-		if _, err := os.Stat(file.GlobalPath); err == nil {
-			continue
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("profile-local game settings file %s is not readable: %w", file.GlobalPath, err)
 		}
 		if _, ok := seen[file.GlobalPath]; ok {
 			continue
 		}
 		seen[file.GlobalPath] = struct{}{}
+		if _, err := os.Stat(file.GlobalPath); err == nil {
+			continue
+		}
 		missing = append(missing, file.GlobalPath)
 	}
+	sort.Strings(missing)
+	return missing
+}
+
+func checkRequiredGlobalProfileFiles(files []profileFileForSwitch, oldFeatures, newFeatures map[string]bool) error {
+	states := map[string]bool{}
+	for featureID, enabled := range oldFeatures {
+		if enabled {
+			states[featureID] = true
+		}
+	}
+	for featureID, enabled := range newFeatures {
+		if enabled {
+			states[featureID] = true
+		}
+	}
+	missing := missingRequiredProfileSettingPaths(files, states)
 	if len(missing) == 0 {
 		return nil
 	}

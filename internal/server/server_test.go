@@ -10096,6 +10096,61 @@ func TestProfileSwitchBlocksWhenRequiredLocalGameSettingsAreMissing(t *testing.T
 	}
 }
 
+func TestGameDiagnosticsWarnsWhenRequiredLocalGameSettingsAreMissing(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	if _, err := srv.db.SetProfileFeatureState(context.Background(), profiles[0].ID, "local_game_settings", true); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+fallout4.SteamAppID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body gameDiagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.ExtensionTests) != 1 {
+		t.Fatalf("extension tests = %+v", body.ExtensionTests)
+	}
+	test := body.ExtensionTests[0]
+	if test.TestID != "local-game-settings-global-files" || test.Status != sdk.HealthCheckStatusWarning || !strings.Contains(test.Details, "Fallout4.ini") {
+		t.Fatalf("local settings diagnostic = %+v", test)
+	}
+	foundWarning := false
+	for _, warning := range body.ValidationWarnings {
+		if strings.Contains(warning, "Global local game settings check") && strings.Contains(warning, "Fallout4.ini") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("validation warnings = %+v", body.ValidationWarnings)
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

@@ -1280,6 +1280,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {

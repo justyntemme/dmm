@@ -127,7 +127,13 @@ func registerLocalGameSettings(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM supports Vortex-style profile-local game settings through extension-declared profile files, per-profile feature state, profile-switch sync, and the bake-settings lifecycle event.",
 	})
-	r.RegisterExtensionTest(blockedTest("local-game-settings-global-files", "Global local game settings check", "gamemode-activated"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "local-game-settings-global-files",
+		Name:    "Global local game settings check",
+		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM reports missing required profile-local settings files from extension-declared profile-file metadata in game diagnostics.",
+	})
 }
 
 func registerNewFileMonitor(r sdk.Registrar) {
