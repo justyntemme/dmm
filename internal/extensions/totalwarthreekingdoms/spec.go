@@ -96,9 +96,9 @@ func Register(r sdk.Registrar) {
 		Message:           unsupportedReason,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "totalwarthreekingdoms-ensure-data-folder",
-		Name:           "Ensure Total War: Three Kingdoms data folder is writable",
-		GeneratedFiles: []string{dataRoot},
+		ID:      "totalwarthreekingdoms-ensure-data-folder",
+		Name:    "Ensure Total War: Three Kingdoms data folder is writable",
+		Actions: sdk.EnsureGameDirectories(dataRoot),
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "totalwarthreekingdoms-required-files",

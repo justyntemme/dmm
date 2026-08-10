@@ -68,9 +68,12 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "dragonage2-prepare-mod-folders",
-		Name:           "Prepare Dragon Age 2 mod folders",
-		GeneratedFiles: []string{"BioWare/Dragon Age 2/packages/core/override", addinsRoot},
+		ID:   "dragonage2-prepare-mod-folders",
+		Name: "Prepare Dragon Age 2 mod folders",
+		Actions: append(
+			sdk.EnsureTargetRootDirectories(overrideRootID, "."),
+			sdk.EnsureGameDirectories(addinsRoot)...,
+		),
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "dragonage2-dazip-migration",

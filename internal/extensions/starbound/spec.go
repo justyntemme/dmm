@@ -51,9 +51,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "starbound-ensure-mods-folder",
-		Name:           "Ensure Starbound mods folder exists",
-		GeneratedFiles: []string{modRoot},
+		ID:      "starbound-ensure-mods-folder",
+		Name:    "Ensure Starbound mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "starbound-xbox-launcher",

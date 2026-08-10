@@ -90,9 +90,9 @@ func Register(r sdk.Registrar) {
 		Relative:           true,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "sims4-prepare-modding",
-		Name:           "Prepare The Sims 4 mod folder and Resource.cfg",
-		GeneratedFiles: []string{"Mods/Resource.cfg", "Options.ini"},
+		ID:      "sims4-prepare-modding",
+		Name:    "Prepare The Sims 4 mod folder and Resource.cfg",
+		Actions: sdk.EnsureTargetRootDirectories(userDataRootID, "Mods"),
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "sims4-vortex-mods-migration-2.0.0",

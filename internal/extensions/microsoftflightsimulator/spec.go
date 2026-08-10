@@ -98,10 +98,9 @@ func Register(r sdk.Registrar) {
 		Message: "Vortex also merges locPak localization strings for aircraft.cfg conflicts; DMM records this source behavior while the first MSFS port focuses on Community package and replacer install parity.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "msfs-prepare-community",
-		Name:           "Prepare MSFS Community package folder and official-file index",
-		RequiredFiles:  []string{"UserCfg.opt"},
-		GeneratedFiles: []string{"Community"},
+		ID:      "msfs-prepare-community",
+		Name:    "Prepare MSFS Community package folder and official-file index",
+		Actions: sdk.EnsureTargetRootDirectories(communityRootID, "."),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

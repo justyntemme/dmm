@@ -72,9 +72,9 @@ func Register(r sdk.Registrar) {
 		Message: "Vortex requires mtframework-arc-support and selectively merges game_main.arc and title.arc. DMM records the dependency but cannot merge ARC archives until the shared MT Framework ARC engine is implemented.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "dragonsdogma-prepare-nativepc",
-		Name:           "Prepare Dragon's Dogma nativePC folder",
-		GeneratedFiles: []string{modRoot},
+		ID:      "dragonsdogma-prepare-nativepc",
+		Name:    "Prepare Dragon's Dogma nativePC folder",
+		Actions: sdk.EnsureGameDirectories(modRoot),
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "dragonsdogma-1.0.1-rom-migration",

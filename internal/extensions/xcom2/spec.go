@@ -72,9 +72,9 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "xcom2-prepare-mods-folder",
-		Name:           "Prepare XCOM 2 mods folder",
-		GeneratedFiles: []string{xcom2Mods, wotcMods, xcom2Config + "/" + optionsINI, wotcConfig + "/" + optionsINI},
+		ID:      "xcom2-prepare-mods-folder",
+		Name:    "Prepare XCOM 2 mods folder",
+		Actions: sdk.EnsureGameDirectories(xcom2Mods, wotcMods, xcom2Config, wotcConfig),
 	})
 	registerSupportedTools(r)
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{

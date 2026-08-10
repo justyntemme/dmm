@@ -51,9 +51,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "grimdawn-ensure-mods-folder",
-		Name:           "Ensure Grim Dawn mods folder exists",
-		GeneratedFiles: []string{modRoot},
+		ID:      "grimdawn-ensure-mods-folder",
+		Name:    "Ensure Grim Dawn mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
 	})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "grimdawn-hash-version", Name: "Grim Dawn executable and Game.dll hash version", VortexGameID: VortexGameID, HashFiles: []string{"Grim Dawn.exe", "Game.dll"}}))
 	r.RegisterGameStore(sdk.GameStoreSpec{

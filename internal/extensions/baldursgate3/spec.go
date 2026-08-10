@@ -98,9 +98,12 @@ func Register(r sdk.Registrar) {
 		Message: "Vortex reads bin/bg3.exe FileVersion to choose modsettings.lsx v6/v7/v8 defaults; DMM records the source requirement until executable-version extraction is wired to runtime diagnostics.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "bg3-prepare-modding",
-		Name:           "Prepare BG3 local Mods folder and Public profile modsettings.lsx",
-		GeneratedFiles: []string{"Mods", "PlayerProfiles/Public/modsettings.lsx"},
+		ID:   "bg3-prepare-modding",
+		Name: "Prepare BG3 local Mods folder and Public profile modsettings.lsx",
+		Actions: append(
+			sdk.EnsureTargetRootDirectories(bg3ModsRootID, "."),
+			sdk.EnsureTargetRootDirectories(bg3LocalDataRootID, "PlayerProfiles/Public")...,
+		),
 	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bg3-pak-load-order", Name: "BG3 pak load order"})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{

@@ -296,7 +296,7 @@ type FeatureSummary struct {
 	Trigger            string                   `json:"trigger,omitempty"`
 	Priority           int                      `json:"priority,omitempty"`
 	Platforms          []string                 `json:"platforms,omitempty"`
-	GeneratedFiles     []string                 `json:"generated_files,omitempty"`
+	SetupActions       []SetupActionSummary     `json:"setup_actions,omitempty"`
 	FromVersion        string                   `json:"from_version,omitempty"`
 	ToVersion          string                   `json:"to_version,omitempty"`
 	Target             string                   `json:"target,omitempty"`
@@ -314,6 +314,16 @@ type FeatureSummary struct {
 	Parameters         []LauncherParameter      `json:"parameters,omitempty"`
 	Relative           bool                     `json:"relative,omitempty"`
 	Acquisition        *ToolAcquisitionSummary  `json:"acquisition,omitempty"`
+}
+
+type SetupActionSummary struct {
+	ID                string `json:"id"`
+	Name              string `json:"name,omitempty"`
+	Kind              string `json:"kind"`
+	Base              string `json:"base"`
+	TargetRootID      string `json:"target_root_id,omitempty"`
+	RelativePath      string `json:"relative_path,omitempty"`
+	OverwriteExisting bool   `json:"overwrite_existing,omitempty"`
 }
 
 type ActionTargetSummary struct {
@@ -1175,6 +1185,18 @@ func (r Registry) ResolveTargetRoot(ctx context.Context, appID, rootID string, i
 	return sdk.TargetRootResult{}, false, nil
 }
 
+func (r Registry) GameSetupsForSteamApp(appID string) []GameSetupSpec {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 {
+		return nil
+	}
+	var out []GameSetupSpec
+	for _, extension := range extensions {
+		out = append(out, extension.GameSetups...)
+	}
+	return out
+}
+
 func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpec, bool) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok || len(extension.PluginActivations) == 0 {
@@ -1588,10 +1610,11 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, setup := range extension.GameSetups {
 		summary.Capabilities.GameSetups = append(summary.Capabilities.GameSetups, FeatureSummary{
-			ID:             setup.ID,
-			Name:           setup.Name,
-			RequiredFiles:  appendClean([]string{}, setup.RequiredFiles...),
-			GeneratedFiles: appendClean([]string{}, setup.GeneratedFiles...),
+			ID:           setup.ID,
+			Name:         setup.Name,
+			Status:       defaultString(setup.Status, sdk.CapabilityStatusReady),
+			Message:      setup.Message,
+			SetupActions: setupActionSummaries(setup.Actions),
 		})
 	}
 	for _, action := range extension.ExtensionActions {
@@ -2002,6 +2025,28 @@ func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
 		FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
 		FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
 	}
+}
+
+func setupActionSummaries(actions []sdk.GameSetupActionSpec) []SetupActionSummary {
+	if len(actions) == 0 {
+		return nil
+	}
+	out := make([]SetupActionSummary, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, SetupActionSummary{
+			ID:                strings.TrimSpace(action.ID),
+			Name:              strings.TrimSpace(action.Name),
+			Kind:              strings.TrimSpace(action.Kind),
+			Base:              strings.TrimSpace(action.Base),
+			TargetRootID:      strings.TrimSpace(action.TargetRootID),
+			RelativePath:      filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
+			OverwriteExisting: action.OverwriteExisting,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 func toolAcquisitionSummary(acquisition *sdk.ToolAcquisitionSpec) *ToolAcquisitionSummary {

@@ -81,9 +81,9 @@ func Register(r sdk.Registrar) {
 		Message:  "Vortex discovers Untitled Goose Game through the Epic launcher app id Flour. DMM has no Epic discovery/runtime bridge in the Steam Deck MVP yet.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "untitledgoosegame-prepare-bepinex",
-		Name:           "Prepare Untitled Goose Game BepInEx folders",
-		GeneratedFiles: []string{"BepInEx/plugins", "BepInEx/config/BepInEx.cfg"},
+		ID:      "untitledgoosegame-prepare-bepinex",
+		Name:    "Prepare Untitled Goose Game BepInEx folders",
+		Actions: sdk.EnsureGameDirectories("BepInEx/plugins", "BepInEx/config"),
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "untitledgoosegame-migrate-020",

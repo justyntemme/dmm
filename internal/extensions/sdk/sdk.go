@@ -451,10 +451,94 @@ type GameStoreSpec struct {
 }
 
 type GameSetupSpec struct {
-	ID             string
-	Name           string
-	RequiredFiles  []string
-	GeneratedFiles []string
+	ID      string
+	Name    string
+	Status  string
+	Message string
+	Actions []GameSetupActionSpec
+}
+
+type GameSetupActionSpec struct {
+	ID                string
+	Name              string
+	Kind              string
+	Base              string
+	TargetRootID      string
+	RelativePath      string
+	Content           string
+	OverwriteExisting bool
+}
+
+const (
+	GameSetupActionEnsureDirectory = "ensure-directory"
+	GameSetupActionEnsureFile      = "ensure-file"
+	GameSetupActionRequirePath     = "require-path"
+
+	GameSetupBaseGame       = "game"
+	GameSetupBaseTargetRoot = "target-root"
+)
+
+func EnsureGameDirectories(paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionEnsureDirectory, GameSetupBaseGame, "", "", false, paths...)
+}
+
+func EnsureGameFiles(content string, paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionEnsureFile, GameSetupBaseGame, "", content, false, paths...)
+}
+
+func RequireGamePaths(paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionRequirePath, GameSetupBaseGame, "", "", false, paths...)
+}
+
+func EnsureTargetRootDirectories(rootID string, paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionEnsureDirectory, GameSetupBaseTargetRoot, rootID, "", false, paths...)
+}
+
+func EnsureTargetRootFiles(rootID, content string, paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionEnsureFile, GameSetupBaseTargetRoot, rootID, content, false, paths...)
+}
+
+func RequireTargetRootPaths(rootID string, paths ...string) []GameSetupActionSpec {
+	return ensureGameSetupActions(GameSetupActionRequirePath, GameSetupBaseTargetRoot, rootID, "", false, paths...)
+}
+
+func ensureGameSetupActions(kind, base, rootID, content string, overwriteExisting bool, paths ...string) []GameSetupActionSpec {
+	out := make([]GameSetupActionSpec, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			path = "."
+		}
+		out = append(out, GameSetupActionSpec{
+			ID:                gameSetupActionID(kind, base, rootID, path),
+			Kind:              kind,
+			Base:              base,
+			TargetRootID:      strings.TrimSpace(rootID),
+			RelativePath:      path,
+			Content:           content,
+			OverwriteExisting: overwriteExisting,
+		})
+	}
+	return out
+}
+
+func gameSetupActionID(kind, base, rootID, path string) string {
+	value := strings.ToLower(strings.TrimSpace(kind + "-" + base + "-" + rootID + "-" + path))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 type ExtensionActionSpec struct {

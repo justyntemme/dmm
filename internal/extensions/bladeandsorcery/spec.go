@@ -110,9 +110,9 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "bladeandsorcery-prepare-for-modding",
-		Name:           "Prepare Blade & Sorcery mod folders",
-		GeneratedFiles: []string{streamingAssets, officialRoot, streamingAssets + "/Default"},
+		ID:      "bladeandsorcery-prepare-for-modding",
+		Name:    "Prepare Blade & Sorcery mod folders",
+		Actions: sdk.EnsureGameDirectories(streamingAssets, officialRoot, streamingAssets+"/Default"),
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: sdk.EventWillDeploy,

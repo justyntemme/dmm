@@ -196,10 +196,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			})
 			r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG"})
 			r.RegisterGameSetup(sdk.GameSetupSpec{
-				ID:             "prepare",
-				Name:           "Prepare for modding",
-				RequiredFiles:  []string{"Game.exe"},
-				GeneratedFiles: []string{"Mods/.dmm-ready"},
+				ID:      "prepare",
+				Name:    "Prepare for modding",
+				Actions: append(sdk.RequireGamePaths("Game.exe"), sdk.EnsureGameFiles("ready\n", "Mods/.dmm-ready")...),
 			})
 			r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "manage-rules", Name: "Manage Rules", Scope: "profile", Kind: "dialog"})
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{ID: "rules", Name: "Rules", Scope: "game"})
@@ -413,7 +412,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.GameStores) != 1 || summary.Capabilities.GameStores[0].ID != "gog" {
 		t.Fatalf("game store capabilities = %+v", summary.Capabilities.GameStores)
 	}
-	if len(summary.Capabilities.GameSetups) != 1 || summary.Capabilities.GameSetups[0].ID != "prepare" || len(summary.Capabilities.GameSetups[0].GeneratedFiles) != 1 {
+	if len(summary.Capabilities.GameSetups) != 1 || summary.Capabilities.GameSetups[0].ID != "prepare" || len(summary.Capabilities.GameSetups[0].SetupActions) != 2 {
 		t.Fatalf("game setup capabilities = %+v", summary.Capabilities.GameSetups)
 	}
 	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Kind != "dialog" {

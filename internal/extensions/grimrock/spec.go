@@ -48,6 +48,6 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterGameSetup(sdk.GameSetupSpec{ID: "grimrock-ensure-dungeons-folder", Name: "Ensure Legend of Grimrock Dungeons folder exists", GeneratedFiles: []string{"Almost Human/Legend of Grimrock/Dungeons"}})
+	r.RegisterGameSetup(sdk.GameSetupSpec{ID: "grimrock-ensure-dungeons-folder", Name: "Ensure Legend of Grimrock Dungeons folder exists", Actions: sdk.EnsureTargetRootDirectories(dungeonsRoot, ".")})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-grimrock extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-grimrock/src"})
 }

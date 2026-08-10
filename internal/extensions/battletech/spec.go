@@ -65,9 +65,12 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "battletech-ensure-mods-folders",
-		Name:           "Ensure BattleTech mod folders exist",
-		GeneratedFiles: []string{"Mods", "My Games/BattleTech/mods"},
+		ID:   "battletech-ensure-mods-folders",
+		Name: "Ensure BattleTech mod folders exist",
+		Actions: append(
+			sdk.EnsureGameDirectories("Mods"),
+			sdk.EnsureTargetRootDirectories(modsRootID, ".")...,
+		),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "battletech-product-version",

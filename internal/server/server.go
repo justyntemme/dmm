@@ -111,6 +111,7 @@ const (
 	jobTypeExtensionNotice     = "extension-notice"
 	jobTypeExtensionToolAction = "extension-tool-action"
 	jobTypeOpenDirectoryAction = "open-directory-action"
+	jobTypeGameSetup           = "game-setup"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
@@ -424,6 +425,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/acquire", s.handleAcquireExtensionTool)
 	mux.HandleFunc("POST /api/games/{appID}/requirements/{requirementID}/acquire", s.handleAcquireRuntimeRequirement)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
+	mux.HandleFunc("POST /api/games/{appID}/setup", s.handleRunGameSetup)
 	mux.HandleFunc("POST /api/games/{appID}/activate", s.handleActivateGame)
 	mux.HandleFunc("GET /api/open-directory/actions", s.handleOpenDirectoryActions)
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/start", s.handleStartOpenDirectoryAction)
@@ -648,6 +650,7 @@ type gameDiagnosticsResponse struct {
 	ActiveDeployJobs    int                              `json:"active_deploy_jobs"`
 	Deployment          deploymentStatusResponse         `json:"deployment"`
 	Preview             deployPreviewSummary             `json:"preview"`
+	GameSetups          []gameSetupStatusResponse        `json:"game_setups,omitempty"`
 	RuntimeRequirements []gamehandler.RuntimeRequirement `json:"runtime_requirements,omitempty"`
 	ExtensionTests      []gameExtensionTestResponse      `json:"extension_tests,omitempty"`
 	HealthChecks        []gameHealthCheckResponse        `json:"health_checks,omitempty"`
@@ -677,6 +680,26 @@ type gameHealthCheckResponse struct {
 	Details        string `json:"details,omitempty"`
 }
 
+type gameSetupStatusResponse struct {
+	SetupID string                          `json:"setup_id"`
+	Name    string                          `json:"name"`
+	Status  string                          `json:"status"`
+	Message string                          `json:"message,omitempty"`
+	Actions []gameSetupActionStatusResponse `json:"actions,omitempty"`
+}
+
+type gameSetupActionStatusResponse struct {
+	ActionID     string `json:"action_id"`
+	Name         string `json:"name,omitempty"`
+	Kind         string `json:"kind"`
+	Base         string `json:"base"`
+	TargetRootID string `json:"target_root_id,omitempty"`
+	RelativePath string `json:"relative_path,omitempty"`
+	Status       string `json:"status"`
+	Message      string `json:"message,omitempty"`
+	TargetPath   string `json:"target_path,omitempty"`
+}
+
 type gameExtensionTestResponse struct {
 	TestID   string   `json:"test_id"`
 	TestName string   `json:"test_name"`
@@ -686,6 +709,19 @@ type gameExtensionTestResponse struct {
 	Message  string   `json:"message"`
 	Details  string   `json:"details,omitempty"`
 	Actions  []string `json:"actions,omitempty"`
+}
+
+type gameSetupApplyResponse struct {
+	AppID  string                    `json:"app_id"`
+	Job    jobResponse               `json:"job"`
+	Result gameSetupApplyResult      `json:"result"`
+	Setups []gameSetupStatusResponse `json:"setups"`
+}
+
+type gameSetupApplyResult struct {
+	Checked int `json:"checked"`
+	Created int `json:"created"`
+	Skipped int `json:"skipped"`
 }
 
 type gameResponse struct {
@@ -1040,6 +1076,49 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleRunGameSetup(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	job := s.jobs.CreateWithPayload(jobTypeGameSetup, "Prepare game for modding", gameJobPayload(appID))
+	job, _ = s.jobs.Run(job.ID, "Preparing "+game.Name+" for modding")
+	result, err := s.ensureGameSetup(r.Context(), game, job.ID, "manual")
+	if err != nil {
+		job = s.failJobWithError(job, err)
+		writeJSON(w, http.StatusAccepted, gameSetupApplyResponse{
+			AppID:  appID,
+			Job:    jobAPIResponse(job),
+			Result: result,
+			Setups: s.gameSetupStatuses(r.Context(), game),
+		})
+		return
+	}
+	message := "Prepared " + game.Name + " for modding"
+	if result.Created == 0 {
+		message = game.Name + " setup is already ready"
+	}
+	job, _ = s.jobs.Complete(job.ID, message)
+	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
+		"action":  "game_setup",
+		"created": result.Created,
+		"checked": result.Checked,
+		"source":  "manual",
+	})
+	writeJSON(w, http.StatusAccepted, gameSetupApplyResponse{
+		AppID:  appID,
+		Job:    jobAPIResponse(job),
+		Result: result,
+		Setups: s.gameSetupStatuses(r.Context(), game),
+	})
+}
+
 func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnosticsResponse, error) {
 	game, err := s.db.GameBySteamApp(ctx, appID)
 	if err != nil {
@@ -1088,6 +1167,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 		}
 	}
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
+	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -1294,6 +1374,240 @@ func healthCheckFilesFromManifest(files []stagedManifestFile) []sdk.ModHealthChe
 		})
 	}
 	return out
+}
+
+func (s *Server) gameSetupStatuses(ctx context.Context, game storage.Game) []gameSetupStatusResponse {
+	setups := s.games.GameSetupsForSteamApp(game.SteamAppID)
+	if len(setups) == 0 {
+		return nil
+	}
+	out := make([]gameSetupStatusResponse, 0, len(setups))
+	for _, setup := range setups {
+		status := strings.TrimSpace(setup.Status)
+		if status == "" {
+			status = "ready"
+		}
+		resp := gameSetupStatusResponse{
+			SetupID: strings.TrimSpace(setup.ID),
+			Name:    strings.TrimSpace(setup.Name),
+			Status:  status,
+			Message: strings.TrimSpace(setup.Message),
+			Actions: make([]gameSetupActionStatusResponse, 0, len(setup.Actions)),
+		}
+		if status != "ready" {
+			out = append(out, resp)
+			continue
+		}
+		overall := "ready"
+		for _, action := range setup.Actions {
+			actionStatus := s.gameSetupActionStatus(ctx, game, action)
+			resp.Actions = append(resp.Actions, actionStatus)
+			switch actionStatus.Status {
+			case "blocked":
+				overall = "blocked"
+			case "missing":
+				if overall == "ready" {
+					overall = "missing"
+				}
+			}
+		}
+		resp.Status = overall
+		if resp.Message == "" {
+			switch overall {
+			case "missing":
+				resp.Message = "setup paths are missing; DMM will create them before applying enabled mods"
+			case "blocked":
+				resp.Message = "setup needs attention before DMM can prepare this game"
+			}
+		}
+		out = append(out, resp)
+	}
+	return out
+}
+
+func (s *Server) gameSetupActionStatus(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) gameSetupActionStatusResponse {
+	resp := gameSetupActionStatusResponse{
+		ActionID:     strings.TrimSpace(action.ID),
+		Name:         strings.TrimSpace(action.Name),
+		Kind:         strings.TrimSpace(action.Kind),
+		Base:         strings.TrimSpace(action.Base),
+		TargetRootID: strings.TrimSpace(action.TargetRootID),
+		RelativePath: filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
+		Status:       "missing",
+	}
+	target, err := s.gameSetupActionTarget(ctx, game, action)
+	if err != nil {
+		resp.Status = "blocked"
+		resp.Message = err.Error()
+		return resp
+	}
+	resp.TargetPath = filepath.ToSlash(target)
+	info, err := os.Stat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		resp.Status = "missing"
+		return resp
+	}
+	if err != nil {
+		resp.Status = "blocked"
+		resp.Message = err.Error()
+		return resp
+	}
+	switch strings.TrimSpace(action.Kind) {
+	case sdk.GameSetupActionEnsureDirectory:
+		if !info.IsDir() {
+			resp.Status = "blocked"
+			resp.Message = "target exists but is not a directory"
+			return resp
+		}
+	case sdk.GameSetupActionEnsureFile:
+		if info.IsDir() {
+			resp.Status = "blocked"
+			resp.Message = "target exists but is a directory"
+			return resp
+		}
+	}
+	resp.Status = "ready"
+	return resp
+}
+
+func (s *Server) ensureGameSetupForApp(ctx context.Context, appID, jobID, source string) (gameSetupApplyResult, error) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return gameSetupApplyResult{}, err
+	}
+	return s.ensureGameSetup(ctx, game, jobID, source)
+}
+
+func (s *Server) ensureGameSetup(ctx context.Context, game storage.Game, jobID, source string) (gameSetupApplyResult, error) {
+	setups := s.games.GameSetupsForSteamApp(game.SteamAppID)
+	if len(setups) == 0 {
+		return gameSetupApplyResult{}, nil
+	}
+	var result gameSetupApplyResult
+	for _, setup := range setups {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		status := strings.TrimSpace(setup.Status)
+		if status == "" {
+			status = "ready"
+		}
+		if status != "ready" {
+			result.Skipped++
+			s.logger.Info("game setup skipped because capability is not ready", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setup.ID, "status", status, "source", source)
+			continue
+		}
+		for _, action := range setup.Actions {
+			applied, err := s.ensureGameSetupAction(ctx, game, setup, action, jobID, source)
+			if err != nil {
+				return result, err
+			}
+			result.Checked++
+			if applied {
+				result.Created++
+			}
+		}
+	}
+	return result, nil
+}
+
+func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, setup sdk.GameSetupSpec, action sdk.GameSetupActionSpec, jobID, source string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	target, err := s.gameSetupActionTarget(ctx, game, action)
+	if err != nil {
+		return false, err
+	}
+	kind := strings.TrimSpace(action.Kind)
+	setupID := strings.TrimSpace(setup.ID)
+	actionID := strings.TrimSpace(action.ID)
+	if kind == sdk.GameSetupActionRequirePath {
+		if _, err := os.Stat(target); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return false, fmt.Errorf("game setup %s requires missing path %s", setupID, filepath.ToSlash(target))
+			}
+			return false, err
+		}
+		s.logger.Info("game setup required path verified", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
+		return false, nil
+	}
+	info, err := os.Stat(target)
+	if err == nil {
+		switch kind {
+		case sdk.GameSetupActionEnsureDirectory:
+			if !info.IsDir() {
+				return false, fmt.Errorf("game setup %s target exists but is not a directory: %s", setupID, filepath.ToSlash(target))
+			}
+		case sdk.GameSetupActionEnsureFile:
+			if info.IsDir() {
+				return false, fmt.Errorf("game setup %s target exists but is a directory: %s", setupID, filepath.ToSlash(target))
+			}
+			if !action.OverwriteExisting {
+				s.logger.Info("game setup file already exists", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
+				return false, nil
+			}
+		default:
+			return false, fmt.Errorf("game setup %s action %s has unsupported kind %q", setupID, actionID, kind)
+		}
+		if kind == sdk.GameSetupActionEnsureDirectory {
+			s.logger.Info("game setup directory already exists", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
+			return false, nil
+		}
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	switch kind {
+	case sdk.GameSetupActionEnsureDirectory:
+		if err := os.MkdirAll(target, 0o700); err != nil {
+			return false, err
+		}
+		s.logger.Info("game setup directory created", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
+		return true, nil
+	case sdk.GameSetupActionEnsureFile:
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return false, err
+		}
+		if err := os.WriteFile(target, []byte(action.Content), 0o600); err != nil {
+			return false, err
+		}
+		s.logger.Info("game setup file created", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "bytes", len(action.Content), "source", source)
+		return true, nil
+	default:
+		return false, fmt.Errorf("game setup %s action %s has unsupported kind %q", setupID, actionID, kind)
+	}
+}
+
+func (s *Server) gameSetupActionTarget(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) (string, error) {
+	root := strings.TrimSpace(game.GamePath)
+	switch strings.TrimSpace(action.Base) {
+	case sdk.GameSetupBaseGame:
+	case sdk.GameSetupBaseTargetRoot:
+		resolved, err := s.resolveManifestTargetRoot(ctx, game, action.TargetRootID)
+		if err != nil {
+			return "", err
+		}
+		root = resolved
+	default:
+		return "", fmt.Errorf("unsupported game setup base %q", action.Base)
+	}
+	if root == "" {
+		return "", errors.New("game setup root is empty")
+	}
+	root = filepath.Clean(root)
+	rel := filepath.ToSlash(strings.TrimSpace(action.RelativePath))
+	if rel == "" || rel == "." {
+		return root, nil
+	}
+	if filepath.IsAbs(rel) {
+		return "", errors.New("game setup relative path must not be absolute")
+	}
+	target := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+	if !pathContains(root, target) {
+		return "", errors.New("game setup target escapes its declared root")
+	}
+	return target, nil
 }
 
 func (s *Server) handleGameTools(w http.ResponseWriter, r *http.Request) {
@@ -1776,6 +2090,16 @@ func gameDiagnosticsWarnings(resp gameDiagnosticsResponse) []string {
 		if requirement.Required && requirement.Status != gamehandler.RequirementOK {
 			warnings = append(warnings, requirement.Name+" "+requirementWarningKind(requirement.Kind)+" requirement is "+string(requirement.Status)+": "+requirement.Message)
 		}
+	}
+	for _, setup := range resp.GameSetups {
+		if setup.Status == "ready" {
+			continue
+		}
+		message := strings.TrimSpace(setup.Message)
+		if message == "" {
+			message = "setup is " + setup.Status
+		}
+		warnings = append(warnings, strings.TrimSpace(setup.Name+": "+message))
 	}
 	for _, test := range resp.ExtensionTests {
 		if test.Status == sdk.HealthCheckStatusPassed && test.Severity == sdk.HealthCheckSeverityInfo {
@@ -7681,6 +8005,11 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	} else {
 		job = updatedJob
 	}
+	if setup, err := s.ensureGameSetupForApp(r.Context(), appID, job.ID, "manual"); err != nil {
+		job = s.failJobWithError(job, err)
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "setup": setup})
+		return
+	}
 	plan, err := s.buildGameDeployPlanWithProgress(r.Context(), appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
 		job = s.failJobWithError(job, err)
@@ -7770,6 +8099,15 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 		}
 	} else {
 		job = updatedJob
+	}
+	if _, err := s.ensureGameSetupForApp(ctx, appID, job.ID, source); err != nil {
+		s.logger.Warn("profile apply setup failed", "app_id", appID, "source", source, "error", err)
+		job = s.failJobWithError(job, err)
+		return profileApplyResponse{
+			Status:  "failed",
+			Message: "Profile was updated, but DMM could not prepare the game for modding: " + err.Error(),
+			Job:     &job,
+		}
 	}
 	plan, err := s.buildGameDeployPlanWithProgress(ctx, appID, s.extensionEventProgressUpdater(job.ID, "Preparing deployment"))
 	if err != nil {
@@ -11846,6 +12184,14 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 		return
 	} else if blocked {
 		message := "Installed " + staged.Name + " enabled; " + updatedJob.Message
+		s.jobs.Complete(jobID, message)
+		publishInstalled(true, message)
+		finish()
+		return
+	}
+	if _, err := s.ensureGameSetupForApp(ctx, staged.SteamAppID, jobID, "auto-enable"); err != nil {
+		message := "Installed " + staged.Name + " enabled; game setup failed: " + err.Error()
+		s.logger.Warn("auto-enable game setup failed", "job_id", jobID, "app_id", staged.SteamAppID, "error", err)
 		s.jobs.Complete(jobID, message)
 		publishInstalled(true, message)
 		finish()

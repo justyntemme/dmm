@@ -94,9 +94,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "darkestdungeon-prepare-for-modding",
-		Name:           "Prepare Darkest Dungeon mods folder",
-		GeneratedFiles: []string{modsDir, "dlc"},
+		ID:      "darkestdungeon-prepare-for-modding",
+		Name:    "Prepare Darkest Dungeon mods folder",
+		Actions: sdk.EnsureGameDirectories(modsDir, "dlc"),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

@@ -68,9 +68,9 @@ func Register(r sdk.Registrar) {
 		}),
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "wolcen-prepare-mods",
-		Name:           "Prepare Wolcen Mods folder",
-		GeneratedFiles: []string{"Mods"},
+		ID:      "wolcen-prepare-mods",
+		Name:    "Prepare Wolcen Mods folder",
+		Actions: sdk.EnsureGameDirectories("Mods"),
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-wolcen extension source",

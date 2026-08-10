@@ -61,8 +61,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:   "factorio-ensure-mods-folder",
-		Name: "Ensure Factorio user mods folder exists",
+		ID:      "factorio-ensure-mods-folder",
+		Name:    "Ensure Factorio user mods folder exists",
+		Actions: sdk.EnsureTargetRootDirectories(modsRootID, "."),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

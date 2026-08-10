@@ -59,9 +59,9 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "kingdomcomedeliverance-ensure-mods-folder",
-		Name:           "Ensure Kingdom Come Mods folder exists",
-		GeneratedFiles: []string{modsRoot, modOrderFile},
+		ID:      "kingdomcomedeliverance-ensure-mods-folder",
+		Name:    "Ensure Kingdom Come Mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modsRoot),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "kingdomcomedeliverance-xbox-launcher",

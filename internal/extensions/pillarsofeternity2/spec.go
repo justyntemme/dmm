@@ -75,9 +75,9 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "poe2-prepare-modding",
-		Name:           "Prepare Pillars II override and modconfig paths",
-		GeneratedFiles: []string{"PillarsOfEternityII_Data/override", "modconfig.json"},
+		ID:      "poe2-prepare-modding",
+		Name:    "Prepare Pillars II override and modconfig paths",
+		Actions: sdk.EnsureGameDirectories("PillarsOfEternityII_Data/override"),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "poe2-xbox-launcher",

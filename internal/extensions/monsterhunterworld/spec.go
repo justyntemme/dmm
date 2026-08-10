@@ -90,9 +90,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "monsterhunterworld-prepare-nativepc",
-		Name:           "Prepare Monster Hunter: World nativePC folder",
-		GeneratedFiles: []string{nativePCRoot},
+		ID:      "monsterhunterworld-prepare-nativepc",
+		Name:    "Prepare Monster Hunter: World nativePC folder",
+		Actions: sdk.EnsureGameDirectories(nativePCRoot),
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "monsterhunterworld-stracker-loader",

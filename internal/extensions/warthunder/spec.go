@@ -55,9 +55,9 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "warthunder-prepare-for-modding",
-		Name:           "Prepare War Thunder mod folders and audio config",
-		GeneratedFiles: []string{skinsRoot, audioRoot},
+		ID:      "warthunder-prepare-for-modding",
+		Name:    "Prepare War Thunder mod folders and audio config",
+		Actions: sdk.EnsureGameDirectories(skinsRoot, audioRoot),
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: sdk.EventWillDeploy,

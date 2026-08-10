@@ -80,9 +80,9 @@ func Register(r sdk.Registrar) {
 		Message:  "Vortex attempts to launch Bloodlines through Steam when the Steam app is discoverable.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "vampirebloodlines-prepare-folders",
-		Name:           "Ensure Bloodlines mod folders are writable",
-		GeneratedFiles: []string{defaultRoot, patchRoot},
+		ID:      "vampirebloodlines-prepare-folders",
+		Name:    "Ensure Bloodlines mod folders are writable",
+		Actions: sdk.EnsureGameDirectories(defaultRoot, patchRoot),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "vampirebloodlines-version-inf",

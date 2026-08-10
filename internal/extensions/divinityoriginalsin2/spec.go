@@ -115,9 +115,9 @@ func registerVariant(r sdk.Registrar, current variant) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             current.ID + "-ensure-documents-mods",
-		Name:           "Ensure " + current.Name + " Documents Mods folder",
-		GeneratedFiles: []string{"Larian Studios/" + current.DocumentsFolder + "/Mods"},
+		ID:      current.ID + "-ensure-documents-mods",
+		Name:    "Ensure " + current.Name + " Documents Mods folder",
+		Actions: sdk.EnsureTargetRootDirectories(current.TargetRootID, "."),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       current.ID + "-exe-version-marker",

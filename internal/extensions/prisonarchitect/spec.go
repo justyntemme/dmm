@@ -66,9 +66,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "prisonarchitect-ensure-localappdata-mods",
-		Name:           "Ensure Prison Architect LocalAppData mods folder exists",
-		GeneratedFiles: []string{"Introversion/Prison Architect/mods"},
+		ID:      "prisonarchitect-ensure-localappdata-mods",
+		Name:    "Ensure Prison Architect LocalAppData mods folder exists",
+		Actions: sdk.EnsureTargetRootDirectories(modsRootID, "."),
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "prisonarchitect-launcher-settings-version",

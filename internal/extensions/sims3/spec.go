@@ -49,9 +49,9 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "sims3-resource-cfg",
-		Name:           "Prepare The Sims 3 Resource.cfg",
-		GeneratedFiles: []string{"Electronic Arts/The Sims 3/Mods/Packages", "Electronic Arts/The Sims 3/Mods/Resource.cfg"},
+		ID:      "sims3-resource-cfg",
+		Name:    "Prepare The Sims 3 Resource.cfg",
+		Actions: sdk.EnsureTargetRootDirectories(packagesRootID, "."),
 	})
 	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
 		ID:        "sims3-sku-version",

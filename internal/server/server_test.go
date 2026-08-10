@@ -12067,6 +12067,117 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	}
 }
 
+func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999006"
+	gamePath := filepath.Join(t.TempDir(), "Setup Game")
+	targetRoot := filepath.Join(t.TempDir(), "External Mods")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("game"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "setupgame",
+		Name:    "Setup Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"setupgame"},
+				VortexGameID: "setupgame",
+			})
+			r.RegisterTargetRoot(sdk.TargetRootSpec{
+				ID:   "external-root",
+				Name: "External setup root",
+				Resolver: func(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+					if err := ctx.Err(); err != nil {
+						return sdk.TargetRootResult{}, err
+					}
+					return sdk.TargetRootResult{Path: targetRoot, Source: "test"}, nil
+				},
+			})
+			actions := sdk.RequireGamePaths("Game.exe")
+			actions = append(actions, sdk.EnsureGameDirectories("Mods")...)
+			actions = append(actions, sdk.EnsureTargetRootDirectories("external-root", ".")...)
+			actions = append(actions, sdk.EnsureTargetRootFiles("external-root", "ready\n", "settings/config.txt")...)
+			r.RegisterGameSetup(sdk.GameSetupSpec{
+				ID:      "prepare",
+				Name:    "Prepare setup game",
+				Actions: actions,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Setup Game",
+		InstallDir:  "Setup Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var before gameDiagnosticsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&before); err != nil {
+		t.Fatal(err)
+	}
+	if len(before.GameSetups) != 1 || before.GameSetups[0].Status != "missing" {
+		t.Fatalf("setup diagnostics before = %+v", before.GameSetups)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/setup", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("setup status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var applied gameSetupApplyResponse
+	if err := json.NewDecoder(rec.Body).Decode(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 3 || applied.Result.Checked != 4 {
+		t.Fatalf("setup response = %+v", applied)
+	}
+	if _, err := os.Stat(filepath.Join(gamePath, "Mods")); err != nil {
+		t.Fatalf("game mods dir missing: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(targetRoot, "settings", "config.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "ready\n" {
+		t.Fatalf("config content = %q", string(content))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics after status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var after gameDiagnosticsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.GameSetups) != 1 || after.GameSetups[0].Status != "ready" {
+		t.Fatalf("setup diagnostics after = %+v", after.GameSetups)
+	}
+}
+
 func discoveredToolByIDSource(tools []discoveredTool, id, source string) *discoveredTool {
 	for i := range tools {
 		if tools[i].ID == id && tools[i].Source == source {

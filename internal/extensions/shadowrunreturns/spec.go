@@ -58,9 +58,9 @@ func Register(r sdk.Registrar) {
 		Relative:           true,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "shadowrunreturns-ensure-content-packs",
-		Name:           "Ensure Shadowrun Returns ContentPacks folder exists",
-		GeneratedFiles: []string{modRoot},
+		ID:      "shadowrunreturns-ensure-content-packs",
+		Name:    "Ensure Shadowrun Returns ContentPacks folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
 	})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{
 		ID:           "shadowrunreturns-hash-version",

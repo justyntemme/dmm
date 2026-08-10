@@ -53,9 +53,9 @@ func RegisterWitcher(r sdk.Registrar) {
 	r.RegisterInstaller(witcherUserInstaller(WitcherID, "witcheruser"))
 	r.RegisterInstaller(defaultInstaller(WitcherID, "witcherdefault"))
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "witcher-ensure-override-folder",
-		Name:           "Ensure The Witcher Override folder exists",
-		GeneratedFiles: []string{"Data/Override"},
+		ID:      "witcher-ensure-override-folder",
+		Name:    "Ensure The Witcher Override folder exists",
+		Actions: sdk.EnsureGameDirectories("Data/Override"),
 	})
 	for _, ref := range witcherSources() {
 		r.RegisterSource(ref)
@@ -80,9 +80,9 @@ func RegisterWitcher2(r sdk.Registrar) {
 	r.RegisterInstaller(witcherUserInstaller(Witcher2ID, "witcher2user"))
 	r.RegisterInstaller(defaultInstaller(Witcher2ID, "witcher2default"))
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "witcher2-ensure-usercontent-folder",
-		Name:           "Ensure The Witcher 2 UserContent folder exists",
-		GeneratedFiles: []string{"UserContent"},
+		ID:      "witcher2-ensure-usercontent-folder",
+		Name:    "Ensure The Witcher 2 UserContent folder exists",
+		Actions: sdk.EnsureGameDirectories("UserContent"),
 	})
 	for _, ref := range witcher2Sources() {
 		r.RegisterSource(ref)

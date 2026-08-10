@@ -77,9 +77,9 @@ func Register(r sdk.Registrar) {
 		Message: "Vortex exposes a load-order page with mod-author ordering guidance. DMM generates modlist.txt from profile priority today; generic drag/drop load-order UI remains to be implemented.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "conanexiles-ensure-mods-folder",
-		Name:           "Ensure Conan Exiles Mods folder exists",
-		GeneratedFiles: []string{modsRoot, modlistRel},
+		ID:      "conanexiles-ensure-mods-folder",
+		Name:    "Ensure Conan Exiles Mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modsRoot),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

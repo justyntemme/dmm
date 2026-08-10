@@ -85,9 +85,9 @@ func Register(r sdk.Registrar) {
 		Message:  "Vortex requests Steam launcher behavior when steamclient64.dll is present in the game folder.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "7daystodie-user-data-folder",
-		Name:           "Configure 7 Days to Die user data folder",
-		GeneratedFiles: []string{"Mods", "launchersettings.json"},
+		ID:      "7daystodie-user-data-folder",
+		Name:    "Configure 7 Days to Die user data folder",
+		Actions: sdk.EnsureGameDirectories("Mods"),
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:      "7daystodie-udf",

@@ -1968,18 +1968,50 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 		if strings.TrimSpace(spec.Name) == "" {
 			errs = append(errs, errors.New("game setup "+id+" name is required"))
 		}
-		for _, path := range spec.RequiredFiles {
-			if err := validateRelativePath(path); err != nil {
-				errs = append(errs, errors.New("game setup "+id+" required file: "+err.Error()))
+		actionSeen := map[string]struct{}{}
+		for _, action := range spec.Actions {
+			actionID := strings.TrimSpace(action.ID)
+			if actionID == "" {
+				errs = append(errs, errors.New("game setup "+id+" action id is required"))
+				continue
 			}
-		}
-		for _, path := range spec.GeneratedFiles {
-			if err := validateRelativePath(path); err != nil {
-				errs = append(errs, errors.New("game setup "+id+" generated file: "+err.Error()))
+			errs = append(errs, validateSimpleID("game setup "+id+" action", actionID)...)
+			actionKey := strings.ToLower(actionID)
+			if _, ok := actionSeen[actionKey]; ok {
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" is registered more than once"))
+			}
+			actionSeen[actionKey] = struct{}{}
+			switch strings.TrimSpace(action.Kind) {
+			case sdk.GameSetupActionEnsureDirectory, sdk.GameSetupActionEnsureFile, sdk.GameSetupActionRequirePath:
+			default:
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" kind must be ensure-directory, ensure-file, or require-path"))
+			}
+			switch strings.TrimSpace(action.Base) {
+			case sdk.GameSetupBaseGame:
+				if strings.TrimSpace(action.TargetRootID) != "" {
+					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" must not declare target_root_id when base is game"))
+				}
+			case sdk.GameSetupBaseTargetRoot:
+				if strings.TrimSpace(action.TargetRootID) == "" {
+					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" target_root_id is required"))
+				}
+			default:
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" base must be game or target-root"))
+			}
+			if err := validateSetupRelativePath(action.RelativePath); err != nil {
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" relative path: "+err.Error()))
 			}
 		}
 	}
 	return errs
+}
+
+func validateSetupRelativePath(value string) error {
+	value = strings.TrimSpace(filepath.ToSlash(value))
+	if value == "" || value == "." {
+		return nil
+	}
+	return validateRelativePath(value)
 }
 
 func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk.TargetRootSpec) []error {

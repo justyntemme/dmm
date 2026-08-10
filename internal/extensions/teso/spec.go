@@ -49,7 +49,7 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterGameSetup(sdk.GameSetupSpec{ID: "teso-ensure-addons-folder", Name: "Ensure The Elder Scrolls Online AddOns folder exists", GeneratedFiles: []string{"Elder Scrolls Online/live/Addons"}})
+	r.RegisterGameSetup(sdk.GameSetupSpec{ID: "teso-ensure-addons-folder", Name: "Ensure The Elder Scrolls Online AddOns folder exists", Actions: sdk.EnsureTargetRootDirectories(addonsRoot, ".")})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{
 		ID:           "teso-hash-version",
 		Name:         "The Elder Scrolls Online hash version",

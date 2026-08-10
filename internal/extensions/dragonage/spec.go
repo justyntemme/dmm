@@ -68,9 +68,12 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             "dragonage-prepare-documents",
-		Name:           "Prepare Dragon Age Documents mod folders",
-		GeneratedFiles: []string{"BioWare/Dragon Age/packages/core/override", "BioWare/Dragon Age/AddIns", dazip.AddInsXMLRel},
+		ID:   "dragonage-prepare-documents",
+		Name: "Prepare Dragon Age Documents mod folders",
+		Actions: append(
+			sdk.EnsureTargetRootDirectories(overrideRootID, "."),
+			sdk.EnsureTargetRootDirectories(documentsRootID, "AddIns")...,
+		),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "dragonage-steam-launcher",

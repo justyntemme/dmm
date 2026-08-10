@@ -52,9 +52,9 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 	})
 	r.RegisterInstaller(ToolInstaller("vortex:"+gameID+":umm-tool", 15))
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:             gameID + "-ensure-mods-folder",
-		Name:           "Ensure " + gameName + " Mods folder exists",
-		GeneratedFiles: []string{ModRoot},
+		ID:      gameID + "-ensure-mods-folder",
+		Name:    "Ensure " + gameName + " Mods folder exists",
+		Actions: sdk.EnsureGameDirectories(ModRoot),
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:             "umm",
