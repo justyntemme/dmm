@@ -42,6 +42,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
+	"github.com/justyntemme/decky-mod-manager/internal/gamebryosaves"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
@@ -505,6 +506,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/move", s.handleMoveProfileMod)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/plugin-activation/{activationID}/plugins", s.handleSetProfilePluginActivation)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/plugin-activation/{activationID}/order", s.handleSetProfilePluginActivationOrder)
+	mux.HandleFunc("GET /api/profiles/{profileID}/savegames", s.handleProfileSavegames)
+	mux.HandleFunc("POST /api/profiles/{profileID}/savegames/transfer", s.handleTransferProfileSavegames)
+	mux.HandleFunc("DELETE /api/profiles/{profileID}/savegames", s.handleDeleteProfileSavegames)
+	mux.HandleFunc("POST /api/profiles/{profileID}/savegames/{saveID}/restore-plugins", s.handleRestoreProfileSavegamePlugins)
 	mux.HandleFunc("GET /api/jobs", s.handleJobs)
 	mux.HandleFunc("GET /api/events/ws", s.handleEventsWebSocket)
 	mux.HandleFunc("POST /api/client-events", s.handleClientEvent)
@@ -11733,6 +11738,190 @@ func (s *Server) handleSetProfilePluginActivationOrder(w http.ResponseWriter, r 
 	}
 	apply := s.applyProfileChangesForUserAction(r.Context(), ctx.game.SteamAppID, "plugin-activation-order")
 	writeJSON(w, http.StatusOK, profilePluginActivationUpdateResponse{LoadOrder: loadOrder, States: states, Apply: apply})
+}
+
+type transferSavegamesRequest struct {
+	Source     string   `json:"source"`
+	SaveIDs    []string `json:"save_ids"`
+	KeepSource bool     `json:"keep_source"`
+}
+
+type deleteSavegamesRequest struct {
+	Slot    string   `json:"slot"`
+	SaveIDs []string `json:"save_ids"`
+}
+
+type savegameOperationResponse struct {
+	Failed []string `json:"failed,omitempty"`
+}
+
+type savegameRestorePluginsResponse struct {
+	Applied []string                               `json:"applied"`
+	Missing []string                               `json:"missing,omitempty"`
+	States  []storage.ProfilePluginActivationState `json:"states,omitempty"`
+	Apply   profileApplyResponse                   `json:"apply"`
+}
+
+func (s *Server) handleProfileSavegames(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.profileSavegameService(w, r)
+	if !ok {
+		return
+	}
+	slot := gamebryosaves.Slot(strings.TrimSpace(r.URL.Query().Get("slot")))
+	if slot == "" {
+		slot = gamebryosaves.SlotProfile
+	}
+	saves, err := service.List(slot)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saves)
+}
+
+func (s *Server) handleTransferProfileSavegames(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.profileSavegameService(w, r)
+	if !ok {
+		return
+	}
+	var req transferSavegamesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	source := gamebryosaves.Slot(strings.TrimSpace(req.Source))
+	if source == "" {
+		source = gamebryosaves.SlotGlobal
+	}
+	failed, err := service.Transfer(source, req.SaveIDs, req.KeepSource)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile savegames transferred", "profile_id", service.ProfileID, "source", source, "count", len(req.SaveIDs), "failed", len(failed), "keep_source", req.KeepSource)
+	writeJSON(w, http.StatusOK, savegameOperationResponse{Failed: failed})
+}
+
+func (s *Server) handleDeleteProfileSavegames(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.profileSavegameService(w, r)
+	if !ok {
+		return
+	}
+	var req deleteSavegamesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	slot := gamebryosaves.Slot(strings.TrimSpace(req.Slot))
+	if slot == "" {
+		slot = gamebryosaves.SlotProfile
+	}
+	failed, err := service.Delete(slot, req.SaveIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile savegames deleted", "profile_id", service.ProfileID, "slot", slot, "count", len(req.SaveIDs), "failed", len(failed))
+	writeJSON(w, http.StatusOK, savegameOperationResponse{Failed: failed})
+}
+
+func (s *Server) handleRestoreProfileSavegamePlugins(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.profileSavegameService(w, r)
+	if !ok {
+		return
+	}
+	saveID := strings.TrimSpace(r.PathValue("saveID"))
+	if saveID == "" {
+		http.Error(w, "saveID is required", http.StatusBadRequest)
+		return
+	}
+	savePath, err := service.Path(gamebryosaves.SlotProfile)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	meta, err := gamebryosaves.Parse(filepath.Join(savePath, filepath.Base(saveID)))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), service.ProfileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	spec, ok := s.games.PluginActivationForSteamApp(appID)
+	if !ok {
+		http.Error(w, "plugin activation is not supported for this profile", http.StatusBadRequest)
+		return
+	}
+	ctx, err := s.profilePluginActivationContext(r.Context(), service.ProfileID, spec.ID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var applied, missing []string
+	for _, plugin := range meta.Plugins {
+		entry, ok := ctx.byKey[pluginActivationRequestKey(plugin)]
+		if !ok {
+			missing = append(missing, plugin)
+			continue
+		}
+		applied = append(applied, entry.Name)
+	}
+	if len(applied) == 0 {
+		http.Error(w, "savegame does not reference any available profile plugins", http.StatusBadRequest)
+		return
+	}
+	states, err := s.db.SetProfilePluginActivationOrder(r.Context(), service.ProfileID, spec.ID, applied)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile savegame plugin order restored", "profile_id", service.ProfileID, "save_id", saveID, "applied", len(applied), "missing", len(missing))
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "savegame-plugin-restore")
+	writeJSON(w, http.StatusOK, savegameRestorePluginsResponse{Applied: applied, Missing: missing, States: states, Apply: apply})
+}
+
+func (s *Server) profileSavegameService(w http.ResponseWriter, r *http.Request) (gamebryosaves.Service, bool) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return gamebryosaves.Service{}, false
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return gamebryosaves.Service{}, false
+	}
+	_, spec, ok := s.games.SavegameManagementForSteamApp(appID)
+	if !ok {
+		http.Error(w, "savegame management is not supported for this profile", http.StatusBadRequest)
+		return gamebryosaves.Service{}, false
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return gamebryosaves.Service{}, false
+	}
+	documents, err := protonDocumentsBase(game)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return gamebryosaves.Service{}, false
+	}
+	states, err := s.db.ProfileFeatureStates(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return gamebryosaves.Service{}, false
+	}
+	enabled := false
+	for _, state := range states {
+		if state.FeatureID == spec.LocalFeatureID {
+			enabled = state.Enabled
+			break
+		}
+	}
+	return gamebryosaves.Service{Spec: spec, Documents: documents, ProfileID: profileID, LocalSaves: enabled}, true
 }
 
 func profilePluginActivationPath(w http.ResponseWriter, r *http.Request) (int64, string, bool) {

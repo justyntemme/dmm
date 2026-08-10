@@ -68,6 +68,7 @@ type Extension struct {
 	ExtensionAPIs            []sdk.ExtensionAPISpec
 	ProfileFeatures          []sdk.ProfileFeatureSpec
 	ProfileFiles             []sdk.ProfileFileSpec
+	SavegameManagement       []sdk.SavegameManagementSpec
 	CollectionFeatures       []sdk.CollectionFeatureSpec
 	StateReducers            []sdk.StateReducerSpec
 	StateStores              []sdk.StateStoreSpec
@@ -139,6 +140,7 @@ type ExtensionControlWrapperSpec = sdk.ExtensionControlWrapperSpec
 type ExtensionAPISpec = sdk.ExtensionAPISpec
 type ProfileFeatureSpec = sdk.ProfileFeatureSpec
 type ProfileFileSpec = sdk.ProfileFileSpec
+type SavegameManagementSpec = sdk.SavegameManagementSpec
 type CollectionFeatureSpec = sdk.CollectionFeatureSpec
 type StateReducerSpec = sdk.StateReducerSpec
 type StateStoreSpec = sdk.StateStoreSpec
@@ -258,6 +260,7 @@ type ExtensionCapabilities struct {
 	ExtensionAPIs            []FeatureSummary         `json:"extension_apis,omitempty"`
 	ProfileFeatures          []FeatureSummary         `json:"profile_features,omitempty"`
 	ProfileFiles             []FeatureSummary         `json:"profile_files,omitempty"`
+	SavegameManagement       []FeatureSummary         `json:"savegame_management,omitempty"`
 	CollectionFeatures       []FeatureSummary         `json:"collection_features,omitempty"`
 	StateReducers            []FeatureSummary         `json:"state_reducers,omitempty"`
 	StateStores              []FeatureSummary         `json:"state_stores,omitempty"`
@@ -856,6 +859,17 @@ func (r Registry) ProfileFeatureForSteamApp(appID, featureID string) (Extension,
 		}
 	}
 	return Extension{}, sdk.ProfileFeatureSpec{}, false
+}
+
+func (r Registry) SavegameManagementForSteamApp(appID string) (Extension, sdk.SavegameManagementSpec, bool) {
+	for _, extension := range r.extensionListBySteamAppID[canonical(appID)] {
+		for _, spec := range extension.SavegameManagement {
+			if strings.EqualFold(strings.TrimSpace(spec.GameID), strings.TrimSpace(extension.InstallPlan.VortexGameID)) {
+				return extension, spec, true
+			}
+		}
+	}
+	return Extension{}, sdk.SavegameManagementSpec{}, false
 }
 
 func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
@@ -2102,6 +2116,18 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: file.Message,
 		})
 	}
+	for _, savegames := range extension.SavegameManagement {
+		summary.Capabilities.SavegameManagement = append(summary.Capabilities.SavegameManagement, FeatureSummary{
+			ID:             savegames.ID,
+			Name:           savegames.Name,
+			GameID:         savegames.GameID,
+			Base:           savegames.Base,
+			Path:           savegames.Path,
+			FileExtensions: append([]string(nil), savegames.SaveExtensions...),
+			Status:         defaultString(savegames.Status, sdk.CapabilityStatusReady),
+			Message:        savegames.Message,
+		})
+	}
 	for _, feature := range extension.CollectionFeatures {
 		summary.Capabilities.CollectionFeatures = append(summary.Capabilities.CollectionFeatures, FeatureSummary{
 			ID:      feature.ID,
@@ -2237,6 +2263,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.ExtensionAPIs)
 	sortFeatureSummaries(summary.Capabilities.ProfileFeatures)
 	sortFeatureSummaries(summary.Capabilities.ProfileFiles)
+	sortFeatureSummaries(summary.Capabilities.SavegameManagement)
 	sortFeatureSummaries(summary.Capabilities.CollectionFeatures)
 	sortFeatureSummaries(summary.Capabilities.StateReducers)
 	sortFeatureSummaries(summary.Capabilities.StateStores)

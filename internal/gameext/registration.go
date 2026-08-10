@@ -402,6 +402,13 @@ func (r *Registrar) RegisterProfileFile(spec sdk.ProfileFileSpec) {
 	r.extension.ProfileFiles = append(r.extension.ProfileFiles, spec)
 }
 
+func (r *Registrar) RegisterSavegameManagement(spec sdk.SavegameManagementSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.SavegameManagement = append(r.extension.SavegameManagement, spec)
+}
+
 func (r *Registrar) RegisterCollectionFeature(spec sdk.CollectionFeatureSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -564,6 +571,7 @@ func validateExtension(extension Extension) error {
 		return spec.ID, spec.Name, spec.Status, spec.Message
 	})...)
 	errs = append(errs, validateProfileFiles(extension.ProfileFiles)...)
+	errs = append(errs, validateSavegameManagement(extension.SavegameManagement)...)
 	errs = append(errs, validateStatusedNamed("collection feature", extension.CollectionFeatures, func(spec sdk.CollectionFeatureSpec) (string, string, string, string) {
 		return spec.ID, spec.Name, spec.Status, spec.Message
 	})...)
@@ -635,6 +643,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.ExtensionAPIs) > 0 ||
 		len(extension.ProfileFeatures) > 0 ||
 		len(extension.ProfileFiles) > 0 ||
+		len(extension.SavegameManagement) > 0 ||
 		len(extension.CollectionFeatures) > 0 ||
 		len(extension.StateReducers) > 0 ||
 		len(extension.StateStores) > 0 ||
@@ -2116,6 +2125,47 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 		for _, patch := range spec.Patches {
 			if err := validateProfileFilePatch(id, patch); err != nil {
 				errs = append(errs, err)
+			}
+		}
+	}
+	return errs
+}
+
+func validateSavegameManagement(specs []sdk.SavegameManagementSpec) []error {
+	errs := validateStatusedNamed("savegame management", specs, func(spec sdk.SavegameManagementSpec) (string, string, string, string) {
+		return spec.ID, spec.Name, spec.Status, spec.Message
+	})
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		if strings.TrimSpace(spec.GameID) == "" {
+			errs = append(errs, errors.New("savegame management "+id+" game id is required"))
+		}
+		switch strings.TrimSpace(spec.Base) {
+		case "", sdk.ProfileFileBaseProtonDocuments:
+		default:
+			errs = append(errs, errors.New("savegame management "+id+" base is not supported"))
+		}
+		if err := validateRelativePath(spec.Path); err != nil {
+			errs = append(errs, errors.New("savegame management "+id+" path: "+err.Error()))
+		}
+		if strings.TrimSpace(spec.LocalFeatureID) == "" {
+			errs = append(errs, errors.New("savegame management "+id+" local feature id is required"))
+		}
+		if err := validateRelativePath(spec.LocalPath); err != nil {
+			errs = append(errs, errors.New("savegame management "+id+" local path: "+err.Error()))
+		}
+		if err := validateRelativePath(spec.GlobalPath); err != nil {
+			errs = append(errs, errors.New("savegame management "+id+" global path: "+err.Error()))
+		}
+		if len(spec.SaveExtensions) == 0 {
+			errs = append(errs, errors.New("savegame management "+id+" save extensions are required"))
+		}
+		for _, ext := range spec.SaveExtensions {
+			if !strings.HasPrefix(strings.TrimSpace(ext), ".") {
+				errs = append(errs, errors.New("savegame management "+id+" save extension must start with ."))
 			}
 		}
 	}

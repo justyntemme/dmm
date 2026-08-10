@@ -41,6 +41,8 @@ type LocalGameSettingsOptions struct {
 	SaveININame    string
 	SavePath       string
 	GlobalSavePath string
+	SaveExtensions []string
+	SaveSidecars   []string
 	FilePatches    []LocalGameSettingPatch
 }
 
@@ -154,6 +156,9 @@ func RegisterLocalGameSettings(r sdk.Registrar, opts LocalGameSettingsOptions) {
 	r.RegisterProfileFeature(LocalGameSettingsProfileFeature())
 	if strings.TrimSpace(opts.SaveININame) != "" {
 		r.RegisterProfileFeature(LocalSavesProfileFeature())
+		if savegames := LocalSavegameManagement(opts); savegames.ID != "" {
+			r.RegisterSavegameManagement(savegames)
+		}
 	}
 	for _, file := range LocalGameSettingsProfileFiles(opts) {
 		r.RegisterProfileFile(file)
@@ -173,6 +178,43 @@ func LocalSavesProfileFeature() sdk.ProfileFeatureSpec {
 		ID:      "local_saves",
 		Name:    "Local Saves",
 		Message: "This profile uses its own Gamebryo save folder by writing General.SLocalSavePath, matching Vortex's local saves profile feature.",
+	}
+}
+
+func LocalSavegameManagement(opts LocalGameSettingsOptions) sdk.SavegameManagementSpec {
+	gameID := strings.TrimSpace(opts.GameID)
+	myGamesPath := strings.Trim(strings.TrimSpace(opts.MyGamesPath), "/")
+	if gameID == "" || myGamesPath == "" {
+		return sdk.SavegameManagementSpec{}
+	}
+	savePath := strings.Trim(strings.TrimSpace(opts.SavePath), "/")
+	if savePath == "" {
+		savePath = "Saves/{profile_id}"
+	}
+	globalSavePath := strings.Trim(strings.TrimSpace(opts.GlobalSavePath), "/")
+	if globalSavePath == "" {
+		globalSavePath = "Saves"
+	}
+	extensions := opts.SaveExtensions
+	if len(extensions) == 0 {
+		extensions = []string{".ess", ".fos"}
+	}
+	sidecars := opts.SaveSidecars
+	if len(sidecars) == 0 {
+		sidecars = []string{".skse", ".fose", ".f4se", ".nvse", ".obse"}
+	}
+	return sdk.SavegameManagementSpec{
+		ID:               gameID + "-gamebryo-savegames",
+		Name:             "Gamebryo Savegames",
+		GameID:           gameID,
+		Base:             sdk.ProfileFileBaseProtonDocuments,
+		Path:             path.Join("My Games", myGamesPath),
+		LocalFeatureID:   "local_saves",
+		LocalPath:        savePath,
+		GlobalPath:       globalSavePath,
+		SaveExtensions:   append([]string(nil), extensions...),
+		SidecarPatterns:  append([]string(nil), sidecars...),
+		PluginExtensions: []string{".esm", ".esp", ".esl"},
 	}
 }
 

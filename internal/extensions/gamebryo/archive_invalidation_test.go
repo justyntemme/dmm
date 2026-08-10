@@ -125,6 +125,20 @@ func TestArchiveInvalidationProfilePatchesAttachToINI(t *testing.T) {
 	}
 }
 
+func TestLocalSavegameManagementDeclaresSafeGamebryoPaths(t *testing.T) {
+	spec := LocalSavegameManagement(LocalGameSettingsOptions{
+		GameID:      "fallout4",
+		MyGamesPath: "Fallout4",
+		SaveININame: "Fallout4Custom.ini",
+	})
+	if spec.ID != "fallout4-gamebryo-savegames" || spec.Path != "My Games/Fallout4" || spec.LocalPath != "Saves/{profile_id}" || spec.GlobalPath != "Saves" {
+		t.Fatalf("savegame spec = %+v", spec)
+	}
+	if spec.LocalFeatureID != "local_saves" || len(spec.SaveExtensions) == 0 || len(spec.SidecarPatterns) == 0 {
+		t.Fatalf("savegame spec missing defaults = %+v", spec)
+	}
+}
+
 func TestArchiveInvalidationHandlerKeepsManagedPatchMapping(t *testing.T) {
 	root := t.TempDir()
 	documentsRoot := filepath.Join(root, "steamapps", "compatdata", "377160", "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")

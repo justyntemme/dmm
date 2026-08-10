@@ -374,8 +374,8 @@ Vortex source examples:
 DMM status:
 
 - Has DMM-owned VFS, staging, deployment manifests, rollback, and local archive import.
-- Has source-backed runtime for new-file adoption/monitoring, plus blocked metadata for Vortex/NMM/MO import UI entries and savegame profile features. Profile-local settings file sync itself is implemented through game extensions that declare the Vortex `local_game_settings` files, and `bake-settings` has a profile-switch lifecycle runtime. Concrete extension handlers for mod-provided settings baking remain to be added where source review requires them.
-- Missing the actual runtime implementations for the remaining import/savegame/profile utility features.
+- Has source-backed runtime for new-file adoption/monitoring and Gamebryo savegame management. Savegame parity is extension-declared and covers profile/global save listing, profile save transfer/copy, save deletion with script-extender sidecars, local-save profile path support, and restore-plugin-order through the profile plugin activation APIs. Profile-local settings file sync itself is implemented through game extensions that declare the Vortex `local_game_settings` files, and `bake-settings` has a profile-switch lifecycle runtime. Concrete extension handlers for mod-provided settings baking remain to be added where source review requires them.
+- Missing the actual runtime implementations for the remaining Vortex/NMM/MO import utility features.
 
 Priority: P2 for MVP unless needed to safely adopt dirty Vortex installs.
 

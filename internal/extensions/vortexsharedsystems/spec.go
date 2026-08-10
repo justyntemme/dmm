@@ -71,15 +71,16 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		ID:      "local_saves",
 		Name:    "Gamebryo local save paths",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM supports Vortex-style Gamebryo local save path redirection through extension-declared profile-file INI patches. Save browsing, transfer, and restore UI remain separate blocked surfaces.",
+		Message: "DMM supports Vortex-style Gamebryo local save path redirection through extension-declared profile-file INI patches and the savegame management runtime.",
 	})
-	r.RegisterStateReducer(blockedReducer("gamebryo-save-session", "Gamebryo savegame session state", "session/saves"))
-	r.RegisterStateReducer(blockedReducer("gamebryo-save-settings", "Gamebryo savegame settings state", "settings/saves"))
-	r.RegisterExtensionAction(blockedAction("gamebryo-save-transfer", "Transfer save games", "savegames-icons", "savegame"))
-	r.RegisterExtensionAction(blockedAction("gamebryo-save-refresh", "Refresh save games", "savegames-icons", "refresh"))
-	r.RegisterExtensionAction(blockedAction("gamebryo-save-open", "Open save games", "savegames-icons", "open"))
-	r.RegisterExtensionMainPage(blockedMainPage("gamebryo-savegames", "Save games", "savegame"))
-	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusBlocked, Message: blockedMessage})
+	savegameMessage := "DMM exposes Vortex-equivalent Gamebryo savegame management through extension-declared savegame specs plus profile APIs for list, transfer/copy, delete, and restore-plugin-order operations."
+	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-save-session", Name: "Gamebryo savegame session state", Scope: "api/profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-save-settings", Name: "Gamebryo savegame settings state", Scope: "extension-savegame-spec", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "gamebryo-save-transfer", Name: "Transfer save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "gamebryo-save-refresh", Name: "Refresh save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "gamebryo-save-open", Name: "Open save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{ID: "gamebryo-savegames", Name: "Save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
+	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterExtensionAPI(readyAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "skyrim-fonts", Name: "Skyrim font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionMainPage(blockedMainPage("morrowind-plugins", "Morrowind plugins", "plugins"))

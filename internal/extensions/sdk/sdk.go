@@ -75,6 +75,7 @@ type Registrar interface {
 	RegisterExtensionAPI(ExtensionAPISpec)
 	RegisterProfileFeature(ProfileFeatureSpec)
 	RegisterProfileFile(ProfileFileSpec)
+	RegisterSavegameManagement(SavegameManagementSpec)
 	RegisterCollectionFeature(CollectionFeatureSpec)
 	RegisterStateReducer(StateReducerSpec)
 	RegisterStateStore(StateStoreSpec)
@@ -930,6 +931,22 @@ type ProfileFilePatchSpec struct {
 	DisabledValue         string
 	DisabledValueTemplate string
 	AllowEmpty            bool
+}
+
+type SavegameManagementSpec struct {
+	ID               string
+	Name             string
+	GameID           string
+	Base             string
+	Path             string
+	LocalFeatureID   string
+	LocalPath        string
+	GlobalPath       string
+	SaveExtensions   []string
+	SidecarPatterns  []string
+	PluginExtensions []string
+	Status           string
+	Message          string
 }
 
 type CollectionFeatureSpec struct {
