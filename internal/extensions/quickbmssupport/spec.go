@@ -1,6 +1,14 @@
 package quickbmssupport
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync"
+
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/quickbms"
+)
 
 const (
 	ID      = "quickbms-support"
@@ -9,7 +17,67 @@ const (
 	BuildID = "first-party-go"
 )
 
-const metadataMessage = "DMM has a typed QuickBMS process bridge, but no converted extension has wired this Vortex API through a DMM extension API namespace yet."
+const runtimeMessage = "DMM exposes a first-party Go namespace for Vortex's QuickBMS API calls backed by the typed QuickBMS process bridge."
+
+type API struct {
+	mu              sync.RWMutex
+	registeredGames map[string]struct{}
+	Runner          quickbms.Runner
+}
+
+func NewAPI(runner quickbms.Runner) *API {
+	return &API{
+		registeredGames: map[string]struct{}{},
+		Runner:          runner,
+	}
+}
+
+func (api *API) RegisterGame(gameID string) {
+	gameID = strings.TrimSpace(gameID)
+	if gameID == "" {
+		return
+	}
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	api.registeredGames[gameID] = struct{}{}
+}
+
+func (api *API) GameRegistered(gameID string) bool {
+	api.mu.RLock()
+	defer api.mu.RUnlock()
+	_, ok := api.registeredGames[strings.TrimSpace(gameID)]
+	return ok
+}
+
+func (api *API) List(ctx context.Context, gameID string, op quickbms.Operation) (quickbms.Result, error) {
+	op.Type = quickbms.OperationList
+	return api.run(ctx, gameID, op)
+}
+
+func (api *API) Extract(ctx context.Context, gameID string, op quickbms.Operation) (quickbms.Result, error) {
+	op.Type = quickbms.OperationExtract
+	return api.run(ctx, gameID, op)
+}
+
+func (api *API) Write(ctx context.Context, gameID string, op quickbms.Operation) (quickbms.Result, error) {
+	op.Type = quickbms.OperationWrite
+	return api.run(ctx, gameID, op)
+}
+
+func (api *API) Reimport(ctx context.Context, gameID string, op quickbms.Operation) (quickbms.Result, error) {
+	op.Type = quickbms.OperationReimport
+	return api.run(ctx, gameID, op)
+}
+
+func (api *API) run(ctx context.Context, gameID string, op quickbms.Operation) (quickbms.Result, error) {
+	if api == nil {
+		return quickbms.Result{}, errors.New("quickbms API is nil")
+	}
+	if !api.GameRegistered(gameID) {
+		return quickbms.Result{}, errors.New("quickbms game is not registered: " + strings.TrimSpace(gameID))
+	}
+	return api.Runner.Run(ctx, op)
+}
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -35,8 +103,8 @@ func Register(r sdk.Registrar) {
 		{ID: "qbmsWrite", Name: "Write QuickBMS archive entries"},
 		{ID: "qbmsReimport", Name: "Reimport QuickBMS archive entries"},
 	} {
-		api.Status = sdk.CapabilityStatusMetadata
-		api.Message = metadataMessage
+		api.Status = sdk.CapabilityStatusReady
+		api.Message = runtimeMessage
 		r.RegisterExtensionAPI(api)
 	}
 }
