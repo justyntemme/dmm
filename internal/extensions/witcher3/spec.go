@@ -56,7 +56,13 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"WitcherScriptMerger.exe"},
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "witcher3-xml-menu-merge", Name: "Witcher 3 XML/menu merge"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "witcher3-mods-settings", Name: "Witcher 3 mods.settings load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:                "witcher3-mods-settings",
+		Name:              "Witcher 3 mods.settings load order",
+		ModTypes:          []string{"witcher3menumodroot", "witcher3tl", "witcher3dlc", "witcher3-mod-root"},
+		Message:           "DMM currently derives the managed mods.settings subset from profile priority; advanced Script Merger ordering remains extension work.",
+		UsageInstructions: "Move profile mods up or down to change the generated managed Witcher 3 settings order.",
+	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "witcher3-menu-readme-conflicts",
 		Name:     "Witcher 3 menu/readme conflict ignore",

@@ -73,7 +73,15 @@ func Register(r sdk.Registrar) {
 		Status:             sdk.CapabilityStatusMetadata,
 		Message:            "Vortex exposes the Morrowind Construction Set as a supported external tool.",
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "morrowind-ini-load-order", Name: "Morrowind.ini Game Files"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "morrowind-ini-load-order",
+		Name:           "Morrowind.ini Game Files",
+		TargetRelative: morrowindINI,
+		TargetRoot:     dataRoot,
+		ModTypes:       []string{dataRootModType, dataFolderModType},
+		FileExtensions: []string{".esm", ".esp"},
+		EntryNameMode:  sdk.LoadOrderEntryNameFileName,
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
 		Name:    "Generate Morrowind.ini plugin list",

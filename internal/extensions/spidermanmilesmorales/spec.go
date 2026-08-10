@@ -116,7 +116,13 @@ func Register(r sdk.Registrar) {
 		ModTypes:           []string{mmpcModType},
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "spidermanmilesmorales-mmpc-load-order", Name: "Miles Morales MMPC load order"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "spidermanmilesmorales-mmpc-load-order", Name: "Miles Morales MMPC load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "spidermanmilesmorales-mmpc-load-order",
+		Name:           "Miles Morales MMPC load order",
+		TargetRelative: loadOrderFile,
+		ModTypes:       []string{mmpcModType},
+		FileExtensions: []string{".mmpcmod"},
+	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "spidermanmilesmorales-vortex-ignored-metadata",
 		Name:     "Vortex ignored SMPC metadata",

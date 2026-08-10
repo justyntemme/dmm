@@ -124,7 +124,13 @@ func Register(r sdk.Registrar) {
 		DefaultPrimary:     true,
 		ModTypes:           []string{modType, mewjectorModType},
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "mewgenics-modlist", Name: "Mewgenics modlist.txt"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "mewgenics-modlist",
+		Name:           "Mewgenics modlist.txt",
+		TargetRelative: modListRel,
+		TargetRoot:     modRoot,
+		ModTypes:       []string{modType, mewjectorModType},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "will-deploy",
 		Name:    "Generate Mewgenics launch files",

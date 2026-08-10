@@ -468,7 +468,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInstallPlanTargetRoots(extension.InstallPlan, extension.TargetRoots)...)
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
 	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
-	errs = append(errs, validateNamedSpecs("load order", extension.LoadOrders, func(spec sdk.LoadOrderSpec) string { return spec.ID })...)
+	errs = append(errs, validateLoadOrders(extension.LoadOrders, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateArchiveTypes(extension.ArchiveTypes)...)
 	errs = append(errs, validateInterpreters(extension.Interpreters)...)
 	errs = append(errs, validateGameStores(extension.GameStores)...)
@@ -1080,6 +1080,83 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 					errs = append(errs, errors.New("plugin activation "+id+" archive check versions must be between 1 and 255"))
 				}
 			}
+		}
+	}
+	return errs
+}
+
+func validateLoadOrders(specs []sdk.LoadOrderSpec, modTypes []installplan.ModTypeSpec, targetRoots []sdk.TargetRootSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	knownModTypes := map[string]struct{}{}
+	for _, modType := range modTypes {
+		if id := strings.ToLower(strings.TrimSpace(modType.ID)); id != "" {
+			knownModTypes[id] = struct{}{}
+		}
+	}
+	knownTargetRoots := map[string]struct{}{}
+	for _, targetRoot := range targetRoots {
+		if id := strings.ToLower(strings.TrimSpace(targetRoot.ID)); id != "" {
+			knownTargetRoots[id] = struct{}{}
+		}
+	}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("load order id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("load order", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("load order "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("load order "+id+" name is required"))
+		}
+		if err := validateCapabilityStatus("load order", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
+		if target := strings.TrimSpace(spec.TargetRelative); target != "" {
+			if err := validateRelativePath(target); err != nil {
+				errs = append(errs, errors.New("load order "+id+" target relative: "+err.Error()))
+			}
+		}
+		if root := strings.TrimSpace(spec.TargetRoot); root != "" {
+			if err := validateRelativePath(root); err != nil {
+				errs = append(errs, errors.New("load order "+id+" target root: "+err.Error()))
+			}
+		}
+		if rootID := strings.TrimSpace(spec.TargetRootID); rootID != "" {
+			errs = append(errs, validateSimpleID("load order "+id+" target root id", rootID)...)
+			if _, ok := knownTargetRoots[strings.ToLower(rootID)]; !ok {
+				errs = append(errs, errors.New("load order "+id+" target root id "+rootID+" is not registered"))
+			}
+		}
+		for _, modType := range spec.ModTypes {
+			modType = strings.TrimSpace(modType)
+			if modType == "" {
+				errs = append(errs, errors.New("load order "+id+" mod type must not be empty"))
+				continue
+			}
+			if _, ok := knownModTypes[strings.ToLower(modType)]; !ok {
+				errs = append(errs, errors.New("load order "+id+" mod type "+modType+" is not registered"))
+			}
+		}
+		for _, extension := range spec.FileExtensions {
+			extension = strings.TrimSpace(extension)
+			if !strings.HasPrefix(extension, ".") || strings.Contains(extension, "/") || strings.Contains(extension, `\`) {
+				errs = append(errs, errors.New("load order "+id+" file extension must be a file extension"))
+			}
+		}
+		switch strings.TrimSpace(spec.EntryNameMode) {
+		case "", sdk.LoadOrderEntryNameMod, sdk.LoadOrderEntryNameFirstChild, sdk.LoadOrderEntryNameFileName, sdk.LoadOrderEntryNameFileBase, sdk.LoadOrderEntryNameTargetRelative:
+		default:
+			errs = append(errs, errors.New("load order "+id+" entry name mode is unsupported"))
+		}
+		if strings.ContainsAny(spec.UsageInstructions, "\x00") {
+			errs = append(errs, errors.New("load order "+id+" usage instructions must not contain NUL"))
 		}
 	}
 	return errs

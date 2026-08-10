@@ -52,7 +52,13 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "kingdomcomedeliverance-mod-order", Name: "Kingdom Come mod_order.txt"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "kingdomcomedeliverance-mod-order",
+		Name:           "Kingdom Come mod_order.txt",
+		TargetRelative: modOrderFile,
+		TargetRoot:     modsRoot,
+		ModTypes:       []string{modType},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
 		Name:    "Generate Kingdom Come mod_order.txt",

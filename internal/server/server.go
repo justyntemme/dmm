@@ -557,17 +557,18 @@ type deploymentSettingsResponse struct {
 }
 
 type pluginLoadOrderResponse struct {
-	AppID         string                 `json:"app_id"`
-	ProfileID     int64                  `json:"profile_id,omitempty"`
-	Supported     bool                   `json:"supported"`
-	ActivationID  string                 `json:"activation_id,omitempty"`
-	Name          string                 `json:"name,omitempty"`
-	TargetRoot    string                 `json:"target_root,omitempty"`
-	PluginsFile   string                 `json:"plugins_file,omitempty"`
-	LoadOrderFile string                 `json:"load_order_file,omitempty"`
-	LOOT          *lootmeta.Status       `json:"loot,omitempty"`
-	Plugins       []pluginLoadOrderEntry `json:"plugins"`
-	Warnings      []string               `json:"warnings,omitempty"`
+	AppID           string                       `json:"app_id"`
+	ProfileID       int64                        `json:"profile_id,omitempty"`
+	Supported       bool                         `json:"supported"`
+	ActivationID    string                       `json:"activation_id,omitempty"`
+	Name            string                       `json:"name,omitempty"`
+	TargetRoot      string                       `json:"target_root,omitempty"`
+	PluginsFile     string                       `json:"plugins_file,omitempty"`
+	LoadOrderFile   string                       `json:"load_order_file,omitempty"`
+	LOOT            *lootmeta.Status             `json:"loot,omitempty"`
+	Plugins         []pluginLoadOrderEntry       `json:"plugins"`
+	ExtensionOrders []extensionLoadOrderResponse `json:"extension_orders,omitempty"`
+	Warnings        []string                     `json:"warnings,omitempty"`
 }
 
 type pluginLoadOrderEntry struct {
@@ -581,6 +582,35 @@ type pluginLoadOrderEntry struct {
 	LockedIndex    *int   `json:"locked_index,omitempty"`
 	Active         bool   `json:"active"`
 	Mutable        bool   `json:"mutable"`
+}
+
+type extensionLoadOrderResponse struct {
+	ID                string                    `json:"id"`
+	Name              string                    `json:"name,omitempty"`
+	TargetRelative    string                    `json:"target_relative,omitempty"`
+	TargetRoot        string                    `json:"target_root,omitempty"`
+	TargetRootID      string                    `json:"target_root_id,omitempty"`
+	Status            string                    `json:"status,omitempty"`
+	Message           string                    `json:"message,omitempty"`
+	EntryNameMode     string                    `json:"entry_name_mode,omitempty"`
+	ToggleableEntries bool                      `json:"toggleable_entries,omitempty"`
+	UsageInstructions string                    `json:"usage_instructions,omitempty"`
+	Mutable           bool                      `json:"mutable"`
+	Entries           []extensionLoadOrderEntry `json:"entries"`
+}
+
+type extensionLoadOrderEntry struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	ModID          string   `json:"mod_id,omitempty"`
+	Catalog        string   `json:"catalog,omitempty"`
+	SourceTag      string   `json:"source_tag,omitempty"`
+	ModType        string   `json:"mod_type,omitempty"`
+	Priority       int      `json:"priority"`
+	Active         bool     `json:"active"`
+	Mutable        bool     `json:"mutable"`
+	Targets        []string `json:"targets,omitempty"`
 }
 
 type deploymentStrategyCapability struct {
@@ -14553,8 +14583,12 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 		ProfileID: profileID,
 		Plugins:   []pluginLoadOrderEntry{},
 	}
+	extensionOrders, warnings := s.extensionLoadOrdersForProfile(game, profileID, mods)
+	resp.ExtensionOrders = extensionOrders
+	resp.Warnings = append(resp.Warnings, warnings...)
 	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
 	if !ok {
+		resp.Supported = len(resp.ExtensionOrders) > 0
 		return resp, nil
 	}
 	resp.Supported = true
@@ -14609,6 +14643,212 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 		resp.Plugins[idx].ModIndex = idx
 	}
 	return resp, nil
+}
+
+func (s *Server) extensionLoadOrdersForProfile(game storage.Game, profileID int64, mods []storage.InstalledMod) ([]extensionLoadOrderResponse, []string) {
+	specs := s.games.LoadOrdersForSteamApp(game.SteamAppID)
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	out := make([]extensionLoadOrderResponse, 0, len(specs))
+	var warnings []string
+	for _, spec := range specs {
+		order := extensionLoadOrderResponse{
+			ID:                strings.TrimSpace(spec.ID),
+			Name:              strings.TrimSpace(spec.Name),
+			TargetRelative:    cleanLoadOrderRelative(spec.TargetRelative),
+			TargetRoot:        cleanLoadOrderRelative(spec.TargetRoot),
+			TargetRootID:      strings.TrimSpace(spec.TargetRootID),
+			Status:            strings.TrimSpace(spec.Status),
+			Message:           strings.TrimSpace(spec.Message),
+			EntryNameMode:     extensionLoadOrderNameMode(spec),
+			ToggleableEntries: spec.ToggleableEntries,
+			UsageInstructions: strings.TrimSpace(spec.UsageInstructions),
+			Mutable:           false,
+			Entries:           []extensionLoadOrderEntry{},
+		}
+		if order.Status == "" {
+			order.Status = sdk.CapabilityStatusReady
+		}
+		for _, mod := range mods {
+			entry, matched, err := extensionLoadOrderEntryForMod(spec, mod)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s skipped %s: %v", order.Name, mod.Name, err))
+				continue
+			}
+			if !matched {
+				continue
+			}
+			order.Entries = append(order.Entries, entry)
+		}
+		sort.SliceStable(order.Entries, func(i, j int) bool {
+			if order.Entries[i].Priority != order.Entries[j].Priority {
+				return order.Entries[i].Priority < order.Entries[j].Priority
+			}
+			if strings.ToLower(order.Entries[i].Name) != strings.ToLower(order.Entries[j].Name) {
+				return strings.ToLower(order.Entries[i].Name) < strings.ToLower(order.Entries[j].Name)
+			}
+			return order.Entries[i].ID < order.Entries[j].ID
+		})
+		out = append(out, order)
+	}
+	return out, warnings
+}
+
+func extensionLoadOrderEntryForMod(spec gameext.LoadOrderSpec, mod storage.InstalledMod) (extensionLoadOrderEntry, bool, error) {
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		return extensionLoadOrderEntry{}, false, err
+	}
+	modType := strings.TrimSpace(manifest.ModType)
+	if !loadOrderModTypeMatches(spec, modType) {
+		return extensionLoadOrderEntry{}, false, nil
+	}
+	targets := loadOrderTargets(spec, manifest)
+	if len(targets) == 0 && !loadOrderCanMatchByModTypeOnly(spec) {
+		return extensionLoadOrderEntry{}, false, nil
+	}
+	name := extensionLoadOrderEntryName(spec, mod, targets)
+	if name == "" {
+		name = strings.TrimSpace(mod.Name)
+	}
+	if name == "" {
+		name = strconv.FormatInt(mod.ID, 10)
+	}
+	return extensionLoadOrderEntry{
+		ID:             strconv.FormatInt(mod.ID, 10),
+		Name:           name,
+		InstalledModID: mod.ID,
+		ModID:          strings.TrimSpace(mod.SourceModID),
+		Catalog:        strings.TrimSpace(mod.Catalog),
+		SourceTag:      normalizeCatalogID(mod.Catalog),
+		ModType:        modType,
+		Priority:       mod.Priority,
+		Active:         mod.Enabled,
+		Mutable:        false,
+		Targets:        targets,
+	}, true, nil
+}
+
+func loadOrderModTypeMatches(spec gameext.LoadOrderSpec, modType string) bool {
+	required := canonicalSet(spec.ModTypes)
+	if len(required) == 0 {
+		return true
+	}
+	_, ok := required[canonicalModType(modType)]
+	return ok
+}
+
+func loadOrderTargets(spec gameext.LoadOrderSpec, manifest stagedManifest) []string {
+	root := cleanLoadOrderRelative(spec.TargetRoot)
+	extensions := extensionSet(spec.FileExtensions)
+	seen := map[string]struct{}{}
+	var targets []string
+	for _, file := range manifest.Files {
+		target := cleanLoadOrderRelative(file.TargetRelative)
+		if target == "" {
+			continue
+		}
+		if root != "" && !loadOrderPathWithinRoot(target, root) {
+			continue
+		}
+		if len(extensions) > 0 {
+			if _, ok := extensions[strings.ToLower(filepath.Ext(target))]; !ok {
+				continue
+			}
+		}
+		key := strings.ToLower(target)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	return targets
+}
+
+func loadOrderCanMatchByModTypeOnly(spec gameext.LoadOrderSpec) bool {
+	return len(spec.ModTypes) > 0 && cleanLoadOrderRelative(spec.TargetRoot) == "" && len(spec.FileExtensions) == 0
+}
+
+func extensionLoadOrderEntryName(spec gameext.LoadOrderSpec, mod storage.InstalledMod, targets []string) string {
+	mode := extensionLoadOrderNameMode(spec)
+	if len(targets) == 0 {
+		return strings.TrimSpace(mod.Name)
+	}
+	target := targets[0]
+	switch mode {
+	case sdk.LoadOrderEntryNameFirstChild:
+		if name, ok := firstLoadOrderChild(target, cleanLoadOrderRelative(spec.TargetRoot)); ok {
+			return name
+		}
+	case sdk.LoadOrderEntryNameFileName:
+		return filepath.Base(target)
+	case sdk.LoadOrderEntryNameFileBase:
+		base := filepath.Base(target)
+		if ext := filepath.Ext(base); ext != "" {
+			base = strings.TrimSuffix(base, ext)
+		}
+		return strings.TrimSpace(base)
+	case sdk.LoadOrderEntryNameTargetRelative:
+		return target
+	}
+	return strings.TrimSpace(mod.Name)
+}
+
+func extensionLoadOrderNameMode(spec gameext.LoadOrderSpec) string {
+	mode := strings.TrimSpace(spec.EntryNameMode)
+	if mode == "" {
+		return sdk.LoadOrderEntryNameMod
+	}
+	return mode
+}
+
+func firstLoadOrderChild(target, root string) (string, bool) {
+	if root == "" {
+		return "", false
+	}
+	if target == root {
+		return "", false
+	}
+	prefix := strings.TrimSuffix(root, "/") + "/"
+	if !strings.HasPrefix(target, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(target, prefix)
+	first, _, _ := strings.Cut(rest, "/")
+	first = strings.TrimSpace(first)
+	return first, first != ""
+}
+
+func loadOrderPathWithinRoot(target, root string) bool {
+	if root == "" {
+		return true
+	}
+	if target == root {
+		return false
+	}
+	return strings.HasPrefix(target, strings.TrimSuffix(root, "/")+"/")
+}
+
+func cleanLoadOrderRelative(value string) string {
+	value = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(value))))
+	if value == "." || value == ".." || strings.HasPrefix(value, "../") || filepath.IsAbs(value) {
+		return ""
+	}
+	return value
+}
+
+func extensionSet(values []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value != "" {
+			out[value] = struct{}{}
+		}
+	}
+	return out
 }
 
 func installedModCatalogsByID(mods []storage.InstalledMod) map[int64]string {

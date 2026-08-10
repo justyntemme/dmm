@@ -82,7 +82,13 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterMerge(sdk.MergeSpec{ID: "ff7rebirth-unreal-pak-load-order", Name: "Final Fantasy VII Rebirth pak load order"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "ff7rebirth-unreal-pak-load-order", Name: "Final Fantasy VII Rebirth pak load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "ff7rebirth-unreal-pak-load-order",
+		Name:           "Final Fantasy VII Rebirth pak load order",
+		TargetRoot:     pakRoot,
+		ModTypes:       []string{pakModType},
+		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Final Fantasy VII Rebirth pak load order prefixes",

@@ -81,7 +81,13 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildModletArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "7daystodie-folder-prefix-order", Name: "7 Days to Die folder prefix load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:                "7daystodie-folder-prefix-order",
+		Name:              "7 Days to Die folder prefix load order",
+		ModTypes:          []string{modletModType},
+		Message:           "DMM applies deterministic folder prefixes from profile priority during deployment.",
+		UsageInstructions: "Move profile mods up or down to change generated 7 Days to Die folder prefixes.",
+	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "7daystodie-folder-prefix-order", Name: "7 Days to Die folder prefix merge"})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,

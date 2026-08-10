@@ -486,9 +486,27 @@ type MergeSpec struct {
 }
 
 type LoadOrderSpec struct {
-	ID   string
-	Name string
+	ID                string
+	Name              string
+	TargetRelative    string
+	TargetRoot        string
+	TargetRootID      string
+	ModTypes          []string
+	FileExtensions    []string
+	EntryNameMode     string
+	ToggleableEntries bool
+	UsageInstructions string
+	Status            string
+	Message           string
 }
+
+const (
+	LoadOrderEntryNameMod            = "mod"
+	LoadOrderEntryNameFirstChild     = "first-child"
+	LoadOrderEntryNameFileName       = "file-name"
+	LoadOrderEntryNameFileBase       = "file-base"
+	LoadOrderEntryNameTargetRelative = "target-relative"
+)
 
 type ArchiveTypeSpec struct {
 	ID             string

@@ -59,7 +59,13 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "codevein-pak-load-order", Name: "Code Vein pak load order"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "codevein-pak-load-order", Name: "Code Vein pak load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "codevein-pak-load-order",
+		Name:           "Code Vein pak load order",
+		TargetRoot:     pakRoot,
+		ModTypes:       []string{pakModType},
+		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Code Vein pak load order prefixes",

@@ -46,7 +46,13 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "spyro-pak-load-order", Name: "Spyro pak load order"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "spyro-pak-load-order", Name: "Spyro pak load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "spyro-pak-load-order",
+		Name:           "Spyro pak load order",
+		TargetRoot:     pakRoot,
+		ModTypes:       []string{modType},
+		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Spyro pak load order prefixes",

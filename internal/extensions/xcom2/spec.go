@@ -65,7 +65,15 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildXComArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "xcom2-default-mod-options", Name: "XCOM 2 DefaultModOptions.ini"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:                "xcom2-default-mod-options",
+		Name:              "XCOM 2 DefaultModOptions.ini",
+		ModTypes:          []string{xcom2ModType, wotcModType},
+		FileExtensions:    []string{modExt},
+		ToggleableEntries: true,
+		Message:           "Target path is variant-dependent: XComGame/Config/DefaultModOptions.ini or XCom2-WarOfTheChosen/XComGame/Config/DefaultModOptions.ini.",
+		UsageInstructions: "Vortex serializes enabled XCOM mods to DefaultModOptions.ini; DMM derives the file from the selected profile order.",
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
 		Name:    "Generate XCOM 2 DefaultModOptions.ini",

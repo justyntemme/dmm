@@ -89,7 +89,14 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(sharedmodtypes.DInputInstaller("vortex:bladeandsorcery:dinput", 50))
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bladeandsorcery-loadorder-json", Name: "Blade & Sorcery loadorder.json"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "bladeandsorcery-loadorder-json",
+		Name:           "Blade & Sorcery loadorder.json",
+		TargetRelative: loadOrderFile,
+		TargetRoot:     officialRoot,
+		ModTypes:       []string{officialModType, dinputModType},
+		EntryNameMode:  sdk.LoadOrderEntryNameFirstChild,
+	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "bladeandsorcery-loadorder-page",
 		Name:    "Blade & Sorcery load order page",

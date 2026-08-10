@@ -133,7 +133,14 @@ func Register(r sdk.Registrar) {
 			sdk.EnsureTargetRootFiles(bg3LocalDataRootID, defaultModSettingsV8, "PlayerProfiles/Public/modsettings.lsx")...,
 		),
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bg3-pak-load-order", Name: "BG3 pak load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "bg3-pak-load-order",
+		Name:           "BG3 pak load order",
+		TargetRootID:   bg3ModsRootID,
+		ModTypes:       []string{pakModType},
+		FileExtensions: []string{".pak"},
+		EntryNameMode:  sdk.LoadOrderEntryNameFileName,
+	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "bg3-load-order-page",
 		Name:    "BG3 pak load order page",

@@ -68,7 +68,13 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildOverrideArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "poe2-modconfig-load-order", Name: "Pillars II modconfig.json"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "poe2-modconfig-load-order",
+		Name:           "Pillars II modconfig.json",
+		TargetRelative: modConfigFile,
+		TargetRootID:   configRootID,
+		ModTypes:       []string{modType},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
 		Name:    "Generate Pillars II modconfig.json",

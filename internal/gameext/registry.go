@@ -293,7 +293,13 @@ type FeatureSummary struct {
 	StateFileRelative    string                   `json:"state_file_relative,omitempty"`
 	TargetArchives       []string                 `json:"target_archives,omitempty"`
 	RequiresEngine       string                   `json:"requires_engine,omitempty"`
+	TargetRelative       string                   `json:"target_relative,omitempty"`
+	TargetRoot           string                   `json:"target_root,omitempty"`
+	TargetRootID         string                   `json:"target_root_id,omitempty"`
 	FileExtensions       []string                 `json:"file_extensions,omitempty"`
+	EntryNameMode        string                   `json:"entry_name_mode,omitempty"`
+	ToggleableEntries    bool                     `json:"toggleable_entries,omitempty"`
+	UsageInstructions    string                   `json:"usage_instructions,omitempty"`
 	Engine               string                   `json:"engine,omitempty"`
 	SupportsWrite        bool                     `json:"supports_write,omitempty"`
 	Status               string                   `json:"status,omitempty"`
@@ -1409,6 +1415,18 @@ func (r Registry) PluginActivationForSteamApp(appID string) (PluginActivationSpe
 	return extension.PluginActivations[0], true
 }
 
+func (r Registry) LoadOrdersForSteamApp(appID string) []LoadOrderSpec {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 {
+		return nil
+	}
+	var out []LoadOrderSpec
+	for _, extension := range extensions {
+		out = append(out, extension.LoadOrders...)
+	}
+	return out
+}
+
 func (r Registry) ConflictIgnorePatternsForSteamApp(appID string) []string {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -1834,7 +1852,20 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{ID: merge.ID, Name: merge.Name})
 	}
 	for _, loadOrder := range extension.LoadOrders {
-		summary.Capabilities.LoadOrders = append(summary.Capabilities.LoadOrders, FeatureSummary{ID: loadOrder.ID, Name: loadOrder.Name})
+		summary.Capabilities.LoadOrders = append(summary.Capabilities.LoadOrders, FeatureSummary{
+			ID:                loadOrder.ID,
+			Name:              loadOrder.Name,
+			TargetRelative:    loadOrder.TargetRelative,
+			TargetRoot:        loadOrder.TargetRoot,
+			TargetRootID:      loadOrder.TargetRootID,
+			ModTypes:          appendClean([]string{}, loadOrder.ModTypes...),
+			FileExtensions:    appendClean([]string{}, loadOrder.FileExtensions...),
+			EntryNameMode:     loadOrder.EntryNameMode,
+			ToggleableEntries: loadOrder.ToggleableEntries,
+			UsageInstructions: loadOrder.UsageInstructions,
+			Status:            defaultString(loadOrder.Status, sdk.CapabilityStatusReady),
+			Message:           loadOrder.Message,
+		})
 	}
 	for _, archiveType := range extension.ArchiveTypes {
 		summary.Capabilities.ArchiveTypes = append(summary.Capabilities.ArchiveTypes, FeatureSummary{

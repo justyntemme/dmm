@@ -11395,6 +11395,112 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	}
 }
 
+func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "440900"
+	gamePath := filepath.Join(t.TempDir(), "Conan Exiles")
+	if err := os.MkdirAll(filepath.Join(gamePath, "ConanSandbox", "Mods"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:      appID,
+		Name:       "Conan Exiles",
+		InstallDir: "Conan Exiles",
+		Path:       gamePath,
+		State:      "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := installLoadOrderTestMod(t, srv, appID, "First Conan Pak", "nexus", "first", "ConanSandbox/Mods/First.pak", "conanexiles-pak")
+	second := installLoadOrderTestMod(t, srv, appID, "Second Conan Pak", "github", "second", "ConanSandbox/Mods/Second.pak", "conanexiles-pak")
+	firstPriority := 10
+	if _, err := srv.db.SetProfileModState(context.Background(), first.ProfileID, first.ID, nil, &firstPriority); err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	secondPriority := 5
+	if _, err := srv.db.SetProfileModState(context.Background(), second.ProfileID, second.ID, &disabled, &secondPriority); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/load-order", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("load order status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp pluginLoadOrderResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Supported || resp.ActivationID != "" || len(resp.Plugins) != 0 {
+		t.Fatalf("load order response = %+v", resp)
+	}
+	if len(resp.ExtensionOrders) != 1 {
+		t.Fatalf("extension orders = %+v", resp.ExtensionOrders)
+	}
+	order := resp.ExtensionOrders[0]
+	if order.ID != "conanexiles-modlist" || order.TargetRelative != "ConanSandbox/Mods/modlist.txt" || order.TargetRoot != "ConanSandbox/Mods" {
+		t.Fatalf("extension order metadata = %+v", order)
+	}
+	if len(order.Entries) != 2 {
+		t.Fatalf("extension order entries = %+v", order.Entries)
+	}
+	if order.Entries[0].InstalledModID != second.ID || order.Entries[0].Active || order.Entries[0].SourceTag != "github" {
+		t.Fatalf("first extension order entry = %+v", order.Entries[0])
+	}
+	if order.Entries[1].InstalledModID != first.ID || !order.Entries[1].Active || order.Entries[1].SourceTag != "nexus" {
+		t.Fatalf("second extension order entry = %+v", order.Entries[1])
+	}
+	if len(order.Entries[1].Targets) != 1 || order.Entries[1].Targets[0] != "ConanSandbox/Mods/First.pak" {
+		t.Fatalf("first mod targets = %+v", order.Entries[1].Targets)
+	}
+}
+
+func installLoadOrderTestMod(t *testing.T, srv *Server, appID, name, catalogID, modID, targetRelative, modType string) storage.InstalledMod {
+	t.Helper()
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", catalogID, appID, modID)
+	sourceRel := filepath.Base(targetRelative)
+	if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, sourceRel), []byte(name), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   modType,
+		PlannerID: "test:" + modType,
+		Instructions: []installplan.Instruction{{
+			StagingRelative: sourceRel,
+			TargetRelative:  targetRelative,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    catalogID,
+			GameDomain: "conanexiles",
+			ModID:      modID,
+			FileID:     modID + "-file",
+		},
+		Name:         name,
+		Version:      "1.0.0",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", modID+".zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifestJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mod
+}
+
 func TestGamebryoPluginActivationEnablesLightPluginsFromProfileMetadata(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

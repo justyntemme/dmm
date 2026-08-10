@@ -54,7 +54,14 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "conanexiles-modlist", Name: "Conan Exiles modlist.txt"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "conanexiles-modlist",
+		Name:           "Conan Exiles modlist.txt",
+		TargetRelative: modlistRel,
+		TargetRoot:     modsRoot,
+		ModTypes:       []string{modType},
+		FileExtensions: []string{".pak"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: sdk.EventWillDeploy,
 		Name:  "Generate Conan Exiles modlist.txt",

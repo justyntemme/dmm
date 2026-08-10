@@ -83,7 +83,13 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "msfs-aircraft-cfg", Name: "MSFS aircraft.cfg merge"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "msfs-community-load-order", Name: "MSFS Community package load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:            "msfs-community-load-order",
+		Name:          "MSFS Community package load order",
+		TargetRootID:  communityRootID,
+		ModTypes:      []string{packModType, replacerModType},
+		EntryNameMode: sdk.LoadOrderEntryNameFirstChild,
+	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "msfs-load-order-page",
 		Name:    "MSFS Community package load order",

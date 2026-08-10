@@ -56,7 +56,13 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "bloodstainedrotn-pak-load-order", Name: "Bloodstained pak load order"})
-	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bloodstainedrotn-pak-load-order", Name: "Bloodstained pak load order"})
+	r.RegisterLoadOrder(sdk.LoadOrderSpec{
+		ID:             "bloodstainedrotn-pak-load-order",
+		Name:           "Bloodstained pak load order",
+		TargetRoot:     pakRoot,
+		ModTypes:       []string{pakModType},
+		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
 		Name:  "Apply Bloodstained pak load order prefixes",
