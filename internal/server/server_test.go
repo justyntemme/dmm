@@ -10211,6 +10211,68 @@ func TestGameDiagnosticsWarnsForIncompatibleModGameVersionMetadata(t *testing.T)
 	}
 }
 
+func TestGameDiagnosticsWarnsWhenObservedGameVersionChanges(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		Version:     "1.6.0",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := srv.gameDiagnostics(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range first.ExtensionTests {
+		if test.TestID == "game-version-gamemode" {
+			t.Fatalf("first observation should not warn: %+v", first.ExtensionTests)
+		}
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		Version:     "1.6.1",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := srv.gameDiagnostics(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versionTest *gameExtensionTestResponse
+	for i := range changed.ExtensionTests {
+		if changed.ExtensionTests[i].TestID == "game-version-gamemode" {
+			versionTest = &changed.ExtensionTests[i]
+			break
+		}
+	}
+	if versionTest == nil || versionTest.Status != sdk.HealthCheckStatusWarning || !strings.Contains(versionTest.Details, "Previous version: 1.6.0") || !strings.Contains(versionTest.Details, "Current version: 1.6.1") {
+		t.Fatalf("game-version changed diagnostic = %+v", changed.ExtensionTests)
+	}
+
+	repeated, err := srv.gameDiagnostics(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range repeated.ExtensionTests {
+		if test.TestID == "game-version-gamemode" {
+			t.Fatalf("changed-version warning should be observed once: %+v", repeated.ExtensionTests)
+		}
+	}
+}
+
 func TestPostInstallGameVersionNoticeUsesModInstalledTrigger(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

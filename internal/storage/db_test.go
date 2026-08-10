@@ -476,6 +476,46 @@ func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 	}
 }
 
+func TestGameVersionObservationTracksLastSeenVersion(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Stardew Valley",
+		Version:     "1.6.0",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := db.GameBySteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.GameVersionObservation(context.Background(), game.ID); err != nil || ok {
+		t.Fatalf("initial observation ok=%v err=%v", ok, err)
+	}
+	observed, err := db.SetGameVersionObservation(context.Background(), game.ID, " 1.6.0 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Version != "1.6.0" || observed.GameID != game.ID || observed.UpdatedAt == "" {
+		t.Fatalf("observed = %+v", observed)
+	}
+	observed, err = db.SetGameVersionObservation(context.Background(), game.ID, "1.6.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observed.Version != "1.6.1" {
+		t.Fatalf("updated observation = %+v", observed)
+	}
+}
+
 func TestGamesHideSteamHelperApps(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

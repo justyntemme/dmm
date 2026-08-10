@@ -28,6 +28,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_game_settings")
 	assertReady(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-plugin-index-lock")
+	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "test-gameversion-state")
 	assertReady(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives", "oblivion-fonts", "skyrim-fonts")
 	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts")

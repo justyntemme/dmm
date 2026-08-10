@@ -147,7 +147,13 @@ func registerNewFileMonitor(r sdk.Registrar) {
 }
 
 func registerVortexTests(r sdk.Registrar) {
-	r.RegisterStateReducer(blockedReducer("test-gameversion-state", "Vortex game-version test state", "persistent/gameMode"))
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "test-gameversion-state",
+		Name:    "Vortex game-version test state",
+		Scope:   "persistent/gameMode",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM persists the last observed game version separately from Steam discovery state and reports a Vortex-style warning when the installed game version changes.",
+	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
 		ID:      "game-version-gamemode",
 		Name:    "Game version check on game mode activation",

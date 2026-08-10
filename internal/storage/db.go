@@ -67,6 +67,12 @@ type Game struct {
 	State        string `json:"state"`
 }
 
+type GameVersionObservation struct {
+	GameID    int64  `json:"game_id"`
+	Version   string `json:"version"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 type InstalledMod struct {
 	ID               int64  `json:"id"`
 	GameID           int64  `json:"game_id"`
@@ -1075,6 +1081,47 @@ FROM games
 WHERE steam_app_id = ?
 `, appID).Scan(&game.ID, &game.SteamAppID, &game.Name, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State)
 	return game, err
+}
+
+func (db *DB) GameVersionObservation(ctx context.Context, gameID int64) (GameVersionObservation, bool, error) {
+	if gameID <= 0 {
+		return GameVersionObservation{}, false, errors.New("game id is required")
+	}
+	var observation GameVersionObservation
+	err := db.conn.QueryRowContext(ctx, `
+SELECT game_id, version, updated_at
+FROM game_version_observations
+WHERE game_id = ?
+`, gameID).Scan(&observation.GameID, &observation.Version, &observation.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return GameVersionObservation{}, false, nil
+	}
+	if err != nil {
+		return GameVersionObservation{}, false, err
+	}
+	observation.Version = strings.TrimSpace(observation.Version)
+	return observation, true, nil
+}
+
+func (db *DB) SetGameVersionObservation(ctx context.Context, gameID int64, version string) (GameVersionObservation, error) {
+	version = strings.TrimSpace(version)
+	if gameID <= 0 {
+		return GameVersionObservation{}, errors.New("game id is required")
+	}
+	if version == "" {
+		return GameVersionObservation{}, errors.New("game version is required")
+	}
+	if _, err := db.conn.ExecContext(ctx, `
+INSERT INTO game_version_observations (game_id, version, updated_at)
+VALUES (?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(game_id) DO UPDATE SET
+	version = excluded.version,
+	updated_at = CURRENT_TIMESTAMP
+`, gameID, version); err != nil {
+		return GameVersionObservation{}, err
+	}
+	observation, _, err := db.GameVersionObservation(ctx, gameID)
+	return observation, err
 }
 
 func (db *DB) ProfilesForSteamApp(ctx context.Context, appID string) ([]Profile, error) {

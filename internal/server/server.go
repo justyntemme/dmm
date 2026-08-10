@@ -1281,7 +1281,9 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionCompatibilityDiagnostics(game, mods, sdk.EventGamemodeActivated)...)
+	gameVersionTests := gameVersionCompatibilityDiagnostics(game, mods, sdk.EventGamemodeActivated)
+	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -13781,7 +13783,45 @@ func (s *Server) queueGameVersionModInstalledNotices(ctx context.Context, appID,
 		return
 	}
 	tests := gameVersionCompatibilityDiagnostics(game, mods, "mod-installed")
+	tests = append(tests, s.gameVersionChangeDiagnostics(ctx, game, len(tests) > 0, "mod-installed")...)
 	s.queueExtensionNoticeJobs(ctx, appID, "mod-installed", source, game.Name, extensionTestNotices(tests))
+}
+
+func (s *Server) gameVersionChangeDiagnostics(ctx context.Context, game storage.Game, suppressWarning bool, trigger string) []gameExtensionTestResponse {
+	current := strings.TrimSpace(game.Version)
+	if current == "" {
+		return nil
+	}
+	previous, ok, err := s.db.GameVersionObservation(ctx, game.ID)
+	if err != nil {
+		s.logger.Warn("game-version observation read failed", "app_id", game.SteamAppID, "game_id", game.ID, "error", err)
+		return nil
+	}
+	if _, err := s.db.SetGameVersionObservation(ctx, game.ID, current); err != nil {
+		s.logger.Warn("game-version observation write failed", "app_id", game.SteamAppID, "game_id", game.ID, "version", current, "error", err)
+		return nil
+	}
+	if suppressWarning || !ok {
+		return nil
+	}
+	before := strings.TrimSpace(previous.Version)
+	if before == "" || before == current {
+		return nil
+	}
+	testID := "game-version-gamemode"
+	if strings.TrimSpace(trigger) == "mod-installed" {
+		testID = "game-version-mod-installed"
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   testID,
+		TestName: "Game version check",
+		Trigger:  strings.TrimSpace(trigger),
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "The game version changed since DMM last checked it.",
+		Details:  "Previous version: " + before + "\nCurrent version: " + current,
+		Actions:  []string{"Check installed mods for updates before launching this profile."},
+	}}
 }
 
 func gameVersionCompatibilityDiagnostics(game storage.Game, mods []storage.InstalledMod, trigger string) []gameExtensionTestResponse {
