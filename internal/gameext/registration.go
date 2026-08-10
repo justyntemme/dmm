@@ -51,6 +51,7 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.SupportModID = strings.TrimSpace(spec.SupportModID)
 	r.extension.GameMetadata = sdk.GameRegistrationMetadata{
 		ExecutableRelative:  spec.ExecutableRelative,
+		ExecutableVariants:  append([]sdk.GameExecutableVariantSpec(nil), spec.ExecutableVariants...),
 		RequiredFiles:       append([]string(nil), spec.RequiredFiles...),
 		QueryModPath:        spec.QueryModPath,
 		QueryModPathDynamic: spec.QueryModPathDynamic,
@@ -1460,6 +1461,25 @@ func validateGameRegistrationMetadata(metadata sdk.GameRegistrationMetadata) []e
 	if strings.TrimSpace(metadata.ExecutableRelative) != "" {
 		if err := validateRelativePath(metadata.ExecutableRelative); err != nil {
 			errs = append(errs, errors.New("game executable path: "+err.Error()))
+		}
+	}
+	for _, variant := range metadata.ExecutableVariants {
+		variantID := strings.TrimSpace(variant.ID)
+		if variantID != "" {
+			errs = append(errs, validateSimpleID("game executable variant", variantID)...)
+		}
+		if strings.ContainsAny(variant.Name, "\x00\r\n") {
+			errs = append(errs, errors.New("game executable variant name must not contain control line breaks"))
+		}
+		if strings.TrimSpace(variant.ExecutableRelative) == "" {
+			errs = append(errs, errors.New("game executable variant path is required"))
+		} else if err := validateRelativePath(variant.ExecutableRelative); err != nil {
+			errs = append(errs, errors.New("game executable variant path: "+err.Error()))
+		}
+		for _, path := range variant.RequiredFiles {
+			if err := validateRelativePath(path); err != nil {
+				errs = append(errs, errors.New("game executable variant required file: "+err.Error()))
+			}
 		}
 	}
 	for _, path := range metadata.RequiredFiles {

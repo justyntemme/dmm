@@ -2245,7 +2245,8 @@ func (s *Server) gameLaunchOptionRequirementStatus(ctx context.Context, game sto
 		}
 		executableRelative := strings.TrimSpace(requirement.ExecutableRelative)
 		if executableRelative == "" {
-			executableRelative = strings.TrimSpace(extension.GameMetadata.ExecutableRelative)
+			metadata := gameext.ResolveGameRegistrationForGamePath(game.GamePath, extension.GameMetadata)
+			executableRelative = strings.TrimSpace(metadata.ExecutableRelative)
 		}
 		executablePath := ""
 		desired := strings.Join(arguments, " ")

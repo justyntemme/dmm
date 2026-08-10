@@ -370,6 +370,7 @@ type LauncherParameter struct {
 
 type GameRegistrationSummary struct {
 	ExecutableRelative  string            `json:"executable_relative,omitempty"`
+	ExecutableVariants  []FeatureSummary  `json:"variants,omitempty"`
 	RequiredFiles       []string          `json:"required_files,omitempty"`
 	QueryModPath        string            `json:"query_mod_path,omitempty"`
 	QueryModPathDynamic bool              `json:"query_mod_path_dynamic,omitempty"`
@@ -598,7 +599,8 @@ func (r Registry) buildInstallPlanWithPlatformApp(platformAppID, gameID, extract
 	options.ArchiveName = strings.TrimSpace(archiveName)
 	options.GamePath = strings.TrimSpace(gamePath)
 	if extension, ok := r.extensionForInstallPlan(platformAppID, gameID); ok {
-		options.ExecutableRelative = strings.TrimSpace(extension.GameMetadata.ExecutableRelative)
+		metadata := ResolveGameRegistrationForGamePath(gamePath, extension.GameMetadata)
+		options.ExecutableRelative = strings.TrimSpace(metadata.ExecutableRelative)
 	}
 	options.Selections = cloneSelections(selections)
 	return r.installPlans.BuildWithOptions(gameID, extractedRoot, options)
@@ -883,6 +885,58 @@ func ResolveSupportedToolForGamePath(gamePath string, tool SupportedToolSpec) Su
 	resolved := tool
 	resolved.Variants = nil
 	return resolved
+}
+
+func ResolveGameRegistrationForGamePath(gamePath string, metadata sdk.GameRegistrationMetadata) sdk.GameRegistrationMetadata {
+	for _, variant := range metadata.ExecutableVariants {
+		if strings.TrimSpace(variant.ExecutableRelative) == "" {
+			continue
+		}
+		if !gameExecutableVariantPresent(gamePath, variant) {
+			continue
+		}
+		resolved := metadata
+		resolved.ExecutableRelative = variant.ExecutableRelative
+		if len(variant.RequiredFiles) > 0 {
+			resolved.RequiredFiles = append([]string(nil), variant.RequiredFiles...)
+		}
+		resolved.ExecutableVariants = nil
+		return resolved
+	}
+	resolved := metadata
+	resolved.ExecutableVariants = nil
+	return resolved
+}
+
+func gameExecutableVariantPresent(gamePath string, variant sdk.GameExecutableVariantSpec) bool {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return false
+	}
+	required := appendClean([]string{}, variant.RequiredFiles...)
+	executable := strings.TrimSpace(variant.ExecutableRelative)
+	if executable != "" && !containsFold(required, executable) {
+		required = append([]string{executable}, required...)
+	}
+	if len(required) == 0 {
+		return false
+	}
+	root := filepath.Clean(gamePath)
+	for _, rel := range required {
+		cleanRel, ok := safeToolRelative(rel)
+		if !ok {
+			return false
+		}
+		path := filepath.Join(root, filepath.FromSlash(cleanRel))
+		if !pathWithin(root, path) {
+			return false
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func applySupportedToolVariant(tool SupportedToolSpec, variant SupportedToolVariantSpec) SupportedToolSpec {
@@ -2128,9 +2182,26 @@ func supportedToolVariants(variants []sdk.SupportedToolVariantSpec) []FeatureSum
 	return out
 }
 
+func gameExecutableVariants(variants []sdk.GameExecutableVariantSpec) []FeatureSummary {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]FeatureSummary, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, FeatureSummary{
+			ID:                 strings.TrimSpace(variant.ID),
+			Name:               strings.TrimSpace(variant.Name),
+			ExecutableRelative: strings.TrimSpace(variant.ExecutableRelative),
+			RequiredFiles:      append([]string(nil), variant.RequiredFiles...),
+		})
+	}
+	return out
+}
+
 func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegistrationSummary, bool) {
 	summary := GameRegistrationSummary{
 		ExecutableRelative:  strings.TrimSpace(metadata.ExecutableRelative),
+		ExecutableVariants:  gameExecutableVariants(metadata.ExecutableVariants),
 		RequiredFiles:       appendClean([]string{}, metadata.RequiredFiles...),
 		QueryModPath:        strings.TrimSpace(metadata.QueryModPath),
 		QueryModPathDynamic: metadata.QueryModPathDynamic,
@@ -2141,6 +2212,7 @@ func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegis
 		Environment:         copyStringMap(metadata.Environment),
 	}
 	ok := summary.ExecutableRelative != "" ||
+		len(summary.ExecutableVariants) > 0 ||
 		len(summary.RequiredFiles) > 0 ||
 		summary.QueryModPath != "" ||
 		summary.QueryModPathDynamic ||

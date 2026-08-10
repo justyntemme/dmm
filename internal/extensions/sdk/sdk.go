@@ -94,6 +94,7 @@ type GameRegistration struct {
 	AllowNoSteamAppID   bool
 	SupportModID        string
 	ExecutableRelative  string
+	ExecutableVariants  []GameExecutableVariantSpec
 	RequiredFiles       []string
 	QueryModPath        string
 	QueryModPathDynamic bool
@@ -108,6 +109,7 @@ type GameRegistration struct {
 
 type GameRegistrationMetadata struct {
 	ExecutableRelative  string
+	ExecutableVariants  []GameExecutableVariantSpec
 	RequiredFiles       []string
 	QueryModPath        string
 	QueryModPathDynamic bool
@@ -116,6 +118,13 @@ type GameRegistrationMetadata struct {
 	StopPatterns        []string
 	CompatibleDownloads []string
 	Environment         map[string]string
+}
+
+type GameExecutableVariantSpec struct {
+	ID                 string
+	Name               string
+	ExecutableRelative string
+	RequiredFiles      []string
 }
 
 const (

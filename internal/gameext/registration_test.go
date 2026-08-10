@@ -28,11 +28,17 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				NexusDomains:       []string{"samplegame", "samplegame"},
 				VortexGameID:       "samplegame",
 				ExecutableRelative: "Game.exe",
-				RequiredFiles:      []string{"Game.exe", "Data/sample.dat"},
-				QueryModPath:       "Mods",
-				MergeMode:          sdk.GameMergeModeAll,
-				RequiresCleanup:    true,
-				StopPatterns:       []string{"(^|/)Data/.+"},
+				ExecutableVariants: []sdk.GameExecutableVariantSpec{{
+					ID:                 "game-ng",
+					Name:               "Game NG",
+					ExecutableRelative: "GameNG.exe",
+					RequiredFiles:      []string{"GameNG.exe"},
+				}},
+				RequiredFiles:   []string{"Game.exe", "Data/sample.dat"},
+				QueryModPath:    "Mods",
+				MergeMode:       sdk.GameMergeModeAll,
+				RequiresCleanup: true,
+				StopPatterns:    []string{"(^|/)Data/.+"},
 				CompatibleDownloads: []string{
 					"sampleaddon",
 				},
@@ -289,6 +295,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("exe"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "GameNG.exe"), []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(gamePath, "Tools"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -305,6 +314,10 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
 		t.Fatalf("launch tool provider lookup = %+v %v", tool, ok)
+	}
+	resolvedGameMetadata := ResolveGameRegistrationForGamePath(gamePath, extension.GameMetadata)
+	if resolvedGameMetadata.ExecutableRelative != "GameNG.exe" || len(resolvedGameMetadata.RequiredFiles) != 1 || resolvedGameMetadata.RequiredFiles[0] != "GameNG.exe" || len(resolvedGameMetadata.ExecutableVariants) != 0 {
+		t.Fatalf("resolved game metadata = %+v", resolvedGameMetadata)
 	}
 	var baseSupportedTool SupportedToolSpec
 	for _, tool := range extension.SupportedTools {
@@ -325,7 +338,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if summary.ID != "sample" || summary.VortexGameID != "samplegame" {
 		t.Fatalf("summary identity = %+v", summary)
 	}
-	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll || !summary.Capabilities.GameRegistration.RequiresCleanup {
+	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll || !summary.Capabilities.GameRegistration.RequiresCleanup || len(summary.Capabilities.GameRegistration.ExecutableVariants) != 1 {
 		t.Fatalf("game registration metadata = %+v", summary.Capabilities.GameRegistration)
 	}
 	if !contains(summary.Capabilities.GameRegistration.RequiredFiles, "Data/sample.dat") || !contains(summary.Capabilities.GameRegistration.CompatibleDownloads, "sampleaddon") {
@@ -789,10 +802,16 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				NexusDomains:       []string{"badgame"},
 				VortexGameID:       "badgame",
 				ExecutableRelative: "../Bad.exe",
-				RequiredFiles:      []string{"/Bad.dat"},
-				QueryModPath:       "bad\npath",
-				MergeMode:          "maybe",
-				StopPatterns:       []string{""},
+				ExecutableVariants: []sdk.GameExecutableVariantSpec{{
+					ID:                 "bad/variant",
+					Name:               "Bad\nVariant",
+					ExecutableRelative: "../BadNG.exe",
+					RequiredFiles:      []string{"/BadNG.dat"},
+				}},
+				RequiredFiles: []string{"/Bad.dat"},
+				QueryModPath:  "bad\npath",
+				MergeMode:     "maybe",
+				StopPatterns:  []string{""},
 				CompatibleDownloads: []string{
 					"bad\ndomain",
 				},
@@ -920,6 +939,10 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"extension version is required",
 		"extension build id is required",
 		"game executable path: path traversal is not allowed",
+		"game executable variant bad/variant id must be a simple identifier",
+		"game executable variant name must not contain control line breaks",
+		"game executable variant path: path traversal is not allowed",
+		"game executable variant required file: absolute path is not allowed",
 		"game required file: absolute path is not allowed",
 		"game query mod path must not contain control line breaks",
 		"game merge mode must be none, all, or dynamic",

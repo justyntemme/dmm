@@ -35,11 +35,17 @@ func Register(r sdk.Registrar) {
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "fallout3.exe",
-		RequiredFiles:      []string{"Data/fallout3.esm"},
-		QueryModPath:       "Data",
-		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppIDGOTY},
-		Deployment:         installplan.DeploymentSpec{AllowNeedsReviewState: true},
+		ExecutableVariants: []sdk.GameExecutableVariantSpec{{
+			ID:                 "fallout3ng",
+			Name:               "Fallout 3 New Executable",
+			ExecutableRelative: "fallout3ng.exe",
+			RequiredFiles:      []string{"fallout3ng.exe", "Data/fallout3.esm"},
+		}},
+		RequiredFiles: []string{"Data/fallout3.esm"},
+		QueryModPath:  "Data",
+		MergeMode:     sdk.GameMergeModeAll,
+		Environment:   map[string]string{"SteamAPPId": SteamAppIDGOTY},
+		Deployment:    installplan.DeploymentSpec{AllowNeedsReviewState: true},
 	})
 	for _, modType := range gamebryo.DataRootModTypes(dataRootInstallerOptions()) {
 		r.RegisterModType(modType)
@@ -149,7 +155,6 @@ func registerStoreMetadata(r sdk.Registrar) {
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Status: sdk.CapabilityStatusMetadata, Message: "Vortex uses Xbox launcher metadata for the Microsoft Store version."})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Status: sdk.CapabilityStatusMetadata, Message: "Vortex uses Epic launcher metadata for the Epic version."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "fallout3-hash-version", Name: "Fallout3.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Fallout3.esm"}}))
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "fallout3-dynamic-executable", Name: "Fallout 3 fallout3ng.exe executable preference", Trigger: "source-parity", Status: sdk.CapabilityStatusMetadata, Message: "Vortex prefers fallout3ng.exe when it exists. DMM records fallout3.exe as the Steam Deck default until generic executable variant probing is added."})
 }
 
 func sources() []sdk.SourceRef {
