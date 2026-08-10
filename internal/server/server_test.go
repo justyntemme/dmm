@@ -37,6 +37,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/finalfantasy7rebirth"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mewgenics"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sevendaystodie"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starwarsjedisurvivor"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/xrebirth"
@@ -10316,6 +10317,62 @@ func TestApplyGameLaunchRequestsDeckySteamAPIAction(t *testing.T) {
 		t.Fatalf("apply response = %+v", body)
 	}
 	status, err := steam.LaunchOptionsStatusForApp(context.Background(), "413150", desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Configured || status.CurrentOptions != "" {
+		t.Fatalf("launch options were changed by backend = %+v", status)
+	}
+}
+
+func TestGameLaunchStatusPublishesSettingDrivenLaunchArguments(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "7 Days to Die")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       sevendaystodie.SteamAppID,
+		Name:        sevendaystodie.Name,
+		InstallDir:  "7 Days to Die",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	udf := filepath.Join(t.TempDir(), "7DTD User Data")
+	raw, err := json.Marshal(map[string]string{"path": udf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetExtensionSettingValue(context.Background(), sevendaystodie.VortexGameID, "7daystodie-udf", raw); err != nil {
+		t.Fatal(err)
+	}
+	writeSteamLaunchOptions(t, sevendaystodie.SteamAppID, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+sevendaystodie.SteamAppID+"/launch", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body gameLaunchStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	desired := `-UserDataFolder="` + filepath.ToSlash(udf) + `"`
+	if !body.Required || body.Configured || !body.CanConfigure || body.LaunchOption == nil || body.Action == nil {
+		t.Fatalf("launch status = %+v", body)
+	}
+	if body.LaunchOption.ID != "7daystodie-user-data-folder-argument" || body.LaunchOption.Mode != sdk.LaunchOptionModeDefaultArguments {
+		t.Fatalf("launch option = %+v", body.LaunchOption)
+	}
+	if body.DesiredOptions != desired || body.Action.DesiredOptions != desired || body.Action.RequirementID != body.LaunchOption.ID {
+		t.Fatalf("desired/action = %q %+v", body.DesiredOptions, body.Action)
+	}
+	status, err := steam.LaunchOptionsStatusForApp(context.Background(), sevendaystodie.SteamAppID, desired)
 	if err != nil {
 		t.Fatal(err)
 	}

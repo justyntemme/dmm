@@ -125,6 +125,13 @@ func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
 }
 
+func (r *Registrar) RegisterLaunchOptionRequirement(spec sdk.LaunchOptionRequirementSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.LaunchOptionRequirements = append(r.extension.LaunchOptionRequirements, spec)
+}
+
 func (r *Registrar) RegisterSupportedTool(spec sdk.SupportedToolSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -446,6 +453,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateRuntimeSpec(extension.RuntimeRequirements)...)
 	errs = append(errs, validateInstallPlatforms(extension.InstallPlatforms)...)
 	errs = append(errs, validateLaunchTools(extension.LaunchTools)...)
+	errs = append(errs, validateLaunchOptionRequirements(extension.LaunchOptionRequirements)...)
 	errs = append(errs, validateSupportedTools(extension.SupportedTools)...)
 	errs = append(errs, validateLauncherRequirements(extension.LauncherRequirements)...)
 	errs = append(errs, validateGameVersionProviders(extension.GameVersionProviders)...)
@@ -540,6 +548,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.InstallPlatforms) > 0 ||
 		len(extension.RuntimeRequirements.RuntimeRequirements) > 0 ||
 		len(extension.LaunchTools) > 0 ||
+		len(extension.LaunchOptionRequirements) > 0 ||
 		len(extension.SupportedTools) > 0 ||
 		len(extension.LauncherRequirements) > 0 ||
 		len(extension.GameInfoProviders) > 0 ||
@@ -1207,6 +1216,57 @@ func validateLaunchTools(tools []sdk.LaunchToolSpec) []error {
 			if strings.TrimSpace(modType) == "" {
 				errs = append(errs, errors.New("launch tool "+id+" provider mod type is required"))
 			}
+		}
+	}
+	return errs
+}
+
+func validateLaunchOptionRequirements(requirements []sdk.LaunchOptionRequirementSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	for _, requirement := range requirements {
+		id := strings.TrimSpace(requirement.ID)
+		if id == "" {
+			errs = append(errs, errors.New("launch option requirement id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("launch option requirement", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("launch option requirement "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(requirement.Name) == "" {
+			errs = append(errs, errors.New("launch option requirement "+id+" name is required"))
+		}
+		status := strings.TrimSpace(requirement.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status == sdk.CapabilityStatusReady && requirement.Provider == nil && len(requirement.Arguments) == 0 {
+			errs = append(errs, errors.New("launch option requirement "+id+" must declare static arguments or a provider"))
+		}
+		mode := strings.TrimSpace(requirement.Mode)
+		if mode == "" {
+			mode = sdk.LaunchOptionModeDefaultArguments
+		}
+		switch mode {
+		case sdk.LaunchOptionModeDefaultArguments, sdk.LaunchOptionModeCommand:
+		default:
+			errs = append(errs, errors.New("launch option requirement "+id+" mode is invalid"))
+		}
+		if executable := strings.TrimSpace(requirement.ExecutableRelative); executable != "" {
+			if err := validateRelativePath(executable); err != nil {
+				errs = append(errs, errors.New("launch option requirement "+id+" executable path: "+err.Error()))
+			}
+		}
+		for _, argument := range requirement.Arguments {
+			if err := validateLaunchArgument(argument); err != nil {
+				errs = append(errs, errors.New("launch option requirement "+id+" argument: "+err.Error()))
+			}
+		}
+		if err := validateCapabilityStatus("launch option requirement", id, requirement.Status, requirement.Message); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs

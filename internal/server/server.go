@@ -847,6 +847,7 @@ type gameLaunchStatusResponse struct {
 	Configured     bool                  `json:"configured"`
 	CanConfigure   bool                  `json:"can_configure"`
 	Tool           *launchToolResponse   `json:"tool,omitempty"`
+	LaunchOption   *launchOptionResponse `json:"launch_option,omitempty"`
 	DesiredOptions string                `json:"desired_options,omitempty"`
 	CurrentOptions string                `json:"current_options,omitempty"`
 	MissingFiles   []string              `json:"missing_files,omitempty"`
@@ -870,10 +871,22 @@ type launchToolResponse struct {
 	SourceExtension    string                           `json:"source_extension"`
 }
 
+type launchOptionResponse struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Mode               string   `json:"mode"`
+	ExecutableRelative string   `json:"executable_relative"`
+	ExecutablePath     string   `json:"executable_path"`
+	Arguments          []string `json:"arguments,omitempty"`
+	Source             string   `json:"source,omitempty"`
+	SourceExtension    string   `json:"source_extension"`
+}
+
 type launchActionResponse struct {
 	Type            string `json:"type"`
 	AppID           string `json:"app_id"`
 	ToolID          string `json:"tool_id"`
+	RequirementID   string `json:"requirement_id,omitempty"`
 	DesiredOptions  string `json:"desired_options"`
 	CurrentOptions  string `json:"current_options,omitempty"`
 	Reason          string `json:"reason"`
@@ -1871,7 +1884,12 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		CurrentOptions: "",
 	}
 	if !required {
-		resp.Details = append(resp.Details, "No extension launch tool is required for the enabled profile mods.")
+		if optionStatus, ok, optionErr := s.gameLaunchOptionRequirementStatus(ctx, game); optionErr != nil {
+			return gameLaunchStatusResponse{}, optionErr
+		} else if ok {
+			return optionStatus, nil
+		}
+		resp.Details = append(resp.Details, "No extension launch tool or launch options are required for the enabled profile mods.")
 		return resp, nil
 	}
 	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
@@ -1931,6 +1949,7 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		Type:            "set-steam-launch-options",
 		AppID:           appID,
 		ToolID:          tool.ID,
+		RequirementID:   tool.ID,
 		DesiredOptions:  desired,
 		CurrentOptions:  resp.CurrentOptions,
 		Reason:          tool.Name + " is required by enabled profile mods.",
@@ -1938,6 +1957,135 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 		Risk:            launchActionRisk(resp.CurrentOptions),
 	}
 	return resp, nil
+}
+
+func (s *Server) gameLaunchOptionRequirementStatus(ctx context.Context, game storage.Game) (gameLaunchStatusResponse, bool, error) {
+	extension, requirements, ok := s.games.LaunchOptionRequirementsForSteamApp(game.SteamAppID)
+	if !ok {
+		return gameLaunchStatusResponse{}, false, nil
+	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return gameLaunchStatusResponse{}, false, err
+	}
+	for _, requirement := range requirements {
+		status := strings.TrimSpace(requirement.Status)
+		if status == sdk.CapabilityStatusBlocked || status == sdk.CapabilityStatusMetadata {
+			continue
+		}
+		result := sdk.LaunchOptionResult{
+			Required:  len(requirement.Arguments) > 0,
+			Arguments: append([]string(nil), requirement.Arguments...),
+		}
+		if requirement.Provider != nil {
+			next, err := requirement.Provider(ctx, sdk.LaunchOptionInput{
+				AppID:             game.SteamAppID,
+				GamePath:          game.GamePath,
+				LibraryPath:       game.LibraryPath,
+				ExtensionSettings: settings,
+			})
+			if err != nil {
+				resp := baseGameLaunchStatus(game)
+				resp.Required = true
+				resp.Configured = false
+				resp.Details = append(resp.Details, err.Error())
+				resp.Error = err.Error()
+				return resp, true, nil
+			}
+			result.Required = result.Required || next.Required || len(next.Arguments) > 0
+			result.Arguments = append(result.Arguments, next.Arguments...)
+			result.Details = append(result.Details, next.Details...)
+			result.Source = strings.TrimSpace(next.Source)
+		}
+		if !result.Required {
+			continue
+		}
+		resp := baseGameLaunchStatus(game)
+		resp.Required = true
+		resp.Configured = false
+		resp.Details = append(resp.Details, result.Details...)
+		arguments := cleanLaunchArguments(result.Arguments)
+		mode := strings.TrimSpace(requirement.Mode)
+		if mode == "" {
+			mode = sdk.LaunchOptionModeDefaultArguments
+		}
+		executableRelative := strings.TrimSpace(requirement.ExecutableRelative)
+		if executableRelative == "" {
+			executableRelative = strings.TrimSpace(extension.GameMetadata.ExecutableRelative)
+		}
+		executablePath := ""
+		desired := strings.Join(arguments, " ")
+		if mode == sdk.LaunchOptionModeCommand {
+			if executableRelative == "" {
+				resp.Details = append(resp.Details, "Extension launch-option requirement does not declare a game executable.")
+				return resp, true, nil
+			}
+			executablePath = filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(executableRelative)))
+			desired = steam.DesiredLaunchOptions(game.GamePath, executableRelative, arguments...)
+		}
+		resp.DesiredOptions = desired
+		resp.LaunchOption = &launchOptionResponse{
+			ID:                 requirement.ID,
+			Name:               requirement.Name,
+			Mode:               mode,
+			ExecutableRelative: executableRelative,
+			ExecutablePath:     executablePath,
+			Arguments:          arguments,
+			Source:             result.Source,
+			SourceExtension:    extension.ID,
+		}
+		resp.CanConfigure = true
+		launchStatus, err := steam.LaunchOptionsStatusForApp(ctx, game.SteamAppID, desired)
+		if err != nil {
+			resp.Error = err.Error()
+			s.logger.Warn("launch option status read failed", "app_id", game.SteamAppID, "requirement_id", requirement.ID, "error", err)
+		} else {
+			resp.CurrentOptions = launchStatus.CurrentOptions
+			resp.Configured = launchOptionsExactlyConfigured(launchStatus.CurrentOptions, desired)
+			resp.Details = append(resp.Details, launchStatus.LocalConfigPaths...)
+		}
+		if resp.Configured {
+			return resp, true, nil
+		}
+		resp.Action = &launchActionResponse{
+			Type:            "set-steam-launch-options",
+			AppID:           game.SteamAppID,
+			ToolID:          requirement.ID,
+			RequirementID:   requirement.ID,
+			DesiredOptions:  desired,
+			CurrentOptions:  resp.CurrentOptions,
+			Reason:          requirement.Name + " is required by extension settings.",
+			SourceExtension: extension.ID,
+			Risk:            launchActionRisk(resp.CurrentOptions),
+		}
+		return resp, true, nil
+	}
+	return gameLaunchStatusResponse{}, false, nil
+}
+
+func baseGameLaunchStatus(game storage.Game) gameLaunchStatusResponse {
+	return gameLaunchStatusResponse{
+		AppID:          game.SteamAppID,
+		Game:           game,
+		Required:       false,
+		Configured:     true,
+		CanConfigure:   false,
+		Details:        []string{},
+		MissingFiles:   []string{},
+		DesiredOptions: "",
+		CurrentOptions: "",
+	}
+}
+
+func cleanLaunchArguments(arguments []string) []string {
+	out := make([]string, 0, len(arguments))
+	for _, argument := range arguments {
+		argument = strings.TrimSpace(argument)
+		if argument != "" {
+			out = append(out, argument)
+		}
+	}
+	return out
 }
 
 func launchOptionsConfigured(currentOptions, desiredOptions, executablePath string) bool {
@@ -1949,6 +2097,10 @@ func launchOptionsConfigured(currentOptions, desiredOptions, executablePath stri
 		return true
 	}
 	return strings.Contains(currentOptions, strings.TrimSpace(executablePath))
+}
+
+func launchOptionsExactlyConfigured(currentOptions, desiredOptions string) bool {
+	return strings.TrimSpace(currentOptions) != "" && strings.TrimSpace(currentOptions) == strings.TrimSpace(desiredOptions)
 }
 
 func launchToolArguments(gamePath string, tool games.LaunchToolSpec, dynamicArguments []string) []string {

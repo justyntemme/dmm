@@ -102,6 +102,13 @@ func Register(r sdk.Registrar) {
 		Name:    "Configure 7 Days to Die user data folder",
 		Actions: sdk.EnsureTargetRootDirectories(modsRootID, "."),
 	})
+	r.RegisterLaunchOptionRequirement(sdk.LaunchOptionRequirementSpec{
+		ID:       "7daystodie-user-data-folder-argument",
+		Name:     "7 Days to Die User Data Folder launch argument",
+		Mode:     sdk.LaunchOptionModeDefaultArguments,
+		Provider: udfLaunchOptionRequirement,
+		Message:  "When a User Data Folder is configured, Steam launch options must pass it to 7 Days to Die.",
+	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:      udfSettingID,
 		Name:    "7 Days to Die User Data Folder",
@@ -142,6 +149,22 @@ func modsTargetRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetR
 		return sdk.TargetRootResult{}, errors.New("game path is required to resolve 7 Days to Die Mods folder")
 	}
 	return sdk.TargetRootResult{Path: filepath.Join(gamePath, modsRoot), Source: "Vortex fallback game-root Mods path"}, nil
+}
+
+func udfLaunchOptionRequirement(ctx context.Context, input sdk.LaunchOptionInput) (sdk.LaunchOptionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.LaunchOptionResult{}, err
+	}
+	udf, ok, err := configuredUDF(input.ExtensionSettings)
+	if err != nil || !ok {
+		return sdk.LaunchOptionResult{}, err
+	}
+	return sdk.LaunchOptionResult{
+		Required:  true,
+		Arguments: []string{`-UserDataFolder="` + filepath.ToSlash(udf) + `"`},
+		Details:   []string{"7 Days to Die User Data Folder launch argument is derived from the extension setting."},
+		Source:    "Vortex User Data Folder setting",
+	}, nil
 }
 
 func configuredUDF(settings map[string]map[string]json.RawMessage) (string, bool, error) {

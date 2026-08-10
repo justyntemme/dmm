@@ -31,6 +31,7 @@ type Extension struct {
 	RuntimeRequirements      gamehandler.GameSpec
 	InstallerChoices         []sdk.InstallerChoiceSpec
 	LaunchTools              []sdk.LaunchToolSpec
+	LaunchOptionRequirements []sdk.LaunchOptionRequirementSpec
 	SupportedTools           []sdk.SupportedToolSpec
 	LauncherRequirements     []sdk.LauncherRequirementSpec
 	InstallPlatforms         []sdk.InstallPlatformSpec
@@ -80,6 +81,7 @@ type SourceRef = sdk.SourceRef
 type LaunchToolSpec = sdk.LaunchToolSpec
 type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
 type LaunchToolDynamicArgumentSpec = sdk.LaunchToolDynamicArgumentSpec
+type LaunchOptionRequirementSpec = sdk.LaunchOptionRequirementSpec
 type SupportedToolSpec = sdk.SupportedToolSpec
 type ToolAcquisitionSpec = sdk.ToolAcquisitionSpec
 type LauncherRequirementSpec = sdk.LauncherRequirementSpec
@@ -215,6 +217,7 @@ type ExtensionCapabilities struct {
 	InstallerChoices         []FeatureSummary         `json:"installer_choices,omitempty"`
 	RuntimeRequirements      []FeatureSummary         `json:"runtime_requirements,omitempty"`
 	LaunchTools              []FeatureSummary         `json:"launch_tools,omitempty"`
+	LaunchOptionRequirements []FeatureSummary         `json:"launch_option_requirements,omitempty"`
 	SupportedTools           []FeatureSummary         `json:"supported_tools,omitempty"`
 	LauncherRequirements     []FeatureSummary         `json:"launcher_requirements,omitempty"`
 	InstallPlatforms         []FeatureSummary         `json:"install_platforms,omitempty"`
@@ -731,6 +734,14 @@ func (r Registry) LaunchToolForSteamApp(appID, toolID string) (Extension, Launch
 		}
 	}
 	return Extension{}, LaunchToolSpec{}, false
+}
+
+func (r Registry) LaunchOptionRequirementsForSteamApp(appID string) (Extension, []LaunchOptionRequirementSpec, bool) {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok || len(extension.LaunchOptionRequirements) == 0 {
+		return Extension{}, nil, false
+	}
+	return extension, append([]LaunchOptionRequirementSpec(nil), extension.LaunchOptionRequirements...), true
 }
 
 func (r Registry) ExtensionActionForSteamApp(appID, actionID string) (Extension, sdk.ExtensionActionSpec, bool) {
@@ -1477,6 +1488,17 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ProviderModTypes:   appendClean([]string{}, tool.ProviderModTypes...),
 		})
 	}
+	for _, requirement := range extension.LaunchOptionRequirements {
+		summary.Capabilities.LaunchOptionRequirements = append(summary.Capabilities.LaunchOptionRequirements, FeatureSummary{
+			ID:                 requirement.ID,
+			Name:               requirement.Name,
+			Kind:               defaultString(requirement.Mode, sdk.LaunchOptionModeDefaultArguments),
+			ExecutableRelative: requirement.ExecutableRelative,
+			Arguments:          append([]string(nil), requirement.Arguments...),
+			Status:             defaultString(requirement.Status, sdk.CapabilityStatusReady),
+			Message:            requirement.Message,
+		})
+	}
 	for _, tool := range extension.SupportedTools {
 		summary.Capabilities.SupportedTools = append(summary.Capabilities.SupportedTools, FeatureSummary{
 			ID:                 tool.ID,
@@ -1839,6 +1861,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.InstallerChoices)
 	sortFeatureSummaries(summary.Capabilities.RuntimeRequirements)
 	sortFeatureSummaries(summary.Capabilities.LaunchTools)
+	sortFeatureSummaries(summary.Capabilities.LaunchOptionRequirements)
 	sortFeatureSummaries(summary.Capabilities.SupportedTools)
 	sortFeatureSummaries(summary.Capabilities.LauncherRequirements)
 	sortFeatureSummaries(summary.Capabilities.InstallPlatforms)

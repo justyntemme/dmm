@@ -31,6 +31,9 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.TargetRoots) != 1 || summary.Capabilities.TargetRoots[0].ID != modsRootID {
 		t.Fatalf("target roots = %+v", summary.Capabilities.TargetRoots)
 	}
+	if len(summary.Capabilities.LaunchOptionRequirements) != 1 || summary.Capabilities.LaunchOptionRequirements[0].ID != "7daystodie-user-data-folder-argument" {
+		t.Fatalf("launch option requirements = %+v", summary.Capabilities.LaunchOptionRequirements)
+	}
 	if len(summary.Capabilities.ExtensionSettings) != 1 || summary.Capabilities.ExtensionSettings[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
 	}
@@ -113,6 +116,28 @@ func TestModsTargetRootUsesConfiguredUDF(t *testing.T) {
 	want := filepath.Join(filepath.Dir(udf), modsRoot)
 	if result.Path != want {
 		t.Fatalf("resolved UDF root = %q, want %q", result.Path, want)
+	}
+}
+
+func TestUDFLaunchOptionRequirementUsesConfiguredUDF(t *testing.T) {
+	udf := filepath.Join(t.TempDir(), "UserData")
+	result, err := udfLaunchOptionRequirement(context.Background(), sdk.LaunchOptionInput{
+		GamePath: "/game",
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {
+				udfSettingID: json.RawMessage(`{"path":` + strconvQuote(udf) + `}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Required || len(result.Arguments) != 1 {
+		t.Fatalf("launch option result = %+v", result)
+	}
+	want := `-UserDataFolder="` + filepath.ToSlash(udf) + `"`
+	if result.Arguments[0] != want {
+		t.Fatalf("argument = %q, want %q", result.Arguments[0], want)
 	}
 }
 

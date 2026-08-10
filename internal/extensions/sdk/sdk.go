@@ -43,6 +43,7 @@ type Registrar interface {
 	RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec)
 	RegisterRuntimeMetadataDependencies(RuntimeDependencySpec)
 	RegisterLaunchTool(LaunchToolSpec)
+	RegisterLaunchOptionRequirement(LaunchOptionRequirementSpec)
 	RegisterSupportedTool(SupportedToolSpec)
 	RegisterLauncherRequirement(LauncherRequirementSpec)
 	RegisterGameVersionProvider(GameVersionProviderSpec)
@@ -216,6 +217,38 @@ type LaunchToolSpec struct {
 	DefaultPrimary     bool
 	ModTypes           []string
 	ProviderModTypes   []string
+}
+
+type LaunchOptionRequirementSpec struct {
+	ID                 string
+	Name               string
+	Mode               string
+	ExecutableRelative string
+	Arguments          []string
+	Provider           LaunchOptionProviderFunc
+	Status             string
+	Message            string
+}
+
+const (
+	LaunchOptionModeDefaultArguments = "default-arguments"
+	LaunchOptionModeCommand          = "command"
+)
+
+type LaunchOptionProviderFunc func(context.Context, LaunchOptionInput) (LaunchOptionResult, error)
+
+type LaunchOptionInput struct {
+	AppID             string
+	GamePath          string
+	LibraryPath       string
+	ExtensionSettings map[string]map[string]json.RawMessage
+}
+
+type LaunchOptionResult struct {
+	Required  bool
+	Arguments []string
+	Details   []string
+	Source    string
 }
 
 type SupportedToolSpec struct {
