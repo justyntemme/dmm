@@ -50,6 +50,35 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 	}, nil
 }
 
+func didPurge(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if strings.TrimSpace(input.GamePath) == "" {
+		return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt manual-entry preservation skipped because the game path is unavailable."}}, nil
+	}
+	orderPath := filepath.Join(input.GamePath, filepath.FromSlash(modOrderFile))
+	current, err := os.ReadFile(orderPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt manual-entry preservation skipped because no order file exists."}}, nil
+		}
+		return sdk.EventHandlerResult{}, err
+	}
+	manual := manualOrderLinesAfterPurge(string(current), input)
+	if err := os.MkdirAll(filepath.Dir(orderPath), 0o700); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	body := strings.Join(manual, "\n")
+	if strings.TrimSpace(body) != "" {
+		body += "\n"
+	}
+	if err := os.WriteFile(orderPath, []byte(body), 0o600); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt was rewritten to preserve manually installed mod folders after purge."}}, nil
+}
+
 func deploymentModIndex(mods []sdk.DeploymentMod) map[int64]sdk.DeploymentMod {
 	out := make(map[int64]sdk.DeploymentMod, len(mods))
 	for _, mod := range mods {
@@ -178,6 +207,113 @@ func unmanagedOrderLines(gamePath string, entries []loadOrderEntry) []string {
 		out = append(out, line)
 	}
 	return out
+}
+
+func manualOrderLinesAfterPurge(body string, input sdk.EventHandlerInput) []string {
+	live := liveKCDModFolders(filepath.Join(input.GamePath, modsRoot))
+	if len(live) == 0 {
+		return nil
+	}
+	managed := managedFoldersFromApplied(input.ManagedFiles)
+	var out []string
+	seen := map[string]struct{}{}
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		clean := transformID(line)
+		key := strings.ToLower(clean)
+		if key == "" {
+			continue
+		}
+		if _, ok := live[key]; !ok {
+			continue
+		}
+		if _, ok := managed[key]; ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, clean)
+	}
+	return out
+}
+
+func liveKCDModFolders(modsPath string) map[string]struct{} {
+	entries, err := os.ReadDir(modsPath)
+	if err != nil {
+		return nil
+	}
+	out := map[string]struct{}{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if directoryContainsKCDModFile(filepath.Join(modsPath, entry.Name())) {
+			folder := transformID(entry.Name())
+			if folder != "" {
+				out[strings.ToLower(folder)] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+func directoryContainsKCDModFile(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".pak", ".cfg", ".manifest":
+			return true
+		}
+	}
+	return false
+}
+
+func managedFoldersFromApplied(files []deploy.AppliedFile) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, file := range files {
+		rel, ok := relativeToModsRoot(file.TargetPath)
+		if !ok {
+			continue
+		}
+		folder := firstPathSegment(rel)
+		folder = transformID(folder)
+		if folder != "" {
+			out[strings.ToLower(folder)] = struct{}{}
+		}
+	}
+	return out
+}
+
+func relativeToModsRoot(path string) (string, bool) {
+	rel := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(path))))
+	root := strings.ToLower(strings.TrimSuffix(modsRoot, "/")) + "/"
+	if strings.HasPrefix(strings.ToLower(rel), root) {
+		return strings.TrimPrefix(rel, strings.TrimSuffix(modsRoot, "/")+"/"), true
+	}
+	marker := "/" + root
+	idx := strings.LastIndex(strings.ToLower(rel), marker)
+	if idx == -1 {
+		return "", false
+	}
+	return rel[idx+len(marker):], true
+}
+
+func firstPathSegment(rel string) string {
+	rel = strings.Trim(strings.TrimSpace(filepath.ToSlash(rel)), "/")
+	if rel == "" {
+		return ""
+	}
+	if idx := strings.Index(rel, "/"); idx >= 0 {
+		return rel[:idx]
+	}
+	return rel
 }
 
 func writeOrderFiles(input sdk.EventHandlerInput, body string) (string, string, error) {

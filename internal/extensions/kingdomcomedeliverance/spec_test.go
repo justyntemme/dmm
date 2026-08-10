@@ -21,7 +21,9 @@ func TestExtensionRegistersKCDCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != modsRoot {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
+	if len(summary.Capabilities.LoadOrders) != 1 ||
+		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventWillDeploy) ||
+		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventDidPurge) {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
 	}
 }
@@ -74,6 +76,31 @@ func TestWillDeployRewritesFoldersAndGeneratesModOrder(t *testing.T) {
 	}
 }
 
+func TestDidPurgePreservesOnlyManualLiveOrderEntries(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "game")
+	writeFile(t, filepath.Join(gamePath, "Mods", "ManualMod", "manual.pak"), "manual")
+	writeFile(t, filepath.Join(gamePath, "Mods", "ReadmeOnly", "readme.txt"), "not a kcd mod")
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(modOrderFile)), "ManualMod\n10\nMissingManual\nManualMod\nReadmeOnly\n")
+
+	result, err := didPurge(context.Background(), sdk.EventHandlerInput{
+		GamePath: gamePath,
+		ManagedFiles: []deploy.AppliedFile{
+			{TargetPath: filepath.Join(gamePath, "Mods", "10", "Data", "managed.pak")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) == 0 {
+		t.Fatalf("expected purge preservation message")
+	}
+	order := readFile(t, filepath.Join(gamePath, filepath.FromSlash(modOrderFile)))
+	if strings.TrimSpace(order) != "ManualMod" {
+		t.Fatalf("mod_order.txt = %q", order)
+	}
+}
+
 func assertMapping(t *testing.T, mappings []deploy.FileMapping, target string) {
 	t.Helper()
 	for _, mapping := range mappings {
@@ -101,4 +128,13 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func hasFeature(features []gameext.FeatureSummary, id string) bool {
+	for _, feature := range features {
+		if feature.ID == id {
+			return true
+		}
+	}
+	return false
 }

@@ -58,6 +58,11 @@ func Register(r sdk.Registrar) {
 		Name:    "Generate Kingdom Come mod_order.txt",
 		Handler: willDeploy,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidPurge,
+		Name:    "Preserve manual Kingdom Come mod_order.txt entries",
+		Handler: didPurge,
+	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "kingdomcomedeliverance-ensure-mods-folder",
 		Name:    "Ensure Kingdom Come Mods folder exists",
