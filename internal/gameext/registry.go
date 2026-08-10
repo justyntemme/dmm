@@ -150,6 +150,7 @@ type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
 type EventNotice = sdk.EventNotice
+type EventToolInputFileSpec = sdk.EventToolInputFileSpec
 type EventToolGeneratedOutputSpec = sdk.EventToolGeneratedOutputSpec
 type DeploymentModFile = sdk.DeploymentModFile
 type EventProgress = sdk.EventProgress

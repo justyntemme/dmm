@@ -115,7 +115,10 @@ func TestDidDeployQueuesAutomaticGeneratedToolNotice(t *testing.T) {
 		ProfileName: `Default/Profile`,
 		StagingRoot: filepath.Join(t.TempDir(), "staging"),
 		ExtensionSettings: map[string]map[string]json.RawMessage{
-			"skyrimse": {SettingAutoRun: []byte("true")},
+			"skyrimse": {
+				SettingAutoRun: []byte("true"),
+				SettingPatches: []byte(`{"12":["GenderSpecific","CreaturePack"]}`),
+			},
 		},
 		ManagedFiles: []deploy.AppliedFile{{
 			TargetPath: "Data/meshes/actors/character/animations/mod/idle.hkx",
@@ -136,5 +139,8 @@ func TestDidDeployQueuesAutomaticGeneratedToolNotice(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(notice.ToolArguments, " "), `RedirectFiles="`) || !strings.Contains(strings.Join(notice.ToolArguments, " "), "InstantExecute=1") {
 		t.Fatalf("tool arguments = %+v", notice.ToolArguments)
+	}
+	if len(notice.ToolInputFiles) != 1 || notice.ToolInputFiles[0].RelativePath != "MyPatches.txt" || notice.ToolInputFiles[0].Content != "GenderSpecific\nCreaturePack" || !notice.ToolInputFiles[0].RemoveIfEmpty {
+		t.Fatalf("tool input files = %+v", notice.ToolInputFiles)
 	}
 }

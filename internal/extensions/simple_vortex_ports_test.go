@@ -48,8 +48,8 @@ func TestSimpleVortexGamePortsExposeInstallers(t *testing.T) {
 			appID:          enderal.SteamAppID,
 			queryModPath:   "Data",
 			target:         "Data/file.txt",
-			wantInstallers: 1,
-			wantModTypes:   1,
+			wantInstallers: 2,
+			wantModTypes:   3,
 			wantTools:      4,
 		},
 		{

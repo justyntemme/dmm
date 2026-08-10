@@ -157,6 +157,7 @@ func didDeploy(opts SupportOptions) sdk.EventHandlerFunc {
 		}
 		outputPath := filepath.Join(input.StagingRoot, "_generated", "tool-output", input.AppID, strconv.FormatInt(input.ProfileID, 10), "fnis-data")
 		message := "FNIS animation generation queued for " + profileName + "."
+		patchContent := strings.Join(selectedPatches(input.ExtensionSettings, opts.GameID, input.ProfileID), "\n")
 		return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
 			Message:       message,
 			ActionKind:    sdk.EventNoticeActionRunLaunchTool,
@@ -166,6 +167,12 @@ func didDeploy(opts SupportOptions) sdk.EventHandlerFunc {
 			AutoRun:       true,
 			WaitForExit:   true,
 			ToolArguments: []string{`RedirectFiles="` + outputPath + `"`, "InstantExecute=1"},
+			ToolInputFiles: []sdk.EventToolInputFileSpec{{
+				RelativeTo:    "tool-dir",
+				RelativePath:  "MyPatches.txt",
+				Content:       patchContent,
+				RemoveIfEmpty: true,
+			}},
 			GeneratedOutput: &sdk.EventToolGeneratedOutputSpec{
 				TargetProfileID:    input.ProfileID,
 				Name:               DataModName(profileName),
@@ -178,6 +185,44 @@ func didDeploy(opts SupportOptions) sdk.EventHandlerFunc {
 			},
 		}}}, nil
 	}
+}
+
+func selectedPatches(settings map[string]map[string]json.RawMessage, gameID string, profileID int64) []string {
+	raw, ok := settingRaw(settings, gameID, SettingPatches)
+	if !ok {
+		return nil
+	}
+	var direct []string
+	if err := json.Unmarshal(raw, &direct); err == nil {
+		return trimmedStringSlice(direct)
+	}
+	profileKey := strconv.FormatInt(profileID, 10)
+	var byProfile map[string][]string
+	if err := json.Unmarshal(raw, &byProfile); err == nil {
+		return trimmedStringSlice(byProfile[profileKey])
+	}
+	var rawByProfile map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rawByProfile); err != nil {
+		return nil
+	}
+	if profileRaw, ok := rawByProfile[profileKey]; ok {
+		if err := json.Unmarshal(profileRaw, &direct); err == nil {
+			return trimmedStringSlice(direct)
+		}
+	}
+	return nil
+}
+
+func trimmedStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
 }
 
 func deploymentHasAnimationRelevantFiles(input sdk.EventHandlerInput, opts SupportOptions) bool {
@@ -506,11 +551,22 @@ func parsePatchLine(line string) (Patch, bool) {
 }
 
 func settingBool(settings map[string]map[string]json.RawMessage, extensionID, settingID string) bool {
+	raw, ok := settingRaw(settings, extensionID, settingID)
+	if !ok {
+		return false
+	}
+	var value bool
+	return json.Unmarshal(raw, &value) == nil && value
+}
+
+func settingRaw(settings map[string]map[string]json.RawMessage, extensionID, settingID string) (json.RawMessage, bool) {
 	extensionID = strings.ToLower(strings.TrimSpace(extensionID))
 	settingID = strings.ToLower(strings.TrimSpace(settingID))
 	raw := settings[extensionID][settingID]
-	var value bool
-	return json.Unmarshal(raw, &value) == nil && value
+	if len(raw) == 0 {
+		return nil, false
+	}
+	return raw, true
 }
 
 func resolveToolPath(input sdk.ExtensionTestInput) (string, bool) {

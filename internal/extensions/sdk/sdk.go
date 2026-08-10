@@ -1163,7 +1163,15 @@ type EventNotice struct {
 	AutoRun         bool
 	WaitForExit     bool
 	ToolArguments   []string
+	ToolInputFiles  []EventToolInputFileSpec
 	GeneratedOutput *EventToolGeneratedOutputSpec
+}
+
+type EventToolInputFileSpec struct {
+	RelativeTo    string
+	RelativePath  string
+	Content       string
+	RemoveIfEmpty bool
 }
 
 type EventToolGeneratedOutputSpec struct {

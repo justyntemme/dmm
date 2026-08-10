@@ -13309,6 +13309,66 @@ func TestExtensionToolCompletionRecordsGeneratedProfileMod(t *testing.T) {
 	}
 }
 
+func TestStartExtensionToolActionPreparesInputFiles(t *testing.T) {
+	srv := newTestServer(t)
+	toolDir := filepath.Join(t.TempDir(), "Tool")
+	if err := os.MkdirAll(toolDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executablePath := filepath.Join(toolDir, "Tool.exe")
+	if err := os.WriteFile(executablePath, []byte("tool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(toolDir, "Config", "MyPatches.txt")
+	job := srv.jobs.CreateWithPayload(jobTypeExtensionToolAction, "Extension tool: Tool", jobs.JobPayload{
+		"tool_id":               "Tool",
+		"tool_action_available": "true",
+		"tool_executable_path":  executablePath,
+		"tool_input_files":      `[{"relative_to":"tool-dir","relative_path":"Config/MyPatches.txt","content":"GenderSpecific\nCreaturePack","remove_if_empty":true}]`,
+		"tool_launch_options":   "echo tool",
+		"tool_action_type":      "run-steam-app-with-launch-options",
+		"tool_source_extension": "test",
+	})
+	job, _ = srv.jobs.Wait(job.ID, "Waiting")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+job.ID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("tool action start status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	body, err := os.ReadFile(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "GenderSpecific\nCreaturePack" {
+		t.Fatalf("input file = %q", string(body))
+	}
+
+	removeJob := srv.jobs.CreateWithPayload(jobTypeExtensionToolAction, "Extension tool: Tool", jobs.JobPayload{
+		"tool_id":               "Tool",
+		"tool_action_available": "true",
+		"tool_executable_path":  executablePath,
+		"tool_input_files":      `[{"relative_to":"tool-dir","relative_path":"Config/MyPatches.txt","content":"","remove_if_empty":true}]`,
+		"tool_launch_options":   "echo tool",
+		"tool_action_type":      "run-steam-app-with-launch-options",
+		"tool_source_extension": "test",
+	})
+	removeJob, _ = srv.jobs.Wait(removeJob.ID, "Waiting")
+
+	req = httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+removeJob.ID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("remove tool action start status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(inputPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("input file still exists or unexpected error: %v", err)
+	}
+}
+
 func TestActivateGameAutoAcquiresExtensionTools(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999014"

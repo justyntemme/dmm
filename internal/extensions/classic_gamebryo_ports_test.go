@@ -12,40 +12,52 @@ import (
 
 func TestClassicGamebryoPortsExposeCoreCapabilities(t *testing.T) {
 	tests := []struct {
-		name          string
-		extension     gameext.Extension
-		appID         string
-		wantTools     int
-		wantLaunchers int
-		wantStores    int
-		wantTarget    string
+		name           string
+		extension      gameext.Extension
+		appID          string
+		wantInstallers int
+		wantModTypes   int
+		wantTools      int
+		wantEvents     int
+		wantLaunchers  int
+		wantStores     int
+		wantTarget     string
 	}{
 		{
-			name:          fallout3.Name,
-			extension:     gameext.MustCompileExtension(fallout3.Extension()),
-			appID:         fallout3.SteamAppIDGOTY,
-			wantTools:     3,
-			wantLaunchers: 2,
-			wantStores:    3,
-			wantTarget:    "Data/file.txt",
+			name:           fallout3.Name,
+			extension:      gameext.MustCompileExtension(fallout3.Extension()),
+			appID:          fallout3.SteamAppIDGOTY,
+			wantInstallers: 3,
+			wantModTypes:   3,
+			wantTools:      3,
+			wantEvents:     1,
+			wantLaunchers:  2,
+			wantStores:     3,
+			wantTarget:     "Data/file.txt",
 		},
 		{
-			name:          oblivion.Name,
-			extension:     gameext.MustCompileExtension(oblivion.Extension()),
-			appID:         oblivion.SteamAppID,
-			wantTools:     3,
-			wantLaunchers: 0,
-			wantStores:    2,
-			wantTarget:    "Data/file.txt",
+			name:           oblivion.Name,
+			extension:      gameext.MustCompileExtension(oblivion.Extension()),
+			appID:          oblivion.SteamAppID,
+			wantInstallers: 3,
+			wantModTypes:   3,
+			wantTools:      3,
+			wantEvents:     1,
+			wantLaunchers:  0,
+			wantStores:     2,
+			wantTarget:     "Data/file.txt",
 		},
 		{
-			name:          skyrim.Name,
-			extension:     gameext.MustCompileExtension(skyrim.Extension()),
-			appID:         skyrim.SteamAppID,
-			wantTools:     5,
-			wantLaunchers: 0,
-			wantStores:    0,
-			wantTarget:    "Data/file.txt",
+			name:           skyrim.Name,
+			extension:      gameext.MustCompileExtension(skyrim.Extension()),
+			appID:          skyrim.SteamAppID,
+			wantInstallers: 4,
+			wantModTypes:   5,
+			wantTools:      5,
+			wantEvents:     3,
+			wantLaunchers:  0,
+			wantStores:     0,
+			wantTarget:     "Data/file.txt",
 		},
 	}
 	for _, tt := range tests {
@@ -61,7 +73,7 @@ func TestClassicGamebryoPortsExposeCoreCapabilities(t *testing.T) {
 			if summary.Capabilities.GameRegistration.QueryModPath != "Data" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 			}
-			if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.ModTypes) != 3 {
+			if len(summary.Capabilities.Installers) != tt.wantInstallers || len(summary.Capabilities.ModTypes) != tt.wantModTypes {
 				t.Fatalf("install capability = installers %+v mod types %+v", summary.Capabilities.Installers, summary.Capabilities.ModTypes)
 			}
 			if len(summary.Capabilities.InstallerChoices) != 1 {
@@ -70,7 +82,7 @@ func TestClassicGamebryoPortsExposeCoreCapabilities(t *testing.T) {
 			if len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 {
 				t.Fatalf("script extender capabilities = runtime %+v launch %+v", summary.Capabilities.RuntimeRequirements, summary.Capabilities.LaunchTools)
 			}
-			if len(summary.Capabilities.PluginActivations) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
+			if len(summary.Capabilities.PluginActivations) != 1 || len(summary.Capabilities.EventHandlers) != tt.wantEvents {
 				t.Fatalf("gamebryo capabilities = activation %+v handlers %+v", summary.Capabilities.PluginActivations, summary.Capabilities.EventHandlers)
 			}
 			if len(summary.Capabilities.SupportedTools) != tt.wantTools {

@@ -2788,6 +2788,7 @@ func (s *Server) extensionNoticeJobPayload(ctx context.Context, appID, event, so
 			payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(executablePath, args...)
 		}
 	}
+	addExtensionToolInputFilesPayload(notice.ToolInputFiles, payload)
 	addExtensionGeneratedOutputPayload(notice.GeneratedOutput, payload)
 	for key, value := range payload {
 		if strings.TrimSpace(value) == "" {
@@ -2827,6 +2828,46 @@ func (s *Server) addExtensionToolLaunchPayload(ctx context.Context, appID, toolI
 	for key, value := range resolved {
 		payload[key] = value
 	}
+}
+
+type extensionToolInputFilePayload struct {
+	RelativeTo    string `json:"relative_to"`
+	RelativePath  string `json:"relative_path"`
+	Content       string `json:"content"`
+	RemoveIfEmpty bool   `json:"remove_if_empty"`
+}
+
+func addExtensionToolInputFilesPayload(specs []gameext.EventToolInputFileSpec, payload jobs.JobPayload) {
+	files := extensionToolInputFilePayloads(specs)
+	if len(files) == 0 {
+		return
+	}
+	raw, err := json.Marshal(files)
+	if err != nil {
+		return
+	}
+	payload["tool_input_files"] = string(raw)
+}
+
+func extensionToolInputFilePayloads(specs []gameext.EventToolInputFileSpec) []extensionToolInputFilePayload {
+	out := make([]extensionToolInputFilePayload, 0, len(specs))
+	for _, spec := range specs {
+		relativeTo := strings.TrimSpace(spec.RelativeTo)
+		if relativeTo == "" {
+			relativeTo = "tool-dir"
+		}
+		relativePath := filepath.ToSlash(strings.TrimSpace(spec.RelativePath))
+		if relativePath == "" {
+			continue
+		}
+		out = append(out, extensionToolInputFilePayload{
+			RelativeTo:    relativeTo,
+			RelativePath:  relativePath,
+			Content:       spec.Content,
+			RemoveIfEmpty: spec.RemoveIfEmpty,
+		})
+	}
+	return out
 }
 
 func addExtensionGeneratedOutputPayload(spec *gameext.EventToolGeneratedOutputSpec, payload jobs.JobPayload) {
@@ -3095,10 +3136,23 @@ func extensionNoticeKey(appID, event string, notice gameext.EventNotice) string 
 		strconv.FormatBool(notice.AutoRun),
 		strconv.FormatBool(notice.WaitForExit),
 		strings.Join(trimmedStringSlice(notice.ToolArguments), "\x1f"),
+		extensionToolInputFilesNoticeKey(notice.ToolInputFiles),
 		extensionGeneratedOutputNoticeKey(notice.GeneratedOutput),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:12])
+}
+
+func extensionToolInputFilesNoticeKey(specs []gameext.EventToolInputFileSpec) string {
+	files := extensionToolInputFilePayloads(specs)
+	if len(files) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(files)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 func extensionGeneratedOutputNoticeKey(spec *gameext.EventToolGeneratedOutputSpec) string {
@@ -3132,6 +3186,16 @@ func extensionEventNotices(result gameext.EventHandlerResult) []gameext.EventNot
 		notice.ActionLabel = strings.TrimSpace(notice.ActionLabel)
 		notice.HelpURL = strings.TrimSpace(notice.HelpURL)
 		notice.ToolArguments = trimmedStringSlice(notice.ToolArguments)
+		inputFiles := make([]gameext.EventToolInputFileSpec, 0, len(notice.ToolInputFiles))
+		for _, file := range notice.ToolInputFiles {
+			file.RelativeTo = strings.TrimSpace(file.RelativeTo)
+			file.RelativePath = filepath.ToSlash(strings.TrimSpace(file.RelativePath))
+			if file.RelativePath == "" {
+				continue
+			}
+			inputFiles = append(inputFiles, file)
+		}
+		notice.ToolInputFiles = inputFiles
 		if notice.GeneratedOutput != nil {
 			notice.GeneratedOutput.Name = strings.TrimSpace(notice.GeneratedOutput.Name)
 			notice.GeneratedOutput.ModType = strings.TrimSpace(notice.GeneratedOutput.ModType)
@@ -5904,8 +5968,79 @@ func (s *Server) handleStartExtensionToolAction(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(started), "proceed": false})
 		return
 	}
+	if err := s.prepareExtensionToolInputFiles(started.Payload); err != nil {
+		failed, _ := s.jobs.Fail(jobID, err.Error())
+		s.logger.Warn("extension tool input preparation failed", "job_id", jobID, "app_id", started.Payload["app_id"], "tool_id", started.Payload["tool_id"], "error", err)
+		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(failed), "error": err.Error(), "proceed": false})
+		return
+	}
 	s.logger.Info("extension tool action started", "job_id", jobID, "app_id", started.Payload["app_id"], "tool_id", started.Payload["tool_id"], "tool_kind", started.Payload["tool_kind"])
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(started), "proceed": true})
+}
+
+func (s *Server) prepareExtensionToolInputFiles(payload jobs.JobPayload) error {
+	raw := strings.TrimSpace(payload["tool_input_files"])
+	if raw == "" {
+		return nil
+	}
+	executablePath := filepath.Clean(strings.TrimSpace(payload["tool_executable_path"]))
+	if executablePath == "." || executablePath == "" || !filepath.IsAbs(executablePath) {
+		return errors.New("extension tool input files require an absolute resolved tool path")
+	}
+	var files []extensionToolInputFilePayload
+	if err := json.Unmarshal([]byte(raw), &files); err != nil {
+		return fmt.Errorf("invalid extension tool input file payload: %w", err)
+	}
+	for _, file := range files {
+		base, err := extensionToolInputBase(executablePath, file.RelativeTo)
+		if err != nil {
+			return err
+		}
+		relative, err := safeExtensionToolInputRelativePath(file.RelativePath)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(base, relative)
+		if file.RemoveIfEmpty && strings.TrimSpace(file.Content) == "" {
+			if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove extension tool input file %q: %w", target, err)
+			}
+			s.logger.Info("extension tool input file removed", "tool_id", payload["tool_id"], "path", target)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return fmt.Errorf("prepare extension tool input directory %q: %w", filepath.Dir(target), err)
+		}
+		if err := os.WriteFile(target, []byte(file.Content), 0o644); err != nil {
+			return fmt.Errorf("write extension tool input file %q: %w", target, err)
+		}
+		s.logger.Info("extension tool input file written", "tool_id", payload["tool_id"], "path", target, "bytes", len(file.Content))
+	}
+	return nil
+}
+
+func extensionToolInputBase(executablePath, relativeTo string) (string, error) {
+	switch strings.TrimSpace(relativeTo) {
+	case "", "tool-dir":
+		return filepath.Dir(executablePath), nil
+	default:
+		return "", fmt.Errorf("unsupported extension tool input base %q", relativeTo)
+	}
+}
+
+func safeExtensionToolInputRelativePath(input string) (string, error) {
+	input = filepath.FromSlash(strings.TrimSpace(input))
+	if input == "" {
+		return "", errors.New("extension tool input relative path is required")
+	}
+	if filepath.IsAbs(input) {
+		return "", fmt.Errorf("extension tool input path must be relative: %q", input)
+	}
+	clean := filepath.Clean(input)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("extension tool input path escapes its base: %q", input)
+	}
+	return clean, nil
 }
 
 func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *http.Request) {
