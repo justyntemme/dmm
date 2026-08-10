@@ -420,6 +420,21 @@ type GameDiagnostics = {
   validation_warnings?: string[];
 };
 
+type GameInfo = {
+  app_id: string;
+  name: string;
+  ran: boolean;
+  details: GameInfoDetail[];
+};
+
+type GameInfoDetail = {
+  id: string;
+  title: string;
+  type?: string;
+  value: unknown;
+  source?: string;
+};
+
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 type GameVisibility = "manageable" | "extensions" | "all";
@@ -1319,6 +1334,17 @@ function runtimeRequirementAcquisitionURL(requirement: RuntimeRequirement) {
 function safeHTTPURL(value: unknown) {
   const url = String(value || "").trim();
   return /^https?:\/\//i.test(url) ? url : "";
+}
+
+function deckyInfoValue(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function deckyJobPrimaryActionLabel(job: Job) {
@@ -4535,6 +4561,7 @@ function FreshDeckyModManagerRoute() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [mods, setMods] = useState<ManagedMod[]>([]);
   const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
+  const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [pluginLoadOrder, setPluginLoadOrder] = useState<PluginLoadOrder | null>(null);
   const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
@@ -4628,13 +4655,14 @@ function FreshDeckyModManagerRoute() {
       setProfiles([]);
       setMods([]);
       setGameDiagnostics(null);
+      setGameInfo(null);
       setDeploymentStatus(null);
       setPluginLoadOrder(null);
       setInstallCandidates([]);
       setWorkshopItems([]);
       return;
     }
-    const [profilesResult, modsResult, diagnosticsResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, diagnosticsResult, infoResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -4649,6 +4677,11 @@ function FreshDeckyModManagerRoute() {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         diagnostics: null
+      })),
+      call<[string], { ok: boolean; error?: string; info?: GameInfo | null }>("game_info", appID).catch((err) => ({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        info: null
       })),
       call<[string], { ok: boolean; error?: string; status?: DeploymentStatus | null }>("game_deploy_status", appID).catch((err) => ({
         ok: false,
@@ -4676,6 +4709,7 @@ function FreshDeckyModManagerRoute() {
     if (modsResult.ok) setMods(modsResult.mods);
     else setError(modsResult.error || "Unable to load mods.");
     setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
+    setGameInfo(infoResult.ok ? infoResult.info ?? null : null);
     setDeploymentStatus(deploymentResult.ok ? deploymentResult.status ?? null : null);
     setPluginLoadOrder(loadOrderResult.ok ? loadOrderResult.load_order ?? null : null);
     setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
@@ -4684,6 +4718,7 @@ function FreshDeckyModManagerRoute() {
     if (!profilesResult.ok) failedSlices.push(`profiles:${profilesResult.error || ""}`);
     if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
     if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
+    if (!infoResult.ok) failedSlices.push(`info:${infoResult.error || ""}`);
     if (!deploymentResult.ok) failedSlices.push(`deployment:${deploymentResult.error || ""}`);
     if (!loadOrderResult.ok) failedSlices.push(`load_order:${loadOrderResult.error || ""}`);
     if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
@@ -5624,6 +5659,24 @@ function FreshDeckyModManagerRoute() {
         <FreshActionButton disabled={modUpdateBusy || mods.length === 0} onActivate={checkModUpdates}>
           {modUpdateBusy ? "Checking Updates" : "Check Updates"}
         </FreshActionButton>
+        {gameInfo?.details?.length ? (
+          <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div style={{ color: "#f8fafc", fontWeight: 900 }}>Game Info</div>
+            <div style={{ display: "grid", gap: "6px", marginTop: "6px", minWidth: 0 }}>
+              {gameInfo.details.map((detail) => {
+                const value = deckyInfoValue(detail.value);
+                if (!value) return null;
+                return (
+                  <div key={detail.id} style={{ display: "grid", gap: "2px", minWidth: 0 }}>
+                    <div style={{ color: "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{detail.title || detail.id}</div>
+                    <div style={{ color: "#d4d4d8", fontSize: "12px", fontWeight: 800, overflowWrap: "anywhere" }}>{value}</div>
+                    {detail.source && <div style={{ color: "#64748b", fontSize: "10px", overflowWrap: "anywhere" }}>{detail.source}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         {deploymentStatus?.restore_available && (
           <Focusable
             className="dmm-sidebar-row"

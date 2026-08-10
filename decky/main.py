@@ -604,6 +604,20 @@ class Plugin:
         self._log(f"plugin load order loaded app_id={app_id} supported={bool(result.get('supported'))} plugins={len(plugins)}")
         return {"ok": True, "load_order": result}
 
+    async def game_info(self, app_id):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "info": None}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "info": None}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/info")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to load game info.", "info": None}
+        details = result.get("details")
+        detail_count = len(details) if isinstance(details, list) else 0
+        self._log(f"game info loaded app_id={app_id} ran={bool(result.get('ran'))} details={detail_count}")
+        return {"ok": True, "info": result}
+
     async def set_profile_plugin_activation(self, app_id, profile_id, activation_id, plugin_name, enabled):
         app_id = str(app_id or "").strip()
         profile_id = str(profile_id or "").strip()

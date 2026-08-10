@@ -654,6 +654,21 @@
     validation_warnings?: string[];
   };
 
+  type GameInfo = {
+    app_id: string;
+    name: string;
+    ran: boolean;
+    details: GameInfoDetail[];
+  };
+
+  type GameInfoDetail = {
+    id: string;
+    title: string;
+    type?: string;
+    value: unknown;
+    source?: string;
+  };
+
   type ProfileApplyResult = {
     status: "applied" | "blocked" | "failed" | string;
     message: string;
@@ -788,6 +803,7 @@
   let lootUserlistBusy = false;
   let lootUserlistMessage = "";
   let gameDiagnostics: GameDiagnostics | null = null;
+  let gameInfo: GameInfo | null = null;
   let gameLaunchStatus: GameLaunchStatus | null = null;
   let workshopState: WorkshopState | null = null;
   let workshopItems: WorkshopItem[] = [];
@@ -1474,6 +1490,7 @@
     restorePointPreview = null;
     restorePointPreviewBusy = 0;
     gameDiagnostics = null;
+    gameInfo = null;
     gameLaunchStatus = null;
     pluginLoadOrder = null;
     lootUserlist = null;
@@ -1583,7 +1600,7 @@
   async function loadGameState(game: Game) {
     const sequence = ++selectedGameLoadSequence;
     const requestAppID = game.app_id;
-    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextGameInfo, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
@@ -1594,6 +1611,7 @@
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
       getJSON<PluginLoadOrder>(`/api/games/${game.app_id}/load-order`),
       getJSON<GameDiagnostics>(`/api/games/${game.app_id}/diagnostics`),
+      getJSON<GameInfo>(`/api/games/${game.app_id}/info`),
       getJSON<GameLaunchStatus>(`/api/games/${game.app_id}/launch`),
       getJSON<WorkshopState>(`/api/games/${game.app_id}/workshop`)
     ]);
@@ -1634,6 +1652,7 @@
     pluginLoadOrder = nextPluginLoadOrder;
     await loadLOOTUserlist(game, nextPluginLoadOrder);
     gameDiagnostics = nextDiagnostics;
+    gameInfo = nextGameInfo;
     gameLaunchStatus = nextLaunchStatus;
     workshopState = nextWorkshopState;
     workshopItems = nextWorkshopState.items ?? [];
@@ -4465,6 +4484,17 @@
     return candidate.status;
   }
 
+  function gameInfoValue(value: unknown) {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
   function displayValidationWarnings(diagnostics: GameDiagnostics | null) {
     const warnings = diagnostics?.validation_warnings ?? [];
     const requirements = diagnostics?.runtime_requirements ?? [];
@@ -6279,6 +6309,27 @@
       {:else if activeGameModule === "review"}
         <article class="workspace-panel">
           <h2>Review</h2>
+          {#if gameInfo?.details?.length}
+            <section class="requirement-list" aria-label="Game information">
+              <div class="panel-heading compact-heading">
+                <h3>Game Info</h3>
+                <span>{gameInfo.details.length}</span>
+              </div>
+              {#each gameInfo.details as detail}
+                {@const value = gameInfoValue(detail.value)}
+                {#if value}
+                  <article>
+                    <div>
+                      <strong>{detail.title || detail.id}</strong>
+                      <p>{value}</p>
+                      {#if detail.source}<small>{detail.source}</small>{/if}
+                    </div>
+                    <span>{detail.type || "Info"}</span>
+                  </article>
+                {/if}
+              {/each}
+            </section>
+          {/if}
           {#if gameDiagnostics?.runtime_requirements?.length}
             <section class="requirement-list" aria-label="Runtime requirements">
               <div class="panel-heading compact-heading">
@@ -6371,7 +6422,7 @@
                 <span>{marker}</span>
               {/each}
             </div>
-          {:else if !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
+          {:else if !gameInfo?.details?.length && !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
             <p class="hint">No review markers for this game.</p>
           {/if}
         </article>
