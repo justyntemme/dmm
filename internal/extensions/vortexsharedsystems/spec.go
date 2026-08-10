@@ -49,7 +49,7 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 		readyAPI("nexus-download", "Queue a source-backed Nexus manager download"),
 		readyAPI("discover-tools", "Discover extension-declared and DMM-managed external tools"),
 		readyAPI("bake-settings", "Bake profile-local game settings"),
-		blockedAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
+		readyAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
 		readyAPI("registerGameInfoProvider", "Register generic game info provider"),
 	} {
 		r.RegisterExtensionAPI(api)

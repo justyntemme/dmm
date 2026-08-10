@@ -1,6 +1,7 @@
 package gameext
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -137,10 +138,41 @@ func (r *Registrar) RegisterRuntimeMetadataDependencies(spec sdk.RuntimeDependen
 	r.extension.RuntimeRequirements.DependencyRequirementIDPrefix = strings.TrimSpace(spec.RequirementIDPrefix)
 	r.extension.RuntimeRequirements.DependencyRequirementKind = strings.TrimSpace(spec.RequirementKind)
 	r.extension.RuntimeRequirements.DependencyRequirementMessage = strings.TrimSpace(spec.RequirementMessage)
+	for _, handler := range spec.RuleHandlers {
+		if handler == nil {
+			continue
+		}
+		r.extension.RuntimeRequirements.DependencyRuleHandlers = append(r.extension.RuntimeRequirements.DependencyRuleHandlers, dependencyRuleHandler(handler))
+	}
 }
 
 func (r *Registrar) RegisterLaunchTool(spec sdk.LaunchToolSpec) {
 	r.extension.LaunchTools = append(r.extension.LaunchTools, spec)
+}
+
+func dependencyRuleHandler(handler sdk.UnfulfilledDependencyRuleHandler) gamehandler.UnfulfilledDependencyRuleHandler {
+	return func(ctx context.Context, rule gamehandler.UnfulfilledDependencyRule) (bool, error) {
+		return handler(ctx, sdk.UnfulfilledDependencyRule{
+			Metadata: sdk.DependencyModMetadata{
+				Kind:                       rule.Metadata.Kind,
+				Name:                       rule.Metadata.Name,
+				UniqueID:                   rule.Metadata.UniqueID,
+				Version:                    rule.Metadata.Version,
+				MinGameVersion:             rule.Metadata.MinGameVersion,
+				MaxGameVersion:             rule.Metadata.MaxGameVersion,
+				EntryDLL:                   rule.Metadata.EntryDLL,
+				MinimumAPIVersion:          rule.Metadata.MinimumAPIVersion,
+				AdditionalLogicalFileNames: append([]string(nil), rule.Metadata.AdditionalLogicalFileNames...),
+				ManifestVersion:            rule.Metadata.ManifestVersion,
+			},
+			Dependency: sdk.DependencyRule{
+				UniqueID:       rule.Dependency.UniqueID,
+				MinimumVersion: rule.Dependency.MinimumVersion,
+				Required:       rule.Dependency.Required,
+			},
+			Status: string(rule.Status),
+		})
+	}
 }
 
 func (r *Registrar) RegisterLaunchOptionRequirement(spec sdk.LaunchOptionRequirementSpec) {

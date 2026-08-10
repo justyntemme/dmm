@@ -323,6 +323,40 @@ func TestStardewRuntimeRequirementsMatchAdditionalLogicalFileNames(t *testing.T)
 	}
 }
 
+func TestRuntimeRequirementsAllowExtensionHandledDependencyRules(t *testing.T) {
+	registry := NewRegistry([]GameSpec{{
+		SteamAppID:                    "100",
+		DependencyMetadataKinds:       []string{"manifest"},
+		DependencyRequirementIDPrefix: "dependency:",
+		DependencyRuleHandlers: []UnfulfilledDependencyRuleHandler{
+			func(_ context.Context, rule UnfulfilledDependencyRule) (bool, error) {
+				return rule.Dependency.UniqueID == "handled.Dependency" && rule.Status == RequirementMissing, nil
+			},
+		},
+	}})
+
+	reqs := registry.RuntimeRequirements(context.Background(), "100", t.TempDir(), []RuntimeMod{{
+		Enabled: true,
+		ModType: "managed",
+		Metadata: []ModMetadata{{
+			Kind:     "manifest",
+			Name:     "Consumer",
+			UniqueID: "consumer",
+			Dependencies: []ModDependency{
+				{UniqueID: "handled.Dependency", Required: true},
+				{UniqueID: "visible.Dependency", Required: true},
+			},
+		}},
+	}})
+
+	if _, ok := reqByID(reqs, "dependency:handled.Dependency"); ok {
+		t.Fatalf("handled dependency should be suppressed: %+v", reqs)
+	}
+	if got := reqStatus(reqs, "dependency:visible.Dependency"); got != RequirementMissing {
+		t.Fatalf("visible dependency status = %q in %+v", got, reqs)
+	}
+}
+
 func TestStardewRuntimeRequirementsTreatDisabledDependencyAsMissing(t *testing.T) {
 	reqs := RuntimeRequirements(context.Background(), "413150", t.TempDir(), []RuntimeMod{
 		{

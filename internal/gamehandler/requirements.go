@@ -56,6 +56,14 @@ type ModDependency struct {
 	Required       bool
 }
 
+type UnfulfilledDependencyRule struct {
+	Metadata   ModMetadata
+	Dependency ModDependency
+	Status     RequirementStatus
+}
+
+type UnfulfilledDependencyRuleHandler func(context.Context, UnfulfilledDependencyRule) (bool, error)
+
 type GameSpec struct {
 	SteamAppID                    string
 	RuntimeRequirements           []RuntimeRequirementSpec
@@ -63,6 +71,7 @@ type GameSpec struct {
 	DependencyRequirementIDPrefix string
 	DependencyRequirementKind     string
 	DependencyRequirementMessage  string
+	DependencyRuleHandlers        []UnfulfilledDependencyRuleHandler
 }
 
 type RuntimeRequirementSpec struct {
@@ -149,7 +158,7 @@ func (r Registry) RuntimeRequirements(ctx context.Context, steamAppID, gamePath 
 			requirements = append(requirements, evaluateRuntimeRequirement(ctx, gamePath, requirementSpec, mods))
 		}
 	}
-	requirements = append(requirements, modDependencyRequirements(spec, mods)...)
+	requirements = append(requirements, modDependencyRequirements(ctx, spec, mods)...)
 	return requirements
 }
 
@@ -265,14 +274,14 @@ func runtimeAcquisition(spec *RuntimeAcquisitionSpec) *RuntimeAcquisition {
 	}
 }
 
-func modDependencyRequirements(spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {
+func modDependencyRequirements(ctx context.Context, spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {
 	if len(spec.DependencyMetadataKinds) == 0 {
 		return nil
 	}
-	return modMetadataDependencyRequirements(spec, mods)
+	return modMetadataDependencyRequirements(ctx, spec, mods)
 }
 
-func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {
+func modMetadataDependencyRequirements(ctx context.Context, spec GameSpec, mods []RuntimeMod) []RuntimeRequirement {
 	kinds := map[string]struct{}{}
 	for _, kind := range spec.DependencyMetadataKinds {
 		kinds[strings.TrimSpace(kind)] = struct{}{}
@@ -320,6 +329,9 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 				id := idPrefix + uniqueID
 				installedMetadata, ok := installed[strings.ToLower(uniqueID)]
 				if !ok {
+					if dependencyRuleHandled(ctx, spec, UnfulfilledDependencyRule{Metadata: metadata, Dependency: dependency, Status: RequirementMissing}) {
+						continue
+					}
 					next := RuntimeRequirement{
 						ID:       id,
 						Name:     uniqueID,
@@ -338,6 +350,9 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 				}
 
 				if !dependencyVersionTooOld(installedMetadata, dependency) {
+					continue
+				}
+				if dependencyRuleHandled(ctx, spec, UnfulfilledDependencyRule{Metadata: metadata, Dependency: dependency, Status: RequirementOutdated}) {
 					continue
 				}
 				details := dependencyDetails(metadata, dependency)
@@ -376,6 +391,19 @@ func modMetadataDependencyRequirements(spec GameSpec, mods []RuntimeMod) []Runti
 		requirements = append(requirements, problems[key])
 	}
 	return requirements
+}
+
+func dependencyRuleHandled(ctx context.Context, spec GameSpec, rule UnfulfilledDependencyRule) bool {
+	for _, handler := range spec.DependencyRuleHandlers {
+		if handler == nil {
+			continue
+		}
+		handled, err := handler(ctx, rule)
+		if err == nil && handled {
+			return true
+		}
+	}
+	return false
 }
 
 func metadataLogicalIDs(metadata ModMetadata) []string {

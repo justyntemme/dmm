@@ -195,6 +195,34 @@ type RuntimeDependencySpec struct {
 	RequirementIDPrefix string
 	RequirementKind     string
 	RequirementMessage  string
+	RuleHandlers        []UnfulfilledDependencyRuleHandler
+}
+
+type UnfulfilledDependencyRuleHandler func(context.Context, UnfulfilledDependencyRule) (bool, error)
+
+type UnfulfilledDependencyRule struct {
+	Metadata   DependencyModMetadata
+	Dependency DependencyRule
+	Status     string
+}
+
+type DependencyModMetadata struct {
+	Kind                       string
+	Name                       string
+	UniqueID                   string
+	Version                    string
+	MinGameVersion             string
+	MaxGameVersion             string
+	EntryDLL                   string
+	MinimumAPIVersion          string
+	AdditionalLogicalFileNames []string
+	ManifestVersion            string
+}
+
+type DependencyRule struct {
+	UniqueID       string
+	MinimumVersion string
+	Required       bool
 }
 
 type SourceRef struct {
