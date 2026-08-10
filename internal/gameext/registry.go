@@ -149,6 +149,7 @@ type EventHandlerSpec = sdk.EventHandlerSpec
 type EventHandlerInput = sdk.EventHandlerInput
 type EventHandlerResult = sdk.EventHandlerResult
 type EventNotice = sdk.EventNotice
+type DeploymentModFile = sdk.DeploymentModFile
 type EventProgress = sdk.EventProgress
 type EventProgressFunc = sdk.EventProgressFunc
 type BlockingIssue = sdk.BlockingIssue

@@ -1025,6 +1025,19 @@ type DeploymentMod struct {
 	SourceGameDomain string
 	SourceModID      string
 	SourceFileID     string
+	Files            []DeploymentModFile
+	Metadata         []installplan.ModMetadata
+}
+
+type DeploymentModFile struct {
+	Path           string
+	TargetRoot     string
+	TargetRelative string
+	TargetPolicy   string
+	DeployStrategy string
+	FileMode       string
+	Size           int64
+	SHA256         string
 }
 
 type AddedFile struct {

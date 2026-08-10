@@ -146,8 +146,8 @@ func Register(r sdk.Registrar) {
 		Name:           "BG3 pak",
 		FileExtensions: []string{".pak"},
 		Engine:         "lslib-divine",
-		Status:         sdk.CapabilityStatusBlocked,
-		Message:        "Vortex shells out to LSLib/divine.exe to list pak contents and extract meta.lsx. DMM installs paks but still needs the generic external archive-engine runtime before it can guarantee BG3 modsettings.lsx parity for every pak.",
+		Status:         sdk.CapabilityStatusReady,
+		Message:        "Vortex shells out to LSLib/divine.exe to list pak contents and extract meta.lsx. DMM mirrors that path through the extension-owned Divine process bridge during modsettings.lsx generation.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "bg3-pak-metadata-engine",
@@ -179,8 +179,8 @@ func Register(r sdk.Registrar) {
 		ID:      "bg3-pak-meta-lsx",
 		Name:    "BG3 pak meta.lsx extractor",
 		Target:  ".pak",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex uses LSLib/divine list-package and extract-package to locate and parse meta.lsx inside each pak. DMM needs the generic external archive-engine runtime before this extractor can populate UUID, Folder, Version64, and isListed metadata.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex uses LSLib/divine list-package and extract-package to locate and parse meta.lsx inside each pak. DMM uses the same command shape to populate BG3 modsettings.lsx during deployment.",
 	})
 	r.RegisterStateReducer(sdk.StateReducerSpec{
 		ID:      "bg3-settings",

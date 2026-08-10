@@ -24,7 +24,7 @@
 ## Beta Gaps
 
 - DMM does not yet execute LSLib/Divine to read pak `meta.lsx` data.
-- `modsettings.lsx` generation and BG3 pak load-order management remain blocked until the external archive-engine execution path exists.
+- `modsettings.lsx` generation uses the extension-owned Divine process bridge to list pak contents, extract `meta.lsx`, and generate the Public profile load-order file during deployment. BG3 load-order import/migration UI remains future parity work.
 - Vortex `check-mods-version` parity remains missing; DMM can acquire the tool, but does not yet run BG3's source-backed update check event.
 - Live BG3 archive validation is still required on Steam Deck.
 

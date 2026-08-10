@@ -41,7 +41,7 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if reinstallAction == nil || reinstallAction.Kind != sdk.ExtensionActionKindAcquireTool || reinstallAction.AcquireTool == nil || reinstallAction.AcquireTool.ToolID != "bg3-lslib-divine" || reinstallAction.Status != "" {
 		t.Fatalf("reinstall action = %+v", reinstallAction)
 	}
-	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusBlocked {
+	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
@@ -137,13 +137,16 @@ func TestBuildLSLibStagesToolsWithoutDeployTargets(t *testing.T) {
 	}
 }
 
-func TestWillDeployReportsPakMetadataGap(t *testing.T) {
+func TestWillDeployReportsMissingDivineTool(t *testing.T) {
 	result, err := willDeploy(context.Background(), sdk.EventHandlerInput{
 		Mappings: []deploy.FileMapping{{TargetRelative: "BetterUI.pak", InstalledModID: 1}},
 		Mods: []sdk.DeploymentMod{{
 			ID:      1,
 			ModType: pakModType,
 			Enabled: true,
+			Files: []sdk.DeploymentModFile{{
+				Path: "BetterUI.pak",
+			}},
 		}},
 	})
 	if err != nil {
@@ -151,6 +154,83 @@ func TestWillDeployReportsPakMetadataGap(t *testing.T) {
 	}
 	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "LSLib/divine") {
 		t.Fatalf("notices = %+v", result.Notices)
+	}
+}
+
+func TestWillDeployGeneratesBG3ModSettingsWithManagedDivine(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "steamapps", "common", "Baldurs Gate 3")
+	library := root
+	stagingMods := filepath.Join(root, "staging", "bg3-mod")
+	stagingTool := filepath.Join(root, "staging", "bg3-lslib")
+	if err := os.MkdirAll(stagingMods, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingMods, "BetterUI.pak"), []byte("pak"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	divinePath := fakeDivineExecutable(t, stagingTool)
+	result, err := willDeploy(context.Background(), sdk.EventHandlerInput{
+		AppID:       SteamAppID,
+		GamePath:    gamePath,
+		LibraryPath: library,
+		WorkDir:     filepath.Join(root, "work"),
+		Mods: []sdk.DeploymentMod{
+			{
+				ID:          1,
+				Name:        "Better UI",
+				ModType:     pakModType,
+				Enabled:     true,
+				Priority:    10,
+				StagingPath: stagingMods,
+				Files: []sdk.DeploymentModFile{{
+					Path:           "BetterUI.pak",
+					TargetRelative: "BetterUI.pak",
+				}},
+			},
+			{
+				ID:          2,
+				Name:        "LSLib",
+				ModType:     lslibModType,
+				StagingPath: stagingTool,
+				Metadata: []installplan.ModMetadata{{
+					Kind:            "tool",
+					Name:            "LSLib/Divine Tool",
+					UniqueID:        "bg3-lslib-divine",
+					StagingRelative: "tools/divine.exe",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	wantTargetRoot := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Larian Studios", "Baldur's Gate 3")
+	if mapping.TargetRoot != wantTargetRoot || mapping.TargetRelative != "PlayerProfiles/Public/modsettings.lsx" || mapping.Strategy != deploy.StrategyCopy {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	body, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		`value="GustavX"`,
+		`value="BetterUIFolder"`,
+		`value="Better UI"`,
+		`value="00000000-0000-0000-0000-000000000123"`,
+		`value="36028797018963970"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated modsettings missing %s:\n%s", want, text)
+		}
+	}
+	if divinePath == "" {
+		t.Fatal("fake divine path not created")
 	}
 }
 
@@ -220,6 +300,60 @@ func writeFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func fakeDivineExecutable(t *testing.T, stagingRoot string) string {
+	t.Helper()
+	path := filepath.Join(stagingRoot, "tools", "divine.exe")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `#!/bin/sh
+action=""
+destination=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --action) action="$2"; shift 2 ;;
+    --destination) destination="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$action" in
+  list-package)
+    printf 'Mods/BetterUI/meta.lsx\t1759\t0\n'
+    ;;
+  extract-package)
+    mkdir -p "$destination/Mods/BetterUI"
+    cat > "$destination/Mods/BetterUI/meta.lsx" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<save>
+  <region id="Config">
+    <node id="root">
+      <children>
+        <node id="ModuleInfo">
+          <attribute id="Folder" type="LSString" value="BetterUIFolder"/>
+          <attribute id="MD5" type="LSString" value="abc"/>
+          <attribute id="Name" type="LSString" value="Better UI"/>
+          <attribute id="PublishHandle" type="uint64" value="0"/>
+          <attribute id="UUID" type="FixedString" value="00000000-0000-0000-0000-000000000123"/>
+          <attribute id="Version64" type="int64" value="36028797018963970"/>
+        </node>
+      </children>
+    </node>
+  </region>
+</save>
+XML
+    ;;
+  *)
+    echo "unexpected action $action" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func assertTargets(t *testing.T, instructions []installplan.Instruction, want []string) {

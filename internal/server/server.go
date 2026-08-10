@@ -14350,6 +14350,10 @@ func (s *Server) findActiveExtensionNoticeJob(noticeKey string) (jobs.Job, bool)
 func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod {
 	out := make([]gameext.DeploymentMod, 0, len(mods))
 	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			manifest = stagedManifest{}
+		}
 		out = append(out, gameext.DeploymentMod{
 			ID:               mod.ID,
 			Name:             mod.Name,
@@ -14360,6 +14364,25 @@ func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod
 			SourceGameDomain: mod.SourceGameDomain,
 			SourceModID:      mod.SourceModID,
 			SourceFileID:     mod.SourceFileID,
+			Files:            deploymentModFilesForHooks(manifest.Files),
+			Metadata:         append([]installplan.ModMetadata(nil), manifest.Metadata...),
+		})
+	}
+	return out
+}
+
+func deploymentModFilesForHooks(files []stagedManifestFile) []gameext.DeploymentModFile {
+	out := make([]gameext.DeploymentModFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, gameext.DeploymentModFile{
+			Path:           file.Path,
+			TargetRoot:     file.TargetRoot,
+			TargetRelative: file.TargetRelative,
+			TargetPolicy:   file.TargetPolicy,
+			DeployStrategy: file.DeployStrategy,
+			FileMode:       file.FileMode,
+			Size:           file.Size,
+			SHA256:         file.SHA256,
 		})
 	}
 	return out

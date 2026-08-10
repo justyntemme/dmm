@@ -11623,6 +11623,30 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	stagingPath := filepath.Join(t.TempDir(), "staging", "lifecyclegame")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "payload"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "payload", "metadata.xml"), []byte("<metadata />\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "observed-root",
+		PlannerID: "lifecyclegame:observed",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "payload/metadata.xml",
+			TargetRelative:  "payload/metadata.xml",
+		}},
+		Metadata: []installplan.ModMetadata{{
+			Kind:     "test-metadata",
+			Name:     "Lifecycle Metadata",
+			UniqueID: "lifecycle-metadata",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID: appID,
 		Resolved: catalog.ResolvedDownload{
@@ -11631,9 +11655,10 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 			ModID:      "10",
 			FileID:     "20",
 		},
-		Name:        "Lifecycle Payload",
-		ArchivePath: filepath.Join(t.TempDir(), "lifecycle.zip"),
-		StagingPath: filepath.Join(t.TempDir(), "staging", "lifecyclegame"),
+		Name:         "Lifecycle Payload",
+		ArchivePath:  filepath.Join(t.TempDir(), "lifecycle.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifestJSON,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -11660,6 +11685,12 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	}
 	if len(captured.Mods) != 1 || captured.Mods[0].ID != mod.ID || captured.Mods[0].Name != "Lifecycle Payload" {
 		t.Fatalf("captured mods = %+v", captured.Mods)
+	}
+	if captured.Mods[0].ModType != "observed-root" || len(captured.Mods[0].Files) != 1 || captured.Mods[0].Files[0].TargetRelative != "payload/metadata.xml" {
+		t.Fatalf("captured mod files = %+v", captured.Mods[0])
+	}
+	if len(captured.Mods[0].Metadata) != 1 || captured.Mods[0].Metadata[0].UniqueID != "lifecycle-metadata" {
+		t.Fatalf("captured mod metadata = %+v", captured.Mods[0].Metadata)
 	}
 	if captured.WorkDir == "" {
 		t.Fatal("captured work dir is empty")
