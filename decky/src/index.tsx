@@ -4532,11 +4532,10 @@ function FreshProfilePickerModal(props: {
   );
 }
 
-function FreshLocalArchiveModal(props: {
+function FreshLocalArchiveBrowser(props: {
   appID: string;
   profileID: number;
   onImported: () => Promise<void>;
-  closeModal: () => void;
 }) {
   const [entries, setEntries] = useState<LocalArchiveBrowseEntry[]>([]);
   const [currentPath, setCurrentPath] = useState("");
@@ -4584,7 +4583,7 @@ function FreshLocalArchiveModal(props: {
       const job = result.job ?? result.result?.job;
       if (job) await maybeShowDeckyActionToast(job, "fresh-local-archive-import");
       await props.onImported();
-      props.closeModal();
+      setMessage(job?.message || "Archive import started.");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -4597,56 +4596,55 @@ function FreshLocalArchiveModal(props: {
   }, []);
 
   return (
-    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
-      <style>{deckyRuntimeStyles}</style>
-      <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "10px", minWidth: 0, padding: "4px", width: "100%" }}>
-        <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
-          <div style={{ fontSize: "16px", fontWeight: 900 }}>Import Archive</div>
-          <div style={{ color: "#a1a1aa", fontSize: "11px", overflowWrap: "anywhere" }}>{currentPath || "Deck Downloads"}</div>
+    <Focusable flow-children="down" style={{ ...freshSectionStyle, background: "#0b1220", gap: "10px" }}>
+      <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
+        <div style={{ color: "#f8fafc", fontSize: "13px", fontWeight: 900 }}>Import Mod Archive</div>
+        <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+          {currentPath || "Deck Downloads"}
         </div>
-        <div style={freshActionRowStyle}>
-          <FreshActionButton disabled={!parentPath} onActivate={() => void browse(parentPath)}>Up</FreshActionButton>
-          <FreshActionButton onActivate={() => void browse("")}>Downloads</FreshActionButton>
-        </div>
-        <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
-          <TextField label="Path" value={pathInput} bShowClearAction onChange={(event) => setPathInput(event.currentTarget.value)} />
-          <FreshActionButton onActivate={() => void browse(pathInput.trim())}>Open Path</FreshActionButton>
-        </div>
-        <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "480px", overflowY: "auto", paddingRight: "4px" }}>
-          {entries.length === 0 && <div style={{ color: "#a1a1aa" }}>No folders or supported archives found here.</div>}
-          {entries.map((entry) => {
-            const isFile = entry.kind === "file";
-            const busy = busyPath === entry.path;
-            return (
-              <Focusable
-                key={entry.path}
-                className="dmm-sidebar-row"
-                focusClassName="dmm-sidebar-row-focused"
-                onActivate={() => {
-                  if (isFile) void importArchive(entry);
-                  else void browse(entry.path);
-                }}
-                onClick={() => {
-                  if (isFile) void importArchive(entry);
-                  else void browse(entry.path);
-                }}
-                style={freshCardStyle(false)}
-              >
-                <div style={{ display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
-                  <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{entry.name}</div>
-                  {isFile && <span style={deckySourcePillStyle("local")}>Local</span>}
-                </div>
-                <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
-                  {isFile ? `${formatBytes(entry.bytes)} · ${busy ? "Importing" : "A Import"}` : "A Open Folder"}
-                </div>
-              </Focusable>
-            );
-          })}
-        </Focusable>
-        {message && <div style={{ color: "#f87171", overflowWrap: "anywhere" }}>{message}</div>}
-        <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
+      </div>
+      <div style={freshActionRowStyle}>
+        <FreshActionButton disabled={!parentPath} onActivate={() => void browse(parentPath)}>Up</FreshActionButton>
+        <FreshActionButton onActivate={() => void browse("")}>Downloads</FreshActionButton>
+      </div>
+      <div style={freshActionRowStyle}>
+        <FreshActionButton onActivate={() => void browse(currentPath)}>Refresh</FreshActionButton>
+        <FreshActionButton onActivate={() => void browse(pathInput.trim())}>Open Path</FreshActionButton>
+      </div>
+      <TextField label="Path" value={pathInput} bShowClearAction onChange={(event) => setPathInput(event.currentTarget.value)} />
+      <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
+        {entries.length === 0 && <div style={{ color: "#a1a1aa" }}>No folders or supported archives found here.</div>}
+        {entries.map((entry) => {
+          const isFile = entry.kind === "file";
+          const busy = busyPath === entry.path;
+          return (
+            <Focusable
+              key={entry.path}
+              className="dmm-sidebar-row"
+              focusClassName="dmm-sidebar-row-focused"
+              onActivate={() => {
+                if (isFile) void importArchive(entry);
+                else void browse(entry.path);
+              }}
+              onClick={() => {
+                if (isFile) void importArchive(entry);
+                else void browse(entry.path);
+              }}
+              style={freshCardStyle(false)}
+            >
+              <div style={{ display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0 }}>
+                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{entry.name}</div>
+                {isFile && <span style={deckySourcePillStyle("local")}>Local</span>}
+              </div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>
+                {isFile ? `${formatBytes(entry.bytes)} · ${busy ? "Importing" : "A Import"}` : "A Open Folder"}
+              </div>
+            </Focusable>
+          );
+        })}
       </Focusable>
-    </ModalRoot>
+      {message && <div style={{ color: message.toLowerCase().includes("unable") ? "#f87171" : "#99f6e4", overflowWrap: "anywhere" }}>{message}</div>}
+    </Focusable>
   );
 }
 
@@ -4682,6 +4680,7 @@ function FreshDeckyModManagerRoute() {
   const [busyPluginKey, setBusyPluginKey] = useState("");
   const [busyJobID, setBusyJobID] = useState("");
   const [modUpdateBusy, setModUpdateBusy] = useState(false);
+  const [archiveBrowserOpen, setArchiveBrowserOpen] = useState(false);
   const [suppressRunningAutoOpen, setSuppressRunningAutoOpen] = useState(Boolean(initialReturnContext?.appID));
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
@@ -4912,13 +4911,7 @@ function FreshDeckyModManagerRoute() {
 
   function openArchiveImport() {
     if (!selectedGameID || !selectedProfile) return;
-    let modal: { Close: () => void } | null = null;
-    const closeModal = () => modal?.Close();
-    modal = showModal(
-      <FreshLocalArchiveModal appID={selectedGameID} profileID={selectedProfile.id} onImported={() => loadSelectedGameState(selectedGameID)} closeModal={closeModal} />,
-      window,
-      { strTitle: "Import Archive", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 720, popupHeight: 780 }
-    );
+    setArchiveBrowserOpen((current) => !current);
   }
 
   function openPairPhoneModal() {
@@ -5592,6 +5585,7 @@ function FreshDeckyModManagerRoute() {
 
   function clearSelectedGame() {
     setSelectedGameID("");
+    setArchiveBrowserOpen(false);
     setSuppressRunningAutoOpen(true);
     setProfiles([]);
     setMods([]);
@@ -5802,8 +5796,18 @@ function FreshDeckyModManagerRoute() {
         </FreshActionButton>
         <div style={freshActionRowStyle}>
           <FreshActionButton disabled={!canBrowse} onActivate={openExploreMods}>Explore Mods</FreshActionButton>
-          <FreshActionButton disabled={!selectedProfile} onActivate={openArchiveImport}>Import Archive</FreshActionButton>
+          <FreshActionButton disabled={!selectedProfile} onActivate={openArchiveImport}>
+            {archiveBrowserOpen ? "Hide Import" : "Import Archive"}
+          </FreshActionButton>
         </div>
+        {archiveBrowserOpen && selectedProfile && (
+          <FreshLocalArchiveBrowser
+            key={`${selectedGameID}:${selectedProfile.id}`}
+            appID={selectedGameID}
+            profileID={selectedProfile.id}
+            onImported={() => loadSelectedGameState(selectedGameID)}
+          />
+        )}
         <FreshActionButton disabled={modUpdateBusy || mods.length === 0} onActivate={checkModUpdates}>
           {modUpdateBusy ? "Checking Updates" : "Check Updates"}
         </FreshActionButton>
