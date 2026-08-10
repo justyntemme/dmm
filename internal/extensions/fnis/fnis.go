@@ -69,8 +69,8 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		ID:      "fnis-will-deploy",
 		Event:   sdk.EventWillDeploy,
 		Name:    "FNIS animation checksum pre-deploy hook",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex disables the generated FNIS Data profile mod and hashes animation-related deployed files before deploy. DMM still needs the generated-tool runtime before this hook can mutate deployment state.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex disables the generated FNIS Data profile mod and hashes animation-related deployed files before deploy. DMM uses the active deploy input to detect animation-relevant changes and queues generated-tool output through the did-deploy hook without mutating profile state during predeploy.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		ID:      "fnis-did-deploy",

@@ -10,6 +10,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -46,6 +47,29 @@ func TestDataModNameSanitizesVortexInvalidCharacters(t *testing.T) {
 	want := "FNIS Data (Default_Test_Profile_Name_____)"
 	if got != want {
 		t.Fatalf("DataModName = %q, want %q", got, want)
+	}
+}
+
+func TestRegisterSupportMarksDeployHooksReady(t *testing.T) {
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "fnis-test",
+		Name:    "FNIS Test",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			RegisterSupport(r, SupportOptions{GameID: "skyrimse", PatchListName: "PatchListSE.txt"})
+		},
+	})
+	summary := gameext.NewRegistry([]gameext.Extension{extension}).ExtensionSummaries()[0]
+	byID := map[string]gameext.FeatureSummary{}
+	for _, handler := range summary.Capabilities.EventHandlers {
+		byID[handler.ID] = handler
+	}
+	if byID["fnis-will-deploy"].Status != sdk.CapabilityStatusReady || byID["fnis-will-deploy"].Message == "" {
+		t.Fatalf("will-deploy handler = %+v", byID["fnis-will-deploy"])
+	}
+	if byID["fnis-did-deploy"].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("did-deploy handler = %+v", byID["fnis-did-deploy"])
 	}
 }
 
