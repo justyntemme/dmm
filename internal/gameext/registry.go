@@ -317,13 +317,14 @@ type FeatureSummary struct {
 }
 
 type SetupActionSummary struct {
-	ID                string `json:"id"`
-	Name              string `json:"name,omitempty"`
-	Kind              string `json:"kind"`
-	Base              string `json:"base"`
-	TargetRootID      string `json:"target_root_id,omitempty"`
-	RelativePath      string `json:"relative_path,omitempty"`
-	OverwriteExisting bool   `json:"overwrite_existing,omitempty"`
+	ID                  string `json:"id"`
+	Name                string `json:"name,omitempty"`
+	Kind                string `json:"kind"`
+	Base                string `json:"base"`
+	TargetRootID        string `json:"target_root_id,omitempty"`
+	RelativePath        string `json:"relative_path,omitempty"`
+	DestinationRelative string `json:"destination_relative,omitempty"`
+	OverwriteExisting   bool   `json:"overwrite_existing,omitempty"`
 }
 
 type ActionTargetSummary struct {
@@ -2034,13 +2035,14 @@ func setupActionSummaries(actions []sdk.GameSetupActionSpec) []SetupActionSummar
 	out := make([]SetupActionSummary, 0, len(actions))
 	for _, action := range actions {
 		out = append(out, SetupActionSummary{
-			ID:                strings.TrimSpace(action.ID),
-			Name:              strings.TrimSpace(action.Name),
-			Kind:              strings.TrimSpace(action.Kind),
-			Base:              strings.TrimSpace(action.Base),
-			TargetRootID:      strings.TrimSpace(action.TargetRootID),
-			RelativePath:      filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
-			OverwriteExisting: action.OverwriteExisting,
+			ID:                  strings.TrimSpace(action.ID),
+			Name:                strings.TrimSpace(action.Name),
+			Kind:                strings.TrimSpace(action.Kind),
+			Base:                strings.TrimSpace(action.Base),
+			TargetRootID:        strings.TrimSpace(action.TargetRootID),
+			RelativePath:        filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
+			DestinationRelative: filepath.ToSlash(strings.TrimSpace(action.DestinationRelative)),
+			OverwriteExisting:   action.OverwriteExisting,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {

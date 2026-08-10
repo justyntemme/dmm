@@ -12078,6 +12078,9 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("game"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "DISABLEMODS.TXT"), []byte("disabled"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	extension := gameext.MustCompileExtension(sdk.Extension{
 		ID:      "setupgame",
 		Name:    "Setup Game",
@@ -12101,6 +12104,7 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 			})
 			actions := sdk.RequireGamePaths("Game.exe")
 			actions = append(actions, sdk.EnsureGameDirectories("Mods")...)
+			actions = append(actions, sdk.RenameGamePathIfExists("DISABLEMODS.TXT", "ENABLEMODS.TXT")...)
 			actions = append(actions, sdk.EnsureTargetRootDirectories("external-root", ".")...)
 			actions = append(actions, sdk.EnsureTargetRootFiles("external-root", "ready\n", "settings/config.txt")...)
 			r.RegisterGameSetup(sdk.GameSetupSpec{
@@ -12148,11 +12152,21 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 3 || applied.Result.Checked != 4 {
+	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 4 || applied.Result.Checked != 5 {
 		t.Fatalf("setup response = %+v", applied)
 	}
 	if _, err := os.Stat(filepath.Join(gamePath, "Mods")); err != nil {
 		t.Fatalf("game mods dir missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(gamePath, "DISABLEMODS.TXT")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("disabled marker should be renamed, stat err = %v", err)
+	}
+	markerContent, err := os.ReadFile(filepath.Join(gamePath, "ENABLEMODS.TXT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(markerContent) != "disabled" {
+		t.Fatalf("marker content = %q", string(markerContent))
 	}
 	content, err := os.ReadFile(filepath.Join(targetRoot, "settings", "config.txt"))
 	if err != nil {

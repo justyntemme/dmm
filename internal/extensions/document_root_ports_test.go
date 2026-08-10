@@ -57,7 +57,7 @@ func TestDocumentRootVortexPortsExposeDynamicTargets(t *testing.T) {
 			if summary.Capabilities.GameRegistration == nil || !summary.Capabilities.GameRegistration.QueryModPathDynamic {
 				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 			}
-			if len(summary.Capabilities.TargetRoots) != 1 || summary.Capabilities.TargetRoots[0].ID != tt.targetRoot {
+			if !hasTargetRoot(summary.Capabilities.TargetRoots, tt.targetRoot) {
 				t.Fatalf("target roots = %+v", summary.Capabilities.TargetRoots)
 			}
 			if len(summary.Capabilities.GameSetups) != tt.wantSetups {
@@ -88,4 +88,13 @@ func TestDocumentRootVortexPortsExposeDynamicTargets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasTargetRoot(roots []gameext.FeatureSummary, id string) bool {
+	for _, root := range roots {
+		if root.ID == id {
+			return true
+		}
+	}
+	return false
 }

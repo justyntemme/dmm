@@ -48,9 +48,12 @@ func Register(r sdk.Registrar) {
 		r.RegisterInstaller(installer)
 	}
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:      "nomanssky-enable-mods",
-		Name:    "Enable No Man's Sky PCBANKS mods",
-		Actions: append(sdk.EnsureGameDirectories("GAMEDATA/MODS", "GAMEDATA/PCBANKS/MODS"), sdk.EnsureGameFiles("", "GAMEDATA/PCBANKS/ENABLEMODS.TXT")...),
+		ID:   "nomanssky-enable-mods",
+		Name: "Enable No Man's Sky PCBANKS mods",
+		Actions: append(
+			append(sdk.EnsureGameDirectories("GAMEDATA/MODS", "GAMEDATA/PCBANKS/MODS"), sdk.EnsureGameFiles("", "GAMEDATA/PCBANKS/ENABLEMODS.TXT")...),
+			sdk.RenameGamePathIfExists("GAMEDATA/PCBANKS/DISABLEMODS.TXT", "GAMEDATA/PCBANKS/ENABLEMODS.TXT")...,
+		),
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "nomanssky-xbox-launcher",

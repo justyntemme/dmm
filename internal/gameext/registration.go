@@ -1982,9 +1982,9 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 			}
 			actionSeen[actionKey] = struct{}{}
 			switch strings.TrimSpace(action.Kind) {
-			case sdk.GameSetupActionEnsureDirectory, sdk.GameSetupActionEnsureFile, sdk.GameSetupActionRequirePath:
+			case sdk.GameSetupActionEnsureDirectory, sdk.GameSetupActionEnsureFile, sdk.GameSetupActionRequirePath, sdk.GameSetupActionRenameIfExists:
 			default:
-				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" kind must be ensure-directory, ensure-file, or require-path"))
+				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" kind must be ensure-directory, ensure-file, require-path, or rename-if-exists"))
 			}
 			switch strings.TrimSpace(action.Base) {
 			case sdk.GameSetupBaseGame:
@@ -2000,6 +2000,11 @@ func validateGameSetups(specs []sdk.GameSetupSpec) []error {
 			}
 			if err := validateSetupRelativePath(action.RelativePath); err != nil {
 				errs = append(errs, errors.New("game setup "+id+" action "+actionID+" relative path: "+err.Error()))
+			}
+			if strings.TrimSpace(action.Kind) == sdk.GameSetupActionRenameIfExists {
+				if err := validateRelativePath(action.DestinationRelative); err != nil {
+					errs = append(errs, errors.New("game setup "+id+" action "+actionID+" destination path: "+err.Error()))
+				}
 			}
 		}
 	}

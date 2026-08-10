@@ -459,20 +459,22 @@ type GameSetupSpec struct {
 }
 
 type GameSetupActionSpec struct {
-	ID                string
-	Name              string
-	Kind              string
-	Base              string
-	TargetRootID      string
-	RelativePath      string
-	Content           string
-	OverwriteExisting bool
+	ID                  string
+	Name                string
+	Kind                string
+	Base                string
+	TargetRootID        string
+	RelativePath        string
+	DestinationRelative string
+	Content             string
+	OverwriteExisting   bool
 }
 
 const (
 	GameSetupActionEnsureDirectory = "ensure-directory"
 	GameSetupActionEnsureFile      = "ensure-file"
 	GameSetupActionRequirePath     = "require-path"
+	GameSetupActionRenameIfExists  = "rename-if-exists"
 
 	GameSetupBaseGame       = "game"
 	GameSetupBaseTargetRoot = "target-root"
@@ -500,6 +502,27 @@ func EnsureTargetRootFiles(rootID, content string, paths ...string) []GameSetupA
 
 func RequireTargetRootPaths(rootID string, paths ...string) []GameSetupActionSpec {
 	return ensureGameSetupActions(GameSetupActionRequirePath, GameSetupBaseTargetRoot, rootID, "", false, paths...)
+}
+
+func RenameGamePathIfExists(from, to string) []GameSetupActionSpec {
+	return []GameSetupActionSpec{{
+		ID:                  gameSetupActionID(GameSetupActionRenameIfExists, GameSetupBaseGame, "", strings.TrimSpace(from)+"-"+strings.TrimSpace(to)),
+		Kind:                GameSetupActionRenameIfExists,
+		Base:                GameSetupBaseGame,
+		RelativePath:        strings.TrimSpace(from),
+		DestinationRelative: strings.TrimSpace(to),
+	}}
+}
+
+func RenameTargetRootPathIfExists(rootID, from, to string) []GameSetupActionSpec {
+	return []GameSetupActionSpec{{
+		ID:                  gameSetupActionID(GameSetupActionRenameIfExists, GameSetupBaseTargetRoot, rootID, strings.TrimSpace(from)+"-"+strings.TrimSpace(to)),
+		Kind:                GameSetupActionRenameIfExists,
+		Base:                GameSetupBaseTargetRoot,
+		TargetRootID:        strings.TrimSpace(rootID),
+		RelativePath:        strings.TrimSpace(from),
+		DestinationRelative: strings.TrimSpace(to),
+	}}
 }
 
 func ensureGameSetupActions(kind, base, rootID, content string, overwriteExisting bool, paths ...string) []GameSetupActionSpec {

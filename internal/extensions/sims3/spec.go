@@ -13,9 +13,19 @@ const (
 	Name         = "The Sims 3"
 
 	executable     = "game/bin/TS3.exe"
+	modsRootID     = "sims3-documents-mods"
 	packagesRootID = "sims3-documents-packages"
 	packageModType = "sims3-package"
 )
+
+const resourceCfg = `Priority 500
+PackedFile DCCache/*.dbc
+PackedFile Packages/*.package
+PackedFile Packages/*/*.package
+PackedFile Packages/*/*/*.package
+PackedFile Packages/*/*/*/*.package
+PackedFile Packages/*/*/*/*/*.package
+`
 
 func Extension() sdk.Extension {
 	return sdk.Extension{ID: VortexGameID, Name: Name, Kind: sdk.ExtensionKindGame, Version: "1.0.0-dmm.1", BuildID: "first-party-go", Register: Register}
@@ -31,6 +41,11 @@ func Register(r sdk.Registrar) {
 		QueryModPathDynamic: true,
 		MergeMode:           sdk.GameMergeModeAll,
 		Deployment:          installplan.DeploymentSpec{AllowNeedsReviewState: true},
+	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       modsRootID,
+		Name:     "The Sims 3 Documents Mods",
+		Resolver: targetroots.ProtonDocuments(SteamAppID, "Electronic Arts", "The Sims 3", "Mods"),
 	})
 	r.RegisterTargetRoot(sdk.TargetRootSpec{
 		ID:       packagesRootID,
@@ -49,9 +64,12 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
-		ID:      "sims3-resource-cfg",
-		Name:    "Prepare The Sims 3 Resource.cfg",
-		Actions: sdk.EnsureTargetRootDirectories(packagesRootID, "."),
+		ID:   "sims3-resource-cfg",
+		Name: "Prepare The Sims 3 Resource.cfg",
+		Actions: append(
+			sdk.EnsureTargetRootDirectories(packagesRootID, "."),
+			sdk.EnsureTargetRootFiles(modsRootID, resourceCfg, "Resource.cfg")...,
+		),
 	})
 	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
 		ID:        "sims3-sku-version",

@@ -689,15 +689,17 @@ type gameSetupStatusResponse struct {
 }
 
 type gameSetupActionStatusResponse struct {
-	ActionID     string `json:"action_id"`
-	Name         string `json:"name,omitempty"`
-	Kind         string `json:"kind"`
-	Base         string `json:"base"`
-	TargetRootID string `json:"target_root_id,omitempty"`
-	RelativePath string `json:"relative_path,omitempty"`
-	Status       string `json:"status"`
-	Message      string `json:"message,omitempty"`
-	TargetPath   string `json:"target_path,omitempty"`
+	ActionID            string `json:"action_id"`
+	Name                string `json:"name,omitempty"`
+	Kind                string `json:"kind"`
+	Base                string `json:"base"`
+	TargetRootID        string `json:"target_root_id,omitempty"`
+	RelativePath        string `json:"relative_path,omitempty"`
+	DestinationRelative string `json:"destination_relative,omitempty"`
+	Status              string `json:"status"`
+	Message             string `json:"message,omitempty"`
+	TargetPath          string `json:"target_path,omitempty"`
+	DestinationPath     string `json:"destination_path,omitempty"`
 }
 
 type gameExtensionTestResponse struct {
@@ -1427,13 +1429,14 @@ func (s *Server) gameSetupStatuses(ctx context.Context, game storage.Game) []gam
 
 func (s *Server) gameSetupActionStatus(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) gameSetupActionStatusResponse {
 	resp := gameSetupActionStatusResponse{
-		ActionID:     strings.TrimSpace(action.ID),
-		Name:         strings.TrimSpace(action.Name),
-		Kind:         strings.TrimSpace(action.Kind),
-		Base:         strings.TrimSpace(action.Base),
-		TargetRootID: strings.TrimSpace(action.TargetRootID),
-		RelativePath: filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
-		Status:       "missing",
+		ActionID:            strings.TrimSpace(action.ID),
+		Name:                strings.TrimSpace(action.Name),
+		Kind:                strings.TrimSpace(action.Kind),
+		Base:                strings.TrimSpace(action.Base),
+		TargetRootID:        strings.TrimSpace(action.TargetRootID),
+		RelativePath:        filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
+		DestinationRelative: filepath.ToSlash(strings.TrimSpace(action.DestinationRelative)),
+		Status:              "missing",
 	}
 	target, err := s.gameSetupActionTarget(ctx, game, action)
 	if err != nil {
@@ -1442,6 +1445,55 @@ func (s *Server) gameSetupActionStatus(ctx context.Context, game storage.Game, a
 		return resp
 	}
 	resp.TargetPath = filepath.ToSlash(target)
+	if strings.TrimSpace(action.Kind) == sdk.GameSetupActionRenameIfExists {
+		destination, err := s.gameSetupActionDestination(ctx, game, action)
+		if err != nil {
+			resp.Status = "blocked"
+			resp.Message = err.Error()
+			return resp
+		}
+		resp.DestinationPath = filepath.ToSlash(destination)
+		sourceInfo, sourceErr := os.Stat(target)
+		destInfo, destErr := os.Stat(destination)
+		switch {
+		case sourceErr == nil && destErr == nil:
+			resp.Status = "blocked"
+			resp.Message = "source and destination both exist"
+			if sourceInfo.IsDir() || destInfo.IsDir() {
+				resp.Message = "rename source or destination is a directory"
+			}
+			return resp
+		case sourceErr == nil:
+			if sourceInfo.IsDir() {
+				resp.Status = "blocked"
+				resp.Message = "rename source is a directory"
+				return resp
+			}
+			resp.Status = "missing"
+			resp.Message = "rename is pending"
+			return resp
+		case destErr == nil:
+			if destInfo.IsDir() {
+				resp.Status = "blocked"
+				resp.Message = "rename destination is a directory"
+				return resp
+			}
+			resp.Status = "ready"
+			return resp
+		case errors.Is(sourceErr, os.ErrNotExist) && errors.Is(destErr, os.ErrNotExist):
+			resp.Status = "ready"
+			resp.Message = "source marker is absent"
+			return resp
+		case sourceErr != nil && !errors.Is(sourceErr, os.ErrNotExist):
+			resp.Status = "blocked"
+			resp.Message = sourceErr.Error()
+			return resp
+		default:
+			resp.Status = "blocked"
+			resp.Message = destErr.Error()
+			return resp
+		}
+	}
 	info, err := os.Stat(target)
 	if errors.Is(err, os.ErrNotExist) {
 		resp.Status = "missing"
@@ -1532,6 +1584,9 @@ func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, s
 		s.logger.Info("game setup required path verified", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", target, "source", source)
 		return false, nil
 	}
+	if kind == sdk.GameSetupActionRenameIfExists {
+		return s.renameGameSetupAction(ctx, game, setupID, actionID, action, target, jobID, source)
+	}
 	info, err := os.Stat(target)
 	if err == nil {
 		switch kind {
@@ -1579,7 +1634,64 @@ func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, s
 	}
 }
 
+func (s *Server) renameGameSetupAction(ctx context.Context, game storage.Game, setupID, actionID string, action sdk.GameSetupActionSpec, sourcePath, jobID, source string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	destination, err := s.gameSetupActionDestination(ctx, game, action)
+	if err != nil {
+		return false, err
+	}
+	sourceInfo, sourceErr := os.Stat(sourcePath)
+	destinationInfo, destinationErr := os.Stat(destination)
+	if sourceErr != nil {
+		if !errors.Is(sourceErr, os.ErrNotExist) {
+			return false, sourceErr
+		}
+		if destinationErr == nil {
+			if destinationInfo.IsDir() {
+				return false, fmt.Errorf("game setup %s rename destination is a directory: %s", setupID, filepath.ToSlash(destination))
+			}
+			s.logger.Info("game setup rename already applied", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "source_path", sourcePath, "destination_path", destination, "source", source)
+			return false, nil
+		}
+		if errors.Is(destinationErr, os.ErrNotExist) {
+			s.logger.Info("game setup rename skipped because source marker is absent", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "source_path", sourcePath, "destination_path", destination, "source", source)
+			return false, nil
+		}
+		return false, destinationErr
+	}
+	if sourceInfo.IsDir() {
+		return false, fmt.Errorf("game setup %s rename source is a directory: %s", setupID, filepath.ToSlash(sourcePath))
+	}
+	if destinationErr == nil {
+		if destinationInfo.IsDir() {
+			return false, fmt.Errorf("game setup %s rename destination is a directory: %s", setupID, filepath.ToSlash(destination))
+		}
+		return false, fmt.Errorf("game setup %s cannot rename %s because destination already exists: %s", setupID, filepath.ToSlash(sourcePath), filepath.ToSlash(destination))
+	}
+	if !errors.Is(destinationErr, os.ErrNotExist) {
+		return false, destinationErr
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return false, err
+	}
+	if err := os.Rename(sourcePath, destination); err != nil {
+		return false, err
+	}
+	s.logger.Info("game setup path renamed", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "source_path", sourcePath, "destination_path", destination, "source", source)
+	return true, nil
+}
+
 func (s *Server) gameSetupActionTarget(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) (string, error) {
+	return s.gameSetupActionPath(ctx, game, action, action.RelativePath)
+}
+
+func (s *Server) gameSetupActionDestination(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) (string, error) {
+	return s.gameSetupActionPath(ctx, game, action, action.DestinationRelative)
+}
+
+func (s *Server) gameSetupActionPath(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec, relativePath string) (string, error) {
 	root := strings.TrimSpace(game.GamePath)
 	switch strings.TrimSpace(action.Base) {
 	case sdk.GameSetupBaseGame:
@@ -1596,7 +1708,7 @@ func (s *Server) gameSetupActionTarget(ctx context.Context, game storage.Game, a
 		return "", errors.New("game setup root is empty")
 	}
 	root = filepath.Clean(root)
-	rel := filepath.ToSlash(strings.TrimSpace(action.RelativePath))
+	rel := filepath.ToSlash(strings.TrimSpace(relativePath))
 	if rel == "" || rel == "." {
 		return root, nil
 	}
