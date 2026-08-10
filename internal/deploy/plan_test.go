@@ -220,6 +220,47 @@ func TestBuildPlanUsesExplicitConflictWinner(t *testing.T) {
 	}
 }
 
+func TestBuildPlanRequiresExplicitWinnerForDuplicateManagedTargets(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	target := filepath.Join(root, "game")
+	for _, rel := range []string{"first/config.json", "second/config.json"} {
+		path := filepath.Join(staging, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := BuildPlanWithOptions(staging, target, StrategySymlink, []FileMapping{
+		{
+			SourceRelative: "first/config.json",
+			TargetRelative: "Mods/Shared/config.json",
+			InstalledModID: 1,
+			ModID:          "first",
+			Priority:       0,
+		},
+		{
+			SourceRelative: "second/config.json",
+			TargetRelative: "Mods/Shared/config.json",
+			InstalledModID: 2,
+			ModID:          "second",
+			Priority:       10,
+		},
+	}, nil, BuildOptions{RequireExplicitWinners: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 1 {
+		t.Fatalf("conflicts = %+v", plan.Conflicts)
+	}
+	conflict := plan.Conflicts[0]
+	if !conflict.Conflict || conflict.Operation != "skip" || conflict.WinnerModID == 0 || !strings.Contains(conflict.ConflictReason, "choose a file winner") {
+		t.Fatalf("conflict = %+v", conflict)
+	}
+}
+
 func TestBuildPlanSupportsManagedExternalTargetRoot(t *testing.T) {
 	root := t.TempDir()
 	staging := filepath.Join(root, "staging")

@@ -6835,6 +6835,14 @@ func TestFileConflictWinnerEndpointOverridesDuplicateTarget(t *testing.T) {
 	}
 
 	targetPath := filepath.Join(gamePath, "Mods", "Shared", "config.json")
+	prePlan, err := srv.buildGameDeployPlan(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prePlan.Conflicts) != 1 || prePlan.Conflicts[0].TargetPath != targetPath || !strings.Contains(prePlan.Conflicts[0].ConflictReason, "choose a file winner") {
+		t.Fatalf("pre-winner conflicts = %+v", prePlan.Conflicts)
+	}
+
 	body := fmt.Sprintf(`{"target_path":%q,"winner_installed_mod_id":%d}`, targetPath, second.ID)
 	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(first.ProfileID, 10)+"/conflicts/winner", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -6848,6 +6856,9 @@ func TestFileConflictWinnerEndpointOverridesDuplicateTarget(t *testing.T) {
 	plan, err := srv.buildGameDeployPlan(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("post-winner conflicts = %+v", plan.Conflicts)
 	}
 	var sawSecondWinner, sawFirstLoser bool
 	for _, action := range plan.Actions {

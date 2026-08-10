@@ -13669,6 +13669,7 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		IgnoreConflictPatterns: s.games.ConflictIgnorePatternsForSteamApp(appID),
 		IgnoreDeployPatterns:   s.games.DeployIgnorePatternsForSteamApp(appID),
 		ConflictWinners:        conflictWinners,
+		RequireExplicitWinners: true,
 	})
 }
 

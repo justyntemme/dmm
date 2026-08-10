@@ -71,6 +71,7 @@ type BuildOptions struct {
 	IgnoreConflictPatterns []string
 	IgnoreDeployPatterns   []string
 	ConflictWinners        map[string]int64
+	RequireExplicitWinners bool
 }
 
 type mappingCandidate struct {
@@ -124,6 +125,9 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		return Plan{}, err
 	}
 	for _, action := range skipped {
+		if action.Conflict {
+			plan.Conflicts = append(plan.Conflicts, action)
+		}
 		plan.Actions = append(plan.Actions, action)
 	}
 	for _, mapping := range winners {
@@ -391,13 +395,18 @@ func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mapp
 			byTarget[key] = next
 			continue
 		}
-		winner, loser := chooseMappingWinner(current, next, options.ConflictWinners[targetPath])
+		overrideInstalledModID := options.ConflictWinners[targetPath]
+		winner, loser := chooseMappingWinner(current, next, overrideInstalledModID)
 		byTarget[key] = winner
 		reason := "overridden by mod priority"
-		if options.ConflictWinners[targetPath] > 0 {
+		conflict := false
+		if overrideInstalledModID > 0 {
 			reason = "resolved by file winner"
 		} else if ignoredConflictTarget(targetRelSlash, options.IgnoreConflictPatterns) {
 			reason = "ignored by extension conflict rules"
+		} else if options.RequireExplicitWinners && !sameMappingOwner(current.mapping, next.mapping) {
+			conflict = true
+			reason = "unresolved duplicate managed file target; choose a file winner"
 		}
 		skipped = append(skipped, Action{
 			TargetPath:     loser.targetPath,
@@ -413,6 +422,7 @@ func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mapp
 			WinnerModID:    winner.mapping.InstalledModID,
 			WinnerSourceID: winner.mapping.ModID,
 			WinnerPriority: winner.mapping.Priority,
+			Conflict:       conflict,
 			ConflictReason: reason,
 		})
 	}
@@ -428,6 +438,16 @@ func prioritizeMappings(defaultTargetRoot string, defaultStrategy Strategy, mapp
 		out = append(out, item.mapping)
 	}
 	return out, skipped, nil
+}
+
+func sameMappingOwner(a, b FileMapping) bool {
+	if a.InstalledModID > 0 || b.InstalledModID > 0 {
+		return a.InstalledModID > 0 && a.InstalledModID == b.InstalledModID
+	}
+	if strings.TrimSpace(a.ModID) != "" || strings.TrimSpace(b.ModID) != "" {
+		return strings.TrimSpace(a.ModID) != "" && strings.TrimSpace(a.ModID) == strings.TrimSpace(b.ModID)
+	}
+	return false
 }
 
 func ignoredConflictTarget(targetRelative string, patterns []string) bool {
