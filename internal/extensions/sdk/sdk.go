@@ -858,6 +858,7 @@ type StateMigrationSpec struct {
 const (
 	StateMigrationCommandPurgeModsInPath = "purge-mods-in-path"
 	StateMigrationCommandSetModType      = "set-mod-type"
+	StateMigrationCommandDeployProfile   = "deploy-profile"
 )
 
 type StateMigrationCommandSpec struct {

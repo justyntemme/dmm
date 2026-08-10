@@ -21,7 +21,7 @@ func Extension() sdk.Extension {
 		ID:       VortexGameID,
 		Name:     Name,
 		Kind:     sdk.ExtensionKindGame,
-		Version:  "1.0.0-dmm.1",
+		Version:  "1.0.1-dmm.1",
 		BuildID:  "first-party-go",
 		Register: Register,
 	}
@@ -79,8 +79,27 @@ func Register(r sdk.Registrar) {
 		Name:        "No Man's Sky deprecated PAK migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.1",
-		Status:      sdk.CapabilityStatusBlocked,
-		Message:     "Vortex migrates existing non-deprecated mods to the deprecated PAK mod type before redeploying. DMM has the generic retag command, but this migration stays blocked until DMM tracks prior extension versions so it cannot run against fresh installs.",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:             "purge-old-mod-path",
+				Name:           "Purge old No Man's Sky mod path",
+				Command:        sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRelative: "GAMEDATA/MODS",
+			},
+			{
+				ID:              "retag-deprecated-paks",
+				Name:            "Retag No Man's Sky PAK mods",
+				Command:         sdk.StateMigrationCommandSetModType,
+				TargetModType:   deprecatedPakModType,
+				ExcludeModTypes: []string{deprecatedPakModType},
+			},
+			{
+				ID:      "redeploy-active-profile",
+				Name:    "Redeploy active No Man's Sky profile",
+				Command: sdk.StateMigrationCommandDeployProfile,
+			},
+		},
+		Message: "Source-backed Vortex 1.0.1 migration purges old managed GAMEDATA/MODS deployment, retags non-deprecated mods to the deprecated PAK type, and redeploys the active profile.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

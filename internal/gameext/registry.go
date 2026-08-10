@@ -805,28 +805,33 @@ func (r Registry) ProfileFeatureForSteamApp(appID, featureID string) (Extension,
 }
 
 func (r Registry) ModTypeDeploymentModeForSteamApp(appID, modType string) string {
-	extension, ok := r.ExtensionForSteamApp(appID)
+	registered, ok := r.ModTypeForSteamApp(appID, modType)
 	if !ok {
 		return installplan.ModTypeDeploymentDirect
 	}
-	modType = canonical(modType)
-	if modType == "" {
+	switch strings.TrimSpace(registered.DeploymentMode) {
+	case installplan.ModTypeDeploymentEventHook:
+		return installplan.ModTypeDeploymentEventHook
+	case installplan.ModTypeDeploymentToolOnly:
+		return installplan.ModTypeDeploymentToolOnly
+	default:
 		return installplan.ModTypeDeploymentDirect
 	}
-	for _, registered := range extension.InstallPlan.ModTypes {
-		if canonical(registered.ID) != modType {
-			continue
-		}
-		switch strings.TrimSpace(registered.DeploymentMode) {
-		case installplan.ModTypeDeploymentEventHook:
-			return installplan.ModTypeDeploymentEventHook
-		case installplan.ModTypeDeploymentToolOnly:
-			return installplan.ModTypeDeploymentToolOnly
-		default:
-			return installplan.ModTypeDeploymentDirect
+}
+
+func (r Registry) ModTypeForSteamApp(appID, modType string) (installplan.ModTypeSpec, bool) {
+	modType = canonical(modType)
+	if modType == "" {
+		return installplan.ModTypeSpec{}, false
+	}
+	for _, extension := range r.ExtensionsForSteamApp(appID) {
+		for _, registered := range extension.InstallPlan.ModTypes {
+			if canonical(registered.ID) == modType {
+				return registered, true
+			}
 		}
 	}
-	return installplan.ModTypeDeploymentDirect
+	return installplan.ModTypeSpec{}, false
 }
 
 func (r Registry) ResolveLaunchToolForSteamApp(appID, gamePath string, tool LaunchToolSpec) LaunchToolSpec {

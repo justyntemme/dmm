@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -248,6 +250,22 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandSetModType:
 		changed, err := s.setInstalledModTypesForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return changed > 0, err
+	case sdk.StateMigrationCommandDeployProfile:
+		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
+		switch result.Status {
+		case "applied":
+			return true, nil
+		case "blocked", "failed":
+			if strings.TrimSpace(result.Message) != "" {
+				return false, errors.New(result.Message)
+			}
+			return false, fmt.Errorf("profile deployment ended with status %q", result.Status)
+		default:
+			if strings.TrimSpace(result.Status) == "" {
+				return false, errors.New("profile deployment returned an empty status")
+			}
+			return false, fmt.Errorf("profile deployment ended with status %q", result.Status)
+		}
 	default:
 		return false, fmt.Errorf("unsupported extension migration command %q", command.Command)
 	}
@@ -289,6 +307,7 @@ func (s *Server) setInstalledModTypesForMigration(ctx context.Context, appID str
 			continue
 		}
 		manifest.ModType = targetType
+		retargetManifestForModTypeMigration(appID, s.games, &manifest, currentType, targetType)
 		body, err := json.Marshal(manifest)
 		if err != nil {
 			return changed, err
@@ -302,6 +321,62 @@ func (s *Server) setInstalledModTypesForMigration(ctx context.Context, appID str
 		s.logger.Info("extension migration retagged installed mods", "app_id", appID, "source", source, "from_mod_type", command.ModType, "target_mod_type", targetType, "excluded_mod_types", strings.Join(command.ExcludeModTypes, ","), "mods", changed)
 	}
 	return changed, nil
+}
+
+func retargetManifestForModTypeMigration(appID string, registry gameext.Registry, manifest *stagedManifest, fromType, targetType string) {
+	fromSpec, fromOK := registry.ModTypeForSteamApp(appID, fromType)
+	targetSpec, targetOK := registry.ModTypeForSteamApp(appID, targetType)
+	if !fromOK || !targetOK {
+		return
+	}
+	fromRoot := modTypeRelativeTargetRoot(fromSpec)
+	targetRoot := modTypeRelativeTargetRoot(targetSpec)
+	if targetRoot == "" || strings.EqualFold(fromRoot, targetRoot) {
+		return
+	}
+	for i := range manifest.Files {
+		if strings.TrimSpace(manifest.Files[i].TargetRoot) != "" {
+			continue
+		}
+		retargeted, ok := retargetRelativeForModTypeRoot(manifest.Files[i].TargetRelative, fromRoot, targetRoot)
+		if ok {
+			manifest.Files[i].TargetRelative = retargeted
+		}
+	}
+}
+
+func modTypeRelativeTargetRoot(spec installplan.ModTypeSpec) string {
+	if strings.TrimSpace(spec.TargetRootID) != "" {
+		return ""
+	}
+	rel, ok := safeRelative(spec.TargetRoot)
+	if !ok || rel == "." {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+func retargetRelativeForModTypeRoot(value, fromRoot, targetRoot string) (string, bool) {
+	rel, ok := safeRelative(value)
+	if !ok || rel == "." {
+		return "", false
+	}
+	targetRoot = filepath.ToSlash(strings.Trim(targetRoot, "/"))
+	if targetRoot == "" {
+		return "", false
+	}
+	if rel == targetRoot || strings.HasPrefix(rel, targetRoot+"/") {
+		return rel, false
+	}
+	fromRoot = filepath.ToSlash(strings.Trim(fromRoot, "/"))
+	if fromRoot != "" && (rel == fromRoot || strings.HasPrefix(rel, fromRoot+"/")) {
+		suffix := strings.Trim(strings.TrimPrefix(rel, fromRoot), "/")
+		if suffix == "" {
+			return targetRoot, true
+		}
+		return filepath.ToSlash(filepath.Join(targetRoot, suffix)), true
+	}
+	return filepath.ToSlash(filepath.Join(targetRoot, rel)), true
 }
 
 func (s *Server) extensionMigrationTargetPath(ctx context.Context, game storage.Game, command sdk.StateMigrationCommandSpec) (string, error) {

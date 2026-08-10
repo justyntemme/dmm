@@ -7851,6 +7851,125 @@ func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "migrationdeploygame", "mods", "old", "files", "1")
+	if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "file.txt"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldTarget := filepath.Join(gamePath, "OldMods", "file.txt")
+	if err := os.MkdirAll(filepath.Dir(oldTarget), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldTarget, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const appID = "999012"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationdeploygame",
+		Name:    "Migration Deploy Game",
+		Version: "1.0.1",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationdeploygame"},
+				VortexGameID: "migrationdeploygame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "old-type", TargetRoot: "OldMods"})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "new-type", TargetRoot: "NewMods"})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "retag-and-deploy",
+				Name:        "Retag and deploy",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.1",
+				Commands: []sdk.StateMigrationCommandSpec{
+					{
+						ID:             "purge-old",
+						Name:           "Purge old path",
+						Command:        sdk.StateMigrationCommandPurgeModsInPath,
+						TargetRelative: "OldMods",
+					},
+					{
+						ID:              "retag",
+						Name:            "Retag mods",
+						Command:         sdk.StateMigrationCommandSetModType,
+						TargetModType:   "new-type",
+						ExcludeModTypes: []string{"new-type"},
+					},
+					{
+						ID:      "deploy",
+						Name:    "Deploy profile",
+						Command: sdk.StateMigrationCommandDeployProfile,
+					},
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Deploy Game",
+		InstallDir:  "Migration Deploy Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationdeploygame", ModID: "old", FileID: "1"},
+		Name:         "Retagged Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "old.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationdeploygame","mod_type":"old-type","files":[{"path":"file.txt","target_relative":"file.txt"}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), appID, deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath:     filepath.Join(stagingPath, "file.txt"),
+		TargetPath:     oldTarget,
+		Strategy:       deploy.StrategyCopy,
+		InstalledModID: mod.ID,
+		Catalog:        "nexus",
+		ModID:          "old",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	if _, err := os.Stat(oldTarget); !os.IsNotExist(err) {
+		t.Fatalf("old target should be purged, stat err = %v", err)
+	}
+	newTarget := filepath.Join(gamePath, "NewMods", "file.txt")
+	if link, err := os.Readlink(newTarget); err != nil || link != filepath.Join(stagingPath, "file.txt") {
+		t.Fatalf("new target symlink = %q err=%v", link, err)
+	}
+	assertInstalledModType(t, srv, appID, mod.ID, "new-type")
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "retag-and-deploy", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
 func assertInstalledModType(t *testing.T, srv *Server, appID string, modID int64, want string) {
 	t.Helper()
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
