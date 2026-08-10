@@ -23,8 +23,12 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "BloodstainedRotN/Content/Paks/~mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	adoption := summary.Capabilities.ExternalModAdoptions[0]
+	if adoption.ID != "bloodstainedrotn-external-pak-adoption" || adoption.Path != "BloodstainedRotN/Content/Paks/~mods" || !adoption.DeleteOriginal {
+		t.Fatalf("external adoption = %+v", adoption)
 	}
 }
 

@@ -79,12 +79,14 @@ func Register(r sdk.Registrar) {
 		Name:     "Code Vein executable version",
 		Provider: gameVersion,
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "codevein-external-pak-adoption",
-		Name:    "Code Vein unmanaged PAK import parity",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex offers to import unmanaged .pak files discovered in the game's ~mods folder. DMM intentionally blocks unmanaged adoption until the generic adoption wizard is implemented.",
+	r.RegisterExternalModAdoption(sdk.ExternalModAdoptionSpec{
+		ID:             "codevein-external-pak-adoption",
+		Name:           "Import unmanaged Code Vein PAK files",
+		TargetRelative: pakRoot,
+		ModType:        pakModType,
+		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+		DeleteOriginal: true,
+		Message:        "Source-backed Vortex setup parity: unmanaged files in CodeVein/content/paks/~mods can be adopted into DMM-owned staging and removed from the game folder.",
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "codevein-load-order-migration-1.0.0",

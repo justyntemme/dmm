@@ -490,6 +490,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/local-archives/browse", s.handleBrowseLocalArchives)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives", s.handleUploadLocalArchive)
 	mux.HandleFunc("POST /api/games/{appID}/local-archives/import", s.handleImportLocalArchivePath)
+	mux.HandleFunc("GET /api/games/{appID}/external-mods", s.handleListExternalMods)
+	mux.HandleFunc("POST /api/games/{appID}/external-mods/adopt", s.handleAdoptExternalMods)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}", s.handleDeleteProfile)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("GET /api/profiles/{profileID}/features", s.handleProfileFeatures)

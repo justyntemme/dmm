@@ -5335,6 +5335,93 @@ func TestImportLocalArchivePathRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestExternalModAdoptionListsAndImportsUnmanagedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "External Game")
+	externalPath := filepath.Join(gamePath, "Mods", "LooseMod.pak")
+	if err := os.MkdirAll(filepath.Dir(externalPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(externalPath, []byte("pak"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "externalgame",
+		Name:    "External Game",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"999777"},
+				NexusDomains: []string{"externalgame"},
+				VortexGameID: "externalgame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "external-pak", TargetRoot: "Mods"})
+			r.RegisterExternalModAdoption(sdk.ExternalModAdoptionSpec{
+				ID:             "external-paks",
+				Name:           "External PAKs",
+				TargetRelative: "Mods",
+				ModType:        "external-pak",
+				FileExtensions: []string{".pak"},
+				DeleteOriginal: true,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:      "999777",
+		Name:       "External Game",
+		InstallDir: "External Game",
+		Path:       gamePath,
+		State:      "installed",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/games/999777/external-mods", nil)
+	listReq.RemoteAddr = "127.0.0.1:1"
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var listed externalModListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].Path != externalPath || listed.Items[0].ModType != "external-pak" {
+		t.Fatalf("listed = %+v", listed.Items)
+	}
+
+	body := `{"adoption_id":"external-paks","paths":[` + strconv.Quote(externalPath) + `]}`
+	adoptReq := httptest.NewRequest(http.MethodPost, "/api/games/999777/external-mods/adopt", strings.NewReader(body))
+	adoptReq.Header.Set("Content-Type", "application/json")
+	adoptReq.RemoteAddr = "127.0.0.1:1"
+	adoptRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(adoptRec, adoptReq)
+	if adoptRec.Code != http.StatusCreated {
+		t.Fatalf("adopt status = %d, body = %s", adoptRec.Code, adoptRec.Body.String())
+	}
+	if _, err := os.Stat(externalPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("external file should be removed, stat err = %v", err)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "999777")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Catalog != "external" || mods[0].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+	var manifest stagedManifest
+	if err := json.Unmarshal([]byte(mods[0].ManifestJSON), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.ModType != "external-pak" || len(manifest.Files) != 1 || manifest.Files[0].TargetRelative != "Mods/LooseMod.pak" {
+		t.Fatalf("manifest = %+v", manifest)
+	}
+}
+
 func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

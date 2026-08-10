@@ -231,6 +231,13 @@ func (r *Registrar) RegisterUnmanagedMarker(spec sdk.UnmanagedMarkerSpec) {
 	r.extension.UnmanagedMarkers = append(r.extension.UnmanagedMarkers, spec)
 }
 
+func (r *Registrar) RegisterExternalModAdoption(spec sdk.ExternalModAdoptionSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExternalModAdoptions = append(r.extension.ExternalModAdoptions, spec)
+}
+
 func (r *Registrar) RegisterConflictIgnore(spec sdk.ConflictIgnoreSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -524,6 +531,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateGameInfoProviders(extension.GameInfoProviders)...)
 	errs = append(errs, validatePluginActivations(extension.PluginActivations)...)
 	errs = append(errs, validateUnmanagedMarkers(extension.UnmanagedMarkers)...)
+	errs = append(errs, validateExternalModAdoptions(extension.ExternalModAdoptions, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateConflictIgnores(extension.ConflictIgnores)...)
 	errs = append(errs, validateDeployIgnores(extension.DeployIgnores)...)
 	errs = append(errs, validatePackedArchiveMutations(extension.PackedArchiveMutations, extension.InstallPlan.ModTypes)...)
@@ -1298,6 +1306,81 @@ func validateUnmanagedMarkers(specs []sdk.UnmanagedMarkerSpec) []error {
 		for _, pattern := range spec.Patterns {
 			if err := validateConflictPattern(pattern); err != nil {
 				errs = append(errs, errors.New("unmanaged marker "+id+" pattern: "+err.Error()))
+			}
+		}
+	}
+	return errs
+}
+
+func validateExternalModAdoptions(specs []sdk.ExternalModAdoptionSpec, modTypes []installplan.ModTypeSpec, targetRoots []sdk.TargetRootSpec) []error {
+	var errs []error
+	seen := map[string]struct{}{}
+	modTypeIDs := map[string]struct{}{}
+	for _, modType := range modTypes {
+		if id := strings.TrimSpace(modType.ID); id != "" {
+			modTypeIDs[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	targetRootIDs := map[string]struct{}{}
+	for _, root := range targetRoots {
+		if id := strings.TrimSpace(root.ID); id != "" {
+			targetRootIDs[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			errs = append(errs, errors.New("external mod adoption id is required"))
+			continue
+		}
+		errs = append(errs, validateSimpleID("external mod adoption", id)...)
+		key := strings.ToLower(id)
+		if _, ok := seen[key]; ok {
+			errs = append(errs, errors.New("external mod adoption "+id+" is registered more than once"))
+		}
+		seen[key] = struct{}{}
+		if strings.TrimSpace(spec.Name) == "" {
+			errs = append(errs, errors.New("external mod adoption "+id+" name is required"))
+		}
+		if err := validateCapabilityStatus("external mod adoption", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
+		modType := strings.TrimSpace(spec.ModType)
+		if modType == "" {
+			errs = append(errs, errors.New("external mod adoption "+id+" mod type is required"))
+		} else if _, ok := modTypeIDs[strings.ToLower(modType)]; !ok {
+			errs = append(errs, errors.New("external mod adoption "+id+" references undeclared mod type "+modType))
+		}
+		rootID := strings.TrimSpace(spec.TargetRootID)
+		if rootID != "" {
+			if _, ok := targetRootIDs[strings.ToLower(rootID)]; !ok {
+				errs = append(errs, errors.New("external mod adoption "+id+" references undeclared target root "+rootID))
+			}
+		}
+		if len(spec.FileExtensions) == 0 && len(spec.GlobPatterns) == 0 {
+			errs = append(errs, errors.New("external mod adoption "+id+" requires at least one file extension or glob pattern"))
+		}
+		for _, ext := range spec.FileExtensions {
+			ext = strings.TrimSpace(ext)
+			if ext == "" {
+				continue
+			}
+			if strings.ContainsAny(ext, "/\\\x00\r\n") {
+				errs = append(errs, errors.New("external mod adoption "+id+" file extension must be a simple extension"))
+			}
+		}
+		for _, pattern := range spec.GlobPatterns {
+			pattern = strings.TrimSpace(pattern)
+			if pattern == "" {
+				continue
+			}
+			if filepath.IsAbs(pattern) || strings.Contains(pattern, "\x00") {
+				errs = append(errs, errors.New("external mod adoption "+id+" glob pattern must be relative"))
+			}
+		}
+		if rel := strings.TrimSpace(spec.TargetRelative); rel != "" {
+			if filepath.IsAbs(rel) || strings.Contains(rel, "\x00") {
+				errs = append(errs, errors.New("external mod adoption "+id+" target relative path must be relative"))
 			}
 		}
 	}

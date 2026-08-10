@@ -42,6 +42,7 @@ type Extension struct {
 	GameInfoProviders        []sdk.GameInfoProviderSpec
 	PluginActivations        []sdk.PluginActivationSpec
 	UnmanagedMarkers         []sdk.UnmanagedMarkerSpec
+	ExternalModAdoptions     []sdk.ExternalModAdoptionSpec
 	ConflictIgnores          []sdk.ConflictIgnoreSpec
 	DeployIgnores            []sdk.DeployIgnoreSpec
 	PackedArchiveMutations   []sdk.PackedArchiveMutationSpec
@@ -104,6 +105,7 @@ type TargetRootResult = sdk.TargetRootResult
 type GameVersionProviderSpec = sdk.GameVersionProviderSpec
 type GameInfoProviderSpec = sdk.GameInfoProviderSpec
 type UnmanagedMarkerSpec = sdk.UnmanagedMarkerSpec
+type ExternalModAdoptionSpec = sdk.ExternalModAdoptionSpec
 type SteamWorkshopSpec = sdk.SteamWorkshopSpec
 type SteamWorkshopActionSpec = sdk.SteamWorkshopActionSpec
 type GameVersionInput = sdk.GameVersionInput
@@ -235,6 +237,7 @@ type ExtensionCapabilities struct {
 	GameInfoProviders        []FeatureSummary         `json:"game_info_providers,omitempty"`
 	PluginActivations        []FeatureSummary         `json:"plugin_activations,omitempty"`
 	UnmanagedMarkers         []FeatureSummary         `json:"unmanaged_markers,omitempty"`
+	ExternalModAdoptions     []FeatureSummary         `json:"external_mod_adoptions,omitempty"`
 	ConflictIgnores          []FeatureSummary         `json:"conflict_ignores,omitempty"`
 	DeployIgnores            []FeatureSummary         `json:"deploy_ignores,omitempty"`
 	PackedArchiveMutations   []FeatureSummary         `json:"packed_archive_mutations,omitempty"`
@@ -309,6 +312,7 @@ type FeatureSummary struct {
 	UsageInstructions    string                   `json:"usage_instructions,omitempty"`
 	Engine               string                   `json:"engine,omitempty"`
 	SupportsWrite        bool                     `json:"supports_write,omitempty"`
+	DeleteOriginal       bool                     `json:"delete_original,omitempty"`
 	Status               string                   `json:"status,omitempty"`
 	Message              string                   `json:"message,omitempty"`
 	ValueType            string                   `json:"value_type,omitempty"`
@@ -1557,6 +1561,14 @@ func (r Registry) SteamWorkshopCoexistenceAllowed(appID string) bool {
 	return ok && spec.AllowCoexistence
 }
 
+func (r Registry) ExternalModAdoptionsForSteamApp(appID string) []sdk.ExternalModAdoptionSpec {
+	extension, ok := r.ExtensionForSteamApp(appID)
+	if !ok || len(extension.ExternalModAdoptions) == 0 {
+		return nil
+	}
+	return append([]sdk.ExternalModAdoptionSpec(nil), extension.ExternalModAdoptions...)
+}
+
 func (r Registry) HasEventHandlerForSteamApp(appID, event string) bool {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -1899,6 +1911,19 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Patterns: appendClean([]string{}, marker.Patterns...),
 		})
 	}
+	for _, adoption := range extension.ExternalModAdoptions {
+		summary.Capabilities.ExternalModAdoptions = append(summary.Capabilities.ExternalModAdoptions, FeatureSummary{
+			ID:             adoption.ID,
+			Name:           adoption.Name,
+			ModTypes:       appendClean([]string{}, adoption.ModType),
+			Target:         adoption.TargetRootID,
+			Path:           adoption.TargetRelative,
+			Patterns:       appendClean(append([]string{}, adoption.FileExtensions...), adoption.GlobPatterns...),
+			Status:         defaultString(adoption.Status, sdk.CapabilityStatusReady),
+			Message:        adoption.Message,
+			DeleteOriginal: adoption.DeleteOriginal,
+		})
+	}
 	for _, ignore := range extension.ConflictIgnores {
 		summary.Capabilities.ConflictIgnores = append(summary.Capabilities.ConflictIgnores, FeatureSummary{ID: ignore.ID, Name: ignore.Name})
 	}
@@ -2239,6 +2264,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.GameInfoProviders)
 	sortFeatureSummaries(summary.Capabilities.PluginActivations)
 	sortFeatureSummaries(summary.Capabilities.UnmanagedMarkers)
+	sortFeatureSummaries(summary.Capabilities.ExternalModAdoptions)
 	sortFeatureSummaries(summary.Capabilities.ConflictIgnores)
 	sortFeatureSummaries(summary.Capabilities.DeployIgnores)
 	sortFeatureSummaries(summary.Capabilities.PackedArchiveMutations)

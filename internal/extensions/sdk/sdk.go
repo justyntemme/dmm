@@ -51,6 +51,7 @@ type Registrar interface {
 	RegisterGameInfoProvider(GameInfoProviderSpec)
 	RegisterPluginActivation(PluginActivationSpec)
 	RegisterUnmanagedMarker(UnmanagedMarkerSpec)
+	RegisterExternalModAdoption(ExternalModAdoptionSpec)
 	RegisterConflictIgnore(ConflictIgnoreSpec)
 	RegisterDeployIgnore(DeployIgnoreSpec)
 	RegisterPackedArchiveMutation(PackedArchiveMutationSpec)
@@ -947,6 +948,19 @@ type SavegameManagementSpec struct {
 	PluginExtensions []string
 	Status           string
 	Message          string
+}
+
+type ExternalModAdoptionSpec struct {
+	ID             string
+	Name           string
+	TargetRootID   string
+	TargetRelative string
+	ModType        string
+	FileExtensions []string
+	GlobPatterns   []string
+	DeleteOriginal bool
+	Status         string
+	Message        string
 }
 
 type CollectionFeatureSpec struct {
