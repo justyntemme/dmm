@@ -132,6 +132,8 @@ func Register(r sdk.Registrar) {
 			"Skyrim.ccc",
 		},
 		SupportsLightPlugins: true,
+		ArchiveCheckType:     "BSA",
+		ArchiveCheckVersions: []int{105},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{

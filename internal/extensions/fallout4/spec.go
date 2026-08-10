@@ -139,6 +139,8 @@ func Register(r sdk.Registrar) {
 			"Fallout4.ccc",
 		},
 		SupportsLightPlugins: true,
+		ArchiveCheckType:     "BA2",
+		ArchiveCheckVersions: []int{8, 7, 1},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{

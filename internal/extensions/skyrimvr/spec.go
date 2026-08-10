@@ -125,6 +125,8 @@ func Register(r sdk.Registrar) {
 		LOOTMasterlistGameID: "skyrimse",
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm", "skyrimvr.esm"},
+		ArchiveCheckType:     "BSA",
+		ArchiveCheckVersions: []int{105},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{

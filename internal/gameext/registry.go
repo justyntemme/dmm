@@ -264,59 +264,61 @@ type ExtensionCapabilities struct {
 }
 
 type FeatureSummary struct {
-	ID                 string                   `json:"id"`
-	Name               string                   `json:"name,omitempty"`
-	ShortName          string                   `json:"short_name,omitempty"`
-	DeploymentMode     string                   `json:"deployment_mode,omitempty"`
-	ExecutableRelative string                   `json:"executable_relative,omitempty"`
-	Arguments          []string                 `json:"arguments,omitempty"`
-	Environment        map[string]string        `json:"environment,omitempty"`
-	RequiredFiles      []string                 `json:"required_files,omitempty"`
-	DynamicInputs      []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
-	DynamicArguments   []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
-	Shell              bool                     `json:"shell,omitempty"`
-	Detach             bool                     `json:"detach,omitempty"`
-	Exclusive          bool                     `json:"exclusive,omitempty"`
-	DefaultPrimary     bool                     `json:"default_primary,omitempty"`
-	ModTypes           []string                 `json:"mod_types,omitempty"`
-	ProviderModTypes   []string                 `json:"provider_mod_types,omitempty"`
-	TargetModType      string                   `json:"target_mod_type,omitempty"`
-	ExcludedModTypes   []string                 `json:"excluded_mod_types,omitempty"`
-	Patterns           []string                 `json:"patterns,omitempty"`
-	PackageFormat      string                   `json:"package_format,omitempty"`
-	StateFileRelative  string                   `json:"state_file_relative,omitempty"`
-	TargetArchives     []string                 `json:"target_archives,omitempty"`
-	RequiresEngine     string                   `json:"requires_engine,omitempty"`
-	FileExtensions     []string                 `json:"file_extensions,omitempty"`
-	Engine             string                   `json:"engine,omitempty"`
-	SupportsWrite      bool                     `json:"supports_write,omitempty"`
-	Status             string                   `json:"status,omitempty"`
-	Message            string                   `json:"message,omitempty"`
-	Command            string                   `json:"command,omitempty"`
-	Commands           []FeatureSummary         `json:"commands,omitempty"`
-	Scope              string                   `json:"scope,omitempty"`
-	Kind               string                   `json:"kind,omitempty"`
-	Trigger            string                   `json:"trigger,omitempty"`
-	Priority           int                      `json:"priority,omitempty"`
-	Platforms          []string                 `json:"platforms,omitempty"`
-	SetupActions       []SetupActionSummary     `json:"setup_actions,omitempty"`
-	FromVersion        string                   `json:"from_version,omitempty"`
-	ToVersion          string                   `json:"to_version,omitempty"`
-	Target             string                   `json:"target,omitempty"`
-	ActionTarget       *ActionTargetSummary     `json:"action_target,omitempty"`
-	Base               string                   `json:"base,omitempty"`
-	Path               string                   `json:"path,omitempty"`
-	GameID             string                   `json:"game_id,omitempty"`
-	MasterlistGameID   string                   `json:"masterlist_game_id,omitempty"`
-	LOOTPrelude        bool                     `json:"loot_prelude,omitempty"`
-	Tags               []string                 `json:"tags,omitempty"`
-	CacheSeconds       int                      `json:"cache_seconds,omitempty"`
-	Launcher           string                   `json:"launcher,omitempty"`
-	Store              string                   `json:"store,omitempty"`
-	AppID              string                   `json:"app_id,omitempty"`
-	Parameters         []LauncherParameter      `json:"parameters,omitempty"`
-	Relative           bool                     `json:"relative,omitempty"`
-	Acquisition        *ToolAcquisitionSummary  `json:"acquisition,omitempty"`
+	ID                   string                   `json:"id"`
+	Name                 string                   `json:"name,omitempty"`
+	ShortName            string                   `json:"short_name,omitempty"`
+	DeploymentMode       string                   `json:"deployment_mode,omitempty"`
+	ExecutableRelative   string                   `json:"executable_relative,omitempty"`
+	Arguments            []string                 `json:"arguments,omitempty"`
+	Environment          map[string]string        `json:"environment,omitempty"`
+	RequiredFiles        []string                 `json:"required_files,omitempty"`
+	DynamicInputs        []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
+	DynamicArguments     []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
+	Shell                bool                     `json:"shell,omitempty"`
+	Detach               bool                     `json:"detach,omitempty"`
+	Exclusive            bool                     `json:"exclusive,omitempty"`
+	DefaultPrimary       bool                     `json:"default_primary,omitempty"`
+	ModTypes             []string                 `json:"mod_types,omitempty"`
+	ProviderModTypes     []string                 `json:"provider_mod_types,omitempty"`
+	TargetModType        string                   `json:"target_mod_type,omitempty"`
+	ExcludedModTypes     []string                 `json:"excluded_mod_types,omitempty"`
+	Patterns             []string                 `json:"patterns,omitempty"`
+	PackageFormat        string                   `json:"package_format,omitempty"`
+	StateFileRelative    string                   `json:"state_file_relative,omitempty"`
+	TargetArchives       []string                 `json:"target_archives,omitempty"`
+	RequiresEngine       string                   `json:"requires_engine,omitempty"`
+	FileExtensions       []string                 `json:"file_extensions,omitempty"`
+	Engine               string                   `json:"engine,omitempty"`
+	SupportsWrite        bool                     `json:"supports_write,omitempty"`
+	Status               string                   `json:"status,omitempty"`
+	Message              string                   `json:"message,omitempty"`
+	Command              string                   `json:"command,omitempty"`
+	Commands             []FeatureSummary         `json:"commands,omitempty"`
+	Scope                string                   `json:"scope,omitempty"`
+	Kind                 string                   `json:"kind,omitempty"`
+	Trigger              string                   `json:"trigger,omitempty"`
+	Priority             int                      `json:"priority,omitempty"`
+	Platforms            []string                 `json:"platforms,omitempty"`
+	SetupActions         []SetupActionSummary     `json:"setup_actions,omitempty"`
+	FromVersion          string                   `json:"from_version,omitempty"`
+	ToVersion            string                   `json:"to_version,omitempty"`
+	Target               string                   `json:"target,omitempty"`
+	ActionTarget         *ActionTargetSummary     `json:"action_target,omitempty"`
+	Base                 string                   `json:"base,omitempty"`
+	Path                 string                   `json:"path,omitempty"`
+	GameID               string                   `json:"game_id,omitempty"`
+	MasterlistGameID     string                   `json:"masterlist_game_id,omitempty"`
+	LOOTPrelude          bool                     `json:"loot_prelude,omitempty"`
+	ArchiveCheckType     string                   `json:"archive_check_type,omitempty"`
+	ArchiveCheckVersions []int                    `json:"archive_check_versions,omitempty"`
+	Tags                 []string                 `json:"tags,omitempty"`
+	CacheSeconds         int                      `json:"cache_seconds,omitempty"`
+	Launcher             string                   `json:"launcher,omitempty"`
+	Store                string                   `json:"store,omitempty"`
+	AppID                string                   `json:"app_id,omitempty"`
+	Parameters           []LauncherParameter      `json:"parameters,omitempty"`
+	Relative             bool                     `json:"relative,omitempty"`
+	Acquisition          *ToolAcquisitionSummary  `json:"acquisition,omitempty"`
 }
 
 type SetupActionSummary struct {
@@ -1554,11 +1556,13 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	}
 	for _, activation := range extension.PluginActivations {
 		summary.Capabilities.PluginActivations = append(summary.Capabilities.PluginActivations, FeatureSummary{
-			ID:               activation.ID,
-			Name:             activation.Name,
-			GameID:           activation.LOOTGameID,
-			MasterlistGameID: activation.LOOTMasterlistGameID,
-			LOOTPrelude:      activation.LOOTPrelude,
+			ID:                   activation.ID,
+			Name:                 activation.Name,
+			GameID:               activation.LOOTGameID,
+			MasterlistGameID:     activation.LOOTMasterlistGameID,
+			LOOTPrelude:          activation.LOOTPrelude,
+			ArchiveCheckType:     activation.ArchiveCheckType,
+			ArchiveCheckVersions: append([]int(nil), activation.ArchiveCheckVersions...),
 		})
 	}
 	for _, marker := range extension.UnmanagedMarkers {

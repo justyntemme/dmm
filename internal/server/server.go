@@ -1186,6 +1186,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.RuntimeRequirements = s.games.RuntimeRequirements(ctx, appID, game.GamePath, runtimeModsForRequirements(mods))
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
@@ -1377,6 +1378,141 @@ func (s *Server) extensionHealthChecks(ctx context.Context, game storage.Game, m
 		})
 	}
 	return out
+}
+
+func (s *Server) gamebryoArchiveCompatibilityTests(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok || strings.TrimSpace(spec.ArchiveCheckType) == "" || len(spec.ArchiveCheckVersions) == 0 {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo archive compatibility check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		s.logger.Warn("Gamebryo archive compatibility check skipped because deployment mappings failed", "app_id", game.SteamAppID, "profile_id", profileID, "error", err)
+		return nil
+	}
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		s.logger.Warn("Gamebryo archive compatibility check skipped because plugin activation state failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	native := installedNativePluginNames(game.GamePath, spec)
+	plugins := pluginActivationEntries(spec, active.Mappings, native, states)
+	activePlugins := make([]string, 0, len(plugins))
+	for _, plugin := range plugins {
+		if plugin.Active {
+			activePlugins = append(activePlugins, plugin.Name)
+		}
+	}
+	if len(activePlugins) == 0 {
+		return nil
+	}
+	dataPath := filepath.Join(game.GamePath, filepath.FromSlash(spec.GameDataRoot))
+	dataFiles, err := os.ReadDir(dataPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			s.logger.Warn("Gamebryo archive compatibility check skipped because Data folder could not be read", "app_id", game.SteamAppID, "path", dataPath, "error", err)
+		}
+		return nil
+	}
+	allowedVersions := map[int]struct{}{}
+	for _, version := range spec.ArchiveCheckVersions {
+		allowedVersions[version] = struct{}{}
+	}
+	archiveExtensions := gamebryoArchiveCheckExtensions(spec.ArchiveCheckType)
+	var issues []string
+	for _, plugin := range activePlugins {
+		pluginBase := gamebryoArchiveCheckBase(plugin)
+		if pluginBase == "" {
+			continue
+		}
+		for _, file := range dataFiles {
+			if file.IsDir() || !gamebryoArchiveCheckExtAllowed(file.Name(), archiveExtensions) {
+				continue
+			}
+			archiveBase := gamebryoArchiveCheckBase(file.Name())
+			if !strings.HasPrefix(archiveBase, pluginBase) {
+				continue
+			}
+			archivePath := filepath.Join(dataPath, file.Name())
+			version, err := readGamebryoArchiveHeaderVersion(archivePath)
+			if err != nil {
+				s.logger.Warn("Gamebryo archive compatibility version read failed", "app_id", game.SteamAppID, "plugin", plugin, "archive", archivePath, "error", err)
+				continue
+			}
+			if _, ok := allowedVersions[version]; ok {
+				continue
+			}
+			issues = append(issues, fmt.Sprintf("%s loaded by %s has archive version %d", file.Name(), plugin, version))
+		}
+	}
+	if len(issues) == 0 {
+		return nil
+	}
+	sort.Strings(issues)
+	expected := intsSlash(spec.ArchiveCheckVersions)
+	message := "Some archives loaded by enabled plugins are incompatible with " + game.Name + "."
+	details := strings.Join(issues, "; ") + ". Expected " + strings.ToUpper(strings.TrimSpace(spec.ArchiveCheckType)) + " version " + expected + "."
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-incompatible-mod-archives",
+		TestName: "Gamebryo incompatible mod archives",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  message,
+		Details:  details,
+		Actions:  []string{"Disable or remove the mod that supplied the incompatible archive."},
+	}}
+}
+
+func gamebryoArchiveCheckExtensions(archiveType string) map[string]struct{} {
+	switch strings.ToUpper(strings.TrimSpace(archiveType)) {
+	case "BA2":
+		return map[string]struct{}{".ba2": {}}
+	case "BSA":
+		return map[string]struct{}{".bsa": {}}
+	default:
+		return map[string]struct{}{".ba2": {}, ".bsa": {}}
+	}
+}
+
+func gamebryoArchiveCheckExtAllowed(name string, extensions map[string]struct{}) bool {
+	_, ok := extensions[strings.ToLower(filepath.Ext(name))]
+	return ok
+}
+
+func gamebryoArchiveCheckBase(name string) string {
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(filepath.Base(name), ext)
+	return strings.ToLower(strings.TrimSpace(base))
+}
+
+func readGamebryoArchiveHeaderVersion(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var header [8]byte
+	if _, err := io.ReadFull(f, header[:]); err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return 0, err
+	}
+	return int(header[4]) + int(header[5]) + int(header[6]) + int(header[7]), nil
+}
+
+func intsSlash(values []int) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
+	}
+	return strings.Join(parts, "/")
 }
 
 func healthCheckFilesFromManifest(files []stagedManifestFile) []sdk.ModHealthCheckFile {

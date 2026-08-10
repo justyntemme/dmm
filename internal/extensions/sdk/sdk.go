@@ -419,6 +419,8 @@ type PluginActivationSpec struct {
 	SupportsLightPlugins   bool
 	SupportsMediumMasters  bool
 	SupportsBlueprintFiles bool
+	ArchiveCheckType       string
+	ArchiveCheckVersions   []int
 }
 
 type UnmanagedMarkerSpec struct {

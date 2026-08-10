@@ -29,6 +29,8 @@ type PluginActivationOptions struct {
 	SupportsLightPlugins   bool
 	SupportsMediumMasters  bool
 	SupportsBlueprintFiles bool
+	ArchiveCheckType       string
+	ArchiveCheckVersions   []int
 }
 
 type LocalGameSettingsOptions struct {
@@ -72,6 +74,8 @@ func PluginActivation(opts PluginActivationOptions) sdk.PluginActivationSpec {
 		SupportsLightPlugins:   opts.SupportsLightPlugins,
 		SupportsMediumMasters:  opts.SupportsMediumMasters,
 		SupportsBlueprintFiles: opts.SupportsBlueprintFiles,
+		ArchiveCheckType:       strings.TrimSpace(opts.ArchiveCheckType),
+		ArchiveCheckVersions:   append([]int(nil), opts.ArchiveCheckVersions...),
 	}
 }
 

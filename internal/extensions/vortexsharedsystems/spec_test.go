@@ -17,10 +17,11 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	}
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "discover-tools", "registerGameInfoProvider")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
-	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "gamebryo-incompatible-mod-archives", "game-version-gamemode")
+	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "game-version-gamemode")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames", "local-game-settings")
 	assertReady(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-plugin-index-lock")
+	assertReady(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives")
 	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts")
 	assertBlocked(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")

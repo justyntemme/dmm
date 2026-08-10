@@ -10588,6 +10588,9 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	if err := os.WriteFile(otherPluginPath, []byte("other plugin"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Data", "Example.ba2"), []byte{0, 0, 0, 0, 9, 0, 0, 0}, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
 		GameID:    fallout4.SteamAppID,
 		ModType:   "fallout4-data-root",
@@ -10687,6 +10690,20 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	}
 	if pluginsByName["Example.esp"].Source != "dmm" || pluginsByName["Example.esp"].Catalog != "nexus" || pluginsByName["Example.esp"].InstalledModID == 0 || pluginsByName["Example.esp"].Priority != 0 {
 		t.Fatalf("managed plugin entry = %+v", pluginsByName["Example.esp"])
+	}
+
+	diagnostics, err := srv.gameDiagnostics(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundArchiveIssue := false
+	for _, test := range diagnostics.ExtensionTests {
+		if test.TestID == "gamebryo-incompatible-mod-archives" && test.Status == sdk.HealthCheckStatusFailed && strings.Contains(test.Details, "Example.ba2") {
+			foundArchiveIssue = true
+		}
+	}
+	if !foundArchiveIssue {
+		t.Fatalf("diagnostics missing incompatible archive issue: %+v", diagnostics.ExtensionTests)
 	}
 
 	orderReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(loadOrder.ProfileID, 10)+"/plugin-activation/"+loadOrder.ActivationID+"/order", bytes.NewBufferString(`{"plugins":["Other.esp"]}`))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,6 +102,9 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	}
 	if !contains(activation.PluginExtensions, ".esl") {
 		t.Fatalf("plugin extensions = %+v", activation.PluginExtensions)
+	}
+	if activation.ArchiveCheckType != "BA2" || !slices.Equal(activation.ArchiveCheckVersions, []int{8, 7, 1}) {
+		t.Fatalf("archive compatibility = %+v / %+v", activation.ArchiveCheckType, activation.ArchiveCheckVersions)
 	}
 }
 

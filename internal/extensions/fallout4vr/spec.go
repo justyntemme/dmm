@@ -117,6 +117,8 @@ func Register(r sdk.Registrar) {
 		LOOTMasterlistGameID: "fallout4",
 		LOOTPrelude:          true,
 		NativePlugins:        []string{"fallout4.esm", "fallout4_vr.esm"},
+		ArchiveCheckType:     "BA2",
+		ArchiveCheckVersions: []int{1},
 	})
 	r.RegisterProfileFeature(gamebryo.LocalLOOTRulesProfileFeature())
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{

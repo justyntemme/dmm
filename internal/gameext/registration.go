@@ -1068,6 +1068,19 @@ func validatePluginActivations(specs []sdk.PluginActivationSpec) []error {
 				errs = append(errs, errors.New("plugin activation "+id+" native plugin manifest: "+err.Error()))
 			}
 		}
+		if strings.TrimSpace(spec.ArchiveCheckType) != "" || len(spec.ArchiveCheckVersions) > 0 {
+			if strings.TrimSpace(spec.ArchiveCheckType) == "" {
+				errs = append(errs, errors.New("plugin activation "+id+" archive check type is required when archive versions are declared"))
+			}
+			if len(spec.ArchiveCheckVersions) == 0 {
+				errs = append(errs, errors.New("plugin activation "+id+" archive check versions are required when archive check type is declared"))
+			}
+			for _, version := range spec.ArchiveCheckVersions {
+				if version <= 0 || version > 255 {
+					errs = append(errs, errors.New("plugin activation "+id+" archive check versions must be between 1 and 255"))
+				}
+			}
+		}
 	}
 	return errs
 }
