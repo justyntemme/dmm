@@ -1481,6 +1481,14 @@ func validateGameRegistrationMetadata(metadata sdk.GameRegistrationMetadata) []e
 				errs = append(errs, errors.New("game executable variant required file: "+err.Error()))
 			}
 		}
+		for _, fragment := range variant.GamePathContains {
+			if strings.TrimSpace(fragment) == "" {
+				errs = append(errs, errors.New("game executable variant path fragment is required"))
+			}
+			if strings.ContainsAny(fragment, "\x00\r\n") {
+				errs = append(errs, errors.New("game executable variant path fragment must not contain control line breaks"))
+			}
+		}
 	}
 	for _, path := range metadata.RequiredFiles {
 		if err := validateRelativePath(path); err != nil {

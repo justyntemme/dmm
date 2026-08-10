@@ -277,6 +277,7 @@ type FeatureSummary struct {
 	Environment          map[string]string        `json:"environment,omitempty"`
 	RequiredFiles        []string                 `json:"required_files,omitempty"`
 	Variants             []FeatureSummary         `json:"variants,omitempty"`
+	GamePathContains     []string                 `json:"game_path_contains,omitempty"`
 	DynamicInputs        []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
 	DynamicArguments     []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
 	Shell                bool                     `json:"shell,omitempty"`
@@ -912,6 +913,13 @@ func gameExecutableVariantPresent(gamePath string, variant sdk.GameExecutableVar
 	gamePath = strings.TrimSpace(gamePath)
 	if gamePath == "" {
 		return false
+	}
+	lowerGamePath := strings.ToLower(gamePath)
+	for _, fragment := range variant.GamePathContains {
+		fragment = strings.ToLower(strings.TrimSpace(fragment))
+		if fragment == "" || !strings.Contains(lowerGamePath, fragment) {
+			return false
+		}
 	}
 	required := appendClean([]string{}, variant.RequiredFiles...)
 	executable := strings.TrimSpace(variant.ExecutableRelative)
@@ -2193,6 +2201,7 @@ func gameExecutableVariants(variants []sdk.GameExecutableVariantSpec) []FeatureS
 			Name:               strings.TrimSpace(variant.Name),
 			ExecutableRelative: strings.TrimSpace(variant.ExecutableRelative),
 			RequiredFiles:      append([]string(nil), variant.RequiredFiles...),
+			GamePathContains:   appendClean([]string{}, variant.GamePathContains...),
 		})
 	}
 	return out

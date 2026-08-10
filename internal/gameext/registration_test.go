@@ -500,6 +500,39 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 }
 
+func TestResolveGameRegistrationExecutableVariantPredicates(t *testing.T) {
+	metadata := sdk.GameRegistrationMetadata{
+		ExecutableRelative: "win64/game.exe",
+		ExecutableVariants: []sdk.GameExecutableVariantSpec{{
+			ID:                 "xbox",
+			ExecutableRelative: "win/game.exe",
+			RequiredFiles:      []string{"win/game.exe"},
+			GamePathContains:   []string{"modifiablewindowsapps"},
+		}},
+	}
+	standardPath := filepath.Join(t.TempDir(), "SteamLibrary", "Game")
+	if err := os.MkdirAll(filepath.Join(standardPath, "win"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(standardPath, "win", "game.exe"), []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if resolved := ResolveGameRegistrationForGamePath(standardPath, metadata); resolved.ExecutableRelative != "win64/game.exe" {
+		t.Fatalf("standard path resolved = %+v", resolved)
+	}
+
+	xboxPath := filepath.Join(t.TempDir(), "ModifiableWindowsApps", "Game")
+	if err := os.MkdirAll(filepath.Join(xboxPath, "win"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xboxPath, "win", "game.exe"), []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if resolved := ResolveGameRegistrationForGamePath(xboxPath, metadata); resolved.ExecutableRelative != "win/game.exe" {
+		t.Fatalf("xbox path resolved = %+v", resolved)
+	}
+}
+
 func TestRegistryBuildInstallPlanUsesNexusDomainForSharedSteamApp(t *testing.T) {
 	extensions := []Extension{
 		MustCompileExtension(sdk.Extension{
@@ -807,6 +840,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 					Name:               "Bad\nVariant",
 					ExecutableRelative: "../BadNG.exe",
 					RequiredFiles:      []string{"/BadNG.dat"},
+					GamePathContains:   []string{"", "bad\nfragment"},
 				}},
 				RequiredFiles: []string{"/Bad.dat"},
 				QueryModPath:  "bad\npath",
@@ -943,6 +977,8 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"game executable variant name must not contain control line breaks",
 		"game executable variant path: path traversal is not allowed",
 		"game executable variant required file: absolute path is not allowed",
+		"game executable variant path fragment is required",
+		"game executable variant path fragment must not contain control line breaks",
 		"game required file: absolute path is not allowed",
 		"game query mod path must not contain control line breaks",
 		"game merge mode must be none, all, or dynamic",

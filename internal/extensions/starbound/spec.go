@@ -33,11 +33,18 @@ func Register(r sdk.Registrar) {
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: executable,
-		RequiredFiles:      []string{"assets/packed.pak", "assets/user/songs/12 Days Of Christmas.abc"},
-		QueryModPath:       modRoot,
-		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
-		Deployment:         installplan.DeploymentSpec{AllowNeedsReviewState: true},
+		ExecutableVariants: []sdk.GameExecutableVariantSpec{{
+			ID:                 "xbox-modifiable-windows-apps",
+			Name:               "Xbox ModifiableWindowsApps executable",
+			ExecutableRelative: "win/starbound.exe",
+			RequiredFiles:      []string{"win/starbound.exe", "assets/packed.pak", "assets/user/songs/12 Days Of Christmas.abc"},
+			GamePathContains:   []string{"modifiablewindowsapps"},
+		}},
+		RequiredFiles: []string{"assets/packed.pak", "assets/user/songs/12 Days Of Christmas.abc"},
+		QueryModPath:  modRoot,
+		MergeMode:     sdk.GameMergeModeAll,
+		Environment:   map[string]string{"SteamAPPId": SteamAppID},
+		Deployment:    installplan.DeploymentSpec{AllowNeedsReviewState: true},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -67,13 +74,6 @@ func Register(r sdk.Registrar) {
 		}},
 		Status:  sdk.CapabilityStatusMetadata,
 		Message: "Vortex uses Xbox launcher metadata for the Microsoft Store version. DMM's current Steam Deck target uses the Steam executable path.",
-	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "starbound-xbox-executable-variant",
-		Name:    "Starbound Xbox executable variant",
-		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex switches to win/starbound.exe for ModifiableWindowsApps installs. DMM records the Xbox launcher metadata but does not need that path for the Steam Deck Steam install.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-starbound extension source",

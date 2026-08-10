@@ -125,6 +125,7 @@ type GameExecutableVariantSpec struct {
 	Name               string
 	ExecutableRelative string
 	RequiredFiles      []string
+	GamePathContains   []string
 }
 
 const (
