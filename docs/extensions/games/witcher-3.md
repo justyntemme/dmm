@@ -26,12 +26,12 @@
 - Config-matrix XML files are merged by the Witcher 3 extension during `will-deploy`: DMM removes the raw config XML deployment mapping, reads the native or `.vortex_backup` game file, merges `UserConfig.Group` nodes by `id`, replaces matching `VisibleVars.Var` nodes by `id`, appends missing vars/groups, and returns one restore-aware `patch-existing` mapping.
 - Script Merger profile-local artifact sync mirrors Vortex `local_merges`: on profile changes the extension stores/restores `MergeInventory.xml`, the generated `mods.settings`, and the configured merged scripts folder under DMM profile artifact storage. Core only passes generic old/new profile lifecycle data; Witcher-specific artifact names and paths remain in the Witcher extension.
 - Script Merger live validation is exposed as a runnable DMM extension diagnostic. It checks the DMM-managed Script Merger executable/config paths and reports a warning if script-relevant mods are enabled without a managed Script Merger install.
+- Collection import/export and load-order UX use DMM's generic profile runtime: profile collection export/import stores installed mod identity, enabled state, and order, while the Witcher extension maintains generated menu/Script Merger artifacts per profile.
 
 ## Beta Gaps
 
 - Vortex hidden menu-mod cache/adoption behavior is incomplete.
-- Full collection import/export UI semantics need integration with DMM collection workflows; the runtime pieces for load-order/menu/Script Merger profile artifacts are represented.
-- Manual load-order UI semantics need final UX parity review against DMM's profile priority controls.
+- Manual load-order UI polish should be reviewed against DMM's profile priority controls, but the runtime path is represented by generic load-order/profile APIs.
 - Live archive validation is required.
 
 ## Validation Targets

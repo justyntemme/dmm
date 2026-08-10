@@ -152,6 +152,13 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 		t.Fatalf("game setups = %+v", compiled.GameSetups)
 	}
 	registry := gameext.NewRegistry([]gameext.Extension{compiled})
+	summary := registry.ExtensionSummaries()[0]
+	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("collection features = %+v", summary.Capabilities.CollectionFeatures)
+	}
+	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
 	if !registry.HasEventHandlerForSteamApp(witcher3.SteamAppID, sdk.EventDidInstallMod) {
 		t.Fatal("missing did-install Script Merger configuration hook")
 	}

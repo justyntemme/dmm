@@ -104,8 +104,22 @@ func Register(r sdk.Registrar) {
 		ID:                "witcher3-mods-settings",
 		Name:              "Witcher 3 mods.settings load order",
 		ModTypes:          []string{"witcher3menumodroot", "witcher3tl", "witcher3dlc", "witcher3-mod-root"},
-		Message:           "DMM currently derives the managed mods.settings subset from profile priority; advanced Script Merger ordering remains extension work.",
+		ToggleableEntries: true,
+		Message:           "DMM derives the managed mods.settings subset from profile priority and stores Script Merger local merge output per profile through Witcher extension lifecycle hooks.",
 		UsageInstructions: "Move profile mods up or down to change the generated managed Witcher 3 settings order.",
+	})
+	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
+		ID:      "witcher3-load-order-page",
+		Name:    "Witcher 3 load order page",
+		Scope:   VortexGameID,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex exposes a custom load-order page for mods.settings. DMM exposes the same managed entries through the generic profile-order UI/API and generates mods.settings during deployment.",
+	})
+	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
+		ID:      "witcher3-collection-data",
+		Name:    "Witcher 3 collection data",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex serializes Witcher 3 load order and merged data for collections. DMM exports/imports installed profile mod identity, enabled state, and order through the generic profile collection runtime; menu and Script Merger generated artifacts are maintained per profile by extension hooks.",
 	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "witcher3-menu-readme-conflicts",
