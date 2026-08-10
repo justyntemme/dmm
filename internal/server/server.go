@@ -7586,7 +7586,7 @@ func (s *Server) handleSortGameLoadOrderLOOT(w http.ResponseWriter, r *http.Requ
 	if shouldApply && len(orderedMutable) > 0 {
 		apply = s.applyProfileChangesForUserAction(r.Context(), game.SteamAppID, "loot-sort")
 	} else if len(orderedMutable) == 0 {
-		apply = profileApplyResponse{Status: "noop", Message: "LOOT returned only native plugins, so no DMM-managed plugin order changed."}
+		apply = profileApplyResponse{Status: "unchanged", Message: "LOOT returned only native plugins, so no DMM-managed plugin order changed."}
 	}
 	writeJSON(w, http.StatusOK, lootSortResponse{
 		LoadOrder:     loadOrder,
