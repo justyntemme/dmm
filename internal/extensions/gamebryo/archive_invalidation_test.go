@@ -89,6 +89,42 @@ func TestArchiveInvalidationHandlerReturnsPatchMappingWithRestore(t *testing.T) 
 	}
 }
 
+func TestArchiveInvalidationProfilePatchesAttachToINI(t *testing.T) {
+	files := LocalGameSettingsProfileFiles(LocalGameSettingsOptions{
+		GameID:      "fallout4",
+		MyGamesPath: "Fallout4",
+		Files: []LocalGameSettingFile{
+			{Name: "Fallout4.ini"},
+			{Name: "Fallout4Prefs.ini"},
+		},
+		FilePatches: ArchiveInvalidationProfilePatches(ArchiveInvalidationOptions{
+			ININame: "Fallout4.ini",
+		}),
+	})
+	if len(files) != 2 {
+		t.Fatalf("profile files = %+v", files)
+	}
+	if len(files[0].Patches) != 2 {
+		t.Fatalf("Fallout4.ini patches = %+v", files[0].Patches)
+	}
+	if len(files[1].Patches) != 0 {
+		t.Fatalf("Fallout4Prefs.ini patches = %+v", files[1].Patches)
+	}
+	seen := map[string]string{}
+	for _, patch := range files[0].Patches {
+		if patch.Kind != sdk.ProfileFilePatchINIKey || patch.FeatureID != "local_game_settings" || patch.Section != "Archive" {
+			t.Fatalf("patch = %+v", patch)
+		}
+		seen[patch.Key] = patch.Value
+	}
+	if seen["bInvalidateOlderFiles"] != "1" {
+		t.Fatalf("bInvalidateOlderFiles patch missing in %+v", files[0].Patches)
+	}
+	if value, ok := seen["sResourceDataDirsFinal"]; !ok || value != "" {
+		t.Fatalf("sResourceDataDirsFinal patch missing in %+v", files[0].Patches)
+	}
+}
+
 func TestArchiveInvalidationHandlerKeepsManagedPatchMapping(t *testing.T) {
 	root := t.TempDir()
 	documentsRoot := filepath.Join(root, "steamapps", "compatdata", "377160", "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")

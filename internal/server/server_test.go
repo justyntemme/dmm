@@ -10279,14 +10279,25 @@ func TestProfileSwitchSyncsLocalGameSettings(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("switch status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if body, err := os.ReadFile(globalINI); err != nil || string(body) != "new ini" {
-		t.Fatalf("global ini = %q, err = %v", string(body), err)
+	body, err := os.ReadFile(globalINI)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if body, err := os.ReadFile(globalINI + ".baked"); err != nil || string(body) != "new ini" {
-		t.Fatalf("baked ini = %q, err = %v", string(body), err)
+	if !strings.HasPrefix(string(body), "new ini") || !strings.Contains(string(body), "bInvalidateOlderFiles=1") || !strings.Contains(string(body), "sResourceDataDirsFinal=") {
+		t.Fatalf("global ini = %q", string(body))
+	}
+	bakedBody, err := os.ReadFile(globalINI + ".baked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bakedBody) != string(body) {
+		t.Fatalf("baked ini = %q, want %q", string(bakedBody), string(body))
 	}
 	if body, err := os.ReadFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, oldProfile.ID, ini.Spec)); err != nil || string(body) != "old ini" {
 		t.Fatalf("old profile ini = %q, err = %v", string(body), err)
+	}
+	if profileBody, err := os.ReadFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, newProfile.ID, ini.Spec)); err != nil || string(profileBody) != string(body) {
+		t.Fatalf("new profile ini = %q, want %q, err = %v", string(profileBody), string(body), err)
 	}
 	if body, err := os.ReadFile(srv.profileFileBackupPath(fallout4.SteamAppID, ini.Spec)); err != nil || string(body) != "old ini" {
 		t.Fatalf("backup ini = %q, err = %v", string(body), err)
@@ -10399,6 +10410,20 @@ func TestSetProfileFeatureSyncsActiveGamebryoLocalSavePath(t *testing.T) {
 	}
 
 	setFeature("local_game_settings", true)
+	falloutINI, err := os.ReadFile(filepath.Join(globalRoot, "Fallout4.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(falloutINI), "bInvalidateOlderFiles=1") || !strings.Contains(string(falloutINI), "sResourceDataDirsFinal=") {
+		t.Fatalf("Fallout4.ini after enabling local game settings = %q", string(falloutINI))
+	}
+	bakedFalloutINI, err := os.ReadFile(filepath.Join(globalRoot, "Fallout4.ini.baked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bakedFalloutINI) != string(falloutINI) {
+		t.Fatalf("baked Fallout4.ini = %q, want %q", string(bakedFalloutINI), string(falloutINI))
+	}
 	customINI := filepath.Join(globalRoot, "Fallout4Custom.ini")
 	if _, err := os.Stat(customINI); !os.IsNotExist(err) {
 		t.Fatalf("optional custom ini should not be created for game settings alone, err = %v", err)

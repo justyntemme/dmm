@@ -114,6 +114,7 @@ func Register(r sdk.Registrar) {
 			{Name: "FalloutPrefs.ini"},
 			{Name: "FalloutCustom.ini", Optional: true},
 		},
+		FilePatches: gamebryo.ArchiveInvalidationProfilePatches(gamebryo.ArchiveInvalidationOptions{ININame: "Fallout.ini"}),
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",

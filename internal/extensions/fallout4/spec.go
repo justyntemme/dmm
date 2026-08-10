@@ -158,6 +158,7 @@ func Register(r sdk.Registrar) {
 			{Name: "Fallout4Prefs.ini"},
 			{Name: "Fallout4Custom.ini", Optional: true},
 		},
+		FilePatches: gamebryo.ArchiveInvalidationProfilePatches(gamebryo.ArchiveInvalidationOptions{ININame: "Fallout4.ini"}),
 	})
 	r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{
 		ID:       "fallout4-persistent-subgraph-offsets",

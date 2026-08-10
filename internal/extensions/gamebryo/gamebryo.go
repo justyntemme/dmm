@@ -41,11 +41,17 @@ type LocalGameSettingsOptions struct {
 	SaveININame    string
 	SavePath       string
 	GlobalSavePath string
+	FilePatches    []LocalGameSettingPatch
 }
 
 type LocalGameSettingFile struct {
 	Name     string
 	Optional bool
+}
+
+type LocalGameSettingPatch struct {
+	FileName string
+	Patch    sdk.ProfileFilePatchSpec
 }
 
 func RegisterPluginActivation(r sdk.Registrar, opts PluginActivationOptions) {
@@ -203,6 +209,7 @@ func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileF
 				DisabledValueTemplate: globalSavePath,
 			})
 		}
+		patches = append(patches, localGameSettingPatchesForFile(opts.FilePatches, name)...)
 		files = append(files, sdk.ProfileFileSpec{
 			ID:                  gameID + "-local-game-settings-" + sanitizeSettingFileID(name),
 			Name:                name,
@@ -217,6 +224,29 @@ func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileF
 		})
 	}
 	return files
+}
+
+func localGameSettingPatchesForFile(patches []LocalGameSettingPatch, name string) []sdk.ProfileFilePatchSpec {
+	name = strings.Trim(strings.TrimSpace(name), "/")
+	if name == "" || len(patches) == 0 {
+		return nil
+	}
+	out := []sdk.ProfileFilePatchSpec{}
+	for _, patch := range patches {
+		fileName := strings.Trim(strings.TrimSpace(patch.FileName), "/")
+		if fileName == "" || !strings.EqualFold(fileName, name) {
+			continue
+		}
+		next := patch.Patch
+		if strings.TrimSpace(next.Kind) == "" {
+			next.Kind = sdk.ProfileFilePatchINIKey
+		}
+		if strings.TrimSpace(next.FeatureID) == "" {
+			next.FeatureID = "local_game_settings"
+		}
+		out = append(out, next)
+	}
+	return out
 }
 
 func sanitizeSettingFileID(value string) string {

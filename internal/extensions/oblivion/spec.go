@@ -81,6 +81,7 @@ func Register(r sdk.Registrar) {
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Oblivion.ini"},
 		},
+		FilePatches: gamebryo.ArchiveInvalidationProfilePatches(gamebryo.ArchiveInvalidationOptions{ININame: "Oblivion.ini"}),
 	})
 	gamebryo.RegisterOblivionFontSettingsTest(r, gamebryo.OblivionFontSettingsOptions{
 		GameID:       VortexGameID,

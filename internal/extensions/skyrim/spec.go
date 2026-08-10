@@ -66,6 +66,7 @@ func Register(r sdk.Registrar) {
 			{Name: "Skyrim.ini"},
 			{Name: "SkyrimPrefs.ini"},
 		},
+		FilePatches: gamebryo.ArchiveInvalidationProfilePatches(gamebryo.ArchiveInvalidationOptions{ININame: "Skyrim.ini"}),
 	})
 	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{

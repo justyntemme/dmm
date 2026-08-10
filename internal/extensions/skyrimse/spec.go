@@ -153,6 +153,7 @@ func Register(r sdk.Registrar) {
 			{Name: "SkyrimPrefs.ini"},
 			{Name: "SkyrimCustom.ini", Optional: true},
 		},
+		FilePatches: gamebryo.ArchiveInvalidationProfilePatches(gamebryo.ArchiveInvalidationOptions{ININame: "Skyrim.ini"}),
 	})
 	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{

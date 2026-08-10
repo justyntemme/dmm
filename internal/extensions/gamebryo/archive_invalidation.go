@@ -112,6 +112,37 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 	}
 }
 
+func ArchiveInvalidationProfilePatches(opts ArchiveInvalidationOptions) []LocalGameSettingPatch {
+	iniName := strings.TrimSpace(opts.ININame)
+	if iniName == "" {
+		return nil
+	}
+	keys := map[string]string{
+		"bInvalidateOlderFiles":  "1",
+		"sResourceDataDirsFinal": "",
+	}
+	ordered := make([]string, 0, len(keys))
+	for key := range keys {
+		ordered = append(ordered, key)
+	}
+	sort.Strings(ordered)
+	out := make([]LocalGameSettingPatch, 0, len(ordered))
+	for _, key := range ordered {
+		out = append(out, LocalGameSettingPatch{
+			FileName: iniName,
+			Patch: sdk.ProfileFilePatchSpec{
+				Kind:       sdk.ProfileFilePatchINIKey,
+				FeatureID:  "local_game_settings",
+				Section:    "Archive",
+				Key:        key,
+				Value:      keys[key],
+				AllowEmpty: keys[key] == "",
+			},
+		})
+	}
+	return out
+}
+
 func archiveInvalidationGeneratedRoot(input sdk.EventHandlerInput) (string, error) {
 	stagingRoot := strings.TrimSpace(input.StagingRoot)
 	appID := strings.TrimSpace(input.AppID)

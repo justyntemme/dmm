@@ -2053,7 +2053,8 @@ func validateProfileFilePatch(fileID string, spec sdk.ProfileFilePatchSpec) erro
 	if strings.TrimSpace(spec.Value) == "" &&
 		strings.TrimSpace(spec.ValueTemplate) == "" &&
 		strings.TrimSpace(spec.DisabledValue) == "" &&
-		strings.TrimSpace(spec.DisabledValueTemplate) == "" {
+		strings.TrimSpace(spec.DisabledValueTemplate) == "" &&
+		!spec.AllowEmpty {
 		return errors.New("profile file " + fileID + " patch value is required")
 	}
 	return nil

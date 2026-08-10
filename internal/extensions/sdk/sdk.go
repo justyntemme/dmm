@@ -884,6 +884,7 @@ type ProfileFilePatchSpec struct {
 	ValueTemplate         string
 	DisabledValue         string
 	DisabledValueTemplate string
+	AllowEmpty            bool
 }
 
 type CollectionFeatureSpec struct {

@@ -571,6 +571,9 @@ func profileFilePatchValue(profileID int64, spec sdk.ProfileFilePatchSpec, enabl
 	if template != "" {
 		return strings.ReplaceAll(template, "{profile_id}", strconv.FormatInt(profileID, 10)), true
 	}
+	if spec.AllowEmpty {
+		return value, true
+	}
 	if strings.TrimSpace(value) == "" {
 		return "", false
 	}
