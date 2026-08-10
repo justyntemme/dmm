@@ -4543,6 +4543,7 @@ function FreshLocalArchiveBrowser(props: {
   const [pathInput, setPathInput] = useState("");
   const [busyPath, setBusyPath] = useState("");
   const [message, setMessage] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(20);
 
   async function browse(path = "") {
     try {
@@ -4560,6 +4561,7 @@ function FreshLocalArchiveBrowser(props: {
       setCurrentPath(result.current_path ?? "");
       setParentPath(result.parent_path ?? "");
       setPathInput(result.current_path ?? "");
+      setVisibleLimit(20);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
     }
@@ -4595,12 +4597,18 @@ function FreshLocalArchiveBrowser(props: {
     void browse("");
   }, []);
 
+  const visibleEntries = entries.slice(0, visibleLimit);
+  const hiddenEntries = Math.max(0, entries.length - visibleEntries.length);
+
   return (
     <Focusable flow-children="down" style={{ ...freshSectionStyle, background: "#0b1220", gap: "10px" }}>
       <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
         <div style={{ color: "#f8fafc", fontSize: "13px", fontWeight: 900 }}>Import Mod Archive</div>
         <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
           {currentPath || "Deck Downloads"}
+        </div>
+        <div style={{ color: "#64748b", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>
+          Showing {visibleEntries.length} of {entries.length}
         </div>
       </div>
       <div style={freshActionRowStyle}>
@@ -4614,7 +4622,7 @@ function FreshLocalArchiveBrowser(props: {
       <TextField label="Path" value={pathInput} bShowClearAction onChange={(event) => setPathInput(event.currentTarget.value)} />
       <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
         {entries.length === 0 && <div style={{ color: "#a1a1aa" }}>No folders or supported archives found here.</div>}
-        {entries.map((entry) => {
+        {visibleEntries.map((entry) => {
           const isFile = entry.kind === "file";
           const busy = busyPath === entry.path;
           return (
@@ -4642,6 +4650,11 @@ function FreshLocalArchiveBrowser(props: {
             </Focusable>
           );
         })}
+        {hiddenEntries > 0 && (
+          <FreshActionButton onActivate={() => setVisibleLimit((current) => current + 20)}>
+            Show {Math.min(20, hiddenEntries)} More
+          </FreshActionButton>
+        )}
       </Focusable>
       {message && <div style={{ color: message.toLowerCase().includes("unable") ? "#f87171" : "#99f6e4", overflowWrap: "anywhere" }}>{message}</div>}
     </Focusable>
