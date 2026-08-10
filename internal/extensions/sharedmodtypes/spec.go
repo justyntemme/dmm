@@ -56,7 +56,7 @@ func Register(r sdk.Registrar) {
 	}
 	for _, modType := range []installplan.ModTypeSpec{
 		DInputModTypeSpec(),
-		{ID: ENBModType, TargetRoot: "", Status: sdk.CapabilityStatusMetadata, Message: "Vortex registers the ENB mod type for game-root deployment, but the upstream automatic ENB installer is commented out. DMM keeps this as source metadata until a game extension declares a concrete ENB runtime path."},
+		ENBModTypeSpec(),
 		{ID: GeDoSaToType, TargetRoot: "", Status: sdk.CapabilityStatusMetadata, Message: "GeDoSaTo helper support is implemented for game extensions that declare a concrete texture target root and runtime requirement."},
 	} {
 		if modType.ID == DInputModType {
@@ -87,6 +87,15 @@ func DInputModTypeSpec() installplan.ModTypeSpec {
 		ID:         DInputModType,
 		TargetRoot: "",
 		Message:    "Vortex DInput injector support deploys files beside the selected game executable and requires user trust for injected DLLs.",
+	}
+}
+
+func ENBModTypeSpec() installplan.ModTypeSpec {
+	return installplan.ModTypeSpec{
+		ID:         ENBModType,
+		TargetRoot: "",
+		Status:     sdk.CapabilityStatusReady,
+		Message:    "Vortex ENB support registers a game-root mod type with mergeMods=true. The upstream automatic ENB installer is commented out, so game extensions opt into this mod type without DMM inventing installer behavior.",
 	}
 }
 

@@ -27,7 +27,7 @@ func TestExtensionRegistersSharedModTypeMetadata(t *testing.T) {
 	if modTypes[DInputModType].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("dinput mod type = %+v", modTypes[DInputModType])
 	}
-	if modTypes[ENBModType].Status != sdk.CapabilityStatusMetadata || modTypes[ENBModType].Message == "" {
+	if modTypes[ENBModType].Status != sdk.CapabilityStatusReady || modTypes[ENBModType].Message == "" {
 		t.Fatalf("enb mod type = %+v", modTypes[ENBModType])
 	}
 	if modTypes[GeDoSaToType].Status != sdk.CapabilityStatusMetadata || modTypes[GeDoSaToType].Message == "" {
