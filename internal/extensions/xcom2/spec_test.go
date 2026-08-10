@@ -28,6 +28,9 @@ func TestExtensionRegistersXCOMCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if len(summary.Capabilities.ExtensionToDos) != 0 {
+		t.Fatalf("todos = %+v", summary.Capabilities.ExtensionToDos)
+	}
 }
 
 func TestInstallerCopiesXComModFolderToBaseModsPath(t *testing.T) {

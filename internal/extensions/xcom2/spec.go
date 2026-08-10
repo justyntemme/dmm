@@ -90,14 +90,7 @@ func Register(r sdk.Registrar) {
 		Name:    "XCOM 2 Load Order",
 		Scope:   "game",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM exposes DefaultModOptions.ini order through generic extension load-order profile controls. Vortex's separate base/WOTC logical-game selection remains tracked by the multi-variant selector gap.",
-	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "xcom2-multi-variant-selector",
-		Name:    "XCOM 2 base/WOTC variant selector",
-		Trigger: "game-selection",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex registers xcom2 and xcom2-wotc as separate logical games for Steam app 268500. DMM currently detects WOTC when present and needs a generic multi-logical-game-per-app selector for exact UI parity.",
+		Message: "DMM exposes DefaultModOptions.ini order through generic extension load-order profile controls. Vortex models base/WOTC as separate logical games; DMM keeps one Steam app and routes installs/deployments through extension-owned variant detection.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
