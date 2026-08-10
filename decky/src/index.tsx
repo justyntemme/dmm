@@ -5616,6 +5616,12 @@ function FreshDeckyModManagerRoute() {
   }
 
   function handleRouteCancel(event: Pick<GamepadEvent, "preventDefault" | "stopPropagation">) {
+    if (tab === "games" && selectedGameID && archiveBrowserOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      setArchiveBrowserOpen(false);
+      return true;
+    }
     if (tab === "games" && selectedGameID) {
       event.preventDefault();
       event.stopPropagation();
