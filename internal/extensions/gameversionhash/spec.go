@@ -26,7 +26,7 @@ const (
 	DefaultHashMapURL = "https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/gameversion_hashmap.json"
 )
 
-const metadataMessage = "Vortex source hashes extension-declared game files and maps them through the Vortex backend hash map. DMM exposes the same reusable helper for converted game extensions; the generic Vortex extension API surface remains metadata-only."
+const runtimeMessage = "Vortex source hashes extension-declared game files and maps them through the Vortex backend hash map. DMM exposes the same reusable runtime helper for converted game extensions; Vortex's DEBUG_MODE-only hash-map editor actions are desktop developer tooling and are not a DMM runtime requirement."
 
 type Options struct {
 	ID           string
@@ -71,14 +71,18 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:      "hash-version-check",
 		Name:    "Hash version check",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: metadataMessage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: runtimeMessage,
+		Provider: detect(Options{
+			ID:   "hash-version-check",
+			Name: "Hash version check",
+		}),
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "getHashVersion",
 		Name:    "Get hash-mapped game version",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: metadataMessage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: runtimeMessage,
 	})
 }
 

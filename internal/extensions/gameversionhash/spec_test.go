@@ -13,7 +13,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestExtensionRegistersSourceBackedHashVersionMetadata(t *testing.T) {
+func TestExtensionRegistersSourceBackedHashVersionRuntime(t *testing.T) {
 	summary := gameext.NewRegistry([]gameext.Extension{
 		gameext.MustCompileExtension(Extension()),
 	}).ExtensionSummaries()[0]
@@ -21,10 +21,10 @@ func TestExtensionRegistersSourceBackedHashVersionMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status != sdk.CapabilityStatusMetadata {
+	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
 	}
-	if len(summary.Capabilities.ExtensionAPIs) != 1 || summary.Capabilities.ExtensionAPIs[0].ID != "getHashVersion" || summary.Capabilities.ExtensionAPIs[0].Message == "" {
+	if len(summary.Capabilities.ExtensionAPIs) != 1 || summary.Capabilities.ExtensionAPIs[0].ID != "getHashVersion" || summary.Capabilities.ExtensionAPIs[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.ExtensionAPIs[0].Message == "" {
 		t.Fatalf("extension apis = %+v", summary.Capabilities.ExtensionAPIs)
 	}
 }
