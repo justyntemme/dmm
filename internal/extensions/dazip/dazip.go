@@ -37,12 +37,11 @@ func Extension() sdk.Extension {
 				Name: "Vortex modtype-dazip source",
 				URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-dazip/src",
 			})
-			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
+			r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 				ID:      "dazip-migration-runtime",
 				Name:    "DAZIP migration purge runtime",
-				Trigger: "migration",
-				Status:  sdk.CapabilityStatusBlocked,
-				Message: "Vortex modtype-dazip can purge historical DA2 DAZIP deployments during migration. DMM has no generic migration/purge-mods-in-path runtime yet.",
+				Status:  sdk.CapabilityStatusReady,
+				Message: "Vortex modtype-dazip purges historical DA2 DAZIP deployments during migration. DMM executes this through extension-declared purge-mods-in-path state migration commands.",
 			})
 		},
 	}
