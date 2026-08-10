@@ -105,6 +105,71 @@ func TestBSAReaderListsAndExtractsVortexFixtureArchives(t *testing.T) {
 	}
 }
 
+func TestBSAWriterCreatesReadableArchives(t *testing.T) {
+	root := t.TempDir()
+	mesh := filepath.Join(root, "mesh.nif")
+	readme := filepath.Join(root, "readme.txt")
+	rootFile := filepath.Join(root, "root.xml")
+	for path, body := range map[string]string{
+		mesh:     "mesh-body",
+		readme:   "readme-body",
+		rootFile: "<root/>",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		version uint32
+	}{
+		{name: "oblivion", version: bsaVersionOblivion},
+		{name: "fallout3", version: bsaVersionFallout3},
+		{name: "skyrimse", version: bsaVersionSkyrimSE},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			archivePath := filepath.Join(root, tc.name+".bsa")
+			if err := WriteBSA(archivePath, tc.version, []BSAWriteFile{
+				{ArchivePath: "meshes/weapons/example.nif", SourcePath: mesh},
+				{ArchivePath: "docs/readme.txt", SourcePath: readme},
+				{ArchivePath: "root.xml", SourcePath: rootFile},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			archive, err := OpenBSA(archivePath, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if archive.Version() != tc.version {
+				t.Fatalf("version = %d, want %d", archive.Version(), tc.version)
+			}
+			assertEntryPaths(t, archive.List(), []string{
+				"meshes\\weapons\\example.nif",
+				"docs\\readme.txt",
+				"root.xml",
+			})
+			body, err := archive.ReadFile("meshes/weapons/example.nif")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != "mesh-body" {
+				t.Fatalf("mesh body = %q", string(body))
+			}
+			out := filepath.Join(root, tc.name+"-out")
+			if err := archive.ExtractAll(out); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(out, "docs", "readme.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != "readme-body" {
+				t.Fatalf("readme body = %q", string(got))
+			}
+		})
+	}
+}
+
 func TestOpenDetectsArchiveType(t *testing.T) {
 	reader, err := Open(testdataPath("test-v103.bsa"))
 	if err != nil {

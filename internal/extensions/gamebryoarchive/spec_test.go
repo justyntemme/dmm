@@ -22,10 +22,10 @@ func TestExtensionRegistersSourceBackedArchiveMetadata(t *testing.T) {
 	if byID["ba2"].Engine != ID || byID["ba2"].Status != sdk.CapabilityStatusReady || byID["ba2"].Message != "" {
 		t.Fatalf("ba2 capability = %+v", byID["ba2"])
 	}
-	if byID["bsa"].Engine != ID || byID["bsa"].SupportsWrite || byID["bsa"].Status != sdk.CapabilityStatusReady {
+	if byID["bsa"].Engine != ID || !byID["bsa"].SupportsWrite || byID["bsa"].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("bsa capability = %+v", byID["bsa"])
 	}
-	if byID["bsa"].Message == "" {
-		t.Fatalf("bsa message was empty")
+	if byID["bsa"].Message != "" {
+		t.Fatalf("bsa message = %q", byID["bsa"].Message)
 	}
 }

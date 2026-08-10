@@ -9,8 +9,6 @@ const (
 	BuildID = "first-party-go"
 )
 
-const writePendingMessage = "DMM has a native Go list/read/extract runtime for this archive type. Vortex's write/create path remains pending."
-
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:      ID,
@@ -40,8 +38,8 @@ func Register(r sdk.Registrar) {
 		Name:           "Bethesda BSA",
 		FileExtensions: []string{".bsa"},
 		Engine:         ID,
+		SupportsWrite:  true,
 		Status:         sdk.CapabilityStatusReady,
-		Message:        writePendingMessage,
 	})
 }
 
