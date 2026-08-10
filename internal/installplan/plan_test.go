@@ -11,6 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/stardewvalley"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	. "github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 var stardewPlanner = NewRegistry([]GameSpec{gameext.MustCompileExtension(stardewvalley.Extension()).InstallPlan})
@@ -834,6 +835,44 @@ func TestCustomInstallerBuildsPlanFromExtensionHook(t *testing.T) {
 	}
 	if plan.Instructions[0].TargetRelative != "Mods/custom/file.txt" {
 		t.Fatalf("target = %q", plan.Instructions[0].TargetRelative)
+	}
+}
+
+func TestPlannerVerifiesExpectedExtractedFileHashes(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "content", "file.txt")
+	writeFile(t, filePath, "content")
+	registry := NewRegistry([]GameSpec{{
+		SteamAppIDs:  []string{"999999"},
+		VortexGameID: "hashgame",
+		ModTypes:     []ModTypeSpec{{ID: "hash-mod"}},
+		Installers: []InstallerSpec{{
+			ID:                "vortex:hashgame:hash",
+			VortexInstallerID: "hash",
+			ModType:           "hash-mod",
+			Match:             MatchSpec{FileBasenames: []string{"file.txt"}},
+			ExpectedExtractedFileHashes: []ExtractedFileHashSpec{{
+				RelativePath: "content/file.txt",
+				Expected: []integrity.ExpectedHash{{
+					Algorithm: integrity.AlgorithmMD5,
+					Value:     "9a0364b9e99bb480dd25e1f0284c8555",
+					Label:     "test extracted file",
+				}},
+			}},
+			InstructionMode: InstructionArchiveRoot,
+		}},
+	}})
+
+	if _, err := registry.Build("hashgame", root); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filePath, "changed")
+	_, err := registry.Build("hashgame", root)
+	if err == nil {
+		t.Fatal("expected extracted file hash mismatch")
+	}
+	if !strings.Contains(err.Error(), "extracted file integrity validation failed") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

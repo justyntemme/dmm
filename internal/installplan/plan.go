@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/tailscale/hujson"
 )
 
@@ -82,6 +83,18 @@ func Unsupported(reason string) error {
 	return UnsupportedError{Reason: reason}
 }
 
+type IntegrityError struct {
+	Reason string
+}
+
+func (e IntegrityError) Error() string {
+	return e.Reason
+}
+
+func IntegrityFailure(reason string) error {
+	return IntegrityError{Reason: reason}
+}
+
 type Registry struct {
 	specs map[string]GameSpec
 }
@@ -127,30 +140,37 @@ const (
 )
 
 type InstallerSpec struct {
-	ID                 string
-	VortexInstallerID  string
-	PlatformID         string
-	Priority           int
-	ModType            string
-	NameSource         string
-	TargetRoot         string
-	TargetRootID       string
-	StripCommonRoot    bool
-	Match              MatchSpec
-	Payload            PayloadSpec
-	GeneratedFiles     []GeneratedFileSpec
-	TargetPolicies     []TargetPolicySpec
-	MetadataExtractors []MetadataExtractorSpec
-	ComponentChoices   *ComponentChoiceSpec
-	InstructionMode    InstructionMode
-	UnsupportedReason  string
-	Status             string
-	Message            string
-	CustomMatch        CustomMatchFunc
-	CustomBuild        CustomBuildFunc
+	ID                          string
+	VortexInstallerID           string
+	PlatformID                  string
+	Priority                    int
+	ModType                     string
+	NameSource                  string
+	TargetRoot                  string
+	TargetRootID                string
+	StripCommonRoot             bool
+	Match                       MatchSpec
+	Payload                     PayloadSpec
+	GeneratedFiles              []GeneratedFileSpec
+	TargetPolicies              []TargetPolicySpec
+	MetadataExtractors          []MetadataExtractorSpec
+	ComponentChoices            *ComponentChoiceSpec
+	ExpectedExtractedFileHashes []ExtractedFileHashSpec
+	InstructionMode             InstructionMode
+	UnsupportedReason           string
+	Status                      string
+	Message                     string
+	CustomMatch                 CustomMatchFunc
+	CustomBuild                 CustomBuildFunc
 }
 
 type CustomMatchFunc func(extractedRoot string) bool
+
+type ExtractedFileHashSpec struct {
+	RelativePath string
+	FileBasename string
+	Expected     []integrity.ExpectedHash
+}
 
 type ComponentChoiceSpec struct {
 	Kind        string
@@ -434,6 +454,10 @@ func buildFromSpec(spec GameSpec, requestedGameID, extractedRoot string, options
 		if errors.As(err, &choice) {
 			return Plan{}, err
 		}
+		var integrityErr IntegrityError
+		if errors.As(err, &integrityErr) {
+			return Plan{}, err
+		}
 		if reason := strings.TrimSpace(installer.UnsupportedReason); reason != "" {
 			return Plan{}, Unsupported(reason)
 		}
@@ -461,20 +485,21 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, requestedGameID,
 		DetectedFrom: []Detection{},
 		Instructions: []Instruction{},
 	}
+	var err error
 	switch installer.InstructionMode {
 	case InstructionManifestFolders:
-		return buildManifestFolderPlan(plan, installer, extractedRoot, options.Selections)
+		plan, err = buildManifestFolderPlan(plan, installer, extractedRoot, options.Selections)
 	case InstructionRootFolder:
-		return buildRootFolderPlan(plan, installer, extractedRoot)
+		plan, err = buildRootFolderPlan(plan, installer, extractedRoot)
 	case InstructionArchiveRoot:
-		return buildArchiveRootPlan(plan, installer, extractedRoot)
+		plan, err = buildArchiveRootPlan(plan, installer, extractedRoot)
 	case InstructionEmbeddedZip:
-		return buildEmbeddedZipPlan(plan, installer, extractedRoot)
+		plan, err = buildEmbeddedZipPlan(plan, installer, extractedRoot)
 	case InstructionCustom:
 		if installer.CustomBuild == nil {
 			return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " does not have a custom builder")
 		}
-		return installer.CustomBuild(BuildInput{
+		plan, err = installer.CustomBuild(BuildInput{
 			GameID:             plan.GameID,
 			ExtractedRoot:      extractedRoot,
 			Installer:          installer,
@@ -488,6 +513,80 @@ func buildWithInstaller(spec GameSpec, installer InstallerSpec, requestedGameID,
 		})
 	default:
 		return Plan{}, Unsupported("Vortex installer " + installer.VortexInstallerID + " uses an unsupported instruction mode")
+	}
+	if err != nil {
+		return Plan{}, err
+	}
+	if err := verifyExpectedExtractedFileHashes(extractedRoot, installer.ExpectedExtractedFileHashes); err != nil {
+		return Plan{}, err
+	}
+	return plan, nil
+}
+
+func verifyExpectedExtractedFileHashes(root string, specs []ExtractedFileHashSpec) error {
+	for _, spec := range specs {
+		expected := integrity.NormalizeExpectedHashes(spec.Expected)
+		if len(expected) == 0 {
+			continue
+		}
+		path, err := expectedExtractedFilePath(root, spec)
+		if err != nil {
+			return IntegrityFailure(err.Error())
+		}
+		if _, err := integrity.VerifyFile(path, expected); err != nil {
+			return IntegrityFailure("extracted file integrity validation failed: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func expectedExtractedFilePath(root string, spec ExtractedFileHashSpec) (string, error) {
+	if rel := strings.TrimSpace(spec.RelativePath); rel != "" {
+		clean := filepath.Clean(filepath.FromSlash(rel))
+		if clean == "." || clean == ".." || filepath.IsAbs(clean) || strings.HasPrefix(filepath.ToSlash(clean), "../") {
+			return "", errors.New("expected extracted file hash path is unsafe: " + rel)
+		}
+		path := filepath.Join(root, clean)
+		if !isWithin(root, path) {
+			return "", errors.New("expected extracted file hash path escapes archive root: " + rel)
+		}
+		if info, err := os.Stat(path); err != nil {
+			return "", errors.New("expected extracted file is missing: " + filepath.ToSlash(clean))
+		} else if !info.Mode().IsRegular() {
+			return "", errors.New("expected extracted file is not a regular file: " + filepath.ToSlash(clean))
+		}
+		return path, nil
+	}
+	basename := strings.TrimSpace(spec.FileBasename)
+	if basename == "" {
+		return "", errors.New("expected extracted file hash requires relative path or file basename")
+	}
+	if filepath.Base(filepath.FromSlash(basename)) != basename || strings.ContainsAny(basename, `/\`) {
+		return "", errors.New("expected extracted file hash basename is unsafe: " + basename)
+	}
+	var matches []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(filepath.Base(path), basename) {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	switch len(matches) {
+	case 0:
+		return "", errors.New("expected extracted file is missing: " + basename)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", errors.New("expected extracted file basename matched multiple files; use relative path: " + basename)
 	}
 }
 

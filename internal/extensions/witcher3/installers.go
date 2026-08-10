@@ -9,6 +9,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 const (
@@ -24,8 +25,16 @@ func scriptMergerToolInstaller() installplan.InstallerSpec {
 		ModType:           scriptMergerToolModType,
 		NameSource:        installplan.NameSourceManifestDisplay,
 		InstructionMode:   installplan.InstructionCustom,
-		CustomMatch:       matchScriptMergerTool,
-		CustomBuild:       buildScriptMergerTool,
+		ExpectedExtractedFileHashes: []installplan.ExtractedFileHashSpec{{
+			RelativePath: scriptMergerToolExe,
+			Expected: []integrity.ExpectedHash{{
+				Algorithm: integrity.AlgorithmMD5,
+				Value:     scriptMergerExecutableMD5,
+				Label:     "Witcher 3 Script Merger executable " + scriptMergerVersion,
+			}},
+		}},
+		CustomMatch: matchScriptMergerTool,
+		CustomBuild: buildScriptMergerTool,
 	}
 }
 

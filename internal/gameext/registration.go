@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -98,6 +99,13 @@ func (r *Registrar) RegisterInstallPlatform(spec sdk.InstallPlatformSpec) {
 }
 
 func (r *Registrar) RegisterInstaller(spec installplan.InstallerSpec) {
+	for idx := range spec.ExpectedExtractedFileHashes {
+		spec.ExpectedExtractedFileHashes[idx].RelativePath = strings.TrimSpace(spec.ExpectedExtractedFileHashes[idx].RelativePath)
+		spec.ExpectedExtractedFileHashes[idx].FileBasename = strings.TrimSpace(spec.ExpectedExtractedFileHashes[idx].FileBasename)
+		spec.ExpectedExtractedFileHashes[idx].Expected = integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), spec.ExpectedExtractedFileHashes[idx].Expected...),
+		)
+	}
 	r.extension.InstallPlan.Installers = append(r.extension.InstallPlan.Installers, spec)
 }
 
@@ -833,6 +841,35 @@ func validateInstallPlanSpec(spec installplan.GameSpec) []error {
 				errs = append(errs, errors.New("installer "+id+" target policy path: "+err.Error()))
 			}
 		}
+		errs = append(errs, validateExpectedExtractedFileHashes(id, installer.ExpectedExtractedFileHashes)...)
+	}
+	return errs
+}
+
+func validateExpectedExtractedFileHashes(installerID string, specs []installplan.ExtractedFileHashSpec) []error {
+	var errs []error
+	for idx, spec := range specs {
+		label := "installer " + installerID + " expected extracted file hash"
+		if len(specs) > 1 {
+			label += " " + strconv.Itoa(idx+1)
+		}
+		relativePath := strings.TrimSpace(spec.RelativePath)
+		fileBasename := strings.TrimSpace(spec.FileBasename)
+		if relativePath == "" && fileBasename == "" {
+			errs = append(errs, errors.New(label+" requires relative path or file basename"))
+		}
+		if relativePath != "" && fileBasename != "" {
+			errs = append(errs, errors.New(label+" must not declare both relative path and file basename"))
+		}
+		if relativePath != "" {
+			if err := validateRelativePath(relativePath); err != nil {
+				errs = append(errs, errors.New(label+" relative path: "+err.Error()))
+			}
+		}
+		if fileBasename != "" && (filepath.Base(filepath.FromSlash(fileBasename)) != fileBasename || strings.ContainsAny(fileBasename, `/\`)) {
+			errs = append(errs, errors.New(label+" file basename must be a single file name"))
+		}
+		errs = append(errs, integrity.ValidateExpectedHashes(label, spec.Expected)...)
 	}
 	return errs
 }

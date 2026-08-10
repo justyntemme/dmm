@@ -21,7 +21,8 @@ const (
 	scriptMergerArchiveName = "WitcherScriptMerger-0.6.5.7z"
 	scriptMergerVersion     = "0.6.5"
 	// Vortex game-witcher3/assets/MD5Cache.json pins the downloaded Script Merger archive.
-	scriptMergerArchiveMD5 = "77D57B2384172604E8D859E8BE4F7DF9"
+	scriptMergerArchiveMD5    = "77D57B2384172604E8D859E8BE4F7DF9"
+	scriptMergerExecutableMD5 = "0C2AFAA49E83C680F89F891237F46E5D"
 )
 
 func Extension() sdk.Extension {

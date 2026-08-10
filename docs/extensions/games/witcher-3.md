@@ -20,7 +20,7 @@
 
 - Nexus domain and Steam AppIDs are registered.
 - Menu mod root, mixed mod/DLC, top-level mod, content-only, and DLC installer shapes are represented.
-- Script Merger is registered as a managed launch tool with source-backed GitHub acquisition from `IDCs/WitcherScriptMerger`. DMM recognizes Script Merger archives as `tool-only` installs, verifies the downloaded archive against the Vortex-pinned MD5 from `MD5Cache.json`, stages the whole payload under DMM-owned storage, records tool metadata, and rewrites `WitcherScriptMerger.exe.config` after install with the game root, vanilla scripts root, and `Mods` root.
+- Script Merger is registered as a managed launch tool with source-backed GitHub acquisition from `IDCs/WitcherScriptMerger`. DMM recognizes Script Merger archives as `tool-only` installs, verifies the downloaded archive and extracted executable against the Vortex-pinned MD5 values from `MD5Cache.json`, stages the whole payload under DMM-owned storage, records tool metadata, and rewrites `WitcherScriptMerger.exe.config` after install with the game root, vanilla scripts root, and `Mods` root.
 - Basic managed `mods.settings` generation exists through an extension deploy hook.
 - Menu `.part.txt` fragments are merged by the Witcher 3 extension during `will-deploy`: DMM scans enabled `witcher3menumodroot` staging folders, ignores `input.xml` fragments like Vortex, merges fragment INI keys over the current or `.vortex_backup` Documents settings file, and returns restore-aware `patch-existing` mappings for files such as `input.settings`, `user.settings`, and `dx12user.settings`.
 - Config-matrix XML files are merged by the Witcher 3 extension during `will-deploy`: DMM removes the raw config XML deployment mapping, reads the native or `.vortex_backup` game file, merges `UserConfig.Group` nodes by `id`, replaces matching `VisibleVars.Var` nodes by `id`, appends missing vars/groups, and returns one restore-aware `patch-existing` mapping.
@@ -28,7 +28,6 @@
 ## Beta Gaps
 
 - Vortex hidden menu-mod cache/adoption behavior is incomplete.
-- Script Merger extracted executable checksum validation is incomplete. Vortex validates the extracted `WitcherScriptMerger.exe` MD5 from its bundled cache after archive extraction; DMM currently validates the downloaded archive MD5 generically and needs a reusable post-extract file hash contract before claiming exact parity.
 - Script Merger execution still needs live validation on Deck after a managed tool install.
 - Manual load-order preservation and full load-order UI semantics are incomplete.
 - Collection/profile data behavior needs parity review.

@@ -130,6 +130,20 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	if len(tool.Acquisition.ExpectedArchiveHashes) != 1 || tool.Acquisition.ExpectedArchiveHashes[0].Algorithm != "md5" || tool.Acquisition.ExpectedArchiveHashes[0].Value != "77d57b2384172604e8d859e8be4f7df9" {
 		t.Fatalf("script merger expected archive hashes = %+v", tool.Acquisition.ExpectedArchiveHashes)
 	}
+	var scriptMergerInstaller *installplan.InstallerSpec
+	for idx := range compiled.InstallPlan.Installers {
+		if compiled.InstallPlan.Installers[idx].ID == "vortex:witcher3:scriptmerger-tool" {
+			scriptMergerInstaller = &compiled.InstallPlan.Installers[idx]
+			break
+		}
+	}
+	if scriptMergerInstaller == nil || len(scriptMergerInstaller.ExpectedExtractedFileHashes) != 1 {
+		t.Fatalf("script merger installer = %+v", scriptMergerInstaller)
+	}
+	extractedHash := scriptMergerInstaller.ExpectedExtractedFileHashes[0]
+	if extractedHash.RelativePath != "WitcherScriptMerger.exe" || len(extractedHash.Expected) != 1 || extractedHash.Expected[0].Algorithm != "md5" || extractedHash.Expected[0].Value != "0c2afaa49e83c680f89f891237f46e5d" {
+		t.Fatalf("script merger expected extracted hash = %+v", extractedHash)
+	}
 	action := extensionActionByID(compiled.ExtensionActions, "witcher3-install-script-merger")
 	if action == nil || action.Kind != sdk.ExtensionActionKindAcquireTool || action.AcquireTool == nil || action.AcquireTool.ToolID != "W3ScriptMerger" {
 		t.Fatalf("script merger action = %+v", action)
@@ -143,30 +157,18 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	}
 }
 
-func TestExtensionPlansScriptMergerToolArchive(t *testing.T) {
+func TestExtensionRejectsScriptMergerToolArchiveWithBadExecutableChecksum(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "WitcherScriptMerger.exe"), "tool")
 	writeFile(t, filepath.Join(root, "WitcherScriptMerger.exe.config"), "<configuration/>")
 	writeFile(t, filepath.Join(root, "Tools", "KDiff3", "kdiff3.exe"), "dependency")
 
-	plan, err := buildWithArchive(root, "WitcherScriptMerger-0.6.5.7z")
-	if err != nil {
-		t.Fatal(err)
+	_, err := buildWithArchive(root, "WitcherScriptMerger-0.6.5.7z")
+	if err == nil {
+		t.Fatal("expected executable checksum mismatch")
 	}
-	if plan.ModType != "witcher3-script-merger-tool" || len(plan.Metadata) != 1 {
-		t.Fatalf("plan = %+v", plan)
-	}
-	metadata := plan.Metadata[0]
-	if metadata.Kind != "tool" || metadata.UniqueID != "W3ScriptMerger" || metadata.StagingRelative != "WitcherScriptMerger.exe" || metadata.Version != "0.6.5" {
-		t.Fatalf("metadata = %+v", metadata)
-	}
-	assertStaging(t, plan.Instructions, "WitcherScriptMerger.exe")
-	assertStaging(t, plan.Instructions, "WitcherScriptMerger.exe.config")
-	assertStaging(t, plan.Instructions, "Tools/KDiff3/kdiff3.exe")
-	for _, instruction := range plan.Instructions {
-		if instruction.TargetRelative != "" || instruction.TargetRoot != "" {
-			t.Fatalf("tool-only instruction has target mapping: %+v", instruction)
-		}
+	if !strings.Contains(err.Error(), "extracted file integrity validation failed") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
