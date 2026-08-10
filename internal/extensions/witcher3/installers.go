@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -14,6 +15,120 @@ const (
 	configMatrixRelPath = "bin/config/r4game/user_config_matrix/pc"
 	partSuffix          = ".part.txt"
 )
+
+func scriptMergerToolInstaller() installplan.InstallerSpec {
+	return installplan.InstallerSpec{
+		ID:                "vortex:witcher3:scriptmerger-tool",
+		VortexInstallerID: "scriptmergerdummy",
+		Priority:          15,
+		ModType:           scriptMergerToolModType,
+		NameSource:        installplan.NameSourceManifestDisplay,
+		InstructionMode:   installplan.InstructionCustom,
+		CustomMatch:       matchScriptMergerTool,
+		CustomBuild:       buildScriptMergerTool,
+	}
+}
+
+func matchScriptMergerTool(root string) bool {
+	_, ok := findScriptMergerExecutable(root)
+	return ok
+}
+
+func buildScriptMergerTool(input installplan.BuildInput) (installplan.Plan, error) {
+	execRel, ok := findScriptMergerExecutable(input.ExtractedRoot)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("Witcher 3 Script Merger archive matched but no " + scriptMergerToolExe + " was found")
+	}
+	toolRoot := filepath.ToSlash(filepath.Dir(execRel))
+	if toolRoot == "." {
+		toolRoot = ""
+	}
+	files, err := filesUnderRoot(input.ExtractedRoot, toolRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	if len(files) == 0 {
+		return installplan.Plan{}, errors.New("Witcher 3 Script Merger archive matched but produced no staged files")
+	}
+	instructions := make([]installplan.Instruction, 0, len(files))
+	for _, file := range files {
+		stagingRel := simplearchive.StripRoot(file, toolRoot)
+		if strings.TrimSpace(stagingRel) == "" || stagingRel == "." {
+			continue
+		}
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
+			StagingRelative: stagingRel,
+		})
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, errors.New("Witcher 3 Script Merger archive matched but produced no staged files")
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return instructions[i].StagingRelative < instructions[j].StagingRelative
+	})
+	execStagingRel := simplearchive.StripRoot(execRel, toolRoot)
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    scriptMergerToolModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceManifestDisplay,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-witcher3-script-merger-tool",
+			Path:   execRel,
+			Reason: "Vortex scriptmergerdummy intercepted " + scriptMergerToolExe + "; DMM installs it as a managed extension tool.",
+		}},
+		Metadata:     []installplan.ModMetadata{scriptMergerToolMetadata(scriptMergerVersionFromArchive(input.ArchiveName), execRel, execStagingRel)},
+		Instructions: instructions,
+	}, nil
+}
+
+func findScriptMergerExecutable(root string) (string, bool) {
+	files, err := simplearchive.ListFiles(root)
+	if err != nil {
+		return "", false
+	}
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file), scriptMergerToolExe) {
+			return file, true
+		}
+	}
+	return "", false
+}
+
+func filesUnderRoot(root, contentRoot string) ([]string, error) {
+	files, err := simplearchive.ListFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	contentRoot = filepath.ToSlash(strings.Trim(contentRoot, "/"))
+	out := make([]string, 0, len(files))
+	for _, file := range files {
+		if simplearchive.PathWithinRoot(file, contentRoot) {
+			out = append(out, file)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func scriptMergerVersionFromArchive(archiveName string) string {
+	base := strings.TrimSpace(filepath.Base(archiveName))
+	lower := strings.ToLower(base)
+	for _, suffix := range []string{".tar.gz", ".zip", ".7z", ".rar", ".tgz"} {
+		if strings.HasSuffix(lower, suffix) {
+			base = base[:len(base)-len(suffix)]
+			break
+		}
+	}
+	for _, prefix := range []string{"WitcherScriptMerger-", "witcher-script-merger-", "script-merger-"} {
+		if strings.HasPrefix(strings.ToLower(base), strings.ToLower(prefix)) {
+			return strings.TrimSpace(base[len(prefix):])
+		}
+	}
+	return ""
+}
 
 func matchMenuModRoot(root string) bool {
 	for _, file := range mustListDataFiles(root) {

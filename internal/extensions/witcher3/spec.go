@@ -11,7 +11,13 @@ const (
 	VortexGameID = "witcher3"
 	Name         = "The Witcher 3"
 
-	scriptMergerToolID = "W3ScriptMerger"
+	scriptMergerToolID      = "W3ScriptMerger"
+	scriptMergerToolName    = "W3 Script Merger"
+	scriptMergerToolExe     = "WitcherScriptMerger.exe"
+	scriptMergerConfigFile  = "WitcherScriptMerger.exe.config"
+	scriptMergerToolModType = "witcher3-script-merger-tool"
+	scriptMergerGitHubURL   = "https://github.com/IDCs/WitcherScriptMerger/releases/latest"
+	scriptMergerArchiveName = "WitcherScriptMerger-0.6.5.7z"
 )
 
 func Extension() sdk.Extension {
@@ -51,9 +57,37 @@ func Register(r sdk.Registrar) {
 	}
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 scriptMergerToolID,
-		Name:               "W3 Script Merger",
-		ExecutableRelative: "WitcherScriptMerger.exe",
-		RequiredFiles:      []string{"WitcherScriptMerger.exe"},
+		Name:               scriptMergerToolName,
+		ExecutableRelative: "WitcherScriptMerger/WitcherScriptMerger.exe",
+		RequiredFiles:      []string{"WitcherScriptMerger/WitcherScriptMerger.exe"},
+		Acquisition: &sdk.ToolAcquisitionSpec{
+			ID:             "witcher3-script-merger-github",
+			Name:           scriptMergerToolName,
+			Catalog:        "github",
+			Mode:           "direct",
+			URL:            scriptMergerGitHubURL,
+			ArchiveName:    scriptMergerArchiveName,
+			Instructions:   "Vortex queries IDCs/WitcherScriptMerger releases, downloads the latest archive at or above 0.6.5, extracts it under WitcherScriptMerger, and rewrites WitcherScriptMerger.exe.config with the game, vanilla scripts, and Mods paths.",
+			Required:       true,
+			AutoAcquire:    true,
+			SourceModID:    "IDCs/WitcherScriptMerger",
+			SourceGame:     "github",
+			SourceProvider: "vortex-game-witcher3",
+			Message:        "Witcher 3 script mods may need Script Merger after deployment. DMM acquires the source-verified GitHub release through the shared managed-tool pipeline.",
+		},
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:          "witcher3-install-script-merger",
+		Name:        "Install Script Merger",
+		Scope:       VortexGameID,
+		Kind:        sdk.ExtensionActionKindAcquireTool,
+		AcquireTool: &sdk.AcquireToolActionSpec{ToolID: scriptMergerToolID},
+		Message:     "Install or reinstall Witcher 3 Script Merger through DMM's managed tool acquisition pipeline.",
+	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "witcher3-ensure-mods-and-dlc",
+		Name:    "Ensure Witcher 3 mod folders exist",
+		Actions: sdk.EnsureGameDirectories("Mods", "DLC"),
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "witcher3-xml-menu-merge", Name: "Witcher 3 XML/menu merge"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
@@ -79,6 +113,11 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidInstallMod,
+		Name:    "Configure Witcher 3 Script Merger",
+		Handler: didInstallScriptMerger,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "did-deploy",
 		Name:    "Remind about Witcher 3 Script Merger after mod changes",
 		Handler: didDeployScriptMergerReminder,
@@ -94,21 +133,13 @@ func modTypes() []installplan.ModTypeSpec {
 		{ID: "witcher3tl", TargetRoot: ""},
 		{ID: "witcher3dlc", TargetRoot: ""},
 		{ID: "witcher3-mod-root", TargetRoot: "Mods"},
+		{ID: scriptMergerToolModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly},
 	}
 }
 
 func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
-		{
-			ID:                "vortex:witcher3:scriptmergerdummy",
-			VortexInstallerID: "scriptmergerdummy",
-			Priority:          15,
-			Match: installplan.MatchSpec{
-				FileBasenames: []string{"WitcherScriptMerger.exe"},
-			},
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "The Witcher 3 Script Merger is a tool, not a mod. DMM must install/configure it through the Witcher 3 extension tool flow before script-merge support is complete.",
-		},
+		scriptMergerToolInstaller(),
 		{
 			ID:                "vortex:witcher3:witcher3tl",
 			VortexInstallerID: "witcher3tl",
@@ -188,6 +219,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Witcher 3 lifecycle and load-order hooks",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/eventHandlers.ts",
+		},
+		{
+			Name: "Vortex Witcher 3 Script Merger setup",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/scriptmerger.ts",
 		},
 	}
 }

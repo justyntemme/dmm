@@ -3,7 +3,6 @@ package witcher3_test
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,17 +118,95 @@ func TestExtensionPlansMenuModArchive(t *testing.T) {
 	assertTarget(t, plan.Instructions, "Mods/FriendlyHUD/content/scripts/friendly.ws")
 }
 
-func TestExtensionBlocksScriptMergerModArchive(t *testing.T) {
+func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
+	compiled := gameext.MustCompileExtension(witcher3.Extension())
+	if modType := modTypeByID(compiled.InstallPlan.ModTypes, "witcher3-script-merger-tool"); modType == nil || modType.DeploymentMode != installplan.ModTypeDeploymentToolOnly {
+		t.Fatalf("script merger mod type = %+v", modType)
+	}
+	tool := supportedToolByID(compiled.SupportedTools, "W3ScriptMerger")
+	if tool == nil || tool.Acquisition == nil || tool.Acquisition.Catalog != "github" || !tool.Acquisition.AutoAcquire {
+		t.Fatalf("script merger tool = %+v", tool)
+	}
+	action := extensionActionByID(compiled.ExtensionActions, "witcher3-install-script-merger")
+	if action == nil || action.Kind != sdk.ExtensionActionKindAcquireTool || action.AcquireTool == nil || action.AcquireTool.ToolID != "W3ScriptMerger" {
+		t.Fatalf("script merger action = %+v", action)
+	}
+	if len(compiled.GameSetups) != 1 || !setupEnsuresDirectory(compiled.GameSetups[0], "Mods") || !setupEnsuresDirectory(compiled.GameSetups[0], "DLC") {
+		t.Fatalf("game setups = %+v", compiled.GameSetups)
+	}
+	registry := gameext.NewRegistry([]gameext.Extension{compiled})
+	if !registry.HasEventHandlerForSteamApp(witcher3.SteamAppID, sdk.EventDidInstallMod) {
+		t.Fatal("missing did-install Script Merger configuration hook")
+	}
+}
+
+func TestExtensionPlansScriptMergerToolArchive(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "WitcherScriptMerger.exe"), "tool")
+	writeFile(t, filepath.Join(root, "WitcherScriptMerger.exe.config"), "<configuration/>")
+	writeFile(t, filepath.Join(root, "Tools", "KDiff3", "kdiff3.exe"), "dependency")
 
-	_, err := build(root)
-	if err == nil {
-		t.Fatal("expected unsupported script merger archive")
+	plan, err := buildWithArchive(root, "WitcherScriptMerger-0.6.5.7z")
+	if err != nil {
+		t.Fatal(err)
 	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "tool, not a mod") {
-		t.Fatalf("error = %v", err)
+	if plan.ModType != "witcher3-script-merger-tool" || len(plan.Metadata) != 1 {
+		t.Fatalf("plan = %+v", plan)
+	}
+	metadata := plan.Metadata[0]
+	if metadata.Kind != "tool" || metadata.UniqueID != "W3ScriptMerger" || metadata.StagingRelative != "WitcherScriptMerger.exe" || metadata.Version != "0.6.5" {
+		t.Fatalf("metadata = %+v", metadata)
+	}
+	assertStaging(t, plan.Instructions, "WitcherScriptMerger.exe")
+	assertStaging(t, plan.Instructions, "WitcherScriptMerger.exe.config")
+	assertStaging(t, plan.Instructions, "Tools/KDiff3/kdiff3.exe")
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRelative != "" || instruction.TargetRoot != "" {
+			t.Fatalf("tool-only instruction has target mapping: %+v", instruction)
+		}
+	}
+}
+
+func TestExtensionDidInstallConfiguresScriptMerger(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging", "script-merger")
+	configPath := filepath.Join(staging, "WitcherScriptMerger.exe.config")
+	writeFile(t, configPath, `<configuration><startup/><appSettings><add key="GameDirectory" value="old-game"/><add key="VanillaScriptsDirectory" value="old-scripts"/><add key="ModsDirectory" value="old-mods"/></appSettings></configuration>`)
+	gamePath := filepath.Join(root, "steamapps", "common", "The Witcher 3")
+
+	result, err := registry.RunEventHandlers(context.Background(), witcher3.SteamAppID, sdk.EventDidInstallMod, sdk.EventHandlerInput{
+		GamePath: gamePath,
+		ModIDs:   []int64{99},
+		Mods: []sdk.DeploymentMod{{
+			ID:          99,
+			Name:        "W3 Script Merger",
+			ModType:     "witcher3-script-merger-tool",
+			StagingPath: staging,
+			Metadata: []installplan.ModMetadata{{
+				Kind:            "tool",
+				Name:            "W3 Script Merger",
+				UniqueID:        "W3ScriptMerger",
+				StagingRelative: "WitcherScriptMerger.exe",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) == 0 || !strings.Contains(result.Messages[0], "Configured Witcher 3 Script Merger") {
+		t.Fatalf("messages = %+v", result.Messages)
+	}
+	body := readFile(t, configPath)
+	for _, want := range []string{
+		`key="GameDirectory" value="` + gamePath + `"`,
+		`key="VanillaScriptsDirectory" value="` + filepath.Join(gamePath, "content", "content0", "scripts") + `"`,
+		`key="ModsDirectory" value="` + filepath.Join(gamePath, "mods") + `"`,
+		`<startup></startup>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("script merger config missing %s:\n%s", want, body)
+		}
 	}
 }
 
@@ -446,6 +523,11 @@ func build(root string) (installplan.Plan, error) {
 	return gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlan("witcher3", root)
 }
 
+func buildWithArchive(root, archiveName string) (installplan.Plan, error) {
+	extension := gameext.MustCompileExtension(witcher3.Extension())
+	return gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathArchiveAndSelections("witcher3", root, "", archiveName, nil)
+}
+
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
 	t.Helper()
 	for _, instruction := range instructions {
@@ -454,6 +536,16 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, instructions)
+}
+
+func assertStaging(t *testing.T, instructions []installplan.Instruction, target string) {
+	t.Helper()
+	for _, instruction := range instructions {
+		if instruction.StagingRelative == target {
+			return
+		}
+	}
+	t.Fatalf("missing staging %q in %+v", target, instructions)
 }
 
 func mappingByTarget(mappings []deploy.FileMapping, target string) *deploy.FileMapping {
@@ -468,6 +560,42 @@ func mappingByTarget(mappings []deploy.FileMapping, target string) *deploy.FileM
 func noticeContains(notices []sdk.EventNotice, needle string) bool {
 	for _, notice := range notices {
 		if strings.Contains(notice.Message, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func modTypeByID(types []installplan.ModTypeSpec, id string) *installplan.ModTypeSpec {
+	for idx := range types {
+		if types[idx].ID == id {
+			return &types[idx]
+		}
+	}
+	return nil
+}
+
+func supportedToolByID(tools []sdk.SupportedToolSpec, id string) *sdk.SupportedToolSpec {
+	for idx := range tools {
+		if tools[idx].ID == id {
+			return &tools[idx]
+		}
+	}
+	return nil
+}
+
+func extensionActionByID(actions []sdk.ExtensionActionSpec, id string) *sdk.ExtensionActionSpec {
+	for idx := range actions {
+		if actions[idx].ID == id {
+			return &actions[idx]
+		}
+	}
+	return nil
+}
+
+func setupEnsuresDirectory(setup sdk.GameSetupSpec, rel string) bool {
+	for _, action := range setup.Actions {
+		if action.Kind == sdk.GameSetupActionEnsureDirectory && action.Base == sdk.GameSetupBaseGame && action.RelativePath == rel {
 			return true
 		}
 	}
