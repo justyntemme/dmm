@@ -646,9 +646,11 @@ type ExtensionTestSpec struct {
 	Status  string
 	Message string
 	Check   ExtensionTestFunc
+	Repair  ExtensionTestRepairFunc
 }
 
 type ExtensionTestFunc func(context.Context, ExtensionTestInput) (ExtensionTestResult, error)
+type ExtensionTestRepairFunc func(context.Context, ExtensionTestInput) (ExtensionTestRepairResult, error)
 
 type ExtensionTestInput struct {
 	AppID       string
@@ -661,14 +663,23 @@ type ExtensionTestInput struct {
 }
 
 type ExtensionTestResult struct {
+	TestID          string
+	TestName        string
+	Trigger         string
+	Status          string
+	Severity        string
+	Message         string
+	Details         string
+	Actions         []string
+	RepairAvailable bool
+}
+
+type ExtensionTestRepairResult struct {
 	TestID   string
 	TestName string
-	Trigger  string
-	Status   string
-	Severity string
+	Changed  bool
 	Message  string
 	Details  string
-	Actions  []string
 }
 
 type ExtensionToDoSpec struct {

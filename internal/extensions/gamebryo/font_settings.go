@@ -52,6 +52,9 @@ func OblivionFontSettingsTest(opts OblivionFontSettingsOptions) sdk.ExtensionTes
 		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
 			return checkOblivionFontSettings(ctx, opts, input, id, name)
 		},
+		Repair: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestRepairResult, error) {
+			return repairOblivionFontSettings(ctx, opts, input, id, name)
+		},
 	}
 }
 
@@ -83,32 +86,9 @@ func checkOblivionFontSettings(ctx context.Context, opts OblivionFontSettingsOpt
 	if err != nil {
 		return failedExtensionTest(id, name, "Failed to resolve Oblivion.ini.", err.Error()), nil
 	}
-	fonts, err := readOblivionFonts(iniPath)
+	missing, err := missingOblivionFonts(ctx, opts, input, iniPath)
 	if err != nil {
-		return failedExtensionTest(id, name, "Failed to read Oblivion.ini.", err.Error()), nil
-	}
-	defaults := normalizedFontSet(opts.DefaultFonts)
-	missing := make([]string, 0)
-	gamePath := strings.TrimSpace(input.GamePath)
-	if gamePath == "" {
-		return failedExtensionTest(id, name, "Failed to inspect Oblivion font files.", "game path is unavailable"), nil
-	}
-	for _, font := range fonts {
-		if defaults[strings.ToLower(font)] {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return sdk.ExtensionTestResult{}, ctx.Err()
-		default:
-		}
-		if _, err := os.Stat(filepath.Join(gamePath, filepath.FromSlash(slashPath(font)))); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				missing = append(missing, font)
-				continue
-			}
-			return failedExtensionTest(id, name, "Failed to inspect Oblivion font files.", err.Error()), nil
-		}
+		return failedExtensionTest(id, name, "Failed to inspect Oblivion font files.", err.Error()), nil
 	}
 	if len(missing) == 0 {
 		return sdk.ExtensionTestResult{
@@ -128,8 +108,38 @@ func checkOblivionFontSettings(ctx context.Context, opts OblivionFontSettingsOpt
 		Message:  "Fonts referenced in Oblivion.ini are missing.",
 		Details:  strings.Join(missing, "\n"),
 		Actions: []string{
-			"Reset missing Oblivion.ini font entries to the default fonts or install the mod that supplies the referenced font files.",
+			"Run the automatic repair to reset missing Oblivion.ini font entries to Vortex's default fonts, or install the mod that supplies the referenced font files.",
 		},
+	}, nil
+}
+
+func repairOblivionFontSettings(ctx context.Context, opts OblivionFontSettingsOptions, input sdk.ExtensionTestInput, id, name string) (sdk.ExtensionTestRepairResult, error) {
+	iniPath, err := gamebryoProtonDocumentsFile(input, opts.MyGamesPath, opts.ININame)
+	if err != nil {
+		return sdk.ExtensionTestRepairResult{}, err
+	}
+	missing, err := missingOblivionFonts(ctx, opts, input, iniPath)
+	if err != nil {
+		return sdk.ExtensionTestRepairResult{}, err
+	}
+	if len(missing) == 0 {
+		return sdk.ExtensionTestRepairResult{
+			TestID:   id,
+			TestName: name,
+			Changed:  false,
+			Message:  "Oblivion font settings are already valid.",
+		}, nil
+	}
+	changed, err := repairOblivionINIFile(iniPath, missing, opts.DefaultFonts)
+	if err != nil {
+		return sdk.ExtensionTestRepairResult{}, err
+	}
+	return sdk.ExtensionTestRepairResult{
+		TestID:   id,
+		TestName: name,
+		Changed:  changed > 0,
+		Message:  fmt.Sprintf("Reset %d missing Oblivion.ini font entr%s.", changed, pluralY(changed)),
+		Details:  strings.Join(missing, "\n"),
 	}, nil
 }
 
@@ -253,6 +263,99 @@ func readOblivionFonts(path string) ([]string, error) {
 	return fonts, nil
 }
 
+func missingOblivionFonts(ctx context.Context, opts OblivionFontSettingsOptions, input sdk.ExtensionTestInput, iniPath string) ([]string, error) {
+	fonts, err := readOblivionFonts(iniPath)
+	if err != nil {
+		return nil, fmt.Errorf("read Oblivion.ini: %w", err)
+	}
+	defaults := normalizedFontSet(opts.DefaultFonts)
+	missing := make([]string, 0)
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return nil, errors.New("game path is unavailable")
+	}
+	for _, font := range fonts {
+		if defaults[strings.ToLower(font)] {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		if _, err := os.Stat(filepath.Join(gamePath, filepath.FromSlash(slashPath(font)))); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				missing = append(missing, font)
+				continue
+			}
+			return nil, err
+		}
+	}
+	sort.Strings(missing)
+	return missing, nil
+}
+
+func repairOblivionINIFile(path string, missing []string, defaultFonts map[string]string) (int, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	text := string(body)
+	hadFinalNewline := strings.HasSuffix(text, "\n")
+	lines := strings.Split(text, "\n")
+	if hadFinalNewline {
+		lines = lines[:len(lines)-1]
+	}
+	missingSet := map[string]struct{}{}
+	for _, font := range missing {
+		missingSet[strings.ToLower(strings.TrimSpace(font))] = struct{}{}
+	}
+	var out []string
+	inFonts := false
+	changed := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+			section := strings.TrimSpace(trimmed[1:strings.Index(trimmed, "]")])
+			inFonts = strings.EqualFold(section, "Fonts")
+			out = append(out, line)
+			continue
+		}
+		if !inFonts || trimmed == "" || strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#") {
+			out = append(out, line)
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			out = append(out, line)
+			continue
+		}
+		cleanKey := strings.TrimSpace(key)
+		cleanValue := strings.Trim(strings.TrimSpace(value), `"'`)
+		if _, missingValue := missingSet[strings.ToLower(cleanValue)]; !missingValue {
+			out = append(out, line)
+			continue
+		}
+		if replacement := strings.TrimSpace(defaultFonts[strings.ToLower(cleanKey)]); replacement != "" {
+			out = append(out, cleanKey+"="+replacement)
+			changed++
+			continue
+		}
+		changed++
+	}
+	if changed == 0 {
+		return 0, nil
+	}
+	next := strings.Join(out, "\n")
+	if hadFinalNewline {
+		next += "\n"
+	}
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+		return 0, err
+	}
+	return changed, nil
+}
+
 func readSkyrimFontConfig(path string) ([]string, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -364,4 +467,11 @@ func slashPath(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.ReplaceAll(value, "\\", "/")
 	return strings.Trim(value, "/")
+}
+
+func pluralY(count int) string {
+	if count == 1 {
+		return "y"
+	}
+	return "ies"
 }

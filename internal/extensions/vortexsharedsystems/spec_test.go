@@ -16,7 +16,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 		t.Fatalf("summary = %+v", summary)
 	}
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "browse-for-download", "nexus-download", "discover-tools", "registerGameInfoProvider")
-	assertBlocked(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
 	assertBlocked(t, "extension action", summary.Capabilities.ExtensionActions, "fnis-generate", "dependency-manage-rules")
 	assertBlocked(t, "extension test", summary.Capabilities.ExtensionTests, "fnis-integration", "game-version-gamemode")
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")

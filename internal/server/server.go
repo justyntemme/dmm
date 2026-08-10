@@ -111,6 +111,7 @@ const (
 	jobTypeExtensionNotice     = "extension-notice"
 	jobTypeExtensionToolAction = "extension-tool-action"
 	jobTypeOpenDirectoryAction = "open-directory-action"
+	jobTypeExtensionTestRepair = "extension-test-repair"
 	jobTypeGameSetup           = "game-setup"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
@@ -440,6 +441,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/games/{appID}/workshop/order", s.handleSetSteamWorkshopOrder)
 	mux.HandleFunc("POST /api/games/{appID}/workshop/items/{itemID}/actions/{kind}", s.handleQueueSteamWorkshopAction)
 	mux.HandleFunc("GET /api/games/{appID}/diagnostics", s.handleGameDiagnostics)
+	mux.HandleFunc("POST /api/games/{appID}/extension-tests/{testID}/repair", s.handleRepairExtensionTest)
 	mux.HandleFunc("GET /api/games/{appID}/tools", s.handleGameTools)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
@@ -707,14 +709,15 @@ type gameSetupActionStatusResponse struct {
 }
 
 type gameExtensionTestResponse struct {
-	TestID   string   `json:"test_id"`
-	TestName string   `json:"test_name"`
-	Trigger  string   `json:"trigger,omitempty"`
-	Status   string   `json:"status"`
-	Severity string   `json:"severity"`
-	Message  string   `json:"message"`
-	Details  string   `json:"details,omitempty"`
-	Actions  []string `json:"actions,omitempty"`
+	TestID          string   `json:"test_id"`
+	TestName        string   `json:"test_name"`
+	Trigger         string   `json:"trigger,omitempty"`
+	Status          string   `json:"status"`
+	Severity        string   `json:"severity"`
+	Message         string   `json:"message"`
+	Details         string   `json:"details,omitempty"`
+	Actions         []string `json:"actions,omitempty"`
+	RepairAvailable bool     `json:"repair_available,omitempty"`
 }
 
 type gameSetupApplyResponse struct {
@@ -722,6 +725,21 @@ type gameSetupApplyResponse struct {
 	Job    jobResponse               `json:"job"`
 	Result gameSetupApplyResult      `json:"result"`
 	Setups []gameSetupStatusResponse `json:"setups"`
+}
+
+type extensionTestRepairResponse struct {
+	AppID       string                            `json:"app_id"`
+	Job         jobResponse                       `json:"job"`
+	Result      extensionTestRepairResultResponse `json:"result"`
+	Diagnostics gameDiagnosticsResponse           `json:"diagnostics"`
+}
+
+type extensionTestRepairResultResponse struct {
+	TestID   string `json:"test_id"`
+	TestName string `json:"test_name"`
+	Changed  bool   `json:"changed"`
+	Message  string `json:"message"`
+	Details  string `json:"details,omitempty"`
 }
 
 type gameSetupApplyResult struct {
@@ -1095,6 +1113,80 @@ func (s *Server) handleGameDiagnostics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleRepairExtensionTest(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	testID := strings.TrimSpace(r.PathValue("testID"))
+	if appID == "" || testID == "" {
+		http.Error(w, "appID and testID are required", http.StatusBadRequest)
+		return
+	}
+	game, err := s.db.GameBySteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profileID, err := s.activeProfileID(r.Context(), appID, mods)
+	if err != nil {
+		s.logger.Debug("extension test repair running without active profile context", "app_id", appID, "test_id", testID, "error", err)
+	}
+	payload := gameJobPayload(appID)
+	if payload == nil {
+		payload = jobs.JobPayload{}
+	}
+	payload["test_id"] = testID
+	job := s.jobs.CreateWithPayload(jobTypeExtensionTestRepair, "Repair diagnostic: "+testID, payload)
+	job, _ = s.jobs.Run(job.ID, "Running extension diagnostic repair")
+	result, found, err := s.games.RepairExtensionTest(r.Context(), appID, testID, sdk.ExtensionTestInput{
+		AppID:       appID,
+		GamePath:    strings.TrimSpace(game.GamePath),
+		LibraryPath: strings.TrimSpace(game.LibraryPath),
+		ProfileID:   profileID,
+		Mods:        deploymentModsForHooks(mods),
+	})
+	if !found {
+		job, _ = s.jobs.Fail(job.ID, "Extension diagnostic repair is not registered")
+		s.logger.Warn("extension test repair not registered", "job_id", job.ID, "app_id", appID, "test_id", testID)
+		writeJSON(w, http.StatusNotFound, map[string]any{"job": jobAPIResponse(job), "error": "extension diagnostic repair is not registered"})
+		return
+	}
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, err.Error())
+		s.logger.Warn("extension test repair failed", "job_id", job.ID, "app_id", appID, "test_id", testID, "error", err)
+		writeJSON(w, http.StatusAccepted, extensionTestRepairResponse{
+			AppID:  appID,
+			Job:    jobAPIResponse(job),
+			Result: extensionTestRepairResultAPIResponse(result),
+		})
+		return
+	}
+	message := strings.TrimSpace(result.Message)
+	if message == "" {
+		message = "Extension diagnostic repair completed"
+	}
+	job, _ = s.jobs.Complete(job.ID, message)
+	s.logger.Info("extension test repair completed", "job_id", job.ID, "app_id", appID, "test_id", result.TestID, "changed", result.Changed)
+	s.publishGameEvent(events.TypeGameChanged, appID, map[string]any{
+		"action":  "extension_test_repair",
+		"test_id": result.TestID,
+		"changed": result.Changed,
+	})
+	diagnostics, diagErr := s.gameDiagnostics(r.Context(), appID)
+	if diagErr != nil {
+		s.logger.Warn("extension test repair diagnostics refresh failed", "job_id", job.ID, "app_id", appID, "test_id", result.TestID, "error", diagErr)
+	}
+	writeJSON(w, http.StatusAccepted, extensionTestRepairResponse{
+		AppID:       appID,
+		Job:         jobAPIResponse(job),
+		Result:      extensionTestRepairResultAPIResponse(result),
+		Diagnostics: diagnostics,
+	})
+}
+
 func (s *Server) handleRunGameSetup(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
@@ -1324,14 +1416,15 @@ func (s *Server) extensionTestsWithContext(ctx context.Context, game storage.Gam
 	out := make([]gameExtensionTestResponse, 0, len(results))
 	for _, result := range results {
 		out = append(out, gameExtensionTestResponse{
-			TestID:   strings.TrimSpace(result.TestID),
-			TestName: strings.TrimSpace(result.TestName),
-			Trigger:  strings.TrimSpace(result.Trigger),
-			Status:   strings.TrimSpace(result.Status),
-			Severity: strings.TrimSpace(result.Severity),
-			Message:  strings.TrimSpace(result.Message),
-			Details:  strings.TrimSpace(result.Details),
-			Actions:  append([]string(nil), result.Actions...),
+			TestID:          strings.TrimSpace(result.TestID),
+			TestName:        strings.TrimSpace(result.TestName),
+			Trigger:         strings.TrimSpace(result.Trigger),
+			Status:          strings.TrimSpace(result.Status),
+			Severity:        strings.TrimSpace(result.Severity),
+			Message:         strings.TrimSpace(result.Message),
+			Details:         strings.TrimSpace(result.Details),
+			Actions:         append([]string(nil), result.Actions...),
+			RepairAvailable: result.RepairAvailable,
 		})
 	}
 	return out
@@ -10370,6 +10463,16 @@ func jobAPIResponses(list []jobs.Job) []jobResponse {
 		out = append(out, jobAPIResponse(job))
 	}
 	return out
+}
+
+func extensionTestRepairResultAPIResponse(result sdk.ExtensionTestRepairResult) extensionTestRepairResultResponse {
+	return extensionTestRepairResultResponse{
+		TestID:   strings.TrimSpace(result.TestID),
+		TestName: strings.TrimSpace(result.TestName),
+		Changed:  result.Changed,
+		Message:  strings.TrimSpace(result.Message),
+		Details:  strings.TrimSpace(result.Details),
+	}
 }
 
 func (s *Server) failJobWithError(job jobs.Job, err error) jobs.Job {

@@ -3,6 +3,7 @@ package gameext
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1047,6 +1048,42 @@ func (r Registry) RunExtensionTests(ctx context.Context, appID, trigger string, 
 	return results, ran
 }
 
+func (r Registry) RepairExtensionTest(ctx context.Context, appID, testID string, input sdk.ExtensionTestInput) (sdk.ExtensionTestRepairResult, bool, error) {
+	extensions := r.ExtensionsForSteamApp(appID)
+	if len(extensions) == 0 {
+		return sdk.ExtensionTestRepairResult{}, false, nil
+	}
+	testID = canonical(testID)
+	for _, extension := range extensions {
+		for _, test := range extension.ExtensionTests {
+			if canonical(test.ID) != testID {
+				continue
+			}
+			status := strings.TrimSpace(test.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if status != sdk.CapabilityStatusReady {
+				return sdk.ExtensionTestRepairResult{}, true, fmt.Errorf("%s is not ready: %s", firstNonEmpty(test.Name, test.ID), strings.TrimSpace(test.Message))
+			}
+			if test.Repair == nil {
+				return sdk.ExtensionTestRepairResult{}, true, fmt.Errorf("%s does not provide an automatic repair", firstNonEmpty(test.Name, test.ID))
+			}
+			nextInput := input
+			nextInput.AppID = strings.TrimSpace(appID)
+			nextInput.GameID = firstNonEmpty(strings.TrimSpace(nextInput.GameID), strings.TrimSpace(extension.InstallPlan.VortexGameID))
+			nextInput.Trigger = firstNonEmpty(strings.TrimSpace(nextInput.Trigger), strings.TrimSpace(test.Trigger))
+			nextInput.Mods = append([]sdk.DeploymentMod(nil), input.Mods...)
+			result, err := test.Repair(ctx, nextInput)
+			if err != nil {
+				return sdk.ExtensionTestRepairResult{}, true, err
+			}
+			return normalizeExtensionTestRepairResult(test, result), true, nil
+		}
+	}
+	return sdk.ExtensionTestRepairResult{}, false, nil
+}
+
 func normalizeExtensionTestResult(test sdk.ExtensionTestSpec, result sdk.ExtensionTestResult) sdk.ExtensionTestResult {
 	result.TestID = firstNonEmpty(result.TestID, strings.TrimSpace(test.ID))
 	result.TestName = firstNonEmpty(result.TestName, strings.TrimSpace(test.Name), result.TestID)
@@ -1087,6 +1124,22 @@ func normalizeExtensionTestResult(test sdk.ExtensionTestSpec, result sdk.Extensi
 	}
 	result.Details = strings.TrimSpace(result.Details)
 	result.Actions = appendClean([]string{}, result.Actions...)
+	result.RepairAvailable = result.RepairAvailable || test.Repair != nil
+	return result
+}
+
+func normalizeExtensionTestRepairResult(test sdk.ExtensionTestSpec, result sdk.ExtensionTestRepairResult) sdk.ExtensionTestRepairResult {
+	result.TestID = firstNonEmpty(result.TestID, strings.TrimSpace(test.ID))
+	result.TestName = firstNonEmpty(result.TestName, strings.TrimSpace(test.Name), result.TestID)
+	if strings.TrimSpace(result.Message) == "" {
+		if result.Changed {
+			result.Message = "Extension repair completed."
+		} else {
+			result.Message = "No repair changes were needed."
+		}
+	}
+	result.Message = strings.TrimSpace(result.Message)
+	result.Details = strings.TrimSpace(result.Details)
 	return result
 }
 

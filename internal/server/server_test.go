@@ -9442,6 +9442,98 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 	}
 }
 
+func TestExtensionTestRepairEndpointRunsRegisteredRepair(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Repair Test Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999086"
+	markerPath := filepath.Join(gamePath, "repair.txt")
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "repairtestgame",
+		Name:    "Repair Test Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"repairtestgame"},
+				VortexGameID: "repairtestgame",
+			})
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+				ID:      "repair-test",
+				Name:    "Repair Test",
+				Trigger: "gamemode-activated",
+				Check: func(_ context.Context, _ sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+					if _, err := os.Stat(markerPath); err == nil {
+						return sdk.ExtensionTestResult{Status: sdk.HealthCheckStatusPassed, Severity: sdk.HealthCheckSeverityInfo, Message: "Repair marker exists."}, nil
+					}
+					return sdk.ExtensionTestResult{Status: sdk.HealthCheckStatusFailed, Severity: sdk.HealthCheckSeverityError, Message: "Repair marker missing."}, nil
+				},
+				Repair: func(_ context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestRepairResult, error) {
+					if input.AppID != appID || input.GamePath != gamePath {
+						return sdk.ExtensionTestRepairResult{}, fmt.Errorf("unexpected repair input: %+v", input)
+					}
+					if err := os.WriteFile(markerPath, []byte("fixed"), 0o600); err != nil {
+						return sdk.ExtensionTestRepairResult{}, err
+					}
+					return sdk.ExtensionTestRepairResult{Changed: true, Message: "Repair marker created."}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Repair Test Game",
+		InstallDir:  "Repair Test Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var before struct {
+		ExtensionTests []gameExtensionTestResponse `json:"extension_tests"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&before); err != nil {
+		t.Fatal(err)
+	}
+	if len(before.ExtensionTests) != 1 || !before.ExtensionTests[0].RepairAvailable {
+		t.Fatalf("extension tests before repair = %+v", before.ExtensionTests)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-tests/repair-test/repair", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("repair status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var repaired extensionTestRepairResponse
+	if err := json.NewDecoder(rec.Body).Decode(&repaired); err != nil {
+		t.Fatal(err)
+	}
+	if repaired.Job.Type != jobTypeExtensionTestRepair || repaired.Job.Status != jobs.StatusCompleted || !repaired.Result.Changed || repaired.Result.TestID != "repair-test" {
+		t.Fatalf("repair response = %+v", repaired)
+	}
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("repair marker missing: %v", err)
+	}
+	if len(repaired.Diagnostics.ExtensionTests) != 1 || repaired.Diagnostics.ExtensionTests[0].Status != sdk.HealthCheckStatusPassed {
+		t.Fatalf("diagnostics after repair = %+v", repaired.Diagnostics.ExtensionTests)
+	}
+}
+
 func TestProfileFeatureEndpointsUseExtensionDeclarations(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999025"
