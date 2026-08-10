@@ -98,6 +98,10 @@ if [[ ! -x "${PACKAGE_DIR}/decky-mod-manager/bin/dmm-nxm-handler" ]]; then
   echo "package is missing bin/dmm-nxm-handler" >&2
   exit 1
 fi
+if [[ "${REQUIRE_LOOT_SORTER:-0}" == "1" && ! -x "${PACKAGE_DIR}/decky-mod-manager/bin/dmm-loot-sorter" ]]; then
+  echo "package is missing required bin/dmm-loot-sorter" >&2
+  exit 1
+fi
 if [[ ! -f "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" ]]; then
   echo "package is missing bundled web UI" >&2
   exit 1
