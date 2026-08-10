@@ -23,6 +23,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-gamemode")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-mod-installed")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "local-game-settings-global-files")
+	assertStatusWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "test-setup-uninstall-entry", sdk.CapabilityStatusMetadata)
 	assertBlocked(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock", "dependency-rules")
 	assertBlocked(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_game_settings")
@@ -69,6 +70,11 @@ func assertReady(t *testing.T, kind string, features []gameext.FeatureSummary, i
 
 func assertReadyWithMessage(t *testing.T, kind string, features []gameext.FeatureSummary, id string) {
 	t.Helper()
+	assertStatusWithMessage(t, kind, features, id, sdk.CapabilityStatusReady)
+}
+
+func assertStatusWithMessage(t *testing.T, kind string, features []gameext.FeatureSummary, id, status string) {
+	t.Helper()
 	featuresByID := map[string]gameext.FeatureSummary{}
 	for _, feature := range features {
 		featuresByID[feature.ID] = feature
@@ -77,7 +83,7 @@ func assertReadyWithMessage(t *testing.T, kind string, features []gameext.Featur
 	if !ok {
 		t.Fatalf("%s %s missing from %+v", kind, id, features)
 	}
-	if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+	if feature.Status != status || feature.Message == "" {
 		t.Fatalf("%s %s = %+v", kind, id, feature)
 	}
 }

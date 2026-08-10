@@ -181,7 +181,13 @@ func registerVortexTests(r sdk.Registrar) {
 			}}}, nil
 		},
 	})
-	r.RegisterExtensionTest(blockedTest("test-setup-uninstall-entry", "Vortex setup uninstall-entry test", "startup"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "test-setup-uninstall-entry",
+		Name:    "Vortex setup uninstall-entry test",
+		Trigger: "startup",
+		Status:  sdk.CapabilityStatusMetadata,
+		Message: "Vortex runs this test only for Windows installer registry state. DMM is delivered as a Decky plugin and has no equivalent Windows uninstall registry entry to validate.",
+	})
 }
 
 func blockedAPI(id, name string) sdk.ExtensionAPISpec {
