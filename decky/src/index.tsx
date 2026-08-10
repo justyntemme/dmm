@@ -787,14 +787,15 @@ const deckyRuntimeStyles = `
 .dmm-settings-section {
   align-content: start;
   align-items: stretch;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  grid-auto-rows: max-content;
-  min-height: max-content !important;
+  min-height: auto !important;
   overflow: visible;
 }
 .dmm-settings-section > * {
   align-self: stretch;
+  flex: 0 0 auto;
   min-width: 0;
 }
 .dmm-settings-row {
@@ -3986,9 +3987,9 @@ const freshSectionStyle: CSSProperties = {
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignItems: "stretch",
-  display: "grid",
+  display: "flex",
+  flexDirection: "column",
   gap: "8px",
-  gridAutoRows: "max-content",
   minHeight: "144px",
   overflow: "visible"
 };
@@ -3996,10 +3997,10 @@ const freshSettingsPrimaryCardStyle: CSSProperties = {
 const freshSettingsCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignItems: "stretch",
-  display: "grid",
+  display: "flex",
+  flexDirection: "column",
   gap: "10px",
-  gridAutoRows: "max-content",
-  minHeight: "max-content",
+  minHeight: "auto",
   overflow: "visible"
 };
 
@@ -4149,7 +4150,7 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
   );
 }
 
-function freshToggleRowStyle(disabled = false): CSSProperties {
+function freshSettingsToggleCardStyle(disabled = false): CSSProperties {
   return {
     ...deckyFocusableCardBase,
     alignItems: "center",
@@ -4167,6 +4168,10 @@ function freshToggleRowStyle(disabled = false): CSSProperties {
     scrollMarginBlock: "18px",
     width: "100%"
   };
+}
+
+function freshToggleRowStyle(disabled = false): CSSProperties {
+  return freshSettingsToggleCardStyle(disabled);
 }
 
 function freshToggleSwitchStyle(checked: boolean, disabled = false): CSSProperties {
@@ -4209,6 +4214,15 @@ function FreshToggleRow(props: { label: string; checked: boolean; disabled?: boo
         <span style={freshToggleKnobStyle} />
       </span>
     </Focusable>
+  );
+}
+
+function FreshSettingsSection(props: { title: string; children: ReactNode; primary?: boolean }) {
+  return (
+    <div className="dmm-settings-section" style={props.primary ? freshSettingsPrimaryCardStyle : freshSettingsCardStyle}>
+      <div style={freshSettingsSectionTitleStyle}>{props.title}</div>
+      {props.children}
+    </div>
   );
 }
 
@@ -5733,20 +5747,20 @@ function FreshDeckyModManagerRoute() {
   function renderSettings() {
     return (
       <>
-        <Focusable
-          className="dmm-sidebar-row"
-          focusClassName="dmm-sidebar-row-focused"
-          onActivate={() => void toggleFreshServer()}
-          onClick={() => void toggleFreshServer()}
-          style={freshSettingsPrimaryCardStyle}
-        >
-          <div style={freshSettingsSectionTitleStyle}>Server</div>
-          <div>Status: {status?.running ? "Running" : "Stopped"}</div>
-          <div style={{ color: "#a1a1aa", overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
-          <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
-        </Focusable>
-        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
-          <div style={freshSettingsSectionTitleStyle}>Security</div>
+        <FreshSettingsSection title="Server" primary>
+          <Focusable
+            className="dmm-sidebar-row"
+            focusClassName="dmm-sidebar-row-focused"
+            onActivate={() => void toggleFreshServer()}
+            onClick={() => void toggleFreshServer()}
+            style={freshCardStyle(Boolean(status?.running))}
+          >
+            <div>Status: {status?.running ? "Running" : "Stopped"}</div>
+            <div style={{ color: "#a1a1aa", lineHeight: 1.3, overflowWrap: "anywhere" }}>Address: {pairingDisplayAddress(status)}</div>
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {status?.running ? "Stop Server" : "Start Server"}</div>
+          </Focusable>
+        </FreshSettingsSection>
+        <FreshSettingsSection title="Security">
           <FreshToggleRow label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
           <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
             Pair Phone
@@ -5759,20 +5773,17 @@ function FreshDeckyModManagerRoute() {
           }}>
             Reset Phone Pairing
           </FreshActionButton>
-        </div>
-        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
-          <div style={freshSettingsSectionTitleStyle}>Automation</div>
+        </FreshSettingsSection>
+        <FreshSettingsSection title="Automation">
           <FreshToggleRow label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />
           <FreshToggleRow label="Auto-enable installed mods" checked={status?.backend?.install.auto_enable_installed_mods ?? false} disabled={!status?.running} onChange={(value) => void setAutoEnableInstalledMods(value)} />
           <FreshToggleRow label="Auto-display installer choices" checked={status?.backend?.install.auto_show_fomod_installers ?? true} disabled={!status?.running} onChange={(value) => void setAutoShowFOMODInstallers(value)} />
-        </div>
-        <div className="dmm-settings-section" style={freshSettingsCardStyle}>
-          <div style={freshSettingsSectionTitleStyle}>Debug</div>
+        </FreshSettingsSection>
+        <FreshSettingsSection title="Debug">
           <FreshToggleRow label="Show Debug" checked={showDebug} onChange={setShowDebug} />
-        </div>
+        </FreshSettingsSection>
         {showDebug && (
-          <div className="dmm-settings-section" style={freshSettingsCardStyle}>
-            <div style={freshSettingsSectionTitleStyle}>Debug Tools</div>
+          <FreshSettingsSection title="Debug Tools">
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
             <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
@@ -5780,7 +5791,7 @@ function FreshDeckyModManagerRoute() {
             <pre style={{ background: "#020617", border: "1px solid #334155", borderRadius: "6px", color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, margin: 0, maxHeight: "340px", overflow: "auto", padding: "8px", whiteSpace: "pre-wrap" }}>
               {diagnosticsTerminalText(diagnosticLogs)}
             </pre>
-          </div>
+          </FreshSettingsSection>
         )}
       </>
     );
@@ -5797,6 +5808,8 @@ function FreshDeckyModManagerRoute() {
             key={item.id}
             className="dmm-decky-tab"
             aria-selected={tab === item.id}
+            tabIndex={-1}
+            onFocus={(event) => event.currentTarget.blur()}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setTab(item.id)}
             style={freshTabStyle(tab === item.id)}
