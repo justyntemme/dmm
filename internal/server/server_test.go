@@ -12478,6 +12478,108 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	}
 }
 
+func TestAcquireToolExtensionActionUsesCapturedInstallPipeline(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999034"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "toolaction",
+		Name:    "Tool Action",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"toolaction"},
+				VortexGameID: "toolaction",
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                 "divine",
+				Name:               "Divine",
+				ExecutableRelative: "tools/divine.exe",
+				Acquisition: &sdk.ToolAcquisitionSpec{
+					ID:          "divine-github",
+					Name:        "Divine package",
+					Catalog:     "github",
+					URL:         "https://github.com/example/divine/releases/latest",
+					ArchiveName: "ExportTool.zip",
+					Required:    true,
+				},
+			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:          "reinstall-divine",
+				Name:        "Re-install Divine",
+				Scope:       "toolaction",
+				Kind:        sdk.ExtensionActionKindAcquireTool,
+				AcquireTool: &sdk.AcquireToolActionSpec{ToolID: "divine"},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Tool Action Game",
+		InstallDir:  "Tool Action Game",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Tool Action Game"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("tool archive"))
+	}))
+	defer downloadServer.Close()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.catalogMu.Lock()
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
+		resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://github.com/example/divine/releases/download/v1.0.0/ExportTool.zip",
+			SteamAppID: appID,
+			GameDomain: "github",
+			ModID:      "example/divine",
+			FileID:     "djEuMA.RXhwb3J0VG9vbC56aXA",
+			FileName:   "ExportTool.zip",
+			Version:    "v1.0.0",
+			DownloadLinks: []catalog.DownloadLink{{
+				Name:      "GitHub release asset",
+				ShortName: "github",
+				URI:       downloadServer.URL + "/ExportTool.zip",
+			}},
+		},
+	}}
+	srv.catalogMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/reinstall-divine/run", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("run status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		ActionID   string                   `json:"action_id"`
+		ActionKind string                   `json:"action_kind"`
+		Tool       string                   `json:"tool"`
+		Job        jobResponse              `json:"job"`
+		Resolved   catalog.ResolvedDownload `json:"resolved"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ActionID != "reinstall-divine" || body.ActionKind != sdk.ExtensionActionKindAcquireTool || body.Tool != "divine" {
+		t.Fatalf("action response = %+v", body)
+	}
+	if body.Job.Type != "captured-install" || body.Resolved.Catalog != "github" {
+		t.Fatalf("captured install response = %+v", body)
+	}
+	waitForJobStatus(t, srv, body.Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(body.Job.ID)
+	if !ok || pending.Source != "extension-action:reinstall-divine:tool-acquisition:divine" || pending.Resolved.FileName != "ExportTool.zip" || pending.ArchivePath == "" {
+		t.Fatalf("captured install pending = %+v ok=%v", pending, ok)
+	}
+}
+
 func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999006"

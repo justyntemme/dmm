@@ -341,6 +341,7 @@ type ActionTargetSummary struct {
 	FallbackBase     string `json:"fallback_base,omitempty"`
 	FallbackRootID   string `json:"fallback_root_id,omitempty"`
 	FallbackRelative string `json:"fallback_relative,omitempty"`
+	ToolID           string `json:"tool_id,omitempty"`
 }
 
 type ToolAcquisitionSummary struct {
@@ -2093,18 +2094,31 @@ func launchToolDynamicArguments(args []sdk.LaunchToolDynamicArgumentSpec) []Laun
 }
 
 func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
-	if action.OpenDirectory == nil {
+	switch strings.TrimSpace(action.Kind) {
+	case sdk.ExtensionActionKindOpenDirectory:
+		if action.OpenDirectory == nil {
+			return nil
+		}
+		target := action.OpenDirectory
+		return &ActionTargetSummary{
+			Type:             strings.TrimSpace(action.Kind),
+			Base:             strings.TrimSpace(target.Base),
+			TargetRootID:     strings.TrimSpace(target.TargetRootID),
+			RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
+			FallbackBase:     strings.TrimSpace(target.FallbackBase),
+			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
+			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+		}
+	case sdk.ExtensionActionKindAcquireTool:
+		if action.AcquireTool == nil {
+			return nil
+		}
+		return &ActionTargetSummary{
+			Type:   strings.TrimSpace(action.Kind),
+			ToolID: strings.TrimSpace(action.AcquireTool.ToolID),
+		}
+	default:
 		return nil
-	}
-	target := action.OpenDirectory
-	return &ActionTargetSummary{
-		Type:             strings.TrimSpace(action.Kind),
-		Base:             strings.TrimSpace(target.Base),
-		TargetRootID:     strings.TrimSpace(target.TargetRootID),
-		RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
-		FallbackBase:     strings.TrimSpace(target.FallbackBase),
-		FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
-		FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
 	}
 }
 

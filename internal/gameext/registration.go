@@ -472,7 +472,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateInterpreters(extension.Interpreters)...)
 	errs = append(errs, validateGameStores(extension.GameStores)...)
 	errs = append(errs, validateGameSetups(extension.GameSetups)...)
-	errs = append(errs, validateExtensionActions(extension.ExtensionActions, extension.TargetRoots)...)
+	errs = append(errs, validateExtensionActions(extension.ExtensionActions, extension.TargetRoots, extension.SupportedTools)...)
 	errs = append(errs, validateStatusedScoped("extension setting", extension.ExtensionSettings, func(spec sdk.ExtensionSettingSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
@@ -2096,7 +2096,7 @@ func validateSetupRelativePath(value string) error {
 	return validateRelativePath(value)
 }
 
-func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk.TargetRootSpec) []error {
+func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk.TargetRootSpec, supportedTools []sdk.SupportedToolSpec) []error {
 	errs := validateStatusedScoped("extension action", specs, func(spec sdk.ExtensionActionSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})
@@ -2106,17 +2106,43 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			declaredRoots[strings.ToLower(id)] = struct{}{}
 		}
 	}
+	declaredTools := map[string]struct{}{}
+	for _, tool := range supportedTools {
+		if id := strings.TrimSpace(tool.ID); id != "" {
+			declaredTools[strings.ToLower(id)] = struct{}{}
+		}
+	}
 	for _, spec := range specs {
 		id := strings.TrimSpace(spec.ID)
 		if id == "" {
 			continue
 		}
-		if strings.TrimSpace(spec.Kind) != sdk.ExtensionActionKindOpenDirectory {
+		kind := strings.TrimSpace(spec.Kind)
+		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindAcquireTool {
 			continue
 		}
 		status := strings.TrimSpace(spec.Status)
 		if status == "" {
 			status = sdk.CapabilityStatusReady
+		}
+		if kind == sdk.ExtensionActionKindAcquireTool {
+			if spec.AcquireTool == nil {
+				if status == sdk.CapabilityStatusReady {
+					errs = append(errs, errors.New("extension action "+id+" acquire-tool target is required"))
+				}
+				continue
+			}
+			toolID := strings.TrimSpace(spec.AcquireTool.ToolID)
+			if toolID == "" {
+				if status == sdk.CapabilityStatusReady {
+					errs = append(errs, errors.New("extension action "+id+" acquire-tool target tool id is required"))
+				}
+				continue
+			}
+			if _, ok := declaredTools[strings.ToLower(toolID)]; !ok {
+				errs = append(errs, errors.New("extension action "+id+" references undeclared supported tool "+toolID))
+			}
+			continue
 		}
 		if spec.OpenDirectory == nil {
 			if status == sdk.CapabilityStatusReady {

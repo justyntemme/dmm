@@ -5658,11 +5658,14 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "appID and actionID are required", http.StatusBadRequest)
 		return
 	}
-	if existing, ok := s.findActiveOpenDirectoryAction(appID, actionID); ok {
-		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
-		return
+	var req extensionToolAcquireRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 	}
-	payload, err := s.extensionActionPayload(r.Context(), appID, actionID)
+	extension, action, err := s.readyExtensionAction(r.Context(), appID, actionID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, err)
@@ -5671,14 +5674,38 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	actionName := strings.TrimSpace(payload["action_name"])
-	if actionName == "" {
-		actionName = actionID
+	switch strings.TrimSpace(action.Kind) {
+	case sdk.ExtensionActionKindOpenDirectory:
+		if existing, ok := s.findActiveOpenDirectoryAction(appID, action.ID); ok {
+			writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
+			return
+		}
+		payload, err := s.extensionOpenDirectoryActionPayload(r.Context(), appID, extension, action)
+		if err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		actionName := strings.TrimSpace(payload["action_name"])
+		if actionName == "" {
+			actionName = action.ID
+		}
+		job := s.jobs.CreateWithPayload(jobTypeOpenDirectoryAction, "Open folder: "+actionName, payload)
+		job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to open "+actionName)
+		s.logger.Info("open-directory action queued", "job_id", job.ID, "app_id", appID, "action_id", payload["action_id"], "path", payload["directory_path"], "source_extension", payload["source_extension"])
+		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+		return
+	case sdk.ExtensionActionKindAcquireTool:
+		response, err := s.runAcquireToolExtensionAction(r.Context(), appID, extension, action, req.ProfileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, response)
+		return
+	default:
+		writeError(w, http.StatusConflict, errors.New("extension action kind is not executable"))
+		return
 	}
-	job := s.jobs.CreateWithPayload(jobTypeOpenDirectoryAction, "Open folder: "+actionName, payload)
-	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to open "+actionName)
-	s.logger.Info("open-directory action queued", "job_id", job.ID, "app_id", appID, "action_id", payload["action_id"], "path", payload["directory_path"], "source_extension", payload["source_extension"])
-	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 }
 
 func (s *Server) handleOpenDirectoryActions(w http.ResponseWriter, r *http.Request) {
@@ -5762,32 +5789,18 @@ func (s *Server) handleCompleteOpenDirectoryAction(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 }
 
-func (s *Server) extensionActionPayload(ctx context.Context, appID, actionID string) (jobs.JobPayload, error) {
+func (s *Server) readyExtensionAction(ctx context.Context, appID, actionID string) (gameext.Extension, sdk.ExtensionActionSpec, error) {
 	appID = strings.TrimSpace(appID)
 	actionID = strings.TrimSpace(actionID)
-	payload := jobs.JobPayload{
-		"app_id":                     appID,
-		"catalog":                    "extension",
-		"action_id":                  actionID,
-		"action_kind":                sdk.ExtensionActionKindOpenDirectory,
-		"directory_action_available": "false",
-	}
 	if appID == "" || actionID == "" {
-		return payload, errors.New("steam app id and action id are required")
+		return gameext.Extension{}, sdk.ExtensionActionSpec{}, errors.New("steam app id and action id are required")
 	}
-	game, err := s.db.GameBySteamApp(ctx, appID)
-	if err != nil {
-		return payload, err
+	if _, err := s.db.GameBySteamApp(ctx, appID); err != nil {
+		return gameext.Extension{}, sdk.ExtensionActionSpec{}, err
 	}
 	extension, action, ok := s.games.ExtensionActionForSteamApp(appID, actionID)
 	if !ok {
-		return payload, errors.New("extension action is not registered for this game")
-	}
-	payload["source_extension"] = strings.TrimSpace(extension.ID)
-	payload["action_id"] = strings.TrimSpace(action.ID)
-	payload["action_name"] = strings.TrimSpace(action.Name)
-	if strings.TrimSpace(action.Kind) != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil {
-		return payload, errors.New("extension action is not an executable open-directory action")
+		return gameext.Extension{}, sdk.ExtensionActionSpec{}, errors.New("extension action is not registered for this game")
 	}
 	status := strings.ToLower(strings.TrimSpace(action.Status))
 	if status == "" {
@@ -5798,7 +5811,30 @@ func (s *Server) extensionActionPayload(ctx context.Context, appID, actionID str
 		if message == "" {
 			message = "extension action is not ready"
 		}
-		return payload, fmt.Errorf("%s: %s", firstNonEmpty(action.Name, action.ID), message)
+		return extension, action, fmt.Errorf("%s: %s", firstNonEmpty(action.Name, action.ID), message)
+	}
+	return extension, action, nil
+}
+
+func (s *Server) extensionOpenDirectoryActionPayload(ctx context.Context, appID string, extension gameext.Extension, action sdk.ExtensionActionSpec) (jobs.JobPayload, error) {
+	appID = strings.TrimSpace(appID)
+	actionID := strings.TrimSpace(action.ID)
+	payload := jobs.JobPayload{
+		"app_id":                     appID,
+		"catalog":                    "extension",
+		"action_id":                  actionID,
+		"action_kind":                sdk.ExtensionActionKindOpenDirectory,
+		"directory_action_available": "false",
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return payload, err
+	}
+	payload["source_extension"] = strings.TrimSpace(extension.ID)
+	payload["action_id"] = strings.TrimSpace(action.ID)
+	payload["action_name"] = strings.TrimSpace(action.Name)
+	if strings.TrimSpace(action.Kind) != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil {
+		return payload, errors.New("extension action is not an executable open-directory action")
 	}
 	path, err := s.resolveOpenDirectoryActionPath(ctx, game, *action.OpenDirectory)
 	if err != nil {
@@ -5808,6 +5844,45 @@ func (s *Server) extensionActionPayload(ctx context.Context, appID, actionID str
 	payload["directory_path"] = filepath.ToSlash(path)
 	payload["directory_action_available"] = "true"
 	return payload, nil
+}
+
+func (s *Server) runAcquireToolExtensionAction(ctx context.Context, appID string, extension gameext.Extension, action sdk.ExtensionActionSpec, profileID int64) (map[string]any, error) {
+	if action.AcquireTool == nil || strings.TrimSpace(action.AcquireTool.ToolID) == "" {
+		return nil, errors.New("extension action does not declare a tool acquisition target")
+	}
+	if profileID > 0 {
+		if err := s.validateTargetProfile(ctx, appID, profileID); err != nil {
+			return nil, err
+		}
+	}
+	_, tool, acquisition, err := s.extensionToolAcquisition(ctx, appID, action.AcquireTool.ToolID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
+		URL:        acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID: appID,
+		Source:     "extension-action:" + strings.TrimSpace(action.ID) + ":tool-acquisition:" + strings.TrimSpace(tool.ID),
+		ProfileID:  profileID,
+	})
+	if err != nil {
+		s.logger.Warn("extension action tool acquisition failed", "app_id", appID, "action_id", action.ID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		return nil, err
+	}
+	s.logger.Info("extension action tool acquisition queued", "app_id", appID, "action_id", action.ID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "target_profile_id", profileID)
+	return map[string]any{
+		"action_id":        action.ID,
+		"action_kind":      sdk.ExtensionActionKindAcquireTool,
+		"tool":             tool.ID,
+		"extension":        extension.ID,
+		"acquisition":      discoveredToolAcquisition(&acquisition),
+		"job":              result.Job,
+		"resolved":         result.Resolved,
+		"duplicate":        result.Duplicate,
+		"browser_required": result.BrowserRequired,
+		"download_started": result.DownloadStarted,
+		"auto_install":     result.AutoInstall,
+	}, nil
 }
 
 func (s *Server) resolveOpenDirectoryActionPath(ctx context.Context, game storage.Game, target sdk.OpenDirectoryActionSpec) (string, error) {

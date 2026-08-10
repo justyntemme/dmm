@@ -609,6 +609,7 @@ type ExtensionActionSpec struct {
 	Scope         string
 	Kind          string
 	OpenDirectory *OpenDirectoryActionSpec
+	AcquireTool   *AcquireToolActionSpec
 	Status        string
 	Message       string
 }
@@ -624,12 +625,17 @@ type OpenDirectoryActionSpec struct {
 
 const (
 	ExtensionActionKindOpenDirectory = "open-directory"
+	ExtensionActionKindAcquireTool   = "acquire-tool"
 
 	OpenDirectoryBaseGame       = "game"
 	OpenDirectoryBaseDownloads  = "downloads"
 	OpenDirectoryBaseStaging    = "staging"
 	OpenDirectoryBaseTargetRoot = "target-root"
 )
+
+type AcquireToolActionSpec struct {
+	ToolID string
+}
 
 type ExtensionSettingSpec struct {
 	ID      string

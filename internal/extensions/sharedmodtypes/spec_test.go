@@ -27,15 +27,16 @@ func TestExtensionRegistersSharedModTypeMetadata(t *testing.T) {
 	if modTypes[DInputModType].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("dinput mod type = %+v", modTypes[DInputModType])
 	}
-	for _, id := range []string{ENBModType, GeDoSaToType} {
-		if modTypes[id].Status != sdk.CapabilityStatusBlocked || modTypes[id].Message == "" {
-			t.Fatalf("%s mod type = %+v", id, modTypes[id])
-		}
+	if modTypes[ENBModType].Status != sdk.CapabilityStatusBlocked || modTypes[ENBModType].Message == "" {
+		t.Fatalf("enb mod type = %+v", modTypes[ENBModType])
+	}
+	if modTypes[GeDoSaToType].Status != sdk.CapabilityStatusMetadata || modTypes[GeDoSaToType].Message == "" {
+		t.Fatalf("gedosato mod type = %+v", modTypes[GeDoSaToType])
 	}
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "dinput" {
 		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
 	}
-	if len(summary.Capabilities.UnsupportedInstallers) != 1 {
+	if len(summary.Capabilities.UnsupportedInstallers) != 1 || summary.Capabilities.UnsupportedInstallers[0].Status != sdk.CapabilityStatusBlocked {
 		t.Fatalf("unsupported installers = %+v", summary.Capabilities.UnsupportedInstallers)
 	}
 	if len(summary.Capabilities.ExtensionAPIs) != 0 {

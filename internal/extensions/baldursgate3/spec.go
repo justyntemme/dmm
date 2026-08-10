@@ -277,11 +277,12 @@ func checkDivineTool(ctx context.Context, gamePath string) []string {
 
 func registerActions(r sdk.Registrar) {
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
-		ID:      "bg3-reinstall-lslib",
-		Name:    "Re-install LSLib/Divine",
-		Scope:   VortexGameID,
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex downloads LSLib from GitHub and installs it as a hidden tool mod. DMM needs the generic external archive-engine installer/update path before this action is active.",
+		ID:          "bg3-reinstall-lslib",
+		Name:        "Re-install LSLib/Divine",
+		Scope:       VortexGameID,
+		Kind:        sdk.ExtensionActionKindAcquireTool,
+		AcquireTool: &sdk.AcquireToolActionSpec{ToolID: "bg3-lslib-divine"},
+		Message:     "Vortex downloads LSLib from GitHub and installs it as a hidden tool mod. DMM routes this through the generic extension tool acquisition pipeline.",
 	})
 	for _, action := range []string{"Export to Game", "Export to File", "Import from Game", "Import from File", "Import from BG3MM", "Open Load Order File"} {
 		r.RegisterExtensionAction(sdk.ExtensionActionSpec{

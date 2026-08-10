@@ -37,6 +37,10 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if divineRuntime == nil || divineRuntime.Acquisition == nil || divineRuntime.Acquisition.Catalog != "github" || len(divineRuntime.ProviderModTypes) != 1 || divineRuntime.ProviderModTypes[0] != lslibModType {
 		t.Fatalf("divine runtime = %+v", divineRuntime)
 	}
+	reinstallAction := extensionActionByID(compiled.ExtensionActions, "bg3-reinstall-lslib")
+	if reinstallAction == nil || reinstallAction.Kind != sdk.ExtensionActionKindAcquireTool || reinstallAction.AcquireTool == nil || reinstallAction.AcquireTool.ToolID != "bg3-lslib-divine" || reinstallAction.Status != "" {
+		t.Fatalf("reinstall action = %+v", reinstallAction)
+	}
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusBlocked {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}
@@ -176,6 +180,15 @@ func supportedToolByID(tools []sdk.SupportedToolSpec, id string) *sdk.SupportedT
 	for idx := range tools {
 		if tools[idx].ID == id {
 			return &tools[idx]
+		}
+	}
+	return nil
+}
+
+func extensionActionByID(actions []sdk.ExtensionActionSpec, id string) *sdk.ExtensionActionSpec {
+	for idx := range actions {
+		if actions[idx].ID == id {
+			return &actions[idx]
 		}
 	}
 	return nil

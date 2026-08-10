@@ -57,13 +57,15 @@ func Register(r sdk.Registrar) {
 	for _, modType := range []installplan.ModTypeSpec{
 		DInputModTypeSpec(),
 		{ID: ENBModType, TargetRoot: "", Message: "ENB support needs game-root deployment plus unsafe DLL confirmation; the Vortex installer is currently commented out upstream."},
-		{ID: GeDoSaToType, TargetRoot: "", Message: "GeDoSaTo support needs external tool discovery plus texture-folder targeting."},
+		{ID: GeDoSaToType, TargetRoot: "", Status: sdk.CapabilityStatusMetadata, Message: "GeDoSaTo helper support is implemented for game extensions that declare a concrete texture target root and runtime requirement."},
 	} {
 		if modType.ID == DInputModType {
 			r.RegisterModType(modType)
 			continue
 		}
-		modType.Status = sdk.CapabilityStatusBlocked
+		if modType.Status == "" {
+			modType.Status = sdk.CapabilityStatusBlocked
+		}
 		if modType.Message == "" {
 			modType.Message = blockedMessage
 		}
@@ -71,7 +73,7 @@ func Register(r sdk.Registrar) {
 	}
 	r.RegisterInstaller(DInputInstaller("dinput", 50))
 	for _, installer := range []installplan.InstallerSpec{
-		{ID: "gedosato", VortexInstallerID: "gedosato", ModType: GeDoSaToType, UnsupportedReason: "GeDoSaTo texture installer planning is not implemented in DMM yet."},
+		{ID: "gedosato", VortexInstallerID: "gedosato", ModType: GeDoSaToType, UnsupportedReason: "GeDoSaTo installer planning is implemented as an opt-in helper; a game extension must declare the target root before DMM can run it."},
 	} {
 		installer.InstructionMode = installplan.InstructionUnsupported
 		installer.Status = sdk.CapabilityStatusBlocked
