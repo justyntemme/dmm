@@ -448,6 +448,11 @@ type ProfilePluginActivationUpdateResult = {
   apply?: ProfileApplyResult;
 };
 
+type ProfileModOrderUpdateResult = {
+  mods?: ManagedMod[];
+  apply?: ProfileApplyResult;
+};
+
 type DeploymentStatus = {
   deployed: boolean;
   file_count: number;
@@ -656,6 +661,7 @@ type ExtensionLoadOrder = {
   status?: string;
   message?: string;
   usage_instructions?: string;
+  mutable?: boolean;
   entries: ExtensionLoadOrderEntry[];
 };
 
@@ -669,6 +675,7 @@ type ExtensionLoadOrderEntry = {
   mod_type?: string;
   priority: number;
   active: boolean;
+  mutable?: boolean;
   targets?: string[];
 };
 
@@ -4908,6 +4915,58 @@ function FreshDeckyModManagerRoute() {
     return pluginLoadOrder?.plugins.filter((plugin) => plugin.mutable) ?? [];
   }
 
+  function extensionLoadOrderEntryKey(order: ExtensionLoadOrder, entry: ExtensionLoadOrderEntry) {
+    return `${order.id}:${entry.installed_mod_id ?? entry.id}`;
+  }
+
+  function mutableExtensionLoadOrderRows(order: ExtensionLoadOrder) {
+    return order.entries.filter((entry) => entry.mutable && entry.installed_mod_id);
+  }
+
+  async function moveExtensionLoadOrderEntry(order: ExtensionLoadOrder, entry: ExtensionLoadOrderEntry, direction: -1 | 1) {
+    if (!selectedGameID || !selectedProfile || !entry.mutable || !entry.installed_mod_id || busyModID) return;
+    const orderedEntries = mutableExtensionLoadOrderRows(order);
+    const from = orderedEntries.findIndex((item) => item.installed_mod_id === entry.installed_mod_id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= orderedEntries.length) return;
+    const targetID = orderedEntries[to].installed_mod_id;
+    if (!targetID) return;
+
+    const current = [...mods].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name));
+    const movingIndex = current.findIndex((item) => item.id === entry.installed_mod_id);
+    const targetIndex = current.findIndex((item) => item.id === targetID);
+    if (movingIndex < 0 || targetIndex < 0) return;
+
+    const [moving] = current.splice(movingIndex, 1);
+    const adjustedTarget = current.findIndex((item) => item.id === targetID);
+    if (adjustedTarget < 0) return;
+    current.splice(direction < 0 ? adjustedTarget : adjustedTarget + 1, 0, moving);
+
+    try {
+      setBusyModID(entry.installed_mod_id);
+      setError("");
+      setMessage("");
+      const result = await call<[string, number, number[]], { ok: boolean; error?: string } & ProfileModOrderUpdateResult>(
+        "set_profile_mod_order",
+        selectedGameID,
+        selectedProfile.id,
+        current.map((item) => item.id)
+      );
+      if (!result.ok) {
+        setError(result.error || "Unable to update extension order.");
+        return;
+      }
+      if (result.mods) setMods(result.mods.sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)));
+      await maybeShowDeckyActionToast(result.apply?.job, "fresh-extension-order");
+      await loadSelectedGameState(selectedGameID);
+      setMessage(result.apply?.message || `Moved ${entry.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyModID(null);
+    }
+  }
+
   async function setPluginActivationEnabled(plugin: PluginLoadOrderEntry, enabled: boolean) {
     if (!selectedGameID || !selectedProfile || !pluginLoadOrder?.activation_id || !plugin.mutable || busyPluginKey) return;
     const key = pluginActivationRowKey(plugin);
@@ -5756,24 +5815,63 @@ function FreshDeckyModManagerRoute() {
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                 {order.name || order.id} · {order.target_relative || order.target_root_id || order.target_root || "Profile order"}
               </div>
+              {order.usage_instructions && (
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{order.usage_instructions}</div>
+              )}
             </div>
             {order.entries.map((entry, index) => {
               const source = entry.source_tag || entry.catalog || "dmm";
-              return (
-                <div key={`${order.id}:${entry.id}`} style={freshModCardStyle(entry.active)}>
+              const key = extensionLoadOrderEntryKey(order, entry);
+              const busy = Boolean(entry.installed_mod_id && busyModID === entry.installed_mod_id);
+              const mutableRows = mutableExtensionLoadOrderRows(order);
+              const mutableIndex = mutableRows.findIndex((item) => item.installed_mod_id === entry.installed_mod_id);
+              const row = (
+                <>
                   <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
                     <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{index + 1}. {entry.name}</div>
                     <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
                   </div>
                   <div style={{ color: entry.active ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
-                    {entry.active ? "Enabled" : "Disabled"} · Priority {entry.priority}
+                    {busy ? "Working" : entry.active ? "Enabled" : "Disabled"} · Priority {entry.priority}
                   </div>
                   {entry.targets && entry.targets.length > 0 && (
                     <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                       {entry.targets.slice(0, 2).join(", ")}{entry.targets.length > 2 ? ` +${entry.targets.length - 2} more` : ""}
                     </div>
                   )}
-                </div>
+                  {entry.mutable ? (
+                    <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>Y Up · Options Down</div>
+                  ) : (
+                    <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 800 }}>Read-only order entry.</div>
+                  )}
+                </>
+              );
+              if (!entry.mutable) {
+                return <div key={key} style={freshModCardStyle(entry.active)}>{row}</div>;
+              }
+              return (
+                <Focusable
+                  key={key}
+                  className="dmm-sidebar-row"
+                  focusClassName="dmm-sidebar-row-focused"
+                  onSecondaryActionDescription="Move Up"
+                  onSecondaryButton={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void moveExtensionLoadOrderEntry(order, entry, -1);
+                  }}
+                  onOptionsActionDescription="Move Down"
+                  onOptionsButton={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void moveExtensionLoadOrderEntry(order, entry, 1);
+                  }}
+                  style={{ ...freshModCardStyle(entry.active), opacity: busy ? 0.7 : 1 }}
+                >
+                  {row}
+                  {mutableIndex <= 0 && <div style={{ color: "#64748b", fontSize: "10px" }}>Already first in this extension order.</div>}
+                  {mutableIndex >= mutableRows.length - 1 && <div style={{ color: "#64748b", fontSize: "10px" }}>Already last in this extension order.</div>}
+                </Focusable>
               );
             })}
           </div>
