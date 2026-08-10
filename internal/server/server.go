@@ -115,6 +115,7 @@ const (
 	jobTypeOpenDirectoryAction = "open-directory-action"
 	jobTypeExtensionTestRepair = "extension-test-repair"
 	jobTypeGameSetup           = "game-setup"
+	extensionToolPostGenerated = "record-generated-profile-mod"
 	fomodHostVersion           = "5.1"
 	maxLocalArchiveUploadBytes = int64(10 << 30)
 	gameDiscoveryCacheTTL      = 10 * time.Second
@@ -5846,6 +5847,14 @@ func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *htt
 		}
 	}
 	if req.Applied {
+		if updated, ok, err := s.completeExtensionToolPostAction(r.Context(), job); err != nil {
+			job, _ = s.jobs.Fail(jobID, err.Error())
+			s.logger.Warn("extension tool post action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "post_action", job.Payload["tool_post_action"], "error", err)
+			writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job), "error": err.Error()})
+			return
+		} else if ok {
+			job = updated
+		}
 		message := "Extension tool launch requested"
 		if strings.TrimSpace(job.Payload["tool_wait_for_exit"]) == "true" {
 			message = "Extension tool exited"
@@ -5862,6 +5871,240 @@ func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *htt
 	job, _ = s.jobs.Fail(jobID, message)
 	s.logger.Warn("extension tool action failed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "error", message, "source", req.Source)
 	writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
+}
+
+func (s *Server) completeExtensionToolPostAction(ctx context.Context, job jobs.Job) (jobs.Job, bool, error) {
+	postAction := strings.TrimSpace(job.Payload["tool_post_action"])
+	if postAction == "" {
+		return job, false, nil
+	}
+	if postAction != extensionToolPostGenerated {
+		return job, false, fmt.Errorf("unsupported extension tool post action %q", postAction)
+	}
+	updated, err := s.recordGeneratedProfileModFromTool(ctx, job)
+	if err != nil {
+		return job, true, err
+	}
+	return updated, true, nil
+}
+
+func (s *Server) recordGeneratedProfileModFromTool(ctx context.Context, job jobs.Job) (jobs.Job, error) {
+	payload := cloneJobPayload(job.Payload)
+	appID := strings.TrimSpace(payload["app_id"])
+	if appID == "" {
+		return job, errors.New("generated tool action did not include an app id")
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return job, err
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return job, err
+	}
+	activeProfile, err := s.activeProfile(ctx, appID, mods)
+	if err != nil {
+		return job, err
+	}
+	targetProfileID := activeProfile.ID
+	if raw := strings.TrimSpace(payload["target_profile_id"]); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed <= 0 {
+			return job, errors.New("generated tool action target profile id is invalid")
+		}
+		targetProfileID = parsed
+	}
+	if targetProfileID != activeProfile.ID {
+		return job, errors.New("generated tool output can only be deployed immediately for the active profile")
+	}
+	stagingPath := filepath.Clean(strings.TrimSpace(payload["generated_mod_staging_path"]))
+	if stagingPath == "" || !filepath.IsAbs(stagingPath) {
+		return job, errors.New("generated tool action did not include an absolute generated staging path")
+	}
+	stagingRoot := filepath.Clean(filepath.Join(s.cfg.DataDir, "staging"))
+	if !pathWithinRoot(stagingRoot, stagingPath) {
+		return job, errors.New("generated tool output path is outside DMM staging")
+	}
+	info, err := os.Stat(stagingPath)
+	if err != nil || !info.IsDir() {
+		return job, errors.New("generated tool output folder is missing")
+	}
+	modType := strings.TrimSpace(payload["generated_mod_type"])
+	if modType == "" {
+		return job, errors.New("generated tool action did not include a generated mod type")
+	}
+	modTypeSpec, ok := s.games.ModTypeForSteamApp(appID, modType)
+	if !ok {
+		return job, fmt.Errorf("generated tool mod type %q is not registered for app %s", modType, appID)
+	}
+	targetRootID := strings.TrimSpace(payload["generated_mod_target_root_id"])
+	if targetRootID == "" {
+		targetRootID = strings.TrimSpace(modTypeSpec.TargetRootID)
+	}
+	targetRelativeRoot := strings.TrimSpace(payload["generated_mod_target_relative_root"])
+	if targetRelativeRoot == "" {
+		targetRelativeRoot = strings.TrimSpace(modTypeSpec.TargetRoot)
+	}
+	plan, err := generatedProfileModPlan(generatedProfileModPlanInput{
+		AppID:              appID,
+		ToolID:             payload["tool_id"],
+		ModType:            modType,
+		StagingPath:        stagingPath,
+		TargetRootID:       targetRootID,
+		TargetRelativeRoot: targetRelativeRoot,
+		Name:               payload["generated_mod_name"],
+		UniqueID:           payload["generated_mod_source_mod_id"],
+	})
+	if err != nil {
+		return job, err
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, plan)
+	if err != nil {
+		return job, err
+	}
+	sourceModID := strings.TrimSpace(payload["generated_mod_source_mod_id"])
+	if sourceModID == "" {
+		sourceModID = "generated-" + strings.TrimSpace(payload["tool_id"]) + "-" + strconv.FormatInt(targetProfileID, 10)
+	}
+	sourceFileID := strings.TrimSpace(payload["generated_mod_source_file_id"])
+	if sourceFileID == "" {
+		sourceFileID = "generated"
+	}
+	modName := strings.TrimSpace(payload["generated_mod_name"])
+	if modName == "" {
+		modName = "Generated tool output"
+	}
+	version := strings.TrimSpace(payload["generated_mod_version"])
+	if version == "" {
+		version = "1.0.0"
+	}
+	enabled := true
+	mod, err := s.db.RecordInstalledMod(ctx, storage.RecordInstalledModParams{
+		SteamAppID: game.SteamAppID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "dmm-generated",
+			GameDomain: game.SteamAppID,
+			ModID:      sourceModID,
+			FileID:     sourceFileID,
+		},
+		Name:            modName,
+		Version:         version,
+		StagingPath:     stagingPath,
+		ManifestJSON:    manifestJSON,
+		DefaultEnabled:  &enabled,
+		TargetProfileID: targetProfileID,
+	})
+	if err != nil {
+		return job, err
+	}
+	mod, err = s.db.SetProfileModEnabled(ctx, targetProfileID, mod.ID, true)
+	if err != nil {
+		return job, err
+	}
+	deployment, err := s.deploySingleMod(ctx, appID, mod.ID, true, "extension-tool-generated-output")
+	if err != nil {
+		return job, err
+	}
+	payload["generated_mod_installed_id"] = strconv.FormatInt(mod.ID, 10)
+	payload["generated_mod_deployment_id"] = strconv.FormatInt(deployment.DeploymentID, 10)
+	payload["generated_mod_files"] = strconv.Itoa(len(deployment.Applied))
+	updated, ok := s.jobs.SetPayload(job.ID, payload)
+	if !ok {
+		return job, errors.New("extension tool action job disappeared while recording generated output")
+	}
+	s.logger.Info("extension tool generated profile mod recorded", "job_id", job.ID, "app_id", appID, "tool_id", payload["tool_id"], "installed_mod_id", mod.ID, "profile_id", targetProfileID, "files", len(deployment.Applied), "staging_path", stagingPath)
+	return updated, nil
+}
+
+type generatedProfileModPlanInput struct {
+	AppID              string
+	ToolID             string
+	ModType            string
+	StagingPath        string
+	TargetRootID       string
+	TargetRelativeRoot string
+	Name               string
+	UniqueID           string
+}
+
+func generatedProfileModPlan(input generatedProfileModPlanInput) (installplan.Plan, error) {
+	stagingPath := filepath.Clean(strings.TrimSpace(input.StagingPath))
+	if stagingPath == "" {
+		return installplan.Plan{}, errors.New("generated staging path is required")
+	}
+	targetRelativeRoot := cleanGeneratedTargetRelativeRoot(input.TargetRelativeRoot)
+	targetRootID := strings.TrimSpace(input.TargetRootID)
+	instructions := []installplan.Instruction{}
+	if err := filepath.WalkDir(stagingPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(stagingPath, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if _, ok := safeRelative(rel); !ok {
+			return fmt.Errorf("generated output contains unsafe relative path %q", rel)
+		}
+		targetRelative := rel
+		if targetRelativeRoot != "" {
+			targetRelative = filepath.ToSlash(filepath.Join(filepath.FromSlash(targetRelativeRoot), filepath.FromSlash(rel)))
+		}
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      path,
+			StagingRelative: rel,
+			TargetRelative:  targetRelative,
+			TargetRoot:      targetRootID,
+		})
+		return nil
+	}); err != nil {
+		return installplan.Plan{}, err
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, errors.New("generated tool output did not contain deployable files")
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		name = "Generated tool output"
+	}
+	uniqueID := strings.TrimSpace(input.UniqueID)
+	if uniqueID == "" {
+		uniqueID = "generated-" + strings.TrimSpace(input.ToolID)
+	}
+	return installplan.Plan{
+		GameID:     strings.TrimSpace(input.AppID),
+		ModType:    strings.TrimSpace(input.ModType),
+		PlannerID:  "extension-tool-generated-output",
+		NameSource: installplan.NameSourceManifestDisplay,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "extension-tool-generated-output",
+			Path:   stagingPath,
+			Reason: "Extension tool produced profile-owned generated output.",
+		}},
+		Metadata: []installplan.ModMetadata{{
+			Kind:     "generated-output",
+			Name:     name,
+			UniqueID: uniqueID,
+		}},
+		Instructions: instructions,
+	}, nil
+}
+
+func cleanGeneratedTargetRelativeRoot(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	rel, ok := safeRelative(value)
+	if !ok {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 func (s *Server) handleGameExtensionActions(w http.ResponseWriter, r *http.Request) {

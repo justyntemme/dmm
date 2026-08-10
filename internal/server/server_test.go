@@ -13168,6 +13168,101 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 }
 
+func TestExtensionToolCompletionRecordsGeneratedProfileMod(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999033"
+	gamePath := filepath.Join(t.TempDir(), "Generated Tool Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "generatedtoolgame",
+		Name:    "Generated Tool Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"generatedtoolgame"},
+				VortexGameID: "generatedtoolgame",
+				QueryModPath: "Data",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "generated-data", TargetRoot: "Data"})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Generated Tool Game",
+		InstallDir:  "Generated Tool Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	generatedPath := filepath.Join(srv.cfg.DataDir, "staging", "_generated", "tool-output", appID, strconv.FormatInt(profiles[0].ID, 10), "fnis")
+	if err := os.MkdirAll(filepath.Join(generatedPath, "meshes", "actors"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(generatedPath, "meshes", "actors", "generated.hkx"), []byte("generated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	job := srv.jobs.CreateWithPayload(jobTypeExtensionToolAction, "Extension tool: FNIS", jobs.JobPayload{
+		"app_id":                             appID,
+		"tool_id":                            "FNIS",
+		"tool_wait_for_exit":                 "true",
+		"tool_post_action":                   extensionToolPostGenerated,
+		"target_profile_id":                  strconv.FormatInt(profiles[0].ID, 10),
+		"generated_mod_name":                 "FNIS Data (Default)",
+		"generated_mod_type":                 "generated-data",
+		"generated_mod_staging_path":         generatedPath,
+		"generated_mod_source_mod_id":        "fnis-data-default",
+		"generated_mod_source_file_id":       "profile-" + strconv.FormatInt(profiles[0].ID, 10),
+		"generated_mod_target_root_id":       "",
+		"generated_mod_target_relative_root": "",
+	})
+	job, _ = srv.jobs.Run(job.ID, "Waiting for generated tool to exit")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+job.ID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("generated tool complete status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	completed, ok := srv.jobs.Get(job.ID)
+	if !ok || completed.Status != jobs.StatusCompleted || completed.Payload["generated_mod_installed_id"] == "" || completed.Payload["generated_mod_deployment_id"] == "" {
+		t.Fatalf("completed generated tool job = %+v", completed)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 || mods[0].Name != "FNIS Data (Default)" || !mods[0].Enabled {
+		t.Fatalf("generated mods = %+v", mods)
+	}
+	files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTarget := filepath.Join(gamePath, "Data", "meshes", "actors", "generated.hkx")
+	if len(files) != 1 || files[0].TargetPath != wantTarget || files[0].InstalledModID != mods[0].ID {
+		t.Fatalf("deployment files = %+v, want target %q mod %d", files, wantTarget, mods[0].ID)
+	}
+	if _, err := os.Stat(wantTarget); err != nil {
+		t.Fatalf("generated target stat: %v", err)
+	}
+}
+
 func TestActivateGameAutoAcquiresExtensionTools(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999014"
