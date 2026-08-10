@@ -98,7 +98,7 @@ Refreshed from source with `rg` against `/tmp/dmm-vortex/extensions` on 2026-08-
 | `context.registerMainPage` | 7 | `RegisterExtensionMainPage` | Metadata-only | Generic extension page runtime, likely phone-first only. |
 | `context.registerMerge` | 5 | `RegisterMerge` plus shared helpers | Partial runtime | Broader merge helpers beyond current XML/MTL and DAZIP AddIns support. |
 | `context.registerInterpreter` | 5 | `RegisterInterpreter` | Partial runtime | DMM resolves extension-declared interpreter commands/arguments by file extension and platform through `/api/interpreters/resolve`; actual execution remains a Decky/user action boundary. |
-| `context.registerArchiveType` | 4 | `RegisterArchiveType` plus native archive runtimes | Partial runtime | BSA/BA2 list/read/extract and BSA write/create are implemented; BA2 write and ARC remain pending. QuickBMS now has a typed process bridge, but no converted extension has wired it through a DMM extension API namespace yet. |
+| `context.registerArchiveType` | 4 | `RegisterArchiveType` plus native archive runtimes | Partial runtime | BSA/BA2 list/read/extract and BSA write/create are implemented. QuickBMS and ARCtool now have typed process bridges, but no converted extension has wired those bridges where needed yet. BA2 write and native ARC parsing/repacking remain pending. |
 | `context.registerProfileFeature` | 4 | `RegisterProfileFeature` | Partial runtime | Per-profile boolean state persists and copies with profiles. Vortex `local_game_settings` profile-file execution is implemented for declared files; savegame feature execution and generic feature runtimes remain pending. |
 | `context.optional.registerCollectionFeature` | 3 | `RegisterCollectionFeature` | Metadata-only | Collection import/postprocess runtime. |
 | `context.registerPersistor` | 3 | `RegisterStatePersistor` | Metadata-only | Extension-owned persisted state runtime. |
@@ -261,7 +261,7 @@ DMM status:
 - Has generic ZIP/7z/RAR extraction through the download/install pipeline.
 - Has MGSV-specific QAR/FPK primitives exposed through extension-owned packed archive mutation.
 - Has a generic extension-declared archive type registry and source-backed framework metadata for Vortex `gamebryo-archive-support`, `gamebryo-bsa-support`, `mtframework-arc-support`, and `quickbms-support`.
-- Has native BA2/BSA list/read/extract support backed by Vortex's Gamebryo archive fixtures. Has native BSA create/write support for uncompressed v103/v104/v105 archives with round-trip reader tests. Has a typed QuickBMS process bridge that mirrors Vortex's list/extract/write/reimport flags, wildcard filter file, log file, timeout, and list parsing contract. BA2 write and ARC are intentionally exposed as pending or `blocked` capabilities until DMM implements native Deck-safe write/reimport engines or verified external-tool bridges.
+- Has native BA2/BSA list/read/extract support backed by Vortex's Gamebryo archive fixtures. Has native BSA create/write support for uncompressed v103/v104/v105 archives with round-trip reader tests. Has a typed QuickBMS process bridge that mirrors Vortex's list/extract/write/reimport flags, wildcard filter file, log file, timeout, and list parsing contract. Has a typed ARCtool process bridge that mirrors Vortex's Dragon's Dogma defaults, list verbose-file parsing, extract temporary-rename behavior, and create sidecar order-file behavior. BA2 write and native ARC parsing/repacking remain pending.
 
 Priority: P0 for Bethesda/MT Framework/QuickBMS games.
 

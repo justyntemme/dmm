@@ -19,7 +19,7 @@ func TestExtensionRegistersSourceBackedArcMetadata(t *testing.T) {
 		t.Fatalf("archive types = %+v", summary.Capabilities.ArchiveTypes)
 	}
 	arc := summary.Capabilities.ArchiveTypes[0]
-	if arc.ID != "arc" || arc.Engine != ID || !arc.SupportsWrite || arc.Status != sdk.CapabilityStatusBlocked || arc.Message == "" {
+	if arc.ID != "arc" || arc.Engine != ID || !arc.SupportsWrite || arc.Status != sdk.CapabilityStatusMetadata || arc.Message == "" {
 		t.Fatalf("arc capability = %+v", arc)
 	}
 }

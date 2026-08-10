@@ -32,8 +32,8 @@ func Register(r sdk.Registrar) {
 		FileExtensions: []string{".arc"},
 		Engine:         ID,
 		SupportsWrite:  true,
-		Status:         sdk.CapabilityStatusBlocked,
-		Message:        "Vortex source shells out to ARCtool.exe for Dragon's Dogma ARC list/extract/create; DMM has not implemented a Deck-safe ARC engine yet.",
+		Status:         sdk.CapabilityStatusMetadata,
+		Message:        "DMM has a typed ARCtool process bridge for Vortex list/extract/create semantics; converted game extensions still need to wire this bridge where ARC support is required.",
 	})
 }
 
