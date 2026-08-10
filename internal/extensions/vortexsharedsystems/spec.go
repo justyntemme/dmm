@@ -34,7 +34,6 @@ func Register(r sdk.Registrar) {
 		r.RegisterSource(ref)
 	}
 	registerCrossExtensionAPIs(r)
-	registerFNIS(r)
 	registerGamebryoSystems(r)
 	registerDependencyManager(r)
 	registerLocalGameSettings(r)
@@ -55,16 +54,6 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 	} {
 		r.RegisterExtensionAPI(api)
 	}
-}
-
-func registerFNIS(r sdk.Registrar) {
-	r.RegisterStateReducer(blockedReducer("fnis-settings", "FNIS settings state", "settings/fnis"))
-	r.RegisterExtensionSetting(blockedSetting("fnis-integration", "FNIS integration settings", "settings"))
-	r.RegisterExtensionToDo(blockedToDo("fnis-install", "Install FNIS integration", "gamemode-activated"))
-	r.RegisterExtensionAction(blockedAction("fnis-generate", "Generate FNIS for Users", "mod-icons", "tool"))
-	r.RegisterExtensionTest(blockedTest("fnis-integration", "FNIS integration check", "gamemode-activated"))
-	r.RegisterEventHandler(blockedEventHandler("fnis-will-deploy", sdk.EventWillDeploy, "FNIS animation checksum pre-deploy hook"))
-	r.RegisterEventHandler(blockedEventHandler("fnis-did-deploy", sdk.EventDidDeploy, "FNIS generator post-deploy hook"))
 }
 
 func registerGamebryoSystems(r sdk.Registrar) {
