@@ -27,6 +27,13 @@ func TestExtensionRegistersVortexBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) < 6 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	requirement := summary.Capabilities.RuntimeRequirements[0]
+	if requirement.Acquisition == nil || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.Catalog != "github" || requirement.Acquisition.ArchiveName != "BepInEx_win_x64_5.4.23.5.zip" {
+		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
+	}
+	if len(requirement.ProviderModTypes) != 1 || requirement.ProviderModTypes[0] != "hollowknight-bepinex-injector" {
+		t.Fatalf("provider mod types = %+v", requirement.ProviderModTypes)
+	}
 }
 
 func TestRootDataFolderInstaller(t *testing.T) {

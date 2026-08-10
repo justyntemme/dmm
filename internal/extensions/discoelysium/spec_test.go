@@ -27,6 +27,13 @@ func TestExtensionRegistersVortexBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) < 6 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	requirement := summary.Capabilities.RuntimeRequirements[0]
+	if requirement.Acquisition == nil || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.Catalog != "direct" || requirement.Acquisition.ArchiveName != "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.755+3fab71a.zip" {
+		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
+	}
+	if len(requirement.ProviderModTypes) != 1 || requirement.ProviderModTypes[0] != "discoelysium-bepinex-injector" {
+		t.Fatalf("provider mod types = %+v", requirement.ProviderModTypes)
+	}
 }
 
 func TestRootDataFolderInstaller(t *testing.T) {

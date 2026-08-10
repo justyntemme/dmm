@@ -2,6 +2,7 @@ package bepinex
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,24 @@ const (
 	bepInExPluginInstallerSuffix  = ":bepinex-plugin"
 	bepInExBlockedInstallerSuffix = ":bepinex-unclassified-blocked"
 )
+
+type RuntimeAcquisitionOptions struct {
+	ID             string
+	Name           string
+	Version        string
+	Catalog        string
+	Mode           string
+	URL            string
+	ArchiveName    string
+	Instructions   string
+	Required       bool
+	AutoAcquire    bool
+	SourceModID    string
+	SourceFileID   string
+	SourceGame     string
+	SourceProvider string
+	Message        string
+}
 
 // UnityGameSpec captures the Vortex modtype-bepinex boundary for games whose
 // extension only needs the shared Unity/BepInEx installer behavior.
@@ -126,7 +145,7 @@ func UnityBepInExRuntimeModType(id string) string {
 }
 
 func DefaultRuntimeAcquisition(autoAcquire bool) gamehandler.RuntimeAcquisitionSpec {
-	return gamehandler.RuntimeAcquisitionSpec{
+	return RuntimeAcquisition(RuntimeAcquisitionOptions{
 		ID:             "bepinex-" + strings.ReplaceAll(DefaultRuntimeVersion, ".", "-") + "-x64",
 		Name:           "BepInEx " + DefaultRuntimeVersion + " x64",
 		Catalog:        "github",
@@ -141,7 +160,68 @@ func DefaultRuntimeAcquisition(autoAcquire bool) gamehandler.RuntimeAcquisitionS
 		SourceGame:     DefaultRuntimeSourceGame,
 		SourceProvider: "vortex-modtype-bepinex",
 		Message:        "Vortex modtype-bepinex defaults to Nexus site mod " + DefaultRuntimeModID + " file " + DefaultRuntimeFileID + " for BepInEx " + DefaultRuntimeVersion + " x64 and falls back to GitHub. DMM acquires the source-verified GitHub release asset through the captured-install pipeline.",
+	})
+}
+
+func GitHubRuntimeAcquisition(autoAcquire bool, version, archiveName string) gamehandler.RuntimeAcquisitionSpec {
+	version = strings.TrimSpace(version)
+	archiveName = strings.TrimSpace(archiveName)
+	tag := version
+	if tag != "" && !strings.HasPrefix(strings.ToLower(tag), "v") {
+		tag = "v" + tag
 	}
+	urlValue := ""
+	if tag != "" && archiveName != "" {
+		urlValue = "https://github.com/BepInEx/BepInEx/releases/download/" + url.PathEscape(tag) + "/" + url.PathEscape(archiveName)
+	}
+	return RuntimeAcquisition(RuntimeAcquisitionOptions{
+		ID:             "bepinex-" + acquisitionIDPart(version) + "-" + acquisitionIDPart(strings.TrimSuffix(archiveName, filepath.Ext(archiveName))),
+		Name:           "BepInEx " + version,
+		Version:        version,
+		Catalog:        "github",
+		Mode:           "direct",
+		URL:            urlValue,
+		ArchiveName:    archiveName,
+		Instructions:   "Vortex modtype-bepinex resolves this game-pinned BepInEx runtime from the BepInEx GitHub release assets. DMM resolves the same source-verified release asset through the captured-install pipeline.",
+		Required:       true,
+		AutoAcquire:    autoAcquire,
+		SourceProvider: "vortex-modtype-bepinex",
+		Message:        "Vortex modtype-bepinex uses BepInEx " + version + " from GitHub for this game. DMM acquires the same release asset through the shared captured-install pipeline.",
+	})
+}
+
+func DirectRuntimeAcquisition(opts RuntimeAcquisitionOptions) gamehandler.RuntimeAcquisitionSpec {
+	opts.Catalog = firstUnityString(opts.Catalog, "direct")
+	opts.Mode = firstUnityString(opts.Mode, "direct")
+	opts.SourceProvider = firstUnityString(opts.SourceProvider, "vortex-modtype-bepinex")
+	return RuntimeAcquisition(opts)
+}
+
+func RuntimeAcquisition(opts RuntimeAcquisitionOptions) gamehandler.RuntimeAcquisitionSpec {
+	required := opts.Required
+	if !required {
+		required = true
+	}
+	return gamehandler.RuntimeAcquisitionSpec{
+		ID:             strings.TrimSpace(opts.ID),
+		Name:           strings.TrimSpace(opts.Name),
+		Catalog:        strings.TrimSpace(opts.Catalog),
+		Mode:           strings.TrimSpace(opts.Mode),
+		URL:            strings.TrimSpace(opts.URL),
+		ArchiveName:    strings.TrimSpace(opts.ArchiveName),
+		Instructions:   strings.TrimSpace(opts.Instructions),
+		Required:       required,
+		AutoAcquire:    opts.AutoAcquire,
+		SourceModID:    strings.TrimSpace(opts.SourceModID),
+		SourceFileID:   strings.TrimSpace(opts.SourceFileID),
+		SourceGame:     strings.TrimSpace(opts.SourceGame),
+		SourceProvider: strings.TrimSpace(opts.SourceProvider),
+		Message:        strings.TrimSpace(opts.Message),
+	}
+}
+
+func RuntimeAcquisitionPtr(spec gamehandler.RuntimeAcquisitionSpec) *gamehandler.RuntimeAcquisitionSpec {
+	return &spec
 }
 
 func unityModTypes(id string) []installplan.ModTypeSpec {
@@ -334,4 +414,22 @@ func firstUnityStrings(values, defaults []string) []string {
 		return cleaned
 	}
 	return cleanUnityStrings(defaults)
+}
+
+func acquisitionIDPart(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }

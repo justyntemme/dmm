@@ -30,9 +30,9 @@
   - Unity `.assets`, `.resource`, and `.ress` files under `hollow_knight_Data`.
 - Blocks the Vortex fallback installer rather than writing unknown files to the game root without a specific extension-owned rule.
 - Reports a BepInEx runtime requirement when BepInEx mods are enabled.
+- Declares Vortex's `autoDownloadBepInEx: true`, `forceGithubDownload: true`, and pinned `5.4.23.5` behavior through DMM's runtime acquisition pipeline using the source-verified `BepInEx_win_x64_5.4.23.5.zip` GitHub release asset.
 
 ## Beta Gaps
 
 - Live archive validation with representative Nexus Hollow Knight mods.
-- BepInEx runtime acquisition is supported generically, but this extension does not declare auto-acquisition because the checked Vortex game extension does not opt into `autoDownloadBepInEx`.
 - The Vortex fallback notification flow is intentionally blocked in DMM until the UI can present a clear manual-review path.

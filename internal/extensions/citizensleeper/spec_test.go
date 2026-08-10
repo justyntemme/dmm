@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	bepinexext "github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -18,6 +19,13 @@ func TestExtensionRegistersBepInExCapabilities(t *testing.T) {
 	}
 	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	requirement := summary.Capabilities.RuntimeRequirements[0]
+	if requirement.Acquisition == nil || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.SourceModID != bepinexext.DefaultRuntimeModID {
+		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
+	}
+	if len(requirement.ProviderModTypes) != 1 || requirement.ProviderModTypes[0] != bepinexInjectorModType {
+		t.Fatalf("provider mod types = %+v", requirement.ProviderModTypes)
 	}
 }
 

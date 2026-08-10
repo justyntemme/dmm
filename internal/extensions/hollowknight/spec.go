@@ -31,6 +31,9 @@ const (
 
 	bepinexRoot       = "BepInEx"
 	bepinexPluginRoot = bepinexRoot + "/plugins"
+
+	bepinexRuntimeVersion = "5.4.23.5"
+	bepinexRuntimeArchive = "BepInEx_win_x64_5.4.23.5.zip"
 )
 
 func Extension() sdk.Extension {
@@ -142,15 +145,17 @@ func Register(r sdk.Registrar) {
 		UnsupportedReason: "Hollow Knight archive layout is not classified by the verified extension rules. DMM blocks it until a specific extension-owned rule can place the files safely.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
-		ID:          "hollowknight-bepinex-installed",
-		Name:        "BepInEx",
-		Kind:        "mod-loader",
-		Required:    true,
-		ModTypes:    []string{bepinexRootModType, bepinexPluginModType, bepinexConfigModType},
-		Message:     "BepInEx is required before enabled Hollow Knight BepInEx mods can load.",
-		OKMessage:   "BepInEx is present in the Hollow Knight game folder.",
-		InstallHint: "Install BepInEx for Hollow Knight, then enable and deploy it from DMM before enabling BepInEx plugin mods.",
-		HelpURL:     "https://github.com/BepInEx/BepInEx/releases",
+		ID:               "hollowknight-bepinex-installed",
+		Name:             "BepInEx",
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         []string{bepinexRootModType, bepinexPluginModType, bepinexConfigModType},
+		ProviderModTypes: []string{bepinexInjectorModType},
+		Message:          "BepInEx is required before enabled Hollow Knight BepInEx mods can load.",
+		OKMessage:        "BepInEx is present in the Hollow Knight game folder.",
+		InstallHint:      "Vortex auto-downloads the pinned BepInEx " + bepinexRuntimeVersion + " runtime for Hollow Knight. DMM can acquire that source-verified runtime automatically, then enable and deploy it before enabling BepInEx mods.",
+		HelpURL:          "https://github.com/BepInEx/BepInEx/releases",
+		Acquisition:      bepinexext.RuntimeAcquisitionPtr(bepinexext.GitHubRuntimeAcquisition(true, bepinexRuntimeVersion, bepinexRuntimeArchive)),
 		Check: bepinexext.RuntimePresenceCheck([]string{
 			"BepInEx/core/BepInEx.dll",
 			"BepInEx/core/BepInEx.Core.dll",

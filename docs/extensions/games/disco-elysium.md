@@ -22,9 +22,9 @@
 - Supports Vortex-backed archive installers for root game/data-folder mods, BepInEx runtime packages, BepInEx plugin/config roots, BepInEx Configuration Manager archives, `GameAssembly.dll` replacements, and Unity asset/resource files.
 - Canonicalizes Vortex's Windows-tolerant `BepinEx` path spelling to `BepInEx` for Steam Deck filesystem safety.
 - Blocks only the Vortex fallback/manual archive shape until a more specific extension-owned installer can classify it safely.
+- Declares Vortex's `autoDownloadBepInEx: true` custom-pack behavior through DMM's runtime acquisition pipeline using the source-verified `BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.755+3fab71a.zip` bleeding-edge build URL.
 
 ## Beta Gaps
 
-- Automatic BepInEx helper download is not implemented yet; users can install the BepInEx Unity IL2CPP x64 runtime through the normal DMM capture/import pipeline.
 - Live-test representative Nexus archives for each supported installer shape.
-- Add generic dependency-helper tooling before mirroring Vortex's automatic BepInEx download action.
+- Add source-backed generated BepInEx config handling only after the intended config template is verified from the Vortex package/assets.

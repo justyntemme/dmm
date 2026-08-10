@@ -104,6 +104,7 @@ func TestUnityExtensionRegistersBepInExCapabilities(t *testing.T) {
 			"Example.x86_64",
 		},
 		NativeLinuxLaunchTool: true,
+		AutoDownloadRuntime:   true,
 	}))
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
 	summary := registry.ExtensionSummaries()[0]
@@ -112,6 +113,13 @@ func TestUnityExtensionRegistersBepInExCapabilities(t *testing.T) {
 	}
 	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	requirement := summary.Capabilities.RuntimeRequirements[0]
+	if requirement.Acquisition == nil || !requirement.Acquisition.AutoAcquire || requirement.Acquisition.SourceProvider != "vortex-modtype-bepinex" {
+		t.Fatalf("runtime acquisition = %+v", requirement.Acquisition)
+	}
+	if len(requirement.ProviderModTypes) != 1 || requirement.ProviderModTypes[0] != bepinex.UnityBepInExRuntimeModType("exampleunity") {
+		t.Fatalf("provider mod types = %+v", requirement.ProviderModTypes)
 	}
 	gamePath := t.TempDir()
 	writeFile(t, filepath.Join(gamePath, "Example.exe"), "exe")
@@ -152,6 +160,16 @@ func TestUnityExtensionBlocksUnclassifiedArchive(t *testing.T) {
 	var unsupported installplan.UnsupportedError
 	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "verified BepInEx layouts") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestGitHubRuntimeAcquisitionBuildsPinnedAssetURL(t *testing.T) {
+	acquisition := bepinex.GitHubRuntimeAcquisition(true, "5.4.23.5", "BepInEx_win_x64_5.4.23.5.zip")
+	if acquisition.Catalog != "github" || acquisition.Mode != "direct" || !acquisition.AutoAcquire {
+		t.Fatalf("acquisition = %+v", acquisition)
+	}
+	if acquisition.URL != "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_win_x64_5.4.23.5.zip" {
+		t.Fatalf("url = %q", acquisition.URL)
 	}
 }
 

@@ -31,6 +31,10 @@ const (
 
 	bepinexRoot       = "BepInEx"
 	bepinexPluginRoot = bepinexRoot + "/plugins"
+
+	bepinexRuntimeVersion = "6.0.0-be.755+3fab71a"
+	bepinexRuntimeArchive = "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.755+3fab71a.zip"
+	bepinexRuntimeURL     = "https://builds.bepinex.dev/projects/bepinex_be/755/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.755%2B3fab71a.zip"
 )
 
 func Extension() sdk.Extension {
@@ -142,15 +146,28 @@ func Register(r sdk.Registrar) {
 		UnsupportedReason: "Disco Elysium archive layout is not classified by the verified extension rules. DMM blocks it until a specific extension-owned rule can place the files safely.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
-		ID:          "discoelysium-bepinex-installed",
-		Name:        "BepInEx",
-		Kind:        "mod-loader",
-		Required:    true,
-		ModTypes:    []string{bepinexRootModType, bepinexPluginModType, bepinexConfigModType},
-		Message:     "BepInEx is required before enabled Disco Elysium BepInEx mods can load.",
-		OKMessage:   "BepInEx is present in the Disco Elysium game folder.",
-		InstallHint: "Install the BepInEx Unity IL2CPP x64 runtime for Disco Elysium, then enable and deploy it from DMM before enabling BepInEx plugin mods.",
-		HelpURL:     "https://builds.bepinex.dev/projects/bepinex_be",
+		ID:               "discoelysium-bepinex-installed",
+		Name:             "BepInEx",
+		Kind:             "mod-loader",
+		Required:         true,
+		ModTypes:         []string{bepinexRootModType, bepinexPluginModType, bepinexConfigModType},
+		ProviderModTypes: []string{bepinexInjectorModType},
+		Message:          "BepInEx is required before enabled Disco Elysium BepInEx mods can load.",
+		OKMessage:        "BepInEx is present in the Disco Elysium game folder.",
+		InstallHint:      "Vortex auto-downloads the pinned BepInEx Unity IL2CPP bleeding-edge runtime for Disco Elysium. DMM can acquire that source-verified runtime automatically, then enable and deploy it before enabling BepInEx mods.",
+		HelpURL:          "https://builds.bepinex.dev/projects/bepinex_be",
+		Acquisition: bepinexext.RuntimeAcquisitionPtr(bepinexext.DirectRuntimeAcquisition(bepinexext.RuntimeAcquisitionOptions{
+			ID:             "discoelysium-bepinex-" + sanitizeID(bepinexRuntimeVersion) + "-win-x64",
+			Name:           "BepInEx Unity IL2CPP " + bepinexRuntimeVersion,
+			Version:        bepinexRuntimeVersion,
+			URL:            bepinexRuntimeURL,
+			ArchiveName:    bepinexRuntimeArchive,
+			Instructions:   "Vortex's Disco Elysium extension uses a customPackDownloader for this exact BepInEx bleeding-edge IL2CPP archive. DMM downloads the same source-verified archive through the captured-install pipeline.",
+			Required:       true,
+			AutoAcquire:    true,
+			SourceProvider: "vortex-game-discoelysium",
+			Message:        "Vortex's Disco Elysium extension auto-downloads " + bepinexRuntimeArchive + " from builds.bepinex.dev when BepInEx is needed.",
+		})),
 		Check: bepinexext.RuntimePresenceCheck([]string{
 			"BepInEx/core/BepInEx.Core.dll",
 			"BepInEx/core/BepInEx.Preloader.Core.dll",

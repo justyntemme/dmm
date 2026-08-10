@@ -21,9 +21,9 @@
 - Checks for `Citizen Sleeper.exe`.
 - Supports BepInEx runtime packages at the game root and plugin archives under `BepInEx/plugins`, matching Vortex's `queryModPath`.
 - Preserves plugin archive wrapper folders because BepInEx plugin mods commonly ship as folder-scoped packages.
+- Declares Vortex's `autoDownloadBepInEx: true` behavior through DMM's runtime acquisition pipeline using the source-verified default BepInEx package.
 
 ## Beta Gaps
 
-- Automatic BepInEx helper download is not implemented yet; users can install BepInEx through the normal DMM capture/import pipeline.
 - The Vortex package references `BepInEx.cfg`, but the downloaded package did not contain that file; DMM does not synthesize it until the intended config content is source-verified.
 - Live-test representative Nexus Citizen Sleeper archives.
