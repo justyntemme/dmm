@@ -1033,6 +1033,104 @@ func TestRecordInstalledModTargetsSpecificProfile(t *testing.T) {
 	}
 }
 
+func TestProfileModRulesNormalizePriorityOrder(t *testing.T) {
+	db, profileID := testProfileWithGame(t, "413150")
+	first := testInstalledMod(t, db, "413150", "First", "first", profileID)
+	second := testInstalledMod(t, db, "413150", "Second", "second", profileID)
+	third := testInstalledMod(t, db, "413150", "Third", "third", profileID)
+	if _, err := db.SetProfileModOrder(context.Background(), profileID, []int64{first.ID, second.ID, third.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ReplaceProfileModRules(context.Background(), profileID, []ProfileModRule{{
+		SourceInstalledModID:    third.ID,
+		ReferenceInstalledModID: first.ID,
+		Type:                    "before",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mods, err := db.ApplyProfileModRules(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 3 || modIndex(mods, third.ID) >= modIndex(mods, first.ID) {
+		t.Fatalf("mods = %+v", mods)
+	}
+}
+
+func TestProfileModRulesRejectCycles(t *testing.T) {
+	db, profileID := testProfileWithGame(t, "413150")
+	first := testInstalledMod(t, db, "413150", "First", "first", profileID)
+	second := testInstalledMod(t, db, "413150", "Second", "second", profileID)
+	if _, err := db.ReplaceProfileModRules(context.Background(), profileID, []ProfileModRule{
+		{SourceInstalledModID: first.ID, ReferenceInstalledModID: second.ID, Type: "before"},
+		{SourceInstalledModID: second.ID, ReferenceInstalledModID: first.ID, Type: "before"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ApplyProfileModRules(context.Background(), profileID); err == nil {
+		t.Fatal("expected cycle error")
+	}
+}
+
+func testProfileWithGame(t *testing.T, appID string) (*DB, int64) {
+	t.Helper()
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Test Game",
+		InstallDir:  "Test Game",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/Test Game",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := db.ProfilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	return db, profiles[0].ID
+}
+
+func testInstalledMod(t *testing.T, db *DB, appID, name, modID string, profileID int64) InstalledMod {
+	t.Helper()
+	mod, err := db.RecordInstalledMod(context.Background(), RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "testgame",
+			ModID:      modID,
+			FileID:     modID + "-file",
+		},
+		Name:            name,
+		Version:         "1.0.0",
+		ArchivePath:     "/downloads/" + modID + ".zip",
+		StagingPath:     "/staging/" + modID,
+		ManifestJSON:    "{}",
+		TargetProfileID: profileID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mod
+}
+
+func modIndex(mods []InstalledMod, id int64) int {
+	for idx, mod := range mods {
+		if mod.ID == id {
+			return idx
+		}
+	}
+	return len(mods)
+}
+
 func TestTransferAndRemoveProfileModOnlyChangesProfileMembership(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

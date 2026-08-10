@@ -94,11 +94,12 @@ func registerGamebryoSystems(r sdk.Registrar) {
 }
 
 func registerDependencyManager(r sdk.Registrar) {
-	r.RegisterStateReducer(blockedReducer("dependency-workarounds", "Dependency workaround settings", "settings/workarounds"))
-	r.RegisterStateReducer(blockedReducer("dependency-session", "Dependency connection state", "session/dependencies"))
-	r.RegisterExtensionTableAttribute(blockedTableAttribute("dependency-load-order", "Dependency load-order table attribute", "mods"))
-	r.RegisterExtensionTableAttribute(blockedTableAttribute("dependency-rules", "Dependency rules table attribute", "mods"))
-	r.RegisterExtensionAction(blockedAction("dependency-manage-rules", "Manage dependency rules", "mod-icons", "rules"))
+	dependencyRuleMessage := "DMM supports Vortex-style before/after/conflicts profile mod rules through profile rule APIs, cycle rejection, and profile priority normalization during rule updates."
+	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "dependency-workarounds", Name: "Dependency workaround settings", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
+	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "dependency-session", Name: "Dependency connection state", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{ID: "dependency-load-order", Name: "Dependency load-order table attribute", Target: "mods", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{ID: "dependency-rules", Name: "Dependency rules table attribute", Target: "mods", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "dependency-manage-rules", Name: "Manage dependency rules", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterExtensionDialog(blockedDialog("dependency-connector", "Dependency connector dialog", "dependencies"))
 	r.RegisterExtensionDialog(blockedDialog("dependency-editor", "Dependency editor dialog", "dependencies"))
 	r.RegisterExtensionDialog(blockedDialog("conflict-editor", "Conflict editor dialog", "dependencies"))
@@ -113,7 +114,7 @@ func registerDependencyManager(r sdk.Registrar) {
 		Message:  blockedMessage,
 	})
 	r.RegisterExtensionSetting(blockedSetting("dependency-workarounds", "Dependency workarounds settings", "settings"))
-	r.RegisterExtensionTest(blockedTest("dependency-unsolved-conflicts", "Unsolved dependency conflicts check", "gamemode-activated"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "dependency-unsolved-conflicts", Name: "Unsolved dependency conflicts check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterStartHook(sdk.StartHookSpec{
 		ID:       "dependency-check-unsolved-conflicts",
 		Name:     "Check unsolved dependency conflicts",

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -145,6 +146,15 @@ type ProfileFeatureState struct {
 	ProfileID int64  `json:"profile_id"`
 	FeatureID string `json:"feature_id"`
 	Enabled   bool   `json:"enabled"`
+}
+
+type ProfileModRule struct {
+	ID                      int64  `json:"id"`
+	ProfileID               int64  `json:"profile_id"`
+	SourceInstalledModID    int64  `json:"source_installed_mod_id"`
+	ReferenceInstalledModID int64  `json:"reference_installed_mod_id"`
+	Type                    string `json:"type"`
+	Version                 string `json:"version,omitempty"`
 }
 
 type SetProfilePluginActivationStateParams struct {
@@ -1343,6 +1353,15 @@ ORDER BY feature_id ASC
 			return Profile{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_mod_rules (profile_id, source_installed_mod_id, reference_installed_mod_id, rule_type, version, updated_at)
+SELECT ?, source_installed_mod_id, reference_installed_mod_id, rule_type, version, CURRENT_TIMESTAMP
+FROM profile_mod_rules
+WHERE profile_id = ?
+ORDER BY source_installed_mod_id ASC, reference_installed_mod_id ASC
+`, profileID, sourceProfileID); err != nil {
+			return Profile{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
 INSERT INTO profile_extension_setting_values (profile_id, extension_id, setting_id, value_json, updated_at)
 SELECT ?, extension_id, setting_id, value_json, CURRENT_TIMESTAMP
 FROM profile_extension_setting_values
@@ -1596,6 +1615,176 @@ DELETE FROM file_conflicts
 WHERE profile_id = ? AND target_path = ?
 `, profileID, targetPath)
 	return err
+}
+
+func (db *DB) ProfileModRules(ctx context.Context, profileID int64) ([]ProfileModRule, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT id, profile_id, source_installed_mod_id, reference_installed_mod_id, rule_type, version
+FROM profile_mod_rules
+WHERE profile_id = ?
+ORDER BY source_installed_mod_id ASC, reference_installed_mod_id ASC
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var rules []ProfileModRule
+	for rows.Next() {
+		var rule ProfileModRule
+		if err := rows.Scan(&rule.ID, &rule.ProfileID, &rule.SourceInstalledModID, &rule.ReferenceInstalledModID, &rule.Type, &rule.Version); err != nil {
+			return nil, err
+		}
+		rules = append(rules, rule)
+	}
+	return rules, rows.Err()
+}
+
+func (db *DB) ReplaceProfileModRules(ctx context.Context, profileID int64, rules []ProfileModRule) ([]ProfileModRule, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var gameID int64
+	if err := tx.QueryRowContext(ctx, `SELECT game_id FROM profiles WHERE id = ?`, profileID).Scan(&gameID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM profile_mod_rules WHERE profile_id = ?`, profileID); err != nil {
+		return nil, err
+	}
+	for _, rule := range rules {
+		ruleType := strings.TrimSpace(rule.Type)
+		if ruleType != "before" && ruleType != "after" && ruleType != "conflicts" {
+			return nil, errors.New("profile mod rule type must be before, after, or conflicts")
+		}
+		if rule.SourceInstalledModID <= 0 || rule.ReferenceInstalledModID <= 0 {
+			return nil, errors.New("profile mod rule source and reference are required")
+		}
+		if rule.SourceInstalledModID == rule.ReferenceInstalledModID {
+			return nil, errors.New("profile mod rule cannot reference the same mod")
+		}
+		for _, id := range []int64{rule.SourceInstalledModID, rule.ReferenceInstalledModID} {
+			var belongs int
+			if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM installed_mods im
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id
+JOIN profile_mods pm ON pm.installed_mod_id = im.id AND pm.profile_id = ?
+WHERE im.id = ? AND m.game_id = ?
+`, profileID, id, gameID).Scan(&belongs); err != nil {
+				return nil, err
+			}
+			if belongs == 0 {
+				return nil, errors.New("profile mod rule references a mod outside this profile")
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_mod_rules (profile_id, source_installed_mod_id, reference_installed_mod_id, rule_type, version, updated_at)
+VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+`, profileID, rule.SourceInstalledModID, rule.ReferenceInstalledModID, ruleType, strings.TrimSpace(rule.Version)); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return db.ProfileModRules(ctx, profileID)
+}
+
+func (db *DB) ApplyProfileModRules(ctx context.Context, profileID int64) ([]InstalledMod, error) {
+	mods, err := db.InstalledModsForProfile(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := db.ProfileModRules(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	ordered, err := SortModsByRules(mods, rules)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(ordered))
+	for _, mod := range ordered {
+		ids = append(ids, mod.ID)
+	}
+	return db.SetProfileModOrder(ctx, profileID, ids)
+}
+
+func SortModsByRules(mods []InstalledMod, rules []ProfileModRule) ([]InstalledMod, error) {
+	byID := map[int64]InstalledMod{}
+	for _, mod := range mods {
+		byID[mod.ID] = mod
+	}
+	edges := map[int64][]int64{}
+	indegree := map[int64]int{}
+	for _, mod := range mods {
+		indegree[mod.ID] = 0
+	}
+	addEdge := func(before, after int64) {
+		if _, ok := byID[before]; !ok {
+			return
+		}
+		if _, ok := byID[after]; !ok {
+			return
+		}
+		for _, existing := range edges[before] {
+			if existing == after {
+				return
+			}
+		}
+		edges[before] = append(edges[before], after)
+		indegree[after]++
+	}
+	for _, rule := range rules {
+		switch rule.Type {
+		case "before":
+			addEdge(rule.SourceInstalledModID, rule.ReferenceInstalledModID)
+		case "after":
+			addEdge(rule.ReferenceInstalledModID, rule.SourceInstalledModID)
+		}
+	}
+	queue := make([]InstalledMod, 0, len(mods))
+	for _, mod := range mods {
+		if indegree[mod.ID] == 0 {
+			queue = append(queue, mod)
+		}
+	}
+	sort.SliceStable(queue, func(i, j int) bool {
+		if queue[i].Priority != queue[j].Priority {
+			return queue[i].Priority < queue[j].Priority
+		}
+		return strings.ToLower(queue[i].Name) < strings.ToLower(queue[j].Name)
+	})
+	var out []InstalledMod
+	for len(queue) > 0 {
+		next := queue[0]
+		queue = queue[1:]
+		out = append(out, next)
+		for _, after := range edges[next.ID] {
+			indegree[after]--
+			if indegree[after] == 0 {
+				queue = append(queue, byID[after])
+				sort.SliceStable(queue, func(i, j int) bool {
+					if queue[i].Priority != queue[j].Priority {
+						return queue[i].Priority < queue[j].Priority
+					}
+					return strings.ToLower(queue[i].Name) < strings.ToLower(queue[j].Name)
+				})
+			}
+		}
+	}
+	if len(out) != len(mods) {
+		return nil, errors.New("profile mod rules contain a cycle")
+	}
+	return out, nil
 }
 
 func (db *DB) fileConflictWinner(ctx context.Context, profileID int64, targetPath string) (FileConflictWinner, error) {

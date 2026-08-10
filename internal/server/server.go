@@ -500,6 +500,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
+	mux.HandleFunc("GET /api/profiles/{profileID}/mods/rules", s.handleProfileModRules)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/rules", s.handleSetProfileModRules)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/mods/{installedModID}", s.handleRemoveProfileMod)
 	mux.HandleFunc("POST /api/profiles/{profileID}/mods/{installedModID}/copy", s.handleCopyProfileMod)
@@ -3978,6 +3980,23 @@ type profileModUpdateResponse struct {
 type profileModOrderUpdateResponse struct {
 	Mods  []storage.InstalledMod `json:"mods"`
 	Apply profileApplyResponse   `json:"apply"`
+}
+
+type profileModRulesRequest struct {
+	Rules []profileModRuleRequest `json:"rules"`
+}
+
+type profileModRuleRequest struct {
+	SourceInstalledModID    int64  `json:"source_installed_mod_id"`
+	ReferenceInstalledModID int64  `json:"reference_installed_mod_id"`
+	Type                    string `json:"type"`
+	Version                 string `json:"version,omitempty"`
+}
+
+type profileModRulesResponse struct {
+	Rules []storage.ProfileModRule `json:"rules"`
+	Mods  []storage.InstalledMod   `json:"mods,omitempty"`
+	Apply profileApplyResponse     `json:"apply"`
 }
 
 type profilePluginActivationUpdateResponse struct {
@@ -11598,6 +11617,65 @@ func (s *Server) handleSetProfileModOrder(w http.ResponseWriter, r *http.Request
 		apply = s.applyProfileChangesForUserAction(r.Context(), appID, "profile-mod-order")
 	}
 	writeJSON(w, http.StatusOK, profileModOrderUpdateResponse{Mods: mods, Apply: apply})
+}
+
+func (s *Server) handleProfileModRules(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	rules, err := s.db.ProfileModRules(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, profileModRulesResponse{Rules: rules})
+}
+
+func (s *Server) handleSetProfileModRules(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	var req profileModRulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	nextRules := make([]storage.ProfileModRule, 0, len(req.Rules))
+	for _, rule := range req.Rules {
+		nextRules = append(nextRules, storage.ProfileModRule{
+			SourceInstalledModID:    rule.SourceInstalledModID,
+			ReferenceInstalledModID: rule.ReferenceInstalledModID,
+			Type:                    rule.Type,
+			Version:                 rule.Version,
+		})
+	}
+	rules, err := s.db.ReplaceProfileModRules(r.Context(), profileID, nextRules)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	mods, err := s.db.ApplyProfileModRules(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.logger.Info("profile mod rules updated", "profile_id", profileID, "rules", len(rules), "mods", len(mods), "app_id", appID)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":     "mod_rules_updated",
+		"profile_id": profileID,
+		"rules":      len(rules),
+	})
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "profile-mod-rules")
+	writeJSON(w, http.StatusOK, profileModRulesResponse{Rules: rules, Mods: mods, Apply: apply})
 }
 
 func (s *Server) handleSetProfilePluginActivation(w http.ResponseWriter, r *http.Request) {

@@ -174,6 +174,18 @@ CREATE TABLE IF NOT EXISTS profile_features (
 	PRIMARY KEY(profile_id, feature_id)
 );
 
+CREATE TABLE IF NOT EXISTS profile_mod_rules (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+	source_installed_mod_id INTEGER NOT NULL REFERENCES installed_mods(id) ON DELETE CASCADE,
+	reference_installed_mod_id INTEGER NOT NULL REFERENCES installed_mods(id) ON DELETE CASCADE,
+	rule_type TEXT NOT NULL,
+	version TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE(profile_id, source_installed_mod_id, reference_installed_mod_id)
+);
+
 CREATE TABLE IF NOT EXISTS profile_plugin_activations (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
