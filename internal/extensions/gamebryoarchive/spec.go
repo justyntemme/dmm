@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source registers this archive engine, but DMM has not implemented the native Go list/extract/write engine yet."
+const writePendingMessage = "DMM has a native Go list/read/extract runtime for this archive type. Vortex's write/create path remains pending."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -33,17 +33,15 @@ func Register(r sdk.Registrar) {
 		Name:           "Bethesda BA2",
 		FileExtensions: []string{".ba2"},
 		Engine:         ID,
-		Status:         sdk.CapabilityStatusBlocked,
-		Message:        blockedMessage,
+		Status:         sdk.CapabilityStatusReady,
 	})
 	r.RegisterArchiveType(sdk.ArchiveTypeSpec{
 		ID:             "bsa",
 		Name:           "Bethesda BSA",
 		FileExtensions: []string{".bsa"},
 		Engine:         ID,
-		SupportsWrite:  true,
-		Status:         sdk.CapabilityStatusBlocked,
-		Message:        blockedMessage,
+		Status:         sdk.CapabilityStatusReady,
+		Message:        writePendingMessage,
 	})
 }
 

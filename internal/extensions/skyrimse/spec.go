@@ -145,6 +145,7 @@ func Register(r sdk.Registrar) {
 			{Name: "SkyrimCustom.ini", Optional: true},
 		},
 	})
+	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimse-exe-version",
 		Name:     "SkyrimSE.exe file version",
@@ -262,6 +263,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex local game settings support",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/local-gamesettings/src",
+		},
+		{
+			Name: "Vortex Gamebryo settings tests",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-test-settings/src",
 		},
 		{
 			Name: "Vortex script extender installer",

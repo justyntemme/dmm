@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-faster/city v1.0.1
+	github.com/pierrec/lz4/v4 v4.1.28
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.54.0

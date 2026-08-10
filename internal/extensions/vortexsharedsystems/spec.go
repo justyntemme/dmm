@@ -77,7 +77,7 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionMainPage(blockedMainPage("gamebryo-savegames", "Save games", "savegame"))
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusBlocked, Message: blockedMessage})
 	r.RegisterExtensionAPI(blockedAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
-	r.RegisterExtensionTest(blockedTest("gamebryo-skyrim-fonts", "Skyrim font settings check", "gamemode-activated"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "skyrim-fonts", Name: "Skyrim font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionMainPage(blockedMainPage("morrowind-plugins", "Morrowind plugins", "plugins"))
 	r.RegisterHistoryStack(sdk.HistoryStackSpec{
 		ID:      "plugins",

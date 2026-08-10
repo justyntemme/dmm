@@ -1,6 +1,7 @@
 package enderal
 
 import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -50,9 +51,14 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
 	registerSupportedTools(r)
+	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-enderal extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-enderal/src",
+	})
+	r.RegisterSource(sdk.SourceRef{
+		Name: "Vortex Gamebryo settings tests",
+		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-test-settings/src",
 	})
 }
 

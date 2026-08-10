@@ -138,6 +138,7 @@ func Register(r sdk.Registrar) {
 			{Name: "SkyrimPrefs.ini"},
 		},
 	})
+	gamebryo.RegisterSkyrimFontSettingsTest(r, gamebryo.SkyrimFontSettingsOptions{GameID: VortexGameID})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "skyrimvr-exe-version",
 		Name:     "SkyrimVR.exe file version",
@@ -198,5 +199,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Vortex Gamebryo plugin management game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts"},
 		{Name: "Vortex Gamebryo archive invalidation game support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts"},
 		{Name: "Vortex local game settings support", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src"},
+		{Name: "Vortex Gamebryo settings tests", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-test-settings/src"},
 	}
 }
