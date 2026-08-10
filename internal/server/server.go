@@ -2771,7 +2771,24 @@ func (s *Server) extensionNoticeJobPayload(ctx context.Context, appID, event, so
 	payload["tool_name"] = strings.TrimSpace(notice.ToolName)
 	payload["action_label"] = strings.TrimSpace(notice.ActionLabel)
 	payload["help_url"] = strings.TrimSpace(notice.HelpURL)
+	if notice.AutoRun {
+		payload["auto_run"] = "true"
+	}
+	if notice.WaitForExit {
+		payload["tool_wait_for_exit"] = "true"
+	}
+	if len(notice.ToolArguments) > 0 {
+		payload["tool_arguments"] = strings.Join(trimmedStringSlice(notice.ToolArguments), "\n")
+	}
 	s.addExtensionNoticeActionPayload(ctx, appID, notice, payload)
+	if strings.TrimSpace(payload["tool_action_available"]) == "true" && len(notice.ToolArguments) > 0 {
+		executablePath := strings.TrimSpace(payload["tool_executable_path"])
+		if executablePath != "" {
+			args := trimmedStringSlice(notice.ToolArguments)
+			payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(executablePath, args...)
+		}
+	}
+	addExtensionGeneratedOutputPayload(notice.GeneratedOutput, payload)
 	for key, value := range payload {
 		if strings.TrimSpace(value) == "" {
 			delete(payload, key)
@@ -2810,6 +2827,37 @@ func (s *Server) addExtensionToolLaunchPayload(ctx context.Context, appID, toolI
 	for key, value := range resolved {
 		payload[key] = value
 	}
+}
+
+func addExtensionGeneratedOutputPayload(spec *gameext.EventToolGeneratedOutputSpec, payload jobs.JobPayload) {
+	if spec == nil {
+		return
+	}
+	payload["tool_post_action"] = extensionToolPostGenerated
+	if spec.TargetProfileID > 0 {
+		payload["target_profile_id"] = strconv.FormatInt(spec.TargetProfileID, 10)
+	}
+	payload["generated_mod_name"] = strings.TrimSpace(spec.Name)
+	payload["generated_mod_type"] = strings.TrimSpace(spec.ModType)
+	if stagingPath := strings.TrimSpace(spec.StagingPath); stagingPath != "" {
+		payload["generated_mod_staging_path"] = filepath.Clean(stagingPath)
+	}
+	payload["generated_mod_source_mod_id"] = strings.TrimSpace(spec.SourceModID)
+	payload["generated_mod_source_file_id"] = strings.TrimSpace(spec.SourceFileID)
+	payload["generated_mod_version"] = strings.TrimSpace(spec.Version)
+	payload["generated_mod_target_root_id"] = strings.TrimSpace(spec.TargetRootID)
+	payload["generated_mod_target_relative_root"] = filepath.ToSlash(strings.TrimSpace(spec.TargetRelativeRoot))
+}
+
+func trimmedStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID string) (jobs.JobPayload, error) {
@@ -3044,9 +3092,34 @@ func extensionNoticeKey(appID, event string, notice gameext.EventNotice) string 
 		strings.TrimSpace(notice.ToolID),
 		strings.TrimSpace(notice.ActionLabel),
 		strings.TrimSpace(notice.HelpURL),
+		strconv.FormatBool(notice.AutoRun),
+		strconv.FormatBool(notice.WaitForExit),
+		strings.Join(trimmedStringSlice(notice.ToolArguments), "\x1f"),
+		extensionGeneratedOutputNoticeKey(notice.GeneratedOutput),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:12])
+}
+
+func extensionGeneratedOutputNoticeKey(spec *gameext.EventToolGeneratedOutputSpec) string {
+	if spec == nil {
+		return ""
+	}
+	stagingPath := strings.TrimSpace(spec.StagingPath)
+	if stagingPath != "" {
+		stagingPath = filepath.Clean(stagingPath)
+	}
+	return strings.Join([]string{
+		strconv.FormatInt(spec.TargetProfileID, 10),
+		strings.TrimSpace(spec.Name),
+		strings.TrimSpace(spec.ModType),
+		stagingPath,
+		strings.TrimSpace(spec.SourceModID),
+		strings.TrimSpace(spec.SourceFileID),
+		strings.TrimSpace(spec.Version),
+		strings.TrimSpace(spec.TargetRootID),
+		filepath.ToSlash(strings.TrimSpace(spec.TargetRelativeRoot)),
+	}, "\x1f")
 }
 
 func extensionEventNotices(result gameext.EventHandlerResult) []gameext.EventNotice {
@@ -3058,6 +3131,17 @@ func extensionEventNotices(result gameext.EventHandlerResult) []gameext.EventNot
 		notice.ToolName = strings.TrimSpace(notice.ToolName)
 		notice.ActionLabel = strings.TrimSpace(notice.ActionLabel)
 		notice.HelpURL = strings.TrimSpace(notice.HelpURL)
+		notice.ToolArguments = trimmedStringSlice(notice.ToolArguments)
+		if notice.GeneratedOutput != nil {
+			notice.GeneratedOutput.Name = strings.TrimSpace(notice.GeneratedOutput.Name)
+			notice.GeneratedOutput.ModType = strings.TrimSpace(notice.GeneratedOutput.ModType)
+			notice.GeneratedOutput.StagingPath = strings.TrimSpace(notice.GeneratedOutput.StagingPath)
+			notice.GeneratedOutput.SourceModID = strings.TrimSpace(notice.GeneratedOutput.SourceModID)
+			notice.GeneratedOutput.SourceFileID = strings.TrimSpace(notice.GeneratedOutput.SourceFileID)
+			notice.GeneratedOutput.Version = strings.TrimSpace(notice.GeneratedOutput.Version)
+			notice.GeneratedOutput.TargetRootID = strings.TrimSpace(notice.GeneratedOutput.TargetRootID)
+			notice.GeneratedOutput.TargetRelativeRoot = filepath.ToSlash(strings.TrimSpace(notice.GeneratedOutput.TargetRelativeRoot))
+		}
 		if notice.Message == "" {
 			continue
 		}
@@ -15003,6 +15087,10 @@ func (s *Server) queueExtensionNoticeJobs(ctx context.Context, appID, event, sou
 			continue
 		}
 		payload := s.extensionNoticeJobPayload(ctx, appID, event, source, notice)
+		if notice.AutoRun && strings.TrimSpace(notice.ActionKind) == gameext.EventNoticeActionRunLaunchTool && strings.TrimSpace(payload["tool_action_available"]) == "true" {
+			s.queueExtensionNoticeToolAction(appID, event, titleName, notice, payload)
+			continue
+		}
 		key := payload["notice_key"]
 		if existing, ok := s.findActiveExtensionNoticeJob(key); ok {
 			updated, _ := s.jobs.Wait(existing.ID, notice.Message)
@@ -15013,6 +15101,33 @@ func (s *Server) queueExtensionNoticeJobs(ctx context.Context, appID, event, sou
 		job, _ = s.jobs.Wait(job.ID, notice.Message)
 		s.logger.Info("extension notice queued", "app_id", appID, "event", event, "job_id", job.ID, "notice_key", key, "tool_id", notice.ToolID)
 	}
+}
+
+func (s *Server) queueExtensionNoticeToolAction(appID, event, gameName string, notice gameext.EventNotice, payload jobs.JobPayload) {
+	toolID := strings.TrimSpace(payload["tool_id"])
+	if toolID == "" {
+		toolID = strings.TrimSpace(notice.ToolID)
+	}
+	toolName := strings.TrimSpace(payload["tool_name"])
+	if toolName == "" {
+		toolName = strings.TrimSpace(notice.ToolName)
+	}
+	if toolName == "" {
+		toolName = toolID
+	}
+	message := strings.TrimSpace(notice.Message)
+	if message == "" {
+		message = "Waiting for Decky to launch " + toolName
+	}
+	if existing, ok := s.findActiveExtensionToolAction(appID, toolID); ok {
+		updated, _ := s.jobs.SetPayload(existing.ID, payload)
+		updated, _ = s.jobs.Wait(updated.ID, message)
+		s.logger.Info("extension tool action refreshed from event", "app_id", appID, "event", event, "job_id", updated.ID, "notice_key", payload["notice_key"], "tool_id", toolID)
+		return
+	}
+	job := s.jobs.CreateWithPayload(jobTypeExtensionToolAction, "Extension tool: "+toolName, payload)
+	job, _ = s.jobs.Wait(job.ID, message)
+	s.logger.Info("extension tool action queued from event", "app_id", appID, "event", event, "game", gameName, "job_id", job.ID, "notice_key", payload["notice_key"], "tool_id", toolID, "wait_for_exit", payload["tool_wait_for_exit"], "post_action", payload["tool_post_action"])
 }
 
 func (s *Server) findActiveExtensionNoticeJob(noticeKey string) (jobs.Job, bool) {

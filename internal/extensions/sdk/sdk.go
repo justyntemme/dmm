@@ -1153,12 +1153,28 @@ type AdoptedFile struct {
 }
 
 type EventNotice struct {
-	Message     string
-	ActionKind  string
-	ToolID      string
-	ToolName    string
-	ActionLabel string
-	HelpURL     string
+	Message         string
+	ActionKind      string
+	ToolID          string
+	ToolName        string
+	ActionLabel     string
+	HelpURL         string
+	AutoRun         bool
+	WaitForExit     bool
+	ToolArguments   []string
+	GeneratedOutput *EventToolGeneratedOutputSpec
+}
+
+type EventToolGeneratedOutputSpec struct {
+	TargetProfileID    int64
+	Name               string
+	ModType            string
+	StagingPath        string
+	SourceModID        string
+	SourceFileID       string
+	Version            string
+	TargetRootID       string
+	TargetRelativeRoot string
 }
 
 const (

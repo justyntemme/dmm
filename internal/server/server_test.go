@@ -11871,6 +11871,9 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "hook-tool.exe"), []byte("tool"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(gamePath, "auto-tool.exe"), []byte("tool"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	const appID = "413150"
 	var willDeployCalls int
 	var didDeployCalls int
@@ -11891,6 +11894,12 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 				Name:               "Hook Tool",
 				ExecutableRelative: "hook-tool.exe",
 				RequiredFiles:      []string{"hook-tool.exe"},
+			})
+			r.RegisterLaunchTool(sdk.LaunchToolSpec{
+				ID:                 "auto-tool",
+				Name:               "Automatic Tool",
+				ExecutableRelative: "auto-tool.exe",
+				RequiredFiles:      []string{"auto-tool.exe"},
 			})
 			r.RegisterEventHandler(sdk.EventHandlerSpec{
 				Event: "will-deploy",
@@ -11939,6 +11948,24 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 						ToolName:    "Hook Tool",
 						ActionLabel: "Open Hook Tool",
 						HelpURL:     "https://example.invalid/hook-tool",
+					}, {
+						Message:       "auto tool should run",
+						ActionKind:    sdk.EventNoticeActionRunLaunchTool,
+						ToolID:        "auto-tool",
+						ToolName:      "Automatic Tool",
+						AutoRun:       true,
+						WaitForExit:   true,
+						ToolArguments: []string{"--generated", "out"},
+						GeneratedOutput: &sdk.EventToolGeneratedOutputSpec{
+							TargetProfileID:    input.ProfileID,
+							Name:               "Automatic Output",
+							ModType:            "hook-root",
+							StagingPath:        filepath.Join(input.StagingRoot, "_generated", "tool-output", input.AppID, strconv.FormatInt(input.ProfileID, 10), "auto-tool"),
+							SourceModID:        "auto-tool-output",
+							SourceFileID:       "profile-" + strconv.FormatInt(input.ProfileID, 10),
+							Version:            "1.0.0",
+							TargetRelativeRoot: "Generated",
+						},
 					}}}, nil
 				},
 			})
@@ -12028,6 +12055,25 @@ func TestDeployRunsExtensionWillDeployHookMappings(t *testing.T) {
 	}
 	if noticeCount != 1 {
 		t.Fatalf("extension notice count = %d", noticeCount)
+	}
+	toolActionCount := 0
+	for _, job := range srv.jobs.List() {
+		if job.Type != jobTypeExtensionToolAction {
+			continue
+		}
+		toolActionCount++
+		if job.Status != jobs.StatusWaiting || job.Payload["app_id"] != appID || job.Payload["event"] != "did-deploy" || job.Payload["tool_id"] != "auto-tool" || job.Payload["auto_run"] != "true" || job.Payload["tool_wait_for_exit"] != "true" || job.Payload["tool_post_action"] != extensionToolPostGenerated || job.Payload["generated_mod_name"] != "Automatic Output" || job.Payload["generated_mod_type"] != "hook-root" || job.Payload["generated_mod_target_relative_root"] != "Generated" {
+			t.Fatalf("extension tool action job = %+v", job)
+		}
+		if !strings.Contains(job.Payload["tool_launch_options"], "auto-tool.exe") || !strings.Contains(job.Payload["tool_launch_options"], "--generated") {
+			t.Fatalf("extension tool action launch options = %q", job.Payload["tool_launch_options"])
+		}
+		if !strings.Contains(job.Message, "auto tool should run") {
+			t.Fatalf("extension tool action message = %q", job.Message)
+		}
+	}
+	if toolActionCount != 1 {
+		t.Fatalf("extension tool action count = %d", toolActionCount)
 	}
 
 	srv.queueExtensionNoticeJobs(context.Background(), appID, "did-deploy", "manual", "Hook Game", []gameext.EventNotice{{
