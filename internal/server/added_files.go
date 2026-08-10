@@ -75,6 +75,10 @@ func (s *Server) processNewFileMonitorChangesBeforeDeploy(ctx context.Context, g
 }
 
 func (s *Server) runFileMonitorEventHandlers(ctx context.Context, game storage.Game, profileID int64, mods []storage.InstalledMod, managedFiles []deploy.AppliedFile, event string, added []sdk.AddedFile, removed []sdk.RemovedFile) (gameext.EventHandlerResult, error) {
+	profile, err := s.db.Profile(ctx, profileID)
+	if err != nil {
+		return gameext.EventHandlerResult{}, err
+	}
 	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
 	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", game.SteamAppID, strconv.FormatInt(profileID, 10), event)
 	if err := os.RemoveAll(workDir); err != nil {
@@ -92,6 +96,7 @@ func (s *Server) runFileMonitorEventHandlers(ctx context.Context, game storage.G
 		GamePath:          game.GamePath,
 		LibraryPath:       game.LibraryPath,
 		ProfileID:         profileID,
+		ProfileName:       profile.Name,
 		StagingRoot:       stagingRoot,
 		WorkDir:           workDir,
 		Source:            "new-file-monitor",

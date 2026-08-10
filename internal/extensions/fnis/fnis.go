@@ -11,6 +11,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/peversion"
 )
 
@@ -38,12 +39,15 @@ type Patch struct {
 }
 
 func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
+	r.RegisterModType(installplan.ModTypeSpec{ID: ToolModType(opts), TargetRoot: "Data"})
+	r.RegisterModType(installplan.ModTypeSpec{ID: GeneratedModType(opts), TargetRoot: "Data"})
+	r.RegisterInstaller(ToolInstaller(opts))
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:        SettingAutoRun,
 		Name:      "Run FNIS automatically",
 		Scope:     "profile",
 		ValueType: sdk.ExtensionSettingValueBool,
-		Message:   "Matches Vortex's settings.fnis.autoRun flag. The setting is ready, but automatic FNIS generation remains gated on the generated-tool runtime.",
+		Message:   "Matches Vortex's settings.fnis.autoRun flag. When enabled, DMM queues FNIS after relevant animation deployments and records the generated profile output as FNIS Data.",
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:        SettingPatches,
@@ -72,11 +76,44 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		ID:      "fnis-did-deploy",
 		Event:   sdk.EventDidDeploy,
 		Name:    "FNIS generator post-deploy hook",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex runs GenerateFNISForUsers.exe with RedirectFiles pointed at a profile-generated FNIS Data mod, then deploys that single generated mod. DMM still needs a Decky wait-for-tool-exit plus generated-profile-mod primitive.",
+		Handler: didDeploy(opts),
 	})
 	for _, ref := range Sources() {
 		r.RegisterSource(ref)
+	}
+}
+
+func ToolModType(opts SupportOptions) string {
+	gameID := strings.TrimSpace(opts.GameID)
+	if gameID == "" {
+		gameID = "game"
+	}
+	return gameID + "-fnis-tool"
+}
+
+func GeneratedModType(opts SupportOptions) string {
+	gameID := strings.TrimSpace(opts.GameID)
+	if gameID == "" {
+		gameID = "game"
+	}
+	return gameID + "-fnis-data"
+}
+
+func ToolInstaller(opts SupportOptions) installplan.InstallerSpec {
+	return installplan.InstallerSpec{
+		ID:                "vortex:" + strings.TrimSpace(opts.GameID) + ":fnis-tool",
+		VortexInstallerID: "fnis-integration-tool",
+		Priority:          20,
+		ModType:           ToolModType(opts),
+		NameSource:        installplan.NameSourceArchive,
+		InstructionMode:   installplan.InstructionCustom,
+		CustomMatch: func(extractedRoot string) bool {
+			_, ok := findExecutable(extractedRoot, ToolExecutable)
+			return ok
+		},
+		CustomBuild: func(input installplan.BuildInput) (installplan.Plan, error) {
+			return buildToolPlan(input, opts)
+		},
 	}
 }
 
@@ -98,6 +135,100 @@ func DataModName(profileName string) string {
 	}
 	replacer := strings.NewReplacer(":", "_", "/", "_", "\\", "_", "*", "_", "?", "_", `"`, "_", "<", "_", ">", "_", "|", "_")
 	return "FNIS Data (" + replacer.Replace(profileName) + ")"
+}
+
+func didDeploy(opts SupportOptions) sdk.EventHandlerFunc {
+	return func(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+		if err := ctx.Err(); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		if !settingBool(input.ExtensionSettings, opts.GameID, SettingAutoRun) {
+			return sdk.EventHandlerResult{}, nil
+		}
+		if input.ProfileID <= 0 || strings.TrimSpace(input.StagingRoot) == "" {
+			return sdk.EventHandlerResult{Messages: []string{"FNIS automatic generation skipped because deployment profile context is incomplete."}}, nil
+		}
+		if !deploymentHasAnimationRelevantFiles(input, opts) {
+			return sdk.EventHandlerResult{}, nil
+		}
+		profileName := strings.TrimSpace(input.ProfileName)
+		if profileName == "" {
+			profileName = "Profile " + strconv.FormatInt(input.ProfileID, 10)
+		}
+		outputPath := filepath.Join(input.StagingRoot, "_generated", "tool-output", input.AppID, strconv.FormatInt(input.ProfileID, 10), "fnis-data")
+		message := "FNIS animation generation queued for " + profileName + "."
+		return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+			Message:       message,
+			ActionKind:    sdk.EventNoticeActionRunLaunchTool,
+			ToolID:        ToolID,
+			ToolName:      ToolName,
+			ActionLabel:   "Run FNIS",
+			AutoRun:       true,
+			WaitForExit:   true,
+			ToolArguments: []string{`RedirectFiles="` + outputPath + `"`, "InstantExecute=1"},
+			GeneratedOutput: &sdk.EventToolGeneratedOutputSpec{
+				TargetProfileID:    input.ProfileID,
+				Name:               DataModName(profileName),
+				ModType:            GeneratedModType(opts),
+				StagingPath:        outputPath,
+				SourceModID:        "fnis-data-" + strconv.FormatInt(input.ProfileID, 10),
+				SourceFileID:       "profile-" + strconv.FormatInt(input.ProfileID, 10),
+				Version:            "1.0.0",
+				TargetRelativeRoot: "",
+			},
+		}}}, nil
+	}
+}
+
+func deploymentHasAnimationRelevantFiles(input sdk.EventHandlerInput, opts SupportOptions) bool {
+	for _, file := range input.ManagedFiles {
+		if animationRelevantRelative(file.TargetPath, opts) {
+			return true
+		}
+	}
+	for _, mapping := range input.Mappings {
+		if animationRelevantRelative(mapping.TargetRelative, opts) {
+			return true
+		}
+	}
+	for _, mod := range input.Mods {
+		if strings.EqualFold(strings.TrimSpace(mod.ModType), GeneratedModType(opts)) {
+			continue
+		}
+		for _, file := range mod.Files {
+			if animationRelevantRelative(file.TargetRelative, opts) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func animationRelevantRelative(rel string, opts SupportOptions) bool {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if rel == "" {
+		return false
+	}
+	lowerRel := strings.ToLower(rel)
+	base := strings.ToLower(filepath.Base(lowerRel))
+	patchList := strings.ToLower(strings.TrimSpace(opts.PatchListName))
+	if patchList == "" {
+		patchList = "patchlist.txt"
+	}
+	switch {
+	case strings.HasPrefix(base, "fnis_") && strings.HasSuffix(base, "_list.txt"):
+		return true
+	case strings.HasPrefix(base, "fnis") && strings.HasSuffix(base, "behavior.txt"):
+		return true
+	case base == "patchlist.txt" || base == patchList:
+		return true
+	case strings.HasPrefix(base, "skeleton") && strings.HasSuffix(base, ".hkx"):
+		return true
+	case strings.Contains(lowerRel, "/animations/") && strings.HasSuffix(base, ".hkx"):
+		return true
+	default:
+		return false
+	}
 }
 
 func ReadPatches(path string) ([]Patch, error) {
@@ -138,6 +269,131 @@ func PatchListPath(gamePath string, opts SupportOptions) string {
 	return filepath.Join(strings.TrimSpace(gamePath), name)
 }
 
+func buildToolPlan(input installplan.BuildInput, opts SupportOptions) (installplan.Plan, error) {
+	executableRel, ok := findExecutable(input.ExtractedRoot, ToolExecutable)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("Vortex FNIS integration matched but GenerateFNISForUsers.exe was not found")
+	}
+	files, err := toolPayloadFiles(input.ExtractedRoot, executableRel)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	if len(files) == 0 {
+		return installplan.Plan{}, installplan.Unsupported("Vortex FNIS integration matched but produced no deployable files")
+	}
+	executableTargetRel := fnisTargetRelative(executableRel)
+	instructions := make([]installplan.Instruction, 0, len(files))
+	for _, rel := range files {
+		targetRel := fnisTargetRelative(rel)
+		if targetRel == "" || targetRel == "." {
+			continue
+		}
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(rel)),
+			StagingRelative: targetRel,
+			TargetRelative:  targetRel,
+		})
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, installplan.Unsupported("Vortex FNIS integration matched but produced no deployable files")
+	}
+	metadata := installplan.ModMetadata{
+		Kind:            "tool",
+		Name:            ToolName,
+		UniqueID:        ToolID,
+		SourcePath:      executableRel,
+		StagingRelative: executableTargetRel,
+		TargetRelative:  executableTargetRel,
+	}
+	if version, err := peversion.FileVersion(filepath.Join(input.ExtractedRoot, filepath.FromSlash(executableRel))); err == nil && strings.TrimSpace(version) != "" {
+		metadata.Version = strings.TrimSpace(version)
+	}
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    ToolModType(opts),
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-fnis-tool-installer",
+			Path:   executableRel,
+			Reason: "Vortex FNIS integration matched " + ToolExecutable,
+		}},
+		Metadata:     []installplan.ModMetadata{metadata},
+		Instructions: instructions,
+	}, nil
+}
+
+func toolPayloadFiles(root, executableRel string) ([]string, error) {
+	executableRel = filepath.ToSlash(strings.TrimSpace(executableRel))
+	requiresDataPrefix := strings.HasPrefix(strings.ToLower(executableRel), "data/")
+	var files []string
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, "../") || rel == ".." || filepath.IsAbs(rel) {
+			return nil
+		}
+		if requiresDataPrefix && !strings.HasPrefix(strings.ToLower(rel), "data/") {
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func fnisTargetRelative(rel string) string {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	lower := strings.ToLower(rel)
+	if lower == "data" {
+		return ""
+	}
+	if strings.HasPrefix(lower, "data/") {
+		return rel[len("Data/"):]
+	}
+	return rel
+}
+
+func findExecutable(root, executable string) (string, bool) {
+	root = strings.TrimSpace(root)
+	executable = strings.TrimSpace(executable)
+	if root == "" || executable == "" {
+		return "", false
+	}
+	var found string
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || found != "" {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Base(path), executable) {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, "../") || rel == ".." || filepath.IsAbs(rel) {
+			return nil
+		}
+		found = rel
+		return nil
+	})
+	return found, found != ""
+}
+
 func NexusPageURL(opts SupportOptions) string {
 	section := strings.TrimSpace(opts.NexusSection)
 	modID := strings.TrimSpace(opts.NexusModID)
@@ -169,7 +425,7 @@ func checkFNIS(ctx context.Context, opts SupportOptions, input sdk.ExtensionTest
 			Message:  "FNIS automatic integration is disabled for this profile.",
 		}
 	}
-	toolPath, ok := resolveToolPath(input.GamePath)
+	toolPath, ok := resolveToolPath(input)
 	if !ok {
 		return sdk.ExtensionTestResult{
 			Status:   sdk.HealthCheckStatusWarning,
@@ -257,13 +513,34 @@ func settingBool(settings map[string]map[string]json.RawMessage, extensionID, se
 	return json.Unmarshal(raw, &value) == nil && value
 }
 
-func resolveToolPath(gamePath string) (string, bool) {
-	gamePath = strings.TrimSpace(gamePath)
+func resolveToolPath(input sdk.ExtensionTestInput) (string, bool) {
+	for _, mod := range input.Mods {
+		for _, metadata := range mod.Metadata {
+			if !strings.EqualFold(strings.TrimSpace(metadata.Kind), "tool") || !strings.EqualFold(strings.TrimSpace(metadata.UniqueID), ToolID) {
+				continue
+			}
+			if rel := strings.TrimSpace(metadata.StagingRelative); rel != "" && strings.TrimSpace(mod.StagingPath) != "" {
+				path := filepath.Join(mod.StagingPath, filepath.FromSlash(filepath.ToSlash(rel)))
+				if pathWithinRoot(filepath.Clean(mod.StagingPath), path) {
+					return path, true
+				}
+			}
+			if rel := strings.TrimSpace(metadata.TargetRelative); rel != "" && strings.TrimSpace(input.GamePath) != "" {
+				path := filepath.Join(input.GamePath, "Data", filepath.FromSlash(filepath.ToSlash(rel)))
+				if pathWithinRoot(filepath.Clean(input.GamePath), path) {
+					return path, true
+				}
+			}
+		}
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
 	if gamePath == "" {
 		return "", false
 	}
-	path := filepath.Join(gamePath, ToolExecutable)
-	return path, true
+	if rel, ok := findExecutable(gamePath, ToolExecutable); ok {
+		return filepath.Join(gamePath, filepath.FromSlash(rel)), true
+	}
+	return filepath.Join(gamePath, ToolExecutable), true
 }
 
 func installDetails(opts SupportOptions) string {
@@ -272,4 +549,14 @@ func installDetails(opts SupportOptions) string {
 		return "Vortex requires FNIS 7.4 or newer for embedded automatic generation."
 	}
 	return "Vortex requires FNIS 7.4 or newer for embedded automatic generation. Source page: " + url
+}
+
+func pathWithinRoot(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }

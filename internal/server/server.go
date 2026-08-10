@@ -14898,10 +14898,11 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 	if !s.games.HasEventHandlerForSteamApp(game.SteamAppID, event) {
 		return gameext.EventHandlerResult{}, nil
 	}
-	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	profile, err := s.activeProfile(ctx, game.SteamAppID, mods)
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
+	profileID := profile.ID
 	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", game.SteamAppID, strconv.FormatInt(profileID, 10), strings.TrimSpace(event))
 	if err := os.RemoveAll(workDir); err != nil {
 		return gameext.EventHandlerResult{}, err
@@ -14918,6 +14919,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 		GamePath:          game.GamePath,
 		LibraryPath:       game.LibraryPath,
 		ProfileID:         profileID,
+		ProfileName:       profile.Name,
 		StagingRoot:       stagingRoot,
 		WorkDir:           workDir,
 		Source:            "deploy-plan",
@@ -14951,10 +14953,11 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	if err != nil {
 		return err
 	}
-	profileID, err := s.activeProfileID(ctx, appID, mods)
+	profile, err := s.activeProfile(ctx, appID, mods)
 	if err != nil {
 		return err
 	}
+	profileID := profile.ID
 	stagingRoot := strings.TrimSpace(plan.StagingRoot)
 	if stagingRoot == "" {
 		stagingRoot = filepath.Join(s.cfg.DataDir, "staging")
@@ -14975,6 +14978,7 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 		GamePath:          game.GamePath,
 		LibraryPath:       game.LibraryPath,
 		ProfileID:         profileID,
+		ProfileName:       profile.Name,
 		StagingRoot:       stagingRoot,
 		WorkDir:           workDir,
 		Source:            source,
@@ -15024,13 +15028,19 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 			return err
 		}
 	}
-	profileID := req.ProfileID
-	if profileID == 0 {
-		profileID, err = s.activeProfileID(ctx, appID, mods)
+	var profile storage.Profile
+	if req.ProfileID > 0 {
+		profile, err = s.db.Profile(ctx, req.ProfileID)
+		if err != nil {
+			return err
+		}
+	} else {
+		profile, err = s.activeProfile(ctx, appID, mods)
 		if err != nil {
 			return err
 		}
 	}
+	profileID := profile.ID
 	stagingRoot := filepath.Join(s.cfg.DataDir, "staging")
 	workDir := filepath.Join(stagingRoot, "_generated", "event-hooks", appID, strconv.FormatInt(profileID, 10), event)
 	if err := os.RemoveAll(workDir); err != nil {
@@ -15048,6 +15058,7 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 		GamePath:           game.GamePath,
 		LibraryPath:        game.LibraryPath,
 		ProfileID:          profileID,
+		ProfileName:        profile.Name,
 		StagingRoot:        stagingRoot,
 		WorkDir:            workDir,
 		Source:             strings.TrimSpace(req.Source),

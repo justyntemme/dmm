@@ -1058,6 +1058,7 @@ type EventHandlerInput struct {
 	GamePath          string
 	LibraryPath       string
 	ProfileID         int64
+	ProfileName       string
 	StagingRoot       string
 	WorkDir           string
 	Source            string
