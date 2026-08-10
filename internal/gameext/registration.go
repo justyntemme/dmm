@@ -994,20 +994,14 @@ func validateRuntimeAcquisition(requirementID string, spec gamehandler.RuntimeAc
 	if strings.TrimSpace(spec.Catalog) == "" {
 		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition catalog is required"))
 	}
-	rawURL := strings.TrimSpace(spec.URL)
-	if rawURL == "" {
-		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition url is required"))
-	} else {
-		parsed, err := url.Parse(rawURL)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition url must be an http or https URL"))
-		}
-	}
+	errs = append(errs, validateAcquisitionSource("runtime requirement "+requirementID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
 	for _, value := range []struct {
 		label string
 		text  string
 	}{
+		{label: "mode", text: spec.Mode},
 		{label: "archive name", text: spec.ArchiveName},
+		{label: "instructions", text: spec.Instructions},
 		{label: "source mod id", text: spec.SourceModID},
 		{label: "source file id", text: spec.SourceFileID},
 		{label: "source game", text: spec.SourceGame},
@@ -1350,20 +1344,14 @@ func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []erro
 	if strings.TrimSpace(spec.Catalog) == "" {
 		errs = append(errs, errors.New("supported tool "+toolID+" acquisition catalog is required"))
 	}
-	rawURL := strings.TrimSpace(spec.URL)
-	if rawURL == "" {
-		errs = append(errs, errors.New("supported tool "+toolID+" acquisition url is required"))
-	} else {
-		parsed, err := url.Parse(rawURL)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			errs = append(errs, errors.New("supported tool "+toolID+" acquisition url must be an http or https URL"))
-		}
-	}
+	errs = append(errs, validateAcquisitionSource("supported tool "+toolID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
 	for _, value := range []struct {
 		label string
 		text  string
 	}{
+		{label: "mode", text: spec.Mode},
 		{label: "archive name", text: spec.ArchiveName},
+		{label: "instructions", text: spec.Instructions},
 		{label: "source mod id", text: spec.SourceModID},
 		{label: "source file id", text: spec.SourceFileID},
 		{label: "source game", text: spec.SourceGame},
@@ -1374,6 +1362,22 @@ func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []erro
 		}
 	}
 	return errs
+}
+
+func validateAcquisitionSource(label, catalogName, rawURL, sourceGame, sourceModID string) []error {
+	var errs []error
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL != "" {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			errs = append(errs, errors.New(label+" url must be an http or https URL"))
+		}
+		return errs
+	}
+	if strings.EqualFold(strings.TrimSpace(catalogName), "nexus") && strings.TrimSpace(sourceGame) != "" && strings.TrimSpace(sourceModID) != "" {
+		return nil
+	}
+	return append(errs, errors.New(label+" url is required unless catalog is nexus with source game and source mod id"))
 }
 
 func validateLauncherRequirements(specs []sdk.LauncherRequirementSpec) []error {

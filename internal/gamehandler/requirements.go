@@ -82,8 +82,10 @@ type RuntimeAcquisitionSpec struct {
 	ID             string
 	Name           string
 	Catalog        string
+	Mode           string
 	URL            string
 	ArchiveName    string
+	Instructions   string
 	Required       bool
 	AutoAcquire    bool
 	SourceModID    string
@@ -97,8 +99,10 @@ type RuntimeAcquisition struct {
 	ID             string `json:"id,omitempty"`
 	Name           string `json:"name,omitempty"`
 	Catalog        string `json:"catalog,omitempty"`
+	Mode           string `json:"mode,omitempty"`
 	URL            string `json:"url,omitempty"`
 	ArchiveName    string `json:"archive_name,omitempty"`
+	Instructions   string `json:"instructions,omitempty"`
 	Required       bool   `json:"required,omitempty"`
 	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
 	SourceModID    string `json:"source_mod_id,omitempty"`
@@ -231,8 +235,10 @@ func runtimeAcquisition(spec *RuntimeAcquisitionSpec) *RuntimeAcquisition {
 		ID:             strings.TrimSpace(spec.ID),
 		Name:           strings.TrimSpace(spec.Name),
 		Catalog:        strings.TrimSpace(spec.Catalog),
+		Mode:           strings.TrimSpace(spec.Mode),
 		URL:            strings.TrimSpace(spec.URL),
 		ArchiveName:    strings.TrimSpace(spec.ArchiveName),
+		Instructions:   strings.TrimSpace(spec.Instructions),
 		Required:       spec.Required,
 		AutoAcquire:    spec.AutoAcquire,
 		SourceModID:    strings.TrimSpace(spec.SourceModID),

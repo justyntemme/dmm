@@ -423,7 +423,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/start", s.handleStartExtensionToolAction)
 	mux.HandleFunc("POST /api/tool/actions/{jobID}/complete", s.handleCompleteExtensionToolAction)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/acquire", s.handleAcquireExtensionTool)
+	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/open-browser", s.handleOpenExtensionToolAcquisitionBrowser)
 	mux.HandleFunc("POST /api/games/{appID}/requirements/{requirementID}/acquire", s.handleAcquireRuntimeRequirement)
+	mux.HandleFunc("POST /api/games/{appID}/requirements/{requirementID}/open-browser", s.handleOpenRuntimeRequirementAcquisitionBrowser)
 	mux.HandleFunc("POST /api/games/{appID}/tools/{toolID}/launch", s.handleQueueExtensionToolLaunch)
 	mux.HandleFunc("POST /api/games/{appID}/setup", s.handleRunGameSetup)
 	mux.HandleFunc("POST /api/games/{appID}/activate", s.handleActivateGame)
@@ -2803,7 +2805,7 @@ func (s *Server) extensionToolAcquisition(ctx context.Context, appID, toolID str
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		if acquisition.URL == "" {
+		if acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID) == "" {
 			return extension, tool, gameext.ToolAcquisitionSpec{}, errors.New("extension tool " + tool.ID + " acquisition URL is empty")
 		}
 		return extension, tool, acquisition, nil
@@ -2836,7 +2838,7 @@ func (s *Server) runtimeRequirementAcquisition(ctx context.Context, appID, requi
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		if acquisition.URL == "" {
+		if runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID) == "" {
 			return extension, requirement, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement " + requirement.ID + " acquisition URL is empty")
 		}
 		return extension, requirement, acquisition, nil
@@ -3357,11 +3359,12 @@ type patchUISettingsRequest struct {
 }
 
 type deckyBrowserOpenRequest struct {
-	URL        string `json:"url"`
-	SteamAppID string `json:"steam_app_id"`
-	ProfileID  int64  `json:"profile_id"`
-	Source     string `json:"source"`
-	Title      string `json:"title"`
+	URL          string `json:"url"`
+	SteamAppID   string `json:"steam_app_id"`
+	ProfileID    int64  `json:"profile_id"`
+	Source       string `json:"source"`
+	Title        string `json:"title"`
+	Instructions string `json:"instructions"`
 }
 
 type extensionSettingResponse struct {
@@ -3796,15 +3799,22 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	response, err := s.queueAcquisitionBrowserOpen(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) queueAcquisitionBrowserOpen(ctx context.Context, req deckyBrowserOpenRequest) (map[string]any, error) {
 	req.URL = strings.TrimSpace(req.URL)
 	if req.URL == "" {
-		http.Error(w, "url is required", http.StatusBadRequest)
-		return
+		return nil, errors.New("url is required")
 	}
 	parsed, err := url.Parse(req.URL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		http.Error(w, "url must be an http or https provider page", http.StatusBadRequest)
-		return
+		return nil, errors.New("url must be an http or https provider page")
 	}
 	req.SteamAppID = strings.TrimSpace(req.SteamAppID)
 	req.Source = strings.TrimSpace(req.Source)
@@ -3815,18 +3825,19 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 	if req.Title == "" {
 		req.Title = "DMM Browser"
 	}
-	if err := s.validateDeckyBrowserOpenTarget(r.Context(), req); err != nil {
+	req.Instructions = strings.TrimSpace(req.Instructions)
+	if err := s.validateDeckyBrowserOpenTarget(ctx, req); err != nil {
 		s.logger.Warn("decky browser open rejected", "app_id", req.SteamAppID, "profile_id", req.ProfileID, "source", req.Source, "error", err)
-		writeError(w, http.StatusBadRequest, err)
-		return
+		return nil, err
 	}
 	expiresAt := time.Now().UTC().Add(deckyBrowserOpenTTL)
 	payload := map[string]any{
-		"url":        req.URL,
-		"profile_id": req.ProfileID,
-		"source":     req.Source,
-		"title":      req.Title,
-		"expires_at": expiresAt.Format(time.RFC3339Nano),
+		"url":          req.URL,
+		"profile_id":   req.ProfileID,
+		"source":       req.Source,
+		"title":        req.Title,
+		"instructions": req.Instructions,
+		"expires_at":   expiresAt.Format(time.RFC3339Nano),
 	}
 	s.logger.Info(
 		"decky browser open requested",
@@ -3841,15 +3852,46 @@ func (s *Server) handleDeckyBrowserOpen(w http.ResponseWriter, r *http.Request) 
 		AppID:   req.SteamAppID,
 		Payload: events.MustPayload(payload),
 	})
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"ok":         true,
-		"app_id":     req.SteamAppID,
-		"expires_at": expiresAt,
-		"message":    "Deck browser handoff queued. Keep the Steam Deck awake and click Nexus Mod Manager Download in the Deck browser.",
-	})
+	return map[string]any{
+		"ok":           true,
+		"app_id":       req.SteamAppID,
+		"url":          req.URL,
+		"instructions": req.Instructions,
+		"expires_at":   expiresAt,
+		"message":      "Deck browser handoff queued. Keep the Steam Deck awake and click the provider download in the Deck browser.",
+	}, nil
 }
 
 const deckyBrowserOpenTTL = 10 * time.Minute
+
+func acquisitionBrowserURL(urlValue, catalogName, sourceGame, sourceModID, sourceFileID string) string {
+	urlValue = strings.TrimSpace(urlValue)
+	if urlValue != "" {
+		return urlValue
+	}
+	if strings.EqualFold(strings.TrimSpace(catalogName), "nexus") {
+		return nexusProviderFileURL(sourceGame, sourceModID, sourceFileID)
+	}
+	return ""
+}
+
+func runtimeAcquisitionBrowserURL(urlValue, catalogName, sourceGame, sourceModID, sourceFileID string) string {
+	return acquisitionBrowserURL(urlValue, catalogName, sourceGame, sourceModID, sourceFileID)
+}
+
+func nexusProviderFileURL(gameDomain, modID, fileID string) string {
+	gameDomain = strings.TrimSpace(gameDomain)
+	modID = strings.TrimSpace(modID)
+	fileID = strings.TrimSpace(fileID)
+	if gameDomain == "" || modID == "" {
+		return ""
+	}
+	query := ""
+	if fileID != "" {
+		query = "?tab=files&file_id=" + url.QueryEscape(fileID)
+	}
+	return "https://www.nexusmods.com/" + url.PathEscape(gameDomain) + "/mods/" + url.PathEscape(modID) + query
+}
 
 func (s *Server) validateDeckyBrowserOpenTarget(ctx context.Context, req deckyBrowserOpenRequest) error {
 	resolved, err := nexus.ParseURL(req.URL)
@@ -4966,7 +5008,7 @@ func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
-		URL:        acquisition.URL,
+		URL:        acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
 		SteamAppID: appID,
 		Source:     "extension-tool-acquisition:" + strings.TrimSpace(tool.ID),
 		ProfileID:  req.ProfileID,
@@ -4978,14 +5020,59 @@ func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Reque
 	}
 	s.logger.Info("extension tool acquisition queued", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "target_profile_id", req.ProfileID)
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"tool":         tool.ID,
-		"extension":    extension.ID,
-		"acquisition":  discoveredToolAcquisition(&acquisition),
-		"job":          result.Job,
-		"resolved":     result.Resolved,
-		"duplicate":    result.Duplicate,
-		"auto_install": result.AutoInstall,
+		"tool":             tool.ID,
+		"extension":        extension.ID,
+		"acquisition":      discoveredToolAcquisition(&acquisition),
+		"job":              result.Job,
+		"resolved":         result.Resolved,
+		"duplicate":        result.Duplicate,
+		"browser_required": result.BrowserRequired,
+		"download_started": result.DownloadStarted,
+		"auto_install":     result.AutoInstall,
 	})
+}
+
+func (s *Server) handleOpenExtensionToolAcquisitionBrowser(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	toolID := strings.TrimSpace(r.PathValue("toolID"))
+	if appID == "" || toolID == "" {
+		http.Error(w, "appID and toolID are required", http.StatusBadRequest)
+		return
+	}
+	var req extensionToolAcquireRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	extension, tool, acquisition, err := s.extensionToolAcquisition(r.Context(), appID, toolID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	response, err := s.queueAcquisitionBrowserOpen(r.Context(), deckyBrowserOpenRequest{
+		URL:          acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID:   appID,
+		ProfileID:    req.ProfileID,
+		Source:       "extension-tool-browser:" + strings.TrimSpace(tool.ID),
+		Title:        firstNonEmpty(acquisition.Name, tool.Name),
+		Instructions: acquisition.Instructions,
+	})
+	if err != nil {
+		s.logger.Warn("extension tool browser acquisition failed", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	response["tool"] = tool.ID
+	response["extension"] = extension.ID
+	response["acquisition"] = discoveredToolAcquisition(&acquisition)
+	s.logger.Info("extension tool browser acquisition queued", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "target_profile_id", req.ProfileID)
+	writeJSON(w, http.StatusAccepted, response)
 }
 
 func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.Request) {
@@ -5018,7 +5105,7 @@ func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.
 		}
 	}
 	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
-		URL:        acquisition.URL,
+		URL:        runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
 		SteamAppID: appID,
 		Source:     "runtime-requirement-acquisition:" + strings.TrimSpace(requirement.ID),
 		ProfileID:  req.ProfileID,
@@ -5030,14 +5117,59 @@ func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.
 	}
 	s.logger.Info("runtime requirement acquisition queued", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "job_id", result.Job.ID, "target_profile_id", req.ProfileID)
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"requirement":  requirement.ID,
-		"extension":    extension.ID,
-		"acquisition":  discoveredRuntimeAcquisition(&acquisition),
-		"job":          result.Job,
-		"resolved":     result.Resolved,
-		"duplicate":    result.Duplicate,
-		"auto_install": result.AutoInstall,
+		"requirement":      requirement.ID,
+		"extension":        extension.ID,
+		"acquisition":      discoveredRuntimeAcquisition(&acquisition),
+		"job":              result.Job,
+		"resolved":         result.Resolved,
+		"duplicate":        result.Duplicate,
+		"browser_required": result.BrowserRequired,
+		"download_started": result.DownloadStarted,
+		"auto_install":     result.AutoInstall,
 	})
+}
+
+func (s *Server) handleOpenRuntimeRequirementAcquisitionBrowser(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	requirementID := strings.TrimSpace(r.PathValue("requirementID"))
+	if appID == "" || requirementID == "" {
+		http.Error(w, "appID and requirementID are required", http.StatusBadRequest)
+		return
+	}
+	var req extensionToolAcquireRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	extension, requirement, acquisition, err := s.runtimeRequirementAcquisition(r.Context(), appID, requirementID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	response, err := s.queueAcquisitionBrowserOpen(r.Context(), deckyBrowserOpenRequest{
+		URL:          runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID:   appID,
+		ProfileID:    req.ProfileID,
+		Source:       "extension-runtime-browser:" + strings.TrimSpace(requirement.ID),
+		Title:        firstNonEmpty(acquisition.Name, requirement.Name),
+		Instructions: acquisition.Instructions,
+	})
+	if err != nil {
+		s.logger.Warn("runtime requirement browser acquisition failed", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	response["requirement"] = requirement.ID
+	response["extension"] = extension.ID
+	response["acquisition"] = discoveredRuntimeAcquisition(&acquisition)
+	s.logger.Info("runtime requirement browser acquisition queued", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "target_profile_id", req.ProfileID)
+	writeJSON(w, http.StatusAccepted, response)
 }
 
 func (s *Server) handleActivateGame(w http.ResponseWriter, r *http.Request) {
@@ -5138,20 +5270,21 @@ func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source st
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
+		acquisitionURL := acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
 		response := autoAcquireResponse{
 			Kind:        "tool",
 			Tool:        tool.ID,
 			Extension:   extension.ID,
 			Acquisition: discoveredToolAcquisition(&acquisition),
 		}
-		if acquisition.URL == "" {
+		if acquisitionURL == "" {
 			response.Error = "extension tool " + tool.ID + " acquisition URL is empty"
 			responses = append(responses, response)
 			s.logger.Warn("extension tool auto-acquire skipped; acquisition URL is empty", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID)
 			continue
 		}
 		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
-			URL:        acquisition.URL,
+			URL:        acquisitionURL,
 			SteamAppID: appID,
 			Source:     "extension-tool-auto-acquire:" + strings.TrimSpace(tool.ID),
 			ProfileID:  profileID,
@@ -5211,14 +5344,15 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		if acquisition.URL == "" {
+		acquisitionURL := runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID)
+		if acquisitionURL == "" {
 			response.Error = "extension runtime " + requirementID + " acquisition URL is empty"
 			responses = append(responses, response)
 			s.logger.Warn("extension runtime auto-acquire skipped; acquisition URL is empty", "app_id", appID, "requirement_id", requirementID, "source_extension", extension.ID)
 			continue
 		}
 		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
-			URL:        acquisition.URL,
+			URL:        acquisitionURL,
 			SteamAppID: appID,
 			Source:     "extension-runtime-auto-acquire:" + requirementID,
 			ProfileID:  profileID,

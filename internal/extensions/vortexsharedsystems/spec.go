@@ -46,7 +46,8 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 	for _, api := range []sdk.ExtensionAPISpec{
 		readyAPI("deploy-single-mod", "Deploy one mod through the deployment pipeline"),
 		readyAPI("purge-mods-in-path", "Purge managed mods under a path"),
-		blockedAPI("browse-for-download", "Open a source-backed download browser"),
+		readyAPI("browse-for-download", "Open a source-backed download browser"),
+		readyAPI("nexus-download", "Queue a source-backed Nexus manager download"),
 		readyAPI("discover-tools", "Discover extension-declared and DMM-managed external tools"),
 		readyAPI("bake-settings", "Bake profile-local game settings"),
 		blockedAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),

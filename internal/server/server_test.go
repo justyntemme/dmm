@@ -416,7 +416,7 @@ func TestDeckyBrowserOpenPublishesBoundedHandoffEvent(t *testing.T) {
 	sub := srv.events.Subscribe(0)
 	defer sub.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(fmt.Sprintf(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400","steam_app_id":"413150","profile_id":%d,"source":"web-test","title":"Test Mod"}`, profile.ID)))
+	req := httptest.NewRequest(http.MethodPost, "/api/decky/browser/open", bytes.NewBufferString(fmt.Sprintf(`{"url":"https://www.nexusmods.com/stardewvalley/mods/2400","steam_app_id":"413150","profile_id":%d,"source":"web-test","title":"Test Mod","instructions":"Click Mod Manager Download"}`, profile.ID)))
 	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec := httptest.NewRecorder()
@@ -435,16 +435,17 @@ func TestDeckyBrowserOpenPublishesBoundedHandoffEvent(t *testing.T) {
 			t.Fatalf("event app id = %q, want 413150", event.AppID)
 		}
 		var payload struct {
-			URL       string `json:"url"`
-			ProfileID int64  `json:"profile_id"`
-			Source    string `json:"source"`
-			Title     string `json:"title"`
-			ExpiresAt string `json:"expires_at"`
+			URL          string `json:"url"`
+			ProfileID    int64  `json:"profile_id"`
+			Source       string `json:"source"`
+			Title        string `json:"title"`
+			Instructions string `json:"instructions"`
+			ExpiresAt    string `json:"expires_at"`
 		}
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.URL != "https://www.nexusmods.com/stardewvalley/mods/2400" || payload.ProfileID != profile.ID || payload.Source != "web-test" || payload.Title != "Test Mod" {
+		if payload.URL != "https://www.nexusmods.com/stardewvalley/mods/2400" || payload.ProfileID != profile.ID || payload.Source != "web-test" || payload.Title != "Test Mod" || payload.Instructions != "Click Mod Manager Download" {
 			t.Fatalf("payload = %+v", payload)
 		}
 		expiresAt, err := time.Parse(time.RFC3339Nano, payload.ExpiresAt)
@@ -11633,12 +11634,14 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 				ExecutableRelative: "Tools/Runner.exe",
 				RequiredFiles:      []string{"Tools/Runner.exe"},
 				Acquisition: &sdk.ToolAcquisitionSpec{
-					ID:          "runner-acquisition",
-					Name:        "Game Runner package",
-					Catalog:     "github",
-					URL:         "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
-					ArchiveName: "runner.zip",
-					Required:    true,
+					ID:           "runner-acquisition",
+					Name:         "Game Runner package",
+					Catalog:      "github",
+					Mode:         "direct",
+					URL:          "https://github.com/example/runner/releases/download/v1.0.0/runner.zip",
+					ArchiveName:  "runner.zip",
+					Instructions: "Download runner.zip",
+					Required:     true,
 				},
 			})
 			r.RegisterSupportedTool(sdk.SupportedToolSpec{
@@ -11744,8 +11747,37 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		t.Fatalf("tools response = %+v", body)
 	}
 	bodyRunner := discoveredToolByIDSource(body.Tools, "runner", "extension-declared")
-	if bodyRunner == nil || bodyRunner.Acquisition == nil || bodyRunner.Acquisition.Catalog != "github" || bodyRunner.Acquisition.ArchiveName != "runner.zip" {
+	if bodyRunner == nil || bodyRunner.Acquisition == nil || bodyRunner.Acquisition.Catalog != "github" || bodyRunner.Acquisition.Mode != "direct" || bodyRunner.Acquisition.ArchiveName != "runner.zip" || bodyRunner.Acquisition.Instructions != "Download runner.zip" {
 		t.Fatalf("runner acquisition = %+v", bodyRunner)
+	}
+
+	sub := srv.events.Subscribe(0)
+	defer sub.Close()
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/open-browser", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /tools/runner/open-browser status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case event := <-sub.C:
+		if event.Type != events.TypeDeckyBrowserOpen || event.AppID != appID {
+			t.Fatalf("browser event = %+v", event)
+		}
+		var payload struct {
+			URL          string `json:"url"`
+			Instructions string `json:"instructions"`
+			Source       string `json:"source"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.URL != "https://github.com/example/runner/releases/download/v1.0.0/runner.zip" || payload.Instructions != "Download runner.zip" || payload.Source != "extension-tool-browser:runner" {
+			t.Fatalf("browser payload = %+v", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for extension tool browser event")
 	}
 
 	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -12134,6 +12166,110 @@ func TestActivateGameAutoAcquiresExtensionRuntime(t *testing.T) {
 	}
 	if manualAcquire.Requirement != requirementID || !manualAcquire.Duplicate || manualAcquire.Job.ID != waiting.ID || manualAcquire.Acquisition.ID != "runtime-loader-auto" {
 		t.Fatalf("manual runtime acquisition = %+v", manualAcquire)
+	}
+}
+
+func TestRuntimeRequirementNexusAcquisitionBuildsBrowserProviderURL(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999020"
+	const requirementID = "nexus-runtime"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "nexusruntime",
+		Name:    "Nexus Runtime",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"stardewvalley"},
+				VortexGameID: "nexusruntime",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-provider", TargetRoot: ""})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               requirementID,
+				Name:             "Nexus Runtime",
+				Kind:             "mod-loader",
+				Required:         true,
+				ProviderModTypes: []string{"runtime-provider"},
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:           "runtime-nexus-file",
+					Name:         "Runtime Nexus file",
+					Catalog:      "nexus",
+					Mode:         "nexus-download",
+					ArchiveName:  "runtime.zip",
+					Instructions: "Click Mod Manager Download for runtime.zip",
+					SourceGame:   "stardewvalley",
+					SourceModID:  "2400",
+					SourceFileID: "12345",
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Nexus Runtime",
+		InstallDir:  "Nexus Runtime",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Nexus Runtime"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), appID, "Deck")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sub := srv.events.Subscribe(0)
+	defer sub.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/requirements/"+requirementID+"/open-browser", bytes.NewBufferString(fmt.Sprintf(`{"profile_id":%d}`, profile.ID)))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /requirements/open-browser status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	select {
+	case event := <-sub.C:
+		if event.Type != events.TypeDeckyBrowserOpen || event.AppID != appID {
+			t.Fatalf("browser event = %+v", event)
+		}
+		var payload struct {
+			URL          string `json:"url"`
+			ProfileID    int64  `json:"profile_id"`
+			Instructions string `json:"instructions"`
+			Source       string `json:"source"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		wantURL := "https://www.nexusmods.com/stardewvalley/mods/2400?tab=files&file_id=12345"
+		if payload.URL != wantURL || payload.ProfileID != profile.ID || payload.Instructions != "Click Mod Manager Download for runtime.zip" || payload.Source != "extension-runtime-browser:"+requirementID {
+			t.Fatalf("browser payload = %+v", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime browser event")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/requirements/"+requirementID+"/acquire", bytes.NewBufferString(fmt.Sprintf(`{"profile_id":%d}`, profile.ID)))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /requirements/acquire status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var acquired struct {
+		Requirement     string                   `json:"requirement"`
+		Acquisition     toolAcquisition          `json:"acquisition"`
+		Resolved        catalog.ResolvedDownload `json:"resolved"`
+		BrowserRequired bool                     `json:"browser_required"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&acquired); err != nil {
+		t.Fatal(err)
+	}
+	if acquired.Requirement != requirementID || acquired.Acquisition.Mode != "nexus-download" || acquired.Resolved.GameDomain != "stardewvalley" || acquired.Resolved.ModID != "2400" || acquired.Resolved.FileID != "12345" || !acquired.BrowserRequired {
+		t.Fatalf("nexus acquisition response = %+v", acquired)
 	}
 }
 

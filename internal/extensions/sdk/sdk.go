@@ -273,8 +273,10 @@ type ToolAcquisitionSpec struct {
 	ID             string
 	Name           string
 	Catalog        string
+	Mode           string
 	URL            string
 	ArchiveName    string
+	Instructions   string
 	Required       bool
 	AutoAcquire    bool
 	SourceModID    string

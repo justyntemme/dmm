@@ -58,8 +58,10 @@ type toolAcquisition struct {
 	ID             string `json:"id,omitempty"`
 	Name           string `json:"name,omitempty"`
 	Catalog        string `json:"catalog,omitempty"`
+	Mode           string `json:"mode,omitempty"`
 	URL            string `json:"url,omitempty"`
 	ArchiveName    string `json:"archive_name,omitempty"`
+	Instructions   string `json:"instructions,omitempty"`
 	Required       bool   `json:"required,omitempty"`
 	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
 	SourceModID    string `json:"source_mod_id,omitempty"`
@@ -198,8 +200,10 @@ func discoveredToolAcquisition(acquisition *gameext.ToolAcquisitionSpec) *toolAc
 		ID:             strings.TrimSpace(acquisition.ID),
 		Name:           strings.TrimSpace(acquisition.Name),
 		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		Mode:           strings.TrimSpace(acquisition.Mode),
 		URL:            strings.TrimSpace(acquisition.URL),
 		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Instructions:   strings.TrimSpace(acquisition.Instructions),
 		Required:       acquisition.Required,
 		AutoAcquire:    acquisition.AutoAcquire,
 		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
@@ -218,8 +222,10 @@ func discoveredRuntimeAcquisition(acquisition *gamehandler.RuntimeAcquisitionSpe
 		ID:             strings.TrimSpace(acquisition.ID),
 		Name:           strings.TrimSpace(acquisition.Name),
 		Catalog:        strings.TrimSpace(acquisition.Catalog),
+		Mode:           strings.TrimSpace(acquisition.Mode),
 		URL:            strings.TrimSpace(acquisition.URL),
 		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		Instructions:   strings.TrimSpace(acquisition.Instructions),
 		Required:       acquisition.Required,
 		AutoAcquire:    acquisition.AutoAcquire,
 		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
