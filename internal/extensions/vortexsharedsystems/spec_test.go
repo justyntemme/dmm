@@ -43,7 +43,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "dependency-unsolved-conflicts")
 	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertStatusWithMessage(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts", sdk.CapabilityStatusReady)
-	assertBlocked(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
+	assertReadyWithMessage(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
 }
 
 func assertBlocked(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {

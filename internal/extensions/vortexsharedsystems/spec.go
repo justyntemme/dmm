@@ -88,8 +88,8 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		ID:      "plugins",
 		Name:    "Gamebryo plugin history stack",
 		Scope:   "gamebryo-plugins",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: blockedMessage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM represents Vortex's Gamebryo plugin history stack with profile plugin activation state plus deployment history. Plugin enable/disable/order changes are applied through the profile activation APIs, create normal deployment history entries, and can be previewed/restored through DMM's deployment history endpoints instead of Vortex's desktop undo stack.",
 	})
 }
 
