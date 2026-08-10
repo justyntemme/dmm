@@ -259,6 +259,7 @@ type SupportedToolSpec struct {
 	Arguments          []string
 	Environment        map[string]string
 	RequiredFiles      []string
+	Variants           []SupportedToolVariantSpec
 	Acquisition        *ToolAcquisitionSpec
 	Relative           bool
 	Shell              bool
@@ -267,6 +268,15 @@ type SupportedToolSpec struct {
 	DefaultPrimary     bool
 	Status             string
 	Message            string
+}
+
+type SupportedToolVariantSpec struct {
+	ID                 string
+	Name               string
+	ExecutableRelative string
+	Arguments          []string
+	Environment        map[string]string
+	RequiredFiles      []string
 }
 
 type ToolAcquisitionSpec struct {

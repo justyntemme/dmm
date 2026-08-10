@@ -21,6 +21,7 @@
 - F4SE script-extender archive inference is extension-owned.
 - F4SE primary launch-tool metadata is registered.
 - FO4Edit, Wrye Bash, and BodySlide tool metadata are registered.
+- BodySlide x64 is preferred when present, with BodySlide.exe kept as the fallback executable, matching the Vortex extension source.
 - Gamebryo plugin activation generation is represented.
 - Steam Workshop coexistence/actions are declared.
 

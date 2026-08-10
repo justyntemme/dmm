@@ -21,6 +21,7 @@
 - SKSE64 script-extender archive inference is extension-owned.
 - SKSE64 primary launch-tool metadata is registered.
 - SSEEdit, Wrye Bash, FNIS, BodySlide, and Creation Kit tool metadata are registered.
+- BodySlide x64 is preferred when present, with BodySlide.exe kept as the fallback executable, matching the Vortex extension source.
 - Gamebryo plugin activation generation is represented.
 
 ## Beta Gaps

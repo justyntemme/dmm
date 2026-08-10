@@ -76,7 +76,6 @@ func Register(r sdk.Registrar) {
 			DataRoot:    "Data",
 		}),
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "skyrim-bodyslide-dynamic-executable", Name: "Skyrim BodySlide executable variant", Trigger: "source-parity", Status: sdk.CapabilityStatusMetadata, Message: "Vortex prefers BodySlide x64.exe when present and falls back to BodySlide.exe. DMM records the default supported tool path until generic executable variant probing is added."})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -92,7 +91,12 @@ func registerSupportedTools(r sdk.Registrar) {
 		{ID: "WryeBash", Name: "Wrye Bash", ExecutableRelative: "Wrye Bash.exe", RequiredFiles: []string{"Wrye Bash.exe"}},
 		{ID: "FNIS", Name: "Fores New Idles in Skyrim", ShortName: "FNIS", ExecutableRelative: "GenerateFNISForUsers.exe", RequiredFiles: []string{"GenerateFNISForUsers.exe"}, Relative: true},
 		{ID: "skse", Name: "Skyrim Script Extender", ShortName: "SKSE", ExecutableRelative: "skse_loader.exe", RequiredFiles: []string{"skse_loader.exe", "TESV.exe"}, Relative: true, Exclusive: true, DefaultPrimary: true},
-		{ID: "bodyslide", Name: "BodySlide", ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide.exe", RequiredFiles: []string{"Data/CalienteTools/BodySlide/BodySlide.exe"}, Relative: true},
+		{ID: "bodyslide", Name: "BodySlide", ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide.exe", RequiredFiles: []string{"Data/CalienteTools/BodySlide/BodySlide.exe"}, Relative: true, Variants: []sdk.SupportedToolVariantSpec{{
+			ID:                 "bodyslide-x64",
+			Name:               "BodySlide x64",
+			ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide x64.exe",
+			RequiredFiles:      []string{"Data/CalienteTools/BodySlide/BodySlide x64.exe"},
+		}}},
 	} {
 		r.RegisterSupportedTool(tool)
 	}

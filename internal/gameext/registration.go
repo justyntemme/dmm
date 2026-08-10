@@ -1303,7 +1303,7 @@ func validateSupportedTools(tools []sdk.SupportedToolSpec) []error {
 			errs = append(errs, errors.New("supported tool "+id+" name is required"))
 		}
 		status := strings.TrimSpace(tool.Status)
-		if strings.TrimSpace(tool.ExecutableRelative) == "" && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
+		if strings.TrimSpace(tool.ExecutableRelative) == "" && len(tool.Variants) == 0 && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
 			errs = append(errs, errors.New("supported tool "+id+" executable path is required"))
 		}
 		if strings.TrimSpace(tool.ExecutableRelative) != "" {
@@ -1326,6 +1326,31 @@ func validateSupportedTools(tools []sdk.SupportedToolSpec) []error {
 			if err := validateRelativePath(path); err != nil {
 				errs = append(errs, errors.New("supported tool "+id+" required file: "+err.Error()))
 			}
+		}
+		for _, variant := range tool.Variants {
+			variantID := strings.TrimSpace(variant.ID)
+			if variantID != "" {
+				errs = append(errs, validateSimpleID("supported tool "+id+" variant", variantID)...)
+			}
+			if strings.ContainsAny(variant.Name, "\x00\r\n") {
+				errs = append(errs, errors.New("supported tool "+id+" variant name must not contain control line breaks"))
+			}
+			if strings.TrimSpace(variant.ExecutableRelative) == "" {
+				errs = append(errs, errors.New("supported tool "+id+" variant executable path is required"))
+			} else if err := validateRelativePath(variant.ExecutableRelative); err != nil {
+				errs = append(errs, errors.New("supported tool "+id+" variant executable path: "+err.Error()))
+			}
+			for _, argument := range variant.Arguments {
+				if err := validateLaunchArgument(argument); err != nil {
+					errs = append(errs, errors.New("supported tool "+id+" variant argument: "+err.Error()))
+				}
+			}
+			for _, path := range variant.RequiredFiles {
+				if err := validateRelativePath(path); err != nil {
+					errs = append(errs, errors.New("supported tool "+id+" variant required file: "+err.Error()))
+				}
+			}
+			errs = append(errs, validateStringMap("supported tool "+id+" variant environment", variant.Environment)...)
 		}
 		if tool.Acquisition != nil {
 			errs = append(errs, validateToolAcquisition(id, *tool.Acquisition)...)

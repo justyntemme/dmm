@@ -84,6 +84,7 @@ type LaunchToolDynamicInputSpec = sdk.LaunchToolDynamicInputSpec
 type LaunchToolDynamicArgumentSpec = sdk.LaunchToolDynamicArgumentSpec
 type LaunchOptionRequirementSpec = sdk.LaunchOptionRequirementSpec
 type SupportedToolSpec = sdk.SupportedToolSpec
+type SupportedToolVariantSpec = sdk.SupportedToolVariantSpec
 type ToolAcquisitionSpec = sdk.ToolAcquisitionSpec
 type LauncherRequirementSpec = sdk.LauncherRequirementSpec
 type LauncherParameterSpec = sdk.LauncherParameterSpec
@@ -275,6 +276,7 @@ type FeatureSummary struct {
 	Arguments            []string                 `json:"arguments,omitempty"`
 	Environment          map[string]string        `json:"environment,omitempty"`
 	RequiredFiles        []string                 `json:"required_files,omitempty"`
+	Variants             []FeatureSummary         `json:"variants,omitempty"`
 	DynamicInputs        []LaunchToolDynamicInput `json:"dynamic_inputs,omitempty"`
 	DynamicArguments     []LaunchToolDynamicArg   `json:"dynamic_arguments,omitempty"`
 	Shell                bool                     `json:"shell,omitempty"`
@@ -866,6 +868,71 @@ func ResolveLaunchToolForPlatform(tool LaunchToolSpec, platformID string) Launch
 	return tool
 }
 
+func ResolveSupportedToolForGamePath(gamePath string, tool SupportedToolSpec) SupportedToolSpec {
+	for _, variant := range tool.Variants {
+		if strings.TrimSpace(variant.ExecutableRelative) == "" {
+			continue
+		}
+		if !supportedToolVariantPresent(gamePath, variant) {
+			continue
+		}
+		resolved := applySupportedToolVariant(tool, variant)
+		resolved.Variants = nil
+		return resolved
+	}
+	resolved := tool
+	resolved.Variants = nil
+	return resolved
+}
+
+func applySupportedToolVariant(tool SupportedToolSpec, variant SupportedToolVariantSpec) SupportedToolSpec {
+	resolved := tool
+	if strings.TrimSpace(variant.ExecutableRelative) != "" {
+		resolved.ExecutableRelative = variant.ExecutableRelative
+	}
+	if len(variant.Arguments) > 0 {
+		resolved.Arguments = append([]string(nil), variant.Arguments...)
+	}
+	if len(variant.Environment) > 0 {
+		resolved.Environment = copyStringMap(variant.Environment)
+	}
+	if len(variant.RequiredFiles) > 0 {
+		resolved.RequiredFiles = append([]string(nil), variant.RequiredFiles...)
+	}
+	return resolved
+}
+
+func supportedToolVariantPresent(gamePath string, variant SupportedToolVariantSpec) bool {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return false
+	}
+	required := appendClean([]string{}, variant.RequiredFiles...)
+	executable := strings.TrimSpace(variant.ExecutableRelative)
+	if executable != "" && !containsFold(required, executable) {
+		required = append([]string{executable}, required...)
+	}
+	if len(required) == 0 {
+		return false
+	}
+	root := filepath.Clean(gamePath)
+	for _, rel := range required {
+		cleanRel, ok := safeToolRelative(rel)
+		if !ok {
+			return false
+		}
+		path := filepath.Join(root, filepath.FromSlash(cleanRel))
+		if !pathWithin(root, path) {
+			return false
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
 func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk.GameVersionInput) (sdk.GameVersionResult, bool, error) {
 	extension, ok := r.ExtensionForSteamApp(appID)
 	if !ok {
@@ -1428,6 +1495,45 @@ func canonical(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+func containsFold(values []string, want string) bool {
+	want = strings.TrimSpace(want)
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), want) {
+			return true
+		}
+	}
+	return false
+}
+
+func safeToolRelative(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\x00\r\n") {
+		return "", false
+	}
+	value = filepath.ToSlash(value)
+	if strings.HasPrefix(value, "/") || filepath.IsAbs(value) {
+		return "", false
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(filepath.FromSlash(value)))
+	if cleaned == "." || cleaned == "" || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", false
+	}
+	return cleaned, true
+}
+
+func pathWithin(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	return !strings.HasPrefix(filepath.ToSlash(rel), "../")
+}
+
 func cloneSelections(values map[string][]string) map[string][]string {
 	if len(values) == 0 {
 		return nil
@@ -1566,6 +1672,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Arguments:          append([]string(nil), tool.Arguments...),
 			Environment:        copyStringMap(tool.Environment),
 			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
+			Variants:           supportedToolVariants(tool.Variants),
 			Relative:           tool.Relative,
 			Shell:              tool.Shell,
 			Detach:             tool.Detach,
@@ -2001,6 +2108,24 @@ func HasSupportedInstallers(extension Extension) bool {
 		}
 	}
 	return false
+}
+
+func supportedToolVariants(variants []sdk.SupportedToolVariantSpec) []FeatureSummary {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]FeatureSummary, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, FeatureSummary{
+			ID:                 strings.TrimSpace(variant.ID),
+			Name:               strings.TrimSpace(variant.Name),
+			ExecutableRelative: strings.TrimSpace(variant.ExecutableRelative),
+			Arguments:          append([]string(nil), variant.Arguments...),
+			Environment:        copyStringMap(variant.Environment),
+			RequiredFiles:      append([]string(nil), variant.RequiredFiles...),
+		})
+	}
+	return out
 }
 
 func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegistrationSummary, bool) {

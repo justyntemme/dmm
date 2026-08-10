@@ -112,6 +112,12 @@ func Register(r sdk.Registrar) {
 		Name:               "BodySlide",
 		ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide.exe",
 		RequiredFiles:      []string{"Data/CalienteTools/BodySlide/BodySlide.exe"},
+		Variants: []sdk.SupportedToolVariantSpec{{
+			ID:                 "bodyslide-x64",
+			Name:               "BodySlide x64",
+			ExecutableRelative: "Data/CalienteTools/BodySlide/BodySlide x64.exe",
+			RequiredFiles:      []string{"Data/CalienteTools/BodySlide/BodySlide x64.exe"},
+		}},
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "creation-kit-64",

@@ -11865,6 +11865,7 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	gamePath := filepath.Join(t.TempDir(), "Tool Discovery Game")
 	for _, rel := range []string{
 		filepath.Join("Tools", "Editor.exe"),
+		filepath.Join("Tools", "Editor x64.exe"),
 		filepath.Join("Tools", "Helper.dll"),
 		filepath.Join("Tools", "Runner.exe"),
 	} {
@@ -11894,8 +11895,14 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 				Name:               "Game Editor",
 				ExecutableRelative: "Tools/Editor.exe",
 				RequiredFiles:      []string{"Tools/Editor.exe", "Tools/Helper.dll"},
-				Environment:        map[string]string{"TOOL_MODE": "test"},
-				Relative:           true,
+				Variants: []sdk.SupportedToolVariantSpec{{
+					ID:                 "editor-x64",
+					Name:               "Game Editor x64",
+					ExecutableRelative: "Tools/Editor x64.exe",
+					RequiredFiles:      []string{"Tools/Editor x64.exe", "Tools/Helper.dll"},
+				}},
+				Environment: map[string]string{"TOOL_MODE": "test"},
+				Relative:    true,
 			})
 			r.RegisterSupportedTool(sdk.SupportedToolSpec{
 				ID:                 "runner",
@@ -11989,7 +11996,7 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		t.Fatalf("discoverTools: %v", err)
 	}
 	editor := discoveredToolByIDSource(result.Tools, "editor", "extension-declared")
-	if editor == nil || !editor.Present || editor.ExecutablePath != filepath.Join(gamePath, "Tools", "Editor.exe") || editor.Environment["TOOL_MODE"] != "test" {
+	if editor == nil || !editor.Present || editor.ExecutablePath != filepath.Join(gamePath, "Tools", "Editor x64.exe") || editor.ExecutableRelative != "Tools/Editor x64.exe" || len(editor.Variants) != 1 || editor.Environment["TOOL_MODE"] != "test" {
 		t.Fatalf("declared editor discovery = %+v", editor)
 	}
 	missing := discoveredToolByIDSource(result.Tools, "missing-loader", "extension-declared")

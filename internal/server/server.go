@@ -2857,19 +2857,20 @@ func (s *Server) extensionExecutableTool(appID, gamePath, toolID string) (gameex
 		if strings.ToLower(strings.TrimSpace(tool.ID)) != canonicalToolID {
 			continue
 		}
+		resolved := gameext.ResolveSupportedToolForGamePath(gamePath, tool)
 		status := strings.ToLower(strings.TrimSpace(tool.Status))
 		if status == "" {
 			status = "ready"
 		}
 		message := strings.TrimSpace(tool.Message)
-		if strings.TrimSpace(tool.ExecutableRelative) == "" {
+		if strings.TrimSpace(resolved.ExecutableRelative) == "" {
 			status = "blocked"
 			message = "extension supported tool does not declare an executable path"
-		} else if len(tool.Environment) > 0 {
+		} else if len(resolved.Environment) > 0 {
 			status = "blocked"
 			message = "DMM cannot pass extension supported-tool environment variables through the Decky Steam launch bridge yet."
 		}
-		return extension, launchToolFromSupportedTool(tool), "supported-tool", status, message, true
+		return extension, launchToolFromSupportedTool(resolved), "supported-tool", status, message, true
 	}
 	return gameext.Extension{}, gameext.LaunchToolSpec{}, "", "", "", false
 }

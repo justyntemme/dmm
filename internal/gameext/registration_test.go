@@ -102,8 +102,14 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 				ExecutableRelative: "Tools/Editor.exe",
 				Arguments:          []string{"--game", "{game_path}"},
 				RequiredFiles:      []string{"Tools/Editor.exe"},
-				Relative:           true,
-				Exclusive:          true,
+				Variants: []sdk.SupportedToolVariantSpec{{
+					ID:                 "sample-editor-x64",
+					Name:               "Sample Editor x64",
+					ExecutableRelative: "Tools/Editor x64.exe",
+					RequiredFiles:      []string{"Tools/Editor x64.exe"},
+				}},
+				Relative:  true,
+				Exclusive: true,
 			})
 			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 				ID:       "sample-epic-launcher",
@@ -283,6 +289,12 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("exe"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(gamePath, "Tools"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gamePath, "Tools", "Editor x64.exe"), []byte("exe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if platform, ok := registry.InstallPlatformForSteamApp("100", gamePath); !ok || platform.ID != "windows" {
 		t.Fatalf("platform = %+v ok=%v", platform, ok)
 	}
@@ -293,6 +305,17 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if tool, ok := registry.ModTypeProvidesLaunchTool("100", "loader-mod"); !ok || tool.ID != "loader" {
 		t.Fatalf("launch tool provider lookup = %+v %v", tool, ok)
+	}
+	var baseSupportedTool SupportedToolSpec
+	for _, tool := range extension.SupportedTools {
+		if tool.ID == "sample-editor" {
+			baseSupportedTool = tool
+			break
+		}
+	}
+	resolvedSupportedTool := ResolveSupportedToolForGamePath(gamePath, baseSupportedTool)
+	if resolvedSupportedTool.ExecutableRelative != "Tools/Editor x64.exe" || len(resolvedSupportedTool.RequiredFiles) != 1 || resolvedSupportedTool.RequiredFiles[0] != "Tools/Editor x64.exe" || len(resolvedSupportedTool.Variants) != 0 {
+		t.Fatalf("resolved supported tool = %+v", resolvedSupportedTool)
 	}
 	summaries := registry.ExtensionSummaries()
 	if len(summaries) != 1 {
@@ -332,7 +355,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.LaunchTools) != 1 || summary.Capabilities.LaunchTools[0].ID != "loader" {
 		t.Fatalf("launch tool capabilities = %+v", summary.Capabilities.LaunchTools)
 	}
-	if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].ID != "sample-editor" || !summary.Capabilities.SupportedTools[0].Relative || !summary.Capabilities.SupportedTools[0].Exclusive {
+	if len(summary.Capabilities.SupportedTools) != 1 || summary.Capabilities.SupportedTools[0].ID != "sample-editor" || !summary.Capabilities.SupportedTools[0].Relative || !summary.Capabilities.SupportedTools[0].Exclusive || len(summary.Capabilities.SupportedTools[0].Variants) != 1 || summary.Capabilities.SupportedTools[0].Variants[0].ExecutableRelative != "Tools/Editor x64.exe" {
 		t.Fatalf("supported tool capabilities = %+v", summary.Capabilities.SupportedTools)
 	}
 	if len(summary.Capabilities.LauncherRequirements) != 1 || summary.Capabilities.LauncherRequirements[0].Launcher != "epic" || len(summary.Capabilities.LauncherRequirements[0].Parameters) != 1 {
@@ -823,6 +846,14 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 				Arguments:          []string{"bad\narg"},
 				Environment:        map[string]string{"bad\nkey": "value"},
 				RequiredFiles:      []string{"/bad.exe"},
+				Variants: []sdk.SupportedToolVariantSpec{{
+					ID:                 "bad/variant",
+					Name:               "Bad\nVariant",
+					ExecutableRelative: "../variant.exe",
+					Arguments:          []string{"bad\rarg"},
+					Environment:        map[string]string{"bad\nkey": "value"},
+					RequiredFiles:      []string{"/variant.dll"},
+				}},
 			})
 			r.RegisterSupportedTool(sdk.SupportedToolSpec{
 				ID:     "no-exe",
@@ -922,6 +953,12 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"supported tool bad/tool executable path: path traversal is not allowed",
 		"supported tool bad/tool argument: must not contain control line breaks",
 		"supported tool bad/tool required file: absolute path is not allowed",
+		"supported tool bad/tool variant bad/variant id must be a simple identifier",
+		"supported tool bad/tool variant name must not contain control line breaks",
+		"supported tool bad/tool variant executable path: path traversal is not allowed",
+		"supported tool bad/tool variant argument: must not contain control line breaks",
+		"supported tool bad/tool variant required file: absolute path is not allowed",
+		"supported tool bad/tool variant environment entries must not contain control line breaks",
 		"supported tool bad/tool environment entries must not contain control line breaks",
 		"supported tool no-exe executable path is required",
 		"launcher requirement bad/launcher id must be a simple identifier",

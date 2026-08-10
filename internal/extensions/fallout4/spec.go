@@ -125,6 +125,12 @@ func Register(r sdk.Registrar) {
 		Name:               "BodySlide",
 		ExecutableRelative: "Data/Tools/BodySlide/BodySlide.exe",
 		RequiredFiles:      []string{"Data/Tools/BodySlide/BodySlide.exe"},
+		Variants: []sdk.SupportedToolVariantSpec{{
+			ID:                 "bodyslide-x64",
+			Name:               "BodySlide x64",
+			ExecutableRelative: "Data/Tools/BodySlide/BodySlide x64.exe",
+			RequiredFiles:      []string{"Data/Tools/BodySlide/BodySlide x64.exe"},
+		}},
 	})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
 		ID:            "fallout4-gamebryo-plugins",

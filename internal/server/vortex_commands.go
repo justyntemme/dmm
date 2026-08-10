@@ -42,6 +42,7 @@ type discoveredTool struct {
 	Arguments          []string          `json:"arguments,omitempty"`
 	Environment        map[string]string `json:"environment,omitempty"`
 	RequiredFiles      []string          `json:"required_files,omitempty"`
+	Variants           []toolVariant     `json:"variants,omitempty"`
 	MissingFiles       []string          `json:"missing_files,omitempty"`
 	Present            bool              `json:"present"`
 	Relative           bool              `json:"relative,omitempty"`
@@ -52,6 +53,15 @@ type discoveredTool struct {
 	Status             string            `json:"status,omitempty"`
 	Message            string            `json:"message,omitempty"`
 	Acquisition        *toolAcquisition  `json:"acquisition,omitempty"`
+}
+
+type toolVariant struct {
+	ID                 string            `json:"id,omitempty"`
+	Name               string            `json:"name,omitempty"`
+	ExecutableRelative string            `json:"executable_relative,omitempty"`
+	Arguments          []string          `json:"arguments,omitempty"`
+	Environment        map[string]string `json:"environment,omitempty"`
+	RequiredFiles      []string          `json:"required_files,omitempty"`
 }
 
 type toolAcquisition struct {
@@ -162,34 +172,54 @@ func (s *Server) discoverLaunchTool(appID, gamePath string, extension gameext.Ex
 }
 
 func discoverSupportedTool(gamePath string, extension gameext.Extension, tool gameext.SupportedToolSpec) discoveredTool {
-	executablePath, missing := declaredToolFiles(gamePath, tool.ExecutableRelative, tool.RequiredFiles)
+	resolved := gameext.ResolveSupportedToolForGamePath(gamePath, tool)
+	executablePath, missing := declaredToolFiles(gamePath, resolved.ExecutableRelative, resolved.RequiredFiles)
 	status := strings.TrimSpace(tool.Status)
 	if status == "" {
 		status = "ready"
 	}
 	return discoveredTool{
-		ID:                 strings.TrimSpace(tool.ID),
-		Name:               strings.TrimSpace(tool.Name),
-		ShortName:          strings.TrimSpace(tool.ShortName),
+		ID:                 strings.TrimSpace(resolved.ID),
+		Name:               strings.TrimSpace(resolved.Name),
+		ShortName:          strings.TrimSpace(resolved.ShortName),
 		Kind:               "supported-tool",
 		Source:             "extension-declared",
 		SourceExtension:    extension.ID,
 		ExecutablePath:     executablePath,
-		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(tool.ExecutableRelative)),
-		Arguments:          cleanStrings(tool.Arguments),
-		Environment:        cloneStringMap(tool.Environment),
-		RequiredFiles:      cleanStrings(tool.RequiredFiles),
+		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(resolved.ExecutableRelative)),
+		Arguments:          cleanStrings(resolved.Arguments),
+		Environment:        cloneStringMap(resolved.Environment),
+		RequiredFiles:      cleanStrings(resolved.RequiredFiles),
+		Variants:           supportedToolVariants(tool.Variants),
 		MissingFiles:       missing,
 		Present:            len(missing) == 0 && executablePath != "",
-		Relative:           tool.Relative,
-		Shell:              tool.Shell,
-		Detach:             tool.Detach,
-		Exclusive:          tool.Exclusive,
-		DefaultPrimary:     tool.DefaultPrimary,
+		Relative:           resolved.Relative,
+		Shell:              resolved.Shell,
+		Detach:             resolved.Detach,
+		Exclusive:          resolved.Exclusive,
+		DefaultPrimary:     resolved.DefaultPrimary,
 		Status:             status,
 		Message:            strings.TrimSpace(tool.Message),
 		Acquisition:        discoveredToolAcquisition(tool.Acquisition),
 	}
+}
+
+func supportedToolVariants(variants []gameext.SupportedToolVariantSpec) []toolVariant {
+	if len(variants) == 0 {
+		return nil
+	}
+	out := make([]toolVariant, 0, len(variants))
+	for _, variant := range variants {
+		out = append(out, toolVariant{
+			ID:                 strings.TrimSpace(variant.ID),
+			Name:               strings.TrimSpace(variant.Name),
+			ExecutableRelative: filepath.ToSlash(strings.TrimSpace(variant.ExecutableRelative)),
+			Arguments:          cleanStrings(variant.Arguments),
+			Environment:        cloneStringMap(variant.Environment),
+			RequiredFiles:      cleanStrings(variant.RequiredFiles),
+		})
+	}
+	return out
 }
 
 func discoveredToolAcquisition(acquisition *gameext.ToolAcquisitionSpec) *toolAcquisition {
@@ -620,7 +650,7 @@ func (s *Server) declaredManagedTool(appID, id string, extension gameext.Extensi
 	}
 	for _, tool := range extension.SupportedTools {
 		if strings.ToLower(strings.TrimSpace(tool.ID)) == id {
-			return launchToolFromSupportedTool(tool), true
+			return launchToolFromSupportedTool(gameext.ResolveSupportedToolForGamePath(gamePath, tool)), true
 		}
 	}
 	return gameext.LaunchToolSpec{}, false
