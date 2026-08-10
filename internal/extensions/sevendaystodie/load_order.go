@@ -57,7 +57,7 @@ func loadOrderPrefixHandler(ctx context.Context, input sdk.EventHandlerInput) (s
 			continue
 		}
 		next := mapping
-		next.TargetRelative = filepath.ToSlash(filepath.Join(modsRoot, prefixes[group.key], rest))
+		next.TargetRelative = filepath.ToSlash(filepath.Join(prefixes[group.key], rest))
 		if next.TargetRelative != mapping.TargetRelative {
 			changed = true
 		}
@@ -75,8 +75,7 @@ func loadOrderPrefixHandler(ctx context.Context, input sdk.EventHandlerInput) (s
 
 func prefixableModletMapping(mapping deploy.FileMapping, mods map[int64]sdk.DeploymentMod) (prefixGroup, string, bool) {
 	rel := cleanRelative(mapping.TargetRelative)
-	rest, ok := trimRoot(rel, modsRoot)
-	if !ok {
+	if rel == "" {
 		return prefixGroup{}, "", false
 	}
 	mod, hasMod := mods[mapping.InstalledModID]
@@ -88,7 +87,7 @@ func prefixableModletMapping(mapping deploy.FileMapping, mods map[int64]sdk.Depl
 		folderID: "mod-" + strconv.FormatInt(mod.ID, 10),
 		name:     strings.TrimSpace(mod.Name),
 		priority: mod.Priority,
-	}, rest, true
+	}, rel, true
 }
 
 func deploymentModIndex(mods []sdk.DeploymentMod) map[int64]sdk.DeploymentMod {
@@ -125,20 +124,6 @@ func makePrefix(input int) string {
 		out = append([]byte{'A'}, out...)
 	}
 	return string(out)
-}
-
-func trimRoot(rel, root string) (string, bool) {
-	rel = cleanRelative(rel)
-	root = cleanRelative(root)
-	if rel == "" || root == "" || rel == root {
-		return "", false
-	}
-	prefix := strings.TrimSuffix(root, "/") + "/"
-	if !strings.HasPrefix(rel, prefix) {
-		return "", false
-	}
-	rest := strings.TrimPrefix(rel, prefix)
-	return rest, rest != "" && rest != "."
 }
 
 func cleanRelative(value string) string {

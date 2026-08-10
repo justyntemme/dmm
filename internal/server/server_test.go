@@ -693,6 +693,70 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	}
 }
 
+func TestResolveManifestTargetRootProvidesExtensionSettings(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999031"
+	targetRoot := filepath.Join(t.TempDir(), "Configured Mods")
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "settingroot",
+		Name:    "Setting Root",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"settingroot"},
+				VortexGameID: "settingroot",
+			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{ID: "root_path", Name: "Root Path", Scope: "game"})
+			r.RegisterTargetRoot(sdk.TargetRootSpec{
+				ID:   "configured-root",
+				Name: "Configured Root",
+				Resolver: func(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+					if err := ctx.Err(); err != nil {
+						return sdk.TargetRootResult{}, err
+					}
+					raw := input.ExtensionSettings["settingroot"]["root_path"]
+					var value string
+					if err := json.Unmarshal(raw, &value); err != nil {
+						return sdk.TargetRootResult{}, err
+					}
+					return sdk.TargetRootResult{Path: value, Source: "test setting"}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Setting Root",
+		InstallDir:  "Setting Root",
+		LibraryPath: "/library",
+		Path:        filepath.Join("/library", "steamapps", "common", "Setting Root"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	value, err := json.Marshal(targetRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetExtensionSettingValue(context.Background(), "settingroot", "root_path", value); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := srv.resolveManifestTargetRoot(context.Background(), game, "configured-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != targetRoot {
+		t.Fatalf("resolved root = %q, want %q", resolved, targetRoot)
+	}
+}
+
 func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

@@ -14379,10 +14379,16 @@ func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Gam
 	if filepath.IsAbs(rootID) {
 		return "", fmt.Errorf("staged manifest target_root %q must be an extension target-root id, not an absolute path", rootID)
 	}
+	settings, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		s.logger.Warn("extension setting values unavailable during target root resolution", "app_id", game.SteamAppID, "target_root_id", rootID, "error", err)
+		return "", err
+	}
 	result, ok, err := s.games.ResolveTargetRoot(ctx, game.SteamAppID, rootID, gameext.TargetRootInput{
-		AppID:       game.SteamAppID,
-		GamePath:    game.GamePath,
-		LibraryPath: game.LibraryPath,
+		AppID:             game.SteamAppID,
+		GamePath:          game.GamePath,
+		LibraryPath:       game.LibraryPath,
+		ExtensionSettings: settings,
 	})
 	if err != nil {
 		s.logger.Warn("extension target root resolution failed", "app_id", game.SteamAppID, "target_root_id", rootID, "error", err)
@@ -14401,6 +14407,29 @@ func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Gam
 	root = filepath.Clean(root)
 	s.logger.Debug("extension target root resolved", "app_id", game.SteamAppID, "target_root_id", rootID, "path", root, "source", result.Source)
 	return root, nil
+}
+
+func (s *Server) extensionSettingValueMap(ctx context.Context) (map[string]map[string]json.RawMessage, error) {
+	values, err := s.db.ExtensionSettingValues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]map[string]json.RawMessage)
+	for _, value := range values {
+		extensionID := strings.TrimSpace(strings.ToLower(value.ExtensionID))
+		settingID := strings.TrimSpace(strings.ToLower(value.SettingID))
+		if extensionID == "" || settingID == "" {
+			continue
+		}
+		if out[extensionID] == nil {
+			out[extensionID] = map[string]json.RawMessage{}
+		}
+		out[extensionID][settingID] = json.RawMessage(value.ValueJSON)
+	}
+	return out, nil
 }
 
 func hasDeployableActions(plan deploy.Plan) bool {

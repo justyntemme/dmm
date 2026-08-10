@@ -2,6 +2,7 @@ package sevendaystodie
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,6 +28,12 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
 	}
+	if len(summary.Capabilities.TargetRoots) != 1 || summary.Capabilities.TargetRoots[0].ID != modsRootID {
+		t.Fatalf("target roots = %+v", summary.Capabilities.TargetRoots)
+	}
+	if len(summary.Capabilities.ExtensionSettings) != 1 || summary.Capabilities.ExtensionSettings[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
+	}
 }
 
 func TestModletInstallerUsesModInfoRoot(t *testing.T) {
@@ -42,8 +49,8 @@ func TestModletInstallerUsesModInfoRoot(t *testing.T) {
 	if plan.PlannerID != "vortex:7daystodie:modlet" || plan.ModType != modletModType {
 		t.Fatalf("plan identity = %+v", plan)
 	}
-	assertTarget(t, plan.Instructions, "Mods/ModInfo.xml")
-	assertTarget(t, plan.Instructions, "Mods/Config/settings.xml")
+	assertTarget(t, plan.Instructions, modsRootID, "ModInfo.xml")
+	assertTarget(t, plan.Instructions, modsRootID, "Config/settings.xml")
 	if len(plan.Metadata) != 1 || plan.Metadata[0].Name != "Cool Mod" {
 		t.Fatalf("metadata = %+v", plan.Metadata)
 	}
@@ -69,8 +76,8 @@ func TestRootModInstallerStripsToBepInExSegment(t *testing.T) {
 func TestLoadOrderPrefixHandlerRewritesOnlyModlets(t *testing.T) {
 	result, err := loadOrderPrefixHandler(context.Background(), sdk.EventHandlerInput{
 		Mappings: []deploy.FileMapping{
-			{InstalledModID: 20, TargetRelative: "Mods/ModInfo.xml", Priority: 20},
-			{InstalledModID: 10, TargetRelative: "Mods/ModInfo.xml", Priority: 10},
+			{InstalledModID: 20, TargetRelative: "ModInfo.xml", Priority: 20},
+			{InstalledModID: 10, TargetRelative: "ModInfo.xml", Priority: 10},
 			{InstalledModID: 30, TargetRelative: "BepInEx/plugins/loader.dll", Priority: 5},
 		},
 		Mods: []sdk.DeploymentMod{
@@ -85,19 +92,50 @@ func TestLoadOrderPrefixHandlerRewritesOnlyModlets(t *testing.T) {
 	if !result.ReplaceMappings || len(result.Mappings) != 3 {
 		t.Fatalf("result = %+v", result)
 	}
-	assertMapping(t, result.Mappings, "Mods/AAA-mod-10/ModInfo.xml")
-	assertMapping(t, result.Mappings, "Mods/AAB-mod-20/ModInfo.xml")
+	assertMapping(t, result.Mappings, "AAA-mod-10/ModInfo.xml")
+	assertMapping(t, result.Mappings, "AAB-mod-20/ModInfo.xml")
 	assertMapping(t, result.Mappings, "BepInEx/plugins/loader.dll")
 }
 
-func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
+func TestModsTargetRootUsesConfiguredUDF(t *testing.T) {
+	udf := filepath.Join(t.TempDir(), "UserData", "Mods")
+	result, err := modsTargetRoot(context.Background(), sdk.TargetRootInput{
+		GamePath: "/game",
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {
+				udfSettingID: json.RawMessage(`{"path":` + strconvQuote(udf) + `}`),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(udf), modsRoot)
+	if result.Path != want {
+		t.Fatalf("resolved UDF root = %q, want %q", result.Path, want)
+	}
+}
+
+func TestModsTargetRootFallsBackToGameMods(t *testing.T) {
+	gamePath := filepath.Join(t.TempDir(), "7 Days")
+	result, err := modsTargetRoot(context.Background(), sdk.TargetRootInput{GamePath: gamePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(gamePath, modsRoot)
+	if result.Path != want {
+		t.Fatalf("fallback root = %q, want %q", result.Path, want)
+	}
+}
+
+func assertTarget(t *testing.T, instructions []installplan.Instruction, targetRoot, target string) {
 	t.Helper()
 	for _, instruction := range instructions {
-		if instruction.TargetRelative == target {
+		if instruction.TargetRoot == targetRoot && instruction.TargetRelative == target {
 			return
 		}
 	}
-	t.Fatalf("missing target %q", target)
+	t.Fatalf("missing target %q in root %q", target, targetRoot)
 }
 
 func assertMapping(t *testing.T, mappings []deploy.FileMapping, target string) {
@@ -118,4 +156,9 @@ func writeFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func strconvQuote(value string) string {
+	data, _ := json.Marshal(value)
+	return string(data)
 }

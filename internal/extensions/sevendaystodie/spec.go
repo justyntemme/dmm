@@ -1,6 +1,12 @@
 package sevendaystodie
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"path/filepath"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -12,6 +18,8 @@ const (
 
 	gameExecutable = "7DaysToDie.exe"
 	modsRoot       = "Mods"
+	modsRootID     = "7daystodie-mods-root"
+	udfSettingID   = "7daystodie-udf"
 	modInfoName    = "modinfo.xml"
 
 	modletModType = "7dtd-mod"
@@ -46,8 +54,13 @@ func Register(r sdk.Registrar) {
 			Actions:          sdk.StandardSteamWorkshopActions(),
 		},
 	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       modsRootID,
+		Name:     "7 Days to Die Mods folder",
+		Resolver: modsTargetRoot,
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: rootModType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: modletModType, TargetRoot: modsRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: modletModType, TargetRootID: modsRootID})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:7daystodie:root-mod",
 		VortexInstallerID: rootModType,
@@ -87,14 +100,13 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "7daystodie-user-data-folder",
 		Name:    "Configure 7 Days to Die user data folder",
-		Actions: sdk.EnsureGameDirectories("Mods"),
+		Actions: sdk.EnsureTargetRootDirectories(modsRootID, "."),
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
-		ID:      "7daystodie-udf",
+		ID:      udfSettingID,
 		Name:    "7 Days to Die User Data Folder",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex can prompt for a custom User Data Folder and write launchersettings.json. DMM currently follows Vortex's fallback Mods path until a generic extension settings/runtime setup flow exists.",
+		Message: "Optional absolute User Data Folder path. If unset, DMM follows Vortex's fallback game-root Mods path.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "7daystodie-prefix-offset",
@@ -114,6 +126,57 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func modsTargetRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.TargetRootResult{}, err
+	}
+	if udf, ok, err := configuredUDF(input.ExtensionSettings); err != nil {
+		return sdk.TargetRootResult{}, err
+	} else if ok {
+		return sdk.TargetRootResult{Path: filepath.Join(udf, modsRoot), Source: "Vortex 7 Days to Die User Data Folder setting"}, nil
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return sdk.TargetRootResult{}, errors.New("game path is required to resolve 7 Days to Die Mods folder")
+	}
+	return sdk.TargetRootResult{Path: filepath.Join(gamePath, modsRoot), Source: "Vortex fallback game-root Mods path"}, nil
+}
+
+func configuredUDF(settings map[string]map[string]json.RawMessage) (string, bool, error) {
+	extensionSettings := settings[strings.ToLower(VortexGameID)]
+	if len(extensionSettings) == 0 {
+		return "", false, nil
+	}
+	raw := extensionSettings[strings.ToLower(udfSettingID)]
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", false, nil
+	}
+	var pathValue string
+	if err := json.Unmarshal(raw, &pathValue); err != nil {
+		var object struct {
+			Path string `json:"path"`
+		}
+		if objectErr := json.Unmarshal(raw, &object); objectErr != nil {
+			return "", false, err
+		}
+		pathValue = object.Path
+	}
+	clean := filepath.Clean(strings.TrimSpace(pathValue))
+	if clean == "" || clean == "." {
+		return "", false, nil
+	}
+	if !filepath.IsAbs(clean) {
+		return "", false, errors.New("7 Days to Die User Data Folder must be an absolute path")
+	}
+	if strings.Contains(strings.ToLower(filepath.ToSlash(clean)), "vortex") {
+		return "", false, errors.New("7 Days to Die User Data Folder must not be inside Vortex directories")
+	}
+	if strings.EqualFold(filepath.Base(clean), modsRoot) {
+		clean = filepath.Dir(clean)
+	}
+	return clean, true, nil
 }
 
 func sources() []sdk.SourceRef {

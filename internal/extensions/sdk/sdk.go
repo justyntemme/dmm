@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
@@ -150,9 +151,10 @@ type TargetRootSpec struct {
 type TargetRootResolverFunc func(context.Context, TargetRootInput) (TargetRootResult, error)
 
 type TargetRootInput struct {
-	AppID       string
-	GamePath    string
-	LibraryPath string
+	AppID             string
+	GamePath          string
+	LibraryPath       string
+	ExtensionSettings map[string]map[string]json.RawMessage
 }
 
 type TargetRootResult struct {

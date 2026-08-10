@@ -28,7 +28,7 @@ func buildModletArchive(input installplan.BuildInput) (installplan.Plan, error) 
 	plan, err := simplearchive.BuildCopyPlan(
 		input,
 		filepath.ToSlash(mustRel(input.ExtractedRoot, contentRoot)),
-		modsRoot,
+		"",
 		"vortex-modinfo",
 		detectionPath,
 		"Vortex 7 Days to Die installer matched modinfo.xml at the modlet root",
@@ -44,6 +44,9 @@ func buildModletArchive(input installplan.BuildInput) (installplan.Plan, error) 
 			SourcePath: detectionPath,
 			Name:       name,
 		})
+	}
+	for idx := range plan.Instructions {
+		plan.Instructions[idx].TargetRoot = modsRootID
 	}
 	return plan, nil
 }
