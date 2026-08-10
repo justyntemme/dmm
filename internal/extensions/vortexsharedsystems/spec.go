@@ -155,7 +155,13 @@ func registerVortexTests(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM reports installed mods whose extension-extracted min/max game-version metadata is incompatible with the detected game version.",
 	})
-	r.RegisterExtensionTest(blockedTest("game-version-mod-installed", "Game version check after mod install", "mod-installed"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "game-version-mod-installed",
+		Name:    "Game version check after mod install",
+		Trigger: "mod-installed",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM queues an Action Center notice after mod install when extension-extracted min/max game-version metadata is incompatible with the detected game version.",
+	})
 	r.RegisterGameInfoProvider(sdk.GameInfoProviderSpec{
 		ID:           "game-version",
 		Name:         "Vortex game version info provider",

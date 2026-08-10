@@ -1281,7 +1281,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionCompatibilityDiagnostics(game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionCompatibilityDiagnostics(game, mods, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -12888,6 +12888,7 @@ func (s *Server) completeInstalledModJob(ctx context.Context, jobID string, stag
 	}); err != nil {
 		s.logger.Warn("post-install extension event failed", "job_id", jobID, "app_id", staged.SteamAppID, "installed_mod_id", staged.ID, "event", gameext.EventDidInstallMod, "error", err)
 	}
+	s.queueGameVersionModInstalledNotices(ctx, staged.SteamAppID, "install")
 	finish := func() {
 		if cleanup != nil {
 			cleanup()
@@ -13768,7 +13769,22 @@ func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.Mo
 	return out
 }
 
-func gameVersionCompatibilityDiagnostics(game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+func (s *Server) queueGameVersionModInstalledNotices(ctx context.Context, appID, source string) {
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		s.logger.Warn("post-install game-version diagnostics skipped because game could not be loaded", "app_id", appID, "source", source, "error", err)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		s.logger.Warn("post-install game-version diagnostics skipped because installed mods could not be loaded", "app_id", appID, "source", source, "error", err)
+		return
+	}
+	tests := gameVersionCompatibilityDiagnostics(game, mods, "mod-installed")
+	s.queueExtensionNoticeJobs(ctx, appID, "mod-installed", source, game.Name, extensionTestNotices(tests))
+}
+
+func gameVersionCompatibilityDiagnostics(game storage.Game, mods []storage.InstalledMod, trigger string) []gameExtensionTestResponse {
 	gameVersion := strings.TrimSpace(game.Version)
 	if gameVersion == "" {
 		return nil
@@ -13803,10 +13819,14 @@ func gameVersionCompatibilityDiagnostics(game storage.Game, mods []storage.Insta
 	}
 	sort.Strings(incompatible)
 	details := append([]string{"Installed version: " + gameVersion}, incompatible...)
+	testID := "game-version-gamemode"
+	if strings.TrimSpace(trigger) == "mod-installed" {
+		testID = "game-version-mod-installed"
+	}
 	return []gameExtensionTestResponse{{
-		TestID:   "game-version-gamemode",
+		TestID:   testID,
 		TestName: "Game version check",
-		Trigger:  sdk.EventGamemodeActivated,
+		Trigger:  strings.TrimSpace(trigger),
 		Status:   sdk.HealthCheckStatusWarning,
 		Severity: sdk.HealthCheckSeverityWarning,
 		Message:  "Some installed mods declare incompatible game-version requirements.",

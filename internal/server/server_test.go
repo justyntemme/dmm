@@ -10211,6 +10211,56 @@ func TestGameDiagnosticsWarnsForIncompatibleModGameVersionMetadata(t *testing.T)
 	}
 }
 
+func TestPostInstallGameVersionNoticeUsesModInstalledTrigger(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		Version:     "1.5.0",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "1000",
+			FileID:     "10001",
+		},
+		Name:        "Future Fish",
+		Version:     "1.0.0",
+		ArchivePath: filepath.Join(srv.cfg.DataDir, "downloads", "future-fish.zip"),
+		StagingPath: filepath.Join(srv.cfg.DataDir, "staging", "future-fish"),
+		ManifestJSON: stagedManifestJSONWithMetadata(t, "413150", "stardew-smapi-mod", installplan.ModMetadata{
+			Kind:           stardewvalley.MetadataKindSMAPIManifest,
+			Name:           "Future Fish",
+			UniqueID:       "example.FutureFish",
+			Version:        "1.0.0",
+			MinGameVersion: "1.6.0",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.queueGameVersionModInstalledNotices(context.Background(), "413150", "test")
+
+	noticeJobs := 0
+	for _, job := range srv.jobs.List() {
+		if job.Type == jobTypeExtensionNotice && job.Payload["event"] == "mod-installed" && strings.Contains(job.Message, "Future Fish requires game version 1.6.0") {
+			noticeJobs++
+		}
+	}
+	if noticeJobs != 1 {
+		t.Fatalf("extension notice jobs = %+v", srv.jobs.List())
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
