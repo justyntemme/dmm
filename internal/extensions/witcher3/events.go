@@ -39,8 +39,17 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
+	keptMappings, xmlMappings, xmlMessages, replaceMappings, err := witcherConfigXMLMergeMappings(ctx, input)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
 	var mappings []deploy.FileMapping
 	var messages []string
+	if replaceMappings {
+		mappings = append(mappings, keptMappings...)
+		mappings = append(mappings, xmlMappings...)
+	}
+	messages = append(messages, xmlMessages...)
 	entries := managedModSettingsEntries(input.Mappings)
 	documentsRoot, err := protonDocumentsRoot(input)
 	if err != nil {
@@ -76,8 +85,9 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 	mappings = append(mappings, menuMappings...)
 	messages = append(messages, menuMessages...)
 	return sdk.EventHandlerResult{
-		Mappings: mappings,
-		Messages: messages,
+		ReplaceMappings: replaceMappings,
+		Mappings:        mappings,
+		Messages:        messages,
 	}, nil
 }
 

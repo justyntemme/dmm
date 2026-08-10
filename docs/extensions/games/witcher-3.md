@@ -12,6 +12,7 @@
 - Vortex Witcher 3 game registration: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/index.ts`
 - Vortex Witcher 3 installers: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/installers.ts`
 - Vortex Witcher 3 common merge/load-order constants: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/common.ts`
+- Vortex Witcher 3 XML merge: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/mergers.ts`
 - Vortex Witcher 3 lifecycle and load-order hooks: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/eventHandlers.ts`
 
 ## Current DMM Capability
@@ -21,10 +22,11 @@
 - Script Merger is registered as a launch tool and blocked as a mod archive.
 - Basic managed `mods.settings` generation exists through an extension deploy hook.
 - Menu `.part.txt` fragments are merged by the Witcher 3 extension during `will-deploy`: DMM scans enabled `witcher3menumodroot` staging folders, ignores `input.xml` fragments like Vortex, merges fragment INI keys over the current or `.vortex_backup` Documents settings file, and returns restore-aware `patch-existing` mappings for files such as `input.settings`, `user.settings`, and `dx12user.settings`.
+- Config-matrix XML files are merged by the Witcher 3 extension during `will-deploy`: DMM removes the raw config XML deployment mapping, reads the native or `.vortex_backup` game file, merges `UserConfig.Group` nodes by `id`, replaces matching `VisibleVars.Var` nodes by `id`, appends missing vars/groups, and returns one restore-aware `patch-existing` mapping.
 
 ## Beta Gaps
 
-- Advanced menu XML merge and Vortex hidden menu-mod cache/adoption behavior are incomplete.
+- Vortex hidden menu-mod cache/adoption behavior is incomplete.
 - Script Merger setup and prompts are incomplete.
 - Manual load-order preservation and full load-order UI semantics are incomplete.
 - Collection/profile data behavior needs parity review.

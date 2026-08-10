@@ -2,11 +2,13 @@ package witcher3_test
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -262,6 +264,113 @@ func TestExtensionWillDeployMergesMenuSettingFragments(t *testing.T) {
 	}
 }
 
+func TestExtensionWillDeployMergesConfigXMLByUserConfigIDs(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "steamapps", "common", "The Witcher 3")
+	targetRel := "bin/config/r4game/user_config_matrix/pc/input.xml"
+	writeFile(t, filepath.Join(gamePath, targetRel), `<?xml version="1.0" encoding="UTF-16"?>
+<UserConfig>
+	<Group builder="Input" id="PCInput" displayName="controls_pc">
+		<VisibleVars>
+			<Var builder="Input" id="MoveFwd" displayName="move_forward" actions="BaseMove"/>
+		</VisibleVars>
+	</Group>
+</UserConfig>`)
+	stageA := filepath.Join(root, "staging", "friendly", "input.xml")
+	stageB := filepath.Join(root, "staging", "later", "input.xml")
+	writeFile(t, stageA, `<UserConfig>
+	<Group builder="Input" id="PCInput" displayName="controls_pc">
+		<VisibleVars>
+			<Var builder="Input" id="MoveFwd" displayName="move_forward" actions="FriendlyMove"/>
+			<Var builder="Input" id="QuickMenu" displayName="quick_menu" actions="QuickMenu"/>
+		</VisibleVars>
+	</Group>
+</UserConfig>`)
+	writeFile(t, stageB, `<UserConfig>
+	<Group builder="Input" id="PCInput" displayName="controls_pc">
+		<VisibleVars>
+			<Var builder="Input" id="MoveFwd" displayName="move_forward" actions="LaterMove"/>
+		</VisibleVars>
+	</Group>
+	<Group builder="Input" id="DMMCustom" displayName="custom">
+		<VisibleVars>
+			<Var builder="Input" id="CustomToggle" displayName="custom_toggle" actions="CustomAction"/>
+		</VisibleVars>
+	</Group>
+</UserConfig>`)
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "will-deploy", sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		LibraryPath: root,
+		StagingRoot: filepath.Join(root, "staging"),
+		WorkDir:     filepath.Join(root, "staging", "_generated", "event-hooks", "292030", "1", "will-deploy"),
+		Mappings: []deploy.FileMapping{
+			{SourcePath: filepath.Join(root, "staging", "readme.txt"), TargetRelative: "Mods/modExample/readme.txt", Priority: 1},
+			{SourcePath: stageA, TargetRelative: targetRel, InstalledModID: 100, Priority: 10},
+			{SourcePath: stageB, TargetRelative: targetRel, InstalledModID: 200, Priority: 20},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ReplaceMappings {
+		t.Fatal("expected Witcher XML merge to replace raw config XML mappings")
+	}
+	merged := mappingByTarget(result.Mappings, targetRel)
+	if merged == nil {
+		t.Fatalf("missing merged config XML mapping in %+v", result.Mappings)
+	}
+	if merged.TargetPolicy != deploy.TargetPolicyPatchExisting || merged.Strategy != deploy.StrategyCopy || merged.RestorePath == "" || merged.ModID != "witcher3-config-xml-merge" {
+		t.Fatalf("merged mapping = %+v", merged)
+	}
+	body := readFile(t, merged.SourcePath)
+	if strings.Count(body, `id="MoveFwd"`) != 1 {
+		t.Fatalf("expected one merged MoveFwd var, body:\n%s", body)
+	}
+	for _, want := range []string{`actions="LaterMove"`, `id="QuickMenu"`, `id="DMMCustom"`, `id="CustomToggle"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("merged XML missing %s:\n%s", want, body)
+		}
+	}
+	restore := readFile(t, merged.RestorePath)
+	if !strings.Contains(restore, `actions="BaseMove"`) {
+		t.Fatalf("restore XML = %s", restore)
+	}
+	if strings.Contains(body, `BaseMove`) || strings.Contains(body, `FriendlyMove`) {
+		t.Fatalf("merged XML did not replace lower-priority duplicate var:\n%s", body)
+	}
+}
+
+func TestExtensionWillDeployDecodesUTF16ConfigXML(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "steamapps", "common", "The Witcher 3")
+	targetRel := "bin/config/r4game/user_config_matrix/pc/hud.xml"
+	writeUTF16LEFile(t, filepath.Join(gamePath, targetRel), `<?xml version="1.0" encoding="UTF-16"?><UserConfig><Group id="HUD"><VisibleVars><Var id="BaseHUD" actions="Base"/></VisibleVars></Group></UserConfig>`)
+	stage := filepath.Join(root, "staging", "hud", "hud.xml")
+	writeUTF16LEFile(t, stage, `<?xml version="1.0" encoding="UTF-16"?><UserConfig><Group id="HUD"><VisibleVars><Var id="ModHUD" actions="Mod"/></VisibleVars></Group></UserConfig>`)
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "will-deploy", sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		LibraryPath: root,
+		StagingRoot: filepath.Join(root, "staging"),
+		WorkDir:     filepath.Join(root, "staging", "_generated", "event-hooks", "292030", "1", "will-deploy"),
+		Mappings:    []deploy.FileMapping{{SourcePath: stage, TargetRelative: targetRel, InstalledModID: 100, Priority: 10}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := mappingByTarget(result.Mappings, targetRel)
+	if merged == nil {
+		t.Fatalf("missing merged UTF-16 config XML mapping in %+v", result.Mappings)
+	}
+	body := readFile(t, merged.SourcePath)
+	if !strings.Contains(body, `id="BaseHUD"`) || !strings.Contains(body, `id="ModHUD"`) {
+		t.Fatalf("merged XML = %s", body)
+	}
+}
+
 func TestExtensionDidDeployIgnoresMenuInputXMLFragments(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
 	root := t.TempDir()
@@ -380,6 +489,23 @@ func writeFile(t *testing.T, path string, contents string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeUTF16LEFile(t *testing.T, path string, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	encoded := utf16.Encode([]rune(contents))
+	body := []byte{0xFF, 0xFE}
+	for _, word := range encoded {
+		var buf [2]byte
+		binary.LittleEndian.PutUint16(buf[:], word)
+		body = append(body, buf[:]...)
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
