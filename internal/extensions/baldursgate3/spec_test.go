@@ -46,6 +46,15 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}
+	if len(compiled.GameVersionProviders) != 1 || compiled.GameVersionProviders[0].Provider == nil {
+		t.Fatalf("game versions = %+v", compiled.GameVersionProviders)
+	}
+	if len(compiled.StateReducers) != 1 || compiled.StateReducers[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("state reducers = %+v", compiled.StateReducers)
+	}
+	if len(compiled.StateMigrations) != 1 || compiled.StateMigrations[0].Status != sdk.CapabilityStatusNotApplicable {
+		t.Fatalf("state migrations = %+v", compiled.StateMigrations)
+	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
 		t.Fatalf("game setup = %+v", compiled.GameSetups)
 	}

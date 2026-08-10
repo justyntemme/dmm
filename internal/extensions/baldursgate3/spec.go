@@ -11,6 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/peversion"
 )
 
 const (
@@ -118,10 +119,10 @@ func Register(r sdk.Registrar) {
 		Message: "Managed tool package used by BG3 pak metadata extraction.",
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
-		ID:      "bg3-exe-version",
-		Name:    "BG3 executable version",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex reads bin/bg3.exe FileVersion to choose modsettings.lsx v6/v7/v8 defaults; DMM records the source requirement until executable-version extraction is wired to runtime diagnostics.",
+		ID:       "bg3-exe-version",
+		Name:     "BG3 executable version",
+		Provider: gameVersion,
+		Message:  "Vortex reads bin/bg3.exe FileVersion to choose modsettings.lsx v6/v7/v8 defaults; DMM exposes the executable version through the generic game-version provider runtime.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:   "bg3-prepare-modding",
@@ -194,16 +195,16 @@ func Register(r sdk.Registrar) {
 		ID:      "bg3-settings",
 		Name:    "BG3 settings reducer",
 		Scope:   VortexGameID,
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex stores autoExportLoadOrder, playerProfile, migration, settingsWritten, and extensionVersion. DMM profile settings need equivalent product UI before full BG3 UX parity.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex stores autoExportLoadOrder, playerProfile, migration, settingsWritten, and extensionVersion. DMM maps autoExportLoadOrder to typed extension settings and uses Public profile modsettings generation for the Steam Deck target.",
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "bg3-patch7-migration",
 		Name:        "BG3 patch 7 load-order migration",
 		FromVersion: "1.4.0",
 		ToVersion:   "1.5.0",
-		Status:      sdk.CapabilityStatusMetadata,
-		Message:     "Vortex re-imports game modsettings.lsx and warns about Mod Fixer after patch 7; DMM records this source behavior pending BG3 load-order import UI.",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex re-imports game modsettings.lsx and warns about Mod Fixer after patch 7 for existing Vortex state. This is not applicable to DMM-created state because DMM generates current Public-profile modsettings.lsx from enabled managed pak metadata; post-MVP Vortex import must implement a real Patch 7 repair for imported Vortex profiles.",
 	})
 	for _, pattern := range ignorePatterns {
 		r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{ID: "bg3-ignore-conflicts-" + sanitizeID(pattern), Name: "BG3 ignore conflict " + pattern, Patterns: []string{pattern}})
@@ -224,6 +225,26 @@ func Register(r sdk.Registrar) {
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.GameVersionResult{}, err
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath == "" {
+		return sdk.GameVersionResult{}, nil
+	}
+	for _, rel := range []string{"bin/bg3.exe", "bin/bg3_dx11.exe"} {
+		version, err := peversion.FileVersion(filepath.Join(gamePath, filepath.FromSlash(rel)))
+		if err == nil && strings.TrimSpace(version) != "" {
+			return sdk.GameVersionResult{Version: version, Source: rel}, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return sdk.GameVersionResult{}, err
+		}
+	}
+	return sdk.GameVersionResult{}, nil
 }
 
 func localModsRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
