@@ -33,7 +33,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "test-gameversion-state")
 	assertReady(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives", "oblivion-fonts", "skyrim-fonts")
 	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
-	assertBlocked(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts")
+	assertStatusWithMessage(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts", sdk.CapabilityStatusReady)
 	assertBlocked(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
 }
 

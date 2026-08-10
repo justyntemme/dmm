@@ -2086,6 +2086,19 @@ func validateStartHooks(specs []sdk.StartHookSpec) []error {
 		if err := validateCapabilityStatus("start hook", id, spec.Status, spec.Message); err != nil {
 			errs = append(errs, err)
 		}
+		status := defaultString(spec.Status, sdk.CapabilityStatusReady)
+		kind := strings.TrimSpace(spec.Kind)
+		if status == sdk.CapabilityStatusReady {
+			if kind == "" {
+				errs = append(errs, errors.New("ready start hook "+id+" kind is required"))
+				continue
+			}
+			switch kind {
+			case sdk.StartHookKindCheckUnresolvedConflicts:
+			default:
+				errs = append(errs, errors.New("start hook "+id+" uses unsupported kind "+kind))
+			}
+		}
 	}
 	return errs
 }

@@ -121,10 +121,11 @@ func registerDependencyManager(r sdk.Registrar) {
 	r.RegisterStartHook(sdk.StartHookSpec{
 		ID:       "dependency-check-unsolved-conflicts",
 		Name:     "Check unsolved dependency conflicts",
-		Trigger:  "startup",
+		Trigger:  sdk.StartHookTriggerStartup,
+		Kind:     sdk.StartHookKindCheckUnresolvedConflicts,
 		Priority: 50,
-		Status:   sdk.CapabilityStatusBlocked,
-		Message:  blockedMessage,
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM checks enabled profile deployment plans for unresolved duplicate managed file targets at startup and queues an Action Center notice when a file winner is required.",
 	})
 }
 

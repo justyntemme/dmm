@@ -73,6 +73,8 @@ type Server struct {
 	gameDiscoveryMu      sync.Mutex
 	gameDiscoveryCache   []steam.Game
 	gameDiscoveryCacheAt time.Time
+	startupHooksMu       sync.Mutex
+	startupHooksRan      bool
 
 	pendingMu        sync.Mutex
 	capturedInstalls map[string]capturedInstall
@@ -4575,9 +4577,79 @@ func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.
 		return nil, false, err
 	}
 	s.runExtensionMigrationsForGames(ctx, games)
+	s.runStartupHooks(ctx, games)
 	s.gameDiscoveryCache = cloneSteamGames(games)
 	s.gameDiscoveryCacheAt = time.Now()
 	return cloneSteamGames(games), false, nil
+}
+
+func (s *Server) runStartupHooks(ctx context.Context, discovered []steam.Game) {
+	s.startupHooksMu.Lock()
+	if s.startupHooksRan {
+		s.startupHooksMu.Unlock()
+		return
+	}
+	s.startupHooksRan = true
+	s.startupHooksMu.Unlock()
+
+	for _, hook := range s.games.ReadyStartHooksForTrigger(sdk.StartHookTriggerStartup) {
+		switch strings.TrimSpace(hook.Kind) {
+		case sdk.StartHookKindCheckUnresolvedConflicts:
+			s.runStartupUnresolvedConflictCheck(ctx, hook, discovered)
+		default:
+			s.logger.Warn("ready startup hook has no runtime", "hook_id", hook.ID, "kind", hook.Kind)
+		}
+	}
+}
+
+func (s *Server) runStartupUnresolvedConflictCheck(ctx context.Context, hook gameext.StartHookSpec, discovered []steam.Game) {
+	seen := map[string]struct{}{}
+	event := "startup:" + strings.TrimSpace(hook.ID)
+	for _, discoveredGame := range discovered {
+		appID := strings.TrimSpace(discoveredGame.AppID)
+		if appID == "" {
+			continue
+		}
+		if _, ok := seen[appID]; ok {
+			continue
+		}
+		seen[appID] = struct{}{}
+		if _, ok := s.games.ExtensionForSteamApp(appID); !ok {
+			continue
+		}
+		game, err := s.db.GameBySteamApp(ctx, appID)
+		if err != nil {
+			s.logger.Warn("startup conflict check skipped game lookup", "app_id", appID, "hook_id", hook.ID, "error", err)
+			continue
+		}
+		plan, err := s.buildGameDeployPlanWithOptions(ctx, appID, buildGameDeployPlanOptions{SkipNewFileMonitorScan: true})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			s.logger.Warn("startup conflict check failed", "app_id", appID, "hook_id", hook.ID, "error", err)
+			continue
+		}
+		conflicts := unresolvedDeployConflicts(plan)
+		s.cancelActiveExtensionNoticeJobs(appID, event, "startup conflict check refreshed")
+		if len(conflicts) == 0 {
+			continue
+		}
+		message := strconv.Itoa(len(conflicts)) + " unresolved managed file conflict" + plural(len(conflicts)) + " need a file winner before this profile can deploy."
+		s.queueExtensionNoticeJobs(ctx, appID, event, "startup-hook", game.Name, []gameext.EventNotice{{
+			Message: message,
+		}})
+	}
+}
+
+func unresolvedDeployConflicts(plan deploy.Plan) []deploy.Action {
+	out := make([]deploy.Action, 0, len(plan.Conflicts))
+	for _, conflict := range plan.Conflicts {
+		if conflict.Conflict {
+			out = append(out, conflict)
+		}
+	}
+	return out
 }
 
 func truthyQueryValue(value string) bool {
@@ -14090,10 +14162,19 @@ func fileSHA256(path string) (string, error) {
 }
 
 func (s *Server) buildGameDeployPlan(ctx context.Context, appID string) (deploy.Plan, error) {
-	return s.buildGameDeployPlanWithProgress(ctx, appID, nil)
+	return s.buildGameDeployPlanWithOptions(ctx, appID, buildGameDeployPlanOptions{})
 }
 
 func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID string, progress gameext.EventProgressFunc) (deploy.Plan, error) {
+	return s.buildGameDeployPlanWithOptions(ctx, appID, buildGameDeployPlanOptions{Progress: progress})
+}
+
+type buildGameDeployPlanOptions struct {
+	Progress               gameext.EventProgressFunc
+	SkipNewFileMonitorScan bool
+}
+
+func (s *Server) buildGameDeployPlanWithOptions(ctx context.Context, appID string, opts buildGameDeployPlanOptions) (deploy.Plan, error) {
 	if strings.TrimSpace(appID) == "" {
 		return deploy.Plan{}, errors.New("appID is required")
 	}
@@ -14118,16 +14199,18 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		return deploy.Plan{}, err
 	}
 	defaultStrategy := s.deploymentStrategyForProfile(appID, profile)
-	adopted, err := s.processNewFileMonitorChangesBeforeDeploy(ctx, game, profile.ID, mods, managedFiles)
-	if err != nil {
-		return deploy.Plan{}, err
-	}
-	if adopted > 0 {
-		mods, err = s.db.InstalledModsForSteamApp(ctx, appID)
+	if !opts.SkipNewFileMonitorScan {
+		adopted, err := s.processNewFileMonitorChangesBeforeDeploy(ctx, game, profile.ID, mods, managedFiles)
 		if err != nil {
 			return deploy.Plan{}, err
 		}
-		s.logger.Info("reloaded installed mods after extension file adoption", "app_id", appID, "profile_id", profile.ID, "adopted", adopted)
+		if adopted > 0 {
+			mods, err = s.db.InstalledModsForSteamApp(ctx, appID)
+			if err != nil {
+				return deploy.Plan{}, err
+			}
+			s.logger.Info("reloaded installed mods after extension file adoption", "app_id", appID, "profile_id", profile.ID, "adopted", adopted)
+		}
 	}
 
 	active, err := s.activeDeploymentMappings(ctx, game, mods)
@@ -14145,7 +14228,7 @@ func (s *Server) buildGameDeployPlanWithProgress(ctx context.Context, appID stri
 		return deploy.Plan{}, err
 	}
 	mappings = append(mappings, activationMappings...)
-	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, gameext.EventWillDeploy, progress)
+	hookResult, err := s.deploymentEventMappings(ctx, game, mods, mappings, managedFiles, stagingRoot, gameext.EventWillDeploy, opts.Progress)
 	if err != nil {
 		return deploy.Plan{}, err
 	}
@@ -14657,6 +14740,28 @@ func (s *Server) findActiveExtensionNoticeJob(noticeKey string) (jobs.Job, bool)
 		}
 	}
 	return jobs.Job{}, false
+}
+
+func (s *Server) cancelActiveExtensionNoticeJobs(appID, event, message string) {
+	appID = strings.TrimSpace(appID)
+	event = strings.TrimSpace(event)
+	if appID == "" || event == "" {
+		return
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "extension notice cleared"
+	}
+	for _, job := range s.jobs.List() {
+		if job.Type != jobTypeExtensionNotice || strings.TrimSpace(job.Payload["app_id"]) != appID || strings.TrimSpace(job.Payload["event"]) != event {
+			continue
+		}
+		switch job.Status {
+		case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusWaiting:
+			canceled, _ := s.jobs.Cancel(job.ID, message)
+			s.logger.Info("extension notice canceled", "app_id", appID, "event", event, "job_id", canceled.ID)
+		}
+	}
 }
 
 func deploymentModsForHooks(mods []storage.InstalledMod) []gameext.DeploymentMod {

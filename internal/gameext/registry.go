@@ -496,6 +496,36 @@ func NewRegistry(extensions []Extension) Registry {
 	return registry
 }
 
+func (r Registry) ReadyStartHooksForTrigger(trigger string) []StartHookSpec {
+	trigger = canonical(trigger)
+	if trigger == "" {
+		return nil
+	}
+	var hooks []StartHookSpec
+	for _, extension := range r.extensions {
+		for _, hook := range extension.StartHooks {
+			status := strings.ToLower(strings.TrimSpace(hook.Status))
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if status != sdk.CapabilityStatusReady || canonical(hook.Trigger) != trigger {
+				continue
+			}
+			hooks = append(hooks, hook)
+		}
+	}
+	sort.SliceStable(hooks, func(i, j int) bool {
+		if hooks[i].Priority != hooks[j].Priority {
+			return hooks[i].Priority < hooks[j].Priority
+		}
+		if canonical(hooks[i].ID) != canonical(hooks[j].ID) {
+			return canonical(hooks[i].ID) < canonical(hooks[j].ID)
+		}
+		return canonical(hooks[i].Name) < canonical(hooks[j].Name)
+	})
+	return hooks
+}
+
 func (r Registry) ExtensionSummaries() []ExtensionSummary {
 	summaries := make([]ExtensionSummary, 0, len(r.extensions))
 	for _, extension := range r.extensions {
@@ -2116,6 +2146,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			ID:       hook.ID,
 			Name:     hook.Name,
 			Trigger:  hook.Trigger,
+			Kind:     hook.Kind,
 			Priority: hook.Priority,
 			Status:   defaultString(hook.Status, sdk.CapabilityStatusReady),
 			Message:  hook.Message,

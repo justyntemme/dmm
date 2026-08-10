@@ -1006,10 +1006,16 @@ type StartHookSpec struct {
 	ID       string
 	Name     string
 	Trigger  string
+	Kind     string
 	Priority int
 	Status   string
 	Message  string
 }
+
+const (
+	StartHookTriggerStartup               = "startup"
+	StartHookKindCheckUnresolvedConflicts = "check-unresolved-file-conflicts"
+)
 
 type EventHandlerSpec struct {
 	ID      string

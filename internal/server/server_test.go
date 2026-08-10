@@ -12395,6 +12395,113 @@ func TestRecomputeConflictsAndRulesRunsExtensionEvent(t *testing.T) {
 	}
 }
 
+func TestStartupHookQueuesUnresolvedConflictNotice(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Startup Conflict Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999005"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "startup-conflict-game",
+		Name:    "Startup Conflict Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"startupconflict"},
+				VortexGameID: "startupconflict",
+				MergeMode:    sdk.GameMergeModeAll,
+				Deployment: installplan.DeploymentSpec{
+					AllowNeedsReviewState: true,
+				},
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "startup-conflict-root", TargetRoot: ""})
+			r.RegisterStartHook(sdk.StartHookSpec{
+				ID:       "dependency-check-unsolved-conflicts",
+				Name:     "Check unsolved dependency conflicts",
+				Trigger:  sdk.StartHookTriggerStartup,
+				Kind:     sdk.StartHookKindCheckUnresolvedConflicts,
+				Priority: 50,
+				Status:   sdk.CapabilityStatusReady,
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Startup Conflict Game",
+		InstallDir:  "Startup Conflict Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	for i, name := range []string{"First Conflict Mod", "Second Conflict Mod"} {
+		stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "startupconflict", strconv.Itoa(i+1))
+		if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stagingPath, "shared.txt"), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+			GameID:    appID,
+			ModType:   "startup-conflict-root",
+			PlannerID: "startup-conflict:test",
+			Instructions: []installplan.Instruction{{
+				StagingRelative: "shared.txt",
+				TargetRelative:  "Data/shared.txt",
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+			SteamAppID: appID,
+			Resolved: catalog.ResolvedDownload{
+				Catalog:    "nexus",
+				GameDomain: "startupconflict",
+				ModID:      name,
+				FileID:     "1",
+			},
+			Name:           name,
+			ArchivePath:    filepath.Join(t.TempDir(), name+".zip"),
+			StagingPath:    stagingPath,
+			ManifestJSON:   manifest,
+			DefaultEnabled: &enabled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := srv.buildGameDeployPlanWithOptions(context.Background(), appID, buildGameDeployPlanOptions{SkipNewFileMonitorScan: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) == 0 {
+		t.Fatalf("startup conflict fixture produced no conflicts: %+v", plan)
+	}
+
+	srv.runStartupHooks(context.Background(), []steam.Game{{AppID: appID}})
+
+	var notice jobs.Job
+	for _, job := range srv.jobs.List() {
+		if job.Type == jobTypeExtensionNotice && job.Payload["event"] == "startup:dependency-check-unsolved-conflicts" {
+			notice = job
+			break
+		}
+	}
+	if notice.ID == "" || notice.Status != jobs.StatusWaiting {
+		t.Fatalf("startup conflict notice = %+v, jobs = %+v", notice, srv.jobs.List())
+	}
+	if notice.Payload["app_id"] != appID || !strings.Contains(notice.Message, "unresolved managed file conflict") {
+		t.Fatalf("startup conflict notice = %+v", notice)
+	}
+}
+
 func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Lifecycle Game")
