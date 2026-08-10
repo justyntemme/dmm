@@ -632,6 +632,7 @@ type PluginLoadOrder = {
   plugins_file?: string;
   load_order_file?: string;
   plugins: PluginLoadOrderEntry[];
+  extension_orders?: ExtensionLoadOrder[];
   warnings?: string[];
 };
 
@@ -644,6 +645,31 @@ type PluginLoadOrderEntry = {
   priority: number;
   active: boolean;
   mutable?: boolean;
+};
+
+type ExtensionLoadOrder = {
+  id: string;
+  name?: string;
+  target_relative?: string;
+  target_root?: string;
+  target_root_id?: string;
+  status?: string;
+  message?: string;
+  usage_instructions?: string;
+  entries: ExtensionLoadOrderEntry[];
+};
+
+type ExtensionLoadOrderEntry = {
+  id: string;
+  name: string;
+  installed_mod_id?: number;
+  mod_id?: string;
+  catalog?: string;
+  source_tag?: string;
+  mod_type?: string;
+  priority: number;
+  active: boolean;
+  targets?: string[];
 };
 
 type WorkshopActionJob = Job & {
@@ -5659,7 +5685,7 @@ function FreshDeckyModManagerRoute() {
             </Focusable>
           );
         })}
-        {pluginLoadOrder?.supported && pluginLoadOrder.plugins.length > 0 && (
+        {pluginLoadOrder?.activation_id && pluginLoadOrder.plugins.length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
             <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
               <div style={{ fontWeight: 900 }}>Plugin Files</div>
@@ -5723,6 +5749,35 @@ function FreshDeckyModManagerRoute() {
             })}
           </div>
         )}
+        {pluginLoadOrder?.extension_orders?.map((order) => (
+          <div key={order.id} style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
+            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+              <div style={{ fontWeight: 900 }}>Extension Order</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                {order.name || order.id} · {order.target_relative || order.target_root_id || order.target_root || "Profile order"}
+              </div>
+            </div>
+            {order.entries.map((entry, index) => {
+              const source = entry.source_tag || entry.catalog || "dmm";
+              return (
+                <div key={`${order.id}:${entry.id}`} style={freshModCardStyle(entry.active)}>
+                  <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
+                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{index + 1}. {entry.name}</div>
+                    <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
+                  </div>
+                  <div style={{ color: entry.active ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
+                    {entry.active ? "Enabled" : "Disabled"} · Priority {entry.priority}
+                  </div>
+                  {entry.targets && entry.targets.length > 0 && (
+                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
+                      {entry.targets.slice(0, 2).join(", ")}{entry.targets.length > 2 ? ` +${entry.targets.length - 2} more` : ""}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
         {workshopItems.map((item) => {
           const disabled = item.disabled_known && item.disabled_locally;
           return (

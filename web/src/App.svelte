@@ -492,6 +492,7 @@
     load_order_file?: string;
     loot?: LOOTStatus;
     plugins: PluginLoadOrderEntry[];
+    extension_orders?: ExtensionLoadOrder[];
     warnings?: string[];
   };
 
@@ -557,6 +558,35 @@
     priority: number;
     active: boolean;
     mutable?: boolean;
+  };
+
+  type ExtensionLoadOrder = {
+    id: string;
+    name?: string;
+    target_relative?: string;
+    target_root?: string;
+    target_root_id?: string;
+    status?: string;
+    message?: string;
+    entry_name_mode?: string;
+    toggleable_entries?: boolean;
+    usage_instructions?: string;
+    mutable?: boolean;
+    entries: ExtensionLoadOrderEntry[];
+  };
+
+  type ExtensionLoadOrderEntry = {
+    id: string;
+    name: string;
+    installed_mod_id?: number;
+    mod_id?: string;
+    catalog?: string;
+    source_tag?: string;
+    mod_type?: string;
+    priority: number;
+    active: boolean;
+    mutable?: boolean;
+    targets?: string[];
   };
 
   type RuntimeRequirement = {
@@ -5494,7 +5524,7 @@
                 </div>
               </section>
             {/if}
-            {#if pluginLoadOrder?.supported}
+            {#if pluginLoadOrder && (pluginLoadOrder.activation_id || pluginLoadOrder.plugins.length > 0)}
               <section class="plugin-load-order-card">
                 <div class="panel-heading compact-heading">
                   <h3>Plugin Load Order</h3>
@@ -5711,6 +5741,53 @@
                 {:else}
                   <p class="hint">No active plugin files are currently part of this profile.</p>
                 {/if}
+              </section>
+            {/if}
+            {#if pluginLoadOrder?.extension_orders?.length}
+              <section class="plugin-load-order-card">
+                <div class="panel-heading compact-heading">
+                  <h3>Extension Load Orders</h3>
+                  <span>{pluginLoadOrder.extension_orders.length} rule{pluginLoadOrder.extension_orders.length === 1 ? "" : "s"}</span>
+                </div>
+                <p>Game extensions derive these order files from the selected profile. Move mods in the profile list to change generated order where the extension supports it.</p>
+                <div class="plugin-load-order-list">
+                  {#each pluginLoadOrder.extension_orders as order}
+                    <article>
+                      <span>{order.entries.length}</span>
+                      <div>
+                        <strong>{order.name ?? order.id}</strong>
+                        {#if order.target_relative}
+                          <small>{order.target_relative}</small>
+                        {:else if order.target_root_id}
+                          <small>Target root: {order.target_root_id}</small>
+                        {:else if order.target_root}
+                          <small>{order.target_root}</small>
+                        {/if}
+                        {#if order.message}
+                          <small>{order.message}</small>
+                        {/if}
+                        {#if order.usage_instructions}
+                          <small>{order.usage_instructions}</small>
+                        {/if}
+                      </div>
+                    </article>
+                    {#each order.entries as entry, index}
+                      <article class:inactive-plugin={!entry.active}>
+                        <span>{index + 1}</span>
+                        <div>
+                          <div class="mod-title-line">
+                            <strong>{entry.name}</strong>
+                            <span class={`source-pill ${sourceClass(entry.source_tag ?? entry.catalog ?? "dmm")}`}>{sourceLabel(entry.source_tag ?? entry.catalog ?? "dmm")}</span>
+                          </div>
+                          <small>{entry.active ? "Enabled" : "Disabled"} · Priority {entry.priority}{entry.mod_type ? ` · ${entry.mod_type}` : ""}</small>
+                          {#if entry.targets?.length}
+                            <small>{entry.targets.slice(0, 3).join(", ")}{entry.targets.length > 3 ? ` +${entry.targets.length - 3} more` : ""}</small>
+                          {/if}
+                        </div>
+                      </article>
+                    {/each}
+                  {/each}
+                </div>
               </section>
             {/if}
             <section class="recovery-card">
