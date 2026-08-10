@@ -16,7 +16,9 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 
 ## Guideline 1: Full Runtime Parity Is The Priority
 
+- This is the active P1 Critical project priority: convert source-backed, metadata-only, blocked, and placeholder extension surfaces into real runtime behavior before doing unrelated feature breadth or polish.
 - Full Vortex-equivalent runtime behavior is the definition of extension parity. A source-backed counterpart, metadata-only registration, placeholder, or documented blocked state is not parity and must not be counted as complete.
+- A DMM counterpart that only records what Vortex does is inventory coverage, not plugin parity. It exists only to make the runtime gap explicit until the full behavior is implemented.
 - Closing metadata-only or blocked extension surfaces is the highest-priority compatibility work before unrelated product polish or breadth expansion. If a Vortex extension uses a surface at runtime, DMM must either implement the equivalent runtime behavior or document a verified product decision that the surface is not applicable to Steam Deck/DMM.
 - Each supported game extension must provide full runtime support for the Vortex manifest/source behavior it relies on: installers, mod types, target roots, launch tools, runtime requirements, setup tests, dependency rules, load order, profile files, events, actions, dialogs/choices, metadata extraction, archive engines, and migrations.
 - When a game extension needs behavior that DMM does not yet expose, add a generic extension API/capability that can support every game needing that class of behavior, then wire the game extension through that API. Do not satisfy the game by baking one-off behavior into the core app.
