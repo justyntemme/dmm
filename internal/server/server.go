@@ -9841,9 +9841,32 @@ func (s *Server) handleSetProfileFeature(w http.ResponseWriter, r *http.Request)
 		http.Error(w, message, http.StatusConflict)
 		return
 	}
+	profile, err := s.db.Profile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	oldFeatures, err := s.profileFeatureEnabledMap(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	state, err := s.db.SetProfileFeatureState(r.Context(), profileID, feature.ID, *req.Enabled)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	newFeatures, err := s.profileFeatureEnabledMap(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.syncProfileFilesForFeatureChange(r.Context(), appID, profile, oldFeatures, newFeatures); err != nil {
+		previous := oldFeatures[strings.TrimSpace(strings.ToLower(feature.ID))]
+		if _, revertErr := s.db.SetProfileFeatureState(r.Context(), profileID, feature.ID, previous); revertErr != nil {
+			s.logger.Warn("failed to revert profile feature state after profile file sync failure", "app_id", appID, "profile_id", profileID, "feature_id", feature.ID, "error", revertErr)
+		}
+		writeError(w, http.StatusConflict, err)
 		return
 	}
 	s.logger.Info("profile feature state updated", "app_id", appID, "profile_id", profileID, "feature_id", state.FeatureID, "enabled", state.Enabled, "extension_id", extension.ID)

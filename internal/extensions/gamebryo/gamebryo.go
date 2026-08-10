@@ -35,11 +35,12 @@ type PluginActivationOptions struct {
 }
 
 type LocalGameSettingsOptions struct {
-	GameID      string
-	MyGamesPath string
-	Files       []LocalGameSettingFile
-	SaveININame string
-	SavePath    string
+	GameID         string
+	MyGamesPath    string
+	Files          []LocalGameSettingFile
+	SaveININame    string
+	SavePath       string
+	GlobalSavePath string
 }
 
 type LocalGameSettingFile struct {
@@ -189,12 +190,17 @@ func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileF
 			if savePath == "" {
 				savePath = "Saves/{profile_id}/"
 			}
+			globalSavePath := strings.TrimSpace(opts.GlobalSavePath)
+			if globalSavePath == "" {
+				globalSavePath = "Saves/"
+			}
 			patches = append(patches, sdk.ProfileFilePatchSpec{
-				Kind:          sdk.ProfileFilePatchINIKey,
-				FeatureID:     "local_saves",
-				Section:       "General",
-				Key:           "SLocalSavePath",
-				ValueTemplate: savePath,
+				Kind:                  sdk.ProfileFilePatchINIKey,
+				FeatureID:             "local_saves",
+				Section:               "General",
+				Key:                   "SLocalSavePath",
+				ValueTemplate:         savePath,
+				DisabledValueTemplate: globalSavePath,
 			})
 		}
 		files = append(files, sdk.ProfileFileSpec{

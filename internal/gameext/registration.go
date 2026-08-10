@@ -1972,7 +1972,10 @@ func validateProfileFilePatch(fileID string, spec sdk.ProfileFilePatchSpec) erro
 	if strings.TrimSpace(spec.Key) == "" {
 		return errors.New("profile file " + fileID + " patch key is required")
 	}
-	if strings.TrimSpace(spec.Value) == "" && strings.TrimSpace(spec.ValueTemplate) == "" {
+	if strings.TrimSpace(spec.Value) == "" &&
+		strings.TrimSpace(spec.ValueTemplate) == "" &&
+		strings.TrimSpace(spec.DisabledValue) == "" &&
+		strings.TrimSpace(spec.DisabledValueTemplate) == "" {
 		return errors.New("profile file " + fileID + " patch value is required")
 	}
 	return nil

@@ -52,10 +52,11 @@ func Register(r sdk.Registrar) {
 	})
 	registerSupportedTools(r)
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
-		GameID:      VortexGameID,
-		MyGamesPath: "Enderal",
-		SaveININame: "Enderal.ini",
-		SavePath:    "../Enderal/Saves/{profile_id}/",
+		GameID:         VortexGameID,
+		MyGamesPath:    "Enderal",
+		SaveININame:    "Enderal.ini",
+		SavePath:       "../Enderal/Saves/{profile_id}/",
+		GlobalSavePath: "../Enderal/Saves/",
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Enderal.ini"},
 			{Name: "EnderalPrefs.ini"},

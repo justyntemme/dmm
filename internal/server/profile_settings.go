@@ -98,6 +98,62 @@ func (s *Server) syncProfileFilesForProfileSwitch(ctx context.Context, appID str
 	return nil
 }
 
+func (s *Server) syncProfileFilesForFeatureChange(ctx context.Context, appID string, profile storage.Profile, oldFeatures, newFeatures map[string]bool) error {
+	if profile.ID <= 0 || !profile.IsDefault {
+		return nil
+	}
+	game, err := s.db.GameBySteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	files, err := s.profileFilesForSwitch(game)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	if !profileFilesHaveEnabledFeature(files, oldFeatures) && !profileFilesHaveEnabledFeature(files, newFeatures) && !profileFilesHavePatchFeatureChange(files, oldFeatures, newFeatures) {
+		return nil
+	}
+	if err := checkRequiredGlobalProfileFiles(files, oldFeatures, newFeatures); err != nil {
+		return err
+	}
+	changed := false
+	for _, file := range files {
+		oldEnabled := profileFileFeatureEnabled(file.Spec, oldFeatures)
+		newEnabled := profileFileFeatureEnabled(file.Spec, newFeatures)
+		patchChanged := profileFilePatchFeatureChanged(file.Spec, oldFeatures, newFeatures)
+		switch {
+		case oldEnabled && !newEnabled:
+			if err := s.copyGlobalProfileFileToProfile(ctx, appID, profile.ID, file); err != nil {
+				return err
+			}
+			if err := s.restoreProfileFileBackupToGlobal(ctx, appID, file); err != nil {
+				return err
+			}
+			changed = true
+		case !oldEnabled && newEnabled:
+			if err := s.copyGlobalProfileFileToBackup(ctx, appID, file); err != nil {
+				return err
+			}
+			if err := s.copyProfileFileToGlobal(ctx, appID, profile.ID, file, newFeatures); err != nil {
+				return err
+			}
+			changed = true
+		case oldEnabled && newEnabled && patchChanged:
+			if err := s.copyProfileFileToGlobal(ctx, appID, profile.ID, file, newFeatures); err != nil {
+				return err
+			}
+			changed = true
+		}
+	}
+	if changed {
+		s.logger.Info("profile-local game settings sync completed after feature change", "app_id", appID, "profile_id", profile.ID)
+	}
+	return nil
+}
+
 func (s *Server) switchProfileSettings(ctx context.Context, appID, source string, oldProfile, newProfile storage.Profile, captureOld bool) error {
 	if oldProfile.ID > 0 && newProfile.ID > 0 && oldProfile.ID == newProfile.ID {
 		return nil
@@ -263,6 +319,15 @@ func profileFilesHaveEnabledFeature(files []profileFileForSwitch, states map[str
 	return false
 }
 
+func profileFilesHavePatchFeatureChange(files []profileFileForSwitch, oldStates, newStates map[string]bool) bool {
+	for _, file := range files {
+		if profileFilePatchFeatureChanged(file.Spec, oldStates, newStates) {
+			return true
+		}
+	}
+	return false
+}
+
 func profileFileFeatureEnabled(spec sdk.ProfileFileSpec, states map[string]bool) bool {
 	for _, featureID := range profileFileFeatureIDs(spec) {
 		if states[featureID] {
@@ -283,6 +348,19 @@ func profileFileFeatureIDs(spec sdk.ProfileFileSpec) []string {
 		}
 	}
 	return ids
+}
+
+func profileFilePatchFeatureChanged(spec sdk.ProfileFileSpec, oldStates, newStates map[string]bool) bool {
+	for _, patch := range spec.Patches {
+		featureID := strings.TrimSpace(strings.ToLower(patch.FeatureID))
+		if featureID == "" {
+			continue
+		}
+		if oldStates[featureID] != newStates[featureID] {
+			return true
+		}
+	}
+	return false
 }
 
 func missingRequiredProfileSettingPaths(files []profileFileForSwitch, states map[string]bool) []string {
@@ -361,6 +439,13 @@ func (s *Server) restoreProfileFileBackupToGlobal(ctx context.Context, appID str
 	backupPath := s.profileFileBackupPath(appID, file.Spec)
 	if _, err := os.Stat(backupPath); err != nil {
 		if file.Spec.Optional && errors.Is(err, os.ErrNotExist) {
+			if err := removeProfileSettingsFile(file.GlobalPath); err != nil {
+				return fmt.Errorf("remove optional profile-local game settings file %s without backup: %w", file.Spec.ID, err)
+			}
+			if err := removeProfileSettingsFile(file.GlobalPath + ".baked"); err != nil {
+				return fmt.Errorf("remove baked optional profile-local game settings file %s without backup: %w", file.Spec.ID, err)
+			}
+			s.logger.Debug("removed optional global game settings because no backup existed", "app_id", appID, "file_id", file.Spec.ID, "extension_id", file.ExtensionID)
 			return nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
@@ -407,6 +492,9 @@ func (s *Server) copyProfileFileToGlobal(ctx context.Context, appID string, prof
 	if patched, err := applyProfileFilePatches(file.GlobalPath, profileID, file.Spec, features); err != nil {
 		return fmt.Errorf("patch profile-local game settings file %s for profile %d: %w", file.Spec.ID, profileID, err)
 	} else if patched {
+		if _, copyErr := copyProfileSettingsFile(file.GlobalPath, profilePath, file.Spec.Optional); copyErr != nil {
+			return fmt.Errorf("save patched profile-local game settings file %s into profile %d: %w", file.Spec.ID, profileID, copyErr)
+		}
 		s.logger.Debug("patched profile game settings in global path", "app_id", appID, "profile_id", profileID, "file_id", file.Spec.ID, "extension_id", file.ExtensionID)
 	}
 	if _, err := copyProfileSettingsFile(file.GlobalPath, file.GlobalPath+".baked", file.Spec.Optional); err != nil {
@@ -451,12 +539,15 @@ func applyProfileFilePatches(path string, profileID int64, spec sdk.ProfileFileS
 	changed := false
 	for _, patch := range spec.Patches {
 		featureID := strings.TrimSpace(strings.ToLower(patch.FeatureID))
-		if featureID == "" || !features[featureID] {
+		if featureID == "" {
+			continue
+		}
+		value, ok := profileFilePatchValue(profileID, patch, features[featureID])
+		if !ok {
 			continue
 		}
 		switch strings.TrimSpace(patch.Kind) {
 		case sdk.ProfileFilePatchINIKey:
-			value := profileFilePatchValue(profileID, patch)
 			patched, ok := patchINISectionKey(next, patch.Section, patch.Key, value)
 			if ok {
 				next = patched
@@ -470,12 +561,20 @@ func applyProfileFilePatches(path string, profileID int64, spec sdk.ProfileFileS
 	return true, writeProfileSettingsFile(path, []byte(next), info.Mode().Perm())
 }
 
-func profileFilePatchValue(profileID int64, spec sdk.ProfileFilePatchSpec) string {
-	value := strings.TrimSpace(spec.ValueTemplate)
-	if value == "" {
-		return spec.Value
+func profileFilePatchValue(profileID int64, spec sdk.ProfileFilePatchSpec, enabled bool) (string, bool) {
+	template := strings.TrimSpace(spec.ValueTemplate)
+	value := spec.Value
+	if !enabled {
+		template = strings.TrimSpace(spec.DisabledValueTemplate)
+		value = spec.DisabledValue
 	}
-	return strings.ReplaceAll(value, "{profile_id}", strconv.FormatInt(profileID, 10))
+	if template != "" {
+		return strings.ReplaceAll(template, "{profile_id}", strconv.FormatInt(profileID, 10)), true
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", false
+	}
+	return value, true
 }
 
 func patchINISectionKey(contents, section, key, value string) (string, bool) {
@@ -610,6 +709,16 @@ func copyProfileSettingsFile(source, target string, optional bool) (bool, error)
 		return false, err
 	}
 	return true, nil
+}
+
+func removeProfileSettingsFile(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if err := os.Remove(filepath.Clean(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func writeProfileSettingsFile(path string, contents []byte, mode os.FileMode) error {

@@ -820,12 +820,14 @@ const (
 )
 
 type ProfileFilePatchSpec struct {
-	Kind          string
-	FeatureID     string
-	Section       string
-	Key           string
-	Value         string
-	ValueTemplate string
+	Kind                  string
+	FeatureID             string
+	Section               string
+	Key                   string
+	Value                 string
+	ValueTemplate         string
+	DisabledValue         string
+	DisabledValueTemplate string
 }
 
 type CollectionFeatureSpec struct {

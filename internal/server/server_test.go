@@ -9983,6 +9983,100 @@ func TestProfileSwitchAppliesGamebryoLocalSavePath(t *testing.T) {
 	}
 }
 
+func TestSetProfileFeatureSyncsActiveGamebryoLocalSavePath(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || !profiles[0].IsDefault {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	profileID := profiles[0].ID
+	globalRoot := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
+	if err := os.MkdirAll(globalRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "Fallout4.ini"), []byte("[General]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "Fallout4Prefs.ini"), []byte("[Display]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	setFeature := func(featureID string, enabled bool) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/features/"+featureID, bytes.NewBufferString(fmt.Sprintf(`{"enabled":%t}`, enabled)))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "127.0.0.1:1"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("set %s=%t status = %d, body = %s", featureID, enabled, rec.Code, rec.Body.String())
+		}
+	}
+
+	setFeature("local_game_settings", true)
+	customINI := filepath.Join(globalRoot, "Fallout4Custom.ini")
+	if _, err := os.Stat(customINI); !os.IsNotExist(err) {
+		t.Fatalf("optional custom ini should not be created for game settings alone, err = %v", err)
+	}
+	setFeature("local_saves", true)
+	body, err := os.ReadFile(customINI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activePath := "SLocalSavePath=Saves/" + strconv.FormatInt(profileID, 10) + "/"
+	if !strings.Contains(string(body), activePath) {
+		t.Fatalf("custom ini after enabling local saves = %q, want %q", string(body), activePath)
+	}
+	setFeature("local_saves", false)
+	body, err = os.ReadFile(customINI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "SLocalSavePath=Saves/") || strings.Contains(string(body), activePath) {
+		t.Fatalf("custom ini after disabling local saves = %q", string(body))
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := srv.profileFilesForSwitch(game)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var customSpec sdk.ProfileFileSpec
+	for _, file := range files {
+		if file.Spec.ID == "fallout4-local-game-settings-fallout4custom-ini" {
+			customSpec = file.Spec
+			break
+		}
+	}
+	if customSpec.ID == "" {
+		t.Fatalf("custom profile file spec not found in %+v", files)
+	}
+	profileCopy, err := os.ReadFile(srv.profileFileProfileCopyPath(fallout4.SteamAppID, profileID, customSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(profileCopy) != string(body) {
+		t.Fatalf("profile copy custom ini = %q, want %q", string(profileCopy), string(body))
+	}
+}
+
 func TestProfileSwitchBakesSettingsWithProfileEnabledMods(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999020"
