@@ -40,6 +40,9 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusBlocked {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}
+	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
+		t.Fatalf("game setup = %+v", compiled.GameSetups)
+	}
 }
 
 func TestLocalModsRootResolvesProtonLocalAppData(t *testing.T) {
@@ -185,6 +188,15 @@ func runtimeRequirementByID(requirements []gamehandler.RuntimeRequirementSpec, i
 		}
 	}
 	return nil
+}
+
+func setupEnsuresFile(setup sdk.GameSetupSpec, rel string) bool {
+	for _, action := range setup.Actions {
+		if action.Kind == sdk.GameSetupActionEnsureFile && action.TargetRootID == bg3LocalDataRootID && action.RelativePath == rel && strings.Contains(action.Content, "GustavX") {
+			return true
+		}
+	}
+	return false
 }
 
 func writeFile(t *testing.T, path, body string) {

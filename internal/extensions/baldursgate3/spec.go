@@ -31,6 +31,29 @@ const (
 
 var ignorePatterns = []string{"**/info.json"}
 
+const defaultModSettingsV8 = `<?xml version="1.0" encoding="UTF-8"?>
+<save>
+    <version major="4" minor="8" revision="0" build="10"/>
+    <region id="ModuleSettings">
+        <node id="root">
+            <children>
+                <node id="Mods">
+                    <children>
+                        <node id="ModuleShortDesc">
+                            <attribute id="Folder" type="LSString" value="GustavX"/>
+                            <attribute id="MD5" type="LSString" value=""/>
+                            <attribute id="Name" type="LSString" value="GustavX"/>
+                            <attribute id="PublishHandle" type="uint64" value="0"/>
+                            <attribute id="UUID" type="guid" value="cb555efe-2d9e-131f-8195-a89329d218ea"/>
+                            <attribute id="Version64" type="int64" value="36028797018963968"/>
+                        </node>
+                    </children>
+                </node>
+            </children>
+        </node>
+    </region>
+</save>`
+
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:       VortexGameID,
@@ -101,8 +124,11 @@ func Register(r sdk.Registrar) {
 		ID:   "bg3-prepare-modding",
 		Name: "Prepare BG3 local Mods folder and Public profile modsettings.lsx",
 		Actions: append(
-			sdk.EnsureTargetRootDirectories(bg3ModsRootID, "."),
-			sdk.EnsureTargetRootDirectories(bg3LocalDataRootID, "PlayerProfiles/Public")...,
+			append(
+				sdk.EnsureTargetRootDirectories(bg3ModsRootID, "."),
+				sdk.EnsureTargetRootDirectories(bg3LocalDataRootID, "PlayerProfiles/Public")...,
+			),
+			sdk.EnsureTargetRootFiles(bg3LocalDataRootID, defaultModSettingsV8, "PlayerProfiles/Public/modsettings.lsx")...,
 		),
 	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{ID: "bg3-pak-load-order", Name: "BG3 pak load order"})
