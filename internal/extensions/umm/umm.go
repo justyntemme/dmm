@@ -39,7 +39,6 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		modType = gameID + "-umm-mod"
 	}
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: ModRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: ToolModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:" + gameID + ":mods",
 		VortexInstallerID: "game-query-mod-path",
@@ -50,12 +49,21 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterInstaller(ToolInstaller("vortex:"+gameID+":umm-tool", 15))
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      gameID + "-ensure-mods-folder",
 		Name:    "Ensure " + gameName + " Mods folder exists",
 		Actions: sdk.EnsureGameDirectories(ModRoot),
 	})
+	RegisterToolRuntimeSupport(r, opts)
+}
+
+func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
+	gameID := strings.TrimSpace(opts.GameID)
+	gameName := strings.TrimSpace(opts.GameName)
+	modType := strings.TrimSpace(opts.ModType)
+	if modType == "" {
+		modType = gameID + "-umm-mod"
+	}
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:             "umm",
 		Name:           ToolName,
@@ -78,6 +86,8 @@ func RegisterGameSupport(r sdk.Registrar, opts GameOptions) {
 			Message:        "Vortex modtype-umm uses Nexus site mod " + ToolModID + " file " + ToolFileID + " and falls back to GitHub release " + ToolVersion + ". DMM acquires the GitHub release asset through the shared captured-install pipeline.",
 		},
 	})
+	r.RegisterModType(installplan.ModTypeSpec{ID: ToolModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly})
+	r.RegisterInstaller(ToolInstaller("vortex:"+gameID+":umm-tool", 15))
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:               gameID + "-umm-installed",
 		Name:             ToolName,

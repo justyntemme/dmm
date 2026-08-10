@@ -9,6 +9,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dawnofman"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -20,8 +21,17 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.TargetRoots) != 1 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.ExtensionToDos) != 1 {
+	if len(summary.Capabilities.TargetRoots) != 1 || len(summary.Capabilities.ModTypes) != 3 || len(summary.Capabilities.Installers) != 3 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	if len(summary.Capabilities.SupportedTools) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 {
+		t.Fatalf("UMM runtime capabilities = %+v", summary.Capabilities)
+	}
+	if len(summary.Capabilities.GameSetups) != 1 || len(summary.Capabilities.GameSetups[0].SetupActions) != 2 {
+		t.Fatalf("game setup capabilities = %+v", summary.Capabilities.GameSetups)
+	}
+	if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
+		t.Fatalf("extension metadata = %+v", summary.Capabilities)
 	}
 }
 
@@ -59,6 +69,24 @@ func TestUMMInstallerTargetsGameModsRoot(t *testing.T) {
 	}
 	assertTarget(t, plan, "Mods/CoolUMM/Info.json", "")
 	assertTarget(t, plan, "Mods/CoolUMM/Assemblies/Mod.dll", "")
+}
+
+func TestUMMRuntimeRequirementIsSatisfiedByManagedTool(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(dawnofman.Extension())})
+	requirements := registry.RuntimeRequirements(context.Background(), dawnofman.SteamAppID, t.TempDir(), []gamehandler.RuntimeMod{{
+		Enabled: true,
+		ModType: "dawnofman-umm-mod",
+	}})
+	if len(requirements) != 1 || requirements[0].Status != gamehandler.RequirementMissing || requirements[0].Acquisition == nil {
+		t.Fatalf("missing UMM requirement = %+v", requirements)
+	}
+	requirements = registry.RuntimeRequirements(context.Background(), dawnofman.SteamAppID, t.TempDir(), []gamehandler.RuntimeMod{
+		{Enabled: true, ModType: "dawnofman-umm-mod"},
+		{Enabled: true, ModType: "umm", Metadata: []gamehandler.ModMetadata{{Name: "Unity Mod Manager"}}},
+	})
+	if len(requirements) != 1 || requirements[0].Status != gamehandler.RequirementOK {
+		t.Fatalf("satisfied UMM requirement = %+v", requirements)
+	}
 }
 
 func TestScenarioRootUsesDocumentsFolder(t *testing.T) {

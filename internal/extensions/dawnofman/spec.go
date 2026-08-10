@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/umm"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -16,11 +17,10 @@ const (
 	VortexGameID = "dawnofman"
 	Name         = "Dawn of Man"
 
-	gameModsRoot       = "Mods"
-	scenarioRootID     = "dawnofman-scenarios"
-	ummModType         = "dawnofman-umm-mod"
-	scenarioModType    = "dom-scene-modtype"
-	ummSetupCapability = "dawnofman-umm-setup"
+	gameModsRoot    = "Mods"
+	scenarioRootID  = "dawnofman-scenarios"
+	ummModType      = "dawnofman-umm-mod"
+	scenarioModType = "dom-scene-modtype"
 )
 
 func Extension() sdk.Extension {
@@ -55,6 +55,7 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: ummModType, TargetRoot: gameModsRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: scenarioModType, TargetRootID: scenarioRootID})
+	umm.RegisterToolRuntimeSupport(r, umm.GameOptions{GameID: VortexGameID, GameName: Name, ModType: ummModType})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:dawnofman:scene",
 		VortexInstallerID: "dom-scene-installer",
@@ -75,12 +76,13 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildUMMArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      ummSetupCapability,
-		Name:    "Unity Mod Manager setup parity",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex prompts users to install Unity Mod Manager and pre-adds it as a tool for Dawn of Man. DMM can install declared UMM-style mods into Mods, but typed UMM tool discovery/injection remains blocked in the shared helper.",
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:   "dawnofman-prepare-for-modding",
+		Name: "Prepare Dawn of Man mod folders",
+		Actions: append(
+			sdk.EnsureGameDirectories(gameModsRoot),
+			sdk.EnsureTargetRootDirectories(scenarioRootID, ".")...,
+		),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -102,10 +104,10 @@ func scenarioRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRoo
 }
 
 func sources() []sdk.SourceRef {
-	return []sdk.SourceRef{
+	return append([]sdk.SourceRef{
 		{
 			Name: "Vortex game-dawnofman extension source",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-dawnofman/src",
 		},
-	}
+	}, umm.Sources()...)
 }
