@@ -11,6 +11,10 @@ type semanticVersion struct {
 	prerelease []string
 }
 
+func CompareSemanticVersions(lhs, rhs string) int {
+	return compareSemanticVersions(lhs, rhs)
+}
+
 func semanticVersionLess(lhs, rhs string) bool {
 	return compareSemanticVersions(lhs, rhs) < 0
 }

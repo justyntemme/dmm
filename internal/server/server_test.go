@@ -10151,6 +10151,66 @@ func TestGameDiagnosticsWarnsWhenRequiredLocalGameSettingsAreMissing(t *testing.
 	}
 }
 
+func TestGameDiagnosticsWarnsForIncompatibleModGameVersionMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		Version:     "1.5.0",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "999",
+			FileID:     "9991",
+		},
+		Name:        "Future Fish",
+		Version:     "1.0.0",
+		ArchivePath: filepath.Join(srv.cfg.DataDir, "downloads", "future-fish.zip"),
+		StagingPath: filepath.Join(srv.cfg.DataDir, "staging", "future-fish"),
+		ManifestJSON: stagedManifestJSONWithMetadata(t, "413150", "stardew-smapi-mod", installplan.ModMetadata{
+			Kind:           stardewvalley.MetadataKindSMAPIManifest,
+			Name:           "Future Fish",
+			UniqueID:       "example.FutureFish",
+			Version:        "1.0.0",
+			MinGameVersion: "1.6.0",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("diagnostics status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body gameDiagnosticsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	var versionTest *gameExtensionTestResponse
+	for i := range body.ExtensionTests {
+		if body.ExtensionTests[i].TestID == "game-version-gamemode" {
+			versionTest = &body.ExtensionTests[i]
+			break
+		}
+	}
+	if versionTest == nil || versionTest.Status != sdk.HealthCheckStatusWarning || !strings.Contains(versionTest.Details, "Future Fish requires game version 1.6.0") {
+		t.Fatalf("game-version diagnostic = %+v", body.ExtensionTests)
+	}
+}
+
 func TestGameDiagnosticsReportsRecommendedModDependenciesWithoutWarnings(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

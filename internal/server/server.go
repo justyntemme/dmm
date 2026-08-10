@@ -1281,6 +1281,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionCompatibilityDiagnostics(game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -13765,6 +13766,53 @@ func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.Mo
 		out = append(out, next)
 	}
 	return out
+}
+
+func gameVersionCompatibilityDiagnostics(game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	gameVersion := strings.TrimSpace(game.Version)
+	if gameVersion == "" {
+		return nil
+	}
+	var incompatible []string
+	seen := map[string]struct{}{}
+	for _, mod := range mods {
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		for _, metadata := range manifest.Metadata {
+			name := firstNonEmpty(strings.TrimSpace(metadata.Name), strings.TrimSpace(mod.Name), "Mod "+strconv.FormatInt(mod.ID, 10))
+			if minVersion := strings.TrimSpace(metadata.MinGameVersion); minVersion != "" && gamehandler.CompareSemanticVersions(gameVersion, minVersion) < 0 {
+				message := name + " requires game version " + minVersion + " or newer"
+				if _, ok := seen[message]; !ok {
+					seen[message] = struct{}{}
+					incompatible = append(incompatible, message)
+				}
+			}
+			if maxVersion := strings.TrimSpace(metadata.MaxGameVersion); maxVersion != "" && gamehandler.CompareSemanticVersions(gameVersion, maxVersion) > 0 {
+				message := name + " supports game versions up to " + maxVersion
+				if _, ok := seen[message]; !ok {
+					seen[message] = struct{}{}
+					incompatible = append(incompatible, message)
+				}
+			}
+		}
+	}
+	if len(incompatible) == 0 {
+		return nil
+	}
+	sort.Strings(incompatible)
+	details := append([]string{"Installed version: " + gameVersion}, incompatible...)
+	return []gameExtensionTestResponse{{
+		TestID:   "game-version-gamemode",
+		TestName: "Game version check",
+		Trigger:  sdk.EventGamemodeActivated,
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "Some installed mods declare incompatible game-version requirements.",
+		Details:  strings.Join(details, "\n"),
+		Actions:  []string{"Check for mod updates or disable incompatible mods in this profile."},
+	}}
 }
 
 func fileSHA256(path string) (string, error) {

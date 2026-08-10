@@ -148,7 +148,13 @@ func registerNewFileMonitor(r sdk.Registrar) {
 
 func registerVortexTests(r sdk.Registrar) {
 	r.RegisterStateReducer(blockedReducer("test-gameversion-state", "Vortex game-version test state", "persistent/gameMode"))
-	r.RegisterExtensionTest(blockedTest("game-version-gamemode", "Game version check on game mode activation", "gamemode-activated"))
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "game-version-gamemode",
+		Name:    "Game version check on game mode activation",
+		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM reports installed mods whose extension-extracted min/max game-version metadata is incompatible with the detected game version.",
+	})
 	r.RegisterExtensionTest(blockedTest("game-version-mod-installed", "Game version check after mod install", "mod-installed"))
 	r.RegisterGameInfoProvider(sdk.GameInfoProviderSpec{
 		ID:           "game-version",
