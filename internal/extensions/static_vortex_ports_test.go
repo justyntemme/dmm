@@ -24,6 +24,7 @@ func TestStaticVortexGamePortsExposeInstallers(t *testing.T) {
 		wantLaunchers  int
 		wantSetups     int
 		wantGameStores int
+		wantRuntimes   int
 	}{
 		{
 			name:          darksouls.Name,
@@ -33,6 +34,7 @@ func TestStaticVortexGamePortsExposeInstallers(t *testing.T) {
 			mergeMode:     sdk.GameMergeModeAll,
 			target:        "DATA/dsfix/tex_override/file.txt",
 			wantLaunchers: 1,
+			wantRuntimes:  1,
 		},
 		{
 			name:           grimdawn.Name,
@@ -97,6 +99,9 @@ func TestStaticVortexGamePortsExposeInstallers(t *testing.T) {
 			}
 			if len(summary.Capabilities.GameStores) != tt.wantGameStores {
 				t.Fatalf("game stores = %+v", summary.Capabilities.GameStores)
+			}
+			if len(summary.Capabilities.RuntimeRequirements) != tt.wantRuntimes {
+				t.Fatalf("runtime requirements = %+v", summary.Capabilities.RuntimeRequirements)
 			}
 			plan, err := buildSimplePlan(t, tt.extension, tt.appID)
 			if err != nil {
