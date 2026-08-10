@@ -315,6 +315,7 @@ type TargetPolicySpec struct {
 type MetadataExtractorSpec struct {
 	Kind                   string
 	ManifestFileName       string
+	FileExtensions         []string
 	ExcludeLocaleManifest  bool
 	NameField              string
 	UniqueIDField          string
@@ -652,7 +653,6 @@ func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot s
 			Reason: "Vortex installer " + installer.VortexInstallerID + " matched a valid " + installer.Match.ManifestFileName,
 		})
 		stagedRoot := manifestStagingRoot(extractedRoot, root, installer.Match.ManifestFileName)
-		plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, manifestPath, extractedRoot, filepath.ToSlash(filepath.Join(stagedRoot, installer.Match.ManifestFileName)), filepath.ToSlash(filepath.Join(installer.TargetRoot, stagedRoot, installer.Match.ManifestFileName)))...)
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -666,14 +666,16 @@ func buildManifestFolderPlan(plan Plan, installer InstallerSpec, extractedRoot s
 			}
 			rel = filepath.ToSlash(rel)
 			stagingRel := filepath.ToSlash(filepath.Join(stagedRoot, rel))
+			targetRel := filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))
+			plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, path, extractedRoot, stagingRel, targetRel)...)
 			plan.Instructions = append(plan.Instructions, Instruction{
 				Kind:            InstructionKindCopy,
 				SourcePath:      path,
 				StagingRelative: stagingRel,
 				TargetRoot:      installer.TargetRootID,
-				TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel)),
-				TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
-				DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, stagingRel))),
+				TargetRelative:  targetRel,
+				TargetPolicy:    targetPolicyFor(installer, targetRel),
+				DeployStrategy:  targetDeploymentStrategyFor(installer, targetRel),
 			})
 			return nil
 		})
@@ -972,14 +974,16 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		targetRel := filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))
+		plan.Metadata = append(plan.Metadata, metadataFromExtractors(installer.MetadataExtractors, path, rootDir, rel, targetRel)...)
 		plan.Instructions = append(plan.Instructions, Instruction{
 			Kind:            InstructionKindCopy,
 			SourcePath:      path,
 			StagingRelative: rel,
 			TargetRoot:      installer.TargetRootID,
-			TargetRelative:  filepath.ToSlash(filepath.Join(installer.TargetRoot, rel)),
-			TargetPolicy:    targetPolicyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
-			DeployStrategy:  targetDeploymentStrategyFor(installer, filepath.ToSlash(filepath.Join(installer.TargetRoot, rel))),
+			TargetRelative:  targetRel,
+			TargetPolicy:    targetPolicyFor(installer, targetRel),
+			DeployStrategy:  targetDeploymentStrategyFor(installer, targetRel),
 		})
 		return nil
 	})
@@ -988,6 +992,9 @@ func buildRootFolderPlan(plan Plan, installer InstallerSpec, extractedRoot strin
 	}
 	sort.Slice(plan.Instructions, func(i, j int) bool {
 		return plan.Instructions[i].StagingRelative < plan.Instructions[j].StagingRelative
+	})
+	sort.Slice(plan.Metadata, func(i, j int) bool {
+		return plan.Metadata[i].TargetRelative < plan.Metadata[j].TargetRelative
 	})
 	return plan, nil
 }
@@ -1254,16 +1261,29 @@ func metadataFromExtractors(extractors []MetadataExtractorSpec, filePath, metada
 
 func metadataExtractorMatchesFile(extractor MetadataExtractorSpec, filePath string) bool {
 	manifestFileName := strings.TrimSpace(extractor.ManifestFileName)
-	if manifestFileName == "" {
-		return false
+	if manifestFileName != "" {
+		if !strings.EqualFold(filepath.Base(filePath), manifestFileName) {
+			return false
+		}
+		if extractor.ExcludeLocaleManifest && hasPathSegment(filePath, "locale") {
+			return false
+		}
+		return true
 	}
-	if !strings.EqualFold(filepath.Base(filePath), manifestFileName) {
-		return false
+	ext := strings.ToLower(filepath.Ext(filePath))
+	for _, candidate := range extractor.FileExtensions {
+		candidate = strings.ToLower(strings.TrimSpace(candidate))
+		if candidate == "" {
+			continue
+		}
+		if !strings.HasPrefix(candidate, ".") {
+			candidate = "." + candidate
+		}
+		if ext == candidate {
+			return true
+		}
 	}
-	if extractor.ExcludeLocaleManifest && hasPathSegment(filePath, "locale") {
-		return false
-	}
-	return true
+	return false
 }
 
 func metadataFromExtractor(extractor MetadataExtractorSpec, path string) ModMetadata {

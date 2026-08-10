@@ -32,6 +32,9 @@ func TestExtensionRegistersMorrowindCapabilities(t *testing.T) {
 	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("collection features = %+v", summary.Capabilities.CollectionFeatures)
 	}
+	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("attribute extractors = %+v", summary.Capabilities.AttributeExtractors)
+	}
 }
 
 func TestDataRootInstallerTargetsDataFiles(t *testing.T) {
@@ -48,6 +51,7 @@ func TestDataRootInstallerTargetsDataFiles(t *testing.T) {
 	}
 	assertTarget(t, plan.Instructions, "Data Files/Example.esp")
 	assertTarget(t, plan.Instructions, "Data Files/Meshes/armor.nif")
+	assertMetadata(t, plan.Metadata, "Example.esp")
 }
 
 func TestDataFolderInstallerDoesNotDuplicateDataFiles(t *testing.T) {
@@ -62,6 +66,7 @@ func TestDataFolderInstallerDoesNotDuplicateDataFiles(t *testing.T) {
 		t.Fatalf("mod type = %q", plan.ModType)
 	}
 	assertTarget(t, plan.Instructions, "Data Files/Example.esp")
+	assertMetadata(t, plan.Metadata, "Example.esp")
 }
 
 func TestWillDeployGeneratesMorrowindINI(t *testing.T) {
@@ -139,6 +144,16 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, instructions)
+}
+
+func assertMetadata(t *testing.T, metadata []installplan.ModMetadata, name string) {
+	t.Helper()
+	for _, entry := range metadata {
+		if entry.Kind == "morrowind-plugin" && entry.Name == name && entry.UniqueID == strings.ToLower(name) {
+			return
+		}
+	}
+	t.Fatalf("missing metadata %q in %+v", name, metadata)
 }
 
 func writeFile(t *testing.T, path, body string) {

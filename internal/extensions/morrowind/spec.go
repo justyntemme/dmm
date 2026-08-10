@@ -1,6 +1,9 @@
 package morrowind
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -97,7 +100,7 @@ func Register(r sdk.Registrar) {
 		Name:    "Morrowind Plugins",
 		Scope:   "game",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM exposes managed Morrowind.ini plugin order through generic extension load-order profile controls. Collection import/export uses the generic DMM profile collection runtime; filesystem watcher state remains separate metadata.",
+		Message: "DMM exposes managed Morrowind.ini plugin order through generic extension load-order profile controls. Collection import/export uses the generic DMM profile collection runtime.",
 	})
 	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
 		ID:      "morrowind-collection-data",
@@ -109,8 +112,8 @@ func Register(r sdk.Registrar) {
 		ID:      "morrowind-plugin-list",
 		Name:    "Installed ESP/ESM plugin list",
 		Target:  "mods",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex stores discovered ESP/ESM file names as mod attributes after install. DMM derives managed plugin names from deployment mappings for now.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM extracts ESP/ESM plugin attributes during extension-owned install planning and uses them with deployment mappings for Morrowind.ini load order.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -123,6 +126,25 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 		DataFolderModType: dataFolderModType,
 		DataRootModType:   dataRootModType,
 		DataRoot:          dataRoot,
+		MetadataExtractors: []installplan.MetadataExtractorSpec{
+			{
+				Kind:           "morrowind-plugin",
+				FileExtensions: []string{".esm", ".esp"},
+				Parse:          pluginMetadataFromFile,
+			},
+		},
+	}
+}
+
+func pluginMetadataFromFile(path string) installplan.ModMetadata {
+	name := strings.TrimSpace(filepath.Base(path))
+	if !isPluginFile(name) {
+		return installplan.ModMetadata{}
+	}
+	return installplan.ModMetadata{
+		Kind:     "morrowind-plugin",
+		Name:     name,
+		UniqueID: strings.ToLower(name),
 	}
 }
 

@@ -7,10 +7,11 @@ import (
 )
 
 type DataRootInstallerOptions struct {
-	GameID            string
-	DataFolderModType string
-	DataRootModType   string
-	DataRoot          string
+	GameID             string
+	DataFolderModType  string
+	DataRootModType    string
+	DataRoot           string
+	MetadataExtractors []installplan.MetadataExtractorSpec
 }
 
 func DataRootModTypes(opts DataRootInstallerOptions) []installplan.ModTypeSpec {
@@ -44,16 +45,18 @@ func DataRootInstallers(opts DataRootInstallerOptions) []installplan.InstallerSp
 			Match: installplan.MatchSpec{
 				RequireTopLevelDirs: []string{dataRoot},
 			},
-			InstructionMode: installplan.InstructionRootFolder,
+			MetadataExtractors: opts.MetadataExtractors,
+			InstructionMode:    installplan.InstructionRootFolder,
 		},
 		{
-			ID:                "vortex:" + prefix + ":data-root",
-			VortexInstallerID: "game-query-mod-path",
-			Priority:          100,
-			ModType:           rootType,
-			NameSource:        installplan.NameSourceArchive,
-			StripCommonRoot:   true,
-			InstructionMode:   installplan.InstructionArchiveRoot,
+			ID:                 "vortex:" + prefix + ":data-root",
+			VortexInstallerID:  "game-query-mod-path",
+			Priority:           100,
+			ModType:            rootType,
+			NameSource:         installplan.NameSourceArchive,
+			StripCommonRoot:    true,
+			MetadataExtractors: opts.MetadataExtractors,
+			InstructionMode:    installplan.InstructionArchiveRoot,
 		},
 	}
 }
