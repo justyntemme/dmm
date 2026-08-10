@@ -5740,6 +5740,13 @@ func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.R
 		http.Error(w, "appID and toolID are required", http.StatusBadRequest)
 		return
 	}
+	var req queueExtensionToolLaunchRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	if existing, ok := s.findActiveExtensionToolAction(appID, toolID); ok {
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
 		return
@@ -5753,6 +5760,9 @@ func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, err)
 		return
 	}
+	if req.WaitForExit {
+		payload["tool_wait_for_exit"] = "true"
+	}
 	toolName := strings.TrimSpace(payload["tool_name"])
 	if toolName == "" {
 		toolName = toolID
@@ -5761,6 +5771,10 @@ func (s *Server) handleQueueExtensionToolLaunch(w http.ResponseWriter, r *http.R
 	job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to launch "+toolName)
 	s.logger.Info("extension tool action queued", "job_id", job.ID, "app_id", appID, "tool_id", payload["tool_id"], "tool_kind", payload["tool_kind"], "source_extension", payload["tool_source_extension"])
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
+}
+
+type queueExtensionToolLaunchRequest struct {
+	WaitForExit bool `json:"wait_for_exit"`
 }
 
 func (s *Server) handleExtensionToolActions(w http.ResponseWriter, r *http.Request) {
@@ -5832,8 +5846,12 @@ func (s *Server) handleCompleteExtensionToolAction(w http.ResponseWriter, r *htt
 		}
 	}
 	if req.Applied {
-		job, _ = s.jobs.Complete(jobID, "Extension tool launch requested")
-		s.logger.Info("extension tool action completed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "source", req.Source)
+		message := "Extension tool launch requested"
+		if strings.TrimSpace(job.Payload["tool_wait_for_exit"]) == "true" {
+			message = "Extension tool exited"
+		}
+		job, _ = s.jobs.Complete(jobID, message)
+		s.logger.Info("extension tool action completed", "job_id", jobID, "app_id", job.Payload["app_id"], "tool_id", job.Payload["tool_id"], "wait_for_exit", job.Payload["tool_wait_for_exit"], "source", req.Source)
 		writeJSON(w, http.StatusOK, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}

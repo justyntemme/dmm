@@ -13066,7 +13066,8 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		t.Fatalf("environment-dependent tool launch status = %d body = %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/launch", nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/launch", bytes.NewBufferString(`{"wait_for_exit":true}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "127.0.0.1:1"
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -13082,6 +13083,9 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	}
 	if queued.Job.Type != jobTypeExtensionToolAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["tool_kind"] != "supported-tool" || queued.Job.Payload["tool_action_available"] != "true" {
 		t.Fatalf("extension tool launch job = %+v", queued.Job)
+	}
+	if queued.Job.Payload["tool_wait_for_exit"] != "true" {
+		t.Fatalf("extension tool wait flag = %+v", queued.Job.Payload)
 	}
 	if !strings.Contains(queued.Job.Payload["tool_launch_options"], "Tools/Runner.exe") {
 		t.Fatalf("extension tool launch options = %q", queued.Job.Payload["tool_launch_options"])

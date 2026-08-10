@@ -731,6 +731,7 @@ type ExtensionToolActionJob = Job & {
     tool_id?: string;
     tool_name?: string;
     tool_launch_options?: string;
+    tool_wait_for_exit?: string;
     tool_action_available?: string;
     tool_action_error?: string;
   };
@@ -1243,6 +1244,55 @@ function currentRunningGame(): RunningGame | null {
   } catch (_err) {
     return null;
   }
+}
+
+function jobPayloadFlag(job: Job, key: string) {
+  return String(job.payload?.[key] || "").trim().toLowerCase() === "true";
+}
+
+function createSteamAppExitWaiter(appID: string, timeoutMs = 30 * 60 * 1000) {
+  const steamSessions = typeof SteamClient !== "undefined" ? SteamClient?.GameSessions : undefined;
+  const registerLifetime = steamSessions?.RegisterForAppLifetimeNotifications;
+  if (typeof registerLifetime !== "function") {
+    throw new Error("Steam app lifetime notifications are unavailable in this Decky context.");
+  }
+  let registration: unknown = null;
+  let settled = false;
+  let sawRunning = currentRunningGame()?.app_id === appID;
+  let timer: number | null = null;
+  const wait = new Promise<void>((resolve, reject) => {
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      unregisterSteamCallback(registration);
+      if (err) reject(err);
+      else resolve();
+    };
+    timer = window.setTimeout(() => finish(new Error(`Timed out waiting for Steam app ${appID} to exit.`)), timeoutMs);
+    registration = registerLifetime((notification) => {
+      const notifiedAppID = String(notification?.unAppID ?? "").trim();
+      if (notifiedAppID !== appID) return;
+      void logFrontendEvent("steam app lifetime notification", { app_id: appID, running: Boolean(notification.bRunning) });
+      if (notification.bRunning) {
+        sawRunning = true;
+        return;
+      }
+      if (sawRunning) finish();
+    });
+  });
+  return {
+    wait,
+    cancel: () => {
+      if (settled) return;
+      settled = true;
+      if (timer !== null) window.clearTimeout(timer);
+      unregisterSteamCallback(registration);
+    }
+  };
 }
 
 function eventMatchesAppID(event: DomainEvent, appID: string) {
@@ -2781,6 +2831,7 @@ async function runExtensionToolActionJob(job: Job, source = "decky-auto") {
   const launchOptions = String(payload.tool_launch_options || "").trim();
   const toolID = String(payload.tool_id || "").trim();
   const toolName = extensionNoticeToolName(job) || toolID || "Extension tool";
+  const waitForExit = jobPayloadFlag(job, "tool_wait_for_exit");
   const unavailable = extensionNoticeRunToolError(job);
   if (!extensionNoticeRunToolAvailable(job)) {
     throw new Error(unavailable || "This extension tool action is not available.");
@@ -2801,14 +2852,26 @@ async function runExtensionToolActionJob(job: Job, source = "decky-auto") {
     return;
   }
 
+  let waiter: ReturnType<typeof createSteamAppExitWaiter> | null = null;
   try {
     const steamApps = typeof SteamClient !== "undefined" ? SteamClient?.Apps : undefined;
     if (typeof steamApps?.RunGame !== "function") {
       throw new Error("Steam run-game API is unavailable in this Decky context.");
     }
-    await logFrontendEvent("extension tool action running", { job_id: job.id, app_id: appID, tool_id: toolID, source });
+    waiter = waitForExit ? createSteamAppExitWaiter(appID) : null;
+    await logFrontendEvent("extension tool action running", { job_id: job.id, app_id: appID, tool_id: toolID, source, wait_for_exit: waitForExit });
     steamApps.RunGame(appID, launchOptions, 0, STEAM_LAUNCH_SOURCE_DASH_APP_LAUNCH_CMD_LINE);
-    await sleep(700);
+    try {
+      if (waiter) {
+        showLaunchToast("DMM extension tool", `${toolName} launched. Waiting for it to exit.`);
+        await waiter.wait;
+      } else {
+        await sleep(700);
+      }
+    } catch (err) {
+      waiter?.cancel();
+      throw err;
+    }
     const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_tool_action", job.id, {
       applied: true,
       source
@@ -2817,8 +2880,9 @@ async function runExtensionToolActionJob(job: Job, source = "decky-auto") {
       throw new Error(report.error || "Unable to record extension tool launch.");
     }
     await maybeShowDeckyActionToast(report.job, "extension-tool-action");
-    showLaunchToast("DMM extension tool", `${toolName} launch requested.`);
+    showLaunchToast("DMM extension tool", waitForExit ? `${toolName} exited.` : `${toolName} launch requested.`);
   } catch (err) {
+    waiter?.cancel();
     const message = err instanceof Error ? err.message : String(err);
     await logFrontendEvent("extension tool action failed", { job_id: job.id, app_id: appID, tool_id: toolID, error: message, source });
     await call<[string, Record<string, string | boolean>], { ok: boolean }>("record_tool_action", job.id, {
