@@ -5783,6 +5783,158 @@ func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	}
 }
 
+func TestApplyFOMODInstallCandidateRunsDidInstallLifecycleEvent(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999004"
+	gamePath := filepath.Join(t.TempDir(), "FOMOD Lifecycle Game")
+	var captured sdk.EventHandlerInput
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "fomod-lifecycle-game",
+		Name:    "FOMOD Lifecycle Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"fomodlife"},
+				VortexGameID: "fomodlife",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "fomod-life-data", TargetRoot: "Data"})
+			r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
+				ID:         "fomodlife:fomod",
+				Name:       "FOMOD installer",
+				Kind:       "fomod",
+				ModType:    "fomod-life-data",
+				TargetRoot: "Data",
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventDidInstallMod,
+				Name:  "Observe FOMOD install",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					captured = input
+					return sdk.EventHandlerResult{}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "FOMOD Lifecycle Game",
+		InstallDir:  "FOMOD Lifecycle Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "fomod.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"fomod/ModuleConfig.xml": `<config>
+  <moduleName>Lifecycle Choice Mod</moduleName>
+  <requiredInstallFiles><file source="Core/base.txt" destination="base.txt" /></requiredInstallFiles>
+  <installSteps>
+    <installStep name="Variant">
+      <optionalFileGroups>
+        <group name="Variant" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="High">
+              <typeDescriptor><type name="Recommended" /></typeDescriptor>
+              <files><folder source="Options/High" destination="textures" /></files>
+            </plugin>
+            <plugin name="Low">
+              <typeDescriptor><type name="Optional" /></typeDescriptor>
+              <files><folder source="Options/Low" destination="textures" /></files>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>`,
+		"Core/base.txt":            "base",
+		"Options/High/variant.txt": "high",
+		"Options/Low/variant.txt":  "low",
+		"fomod/info.xml":           "<fomod />",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	extractPath := filepath.Join(t.TempDir(), "extract")
+	if _, err := archive.ExtractContext(context.Background(), archivePath, extractPath); err != nil {
+		t.Fatal(err)
+	}
+	installer, err := fomod.Parse(extractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerJSON, err := json.Marshal(installer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := catalog.ResolvedDownload{
+		Catalog:    "nexus",
+		GameDomain: "fomodlife",
+		ModID:      "999",
+		FileID:     "1000",
+	}
+	candidate, err := srv.db.RecordInstallCandidate(context.Background(), storage.RecordInstallCandidateParams{
+		SteamAppID:    appID,
+		Resolved:      resolved,
+		Name:          "Lifecycle Choice Mod",
+		ArchivePath:   archivePath,
+		ArchiveSHA256: "sum",
+		Status:        "needs_choices",
+		Reason:        "fomod installer choices are required",
+		InstallerJSON: string(installerJSON),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	choiceJob := srv.ensureInstallerChoiceJob(appID, candidate)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/games/"+appID+"/install-candidates/"+strconv.FormatInt(candidate.ID, 10)+"/apply",
+		bytes.NewBufferString(`{"selections":{"step-1-group-1":["step-1-group-1-plugin-1"]}}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	waitForJobStatus(t, srv, choiceJob.ID, jobs.StatusCompleted)
+
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 1 {
+		t.Fatalf("mods = %+v", mods)
+	}
+	if captured.AppID != appID || captured.Event != sdk.EventDidInstallMod || captured.Source != "install" || captured.ProfileID != mods[0].ProfileID {
+		t.Fatalf("captured install event = %+v, mod = %+v", captured, mods[0])
+	}
+	if !slices.Equal(captured.ModIDs, []int64{mods[0].ID}) {
+		t.Fatalf("captured mod ids = %+v, want %d", captured.ModIDs, mods[0].ID)
+	}
+	if len(captured.Mods) != 1 || captured.Mods[0].ID != mods[0].ID || captured.Mods[0].ModType != "fomod-life-data" {
+		t.Fatalf("captured mods = %+v", captured.Mods)
+	}
+	preset, ok, err := srv.db.InstallerChoicePreset(context.Background(), storage.InstallerChoicePresetParams{
+		SteamAppID:    appID,
+		Resolved:      resolved,
+		InstallerKind: "fomod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !strings.Contains(preset, "step-1-group-1-plugin-1") {
+		t.Fatalf("preset = %q ok=%v", preset, ok)
+	}
+}
+
 func TestSaveInstallCandidateChoicesReturnsEvaluatedInstaller(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
