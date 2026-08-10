@@ -653,7 +653,7 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 				ID:           "merge_config",
 				Name:         "Merge Config",
-				Scope:        "profile",
+				Scope:        "game",
 				DefaultValue: json.RawMessage(`{"enabled":false}`),
 			})
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
@@ -735,6 +735,114 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	srv.Handler().ServeHTTP(missingRec, missingReq)
 	if missingRec.Code != http.StatusNotFound {
 		t.Fatalf("missing status = %d, body = %s", missingRec.Code, missingRec.Body.String())
+	}
+}
+
+func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "251570"
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "7 Days to Die",
+		InstallDir:  "7 Days To Die",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/7 Days To Die",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), appID, "Deck")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "7daystodie",
+		Name:    "7 Days to Die",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{appID}, NexusDomains: []string{"7daystodie"}, VortexGameID: "7daystodie"})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:           "prefix_offset",
+				Name:         "Prefix Offset",
+				Scope:        "profile",
+				ValueType:    sdk.ExtensionSettingValueNumber,
+				DefaultValue: json.RawMessage(`0`),
+			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "blocked_profile_setting",
+				Name:      "Blocked Profile Setting",
+				Scope:     "profile",
+				ValueType: sdk.ExtensionSettingValueBool,
+				Status:    sdk.CapabilityStatusBlocked,
+				Message:   "not ready",
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/profiles/"+strconv.FormatInt(profile.ID, 10)+"/extension-settings", nil)
+	listReq.RemoteAddr = "127.0.0.1:1"
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+	var list []extensionSettingResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[1].SettingID != "prefix_offset" || string(list[1].Value) != `0` || string(list[1].DefaultValue) != `0` {
+		t.Fatalf("initial profile settings = %+v", list)
+	}
+	settingsMap, err := srv.extensionSettingValueMapForProfile(context.Background(), profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(settingsMap["7daystodie"]["prefix_offset"]) != `0` {
+		t.Fatalf("default profile settings map = %+v", settingsMap)
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profile.ID, 10)+"/extensions/7daystodie/settings/prefix_offset", bytes.NewBufferString(`{"value":2}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.RemoteAddr = "127.0.0.1:1"
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, body = %s", putRec.Code, putRec.Body.String())
+	}
+	var updated extensionSettingResponse
+	if err := json.Unmarshal(putRec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.ExtensionID != "7daystodie" || updated.SettingID != "prefix_offset" || string(updated.Value) != `2` {
+		t.Fatalf("updated = %+v", updated)
+	}
+	settingsMap, err = srv.extensionSettingValueMapForProfile(context.Background(), profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(settingsMap["7daystodie"]["prefix_offset"]) != `2` {
+		t.Fatalf("updated profile settings map = %+v", settingsMap)
+	}
+
+	globalPut := httptest.NewRequest(http.MethodPut, "/api/extensions/7daystodie/settings/prefix_offset", bytes.NewBufferString(`{"value":3}`))
+	globalPut.Header.Set("Content-Type", "application/json")
+	globalPut.RemoteAddr = "127.0.0.1:1"
+	globalRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(globalRec, globalPut)
+	if globalRec.Code != http.StatusBadRequest {
+		t.Fatalf("global profile setting status = %d, body = %s", globalRec.Code, globalRec.Body.String())
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(profile.ID, 10)+"/extensions/7daystodie/settings/blocked_profile_setting", bytes.NewBufferString(`{"value":true}`))
+	blockedReq.Header.Set("Content-Type", "application/json")
+	blockedReq.RemoteAddr = "127.0.0.1:1"
+	blockedRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusConflict {
+		t.Fatalf("blocked status = %d, body = %s", blockedRec.Code, blockedRec.Body.String())
 	}
 }
 
@@ -10120,9 +10228,6 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.db.SetExtensionSettingValue(context.Background(), "extensiontestgame", "runtime_enabled", []byte("true")); err != nil {
-		t.Fatal(err)
-	}
 	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
 		SteamAppID:   appID,
 		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "extensiontestgame", ModID: "1", FileID: "2"},
@@ -10132,6 +10237,9 @@ func TestGameDiagnosticsIncludesRunnableExtensionTests(t *testing.T) {
 		ManifestJSON: `{"game_id":"extensiontestgame","mod_type":"root","files":[]}`,
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileExtensionSettingValue(context.Background(), mod.ProfileID, "extensiontestgame", "runtime_enabled", []byte("true")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -13059,9 +13167,6 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := srv.db.SetExtensionSettingValue(context.Background(), "lifecyclegame", "auto_run", []byte("true")); err != nil {
-		t.Fatal(err)
-	}
 	stagingPath := filepath.Join(t.TempDir(), "staging", "lifecyclegame")
 	if err := os.MkdirAll(filepath.Join(stagingPath, "payload"), 0o700); err != nil {
 		t.Fatal(err)
@@ -13100,6 +13205,9 @@ func TestLifecycleEventHandlersReceiveModAndProfileContext(t *testing.T) {
 		ManifestJSON: manifestJSON,
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileExtensionSettingValue(context.Background(), mod.ProfileID, "lifecyclegame", "auto_run", []byte("true")); err != nil {
 		t.Fatal(err)
 	}
 

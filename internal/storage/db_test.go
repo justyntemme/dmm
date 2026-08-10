@@ -335,6 +335,50 @@ func TestExtensionSettingValuesPersistJSON(t *testing.T) {
 	}
 }
 
+func TestProfileExtensionSettingValuesPersistAndClone(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	if err := db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "251570",
+		Name:        "7 Days to Die",
+		InstallDir:  "7 Days To Die",
+		LibraryPath: "/steam",
+		Path:        "/steam/steamapps/common/7 Days To Die",
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := db.CreateProfileForSteamApp(context.Background(), "251570", "Offset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := db.SetProfileExtensionSettingValue(context.Background(), profile.ID, "7DaysToDie", "PrefixOffset", []byte(`2`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ProfileID != profile.ID || value.ExtensionID != "7daystodie" || value.SettingID != "prefixoffset" || value.ValueJSON != `2` {
+		t.Fatalf("value = %+v", value)
+	}
+	if _, err := db.SetProfileExtensionSettingValue(context.Background(), profile.ID, "7daystodie", "prefixoffset", []byte(`{"bad":`)); err == nil {
+		t.Fatal("expected invalid JSON error")
+	}
+	clone, err := db.CreateProfileForSteamAppFromSource(context.Background(), "251570", "Copy", profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := db.ProfileExtensionSettingValues(context.Background(), clone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 || values[0].ProfileID != clone.ID || values[0].ValueJSON != `2` {
+		t.Fatalf("clone values = %+v", values)
+	}
+}
+
 func TestJobsPersistPayload(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

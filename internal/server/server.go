@@ -493,6 +493,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/default", s.handleSetDefaultProfile)
 	mux.HandleFunc("GET /api/profiles/{profileID}/features", s.handleProfileFeatures)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/features/{featureID}", s.handleSetProfileFeature)
+	mux.HandleFunc("GET /api/profiles/{profileID}/extension-settings", s.handleProfileExtensionSettings)
+	mux.HandleFunc("PUT /api/profiles/{profileID}/extensions/{extensionID}/settings/{settingID}", s.handleSetProfileExtensionSetting)
 	mux.HandleFunc("GET /api/profiles/{profileID}/files", s.handleProfileFiles)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
@@ -1226,7 +1228,7 @@ func (s *Server) handleRepairExtensionTest(w http.ResponseWriter, r *http.Reques
 	payload["test_id"] = testID
 	job := s.jobs.CreateWithPayload(jobTypeExtensionTestRepair, "Repair diagnostic: "+testID, payload)
 	job, _ = s.jobs.Run(job.ID, "Running extension diagnostic repair")
-	settings, err := s.extensionSettingValueMap(r.Context())
+	settings, err := s.extensionSettingValueMapForProfile(r.Context(), profileID)
 	if err != nil {
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		s.logger.Warn("extension test repair failed to load settings", "job_id", job.ID, "app_id", appID, "test_id", testID, "error", err)
@@ -1500,7 +1502,7 @@ func (s *Server) extensionTestsWithContext(ctx context.Context, game storage.Gam
 	if err != nil {
 		s.logger.Debug("extension tests running without active profile context", "app_id", game.SteamAppID, "error", err)
 	}
-	settings, err := s.extensionSettingValueMap(ctx)
+	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
 	if err != nil {
 		s.logger.Warn("extension tests failed to load settings", "app_id", game.SteamAppID, "trigger", trigger, "error", err)
 		settings = nil
@@ -4597,6 +4599,10 @@ func (s *Server) handleSetExtensionSetting(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "extension setting is not registered", http.StatusNotFound)
 		return
 	}
+	if isProfileExtensionSetting(setting) {
+		http.Error(w, "profile-scoped extension settings must be updated through a profile endpoint", http.StatusBadRequest)
+		return
+	}
 	status := strings.TrimSpace(setting.Status)
 	if status == "" {
 		status = sdk.CapabilityStatusReady
@@ -4654,6 +4660,9 @@ func (s *Server) extensionSettingResponses(values []storage.ExtensionSettingValu
 	responses := []extensionSettingResponse{}
 	for _, extension := range s.games.ExtensionSummaries() {
 		for _, setting := range extension.Capabilities.ExtensionSettings {
+			if isProfileFeatureSummary(setting) {
+				continue
+			}
 			settingID := strings.TrimSpace(setting.ID)
 			if settingID == "" {
 				continue
@@ -11101,6 +11110,179 @@ func (s *Server) profileFeatureResponses(appID string, profileID int64, states [
 	return responses
 }
 
+func (s *Server) handleProfileExtensionSettings(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	values, err := s.db.ProfileExtensionSettingValues(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.profileExtensionSettingResponses(appID, profileID, values))
+}
+
+func (s *Server) handleSetProfileExtensionSetting(w http.ResponseWriter, r *http.Request) {
+	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
+	if err != nil || profileID <= 0 {
+		http.Error(w, "valid profileID is required", http.StatusBadRequest)
+		return
+	}
+	extensionID := strings.TrimSpace(r.PathValue("extensionID"))
+	settingID := strings.TrimSpace(r.PathValue("settingID"))
+	if extensionID == "" || settingID == "" {
+		http.Error(w, "extensionID and settingID are required", http.StatusBadRequest)
+		return
+	}
+	var req updateExtensionSettingRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.Value) == 0 {
+		http.Error(w, "value is required", http.StatusBadRequest)
+		return
+	}
+	appID, err := s.db.SteamAppIDForProfile(r.Context(), profileID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	extension, setting, ok := s.profileExtensionSettingForSteamApp(appID, extensionID, settingID)
+	if !ok {
+		http.Error(w, "profile extension setting is not registered for this game", http.StatusNotFound)
+		return
+	}
+	status := strings.TrimSpace(setting.Status)
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	if status != sdk.CapabilityStatusReady {
+		message := strings.TrimSpace(setting.Message)
+		if message == "" {
+			message = "profile extension setting runtime is not available"
+		}
+		http.Error(w, message, http.StatusConflict)
+		return
+	}
+	if err := validateExtensionSettingValue(setting, req.Value); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	value, err := s.db.SetProfileExtensionSettingValue(r.Context(), profileID, extension.ID, setting.ID, req.Value)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logger.Info("profile extension setting updated", "app_id", appID, "profile_id", profileID, "extension_id", value.ExtensionID, "setting_id", value.SettingID)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":       "profile_extension_setting_updated",
+		"profile_id":   profileID,
+		"extension_id": value.ExtensionID,
+		"setting_id":   value.SettingID,
+	})
+	writeJSON(w, http.StatusOK, extensionSettingResponse{
+		ExtensionID:  value.ExtensionID,
+		SettingID:    value.SettingID,
+		Name:         fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
+		Scope:        setting.Scope,
+		ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+		DefaultValue: cloneRawMessage(setting.DefaultValue),
+		Placeholder:  strings.TrimSpace(setting.Placeholder),
+		Status:       status,
+		Message:      setting.Message,
+		Value:        json.RawMessage(value.ValueJSON),
+		UpdatedAt:    value.UpdatedAt,
+	})
+}
+
+func (s *Server) profileExtensionSettingResponses(appID string, profileID int64, values []storage.ProfileExtensionSettingValue) []extensionSettingResponse {
+	valueByKey := map[string]storage.ProfileExtensionSettingValue{}
+	for _, value := range values {
+		key := extensionSettingKey(value.ExtensionID, value.SettingID)
+		if key == "" {
+			continue
+		}
+		valueByKey[key] = value
+	}
+	responses := []extensionSettingResponse{}
+	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
+		for _, setting := range extension.ExtensionSettings {
+			if !isProfileExtensionSetting(setting) {
+				continue
+			}
+			settingID := strings.TrimSpace(setting.ID)
+			if settingID == "" {
+				continue
+			}
+			valueJSON := extensionSettingDefaultJSON(setting.DefaultValue)
+			updatedAt := ""
+			if stored, ok := valueByKey[extensionSettingKey(extension.ID, settingID)]; ok {
+				valueJSON = stored.ValueJSON
+				updatedAt = stored.UpdatedAt
+			}
+			if !json.Valid([]byte(valueJSON)) {
+				valueJSON = "null"
+			}
+			responses = append(responses, extensionSettingResponse{
+				ExtensionID:  extension.ID,
+				SettingID:    settingID,
+				Name:         fallbackString(strings.TrimSpace(setting.Name), settingID),
+				Scope:        setting.Scope,
+				ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+				DefaultValue: cloneRawMessage(setting.DefaultValue),
+				Placeholder:  strings.TrimSpace(setting.Placeholder),
+				Status:       fallbackString(strings.TrimSpace(setting.Status), sdk.CapabilityStatusReady),
+				Message:      setting.Message,
+				Value:        json.RawMessage(valueJSON),
+				UpdatedAt:    updatedAt,
+			})
+		}
+	}
+	sort.Slice(responses, func(i, j int) bool {
+		if responses[i].ExtensionID == responses[j].ExtensionID {
+			return responses[i].SettingID < responses[j].SettingID
+		}
+		return responses[i].ExtensionID < responses[j].ExtensionID
+	})
+	_ = profileID
+	return responses
+}
+
+func (s *Server) profileExtensionSettingForSteamApp(appID, extensionID, settingID string) (gameext.Extension, sdk.ExtensionSettingSpec, bool) {
+	canonicalExtension := strings.TrimSpace(strings.ToLower(extensionID))
+	canonicalSetting := strings.TrimSpace(strings.ToLower(settingID))
+	if canonicalExtension == "" || canonicalSetting == "" {
+		return gameext.Extension{}, sdk.ExtensionSettingSpec{}, false
+	}
+	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
+		if strings.TrimSpace(strings.ToLower(extension.ID)) != canonicalExtension {
+			continue
+		}
+		for _, setting := range extension.ExtensionSettings {
+			if strings.TrimSpace(strings.ToLower(setting.ID)) == canonicalSetting && isProfileExtensionSetting(setting) {
+				return extension, setting, true
+			}
+		}
+	}
+	return gameext.Extension{}, sdk.ExtensionSettingSpec{}, false
+}
+
+func isProfileExtensionSetting(setting sdk.ExtensionSettingSpec) bool {
+	return strings.EqualFold(strings.TrimSpace(setting.Scope), "profile")
+}
+
+func isProfileFeatureSummary(setting gameext.FeatureSummary) bool {
+	return strings.EqualFold(strings.TrimSpace(setting.Scope), "profile")
+}
+
 func (s *Server) handleProfileFiles(w http.ResponseWriter, r *http.Request) {
 	profileID, err := strconv.ParseInt(r.PathValue("profileID"), 10, 64)
 	if err != nil || profileID <= 0 {
@@ -15555,7 +15737,7 @@ func (s *Server) deploymentEventMappings(ctx context.Context, game storage.Game,
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
-	settings, err := s.extensionSettingValueMap(ctx)
+	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
@@ -15614,7 +15796,7 @@ func (s *Server) runDeploymentEventHandlers(ctx context.Context, appID, event, s
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
-	settings, err := s.extensionSettingValueMap(ctx)
+	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
 	if err != nil {
 		return err
 	}
@@ -15694,7 +15876,7 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
-	settings, err := s.extensionSettingValueMap(ctx)
+	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
 	if err != nil {
 		return err
 	}
@@ -16875,12 +17057,81 @@ func (s *Server) resolveManifestTargetRoot(ctx context.Context, game storage.Gam
 
 func (s *Server) extensionSettingValueMap(ctx context.Context) (map[string]map[string]json.RawMessage, error) {
 	out := make(map[string]map[string]json.RawMessage)
+	globalSettingKeys := map[string]struct{}{}
 	for _, extension := range s.games.ExtensionSummaries() {
 		extensionID := strings.TrimSpace(strings.ToLower(extension.ID))
 		if extensionID == "" {
 			continue
 		}
 		for _, setting := range extension.Capabilities.ExtensionSettings {
+			if isProfileFeatureSummary(setting) {
+				continue
+			}
+			settingID := strings.TrimSpace(strings.ToLower(setting.ID))
+			if settingID == "" {
+				continue
+			}
+			globalSettingKeys[extensionSettingKey(extensionID, settingID)] = struct{}{}
+			if len(setting.DefaultValue) == 0 || !json.Valid(setting.DefaultValue) {
+				continue
+			}
+			if out[extensionID] == nil {
+				out[extensionID] = map[string]json.RawMessage{}
+			}
+			out[extensionID][settingID] = cloneRawMessage(setting.DefaultValue)
+		}
+	}
+	values, err := s.db.ExtensionSettingValues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
+		extensionID := strings.TrimSpace(strings.ToLower(value.ExtensionID))
+		settingID := strings.TrimSpace(strings.ToLower(value.SettingID))
+		if extensionID == "" || settingID == "" {
+			continue
+		}
+		if _, ok := globalSettingKeys[extensionSettingKey(extensionID, settingID)]; !ok {
+			continue
+		}
+		if out[extensionID] == nil {
+			out[extensionID] = map[string]json.RawMessage{}
+		}
+		out[extensionID][settingID] = json.RawMessage(value.ValueJSON)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func (s *Server) extensionSettingValueMapForProfile(ctx context.Context, profileID int64) (map[string]map[string]json.RawMessage, error) {
+	out, err := s.extensionSettingValueMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]map[string]json.RawMessage{}
+	}
+	if profileID <= 0 {
+		if len(out) == 0 {
+			return nil, nil
+		}
+		return out, nil
+	}
+	appID, err := s.db.SteamAppIDForProfile(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
+		extensionID := strings.TrimSpace(strings.ToLower(extension.ID))
+		if extensionID == "" {
+			continue
+		}
+		for _, setting := range extension.ExtensionSettings {
+			if !isProfileExtensionSetting(setting) {
+				continue
+			}
 			settingID := strings.TrimSpace(strings.ToLower(setting.ID))
 			if settingID == "" || len(setting.DefaultValue) == 0 || !json.Valid(setting.DefaultValue) {
 				continue
@@ -16891,7 +17142,7 @@ func (s *Server) extensionSettingValueMap(ctx context.Context) (map[string]map[s
 			out[extensionID][settingID] = cloneRawMessage(setting.DefaultValue)
 		}
 	}
-	values, err := s.db.ExtensionSettingValues(ctx)
+	values, err := s.db.ProfileExtensionSettingValues(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}

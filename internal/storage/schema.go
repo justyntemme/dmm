@@ -286,6 +286,16 @@ CREATE TABLE IF NOT EXISTS extension_setting_values (
 	PRIMARY KEY(extension_id, setting_id)
 );
 
+CREATE TABLE IF NOT EXISTS profile_extension_setting_values (
+	profile_id INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+	extension_id TEXT NOT NULL,
+	setting_id TEXT NOT NULL,
+	value_json TEXT NOT NULL DEFAULT 'null',
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(profile_id, extension_id, setting_id)
+);
+
 CREATE TABLE IF NOT EXISTS steam_workshop_items (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,

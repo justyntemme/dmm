@@ -34,7 +34,14 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.LaunchOptionRequirements) != 1 || summary.Capabilities.LaunchOptionRequirements[0].ID != "7daystodie-user-data-folder-argument" {
 		t.Fatalf("launch option requirements = %+v", summary.Capabilities.LaunchOptionRequirements)
 	}
-	if len(summary.Capabilities.ExtensionSettings) != 1 || summary.Capabilities.ExtensionSettings[0].Status != sdk.CapabilityStatusReady {
+	if len(summary.Capabilities.ExtensionSettings) != 2 {
+		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
+	}
+	settings := map[string]gameext.FeatureSummary{}
+	for _, setting := range summary.Capabilities.ExtensionSettings {
+		settings[setting.ID] = setting
+	}
+	if settings[udfSettingID].Status != sdk.CapabilityStatusReady || settings[prefixOffsetSettingID].Scope != "profile" || string(settings[prefixOffsetSettingID].DefaultValue) != "0" {
 		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
 	}
 }
@@ -98,6 +105,32 @@ func TestLoadOrderPrefixHandlerRewritesOnlyModlets(t *testing.T) {
 	assertMapping(t, result.Mappings, "AAA-mod-10/ModInfo.xml")
 	assertMapping(t, result.Mappings, "AAB-mod-20/ModInfo.xml")
 	assertMapping(t, result.Mappings, "BepInEx/plugins/loader.dll")
+}
+
+func TestLoadOrderPrefixHandlerUsesProfileOffset(t *testing.T) {
+	result, err := loadOrderPrefixHandler(context.Background(), sdk.EventHandlerInput{
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {
+				prefixOffsetSettingID: json.RawMessage(`2`),
+			},
+		},
+		Mappings: []deploy.FileMapping{
+			{InstalledModID: 20, TargetRelative: "ModInfo.xml", Priority: 20},
+			{InstalledModID: 10, TargetRelative: "ModInfo.xml", Priority: 10},
+		},
+		Mods: []sdk.DeploymentMod{
+			{ID: 20, Name: "Late", ModType: modletModType, Priority: 20},
+			{ID: 10, Name: "Early", ModType: modletModType, Priority: 10},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ReplaceMappings {
+		t.Fatalf("result = %+v", result)
+	}
+	assertMapping(t, result.Mappings, "AAC-mod-10/ModInfo.xml")
+	assertMapping(t, result.Mappings, "AAD-mod-20/ModInfo.xml")
 }
 
 func TestModsTargetRootUsesConfiguredUDF(t *testing.T) {

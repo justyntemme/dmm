@@ -16,11 +16,12 @@ const (
 	VortexGameID = "7daystodie"
 	Name         = "7 Days to Die"
 
-	gameExecutable = "7DaysToDie.exe"
-	modsRoot       = "Mods"
-	modsRootID     = "7daystodie-mods-root"
-	udfSettingID   = "7daystodie-udf"
-	modInfoName    = "modinfo.xml"
+	gameExecutable        = "7DaysToDie.exe"
+	modsRoot              = "Mods"
+	modsRootID            = "7daystodie-mods-root"
+	udfSettingID          = "7daystodie-udf"
+	prefixOffsetSettingID = "7daystodie-prefix-offset"
+	modInfoName           = "modinfo.xml"
 
 	modletModType = "7dtd-mod"
 	rootModType   = "7dtd-root-mod"
@@ -123,20 +124,21 @@ func Register(r sdk.Registrar) {
 		Placeholder: "/home/deck/.local/share/7DaysToDie",
 		Message:     "Optional absolute User Data Folder path. If unset, DMM follows Vortex's fallback game-root Mods path.",
 	})
-	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
-		ID:      "7daystodie-prefix-offset",
-		Name:    "Prefix Offset Assign",
-		Scope:   "profile",
-		Kind:    "load-order",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex exposes prefix offset actions. DMM applies deterministic profile-priority prefixes but does not yet expose a user offset action.",
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:           prefixOffsetSettingID,
+		Name:         "7 Days to Die Prefix Offset",
+		Scope:        "profile",
+		ValueType:    sdk.ExtensionSettingValueNumber,
+		DefaultValue: json.RawMessage("0"),
+		Placeholder:  "0",
+		Message:      "Profile-specific numeric offset for generated modlet folder prefixes. Vortex prompts for AAA-ZZZ; DMM stores the equivalent numeric offset and applies makePrefix(priority + offset).",
 	})
 	r.RegisterStateReducer(sdk.StateReducerSpec{
 		ID:      "7daystodie-settings-state",
 		Name:    "7 Days to Die extension settings",
 		Scope:   "profile",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex stores User Data Folder and previous load-order state in extension settings.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM stores Vortex-equivalent profile prefix offset state through profile-scoped extension settings.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

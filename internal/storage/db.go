@@ -226,6 +226,14 @@ type ExtensionSettingValue struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type ProfileExtensionSettingValue struct {
+	ProfileID   int64  `json:"profile_id"`
+	ExtensionID string `json:"extension_id"`
+	SettingID   string `json:"setting_id"`
+	ValueJSON   string `json:"value_json"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type ExtensionMigrationRunParams struct {
 	ExtensionID string
 	MigrationID string
@@ -596,6 +604,89 @@ WHERE extension_id = ? AND setting_id = ?
 	}
 	if err == nil && !json.Valid([]byte(value.ValueJSON)) {
 		return ExtensionSettingValue{}, errors.New("stored extension setting value is invalid JSON")
+	}
+	return value, err
+}
+
+func (db *DB) ProfileExtensionSettingValues(ctx context.Context, profileID int64) ([]ProfileExtensionSettingValue, error) {
+	if profileID <= 0 {
+		return nil, errors.New("profile id is required")
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT profile_id, extension_id, setting_id, value_json, updated_at
+FROM profile_extension_setting_values
+WHERE profile_id = ?
+ORDER BY extension_id ASC, setting_id ASC
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ProfileExtensionSettingValue
+	for rows.Next() {
+		var value ProfileExtensionSettingValue
+		if err := rows.Scan(&value.ProfileID, &value.ExtensionID, &value.SettingID, &value.ValueJSON, &value.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(value.ValueJSON) == "" {
+			value.ValueJSON = "null"
+		}
+		if !json.Valid([]byte(value.ValueJSON)) {
+			return nil, errors.New("stored profile extension setting value is invalid JSON")
+		}
+		out = append(out, value)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SetProfileExtensionSettingValue(ctx context.Context, profileID int64, extensionID, settingID string, valueJSON []byte) (ProfileExtensionSettingValue, error) {
+	extensionID = strings.TrimSpace(strings.ToLower(extensionID))
+	settingID = strings.TrimSpace(strings.ToLower(settingID))
+	valueJSON = bytesTrimSpace(valueJSON)
+	if profileID <= 0 {
+		return ProfileExtensionSettingValue{}, errors.New("profile id is required")
+	}
+	if extensionID == "" || settingID == "" {
+		return ProfileExtensionSettingValue{}, errors.New("extension id and setting id are required")
+	}
+	if len(valueJSON) == 0 {
+		valueJSON = []byte("null")
+	}
+	if !json.Valid(valueJSON) {
+		return ProfileExtensionSettingValue{}, errors.New("profile extension setting value must be valid JSON")
+	}
+	var exists int
+	if err := db.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM profiles WHERE id = ?`, profileID).Scan(&exists); err != nil {
+		return ProfileExtensionSettingValue{}, err
+	}
+	if exists == 0 {
+		return ProfileExtensionSettingValue{}, sql.ErrNoRows
+	}
+	_, err := db.conn.ExecContext(ctx, `
+INSERT INTO profile_extension_setting_values (profile_id, extension_id, setting_id, value_json, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(profile_id, extension_id, setting_id) DO UPDATE SET
+	value_json = excluded.value_json,
+	updated_at = CURRENT_TIMESTAMP
+`, profileID, extensionID, settingID, string(valueJSON))
+	if err != nil {
+		return ProfileExtensionSettingValue{}, err
+	}
+	return db.profileExtensionSettingValue(ctx, profileID, extensionID, settingID)
+}
+
+func (db *DB) profileExtensionSettingValue(ctx context.Context, profileID int64, extensionID, settingID string) (ProfileExtensionSettingValue, error) {
+	var value ProfileExtensionSettingValue
+	err := db.conn.QueryRowContext(ctx, `
+SELECT profile_id, extension_id, setting_id, value_json, updated_at
+FROM profile_extension_setting_values
+WHERE profile_id = ? AND extension_id = ? AND setting_id = ?
+`, profileID, extensionID, settingID).Scan(&value.ProfileID, &value.ExtensionID, &value.SettingID, &value.ValueJSON, &value.UpdatedAt)
+	if strings.TrimSpace(value.ValueJSON) == "" {
+		value.ValueJSON = "null"
+	}
+	if err == nil && !json.Valid([]byte(value.ValueJSON)) {
+		return ProfileExtensionSettingValue{}, errors.New("stored profile extension setting value is invalid JSON")
 	}
 	return value, err
 }
@@ -1248,6 +1339,15 @@ SELECT ?, feature_id, enabled, CURRENT_TIMESTAMP
 FROM profile_features
 WHERE profile_id = ?
 ORDER BY feature_id ASC
+`, profileID, sourceProfileID); err != nil {
+			return Profile{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO profile_extension_setting_values (profile_id, extension_id, setting_id, value_json, updated_at)
+SELECT ?, extension_id, setting_id, value_json, CURRENT_TIMESTAMP
+FROM profile_extension_setting_values
+WHERE profile_id = ?
+ORDER BY extension_id ASC, setting_id ASC
 `, profileID, sourceProfileID); err != nil {
 			return Profile{}, err
 		}

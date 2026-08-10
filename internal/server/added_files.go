@@ -87,7 +87,7 @@ func (s *Server) runFileMonitorEventHandlers(ctx context.Context, game storage.G
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return gameext.EventHandlerResult{}, err
 	}
-	settings, err := s.extensionSettingValueMap(ctx)
+	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
 	if err != nil {
 		return gameext.EventHandlerResult{}, err
 	}

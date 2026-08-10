@@ -2,6 +2,7 @@ package sevendaystodie
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -45,7 +46,7 @@ func loadOrderPrefixHandler(ctx context.Context, input sdk.EventHandlerInput) (s
 	})
 	prefixes := map[string]string{}
 	for idx, group := range ordered {
-		prefixes[group.key] = makePrefix(idx) + "-" + group.folderID
+		prefixes[group.key] = makePrefix(idx+prefixOffset(input.ExtensionSettings)) + "-" + group.folderID
 	}
 
 	rewritten := make([]deploy.FileMapping, 0, len(input.Mappings))
@@ -124,6 +125,32 @@ func makePrefix(input int) string {
 		out = append([]byte{'A'}, out...)
 	}
 	return string(out)
+}
+
+func prefixOffset(settings map[string]map[string]json.RawMessage) int {
+	extensionSettings := settings[strings.ToLower(VortexGameID)]
+	if len(extensionSettings) == 0 {
+		return 0
+	}
+	raw := extensionSettings[strings.ToLower(prefixOffsetSettingID)]
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var number float64
+	if err := json.Unmarshal(raw, &number); err == nil {
+		if number < 0 {
+			return 0
+		}
+		return int(number)
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		offset, err := strconv.Atoi(strings.TrimSpace(text))
+		if err == nil && offset > 0 {
+			return offset
+		}
+	}
+	return 0
 }
 
 func cleanRelative(value string) string {
