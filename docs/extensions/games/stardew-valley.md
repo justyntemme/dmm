@@ -11,6 +11,8 @@
 - Vortex Stardew game registration: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/game/StardewValleyGame.ts`
 - Vortex Stardew installers: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/installers`
 - Vortex config-mod behavior: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/configMod`
+- Vortex SMAPI.io compatibility updater: `https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/compatibility/updateConflictInfo.ts`
+- SMAPI.io mod compatibility API: `https://smapi.io/api/v3.0/mods`
 - Steam Deck SMAPI guide: `https://stardewvalleywiki.com/Modding:Installing_SMAPI_on_Steam_Deck`
 
 ## Current DMM Capability
@@ -19,6 +21,7 @@
 - SMAPI installer and SMAPI mod folder planning are implemented by the extension.
 - SMAPI launch tool metadata is extension-owned and live-tested on the Deck.
 - SMAPI `manifest.json` dependency metadata is extracted for diagnostics, but DMM treats those dependencies as non-blocking recommendations to match the verified Vortex Stardew behavior where manifest recommendations are disabled by default and considered unreliable.
+- User-triggered mod update checks run the Stardew extension's SMAPI.io compatibility query for enabled SMAPI manifest mods and queue Action Center notices for compatibility warnings, SMAPI.io errors, or suggested updates.
 - Generated SMAPI config files are preserved through an extension event hook.
 - Native Linux and Windows/Proton install platform matching are represented in the extension model.
 

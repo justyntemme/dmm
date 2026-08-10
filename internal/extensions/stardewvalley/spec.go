@@ -116,6 +116,12 @@ func Register(r sdk.Registrar) {
 		Name:    "Preserve generated SMAPI config files",
 		Handler: willDeployPreserveConfigs,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		ID:      "stardew-smapi-compatibility",
+		Event:   sdk.EventCheckModsVersion,
+		Name:    "Check SMAPI.io compatibility",
+		Handler: checkSMAPICompatibility,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
@@ -394,6 +400,14 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Vortex Stardew config mod feature",
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/configMod",
+		},
+		{
+			Name: "Vortex Stardew SMAPI.io compatibility lookup",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/compatibility/updateConflictInfo.ts",
+		},
+		{
+			Name: "SMAPI.io mod compatibility API",
+			URL:  "https://smapi.io/api/v3.0/mods",
 		},
 		{
 			Name: "Stardew Wiki SMAPI Steam Deck guide",
