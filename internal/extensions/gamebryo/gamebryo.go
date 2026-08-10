@@ -38,6 +38,8 @@ type LocalGameSettingsOptions struct {
 	GameID      string
 	MyGamesPath string
 	Files       []LocalGameSettingFile
+	SaveININame string
+	SavePath    string
 }
 
 type LocalGameSettingFile struct {
@@ -143,6 +145,9 @@ func LocalLOOTRulesProfileFeature() sdk.ProfileFeatureSpec {
 
 func RegisterLocalGameSettings(r sdk.Registrar, opts LocalGameSettingsOptions) {
 	r.RegisterProfileFeature(LocalGameSettingsProfileFeature())
+	if strings.TrimSpace(opts.SaveININame) != "" {
+		r.RegisterProfileFeature(LocalSavesProfileFeature())
+	}
 	for _, file := range LocalGameSettingsProfileFiles(opts) {
 		r.RegisterProfileFile(file)
 	}
@@ -153,6 +158,14 @@ func LocalGameSettingsProfileFeature() sdk.ProfileFeatureSpec {
 		ID:      "local_game_settings",
 		Name:    "Game Settings",
 		Message: "This profile has its own game settings, matching Vortex's local game settings profile feature.",
+	}
+}
+
+func LocalSavesProfileFeature() sdk.ProfileFeatureSpec {
+	return sdk.ProfileFeatureSpec{
+		ID:      "local_saves",
+		Name:    "Local Saves",
+		Message: "This profile uses its own Gamebryo save folder by writing General.SLocalSavePath, matching Vortex's local saves profile feature.",
 	}
 }
 
@@ -168,6 +181,22 @@ func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileF
 		if name == "" {
 			continue
 		}
+		featureIDs := []string{"local_game_settings"}
+		patches := []sdk.ProfileFilePatchSpec{}
+		if strings.EqualFold(name, strings.TrimSpace(opts.SaveININame)) {
+			featureIDs = append(featureIDs, "local_saves")
+			savePath := strings.TrimSpace(opts.SavePath)
+			if savePath == "" {
+				savePath = "Saves/{profile_id}/"
+			}
+			patches = append(patches, sdk.ProfileFilePatchSpec{
+				Kind:          sdk.ProfileFilePatchINIKey,
+				FeatureID:     "local_saves",
+				Section:       "General",
+				Key:           "SLocalSavePath",
+				ValueTemplate: savePath,
+			})
+		}
 		files = append(files, sdk.ProfileFileSpec{
 			ID:                  gameID + "-local-game-settings-" + sanitizeSettingFileID(name),
 			Name:                name,
@@ -175,8 +204,10 @@ func LocalGameSettingsProfileFiles(opts LocalGameSettingsOptions) []sdk.ProfileF
 			Base:                sdk.ProfileFileBaseProtonDocuments,
 			Path:                path.Join("My Games", myGamesPath, name),
 			FeatureID:           "local_game_settings",
+			FeatureIDs:          featureIDs,
 			Optional:            file.Optional,
 			SyncOnProfileSwitch: true,
+			Patches:             patches,
 		})
 	}
 	return files

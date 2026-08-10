@@ -145,6 +145,7 @@ func Register(r sdk.Registrar) {
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
 		GameID:      VortexGameID,
 		MyGamesPath: "Skyrim Special Edition",
+		SaveININame: "Skyrim.ini",
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Skyrim.ini"},
 			{Name: "SkyrimPrefs.ini"},

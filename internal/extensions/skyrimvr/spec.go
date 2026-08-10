@@ -137,6 +137,7 @@ func Register(r sdk.Registrar) {
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
 		GameID:      VortexGameID,
 		MyGamesPath: "Skyrim VR",
+		SaveININame: "SkyrimVR.ini",
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Skyrim.ini"},
 			{Name: "SkyrimVR.ini"},

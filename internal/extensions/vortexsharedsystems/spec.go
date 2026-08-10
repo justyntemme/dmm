@@ -72,6 +72,12 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "oblivion-fonts", Name: "Oblivion font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-plugin-index-lock", Name: "Gamebryo plugin index lock state", Scope: "profile_plugin_activations.locked_index", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionTableAttribute(blockedTableAttribute("gamebryo-plugin-index-lock", "Gamebryo plugin index lock table attribute", "gamebryo-plugins"))
+	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
+		ID:      "local_saves",
+		Name:    "Gamebryo local save paths",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM supports Vortex-style Gamebryo local save path redirection through extension-declared profile-file INI patches. Save browsing, transfer, and restore UI remain separate blocked surfaces.",
+	})
 	r.RegisterStateReducer(blockedReducer("gamebryo-save-session", "Gamebryo savegame session state", "session/saves"))
 	r.RegisterStateReducer(blockedReducer("gamebryo-save-settings", "Gamebryo savegame settings state", "settings/saves"))
 	r.RegisterExtensionAction(blockedAction("gamebryo-save-transfer", "Transfer save games", "savegames-icons", "savegame"))

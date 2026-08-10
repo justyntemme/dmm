@@ -136,6 +136,7 @@ func Register(r sdk.Registrar) {
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
 		GameID:      VortexGameID,
 		MyGamesPath: "FalloutNV",
+		SaveININame: "Fallout.ini",
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Fallout.ini"},
 			{Name: "FalloutPrefs.ini"},

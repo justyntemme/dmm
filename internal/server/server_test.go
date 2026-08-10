@@ -9926,6 +9926,63 @@ func TestProfileSwitchSyncsLocalGameSettings(t *testing.T) {
 	}
 }
 
+func TestProfileSwitchAppliesGamebryoLocalSavePath(t *testing.T) {
+	srv := newTestServer(t)
+	libraryPath := filepath.Join(t.TempDir(), "steam-library")
+	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       fallout4.SteamAppID,
+		Name:        fallout4.Name,
+		InstallDir:  "Fallout 4",
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	newProfile, err := srv.db.CreateProfileForSteamApp(context.Background(), fallout4.SteamAppID, "Local Saves")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileFeatureState(context.Background(), newProfile.ID, "local_saves", true); err != nil {
+		t.Fatal(err)
+	}
+	globalRoot := filepath.Join(libraryPath, "steamapps", "compatdata", fallout4.SteamAppID, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Fallout4")
+	if err := os.MkdirAll(globalRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	customINI := filepath.Join(globalRoot, "Fallout4Custom.ini")
+	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+strconv.FormatInt(newProfile.ID, 10)+"/default", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switch status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	body, err := os.ReadFile(customINI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "SLocalSavePath=Saves/" + strconv.FormatInt(newProfile.ID, 10) + "/"
+	if !strings.Contains(string(body), "[General]") || !strings.Contains(string(body), want) {
+		t.Fatalf("custom ini = %q, want %q", string(body), want)
+	}
+	baked, err := os.ReadFile(customINI + ".baked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(baked) != string(body) {
+		t.Fatalf("baked custom ini = %q, want %q", string(baked), string(body))
+	}
+}
+
 func TestProfileSwitchBakesSettingsWithProfileEnabledMods(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999020"

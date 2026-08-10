@@ -801,8 +801,10 @@ type ProfileFileSpec struct {
 	Base                string
 	Path                string
 	FeatureID           string
+	FeatureIDs          []string
 	Optional            bool
 	SyncOnProfileSwitch bool
+	Patches             []ProfileFilePatchSpec
 	Status              string
 	Message             string
 }
@@ -812,6 +814,19 @@ const (
 	ProfileFileBaseProtonLocalAppData = "proton_local_app_data"
 	ProfileFileBaseProtonDocuments    = "proton_documents"
 )
+
+const (
+	ProfileFilePatchINIKey = "ini_key"
+)
+
+type ProfileFilePatchSpec struct {
+	Kind          string
+	FeatureID     string
+	Section       string
+	Key           string
+	Value         string
+	ValueTemplate string
+}
 
 type CollectionFeatureSpec struct {
 	ID      string

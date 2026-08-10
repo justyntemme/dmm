@@ -1937,7 +1937,7 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 		default:
 			errs = append(errs, errors.New("profile file "+id+" base is not supported"))
 		}
-		if spec.SyncOnProfileSwitch && strings.TrimSpace(spec.FeatureID) == "" {
+		if spec.SyncOnProfileSwitch && strings.TrimSpace(spec.FeatureID) == "" && len(nonEmptyStrings(spec.FeatureIDs)) == 0 {
 			errs = append(errs, errors.New("profile file "+id+" sync feature id is required"))
 		}
 		if strings.TrimSpace(spec.Path) != "" {
@@ -1948,8 +1948,45 @@ func validateProfileFiles(specs []sdk.ProfileFileSpec) []error {
 		if err := validateCapabilityStatus("profile file", id, spec.Status, spec.Message); err != nil {
 			errs = append(errs, err)
 		}
+		for _, patch := range spec.Patches {
+			if err := validateProfileFilePatch(id, patch); err != nil {
+				errs = append(errs, err)
+			}
+		}
 	}
 	return errs
+}
+
+func validateProfileFilePatch(fileID string, spec sdk.ProfileFilePatchSpec) error {
+	switch strings.TrimSpace(spec.Kind) {
+	case sdk.ProfileFilePatchINIKey:
+	default:
+		return errors.New("profile file " + fileID + " patch kind is not supported")
+	}
+	if strings.TrimSpace(spec.FeatureID) == "" {
+		return errors.New("profile file " + fileID + " patch feature id is required")
+	}
+	if strings.TrimSpace(spec.Section) == "" {
+		return errors.New("profile file " + fileID + " patch section is required")
+	}
+	if strings.TrimSpace(spec.Key) == "" {
+		return errors.New("profile file " + fileID + " patch key is required")
+	}
+	if strings.TrimSpace(spec.Value) == "" && strings.TrimSpace(spec.ValueTemplate) == "" {
+		return errors.New("profile file " + fileID + " patch value is required")
+	}
+	return nil
+}
+
+func nonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func validateExtensionControlWrappers(specs []sdk.ExtensionControlWrapperSpec) []error {

@@ -77,6 +77,7 @@ func Register(r sdk.Registrar) {
 	gamebryo.RegisterLocalGameSettings(r, gamebryo.LocalGameSettingsOptions{
 		GameID:      VortexGameID,
 		MyGamesPath: "Oblivion",
+		SaveININame: "Oblivion.ini",
 		Files: []gamebryo.LocalGameSettingFile{
 			{Name: "Oblivion.ini"},
 		},

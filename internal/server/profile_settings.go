@@ -89,7 +89,7 @@ func (s *Server) syncProfileFilesForProfileSwitch(ctx context.Context, appID str
 			if err := s.copyGlobalProfileFileToBackup(ctx, appID, file); err != nil {
 				return err
 			}
-			if err := s.copyProfileFileToGlobal(ctx, appID, newProfile.ID, file); err != nil {
+			if err := s.copyProfileFileToGlobal(ctx, appID, newProfile.ID, file, newFeatures); err != nil {
 				return err
 			}
 		}
@@ -264,11 +264,25 @@ func profileFilesHaveEnabledFeature(files []profileFileForSwitch, states map[str
 }
 
 func profileFileFeatureEnabled(spec sdk.ProfileFileSpec, states map[string]bool) bool {
-	featureID := strings.TrimSpace(strings.ToLower(spec.FeatureID))
-	if featureID == "" {
-		return false
+	for _, featureID := range profileFileFeatureIDs(spec) {
+		if states[featureID] {
+			return true
+		}
 	}
-	return states[featureID]
+	return false
+}
+
+func profileFileFeatureIDs(spec sdk.ProfileFileSpec) []string {
+	ids := []string{}
+	if featureID := strings.TrimSpace(strings.ToLower(spec.FeatureID)); featureID != "" {
+		ids = append(ids, featureID)
+	}
+	for _, featureID := range spec.FeatureIDs {
+		if featureID = strings.TrimSpace(strings.ToLower(featureID)); featureID != "" {
+			ids = append(ids, featureID)
+		}
+	}
+	return ids
 }
 
 func missingRequiredProfileSettingPaths(files []profileFileForSwitch, states map[string]bool) []string {
@@ -366,30 +380,189 @@ func (s *Server) restoreProfileFileBackupToGlobal(ctx context.Context, appID str
 	return nil
 }
 
-func (s *Server) copyProfileFileToGlobal(ctx context.Context, appID string, profileID int64, file profileFileForSwitch) error {
+func (s *Server) copyProfileFileToGlobal(ctx context.Context, appID string, profileID int64, file profileFileForSwitch, features map[string]bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	profilePath := s.profileFileProfileCopyPath(appID, profileID, file.Spec)
 	if _, err := os.Stat(profilePath); err != nil {
-		if file.Spec.Optional && errors.Is(err, os.ErrNotExist) {
+		activePatch := profileFileHasActivePatch(file.Spec, features)
+		if file.Spec.Optional && errors.Is(err, os.ErrNotExist) && !activePatch {
 			return nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("read profile-local game settings file %s for profile %d: %w", file.Spec.ID, profileID, err)
 		}
-		if _, copyErr := copyProfileSettingsFile(file.GlobalPath, profilePath, false); copyErr != nil {
+		if activePatch && file.Spec.Optional {
+			if writeErr := writeProfileSettingsFile(profilePath, nil, 0o600); writeErr != nil {
+				return fmt.Errorf("create empty profile-local game settings file %s for profile %d: %w", file.Spec.ID, profileID, writeErr)
+			}
+		} else if _, copyErr := copyProfileSettingsFile(file.GlobalPath, profilePath, false); copyErr != nil {
 			return fmt.Errorf("create missing profile-local game settings file %s for profile %d: %w", file.Spec.ID, profileID, copyErr)
 		}
 	}
 	if _, err := copyProfileSettingsFile(profilePath, file.GlobalPath, file.Spec.Optional); err != nil {
 		return fmt.Errorf("install profile-local game settings file %s from profile %d: %w", file.Spec.ID, profileID, err)
 	}
-	if _, err := copyProfileSettingsFile(profilePath, file.GlobalPath+".baked", file.Spec.Optional); err != nil {
+	if patched, err := applyProfileFilePatches(file.GlobalPath, profileID, file.Spec, features); err != nil {
+		return fmt.Errorf("patch profile-local game settings file %s for profile %d: %w", file.Spec.ID, profileID, err)
+	} else if patched {
+		s.logger.Debug("patched profile game settings in global path", "app_id", appID, "profile_id", profileID, "file_id", file.Spec.ID, "extension_id", file.ExtensionID)
+	}
+	if _, err := copyProfileSettingsFile(file.GlobalPath, file.GlobalPath+".baked", file.Spec.Optional); err != nil {
 		return fmt.Errorf("write baked profile-local game settings file %s from profile %d: %w", file.Spec.ID, profileID, err)
 	}
 	s.logger.Debug("installed profile game settings into global path", "app_id", appID, "profile_id", profileID, "file_id", file.Spec.ID, "extension_id", file.ExtensionID)
 	return nil
+}
+
+func profileFileHasActivePatch(spec sdk.ProfileFileSpec, features map[string]bool) bool {
+	for _, patch := range spec.Patches {
+		featureID := strings.TrimSpace(strings.ToLower(patch.FeatureID))
+		if featureID != "" && features[featureID] {
+			return true
+		}
+	}
+	return false
+}
+
+func applyProfileFilePatches(path string, profileID int64, spec sdk.ProfileFileSpec, features map[string]bool) (bool, error) {
+	if len(spec.Patches) == 0 {
+		return false, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if spec.Optional && errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if info.IsDir() {
+		if spec.Optional {
+			return false, nil
+		}
+		return false, errors.New("profile file patch target is a directory")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	next := string(body)
+	changed := false
+	for _, patch := range spec.Patches {
+		featureID := strings.TrimSpace(strings.ToLower(patch.FeatureID))
+		if featureID == "" || !features[featureID] {
+			continue
+		}
+		switch strings.TrimSpace(patch.Kind) {
+		case sdk.ProfileFilePatchINIKey:
+			value := profileFilePatchValue(profileID, patch)
+			patched, ok := patchINISectionKey(next, patch.Section, patch.Key, value)
+			if ok {
+				next = patched
+				changed = true
+			}
+		}
+	}
+	if !changed || next == string(body) {
+		return false, nil
+	}
+	return true, writeProfileSettingsFile(path, []byte(next), info.Mode().Perm())
+}
+
+func profileFilePatchValue(profileID int64, spec sdk.ProfileFilePatchSpec) string {
+	value := strings.TrimSpace(spec.ValueTemplate)
+	if value == "" {
+		return spec.Value
+	}
+	return strings.ReplaceAll(value, "{profile_id}", strconv.FormatInt(profileID, 10))
+}
+
+func patchINISectionKey(contents, section, key, value string) (string, bool) {
+	section = strings.TrimSpace(section)
+	key = strings.TrimSpace(key)
+	if section == "" || key == "" {
+		return contents, false
+	}
+	lines := splitLinesKeepEndings(contents)
+	targetSection := strings.ToLower(section)
+	targetKey := strings.ToLower(key)
+	inTarget := false
+	sectionSeen := false
+	keySet := false
+	out := make([]string, 0, len(lines)+3)
+	insertKey := func() {
+		if !keySet {
+			out = append(out, key+"="+value+preferredLineEnding(contents))
+			keySet = true
+		}
+	}
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(strings.TrimRight(line, "\r\n"))
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+			if inTarget {
+				insertKey()
+			}
+			name := strings.TrimSpace(trimmed[1:strings.Index(trimmed, "]")])
+			inTarget = strings.EqualFold(name, targetSection)
+			if inTarget {
+				sectionSeen = true
+			}
+			out = append(out, line)
+			continue
+		}
+		if inTarget && !keySet && !strings.HasPrefix(trimmed, ";") && !strings.HasPrefix(trimmed, "#") {
+			if before, _, ok := strings.Cut(trimmed, "="); ok && strings.EqualFold(strings.TrimSpace(before), targetKey) {
+				out = append(out, key+"="+value+lineEnding(line, contents))
+				keySet = true
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	if sectionSeen {
+		if inTarget {
+			insertKey()
+		}
+		return strings.Join(out, ""), true
+	}
+	if len(out) > 0 && !strings.HasSuffix(out[len(out)-1], "\n") {
+		out[len(out)-1] += preferredLineEnding(contents)
+	}
+	if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+		out = append(out, preferredLineEnding(contents))
+	}
+	out = append(out, "["+section+"]"+preferredLineEnding(contents), key+"="+value+preferredLineEnding(contents))
+	return strings.Join(out, ""), true
+}
+
+func splitLinesKeepEndings(contents string) []string {
+	if contents == "" {
+		return nil
+	}
+	lines := strings.SplitAfter(contents, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+func lineEnding(line, contents string) string {
+	switch {
+	case strings.HasSuffix(line, "\r\n"):
+		return "\r\n"
+	case strings.HasSuffix(line, "\n"):
+		return "\n"
+	default:
+		return preferredLineEnding(contents)
+	}
+}
+
+func preferredLineEnding(contents string) string {
+	if strings.Contains(contents, "\r\n") {
+		return "\r\n"
+	}
+	return "\n"
 }
 
 func (s *Server) profileFileProfileCopyPath(appID string, profileID int64, spec sdk.ProfileFileSpec) string {
@@ -432,29 +605,47 @@ func copyProfileSettingsFile(source, target string, optional bool) (bool, error)
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return false, err
 	}
+	mode := info.Mode().Perm()
+	if err := writeProfileSettingsFileFromReader(target, in, mode); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func writeProfileSettingsFile(path string, contents []byte, mode os.FileMode) error {
+	if mode == 0 {
+		mode = 0o600
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	reader := strings.NewReader(string(contents))
+	return writeProfileSettingsFileFromReader(path, reader, mode)
+}
+
+func writeProfileSettingsFileFromReader(target string, in io.Reader, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
-		return false, err
+		return err
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 	if _, err := io.Copy(tmp, in); err != nil {
 		_ = tmp.Close()
-		return false, err
+		return err
 	}
-	mode := info.Mode().Perm()
 	if mode == 0 {
 		mode = 0o600
 	}
 	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
-		return false, err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return false, err
+		return err
 	}
 	if err := os.Rename(tmpPath, target); err != nil {
-		return false, err
+		return err
 	}
-	return true, nil
+	return nil
 }
