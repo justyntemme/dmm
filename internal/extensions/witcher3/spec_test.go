@@ -206,25 +206,59 @@ func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) 
 	}
 }
 
-func TestExtensionDidDeployWarnsWhenMenuFragmentsNeedMerge(t *testing.T) {
+func TestExtensionWillDeployMergesMenuSettingFragments(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
 	root := t.TempDir()
+	documentsRoot := filepath.Join(root, "steamapps", "compatdata", "292030", "pfx", "drive_c", "users", "steamuser", "Documents", "The Witcher 3")
+	writeFile(t, filepath.Join(documentsRoot, "user.settings"), "[Base]\nKeep=1\nOverride=old\n")
 	staging := filepath.Join(root, "FriendlyHUD")
 	writeFile(t, filepath.Join(staging, "bin", "config", "r4game", "user_config_matrix", "pc", "user.settings.part.txt"), "[Key]\nValue=1\n")
+	writeFile(t, filepath.Join(staging, "bin", "config", "r4game", "user_config_matrix", "pc", "extra.settings.part.txt"), "[Other]\nValue=2\n")
+	lateStaging := filepath.Join(root, "LateHUD")
+	writeFile(t, filepath.Join(lateStaging, "nested", "user.settings.part.txt"), "[Base]\nOverride=new\n")
 
-	result, err := registry.RunEventHandlers(context.Background(), "292030", "did-deploy", sdk.EventHandlerInput{
+	result, err := registry.RunEventHandlers(context.Background(), "292030", "will-deploy", sdk.EventHandlerInput{
+		LibraryPath: root,
+		WorkDir:     filepath.Join(root, "work"),
 		Mods: []sdk.DeploymentMod{{
 			Name:        "Friendly HUD",
 			ModType:     "witcher3menumodroot",
 			Enabled:     true,
+			Priority:    10,
 			StagingPath: staging,
+		}, {
+			Name:        "Late HUD",
+			ModType:     "witcher3menumodroot",
+			Enabled:     true,
+			Priority:    20,
+			StagingPath: lateStaging,
+		}},
+		Mappings: []deploy.FileMapping{{
+			TargetRelative: "Mods/modFriendly/content/scripts/friendly.ws",
+			ModID:          "100",
+			Priority:       10,
 		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !noticeContains(result.Notices, "menu mod fragments") {
-		t.Fatalf("expected menu-fragment notice, got %+v", result.Notices)
+	menuMapping := mappingByTarget(result.Mappings, "user.settings")
+	if menuMapping == nil {
+		t.Fatalf("missing user.settings mapping in %+v", result.Mappings)
+	}
+	if menuMapping.TargetRoot != documentsRoot || menuMapping.TargetPolicy != deploy.TargetPolicyPatchExisting || menuMapping.RestorePath == "" {
+		t.Fatalf("menu mapping = %+v", menuMapping)
+	}
+	body := readFile(t, menuMapping.SourcePath)
+	if !strings.Contains(body, "[Base]\r\nKeep=1\r\nOverride=new") || !strings.Contains(body, "[Key]\r\nValue=1") {
+		t.Fatalf("merged body = %q", body)
+	}
+	restore := readFile(t, menuMapping.RestorePath)
+	if !strings.Contains(restore, "Override=old") {
+		t.Fatalf("restore body = %q", restore)
+	}
+	if mappingByTarget(result.Mappings, "extra.settings") != nil {
+		t.Fatalf("unexpected extra.settings mapping without base document: %+v", result.Mappings)
 	}
 }
 
@@ -313,6 +347,15 @@ func assertTarget(t *testing.T, instructions []installplan.Instruction, target s
 	t.Fatalf("missing target %q in %+v", target, instructions)
 }
 
+func mappingByTarget(mappings []deploy.FileMapping, target string) *deploy.FileMapping {
+	for idx := range mappings {
+		if mappings[idx].TargetRelative == target {
+			return &mappings[idx]
+		}
+	}
+	return nil
+}
+
 func noticeContains(notices []sdk.EventNotice, needle string) bool {
 	for _, notice := range notices {
 		if strings.Contains(notice.Message, needle) {
@@ -320,6 +363,15 @@ func noticeContains(notices []sdk.EventNotice, needle string) bool {
 		}
 	}
 	return false
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
 }
 
 func writeFile(t *testing.T, path string, contents string) {

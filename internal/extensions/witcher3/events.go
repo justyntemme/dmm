@@ -39,23 +39,24 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
+	var mappings []deploy.FileMapping
+	var messages []string
 	entries := managedModSettingsEntries(input.Mappings)
-	if len(entries) == 0 {
-		return sdk.EventHandlerResult{Messages: []string{"Witcher 3 mods.settings has no DMM-managed entries for this profile."}}, nil
-	}
 	documentsRoot, err := protonDocumentsRoot(input)
 	if err != nil {
 		return sdk.EventHandlerResult{}, err
 	}
-	sourcePath := filepath.Join(input.WorkDir, w3LoadOrderFile)
-	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
-		return sdk.EventHandlerResult{}, err
-	}
-	if err := os.WriteFile(sourcePath, []byte(renderModSettings(entries)), 0o600); err != nil {
-		return sdk.EventHandlerResult{}, err
-	}
-	return sdk.EventHandlerResult{
-		Mappings: []deploy.FileMapping{{
+	if len(entries) == 0 {
+		messages = append(messages, "Witcher 3 mods.settings has no DMM-managed entries for this profile.")
+	} else {
+		sourcePath := filepath.Join(input.WorkDir, w3LoadOrderFile)
+		if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		if err := os.WriteFile(sourcePath, []byte(renderModSettings(entries)), 0o600); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		mappings = append(mappings, deploy.FileMapping{
 			SourcePath:     sourcePath,
 			TargetRoot:     documentsRoot,
 			TargetRelative: w3LoadOrderFile,
@@ -64,8 +65,19 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 			ChecksumSHA256: "",
 			Priority:       0,
 			SourceRelative: "",
-		}},
-		Messages: []string{fmt.Sprintf("Witcher 3 mods.settings generated with %d managed entries.", len(entries))},
+		})
+		messages = append(messages, fmt.Sprintf("Witcher 3 mods.settings generated with %d managed entries.", len(entries)))
+	}
+
+	menuMappings, menuMessages, err := witcherMenuMergeMappings(ctx, input, documentsRoot)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	mappings = append(mappings, menuMappings...)
+	messages = append(messages, menuMessages...)
+	return sdk.EventHandlerResult{
+		Mappings: mappings,
+		Messages: messages,
 	}, nil
 }
 
@@ -81,14 +93,6 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 			ToolID:      scriptMergerToolID,
 			ToolName:    "W3 Script Merger",
 			ActionLabel: "Run Script Merger",
-		})
-	}
-	if deployIncludesMenuFragments(ctx, input) {
-		notices = append(notices, sdk.EventNotice{
-			Message:     "Witcher 3 menu mod fragments were detected. Vortex generates a profile-specific menu data mod from .part.txt files; DMM has not implemented that merge yet, so review menu/input settings before launching.",
-			ToolID:      "witcher3-menu-mod-merge",
-			ToolName:    "Witcher 3 menu mod merge",
-			ActionLabel: "Review menu settings",
 		})
 	}
 	return sdk.EventHandlerResult{Notices: notices}, nil

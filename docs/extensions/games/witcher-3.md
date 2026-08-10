@@ -20,11 +20,11 @@
 - Menu mod root, mixed mod/DLC, top-level mod, content-only, and DLC installer shapes are represented.
 - Script Merger is registered as a launch tool and blocked as a mod archive.
 - Basic managed `mods.settings` generation exists through an extension deploy hook.
-- Menu `.part.txt` fragments now create an extension-owned Action Center notice after deploy so users know Vortex-style profile menu-data generation is not complete yet.
+- Menu `.part.txt` fragments are merged by the Witcher 3 extension during `will-deploy`: DMM scans enabled `witcher3menumodroot` staging folders, ignores `input.xml` fragments like Vortex, merges fragment INI keys over the current or `.vortex_backup` Documents settings file, and returns restore-aware `patch-existing` mappings for files such as `input.settings`, `user.settings`, and `dx12user.settings`.
 
 ## Beta Gaps
 
-- Advanced menu XML/profile menu-data merge is incomplete.
+- Advanced menu XML merge and Vortex hidden menu-mod cache/adoption behavior are incomplete.
 - Script Merger setup and prompts are incomplete.
 - Manual load-order preservation and full load-order UI semantics are incomplete.
 - Collection/profile data behavior needs parity review.
