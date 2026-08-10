@@ -52,7 +52,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterTargetRoot(sdk.TargetRootSpec{
 		ID:       modsRootID,
 		Name:     "Prison Architect LocalAppData mods",
-		Resolver: targetroots.ProtonLocalAppData(SteamAppID, "Introversion", "Prison Architect", "mods"),
+		Resolver: modsRoot,
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRootID: modsRootID})
 	r.RegisterInstaller(installplan.InstallerSpec{
@@ -84,17 +84,38 @@ func Register(r sdk.Registrar) {
 		Status:   sdk.CapabilityStatusMetadata,
 		Message:  "Vortex source has a commented Steam launcher probe based on steam_api64.dll. DMM records the launcher fact without forcing a launch-option change.",
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "prisonarchitect-native-linux-mod-path",
-		Name:    "Prison Architect native Linux mod path verification",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex source uses a LocalAppData-derived mods path. DMM maps that to the Steam Deck Proton prefix; native Linux mod storage must be source-verified before enabling a separate native target root.",
-	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-prisonarchitect extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-prisonarchitect/src",
 	})
+	r.RegisterSource(sdk.SourceRef{
+		Name: "Prison Architect wiki Linux mod path",
+		URL:  "https://prisonarchitect.paradoxwikis.com/Modding",
+	})
+}
+
+func modsRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.TargetRootResult{}, err
+	}
+	gamePath := strings.TrimSpace(input.GamePath)
+	if gamePath != "" {
+		nativePath := filepath.Join(gamePath, linuxExecutable)
+		windowsPath := filepath.Join(gamePath, windowsExecutable)
+		if nativeInfo, err := os.Stat(nativePath); err == nil && !nativeInfo.IsDir() {
+			if windowsInfo, err := os.Stat(windowsPath); err != nil || windowsInfo.IsDir() {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return sdk.TargetRootResult{}, err
+				}
+				return sdk.TargetRootResult{
+					Path:   filepath.Join(home, ".Prison Architect", "mods"),
+					Source: "native Linux Prison Architect mod folder",
+				}, nil
+			}
+		}
+	}
+	return targetroots.ProtonLocalAppData(SteamAppID, "Introversion", "Prison Architect", "mods")(ctx, input)
 }
 
 func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {

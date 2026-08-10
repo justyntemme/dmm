@@ -141,7 +141,7 @@ Refreshed against `/tmp/dmm-vortex/extensions/games` on 2026-08-09.
 
 Remaining placeholder groups from direct source calls:
 
-- Dedicated source-backed `registerGame` ports with remaining blocked runtime gaps: `game-prisonarchitect` maps Vortex LocalAppData mod deployment to Proton LocalAppData and blocks native-Linux mod-path verification. `game-nehrim` now resolves Vortex's Nehrim-to-Oblivion cross-app install root through Steam app manifests and enables the `data` installer with copy deployment.
+- Dedicated source-backed `registerGame` ports with remaining blocked runtime gaps: `game-prisonarchitect` maps Vortex LocalAppData mod deployment to Proton LocalAppData and selects source-verified native Linux `~/.Prison Architect/mods` when the native executable is installed. `game-nehrim` now resolves Vortex's Nehrim-to-Oblivion cross-app install root through Steam app manifests and enables the `data` installer with copy deployment.
 - Documents/AppData `registerGame` entries promoted with shared DMM target-root support: `game-grimrock`, `game-sims3`, and `game-teso`.
 - Classic Gamebryo `registerGame` entries promoted with shared DMM Gamebryo support: `game-enderal`, `game-fallout3`, `game-oblivion`, and `game-skyrim`.
 - Static game-root `registerGame` entries already promoted: `game-darksouls`, `game-grimdawn`, `game-shadowrunreturns`, `game-starbound`, and `game-stateofdecay`.
