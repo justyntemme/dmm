@@ -311,6 +311,7 @@ CREATE TABLE IF NOT EXISTS captured_installs (
 	archive_path TEXT NOT NULL DEFAULT '',
 	archive_sha256 TEXT NOT NULL DEFAULT '',
 	archive_bytes INTEGER NOT NULL DEFAULT 0,
+	expected_archive_hashes_json TEXT NOT NULL DEFAULT '[]',
 	replace_installed_mod_id INTEGER NOT NULL DEFAULT 0,
 	replace_staging_path TEXT NOT NULL DEFAULT '',
 	target_profile_id INTEGER NOT NULL DEFAULT 0,

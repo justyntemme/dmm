@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 )
@@ -141,6 +143,7 @@ CREATE TABLE captured_installs (
 		{"captured_installs", "archive_path"},
 		{"captured_installs", "archive_sha256"},
 		{"captured_installs", "archive_bytes"},
+		{"captured_installs", "expected_archive_hashes_json"},
 		{"captured_installs", "replace_installed_mod_id"},
 		{"captured_installs", "replace_staging_path"},
 	} {
@@ -195,6 +198,62 @@ func TestSyncExtensionSnapshotsReplacesStoredSet(t *testing.T) {
 	}
 	if len(snapshots) != 1 || snapshots[0].ID != "fallout4" || snapshots[0].Version != "0.2.0" || snapshots[0].BuildID != "test-build" || snapshots[0].SteamAppIDsJSON != `["377160"]` {
 		t.Fatalf("snapshots = %+v", snapshots)
+	}
+}
+
+func TestCapturedInstallPersistsExpectedArchiveHashes(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+	if err := db.UpsertJob(context.Background(), jobs.Job{
+		ID:        "job-1",
+		Type:      "captured-install",
+		Title:     "Captured install",
+		Status:    jobs.StatusWaiting,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expected := []integrity.ExpectedHash{{
+		Algorithm: "MD5",
+		Value:     "77D57B2384172604E8D859E8BE4F7DF9",
+		Label:     "source archive",
+	}}
+	if err := db.SaveCapturedInstall(context.Background(), CapturedInstall{
+		JobID: "job-1",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			SourceURL:  "https://example.invalid/archive.7z",
+			SteamAppID: "292030",
+			GameDomain: "github",
+			ModID:      "IDCs/WitcherScriptMerger",
+			FileID:     "WitcherScriptMerger-0.6.5.7z",
+		},
+		Source:                "extension-tool",
+		ArchivePath:           "/tmp/archive.7z",
+		ExpectedArchiveHashes: expected,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pending, err := db.ListCapturedInstalls(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d", len(pending))
+	}
+	hashes := pending[0].ExpectedArchiveHashes
+	if len(hashes) != 1 {
+		t.Fatalf("hashes = %+v", hashes)
+	}
+	if hashes[0].Algorithm != integrity.AlgorithmMD5 || hashes[0].Value != "77d57b2384172604e8d859e8be4f7df9" || hashes[0].Label != "source archive" {
+		t.Fatalf("hash = %+v", hashes[0])
 	}
 }
 

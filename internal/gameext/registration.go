@@ -10,6 +10,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 type Registrar struct {
@@ -112,6 +113,13 @@ func (r *Registrar) RegisterModType(spec installplan.ModTypeSpec) {
 }
 
 func (r *Registrar) RegisterRuntimeRequirement(spec gamehandler.RuntimeRequirementSpec) {
+	if spec.Acquisition != nil {
+		acquisition := *spec.Acquisition
+		acquisition.ExpectedArchiveHashes = integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		)
+		spec.Acquisition = &acquisition
+	}
 	r.extension.RuntimeRequirements.RuntimeRequirements = append(r.extension.RuntimeRequirements.RuntimeRequirements, spec)
 }
 
@@ -136,6 +144,13 @@ func (r *Registrar) RegisterLaunchOptionRequirement(spec sdk.LaunchOptionRequire
 func (r *Registrar) RegisterSupportedTool(spec sdk.SupportedToolSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
+	}
+	if spec.Acquisition != nil {
+		acquisition := *spec.Acquisition
+		acquisition.ExpectedArchiveHashes = integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		)
+		spec.Acquisition = &acquisition
 	}
 	r.extension.SupportedTools = append(r.extension.SupportedTools, spec)
 }
@@ -996,6 +1011,7 @@ func validateRuntimeAcquisition(requirementID string, spec gamehandler.RuntimeAc
 	if strings.TrimSpace(spec.Catalog) == "" {
 		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition catalog is required"))
 	}
+	errs = append(errs, integrity.ValidateExpectedHashes("runtime requirement "+requirementID+" acquisition", spec.ExpectedArchiveHashes)...)
 	errs = append(errs, validateAcquisitionSource("runtime requirement "+requirementID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
 	for _, value := range []struct {
 		label string
@@ -1453,6 +1469,7 @@ func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []erro
 	if strings.TrimSpace(spec.Catalog) == "" {
 		errs = append(errs, errors.New("supported tool "+toolID+" acquisition catalog is required"))
 	}
+	errs = append(errs, integrity.ValidateExpectedHashes("supported tool "+toolID+" acquisition", spec.ExpectedArchiveHashes)...)
 	errs = append(errs, validateAcquisitionSource("supported tool "+toolID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
 	for _, value := range []struct {
 		label string

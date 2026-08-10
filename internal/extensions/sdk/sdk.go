@@ -8,6 +8,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 type Extension struct {
@@ -290,20 +291,21 @@ type SupportedToolVariantSpec struct {
 }
 
 type ToolAcquisitionSpec struct {
-	ID             string
-	Name           string
-	Catalog        string
-	Mode           string
-	URL            string
-	ArchiveName    string
-	Instructions   string
-	Required       bool
-	AutoAcquire    bool
-	SourceModID    string
-	SourceFileID   string
-	SourceGame     string
-	SourceProvider string
-	Message        string
+	ID                    string
+	Name                  string
+	Catalog               string
+	Mode                  string
+	URL                   string
+	ArchiveName           string
+	Instructions          string
+	ExpectedArchiveHashes []integrity.ExpectedHash
+	Required              bool
+	AutoAcquire           bool
+	SourceModID           string
+	SourceFileID          string
+	SourceGame            string
+	SourceProvider        string
+	Message               string
 }
 
 type LauncherRequirementSpec struct {

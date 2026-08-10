@@ -14,6 +14,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
 
@@ -65,23 +66,24 @@ type toolVariant struct {
 }
 
 type toolAcquisition struct {
-	ID                 string `json:"id,omitempty"`
-	Name               string `json:"name,omitempty"`
-	Version            string `json:"version,omitempty"`
-	Catalog            string `json:"catalog,omitempty"`
-	Mode               string `json:"mode,omitempty"`
-	URL                string `json:"url,omitempty"`
-	ArchiveName        string `json:"archive_name,omitempty"`
-	LatestAssetPattern string `json:"latest_asset_pattern,omitempty"`
-	VersionConstraint  string `json:"version_constraint,omitempty"`
-	Instructions       string `json:"instructions,omitempty"`
-	Required           bool   `json:"required,omitempty"`
-	AutoAcquire        bool   `json:"auto_acquire,omitempty"`
-	SourceModID        string `json:"source_mod_id,omitempty"`
-	SourceFileID       string `json:"source_file_id,omitempty"`
-	SourceGame         string `json:"source_game,omitempty"`
-	SourceProvider     string `json:"source_provider,omitempty"`
-	Message            string `json:"message,omitempty"`
+	ID                    string                   `json:"id,omitempty"`
+	Name                  string                   `json:"name,omitempty"`
+	Version               string                   `json:"version,omitempty"`
+	Catalog               string                   `json:"catalog,omitempty"`
+	Mode                  string                   `json:"mode,omitempty"`
+	URL                   string                   `json:"url,omitempty"`
+	ArchiveName           string                   `json:"archive_name,omitempty"`
+	LatestAssetPattern    string                   `json:"latest_asset_pattern,omitempty"`
+	VersionConstraint     string                   `json:"version_constraint,omitempty"`
+	Instructions          string                   `json:"instructions,omitempty"`
+	ExpectedArchiveHashes []integrity.ExpectedHash `json:"expected_archive_hashes,omitempty"`
+	Required              bool                     `json:"required,omitempty"`
+	AutoAcquire           bool                     `json:"auto_acquire,omitempty"`
+	SourceModID           string                   `json:"source_mod_id,omitempty"`
+	SourceFileID          string                   `json:"source_file_id,omitempty"`
+	SourceGame            string                   `json:"source_game,omitempty"`
+	SourceProvider        string                   `json:"source_provider,omitempty"`
+	Message               string                   `json:"message,omitempty"`
 }
 
 type scopedPurgeResult struct {
@@ -230,13 +232,16 @@ func discoveredToolAcquisition(acquisition *gameext.ToolAcquisitionSpec) *toolAc
 		return nil
 	}
 	return &toolAcquisition{
-		ID:             strings.TrimSpace(acquisition.ID),
-		Name:           strings.TrimSpace(acquisition.Name),
-		Catalog:        strings.TrimSpace(acquisition.Catalog),
-		Mode:           strings.TrimSpace(acquisition.Mode),
-		URL:            strings.TrimSpace(acquisition.URL),
-		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
-		Instructions:   strings.TrimSpace(acquisition.Instructions),
+		ID:           strings.TrimSpace(acquisition.ID),
+		Name:         strings.TrimSpace(acquisition.Name),
+		Catalog:      strings.TrimSpace(acquisition.Catalog),
+		Mode:         strings.TrimSpace(acquisition.Mode),
+		URL:          strings.TrimSpace(acquisition.URL),
+		ArchiveName:  strings.TrimSpace(acquisition.ArchiveName),
+		Instructions: strings.TrimSpace(acquisition.Instructions),
+		ExpectedArchiveHashes: integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		),
 		Required:       acquisition.Required,
 		AutoAcquire:    acquisition.AutoAcquire,
 		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
@@ -262,13 +267,16 @@ func discoveredRuntimeAcquisition(acquisition *gamehandler.RuntimeAcquisitionSpe
 		LatestAssetPattern: strings.TrimSpace(acquisition.LatestAssetPattern),
 		VersionConstraint:  strings.TrimSpace(acquisition.VersionConstraint),
 		Instructions:       strings.TrimSpace(acquisition.Instructions),
-		Required:           acquisition.Required,
-		AutoAcquire:        acquisition.AutoAcquire,
-		SourceModID:        strings.TrimSpace(acquisition.SourceModID),
-		SourceFileID:       strings.TrimSpace(acquisition.SourceFileID),
-		SourceGame:         strings.TrimSpace(acquisition.SourceGame),
-		SourceProvider:     strings.TrimSpace(acquisition.SourceProvider),
-		Message:            strings.TrimSpace(acquisition.Message),
+		ExpectedArchiveHashes: integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		),
+		Required:       acquisition.Required,
+		AutoAcquire:    acquisition.AutoAcquire,
+		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
+		SourceFileID:   strings.TrimSpace(acquisition.SourceFileID),
+		SourceGame:     strings.TrimSpace(acquisition.SourceGame),
+		SourceProvider: strings.TrimSpace(acquisition.SourceProvider),
+		Message:        strings.TrimSpace(acquisition.Message),
 	}
 }
 

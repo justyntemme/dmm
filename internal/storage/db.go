@@ -13,6 +13,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/nexus"
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/events"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	_ "modernc.org/sqlite"
@@ -200,6 +201,7 @@ type CapturedInstall struct {
 	ArchivePath           string                   `json:"archive_path"`
 	ArchiveSHA256         string                   `json:"archive_sha256"`
 	ArchiveBytes          int64                    `json:"archive_bytes"`
+	ExpectedArchiveHashes []integrity.ExpectedHash `json:"expected_archive_hashes"`
 	ReplaceInstalledModID int64                    `json:"replace_installed_mod_id"`
 	ReplaceStagingPath    string                   `json:"replace_staging_path"`
 	TargetProfileID       int64                    `json:"target_profile_id"`
@@ -321,6 +323,7 @@ func (db *DB) applyAdditiveMigrations(ctx context.Context) error {
 		{table: "captured_installs", name: "archive_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_sha256", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "archive_bytes", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "captured_installs", name: "expected_archive_hashes_json", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "captured_installs", name: "replace_installed_mod_id", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "captured_installs", name: "replace_staging_path", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "captured_installs", name: "target_profile_id", definition: "INTEGER NOT NULL DEFAULT 0"},
@@ -1021,9 +1024,13 @@ func (db *DB) SaveCapturedInstall(ctx context.Context, pending CapturedInstall) 
 	if err != nil {
 		return err
 	}
+	expectedHashes, err := json.Marshal(integrity.NormalizeExpectedHashes(pending.ExpectedArchiveHashes))
+	if err != nil {
+		return err
+	}
 	_, err = db.conn.ExecContext(ctx, `
-INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, replace_installed_mod_id, replace_staging_path, target_profile_id, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO captured_installs (job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, expected_archive_hashes_json, replace_installed_mod_id, replace_staging_path, target_profile_id, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(job_id) DO UPDATE SET
 	resolved_json = excluded.resolved_json,
 	download_links_json = excluded.download_links_json,
@@ -1032,17 +1039,18 @@ ON CONFLICT(job_id) DO UPDATE SET
 	archive_path = excluded.archive_path,
 	archive_sha256 = excluded.archive_sha256,
 	archive_bytes = excluded.archive_bytes,
+	expected_archive_hashes_json = excluded.expected_archive_hashes_json,
 	replace_installed_mod_id = excluded.replace_installed_mod_id,
 	replace_staging_path = excluded.replace_staging_path,
 	target_profile_id = excluded.target_profile_id,
 	updated_at = CURRENT_TIMESTAMP
-`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchiveFileName, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes, pending.ReplaceInstalledModID, pending.ReplaceStagingPath, pending.TargetProfileID)
+`, pending.JobID, string(resolved), string(links), pending.Source, pending.ArchiveFileName, pending.ArchivePath, pending.ArchiveSHA256, pending.ArchiveBytes, string(expectedHashes), pending.ReplaceInstalledModID, pending.ReplaceStagingPath, pending.TargetProfileID)
 	return err
 }
 
 func (db *DB) ListCapturedInstalls(ctx context.Context) ([]CapturedInstall, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, replace_installed_mod_id, replace_staging_path, target_profile_id
+SELECT job_id, resolved_json, download_links_json, source, archive_file_name, archive_path, archive_sha256, archive_bytes, expected_archive_hashes_json, replace_installed_mod_id, replace_staging_path, target_profile_id
 FROM captured_installs
 ORDER BY updated_at DESC, created_at DESC
 `)
@@ -1053,8 +1061,8 @@ ORDER BY updated_at DESC, created_at DESC
 	var out []CapturedInstall
 	for rows.Next() {
 		var pending CapturedInstall
-		var resolved, links string
-		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchiveFileName, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes, &pending.ReplaceInstalledModID, &pending.ReplaceStagingPath, &pending.TargetProfileID); err != nil {
+		var resolved, links, expectedHashes string
+		if err := rows.Scan(&pending.JobID, &resolved, &links, &pending.Source, &pending.ArchiveFileName, &pending.ArchivePath, &pending.ArchiveSHA256, &pending.ArchiveBytes, &expectedHashes, &pending.ReplaceInstalledModID, &pending.ReplaceStagingPath, &pending.TargetProfileID); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(resolved), &pending.Resolved); err != nil {
@@ -1062,6 +1070,12 @@ ORDER BY updated_at DESC, created_at DESC
 		}
 		if err := json.Unmarshal([]byte(links), &pending.DownloadLinks); err != nil {
 			return nil, err
+		}
+		if strings.TrimSpace(expectedHashes) != "" {
+			if err := json.Unmarshal([]byte(expectedHashes), &pending.ExpectedArchiveHashes); err != nil {
+				return nil, err
+			}
+			pending.ExpectedArchiveHashes = integrity.NormalizeExpectedHashes(pending.ExpectedArchiveHashes)
 		}
 		out = append(out, pending)
 	}

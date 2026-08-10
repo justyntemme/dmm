@@ -46,6 +46,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -92,6 +93,7 @@ type capturedInstall struct {
 	ArchivePath            string
 	ArchiveSHA256          string
 	ArchiveBytes           int64
+	ExpectedArchiveHashes  []integrity.ExpectedHash
 	ReplaceInstalledModID  int64
 	ReplaceStagingPath     string
 	TargetProfileID        int64
@@ -261,6 +263,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			ArchivePath:           pending.ArchivePath,
 			ArchiveSHA256:         pending.ArchiveSHA256,
 			ArchiveBytes:          pending.ArchiveBytes,
+			ExpectedArchiveHashes: pending.ExpectedArchiveHashes,
 			ReplaceInstalledModID: pending.ReplaceInstalledModID,
 			ReplaceStagingPath:    pending.ReplaceStagingPath,
 			TargetProfileID:       pending.TargetProfileID,
@@ -5600,10 +5603,11 @@ func (s *Server) handleAcquireExtensionTool(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
-		URL:        acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
-		SteamAppID: appID,
-		Source:     "extension-tool-acquisition:" + strings.TrimSpace(tool.ID),
-		ProfileID:  req.ProfileID,
+		URL:                   acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID:            appID,
+		Source:                "extension-tool-acquisition:" + strings.TrimSpace(tool.ID),
+		ProfileID:             req.ProfileID,
+		ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 	})
 	if err != nil {
 		s.logger.Warn("extension tool acquisition failed", "app_id", appID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
@@ -5697,10 +5701,11 @@ func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.
 		}
 	}
 	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
-		URL:        runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
-		SteamAppID: appID,
-		Source:     "runtime-requirement-acquisition:" + strings.TrimSpace(requirement.ID),
-		ProfileID:  req.ProfileID,
+		URL:                   runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID:            appID,
+		Source:                "runtime-requirement-acquisition:" + strings.TrimSpace(requirement.ID),
+		ProfileID:             req.ProfileID,
+		ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 	})
 	if err != nil {
 		s.logger.Warn("runtime requirement acquisition failed", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
@@ -5876,10 +5881,11 @@ func (s *Server) autoAcquireExtensionTools(ctx context.Context, appID, source st
 			continue
 		}
 		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
-			URL:        acquisitionURL,
-			SteamAppID: appID,
-			Source:     "extension-tool-auto-acquire:" + strings.TrimSpace(tool.ID),
-			ProfileID:  profileID,
+			URL:                   acquisitionURL,
+			SteamAppID:            appID,
+			Source:                "extension-tool-auto-acquire:" + strings.TrimSpace(tool.ID),
+			ProfileID:             profileID,
+			ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 		})
 		if err != nil {
 			response.Error = err.Error()
@@ -5965,10 +5971,11 @@ func (s *Server) autoAcquireExtensionRuntimes(ctx context.Context, appID, source
 			continue
 		}
 		result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
-			URL:        acquisitionURL,
-			SteamAppID: appID,
-			Source:     "extension-runtime-auto-acquire:" + requirementID,
-			ProfileID:  profileID,
+			URL:                   acquisitionURL,
+			SteamAppID:            appID,
+			Source:                "extension-runtime-auto-acquire:" + requirementID,
+			ProfileID:             profileID,
+			ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 		})
 		if err != nil {
 			response.Error = err.Error()
@@ -6018,6 +6025,7 @@ func (s *Server) queueRuntimeProviderUpdateIfNeeded(ctx context.Context, appID s
 		SteamAppID:            appID,
 		Source:                "extension-runtime-auto-update:" + requirementID,
 		ProfileID:             targetProfileID,
+		ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 		ReplaceInstalledModID: providerMod.ID,
 		ReplaceStagingPath:    providerMod.StagingPath,
 	})
@@ -7000,10 +7008,11 @@ func (s *Server) runAcquireToolExtensionAction(ctx context.Context, appID string
 		return nil, err
 	}
 	result, err := s.createCapturedInstall(ctx, capturedInstallURLRequest{
-		URL:        acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
-		SteamAppID: appID,
-		Source:     "extension-action:" + strings.TrimSpace(action.ID) + ":tool-acquisition:" + strings.TrimSpace(tool.ID),
-		ProfileID:  profileID,
+		URL:                   acquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		SteamAppID:            appID,
+		Source:                "extension-action:" + strings.TrimSpace(action.ID) + ":tool-acquisition:" + strings.TrimSpace(tool.ID),
+		ProfileID:             profileID,
+		ExpectedArchiveHashes: acquisition.ExpectedArchiveHashes,
 	})
 	if err != nil {
 		s.logger.Warn("extension action tool acquisition failed", "app_id", appID, "action_id", action.ID, "tool_id", tool.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
@@ -12049,12 +12058,13 @@ func (s *Server) handleClearCapturedInstalls(w http.ResponseWriter, r *http.Requ
 }
 
 type capturedInstallURLRequest struct {
-	URL                   string `json:"url"`
-	SteamAppID            string `json:"steam_app_id"`
-	Source                string `json:"source"`
-	ProfileID             int64  `json:"profile_id,omitempty"`
-	ReplaceInstalledModID int64  `json:"-"`
-	ReplaceStagingPath    string `json:"-"`
+	URL                   string                   `json:"url"`
+	SteamAppID            string                   `json:"steam_app_id"`
+	Source                string                   `json:"source"`
+	ProfileID             int64                    `json:"profile_id,omitempty"`
+	ExpectedArchiveHashes []integrity.ExpectedHash `json:"-"`
+	ReplaceInstalledModID int64                    `json:"-"`
+	ReplaceStagingPath    string                   `json:"-"`
 }
 
 type capturedInstallBulkRequest struct {
@@ -13064,6 +13074,7 @@ func (s *Server) handleCapturedInstall(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallURLRequest) (capturedInstallResponse, error) {
 	req.URL = strings.TrimSpace(req.URL)
+	req.ExpectedArchiveHashes = integrity.NormalizeExpectedHashes(req.ExpectedArchiveHashes)
 	if req.URL == "" {
 		return capturedInstallResponse{}, errors.New("url is required")
 	}
@@ -13094,6 +13105,7 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 		"target_profile_id", req.ProfileID,
 	)
 	if job, pending, ok := s.findCapturedInstall(resolved); ok {
+		pending.ExpectedArchiveHashes = mergeExpectedHashes(pending.ExpectedArchiveHashes, req.ExpectedArchiveHashes)
 		if req.ProfileID > 0 && pending.TargetProfileID != req.ProfileID {
 			pending.TargetProfileID = req.ProfileID
 			s.logger.Info("captured install duplicate target profile updated", "job_id", job.ID, "target_profile_id", req.ProfileID)
@@ -13152,6 +13164,7 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 			DownloadLinks:         resolved.DownloadLinks,
 			Source:                source,
 			ArchiveFileName:       resolved.FileName,
+			ExpectedArchiveHashes: req.ExpectedArchiveHashes,
 			ReplaceInstalledModID: req.ReplaceInstalledModID,
 			ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
 			TargetProfileID:       req.ProfileID,
@@ -13213,6 +13226,7 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 			DownloadLinks:         links,
 			Source:                source,
 			ArchiveFileName:       archiveFileName,
+			ExpectedArchiveHashes: req.ExpectedArchiveHashes,
 			ReplaceInstalledModID: req.ReplaceInstalledModID,
 			ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
 			TargetProfileID:       req.ProfileID,
@@ -13237,6 +13251,7 @@ func (s *Server) createCapturedInstall(ctx context.Context, req capturedInstallU
 	s.rememberCapturedInstall(job.ID, capturedInstall{
 		Resolved:              resolved,
 		Source:                source,
+		ExpectedArchiveHashes: req.ExpectedArchiveHashes,
 		ReplaceInstalledModID: req.ReplaceInstalledModID,
 		ReplaceStagingPath:    strings.TrimSpace(req.ReplaceStagingPath),
 		TargetProfileID:       req.ProfileID,
@@ -13293,6 +13308,15 @@ func capturedInstallIsActive(status jobs.Status) bool {
 	default:
 		return false
 	}
+}
+
+func mergeExpectedHashes(existing, incoming []integrity.ExpectedHash) []integrity.ExpectedHash {
+	if len(incoming) == 0 {
+		return integrity.NormalizeExpectedHashes(existing)
+	}
+	merged := append([]integrity.ExpectedHash(nil), existing...)
+	merged = append(merged, incoming...)
+	return integrity.NormalizeExpectedHashes(merged)
 }
 
 func (s *Server) resolveCatalogURL(ctx context.Context, req catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
@@ -13513,6 +13537,24 @@ func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.J
 	if !ok {
 		return jobs.Job{}, errCapturedInstallJobNotFound
 	}
+	result := pending.downloadResult()
+	if err := s.verifyCapturedInstallArchive(jobID, pending, result); err != nil {
+		s.logger.Warn(
+			"captured install cached archive verification failed",
+			"job_id", jobID,
+			"catalog", pending.Resolved.Catalog,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"archive_path", pending.ArchivePath,
+			"archive_sha256", pending.ArchiveSHA256,
+			"error", err,
+		)
+		if failed, ok := s.jobs.Fail(jobID, err.Error()); ok {
+			return failed, nil
+		}
+		return jobs.Job{}, errCapturedInstallJobNotFound
+	}
 	s.logger.Info(
 		"captured install install confirmed",
 		"job_id", jobID,
@@ -13531,7 +13573,7 @@ func (s *Server) startCapturedInstallInstall(jobID, actionSource string) (jobs.J
 	s.trackActiveJob(jobID, cancel)
 	go func() {
 		defer s.untrackActiveJob(jobID)
-		s.installCapturedInstall(ctx, jobID, pending, pending.downloadResult(), actionSource)
+		s.installCapturedInstall(ctx, jobID, pending, result, actionSource)
 	}()
 	return job, nil
 }
@@ -13574,6 +13616,7 @@ func (s *Server) rememberCapturedInstall(jobID string, pending capturedInstall) 
 		ArchivePath:           pending.ArchivePath,
 		ArchiveSHA256:         pending.ArchiveSHA256,
 		ArchiveBytes:          pending.ArchiveBytes,
+		ExpectedArchiveHashes: pending.ExpectedArchiveHashes,
 		ReplaceInstalledModID: pending.ReplaceInstalledModID,
 		ReplaceStagingPath:    pending.ReplaceStagingPath,
 		TargetProfileID:       pending.TargetProfileID,
@@ -13667,6 +13710,21 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		s.jobs.Fail(jobID, err.Error())
 		return
 	}
+	if err := s.verifyCapturedInstallArchive(jobID, pending, result); err != nil {
+		s.logger.Warn(
+			"captured install archive verification failed",
+			"job_id", jobID,
+			"catalog", pending.Resolved.Catalog,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"path", result.Path,
+			"archive_sha256", result.SHA256,
+			"error", err,
+		)
+		s.jobs.Fail(jobID, err.Error())
+		return
+	}
 	s.logger.Info(
 		"captured install downloaded",
 		"job_id", jobID,
@@ -13700,6 +13758,32 @@ func (s *Server) downloadCapturedInstall(ctx context.Context, jobID string, pend
 		return
 	}
 	s.installCapturedInstall(ctx, jobID, pending, result, "auto-install captured download")
+}
+
+func (s *Server) verifyCapturedInstallArchive(jobID string, pending capturedInstall, result download.Result) error {
+	expected := integrity.NormalizeExpectedHashes(pending.ExpectedArchiveHashes)
+	if len(expected) == 0 {
+		return nil
+	}
+	results, err := integrity.VerifyFile(result.Path, expected)
+	for _, verified := range results {
+		s.logger.Info(
+			"captured install archive hash checked",
+			"job_id", jobID,
+			"catalog", pending.Resolved.Catalog,
+			"game_domain", pending.Resolved.GameDomain,
+			"mod_id", pending.Resolved.ModID,
+			"file_id", pending.Resolved.FileID,
+			"algorithm", verified.Expected.Algorithm,
+			"label", verified.Expected.Label,
+			"actual", verified.Actual,
+			"expected", verified.Expected.Value,
+		)
+	}
+	if err != nil {
+		return errors.New("downloaded archive failed source integrity validation: " + err.Error())
+	}
+	return nil
 }
 
 func capturedInstallDownloadedMessage(name string, pending capturedInstall) string {

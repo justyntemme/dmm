@@ -3,6 +3,7 @@ package witcher3
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 const (
@@ -18,6 +19,9 @@ const (
 	scriptMergerToolModType = "witcher3-script-merger-tool"
 	scriptMergerGitHubURL   = "https://github.com/IDCs/WitcherScriptMerger/releases/latest"
 	scriptMergerArchiveName = "WitcherScriptMerger-0.6.5.7z"
+	scriptMergerVersion     = "0.6.5"
+	// Vortex game-witcher3/assets/MD5Cache.json pins the downloaded Script Merger archive.
+	scriptMergerArchiveMD5 = "77D57B2384172604E8D859E8BE4F7DF9"
 )
 
 func Extension() sdk.Extension {
@@ -73,7 +77,12 @@ func Register(r sdk.Registrar) {
 			SourceModID:    "IDCs/WitcherScriptMerger",
 			SourceGame:     "github",
 			SourceProvider: "vortex-game-witcher3",
-			Message:        "Witcher 3 script mods may need Script Merger after deployment. DMM acquires the source-verified GitHub release through the shared managed-tool pipeline.",
+			ExpectedArchiveHashes: []integrity.ExpectedHash{{
+				Algorithm: integrity.AlgorithmMD5,
+				Value:     scriptMergerArchiveMD5,
+				Label:     "Witcher 3 Script Merger archive " + scriptMergerVersion,
+			}},
+			Message: "Witcher 3 script mods may need Script Merger after deployment. DMM acquires the source-verified GitHub release through the shared managed-tool pipeline.",
 		},
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{

@@ -127,6 +127,9 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	if tool == nil || tool.Acquisition == nil || tool.Acquisition.Catalog != "github" || !tool.Acquisition.AutoAcquire {
 		t.Fatalf("script merger tool = %+v", tool)
 	}
+	if len(tool.Acquisition.ExpectedArchiveHashes) != 1 || tool.Acquisition.ExpectedArchiveHashes[0].Algorithm != "md5" || tool.Acquisition.ExpectedArchiveHashes[0].Value != "77d57b2384172604e8d859e8be4f7df9" {
+		t.Fatalf("script merger expected archive hashes = %+v", tool.Acquisition.ExpectedArchiveHashes)
+	}
 	action := extensionActionByID(compiled.ExtensionActions, "witcher3-install-script-merger")
 	if action == nil || action.Kind != sdk.ExtensionActionKindAcquireTool || action.AcquireTool == nil || action.AcquireTool.ToolID != "W3ScriptMerger" {
 		t.Fatalf("script merger action = %+v", action)

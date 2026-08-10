@@ -13,6 +13,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
 
 type Extension struct {
@@ -361,19 +362,20 @@ type ActionTargetSummary struct {
 }
 
 type ToolAcquisitionSummary struct {
-	ID             string `json:"id,omitempty"`
-	Name           string `json:"name,omitempty"`
-	Version        string `json:"version,omitempty"`
-	Catalog        string `json:"catalog,omitempty"`
-	URL            string `json:"url,omitempty"`
-	ArchiveName    string `json:"archive_name,omitempty"`
-	Required       bool   `json:"required,omitempty"`
-	AutoAcquire    bool   `json:"auto_acquire,omitempty"`
-	SourceModID    string `json:"source_mod_id,omitempty"`
-	SourceFileID   string `json:"source_file_id,omitempty"`
-	SourceGame     string `json:"source_game,omitempty"`
-	SourceProvider string `json:"source_provider,omitempty"`
-	Message        string `json:"message,omitempty"`
+	ID                    string                   `json:"id,omitempty"`
+	Name                  string                   `json:"name,omitempty"`
+	Version               string                   `json:"version,omitempty"`
+	Catalog               string                   `json:"catalog,omitempty"`
+	URL                   string                   `json:"url,omitempty"`
+	ArchiveName           string                   `json:"archive_name,omitempty"`
+	ExpectedArchiveHashes []integrity.ExpectedHash `json:"expected_archive_hashes,omitempty"`
+	Required              bool                     `json:"required,omitempty"`
+	AutoAcquire           bool                     `json:"auto_acquire,omitempty"`
+	SourceModID           string                   `json:"source_mod_id,omitempty"`
+	SourceFileID          string                   `json:"source_file_id,omitempty"`
+	SourceGame            string                   `json:"source_game,omitempty"`
+	SourceProvider        string                   `json:"source_provider,omitempty"`
+	Message               string                   `json:"message,omitempty"`
 }
 
 type LauncherParameter struct {
@@ -2452,11 +2454,14 @@ func toolAcquisitionSummary(acquisition *sdk.ToolAcquisitionSpec) *ToolAcquisiti
 		return nil
 	}
 	return &ToolAcquisitionSummary{
-		ID:             strings.TrimSpace(acquisition.ID),
-		Name:           strings.TrimSpace(acquisition.Name),
-		Catalog:        strings.TrimSpace(acquisition.Catalog),
-		URL:            strings.TrimSpace(acquisition.URL),
-		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		ID:          strings.TrimSpace(acquisition.ID),
+		Name:        strings.TrimSpace(acquisition.Name),
+		Catalog:     strings.TrimSpace(acquisition.Catalog),
+		URL:         strings.TrimSpace(acquisition.URL),
+		ArchiveName: strings.TrimSpace(acquisition.ArchiveName),
+		ExpectedArchiveHashes: integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		),
 		Required:       acquisition.Required,
 		AutoAcquire:    acquisition.AutoAcquire,
 		SourceModID:    strings.TrimSpace(acquisition.SourceModID),
@@ -2472,12 +2477,15 @@ func runtimeAcquisitionSummary(acquisition *gamehandler.RuntimeAcquisitionSpec) 
 		return nil
 	}
 	return &ToolAcquisitionSummary{
-		ID:             strings.TrimSpace(acquisition.ID),
-		Name:           strings.TrimSpace(acquisition.Name),
-		Version:        strings.TrimSpace(acquisition.Version),
-		Catalog:        strings.TrimSpace(acquisition.Catalog),
-		URL:            strings.TrimSpace(acquisition.URL),
-		ArchiveName:    strings.TrimSpace(acquisition.ArchiveName),
+		ID:          strings.TrimSpace(acquisition.ID),
+		Name:        strings.TrimSpace(acquisition.Name),
+		Version:     strings.TrimSpace(acquisition.Version),
+		Catalog:     strings.TrimSpace(acquisition.Catalog),
+		URL:         strings.TrimSpace(acquisition.URL),
+		ArchiveName: strings.TrimSpace(acquisition.ArchiveName),
+		ExpectedArchiveHashes: integrity.NormalizeExpectedHashes(
+			append([]integrity.ExpectedHash(nil), acquisition.ExpectedArchiveHashes...),
+		),
 		Required:       acquisition.Required,
 		AutoAcquire:    acquisition.AutoAcquire,
 		SourceModID:    strings.TrimSpace(acquisition.SourceModID),

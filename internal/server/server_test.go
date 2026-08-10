@@ -47,6 +47,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/games"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
@@ -130,6 +131,39 @@ func TestUpdateInstallSettingsPersistsInstallBehaviorDefaults(t *testing.T) {
 	}
 	if !saved.Install.AutoShowFOMODInstallers {
 		t.Fatal("auto_show_fomod_installers was not persisted")
+	}
+}
+
+func TestVerifyCapturedInstallArchiveChecksExpectedHashes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "archive.zip")
+	if err := os.WriteFile(path, []byte("source archive"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	pending := capturedInstall{
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "github",
+			GameDomain: "github",
+			ModID:      "example/tool",
+			FileID:     "archive.zip",
+		},
+		ExpectedArchiveHashes: []integrity.ExpectedHash{{
+			Algorithm: integrity.AlgorithmSHA256,
+			Value:     "6ad189ace456a83fade855d5a647cd8ad9e7966da4404b1187218dca3d9eddaa",
+			Label:     "tool archive",
+		}},
+	}
+	if err := srv.verifyCapturedInstallArchive("job-1", pending, download.Result{Path: path}); err != nil {
+		t.Fatal(err)
+	}
+
+	pending.ExpectedArchiveHashes[0].Value = strings.Repeat("0", 64)
+	err := srv.verifyCapturedInstallArchive("job-1", pending, download.Result{Path: path})
+	if err == nil {
+		t.Fatal("expected integrity mismatch")
+	}
+	if !strings.Contains(err.Error(), "source integrity validation") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
