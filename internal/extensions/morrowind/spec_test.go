@@ -29,6 +29,9 @@ func TestExtensionRegistersMorrowindCapabilities(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 2 {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
 	}
+	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("collection features = %+v", summary.Capabilities.CollectionFeatures)
+	}
 }
 
 func TestDataRootInstallerTargetsDataFiles(t *testing.T) {

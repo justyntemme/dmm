@@ -26,6 +26,9 @@ func TestExtensionRegistersKCDCapabilities(t *testing.T) {
 		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventDidPurge) {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
 	}
+	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("collection features = %+v", summary.Capabilities.CollectionFeatures)
+	}
 }
 
 func TestDefaultInstallerTargetsModsFolder(t *testing.T) {

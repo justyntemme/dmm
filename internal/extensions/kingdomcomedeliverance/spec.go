@@ -97,13 +97,13 @@ func Register(r sdk.Registrar) {
 		Name:    "Kingdom Come Load Order",
 		Scope:   "game",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM exposes mod_order.txt order through generic extension load-order profile controls. Vortex collection import/export remains tracked as a separate blocked collection feature.",
+		Message: "DMM exposes mod_order.txt order through generic extension load-order profile controls. Collection import/export uses the generic DMM profile collection runtime.",
 	})
 	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
 		ID:      "kingdomcomedeliverance-collection-data",
 		Name:    "Kingdom Come collection data",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex serializes Kingdom Come load-order collection data; DMM needs collection import/export runtime before this feature can run.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex serializes Kingdom Come load-order collection data; DMM exports and imports installed profile mod identity, enabled state, and order through the generic profile collection runtime.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

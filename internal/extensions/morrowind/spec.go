@@ -97,13 +97,13 @@ func Register(r sdk.Registrar) {
 		Name:    "Morrowind Plugins",
 		Scope:   "game",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "DMM exposes managed Morrowind.ini plugin order through generic extension load-order profile controls. Vortex filesystem watcher state and collection import/export remain separate blocked parity items.",
+		Message: "DMM exposes managed Morrowind.ini plugin order through generic extension load-order profile controls. Collection import/export uses the generic DMM profile collection runtime; filesystem watcher state remains separate metadata.",
 	})
 	r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{
 		ID:      "morrowind-collection-data",
 		Name:    "Morrowind collection load order",
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "Vortex serializes Morrowind load-order collection data; DMM needs collection import/export runtime before this feature can run.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex serializes Morrowind load-order collection data; DMM exports and imports installed profile mod identity, enabled state, and order through the generic profile collection runtime.",
 	})
 	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
 		ID:      "morrowind-plugin-list",

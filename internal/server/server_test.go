@@ -5422,6 +5422,93 @@ func TestExternalModAdoptionListsAndImportsUnmanagedFiles(t *testing.T) {
 	}
 }
 
+func TestProfileCollectionExportImportAppliesModState(t *testing.T) {
+	srv := newTestServer(t)
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:      "413150",
+		Name:       "Stardew Valley",
+		InstallDir: "Stardew Valley",
+		Path:       filepath.Join(t.TempDir(), "Stardew Valley"),
+		State:      "installed",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), "413150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), game.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileID := profiles[0].ID
+	disabled := false
+	first, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:      "413150",
+		Resolved:        catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "stardewvalley", ModID: "first", FileID: "1", FileName: "First.zip"},
+		Name:            "First",
+		StagingPath:     filepath.Join(t.TempDir(), "first"),
+		ManifestJSON:    `{"files":[]}`,
+		TargetProfileID: profileID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:      "413150",
+		Resolved:        catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "stardewvalley", ModID: "second", FileID: "1", FileName: "Second.zip"},
+		Name:            "Second",
+		StagingPath:     filepath.Join(t.TempDir(), "second"),
+		ManifestJSON:    `{"files":[]}`,
+		DefaultEnabled:  &disabled,
+		TargetProfileID: profileID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileModOrder(context.Background(), profileID, []int64{first.ID, second.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/collection", nil)
+	exportReq.RemoteAddr = "127.0.0.1:1"
+	exportRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(exportRec, exportReq)
+	if exportRec.Code != http.StatusOK {
+		t.Fatalf("export status = %d, body = %s", exportRec.Code, exportRec.Body.String())
+	}
+	var snapshot profileCollectionSnapshot
+	if err := json.Unmarshal(exportRec.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Mods) != 2 || !snapshot.Mods[0].Enabled || snapshot.Mods[1].Enabled {
+		t.Fatalf("snapshot = %+v", snapshot)
+	}
+	snapshot.Mods[0], snapshot.Mods[1] = snapshot.Mods[1], snapshot.Mods[0]
+	snapshot.Mods[0].Enabled = true
+	snapshot.Mods[1].Enabled = false
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/profiles/"+strconv.FormatInt(profileID, 10)+"/collection/import", bytes.NewReader(body))
+	importReq.Header.Set("Content-Type", "application/json")
+	importReq.RemoteAddr = "127.0.0.1:1"
+	importRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(importRec, importReq)
+	if importRec.Code != http.StatusOK {
+		t.Fatalf("import status = %d, body = %s", importRec.Code, importRec.Body.String())
+	}
+	mods, err := srv.db.InstalledModsForProfile(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mods) != 2 || mods[0].ID != second.ID || !mods[0].Enabled || mods[1].ID != first.ID || mods[1].Enabled {
+		t.Fatalf("mods = %+v", mods)
+	}
+}
+
 func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

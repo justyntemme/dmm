@@ -502,6 +502,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/profiles/{profileID}/conflicts/winner", s.handleSetFileConflictWinner)
 	mux.HandleFunc("DELETE /api/profiles/{profileID}/conflicts/winner", s.handleClearFileConflictWinner)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/order", s.handleSetProfileModOrder)
+	mux.HandleFunc("GET /api/profiles/{profileID}/collection", s.handleExportProfileCollection)
+	mux.HandleFunc("POST /api/profiles/{profileID}/collection/import", s.handleImportProfileCollection)
 	mux.HandleFunc("GET /api/profiles/{profileID}/mods/rules", s.handleProfileModRules)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/rules", s.handleSetProfileModRules)
 	mux.HandleFunc("PUT /api/profiles/{profileID}/mods/{installedModID}", s.handleSetProfileModEnabled)
