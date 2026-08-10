@@ -14,7 +14,16 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - If access fails, first verify the Deck is online, then verify `/home/deck/.ssh/authorized_keys` still contains the public key from `/Users/justyntemme/.ssh/decky_mod_manager_test.pub`.
 - If the public key must be reinstalled, use `ssh-copy-id -i ~/.ssh/decky_mod_manager_test.pub deck@192.168.8.102` from this machine, authenticating through the user's normal password or 1Password-backed key only for that repair step.
 
-## Guideline 1: Verify Upstream Behavior First
+## Guideline 1: Full Runtime Parity Is The Priority
+
+- Full Vortex-equivalent runtime behavior is the definition of extension parity. A source-backed counterpart, metadata-only registration, placeholder, or documented blocked state is not parity and must not be counted as complete.
+- Closing metadata-only or blocked extension surfaces is the highest-priority compatibility work before unrelated product polish or breadth expansion. If a Vortex extension uses a surface at runtime, DMM must either implement the equivalent runtime behavior or document a verified product decision that the surface is not applicable to Steam Deck/DMM.
+- Each supported game extension must provide full runtime support for the Vortex manifest/source behavior it relies on: installers, mod types, target roots, launch tools, runtime requirements, setup tests, dependency rules, load order, profile files, events, actions, dialogs/choices, metadata extraction, archive engines, and migrations.
+- When a game extension needs behavior that DMM does not yet expose, add a generic extension API/capability that can support every game needing that class of behavior, then wire the game extension through that API. Do not satisfy the game by baking one-off behavior into the core app.
+- For each missing capability, inspect how Vortex implements the same extension surface and adapt that strategy to DMM's Steam Deck architecture. The result should preserve the Vortex behavior contract while respecting DMM's boundaries: Go backend owns domain state, Decky owns Steam/overlay capabilities, and game-specific behavior stays in the game extension.
+- Metadata-only and blocked states are temporary audit markers only. They are useful to prevent unsafe installs while work is incomplete, but they must remain visible as unfinished work until runtime parity is implemented or the user explicitly accepts a non-parity scope decision.
+
+## Guideline 2: Verify Upstream Behavior First
 
 - Do not assume behavior when it can be verified. Before copying, adapting, or claiming compatibility with a mod manager, plugin store, upstream catalog, game extension, installer format, or Steam/Deck API, inspect the source, official documentation, observed runtime state, or a real fixture.
 - Before implementing or changing Vortex-compatible behavior, verify how Vortex or the relevant official game extension models the same behavior from source, documentation, or observed runtime state.
@@ -31,7 +40,7 @@ These guidelines translate `notes.md` into build decisions. Treat `notes.md` as 
 - Game-specific logic belongs in the extension API implementation for that game. Generic packages may provide reusable primitives such as archive-root planning, launch-tool setup, plugin activation generation, event hooks, target-root resolution, FOMOD evaluation, rollback, and deployment, but they must not contain game-specific branches.
 - If a game needs behavior that is not covered by the current extension API, add a reusable extension capability first and then have the game extension declare that capability. Do not solve it by adding a one-off game branch to `server`, `storage`, `deploy`, `steam`, `installplan`, or UI code.
 - First-party compiled Go extensions are the MVP extension packaging model. They are bundled in this repository for now, but their code is still the only allowed place for game-specific behavior. Runtime-loaded/community extensions are a later packaging and security boundary, not a license to bypass the extension API during MVP.
-- Metadata-only and research-blocked extensions are acceptable for games with verified source/catalog signals but incomplete install support. They should explain the known source state without pretending that archive installation, launch tools, Workshop actions, or load order are supported.
+- Metadata-only and research-blocked extensions are temporary incomplete states for games with verified source/catalog signals but unfinished runtime support. They should explain the known source state without pretending that archive installation, launch tools, Workshop actions, or load order are supported, and they must remain on the parity backlog until converted to runtime behavior or explicitly scoped out by the user.
 
 ## Decisions Requiring Source Review
 
