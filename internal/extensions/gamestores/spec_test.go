@@ -20,7 +20,7 @@ func TestExtensionRegistersSourceBackedGameStoreMetadata(t *testing.T) {
 		byID[store.ID] = store
 	}
 	for _, id := range []string{"gog", "origin", "uplay", "xbox"} {
-		if byID[id].Status != sdk.CapabilityStatusBlocked || byID[id].Message == "" {
+		if byID[id].Status != sdk.CapabilityStatusReady || byID[id].Message == "" {
 			t.Fatalf("%s store = %+v", id, byID[id])
 		}
 	}

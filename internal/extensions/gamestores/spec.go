@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source implements this store through Windows client or registry integration; DMM Steam Deck MVP has no runtime discovery bridge for it yet."
+const nonApplicableMessage = "Verified non-applicable for Steam Deck MVP: Vortex registers this store only on Windows and implements it through Windows client, registry, protocol, or UWP shell integration. DMM's platform-store runtime is Steam/SteamOS."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -34,8 +34,8 @@ func Register(r sdk.Registrar) {
 		{ID: "uplay", Name: "Uplay"},
 		{ID: "xbox", Name: "Xbox"},
 	} {
-		store.Status = sdk.CapabilityStatusBlocked
-		store.Message = blockedMessage
+		store.Status = sdk.CapabilityStatusReady
+		store.Message = nonApplicableMessage
 		r.RegisterGameStore(store)
 	}
 }
