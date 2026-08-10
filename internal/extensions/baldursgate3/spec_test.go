@@ -2,6 +2,8 @@ package baldursgate3
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +48,10 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
 		t.Fatalf("game setup = %+v", compiled.GameSetups)
+	}
+	registry := gameext.NewRegistry([]gameext.Extension{compiled})
+	if !registry.HasEventHandlerForSteamApp(SteamAppID, sdk.EventCheckModsVersion) {
+		t.Fatal("missing BG3 check-mods-version event handler")
 	}
 }
 
@@ -231,6 +237,64 @@ func TestWillDeployGeneratesBG3ModSettingsWithManagedDivine(t *testing.T) {
 	}
 	if divinePath == "" {
 		t.Fatal("fake divine path not created")
+	}
+}
+
+func TestCheckLSLibUpdatesQueuesNoticeForNewStableRelease(t *testing.T) {
+	restore := stubLSLibReleases(t, `[{"tag_name":"release-9","prerelease":false},{"tag_name":"v1.20.0","prerelease":false},{"tag_name":"v1.21.0-beta.1","prerelease":true}]`)
+	defer restore()
+
+	result, err := checkLSLibUpdates(context.Background(), sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{lslibDeploymentMod("1.19.5")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "1.20.0") || result.Notices[0].ActionLabel != "Re-install LSLib/Divine" {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+}
+
+func TestCheckLSLibUpdatesSkipsWhenCurrentIsLatest(t *testing.T) {
+	restore := stubLSLibReleases(t, `[{"tag_name":"v1.20.0","prerelease":false},{"tag_name":"v1.21.0-beta.1","prerelease":true}]`)
+	defer restore()
+
+	result, err := checkLSLibUpdates(context.Background(), sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{lslibDeploymentMod("1.20.0")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 0 {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+}
+
+func lslibDeploymentMod(version string) sdk.DeploymentMod {
+	return sdk.DeploymentMod{
+		ModType: lslibModType,
+		Metadata: []installplan.ModMetadata{{
+			Kind:     "tool",
+			UniqueID: "bg3-lslib-divine",
+			Version:  version,
+		}},
+	}
+}
+
+func stubLSLibReleases(t *testing.T, body string) func() {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	oldEndpoint := lslibReleasesEndpoint
+	oldClient := lslibReleasesHTTPClient
+	lslibReleasesEndpoint = server.URL
+	lslibReleasesHTTPClient = server.Client()
+	return func() {
+		lslibReleasesEndpoint = oldEndpoint
+		lslibReleasesHTTPClient = oldClient
+		server.Close()
 	}
 }
 

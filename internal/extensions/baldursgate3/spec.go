@@ -213,6 +213,12 @@ func Register(r sdk.Registrar) {
 		Name:    "Generate BG3 modsettings.lsx when pak metadata is available",
 		Handler: willDeploy,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		ID:      "bg3-lslib-update-check",
+		Event:   sdk.EventCheckModsVersion,
+		Name:    "Check LSLib/Divine GitHub releases",
+		Handler: checkLSLibUpdates,
+	})
 	registerActions(r)
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
