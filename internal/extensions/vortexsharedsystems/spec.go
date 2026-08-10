@@ -189,8 +189,8 @@ func registerVortexTests(r sdk.Registrar) {
 		ID:      "test-setup-uninstall-entry",
 		Name:    "Vortex setup uninstall-entry test",
 		Trigger: "startup",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex runs this test only for Windows installer registry state. DMM is delivered as a Decky plugin and has no equivalent Windows uninstall registry entry to validate.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Verified non-applicable: Vortex registers this test only for Windows installer registry state. DMM is delivered as a Decky plugin on SteamOS and has no Windows uninstall registry entry to validate.",
 	})
 }
 

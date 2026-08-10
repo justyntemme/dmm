@@ -74,7 +74,7 @@ Counts:
 - [x] `script-extender-error-check` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender runtime requirement capability. Full Vortex parity still needs source review per game/tool.
 - [x] `script-extender-installer` - DMM counterpart: shared `internal/extensions/gamebryo` script-extender installer capability.
 - [x] `test-gameversion` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed game-version tests plus executable `registerGameInfoProvider` rows exposed through `/api/games/{appID}/info`, phone/tablet Review, and the selected-game Decky surface.
-- [x] `test-setup` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Current parity is source-backed setup test metadata marked blocked until DMM has generic setup/uninstall-entry test runtime.
+- [x] `test-setup` - DMM counterpart: `internal/extensions/vortexsharedsystems` framework extension. Source-verified parity covers the Windows-only Vortex uninstall-entry startup test as explicitly non-applicable to DMM's SteamOS Decky plugin delivery model; DMM does not have a Windows uninstall registry entry to validate.
 - [x] `theme-switcher` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed theme settings/state metadata marked blocked; custom theming is not part of Steam Deck MVP.
 - [x] `titlebar-launcher` - DMM counterpart: `internal/extensions/vortexuisurfaces` framework extension. Current parity is source-backed titlebar launcher settings/state metadata marked blocked; DMM launch controls are Decky-native.
 
