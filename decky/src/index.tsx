@@ -5026,6 +5026,7 @@ function FreshDeckyModManagerRoute() {
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
   const reportedActiveGameIDRef = useRef("");
   const selectedGameIDRef = useRef(selectedGameID);
+  const selectedGameLoadSequenceRef = useRef(0);
   const suppressRunningAutoOpenRef = useRef(suppressRunningAutoOpen);
   const selectedGame = games.find((game) => game.app_id === selectedGameID) ?? null;
   const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
@@ -5103,6 +5104,7 @@ function FreshDeckyModManagerRoute() {
   }
 
   async function loadSelectedGameState(appID: string) {
+    const sequence = ++selectedGameLoadSequenceRef.current;
     if (!appID) {
       setProfiles([]);
       setMods([]);
@@ -5162,6 +5164,15 @@ function FreshDeckyModManagerRoute() {
         items: []
       }))
     ]);
+    if (sequence !== selectedGameLoadSequenceRef.current || selectedGameIDRef.current !== appID) {
+      await logFrontendEvent("fresh selected game state discarded stale response", {
+        app_id: appID,
+        selected_app_id: selectedGameIDRef.current,
+        sequence: String(sequence),
+        latest_sequence: String(selectedGameLoadSequenceRef.current)
+      });
+      return;
+    }
     if (profilesResult.ok) setProfiles(profilesResult.profiles);
     else setError(profilesResult.error || "Unable to load profiles.");
     if (modsResult.ok) setMods(modsResult.mods);
@@ -5209,12 +5220,15 @@ function FreshDeckyModManagerRoute() {
         await logFrontendEvent("fresh refresh preserved selected game after base load failure", { app_id: currentSelected });
         await loadSelectedGameState(currentSelected);
       } else if (nextSelected && result.games.some((game) => game.app_id === nextSelected)) {
+        selectedGameIDRef.current = nextSelected;
         setSelectedGameID(nextSelected);
         await loadSelectedGameState(nextSelected);
       } else if (currentSelected && result.games.length === 0) {
         await logFrontendEvent("fresh refresh preserved selected game because game list was empty", { app_id: currentSelected });
         await loadSelectedGameState(currentSelected);
       } else {
+        selectedGameIDRef.current = "";
+        setSelectedGameID("");
         await loadSelectedGameState("");
       }
     } catch (err) {
@@ -5227,6 +5241,7 @@ function FreshDeckyModManagerRoute() {
       setError("");
       setMessage("");
       setSuppressRunningAutoOpen(false);
+      selectedGameIDRef.current = appID;
       setSelectedGameID(appID);
       const recentAt = Date.now();
       setGameRecent((current) => ({ ...current, [appID]: recentAt }));
@@ -5925,6 +5940,7 @@ function FreshDeckyModManagerRoute() {
   }, [games, gameSearch, favoriteGameIDs, gameSort, gameRecent]);
 
   function clearSelectedGame() {
+    selectedGameIDRef.current = "";
     setSelectedGameID("");
     setArchiveBrowserOpen(false);
     setSuppressRunningAutoOpen(true);
