@@ -2753,6 +2753,38 @@ h2 {
   text-transform: uppercase;
 }
 
+.manual-game-form {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #20262e;
+}
+
+.manual-game-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.manual-game-form span {
+  color: #a1a1aa;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.manual-game-form input,
+.manual-game-form select {
+  min-height: 44px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #f4f4f5;
+  background: #171c22;
+}
+
 .catalog-list article {
   display: grid;
   gap: 10px;

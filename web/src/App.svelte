@@ -67,6 +67,8 @@
   type Game = {
     app_id: string;
     name: string;
+    store?: string;
+    store_app_id?: string;
     path: string;
     library_path: string;
     state: string;
@@ -806,7 +808,7 @@
   type Drawer = "games" | "settings" | null;
   type Surface = "actions" | "game" | "settings";
   type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
-  type SettingsPage = "overview" | "jobs" | "install" | "sources" | "extensions" | "nexus";
+  type SettingsPage = "overview" | "jobs" | "install" | "sources" | "game-stores" | "extensions" | "nexus";
   type GameSort = "recent" | "az" | "za";
   type GameVisibility = "manageable" | "extensions" | "all";
   type ModListSort = "profile" | "source" | "az" | "enabled";
@@ -892,6 +894,12 @@
   let gameQuery = "";
   let gameSort: GameSort = "recent";
   let gameVisibility: GameVisibility = "manageable";
+  let manualGameStore = "gog";
+  let manualGameStoreAppID = "";
+  let manualGameName = "";
+  let manualGamePath = "";
+  let manualGameBusy = false;
+  let manualGameMessage = "";
   let actionSourceFilter = "all";
   let jobSourceFilter = "all";
   let modSourceFilter = "all";
@@ -1620,6 +1628,44 @@
   function setGameSort(nextSort: GameSort) {
     gameSort = nextSort;
     void patchGamePreferences({ game_sort: nextSort });
+  }
+
+  async function registerManualStoreGame() {
+    manualGameMessage = "";
+    const payload = {
+      store: manualGameStore.trim(),
+      store_app_id: manualGameStoreAppID.trim(),
+      name: manualGameName.trim(),
+      path: manualGamePath.trim()
+    };
+    if (!payload.store || !payload.store_app_id || !payload.name || !payload.path) {
+      manualGameMessage = "Store, store app ID, game name, and install path are required.";
+      return;
+    }
+    manualGameBusy = true;
+    try {
+      const response = await apiFetch("/api/games/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json() as { ok: boolean; game: Game };
+      if (!result.ok) throw new Error("Manual game registration failed.");
+      manualGameMessage = `${result.game.name} is registered for ${sourceLabel(result.game.store ?? payload.store)} management.`;
+      manualGameStoreAppID = "";
+      manualGameName = "";
+      manualGamePath = "";
+      await refresh("manual-store-game");
+      const registered = games.find((game) => game.app_id === result.game.app_id) ?? result.game;
+      await selectGame(registered);
+      drawer = null;
+    } catch (err) {
+      manualGameMessage = `Unable to register game: ${compactLogValue(err)}`;
+      logClientEvent("manual store game registration failed", { error: compactLogValue(err), store: payload.store, store_app_id: payload.store_app_id });
+    } finally {
+      manualGameBusy = false;
+    }
   }
 
   function isFavoriteGame(appID: string) {
@@ -4288,6 +4334,7 @@
     if (page === "jobs") return "Jobs";
     if (page === "install") return "Install";
     if (page === "sources") return "Sources";
+    if (page === "game-stores") return "Game Stores";
     if (page === "extensions") return "Extension Settings";
     if (page === "nexus") return "Nexus";
     return "Settings";
@@ -4956,6 +5003,7 @@
           <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
           <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
           <button type="button" class:active={activeSettingsPage === "sources"} on:click={() => openSettings("sources")}>Sources</button>
+          <button type="button" class:active={activeSettingsPage === "game-stores"} on:click={() => openSettings("game-stores")}>Game Stores</button>
           <button type="button" class:active={activeSettingsPage === "extensions"} on:click={() => openSettings("extensions")}>Extension Settings</button>
           <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
         </nav>
@@ -5318,6 +5366,40 @@
               </article>
             {/each}
           </div>
+        </article>
+      {:else if activeSettingsPage === "game-stores"}
+        <article class="workspace-panel">
+          <div class="panel-heading">
+            <h2>Game Stores</h2>
+            <span>Manual path</span>
+          </div>
+          <p class="hint">Register a non-Steam install only when a DMM extension supports that store/app identity. DMM will manage files at the selected install path; native store-library discovery and client launching are tracked separately.</p>
+          <form class="manual-game-form" on:submit|preventDefault={registerManualStoreGame}>
+            <label>
+              <span>Store</span>
+              <select bind:value={manualGameStore}>
+                <option value="gog">GOG</option>
+                <option value="epic">Epic Games</option>
+                <option value="xbox">Xbox / Microsoft Store</option>
+                <option value="origin">Origin / EA</option>
+                <option value="uplay">Ubisoft Connect</option>
+              </select>
+            </label>
+            <label>
+              <span>Store App ID</span>
+              <input bind:value={manualGameStoreAppID} autocomplete="off" placeholder="Example: 1456460669" />
+            </label>
+            <label>
+              <span>Game Name</span>
+              <input bind:value={manualGameName} autocomplete="off" placeholder="Example: Baldur's Gate 3" />
+            </label>
+            <label>
+              <span>Install Path</span>
+              <input bind:value={manualGamePath} autocomplete="off" placeholder="/home/deck/Games/example" />
+            </label>
+            <button type="submit" disabled={manualGameBusy}>{manualGameBusy ? "Registering..." : "Register Game"}</button>
+          </form>
+          {#if manualGameMessage}<p class="hint">{manualGameMessage}</p>{/if}
         </article>
       {:else if activeSettingsPage === "extensions"}
         <article class="workspace-panel">
