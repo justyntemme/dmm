@@ -946,13 +946,19 @@ const deckyRuntimeStyles = `
 .dmm-settings-row {
   align-self: stretch !important;
   height: auto !important;
-  min-height: 68px !important;
+  min-height: 72px !important;
   overflow: visible !important;
 }
 .dmm-settings-section .dmm-focus-card {
   align-self: stretch !important;
   height: auto !important;
-  min-height: 62px;
+  min-height: 72px;
+  overflow: visible !important;
+}
+.dmm-fresh-action-card {
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 82px !important;
   overflow: visible !important;
 }
   .dmm-focus-card-focused,
@@ -4323,12 +4329,21 @@ function freshButtonStyle(kind: "primary" | "neutral" | "danger" = "neutral", di
     height: "auto",
     justifyContent: "center",
     lineHeight: 1.22,
-    minHeight: "56px",
+    minHeight: "60px",
     opacity: disabled ? 0.52 : 1,
     overflow: "visible",
     padding: "12px 10px",
     textAlign: "center",
     whiteSpace: "normal"
+  };
+}
+
+function freshActionCardStyle(disabled = false): CSSProperties {
+  return {
+    ...freshCardStyle(false),
+    minHeight: "82px",
+    opacity: disabled ? 0.62 : 1,
+    padding: "12px 10px"
   };
 }
 
@@ -4401,18 +4416,18 @@ function freshModCardStyle(active = false): CSSProperties {
   };
 }
 
-function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kind?: "primary" | "neutral" | "danger"; onActivate: () => void }) {
+function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kind?: "primary" | "neutral" | "danger"; settingsRow?: boolean; onActivate: () => void }) {
   return (
     <Focusable
-      className="dmm-focus-card"
-      focusClassName="dmm-focus-card-focused"
+      className={props.settingsRow ? "dmm-settings-row" : "dmm-focus-card"}
+      focusClassName={props.settingsRow ? "dmm-settings-row-focused" : "dmm-focus-card-focused"}
       onActivate={() => {
         if (!props.disabled) props.onActivate();
       }}
       onClick={() => {
         if (!props.disabled) props.onActivate();
       }}
-      style={freshButtonStyle(props.kind ?? "neutral", props.disabled)}
+      style={props.settingsRow ? freshSettingsToggleCardStyle(props.disabled) : freshButtonStyle(props.kind ?? "neutral", props.disabled)}
     >
       {props.children}
     </Focusable>
@@ -6176,13 +6191,13 @@ function FreshDeckyModManagerRoute() {
             {executableExtensionActions().map((action) => {
               const busy = busyJobID === `extension-action:${action.id}`;
               return (
-                <Focusable
-                  key={action.id}
-                  className="dmm-sidebar-row dmm-content-card"
+              <Focusable
+                key={action.id}
+                  className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onActivate={() => void runSelectedGameExtensionAction(action)}
                   onClick={() => void runSelectedGameExtensionAction(action)}
-                  style={{ ...freshCardStyle(false), opacity: busy ? 0.7 : 1 }}
+                  style={freshActionCardStyle(busy)}
                 >
                   <div style={{ color: "#f8fafc", fontWeight: 900 }}>{action.name || action.id}</div>
                   <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
@@ -6216,7 +6231,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={requirement.id}
-              className="dmm-sidebar-row dmm-content-card"
+              className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
@@ -6228,7 +6243,7 @@ function FreshDeckyModManagerRoute() {
                 else if (canAcquire) void acquireRuntimeRequirement(requirement);
                 else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
               }}
-              style={{ ...freshCardStyle(false), borderColor: "#d97706" }}
+              style={{ ...freshActionCardStyle(false), borderColor: "#d97706" }}
             >
               <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
               <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
@@ -6249,11 +6264,11 @@ function FreshDeckyModManagerRoute() {
         {gameActionJobs.map((job) => (
           <Focusable
             key={job.id}
-            className="dmm-sidebar-row dmm-content-card"
+            className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={() => void activateActionJob(job)}
             onClick={() => void activateActionJob(job)}
-            style={{ ...freshCardStyle(job.status === "waiting" || job.status === "running"), borderColor: job.status === "failed" ? "#7f1d1d" : "#334155" }}
+            style={{ ...freshActionCardStyle(false), background: job.status === "waiting" || job.status === "running" ? "rgba(15, 118, 110, 0.22)" : "rgba(17, 24, 39, 0.78)", borderColor: job.status === "failed" ? "#7f1d1d" : "#334155" }}
           >
             <div style={{ color: job.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: 900 }}>{job.title}</div>
             {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
@@ -6494,10 +6509,10 @@ function FreshDeckyModManagerRoute() {
         </FreshSettingsSection>
         <FreshSettingsSection title="Security">
           <FreshToggleRow label="LAN only" checked={status?.backend?.lan_only ?? true} disabled={!status?.running} onChange={(value) => void setLanOnly(value)} />
-          <FreshActionButton disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
+          <FreshActionButton settingsRow disabled={!status?.auth?.enabled || !pairingURLFromStatus(status)} onActivate={openPairPhoneModal}>
             Pair Phone
           </FreshActionButton>
-          <FreshActionButton disabled={!status?.auth?.enabled} onActivate={async () => {
+          <FreshActionButton settingsRow disabled={!status?.auth?.enabled} onActivate={async () => {
             const next = await call<[], BackendStatus>("reset_api_token");
             applyBackendAuthFromStatus(next);
             setStatus(next);
@@ -6519,7 +6534,7 @@ function FreshDeckyModManagerRoute() {
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
             <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
-            <FreshActionButton onActivate={() => void refreshDebugState()}>Refresh Debug</FreshActionButton>
+            <FreshActionButton settingsRow onActivate={() => void refreshDebugState()}>Refresh Debug</FreshActionButton>
             <pre style={{ background: "#020617", border: "1px solid #334155", borderRadius: "6px", color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, margin: 0, maxHeight: "340px", overflow: "auto", padding: "8px", whiteSpace: "pre-wrap" }}>
               {diagnosticsTerminalText(diagnosticLogs)}
             </pre>
