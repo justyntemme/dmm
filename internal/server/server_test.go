@@ -7218,6 +7218,111 @@ func TestRemoveProfileModKeepsInstalledRowAndStaging(t *testing.T) {
 	}
 }
 
+func TestDeleteGameModRunsRemoveLifecycleAndRemovesStaging(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Remove Lifecycle Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999023"
+	var eventsSeen []string
+	var modIDsSeen [][]int64
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "remove-lifecycle-game",
+		Name:    "Remove Lifecycle Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"removelifecyclegame"},
+				VortexGameID: "removelifecyclegame",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "root", TargetRoot: ""})
+			for _, event := range []string{sdk.EventWillRemoveMods, sdk.EventDidRemoveMod} {
+				event := event
+				r.RegisterEventHandler(sdk.EventHandlerSpec{
+					Event: event,
+					Name:  event,
+					Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+						eventsSeen = append(eventsSeen, input.Event)
+						modIDsSeen = append(modIDsSeen, append([]int64(nil), input.ModIDs...))
+						return sdk.EventHandlerResult{}, nil
+					},
+				})
+			}
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Remove Lifecycle Game",
+		InstallDir:  "Remove Lifecycle Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "removelifecyclegame", "mods", "1", "files", "2")
+	if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "file.txt"), []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    appID,
+		ModType:   "root",
+		PlannerID: "remove-lifecycle-game:root",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: "file.txt",
+			TargetRelative:  "file.txt",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: appID,
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "removelifecyclegame",
+			ModID:      "1",
+			FileID:     "2",
+		},
+		Name:         "Removable Mod",
+		ArchivePath:  filepath.Join(t.TempDir(), "remove.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifestJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/games/"+appID+"/mods/"+strconv.FormatInt(mod.ID, 10), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete mod status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := srv.db.InstalledModForSteamApp(context.Background(), appID, mod.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("installed mod after delete error = %v", err)
+	}
+	if _, err := os.Stat(stagingPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("staging path after delete error = %v", err)
+	}
+	wantEvents := []string{sdk.EventWillRemoveMods, sdk.EventDidRemoveMod}
+	if !slices.Equal(eventsSeen, wantEvents) {
+		t.Fatalf("events seen = %+v", eventsSeen)
+	}
+	for _, ids := range modIDsSeen {
+		if len(ids) != 1 || ids[0] != mod.ID {
+			t.Fatalf("mod ids seen = %+v", modIDsSeen)
+		}
+	}
+}
+
 func TestDeletingOnlyStagedModCanStillRemoveDeployedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

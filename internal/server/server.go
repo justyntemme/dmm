@@ -455,6 +455,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
+	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
 	mux.HandleFunc("GET /api/games/{appID}/load-order", s.handleGameLoadOrder)
 	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/refresh", s.handleRefreshGameLoadOrderLOOT)
 	mux.HandleFunc("POST /api/games/{appID}/load-order/loot/sort", s.handleSortGameLoadOrderLOOT)
@@ -4471,6 +4472,12 @@ type updateDeploySettingsRequest struct {
 type profileModUpdateResponse struct {
 	Mod   storage.InstalledMod `json:"mod"`
 	Apply profileApplyResponse `json:"apply"`
+}
+
+type gameModDeleteResponse struct {
+	Mod                storage.InstalledMod `json:"mod"`
+	Apply              profileApplyResponse `json:"apply"`
+	StagingPathRemoved bool                 `json:"staging_path_removed"`
 }
 
 type profileModOrderUpdateResponse struct {
@@ -8976,6 +8983,67 @@ func (s *Server) handleUpdateGameMod(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("mod update queued", "job_id", job.ID, "app_id", appID, "installed_mod_id", mod.ID, "catalog", resolved.Catalog, "game_domain", resolved.GameDomain, "mod_id", resolved.ModID, "from_file_id", mod.SourceFileID, "to_file_id", update.LatestFileID)
 	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) handleDeleteGameMod(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	installedModID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("installedModID")), 10, 64)
+	if appID == "" || err != nil || installedModID <= 0 {
+		http.Error(w, "valid appID and installedModID are required", http.StatusBadRequest)
+		return
+	}
+	mod, err := s.db.InstalledModForSteamApp(r.Context(), appID, installedModID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "installed mod was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	mods, err := s.db.InstalledModsForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventWillRemoveMods,
+		Source:    "installed-mod-delete",
+		ProfileID: mod.ProfileID,
+		ModIDs:    []int64{installedModID},
+		Mods:      mods,
+	}); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	deleted, err := s.db.DeleteInstalledModForSteamApp(r.Context(), appID, installedModID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	apply := s.applyProfileChangesForUserAction(r.Context(), appID, "installed-mod-delete")
+	stagingRemoved := true
+	if err := s.removeStagingPath(deleted); err != nil {
+		stagingRemoved = false
+		s.logger.Warn("installed mod staging cleanup failed", "app_id", appID, "installed_mod_id", deleted.ID, "staging_path", deleted.StagingPath, "error", err)
+	}
+	if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
+		AppID:     appID,
+		Event:     gameext.EventDidRemoveMod,
+		Source:    "installed-mod-delete",
+		ProfileID: mod.ProfileID,
+		ModIDs:    []int64{deleted.ID},
+		Mods:      []storage.InstalledMod{deleted},
+	}); err != nil {
+		s.logger.Warn("post-delete-mod extension event failed", "app_id", appID, "installed_mod_id", deleted.ID, "event", gameext.EventDidRemoveMod, "error", err)
+	}
+	s.logger.Info("installed mod deleted", "app_id", appID, "installed_mod_id", deleted.ID, "staging_path_removed", stagingRemoved, "apply_status", apply.Status)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":           "deleted",
+		"installed_mod_id": deleted.ID,
+	})
+	writeJSON(w, http.StatusOK, gameModDeleteResponse{Mod: deleted, Apply: apply, StagingPathRemoved: stagingRemoved})
 }
 
 func updateCheckResultForInstalledMod(mod storage.InstalledMod, files []nexus.ModFile, checkedAt string, checkErr error) gameModUpdateCheckResponse {
