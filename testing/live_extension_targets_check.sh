@@ -7,12 +7,14 @@ export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 python3 - "$BASE_URL" <<'PY'
 import json
+import os
 import sys
 import urllib.request
 
 from dmm_test_auth import auth_headers
 
 base_url = sys.argv[1].rstrip("/")
+require_installed_targets = os.environ.get("REQUIRE_INSTALLED_TARGETS", "1").strip().lower() in ("1", "true", "yes", "on")
 
 def request(path):
     req = urllib.request.Request(base_url + path, headers=auth_headers(), method="GET")
@@ -42,7 +44,8 @@ workshop_only = {
 for app_id, extension_id in workshop_only.items():
     game = games_by_app.get(app_id)
     if not game:
-        failures.append(f"{app_id} missing from live game list")
+        if require_installed_targets:
+            failures.append(f"{app_id} missing from live game list")
         continue
     extension = game.get("extension") or {}
     workshop = game.get("steam_workshop") or {}
@@ -58,7 +61,8 @@ for app_id, extension_id in workshop_only.items():
 
 fallout = games_by_app.get("377160")
 if not fallout:
-    failures.append("Fallout 4 missing from live game list")
+    if require_installed_targets:
+        failures.append("Fallout 4 missing from live game list")
 else:
     if fallout.get("state") not in ("clean_candidate", "needs_review"):
         failures.append(f"Fallout 4 unexpected state: state={fallout.get('state')} markers={fallout.get('markers')}")
@@ -187,7 +191,7 @@ require_launch_tool(
     default_primary=True,
 )
 
-metadata_targets = {
+simple_external_targets = {
     "braid": "26800",
     "fez": "224760",
     "gnorpapologue": "1473350",
@@ -200,16 +204,18 @@ metadata_targets = {
     "shieldwall": "1216320",
     "starwarsroguesquadron": "455910",
 }
-for extension_id, app_id in metadata_targets.items():
-    require_coverage(extension_id, "metadata_only")
+for extension_id, app_id in simple_external_targets.items():
+    require_coverage(extension_id, "installer")
     summary = extensions_by_id.get(extension_id) or {}
     if app_id not in [str(item) for item in summary.get("steam_app_ids", [])]:
         failures.append(f"{extension_id} missing app {app_id}: {summary.get('steam_app_ids')}")
     if summary.get("nexus_domains"):
         failures.append(f"{extension_id} should not declare Nexus domains: {summary.get('nexus_domains')}")
     caps = summary.get("capabilities") or {}
-    if any(caps.get(cap) for cap in ("installers", "steam_workshop", "installer_choices")):
-        failures.append(f"{extension_id} should remain metadata-only: {caps}")
+    if not caps.get("installers") or not caps.get("mod_types"):
+        failures.append(f"{extension_id} should declare simple external archive-root support: {caps}")
+    if any(caps.get(cap) for cap in ("steam_workshop", "installer_choices")):
+        failures.append(f"{extension_id} should not declare Workshop or choice capabilities: {caps}")
 
 zomboid = extensions_by_id.get("projectzomboid") or {}
 zomboid_caps = zomboid.get("capabilities") or {}

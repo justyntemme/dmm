@@ -37,7 +37,7 @@ require_no_unsupported = os.environ.get("REQUIRE_NO_UNSUPPORTED", "0").strip().l
 require_no_research_blocked = os.environ.get("REQUIRE_NO_RESEARCH_BLOCKED", "0").strip().lower() in ("1", "true", "yes", "on")
 require_no_browse_only = os.environ.get("REQUIRE_NO_BROWSE_ONLY", "0").strip().lower() in ("1", "true", "yes", "on")
 expected_raw = os.environ.get("EXPECTED_COVERAGE", "")
-valid_coverages = {"installer", "research_blocked", "browse_only", "workshop_only", "metadata_only"}
+valid_coverages = {"installer", "research_blocked", "browse_only", "workshop_only", "metadata_only", "framework"}
 
 
 def request(path):
