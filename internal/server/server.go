@@ -462,6 +462,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/games/{appID}/extension-tests/{testID}/repair", s.handleRepairExtensionTest)
 	mux.HandleFunc("GET /api/games/{appID}/tools", s.handleGameTools)
 	mux.HandleFunc("GET /api/games/{appID}/mods", s.handleGameMods)
+	mux.HandleFunc("GET /api/games/{appID}/mods/{installedModID}/report", s.handleGameModReport)
 	mux.HandleFunc("POST /api/games/{appID}/mods/check-updates", s.handleCheckGameModUpdates)
 	mux.HandleFunc("POST /api/games/{appID}/mods/{installedModID}/update", s.handleUpdateGameMod)
 	mux.HandleFunc("DELETE /api/games/{appID}/mods/{installedModID}", s.handleDeleteGameMod)
@@ -8187,6 +8188,35 @@ func (s *Server) handleGameMods(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gameModResponses(mods, updates))
 }
 
+func (s *Server) handleGameModReport(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	if appID == "" {
+		http.Error(w, "appID is required", http.StatusBadRequest)
+		return
+	}
+	installedModID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("installedModID")), 10, 64)
+	if err != nil || installedModID <= 0 {
+		http.Error(w, "valid installedModID is required", http.StatusBadRequest)
+		return
+	}
+	report, err := s.gameModReport(r.Context(), appID, installedModID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "mod was not found", http.StatusNotFound)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "text") {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, report.Text)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
 func (s *Server) handleGameLoadOrder(w http.ResponseWriter, r *http.Request) {
 	appID := strings.TrimSpace(r.PathValue("appID"))
 	if appID == "" {
@@ -8563,6 +8593,185 @@ type gameModDependencySummary struct {
 	UniqueID       string `json:"unique_id,omitempty"`
 	MinimumVersion string `json:"minimum_version,omitempty"`
 	Required       bool   `json:"required"`
+}
+
+type gameModReportResponse struct {
+	Info  gameModReportInfo   `json:"info"`
+	Mod   gameModReportMod    `json:"mod"`
+	Files []gameModReportFile `json:"files"`
+	Text  string              `json:"text"`
+}
+
+type gameModReportInfo struct {
+	CreatedAt string `json:"created_at"`
+}
+
+type gameModReportMod struct {
+	ID               int64    `json:"id"`
+	Name             string   `json:"name"`
+	Version          string   `json:"version"`
+	ArchivePath      string   `json:"archive_path,omitempty"`
+	ManagedGame      string   `json:"managed_game"`
+	IntendedGame     string   `json:"intended_game,omitempty"`
+	DeploymentMethod string   `json:"deployment_method,omitempty"`
+	DeploymentTime   string   `json:"deployment_time,omitempty"`
+	ModType          string   `json:"mod_type,omitempty"`
+	Source           string   `json:"source,omitempty"`
+	SourceModID      string   `json:"source_mod_id,omitempty"`
+	SourceFileID     string   `json:"source_file_id,omitempty"`
+	ContentTypes     []string `json:"content_types,omitempty"`
+}
+
+type gameModReportFile struct {
+	Path           string `json:"path"`
+	TargetPath     string `json:"target_path,omitempty"`
+	Deployed       bool   `json:"deployed"`
+	OverwrittenBy  string `json:"overwritten_by,omitempty"`
+	ChecksumSHA256 string `json:"checksum_sha256,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+func (s *Server) gameModReport(ctx context.Context, appID string, installedModID int64) (gameModReportResponse, error) {
+	mod, err := s.db.InstalledModForSteamApp(ctx, appID, installedModID)
+	if err != nil {
+		return gameModReportResponse{}, err
+	}
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		return gameModReportResponse{}, err
+	}
+	latest, err := s.db.LatestDeploymentFilesForSteamApp(ctx, appID)
+	if err != nil {
+		return gameModReportResponse{}, err
+	}
+	summary, hasSummary, err := s.db.LatestDeploymentSummaryForSteamApp(ctx, appID)
+	if err != nil {
+		return gameModReportResponse{}, err
+	}
+	deployedBySource := make(map[string]deploy.AppliedFile, len(latest))
+	deployedByTarget := make(map[string]deploy.AppliedFile, len(latest))
+	for _, file := range latest {
+		deployedBySource[cleanReportPath(file.SourcePath)] = file
+		deployedByTarget[cleanReportPath(file.TargetPath)] = file
+	}
+	reportFiles := make([]gameModReportFile, 0, len(manifest.Files))
+	contentFiles := make([]string, 0, len(manifest.Files))
+	for _, file := range manifest.Files {
+		contentFiles = append(contentFiles, file.Path)
+		sourcePath := filepath.Join(mod.StagingPath, filepath.FromSlash(file.Path))
+		entry := gameModReportFile{Path: filepath.ToSlash(file.Path)}
+		if deployed, ok := deployedBySource[cleanReportPath(sourcePath)]; ok && deployed.InstalledModID == mod.ID {
+			entry.Deployed = true
+			entry.TargetPath = filepath.ToSlash(deployed.TargetPath)
+			entry.ChecksumSHA256 = deployed.ChecksumSHA256
+		} else if file.TargetRelative != "" {
+			if deployed, ok := deployedByTarget[cleanReportPath(file.TargetRelative)]; ok && deployed.InstalledModID != 0 && deployed.InstalledModID != mod.ID {
+				entry.OverwrittenBy = strconv.FormatInt(deployed.InstalledModID, 10)
+				entry.TargetPath = filepath.ToSlash(deployed.TargetPath)
+			}
+		}
+		if !entry.Deployed && entry.OverwrittenBy == "" {
+			entry.Error = "undeployed"
+		}
+		reportFiles = append(reportFiles, entry)
+	}
+	content := modcontent.FromFiles(firstNonEmpty(manifest.GameID, mod.SourceGameDomain), contentFiles)
+	report := gameModReportResponse{
+		Info: gameModReportInfo{CreatedAt: time.Now().UTC().Format(time.RFC3339)},
+		Mod: gameModReportMod{
+			ID:           mod.ID,
+			Name:         mod.Name,
+			Version:      mod.Version,
+			ArchivePath:  mod.ArchivePath,
+			ManagedGame:  appID,
+			IntendedGame: mod.SourceGameDomain,
+			ModType:      strings.TrimSpace(manifest.ModType),
+			Source:       mod.Catalog,
+			SourceModID:  mod.SourceModID,
+			SourceFileID: mod.SourceFileID,
+			ContentTypes: content.Types,
+		},
+		Files: reportFiles,
+	}
+	if hasSummary {
+		report.Mod.DeploymentMethod = summary.Strategy
+		report.Mod.DeploymentTime = summary.CreatedAt
+	}
+	report.Text = formatGameModReport(report)
+	return report, nil
+}
+
+func cleanReportPath(path string) string {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if path == "." {
+		return ""
+	}
+	return strings.ToLower(filepath.ToSlash(path))
+}
+
+func formatGameModReport(report gameModReportResponse) string {
+	var b strings.Builder
+	b.WriteString("DMM mod report for: ")
+	b.WriteString(report.Mod.Name)
+	b.WriteString("\n\nMod details\n")
+	writeReportLine(&b, "Mod name", report.Mod.Name)
+	writeReportLine(&b, "Version", report.Mod.Version)
+	writeReportLine(&b, "Archive", report.Mod.ArchivePath)
+	writeReportLine(&b, "Mod type", report.Mod.ModType)
+	writeReportLine(&b, "Managed game", report.Mod.ManagedGame)
+	writeReportLine(&b, "Mod intended for", report.Mod.IntendedGame)
+	writeReportLine(&b, "Download source", strings.TrimSpace(report.Mod.Source+" mod "+report.Mod.SourceModID+" file "+report.Mod.SourceFileID))
+	writeReportLine(&b, "Last deployment", report.Mod.DeploymentTime)
+	writeReportLine(&b, "Deployment method", report.Mod.DeploymentMethod)
+	writeReportLine(&b, "Content", strings.Join(report.Mod.ContentTypes, ", "))
+	b.WriteString("\nDeployed files\n")
+	writeReportFiles(&b, report.Files, func(file gameModReportFile) bool { return file.Deployed && file.OverwrittenBy == "" })
+	b.WriteString("\nFiles overwritten by other mod\n")
+	writeReportFiles(&b, report.Files, func(file gameModReportFile) bool { return file.OverwrittenBy != "" })
+	b.WriteString("\nFiles not deployed\n")
+	writeReportFiles(&b, report.Files, func(file gameModReportFile) bool { return !file.Deployed && file.OverwrittenBy == "" })
+	return b.String()
+}
+
+func writeReportLine(b *strings.Builder, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = "N/A"
+	}
+	b.WriteString("- ")
+	b.WriteString(key)
+	b.WriteString(": ")
+	b.WriteString(value)
+	b.WriteByte('\n')
+}
+
+func writeReportFiles(b *strings.Builder, files []gameModReportFile, include func(gameModReportFile) bool) {
+	wrote := false
+	for _, file := range files {
+		if !include(file) {
+			continue
+		}
+		wrote = true
+		b.WriteString("- ")
+		b.WriteString(file.Path)
+		if file.ChecksumSHA256 != "" {
+			b.WriteString(" (")
+			b.WriteString(file.ChecksumSHA256)
+			b.WriteByte(')')
+		}
+		if file.OverwrittenBy != "" {
+			b.WriteString(" - overwritten by installed mod ")
+			b.WriteString(file.OverwrittenBy)
+		}
+		if file.Error != "" {
+			b.WriteString(" - ")
+			b.WriteString(file.Error)
+		}
+		b.WriteByte('\n')
+	}
+	if !wrote {
+		b.WriteString("- None\n")
+	}
 }
 
 func gameModResponses(mods []storage.InstalledMod, updates map[int64]storage.ModUpdate) []gameModResponse {

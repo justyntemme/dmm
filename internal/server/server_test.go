@@ -16463,6 +16463,95 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 	}
 }
 
+func TestGameModReportEndpointSummarizesStagedAndDeployedFiles(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "413150",
+		Name:        "Stardew Valley",
+		InstallDir:  "Stardew Valley",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	stagingPath := filepath.Join(srv.cfg.DataDir, "staging", "nexus", "stardewvalley", "mods", "8897", "files", "100507")
+	configRel := "VisibleFish/config.json"
+	configPath := filepath.Join(stagingPath, filepath.FromSlash(configRel))
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(`{"enabled":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
+		GameID:    "stardewvalley",
+		ModType:   "stardew-smapi-mod",
+		PlannerID: "vortex:stardewvalley:stardew-valley-installer",
+		Instructions: []installplan.Instruction{{
+			StagingRelative: configRel,
+			TargetRelative:  "Mods/" + configRel,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID: "413150",
+		Resolved: catalog.ResolvedDownload{
+			Catalog:    "nexus",
+			GameDomain: "stardewvalley",
+			ModID:      "8897",
+			FileID:     "100507",
+		},
+		Name:         "Visible Fish",
+		Version:      "100507",
+		ArchivePath:  filepath.Join(srv.cfg.DataDir, "downloads", "visible-fish.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: manifestJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join(gamePath, "Mods", filepath.FromSlash(configRel))
+	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
+		SourcePath:     configPath,
+		TargetPath:     targetPath,
+		Strategy:       deploy.StrategySymlink,
+		ChecksumSHA256: "config-sum",
+		InstalledModID: mod.ID,
+		Catalog:        "nexus",
+		ModID:          "8897",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/413150/mods/"+strconv.FormatInt(mod.ID, 10)+"/report", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var report gameModReportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Mod.Name != "Visible Fish" || report.Mod.ModType != "stardew-smapi-mod" || report.Mod.DeploymentMethod != string(deploy.StrategySymlink) {
+		t.Fatalf("report mod = %+v", report.Mod)
+	}
+	if len(report.Mod.ContentTypes) != 1 || report.Mod.ContentTypes[0] != "config" {
+		t.Fatalf("content = %+v", report.Mod.ContentTypes)
+	}
+	if len(report.Files) != 1 || !report.Files[0].Deployed || report.Files[0].ChecksumSHA256 != "config-sum" {
+		t.Fatalf("files = %+v", report.Files)
+	}
+	if !strings.Contains(report.Text, "DMM mod report for: Visible Fish") || !strings.Contains(report.Text, "Deployed files") {
+		t.Fatalf("text = %s", report.Text)
+	}
+}
+
 func TestModNameFromStagingUsesInstallPlanMetadataName(t *testing.T) {
 	got := modNameFromStaging("/downloads/dfb0c986-2260-47f9-ae8a-543f4eabe8d4", catalog.ResolvedDownload{
 		ModID: "49860",

@@ -38,6 +38,14 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's mod-content extension with a backend classifier over staged manifest files. Installed mod APIs expose Vortex-style content tags and empty-state metadata for Decky and phone/tablet clients.",
 	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "mod-report",
+		Name:    "Generate mod report",
+		Scope:   "mod",
+		Kind:    "report",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's mod-report action with GET /api/games/{appID}/mods/{installedModID}/report, returning staged/deployed file status as JSON or readable text.",
+	})
 	registerImportSurfaces(r)
 }
 
