@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2861,6 +2861,17 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 				if value == "" || strings.ContainsAny(value, "/\\\x00\r\n") {
 					errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segment must be a simple path segment"))
 				}
+			}
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandWrapStagedRoot {
+			if err := validateRelativeOrRoot(command.MetadataFile); err != nil {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" metadata file: "+err.Error()))
+			}
+			if strings.Trim(strings.TrimSpace(command.MetadataFile), "/\\") == "" {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" metadata file is required"))
+			}
+			if field := strings.TrimSpace(command.MetadataNameField); field == "" || strings.ContainsAny(field, "/\\\x00\r\n") {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" metadata name field must be a simple field name"))
 			}
 		}
 		if err := validateCapabilityStatus("state migration "+migrationID+" command", id, command.Status, command.Message); err != nil {

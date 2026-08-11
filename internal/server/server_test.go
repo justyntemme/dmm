@@ -8939,6 +8939,10 @@ func TestExtensionMigrationVersionGateSkipsCompletedTargets(t *testing.T) {
 	if ok, reason := extensionMigrationVersionEligible("0.9.0", true, "1.0.0-dmm.1", migration); !ok || reason != "" {
 		t.Fatalf("upgrade crossing target should run, ok=%v reason=%q", ok, reason)
 	}
+	migration = sdk.StateMigrationSpec{FromVersion: "0.1.0", ToVersion: "0.2.0"}
+	if ok, reason := extensionMigrationVersionEligible("0.0.5", true, "0.2.0-dmm.1", migration); ok || reason == "" {
+		t.Fatalf("source version should skip, ok=%v reason=%q", ok, reason)
+	}
 }
 
 func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
@@ -9123,6 +9127,101 @@ func TestExtensionMigrationMovesMatchingStagedPaths(t *testing.T) {
 		}
 	}
 	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "move-staged", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
+func TestExtensionMigrationWrapsStagedRootByMetadataName(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(root, "staging", "bladeandsorcery", "mods", "legacy", "files", "1")
+	for rel, content := range map[string]string{
+		"manifest.json":       "{\n  // relaxed metadata\n  \"Name\": \"Cool Blade Mod\"\n}\n",
+		"Scripts/example.dll": "script",
+		"readme.txt":          "readme",
+	} {
+		path := filepath.Join(stagingPath, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const appID = "999014"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationwrapgame",
+		Name:    "Migration Wrap Game",
+		Version: "1.0.1",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationwrapgame"},
+				VortexGameID: "migrationwrapgame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "wrap-staged",
+				Name:        "Wrap staged root",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.1",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:                "wrap-by-manifest",
+					Name:              "Wrap by manifest name",
+					Command:           sdk.StateMigrationCommandWrapStagedRoot,
+					ModType:           "legacy-type",
+					MetadataFile:      "manifest.json",
+					MetadataNameField: "Name",
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Wrap Game",
+		InstallDir:  "Migration Wrap Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationwrapgame", ModID: "legacy", FileID: "1"},
+		Name:         "Legacy Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "legacy.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationwrapgame","mod_type":"legacy-type","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	for _, rel := range []string{"Cool Blade Mod/manifest.json", "Cool Blade Mod/Scripts/example.dll", "Cool Blade Mod/readme.txt"} {
+		if _, err := os.Stat(filepath.Join(stagingPath, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("expected %s: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{"manifest.json", "Scripts", "readme.txt"} {
+		if _, err := os.Stat(filepath.Join(stagingPath, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("expected old %s removed, err=%v", rel, err)
+		}
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "wrap-staged", appID)
 	if err != nil {
 		t.Fatal(err)
 	}

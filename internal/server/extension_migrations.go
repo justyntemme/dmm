@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tailscale/hujson"
+
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -122,6 +124,9 @@ func extensionMigrationVersionEligible(previousVersion string, hasPrevious bool,
 	targetVersion := strings.TrimSpace(migration.ToVersion)
 	if targetVersion == "" {
 		return false, "migration target version is empty"
+	}
+	if sourceVersion := strings.TrimSpace(migration.FromVersion); sourceVersion != "" && compareExtensionVersions(previousVersion, sourceVersion) < 0 {
+		return false, "previous extension version is below migration source version"
 	}
 	if compareExtensionVersions(previousVersion, targetVersion) >= 0 {
 		return false, "previous extension version is already at or above migration target"
@@ -254,6 +259,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandMoveStagedPaths:
 		changed, err := s.moveStagedPathsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return changed > 0, err
+	case sdk.StateMigrationCommandWrapStagedRoot:
+		changed, err := s.wrapStagedRootsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return changed > 0, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -346,6 +354,9 @@ func (s *Server) moveStagedPathsForMigration(ctx context.Context, appID string, 
 		if err := ctx.Err(); err != nil {
 			return changed, err
 		}
+		if !installedModMatchesMigrationCommand(mod, command) {
+			continue
+		}
 		stagingRoot := filepath.Clean(strings.TrimSpace(mod.StagingPath))
 		if stagingRoot == "" || !filepath.IsAbs(stagingRoot) {
 			continue
@@ -362,6 +373,55 @@ func (s *Server) moveStagedPathsForMigration(ctx context.Context, appID string, 
 	return changed, nil
 }
 
+func (s *Server) wrapStagedRootsForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) (int, error) {
+	metadataFile, ok := safeRelative(command.MetadataFile)
+	if !ok || metadataFile == "." {
+		return 0, fmt.Errorf("extension migration command %s metadata file is required", command.ID)
+	}
+	field := strings.TrimSpace(command.MetadataNameField)
+	if field == "" {
+		return 0, fmt.Errorf("extension migration command %s metadata name field is required", command.ID)
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, mod := range mods {
+		if err := ctx.Err(); err != nil {
+			return changed, err
+		}
+		if !installedModMatchesMigrationCommand(mod, command) {
+			continue
+		}
+		stagingRoot := filepath.Clean(strings.TrimSpace(mod.StagingPath))
+		if stagingRoot == "" || !filepath.IsAbs(stagingRoot) {
+			continue
+		}
+		modChanged, err := wrapStagedRootByMetadataName(stagingRoot, metadataFile, field)
+		if err != nil {
+			return changed, err
+		}
+		changed += modChanged
+	}
+	if changed > 0 {
+		s.logger.Info("extension migration wrapped staged roots", "app_id", appID, "source", source, "metadata_file", metadataFile, "metadata_name_field", field, "mods", changed)
+	}
+	return changed, nil
+}
+
+func installedModMatchesMigrationCommand(mod storage.InstalledMod, command sdk.StateMigrationCommandSpec) bool {
+	modType := canonicalModType(command.ModType)
+	if modType == "" {
+		return true
+	}
+	manifest, err := parseStagedManifest(mod.ManifestJSON)
+	if err != nil {
+		return false
+	}
+	return canonicalModType(manifest.ModType) == modType
+}
+
 func migrationFirstSegmentSet(segments []string) map[string]struct{} {
 	out := make(map[string]struct{}, len(segments))
 	for _, segment := range segments {
@@ -371,6 +431,96 @@ func migrationFirstSegmentSet(segments []string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func wrapStagedRootByMetadataName(stagingRoot, metadataFile, nameField string) (int, error) {
+	metadataPath := filepath.Join(stagingRoot, filepath.FromSlash(metadataFile))
+	if !pathWithinRoot(stagingRoot, metadataPath) {
+		return 0, fmt.Errorf("extension migration metadata file would leave staging root")
+	}
+	name, err := metadataNameFromFile(metadataPath, nameField)
+	if err != nil {
+		return 0, err
+	}
+	folder, ok := safeSinglePathSegment(name)
+	if !ok {
+		return 0, fmt.Errorf("extension migration metadata name %q is not a safe folder name", name)
+	}
+	if strings.EqualFold(folder, firstPathSegment(metadataFile)) {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(stagingRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	destinationRoot := filepath.Join(stagingRoot, folder)
+	changed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.EqualFold(name, folder) {
+			continue
+		}
+		from := filepath.Join(stagingRoot, name)
+		to := filepath.Join(destinationRoot, name)
+		if !pathWithinRoot(stagingRoot, from) || !pathWithinRoot(stagingRoot, to) {
+			return changed, fmt.Errorf("extension migration staged wrap would leave staging root")
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			return changed, err
+		}
+		if _, err := os.Stat(to); err == nil {
+			return changed, fmt.Errorf("extension migration destination already exists: %s", to)
+		} else if !os.IsNotExist(err) {
+			return changed, err
+		}
+		if err := os.Rename(from, to); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
+func metadataNameFromFile(path, field string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	data, err := hujson.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	data.Standardize()
+	values := map[string]any{}
+	if err := json.Unmarshal(data.Pack(), &values); err != nil {
+		return "", err
+	}
+	for key, value := range values {
+		if !strings.EqualFold(key, field) {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return "", fmt.Errorf("extension migration metadata field %q is not a string", field)
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return "", fmt.Errorf("extension migration metadata field %q is empty", field)
+		}
+		return text, nil
+	}
+	return "", fmt.Errorf("extension migration metadata field %q was not found", field)
+}
+
+func safeSinglePathSegment(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\`+"\x00\r\n") {
+		return "", false
+	}
+	return value, true
 }
 
 func moveMatchingStagedPaths(stagingRoot, destination string, matches map[string]struct{}) (int, error) {

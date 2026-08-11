@@ -64,7 +64,7 @@ func Register(r sdk.Registrar) {
 		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: officialModType, TargetRoot: officialRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex keeps this legacy mod type for pre-8.4 installs and migrations. This is not applicable to DMM-created MVP state; post-MVP Vortex import must detect and repair historical legacy staging explicitly."})
+	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Message: "Legacy Vortex Blade & Sorcery mod type retained for source-backed migration/import parity; current installs are retagged to the official Mods folder when the extension migration runs."})
 	r.RegisterModType(sharedmodtypes.DInputModTypeSpec())
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:bladeandsorcery:mulle-blocked",
@@ -184,9 +184,31 @@ func supportedTools() []sdk.SupportedToolSpec {
 
 func migrations() []sdk.StateMigrationSpec {
 	return []sdk.StateMigrationSpec{
-		{ID: "bladeandsorcery-migration-0.1.0", Name: "Blade & Sorcery migration guard", FromVersion: "0.0.0", ToVersion: "0.1.0", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex suppresses later staged-mod migration for users already on correctly installed pre-0.1.x Vortex state. This is not applicable to DMM-created state because DMM has no pre-0.1.x Blade & Sorcery release state; post-MVP Vortex import must detect this historical state explicitly."},
-		{ID: "bladeandsorcery-migration-0.2.0", Name: "Blade & Sorcery load-order folder migration", FromVersion: "0.1.0", ToVersion: "0.2.0", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex migrates staged official mods into per-mod folders for its load-order system. This is not applicable to DMM-created state because DMM's first Blade & Sorcery installer already stages official mods in per-mod folders; post-MVP Vortex import must implement a real repair for old Vortex staging."},
-		{ID: "bladeandsorcery-migration-0.2.12", Name: "Blade & Sorcery official mod-type migration", FromVersion: "0.2.0", ToVersion: "0.2.12", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex purges legacy deployment and retypes old mods when the detected game version requires official mods. This is not applicable to DMM-created state because DMM's installer chooses the current official mod type from the start; post-MVP Vortex import must implement version-aware retyping for imported old Vortex state."},
+		{
+			ID:          "bladeandsorcery-migration-0.2.0",
+			Name:        "Blade & Sorcery load-order folder migration",
+			FromVersion: "0.1.0",
+			ToVersion:   "0.2.0",
+			Commands: []sdk.StateMigrationCommandSpec{
+				{ID: "purge-official", Name: "Purge old official mod deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, ModType: officialModType, TargetRelative: officialRoot},
+				{ID: "purge-legacy", Name: "Purge old legacy mod deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, ModType: legacyModType, TargetRelative: legacyRoot},
+				{ID: "wrap-official-root", Name: "Wrap old root manifest mods by manifest Name", Command: sdk.StateMigrationCommandWrapStagedRoot, ModType: officialModType, MetadataFile: manifestFile, MetadataNameField: "Name"},
+				{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
+			},
+			Message: "Mirrors Vortex 0.2.0 migration: purge old deployment, wrap historical root manifest installs under their manifest Name folder, and redeploy the active profile.",
+		},
+		{
+			ID:          "bladeandsorcery-migration-0.2.12",
+			Name:        "Blade & Sorcery official mod-type migration",
+			FromVersion: "0.0.0",
+			ToVersion:   "0.2.12",
+			Commands: []sdk.StateMigrationCommandSpec{
+				{ID: "purge-legacy", Name: "Purge old legacy mod deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, ModType: legacyModType, TargetRelative: legacyRoot},
+				{ID: "retag-legacy", Name: "Retag legacy mods to official Mods folder", Command: sdk.StateMigrationCommandSetModType, ModType: legacyModType, TargetModType: officialModType},
+				{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
+			},
+			Message: "Mirrors Vortex 0.2.12 behavior for modern Blade & Sorcery by purging legacy deployment, retagging legacy mods to the official mod type, and redeploying.",
+		},
 	}
 }
 

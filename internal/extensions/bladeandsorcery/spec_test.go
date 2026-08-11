@@ -106,12 +106,12 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status == sdk.CapabilityStatusBlocked {
 		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
 	}
-	if len(summary.Capabilities.StateMigrations) != 3 {
+	if len(summary.Capabilities.StateMigrations) != 2 {
 		t.Fatalf("state migrations = %+v", summary.Capabilities.StateMigrations)
 	}
 	for _, migration := range summary.Capabilities.StateMigrations {
-		if migration.Status != sdk.CapabilityStatusNotApplicable {
-			t.Fatalf("state migration should be not applicable: %+v", migration)
+		if len(migration.Commands) == 0 {
+			t.Fatalf("state migration should have executable commands: %+v", migration)
 		}
 	}
 	if len(summary.Capabilities.ExtensionToDos) != 0 {
