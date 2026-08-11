@@ -2587,11 +2587,11 @@
   }
 
   async function removeInstalledMod(mod: InstalledMod) {
-    if (!selectedProfile) return;
+    if (!selectedGame) return;
     error = "";
     setBusyMod(mod.id, "remove");
     try {
-      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, { method: "DELETE" });
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/mods/${mod.id}`, { method: "DELETE" });
       if (!response.ok) {
         error = await response.text();
         return;
@@ -2856,10 +2856,10 @@
 
   function askRemoveInstalledMod(mod: InstalledMod) {
     confirmation = {
-      title: "Remove profile mod",
-      message: `Remove ${mod.name} from this profile. The cached download is kept so it can be recovered later.`,
+      title: "Uninstall mod",
+      message: `Remove ${mod.name} from every profile and delete its staged files.`,
       detail: `${mod.source_game_domain}/mods/${mod.source_mod_id}/files/${mod.source_file_id}`,
-      confirmLabel: "Remove Mod",
+      confirmLabel: "Uninstall Mod",
       danger: true,
       run: () => removeInstalledMod(mod)
     };
@@ -5745,7 +5745,7 @@
                           {busyMods[mod.id] === "reconfigure" ? "Opening..." : "Reconfigure"}
                         </button>
                         <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
-                          {busyMods[mod.id] === "remove" ? "Removing..." : "Remove"}
+                          {busyMods[mod.id] === "remove" ? "Uninstalling..." : "Uninstall"}
                         </button>
                       </div>
                       {#if transferProfiles().length > 0}
