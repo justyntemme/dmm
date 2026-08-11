@@ -2,6 +2,7 @@ package stardewvalley
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,6 +54,40 @@ func TestWillDeployPreservesLiveSMAPIConfig(t *testing.T) {
 		t.Fatalf("source = %q, want %q", mapping.SourcePath, wantSource)
 	}
 	assertFileBody(t, wantSource, `{"ShowFish":true}`)
+}
+
+func TestWillDeploySkipsSMAPIConfigWhenProfileSettingDisabled(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "game")
+	targetRel := filepath.ToSlash(filepath.Join("Mods", "VisibleFish", "config.json"))
+	writeFile(t, filepath.Join(gamePath, filepath.FromSlash(targetRel)), []byte(`{"ShowFish":true}`))
+
+	result := runStardewWillDeploy(t, sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		StagingRoot: filepath.Join(root, "staging"),
+		ProfileID:   7,
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {
+				SettingMergeConfigs: json.RawMessage("false"),
+			},
+		},
+		Mappings: []deploy.FileMapping{{
+			TargetRelative: "Mods/VisibleFish/manifest.json",
+			InstalledModID: 42,
+		}},
+		Mods: []sdk.DeploymentMod{{
+			ID:      42,
+			ModType: "stardew-smapi-mod",
+			Enabled: true,
+		}},
+	})
+
+	if len(result.Mappings) != 0 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	if len(result.Messages) != 1 || result.Messages[0] != "Stardew config preservation is disabled for this profile." {
+		t.Fatalf("messages = %+v", result.Messages)
+	}
 }
 
 func TestWillDeployRestoresSavedSMAPIConfig(t *testing.T) {

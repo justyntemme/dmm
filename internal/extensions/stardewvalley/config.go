@@ -2,6 +2,7 @@ package stardewvalley
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,9 @@ type stardewConfigCandidate struct {
 func willDeployPreserveConfigs(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
+	}
+	if !mergeConfigsEnabled(input.ExtensionSettings) {
+		return sdk.EventHandlerResult{Messages: []string{"Stardew config preservation is disabled for this profile."}}, nil
 	}
 	if strings.TrimSpace(input.GamePath) == "" || strings.TrimSpace(input.StagingRoot) == "" || input.ProfileID <= 0 {
 		return sdk.EventHandlerResult{Messages: []string{"Stardew config preservation skipped because deployment context is incomplete."}}, nil
@@ -73,6 +77,22 @@ func willDeployPreserveConfigs(ctx context.Context, input sdk.EventHandlerInput)
 		messages = append(messages, fmt.Sprintf("Stardew config preservation prepared %d generated config file(s) and refreshed %d managed config file(s).", len(mappings), refreshed))
 	}
 	return sdk.EventHandlerResult{Mappings: mappings, Messages: messages}, nil
+}
+
+func mergeConfigsEnabled(settings map[string]map[string]json.RawMessage) bool {
+	extensionSettings := settings[VortexGameID]
+	if len(extensionSettings) == 0 {
+		return true
+	}
+	raw, ok := extensionSettings[SettingMergeConfigs]
+	if !ok || len(raw) == 0 {
+		return true
+	}
+	var enabled bool
+	if err := json.Unmarshal(raw, &enabled); err != nil {
+		return true
+	}
+	return enabled
 }
 
 func stardewConfigCandidates(mods []sdk.DeploymentMod, mappings []deploy.FileMapping) []stardewConfigCandidate {

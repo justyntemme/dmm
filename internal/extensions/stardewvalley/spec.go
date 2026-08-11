@@ -2,6 +2,7 @@ package stardewvalley
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,10 @@ import (
 )
 
 const (
-	SteamAppID   = "413150"
-	VortexGameID = "stardewvalley"
-	Name         = "Stardew Valley"
+	SteamAppID          = "413150"
+	VortexGameID        = "stardewvalley"
+	Name                = "Stardew Valley"
+	SettingMergeConfigs = "stardew_merge_configs"
 
 	ModsRelativePath       = "Mods"
 	SMAPIExecutable        = "StardewModdingAPI"
@@ -110,6 +112,14 @@ func Register(r sdk.Registrar) {
 		ProviderModTypes: []string{
 			"SMAPI",
 		},
+	})
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:           SettingMergeConfigs,
+		Name:         "Preserve generated SMAPI config files",
+		Scope:        "profile",
+		ValueType:    sdk.ExtensionSettingValueBool,
+		DefaultValue: json.RawMessage("true"),
+		Message:      "Mirrors Vortex's Stardew merge-configs profile setting. When enabled, DMM adopts generated SMAPI config.json files into profile-owned staging and restores them when mods are re-enabled.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "will-deploy",
