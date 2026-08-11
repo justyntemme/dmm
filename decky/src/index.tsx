@@ -262,6 +262,8 @@ type Dependency = {
   command: string;
   installed: boolean;
   path?: string;
+  description?: string;
+  install_hint?: string;
 };
 
 type NXMStatus = {
@@ -6601,6 +6603,17 @@ function FreshDeckyModManagerRoute() {
             <div>Build: {status?.build?.short_commit || status?.build?.commit?.slice(0, 12) || "unknown"}</div>
             <div>NXM: {nxm?.registered ? "Registered" : "Not registered"}</div>
             <div>Dependencies: {dependencies.filter((dep) => dep.installed).length}/{dependencies.length} installed</div>
+            {dependencies.map((dep) => (
+              <div key={dep.command} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: dep.installed ? "#0f766e" : "#7f1d1d", minHeight: "72px" })}>
+                <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0 }}>
+                  <div style={{ color: "#f8fafc", fontWeight: 900 }}>{dep.name}</div>
+                  <div style={{ color: dep.installed ? "#99f6e4" : "#fca5a5", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{dep.installed ? "Installed" : "Missing"}</div>
+                </div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.command}{dep.path ? ` · ${dep.path}` : ""}</div>
+                {dep.description && <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.description}</div>}
+                {!dep.installed && dep.install_hint && <div style={{ color: "#fbbf24", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.install_hint}</div>}
+              </div>
+            ))}
             <FreshActionButton settingsRow onActivate={() => void refreshDebugState()}>Refresh Debug</FreshActionButton>
             <pre style={{ background: "#020617", border: "1px solid #334155", borderRadius: "6px", color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.35, margin: 0, maxHeight: "340px", overflow: "auto", padding: "8px", whiteSpace: "pre-wrap" }}>
               {diagnosticsTerminalText(diagnosticLogs)}
