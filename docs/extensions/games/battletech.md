@@ -21,5 +21,5 @@
 ## Remaining Gaps
 
 - Live Steam Deck validation against an actual BattleTech mod that generates runtime files.
-- Removed-file reporting is not implemented yet.
-- Multi-owner generated-file resolution needs a user-facing Action Center choice before DMM can safely adopt ambiguous files.
+- Removed-file event emission is implemented in the shared new-file monitor runtime. Source review found BattleTech only consumes `added-files`, so there is no BattleTech-specific removed-file handler to port.
+- Multi-owner generated-file resolution is surfaced through the shared candidate-owner event path. BattleTech intentionally adopts only single-owner generated files, matching the verified Vortex extension behavior.
