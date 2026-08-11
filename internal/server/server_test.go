@@ -9007,6 +9007,71 @@ func TestExtensionMigrationVersionGateSkipsCompletedTargets(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationCommandGameVersionGate(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	versionPath := filepath.Join(gamePath, "version.txt")
+	if err := os.WriteFile(versionPath, []byte("8.3.9"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999013"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationversiongame",
+		Name:    "Migration Version Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{appID}, NexusDomains: []string{"migrationversiongame"}, VortexGameID: "migrationversiongame"})
+			r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
+				ID:   "version-file",
+				Name: "Version file",
+				Provider: func(_ context.Context, input sdk.GameVersionInput) (sdk.GameVersionResult, error) {
+					body, err := os.ReadFile(filepath.Join(input.GamePath, "version.txt"))
+					if err != nil {
+						return sdk.GameVersionResult{}, err
+					}
+					return sdk.GameVersionResult{Version: strings.TrimSpace(string(body)), Source: "version.txt"}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	game := storage.Game{SteamAppID: appID, GamePath: gamePath}
+	command := sdk.StateMigrationCommandSpec{ID: "modern-only", Name: "Modern only", MinGameVersion: "8.4", MaxGameVersion: "9.0"}
+
+	eligible, err := srv.extensionMigrationCommandGameVersionEligible(context.Background(), game, command, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eligible {
+		t.Fatal("version below minimum should skip")
+	}
+	if err := os.WriteFile(versionPath, []byte("8.4.0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eligible, err = srv.extensionMigrationCommandGameVersionEligible(context.Background(), game, command, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eligible {
+		t.Fatal("version at minimum should run")
+	}
+	if err := os.WriteFile(versionPath, []byte("9.1.0"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eligible, err = srv.extensionMigrationCommandGameVersionEligible(context.Background(), game, command, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eligible {
+		t.Fatal("version above maximum should skip")
+	}
+}
+
 func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()
@@ -15760,7 +15825,7 @@ func TestRuntimeRequirementManualAcquireUsesLatestResolver(t *testing.T) {
 					Catalog:            "github",
 					SourceModID:        "example/runtime",
 					LatestAssetPattern: `runtime-.*\.zip`,
-					VersionConstraint:   ">=1.0.0",
+					VersionConstraint:  ">=1.0.0",
 					ArchiveName:        "runtime.zip",
 				},
 			})

@@ -351,6 +351,8 @@ type FeatureSummary struct {
 	LOOTPrelude          bool                     `json:"loot_prelude,omitempty"`
 	ArchiveCheckType     string                   `json:"archive_check_type,omitempty"`
 	ArchiveCheckVersions []int                    `json:"archive_check_versions,omitempty"`
+	MinGameVersion       string                   `json:"min_game_version,omitempty"`
+	MaxGameVersion       string                   `json:"max_game_version,omitempty"`
 	Tags                 []string                 `json:"tags,omitempty"`
 	CacheSeconds         int                      `json:"cache_seconds,omitempty"`
 	Launcher             string                   `json:"launcher,omitempty"`
@@ -2774,6 +2776,8 @@ func migrationCommandSummaries(commands []sdk.StateMigrationCommandSpec) []Featu
 			ExcludedModTypes: appendClean([]string{}, command.ExcludeModTypes...),
 			Target:           command.TargetRootID,
 			Path:             command.TargetRelative,
+			MinGameVersion:   strings.TrimSpace(command.MinGameVersion),
+			MaxGameVersion:   strings.TrimSpace(command.MaxGameVersion),
 			Status:           defaultString(command.Status, sdk.CapabilityStatusReady),
 			Message:          command.Message,
 		})

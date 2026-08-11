@@ -16,6 +16,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
@@ -246,6 +247,10 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 		}
 		commandGame = game
 	}
+	eligible, err := s.extensionMigrationCommandGameVersionEligible(ctx, commandGame, command, source+":"+commandID)
+	if err != nil || !eligible {
+		return false, err
+	}
 	switch strings.TrimSpace(command.Command) {
 	case sdk.StateMigrationCommandPurgeModsInPath:
 		targetPath, err := s.extensionMigrationTargetPath(ctx, commandGame, command)
@@ -294,6 +299,37 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	default:
 		return false, fmt.Errorf("unsupported extension migration command %q", command.Command)
 	}
+}
+
+func (s *Server) extensionMigrationCommandGameVersionEligible(ctx context.Context, game storage.Game, command sdk.StateMigrationCommandSpec, source string) (bool, error) {
+	minVersion := strings.TrimSpace(command.MinGameVersion)
+	maxVersion := strings.TrimSpace(command.MaxGameVersion)
+	if minVersion == "" && maxVersion == "" {
+		return true, nil
+	}
+	gamePath := strings.TrimSpace(game.GamePath)
+	if gamePath == "" {
+		gamePath = filepath.Join(strings.TrimSpace(game.LibraryPath), "steamapps", "common", strings.TrimSpace(game.InstallDir))
+	}
+	result, ran, err := s.games.DetectGameVersion(ctx, game.SteamAppID, gameext.GameVersionInput{
+		GamePath: gamePath,
+	})
+	if err != nil {
+		return false, fmt.Errorf("extension migration command %s game version detection failed: %w", command.ID, err)
+	}
+	version := strings.TrimSpace(result.Version)
+	if !ran || version == "" {
+		return false, fmt.Errorf("extension migration command %s requires game version but no extension version provider returned a version", command.ID)
+	}
+	if minVersion != "" && gamehandler.CompareSemanticVersions(version, minVersion) < 0 {
+		s.logger.Info("extension migration command skipped by minimum game version", "app_id", game.SteamAppID, "source", source, "version", version, "min_version", minVersion)
+		return false, nil
+	}
+	if maxVersion != "" && gamehandler.CompareSemanticVersions(version, maxVersion) > 0 {
+		s.logger.Info("extension migration command skipped by maximum game version", "app_id", game.SteamAppID, "source", source, "version", version, "max_version", maxVersion)
+		return false, nil
+	}
+	return true, nil
 }
 
 func (s *Server) setInstalledModTypesForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) (int, error) {

@@ -203,9 +203,9 @@ func migrations() []sdk.StateMigrationSpec {
 			FromVersion: "0.0.0",
 			ToVersion:   "0.2.12",
 			Commands: []sdk.StateMigrationCommandSpec{
-				{ID: "purge-legacy", Name: "Purge old legacy mod deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, ModType: legacyModType, TargetRelative: legacyRoot},
-				{ID: "retag-legacy", Name: "Retag legacy mods to official Mods folder", Command: sdk.StateMigrationCommandSetModType, ModType: legacyModType, TargetModType: officialModType},
-				{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
+				{ID: "purge-legacy", Name: "Purge old legacy mod deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, ModType: legacyModType, TargetRelative: legacyRoot, MinGameVersion: "8.4"},
+				{ID: "retag-legacy", Name: "Retag legacy mods to official Mods folder", Command: sdk.StateMigrationCommandSetModType, ModType: legacyModType, TargetModType: officialModType, MinGameVersion: "8.4"},
+				{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile, MinGameVersion: "8.4"},
 			},
 			Message: "Mirrors Vortex 0.2.12 behavior for modern Blade & Sorcery by purging legacy deployment, retagging legacy mods to the official mod type, and redeploying.",
 		},

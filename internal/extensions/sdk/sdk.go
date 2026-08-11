@@ -1092,6 +1092,8 @@ type StateMigrationCommandSpec struct {
 	TargetModType       string
 	ExcludeModTypes     []string
 	RequireEnabled      bool
+	MinGameVersion      string
+	MaxGameVersion      string
 	TargetRootID        string
 	TargetRelative      string
 	DestinationRelative string

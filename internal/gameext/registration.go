@@ -2894,6 +2894,12 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" excluded mod type must be a simple identifier"))
 			}
 		}
+		if value := strings.TrimSpace(command.MinGameVersion); value != "" && strings.ContainsAny(value, "/\\\x00\r\n") {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" min game version must be a simple version"))
+		}
+		if value := strings.TrimSpace(command.MaxGameVersion); value != "" && strings.ContainsAny(value, "/\\\x00\r\n") {
+			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" max game version must be a simple version"))
+		}
 		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandSetModType && strings.TrimSpace(command.TargetModType) == "" {
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target mod type is required"))
 		}
