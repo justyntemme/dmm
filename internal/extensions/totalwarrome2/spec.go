@@ -17,7 +17,6 @@ const (
 	Name         = "Total War: ROME II - Emperor Edition"
 
 	packModType     = "totalwarrome2-pack"
-	blockedModType  = "totalwarrome2-unclassified-blocked"
 	dataRoot        = "data"
 	packNoticeEvent = "did-deploy"
 )
@@ -27,8 +26,6 @@ var requiredGameFiles = []string{
 	"data/manifest.txt",
 	"data/data_rome2.pack",
 }
-
-const unsupportedReason = "Total War: ROME II archive layout is not classified by the verified extension rules. DMM currently supports pack-file archives intended for the game data folder; launcher tools, loose data replacement folders, and external Total War mod-manager flows stay blocked until their activation and rollback behavior are source-reviewed."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -50,7 +47,6 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:totalwarrome2:pack",
 		VortexInstallerID: "totalwarrome2-pack",
@@ -60,16 +56,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchPackArchive,
 		CustomBuild:       buildPackArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "research:totalwarrome2:blocked",
-		VortexInstallerID: "totalwarrome2-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: unsupportedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "totalwarrome2-required-files",

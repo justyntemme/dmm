@@ -17,12 +17,10 @@ const (
 	VortexGameID        = "rometotalwar"
 	Name                = "Rome: Total War"
 
-	dataModType    = "rometotalwar-data"
-	blockedModType = "rometotalwar-unclassified-blocked"
-	romeDataRoot   = "data"
-	alexanderRoot  = "alexander"
-	alexanderData  = "alexander/data"
-	blockedReason  = "Rome: Total War archive layout is not classified by the verified extension rules. DMM currently supports vanilla/Alexander data-folder replacement archives only; full conversion mods, launcher-required mod folders, and executable/tool flows stay blocked until a source-reviewed extension rule can place and launch them safely."
+	dataModType   = "rometotalwar-data"
+	romeDataRoot  = "data"
+	alexanderRoot = "alexander"
+	alexanderData = "alexander/data"
 )
 
 func Extension() sdk.Extension {
@@ -45,7 +43,6 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: dataModType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:rometotalwar:data",
 		VortexInstallerID: "rometotalwar-data",
@@ -55,16 +52,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchDataArchive,
 		CustomBuild:       buildDataArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:rometotalwar:unclassified-blocked",
-		VortexInstallerID: "rometotalwar-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "rometotalwar-data-present",

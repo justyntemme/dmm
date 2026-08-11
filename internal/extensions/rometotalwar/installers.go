@@ -19,11 +19,6 @@ func matchDataArchive(root string) bool {
 	return ok
 }
 
-func matchAnyArchive(root string) bool {
-	files, err := listFiles(root)
-	return err == nil && !containsFOMOD(files) && len(files) > 0
-}
-
 func buildDataArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	files, err := listFiles(input.ExtractedRoot)
 	if err != nil {

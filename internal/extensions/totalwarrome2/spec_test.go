@@ -2,7 +2,6 @@ package totalwarrome2
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +24,7 @@ func TestExtensionRegistersPackInstaller(t *testing.T) {
 	if ext.SteamWorkshop.AllowCoexistence {
 		t.Fatalf("Rome II should not advertise Workshop support without verified Steam Workshop category")
 	}
-	if len(ext.InstallPlan.Installers) != 2 {
+	if len(ext.InstallPlan.Installers) != 1 {
 		t.Fatalf("installers = %+v", ext.InstallPlan.Installers)
 	}
 	if ext.InstallPlan.Installers[0].InstructionMode != installplan.InstructionCustom {
@@ -64,21 +63,6 @@ func TestRomeIIPackArchivePlansToData(t *testing.T) {
 	}
 	if targets["data/readme.md"] {
 		t.Fatalf("readme should not be deployed: %+v", targets)
-	}
-}
-
-func TestRomeIIUnclassifiedArchivesAreBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "launcher", "setup.exe"), "tool")
-
-	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
-	_, err := registry.Build(SteamAppID, root)
-	if err == nil {
-		t.Fatal("expected unsupported archive")
-	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Total War: ROME II") {
-		t.Fatalf("unsupported error = %v", err)
 	}
 }
 

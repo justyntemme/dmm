@@ -16,8 +16,7 @@ const (
 	VortexGameID = "cncgenerals"
 	Name         = "Command & Conquer: Generals"
 
-	bigModType     = "cncgenerals-big"
-	blockedModType = "cncgenerals-unclassified-blocked"
+	bigModType = "cncgenerals-big"
 )
 
 var requiredGameFiles = []string{
@@ -25,8 +24,6 @@ var requiredGameFiles = []string{
 	"Game.dat",
 	"INI.big",
 }
-
-const blockedReason = "Command & Conquer: Generals archive layout is not classified by the verified extension rules. DMM currently supports simple .big package drops into the game root; GenLauncher packages, patchers, loose INI/data replacements, and full conversion launch flows stay blocked until their activation and rollback behavior are source-reviewed."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -49,7 +46,6 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: bigModType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:cncgenerals:big",
 		VortexInstallerID: "cncgenerals-big",
@@ -59,16 +55,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchBigArchive,
 		CustomBuild:       buildBigArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:cncgenerals:unclassified-blocked",
-		VortexInstallerID: "cncgenerals-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "cncgenerals-required-files",

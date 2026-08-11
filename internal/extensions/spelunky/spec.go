@@ -16,12 +16,9 @@ const (
 	VortexGameID = "spelunky"
 	Name         = "Spelunky"
 
-	dataModType    = "spelunky-data"
-	blockedModType = "spelunky-unclassified-blocked"
-	dataRoot       = "Data"
+	dataModType = "spelunky-data"
+	dataRoot    = "Data"
 )
-
-const blockedReason = "Spelunky archive layout is not classified by the verified extension rules. DMM currently supports direct Data-folder replacement archives only; Patchlunky .plm packages, Spelunktool texture source edits, and executable/tool flows stay blocked until a source-reviewed extension rule can transform them safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -43,7 +40,6 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: dataModType, TargetRoot: dataRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:spelunky:data",
 		VortexInstallerID: "spelunky-data",
@@ -53,16 +49,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchDataArchive,
 		CustomBuild:       buildDataArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:spelunky:unclassified-blocked",
-		VortexInstallerID: "spelunky-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "spelunky-data-present",

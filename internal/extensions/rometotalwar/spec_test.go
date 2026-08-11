@@ -1,10 +1,8 @@
 package rometotalwar_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/rometotalwar"
@@ -19,7 +17,7 @@ func TestExtensionRegistersRomeAndAlexanderAppIDs(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	want := map[string]bool{
@@ -63,18 +61,6 @@ func TestRomeDataInstallerTargetsAlexanderDataFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTarget(t, plan, "alexander/data/descr_fmv.txt")
-}
-
-func TestRomeUnclassifiedArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "launcher.exe"), "exe")
-
-	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(rometotalwar.Extension())})
-	_, err := registry.BuildInstallPlan(rometotalwar.SteamAppID, root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "not classified") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func assertTarget(t *testing.T, plan installplan.Plan, target string) {

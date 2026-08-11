@@ -1,10 +1,8 @@
 package spelunky_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spelunky"
@@ -18,7 +16,7 @@ func TestExtensionRegistersInstallerCoverage(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	if !registry.SupportsSteamApp(spelunky.SteamAppID) {
@@ -48,17 +46,6 @@ func TestLooseDataSubfolderTargetsDataFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTarget(t, plan, "Data/Localization/strings.pct")
-}
-
-func TestTextureSourceArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "Data", "Textures", "alltex", "MONSTERS", "monsters.png"), "png")
-
-	_, err := build(root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "not classified") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func build(root string) (installplan.Plan, error) {

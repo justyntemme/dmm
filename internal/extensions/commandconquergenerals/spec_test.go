@@ -2,10 +2,8 @@ package commandconquergenerals
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
@@ -21,7 +19,7 @@ func TestExtensionRegistersBigInstaller(t *testing.T) {
 	if len(ext.NexusDomains) != 1 || ext.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", ext.NexusDomains)
 	}
-	if len(ext.InstallPlan.Installers) != 2 {
+	if len(ext.InstallPlan.Installers) != 1 {
 		t.Fatalf("installers = %+v", ext.InstallPlan.Installers)
 	}
 	if len(ext.RuntimeRequirements.RuntimeRequirements) != 1 {
@@ -44,21 +42,6 @@ func TestBigArchivePlansToGameRoot(t *testing.T) {
 	}
 	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "CoolMod.big" {
 		t.Fatalf("instructions = %+v", plan.Instructions)
-	}
-}
-
-func TestUnclassifiedGeneralsArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "GenLauncher.exe"), "tool")
-
-	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
-	_, err := registry.Build(SteamAppID, root)
-	if err == nil {
-		t.Fatal("expected unsupported archive")
-	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Command & Conquer") {
-		t.Fatalf("unsupported error = %v", err)
 	}
 }
 
