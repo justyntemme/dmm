@@ -4260,7 +4260,8 @@ function freshGameCardStyle(active = false): CSSProperties {
     alignItems: "center",
     boxSizing: "border-box",
     minHeight: "74px",
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "visible",
     width: "100%"
   };
 }
@@ -4290,7 +4291,8 @@ function freshModCardStyle(active = false): CSSProperties {
     ...freshCardStyle(active),
     boxSizing: "border-box",
     minHeight: "70px",
-    overflow: "hidden",
+    overflowX: "hidden",
+    overflowY: "visible",
     width: "100%"
   };
 }
@@ -4714,6 +4716,8 @@ function FreshDeckyModManagerRoute() {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const selectedGameRef = useRef<HTMLDivElement | null>(null);
   const reportedActiveGameIDRef = useRef("");
+  const selectedGameIDRef = useRef(selectedGameID);
+  const suppressRunningAutoOpenRef = useRef(suppressRunningAutoOpen);
   const selectedGame = games.find((game) => game.app_id === selectedGameID) ?? null;
   const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   const selectedNexusDomain = (selectedGame?.nexus_domains ?? [])[0]?.trim().toLowerCase() ?? "";
@@ -4724,6 +4728,14 @@ function FreshDeckyModManagerRoute() {
   const validationWarnings = diagnostics?.validation_warnings ?? [];
   const installedCount = mods.length + workshopItems.length;
   const enabledCount = mods.filter((mod) => mod.enabled).length + workshopItems.filter((item) => item.disabled_known ? !item.disabled_locally : item.subscribed).length;
+
+  useEffect(() => {
+    selectedGameIDRef.current = selectedGameID;
+  }, [selectedGameID]);
+
+  useEffect(() => {
+    suppressRunningAutoOpenRef.current = suppressRunningAutoOpen;
+  }, [suppressRunningAutoOpen]);
 
   function applyUIPreferences(ui?: UISettings) {
     setFavoriteGameIDs(new Set((ui?.favorite_game_ids ?? []).filter((item) => typeof item === "string" && item.trim() !== "")));
@@ -4868,6 +4880,12 @@ function FreshDeckyModManagerRoute() {
         failed: failedSlices.join("; ")
       });
     }
+    await logFrontendEvent("fresh selected game state loaded", {
+      app_id: appID,
+      profiles: profilesResult.ok ? String(profilesResult.profiles.length) : "error",
+      mods: modsResult.ok ? String(modsResult.mods.length) : "error",
+      workshop: workshopResult.ok ? String(workshopResult.items.length) : "error"
+    });
   }
 
   async function refreshFreshState() {
@@ -4875,7 +4893,9 @@ function FreshDeckyModManagerRoute() {
       setError("");
       const result = await loadBaseState();
       const runningManageReady = result.running ? result.games.find((game) => game.app_id === result.running?.app_id && gameManageReady(game)) : null;
-      const nextSelected = selectedGameID || initialReturnContext?.appID || (!suppressRunningAutoOpen && runningManageReady ? runningManageReady.app_id : "");
+      const currentSelected = selectedGameIDRef.current;
+      const currentSuppressRunningAutoOpen = suppressRunningAutoOpenRef.current;
+      const nextSelected = currentSelected || initialReturnContext?.appID || (!currentSuppressRunningAutoOpen && runningManageReady ? runningManageReady.app_id : "");
       if (nextSelected && result.games.some((game) => game.app_id === nextSelected)) {
         setSelectedGameID(nextSelected);
         await loadSelectedGameState(nextSelected);
@@ -5631,16 +5651,24 @@ function FreshDeckyModManagerRoute() {
     if (next.id !== "games") setSuppressRunningAutoOpen(false);
   }
 
-  function snapBodyToTopIfFocusIsNearTop(event?: { target?: EventTarget | null }) {
+  function keepFocusedElementVisible(event?: { target?: EventTarget | null }) {
     const body = bodyRef.current;
     const target = event?.target instanceof HTMLElement ? event.target : null;
     if (!body || !target || body.scrollTop <= 0 || !body.contains(target)) return;
-    const firstFocusable = Array.from(
-      body.querySelectorAll<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, input, textarea, button, [tabindex]:not([tabindex='-1'])")
-    ).find((element) => element.offsetParent !== null && !element.hasAttribute("disabled") && element.getAttribute("aria-disabled") !== "true");
-    if (!firstFocusable || (target !== firstFocusable && !firstFocusable.contains(target) && !target.contains(firstFocusable))) return;
     requestAnimationFrame(() => {
-      if (body.scrollTop > 0) body.scrollTo({ top: 0, behavior: "auto" });
+      const focused = target.closest<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input, textarea, button, [tabindex]:not([tabindex='-1'])");
+      if (!focused || !body.contains(focused)) return;
+      const bodyRect = body.getBoundingClientRect();
+      const focusedRect = focused.getBoundingClientRect();
+      const topPadding = 12;
+      const bottomPadding = 24;
+      if (focusedRect.top < bodyRect.top + topPadding) {
+        body.scrollTop = Math.max(0, body.scrollTop - ((bodyRect.top + topPadding) - focusedRect.top));
+        return;
+      }
+      if (focusedRect.bottom > bodyRect.bottom - bottomPadding) {
+        body.scrollTop += focusedRect.bottom - (bodyRect.bottom - bottomPadding);
+      }
     });
   }
 
@@ -6257,7 +6285,7 @@ function FreshDeckyModManagerRoute() {
         ref={bodyRef}
         flow-children="down"
         navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
-        onFocusCapture={snapBodyToTopIfFocusIsNearTop}
+        onFocusCapture={keepFocusedElementVisible}
         preferredFocus
         style={freshDeckyBodyStyle}
       >

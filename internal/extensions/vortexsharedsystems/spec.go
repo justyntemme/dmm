@@ -2,7 +2,12 @@ package vortexsharedsystems
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 )
@@ -36,6 +41,7 @@ func Register(r sdk.Registrar) {
 	registerDependencyManager(r)
 	registerLocalGameSettings(r)
 	registerNewFileMonitor(r)
+	registerSteamGameInfo(r)
 	registerVortexTests(r)
 }
 
@@ -245,6 +251,109 @@ func registerVortexTests(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Verified non-applicable: Vortex registers this test only for Windows installer registry state. DMM is delivered as a Decky plugin on SteamOS and has no Windows uninstall registry entry to validate.",
 	})
+}
+
+var steamAppDetailsURL = "https://store.steampowered.com/api/appdetails"
+
+func registerSteamGameInfo(r sdk.Registrar) {
+	r.RegisterGameInfoProvider(sdk.GameInfoProviderSpec{
+		ID:           "steam",
+		Name:         "Steam store game info provider",
+		Tags:         []string{"release_date", "website", "metacritic_score"},
+		CacheSeconds: int((7 * 24 * time.Hour).Seconds()),
+		Priority:     50,
+		Message:      "DMM mirrors Vortex's gameinfo-steam extension by querying Steam Store appdetails with the selected Steam app ID.",
+		Provider:     steamGameInfoProvider,
+	})
+}
+
+func steamGameInfoProvider(ctx context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
+	appID := strings.TrimSpace(input.AppID)
+	if appID == "" {
+		return sdk.GameInfoResult{}, nil
+	}
+	requestURL, err := url.Parse(steamAppDetailsURL)
+	if err != nil {
+		return sdk.GameInfoResult{}, err
+	}
+	query := requestURL.Query()
+	query.Set("appids", appID)
+	requestURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return sdk.GameInfoResult{}, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return sdk.GameInfoResult{}, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return sdk.GameInfoResult{}, nil
+	}
+	var payload map[string]struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ReleaseDate struct {
+				Date string `json:"date"`
+			} `json:"release_date"`
+			Website    string `json:"website"`
+			Metacritic struct {
+				Score any `json:"score"`
+			} `json:"metacritic"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return sdk.GameInfoResult{}, nil
+	}
+	entry, ok := payload[appID]
+	if !ok || !entry.Success {
+		return sdk.GameInfoResult{}, nil
+	}
+	details := []sdk.GameInfoDetail{}
+	if releaseDate := strings.TrimSpace(entry.Data.ReleaseDate.Date); releaseDate != "" {
+		details = append(details, sdk.GameInfoDetail{
+			ID:     "release_date",
+			Title:  "Release Date",
+			Type:   "date",
+			Value:  releaseDate,
+			Source: "steam",
+		})
+	}
+	if website := strings.TrimSpace(entry.Data.Website); website != "" {
+		details = append(details, sdk.GameInfoDetail{
+			ID:     "website",
+			Title:  "Website",
+			Type:   "url",
+			Value:  website,
+			Source: "steam",
+		})
+	}
+	if score, ok := steamMetacriticScore(entry.Data.Metacritic.Score); ok {
+		details = append(details, sdk.GameInfoDetail{
+			ID:     "metacritic_score",
+			Title:  "Score (Metacritic)",
+			Value:  score,
+			Source: "steam",
+		})
+	}
+	return sdk.GameInfoResult{Details: details}, nil
+}
+
+func steamMetacriticScore(value any) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		score := int(typed)
+		if typed == float64(score) {
+			return score, true
+		}
+	case string:
+		score, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return score, true
+		}
+	}
+	return 0, false
 }
 
 func readyAPI(id, name string) sdk.ExtensionAPISpec {
