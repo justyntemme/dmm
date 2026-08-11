@@ -410,6 +410,23 @@ func TestExtensionDidDeployRemindsAboutScriptMergerForManagedMods(t *testing.T) 
 	}
 }
 
+func TestExtensionDidRemoveModRemindsAboutScriptMergerForManagedMods(t *testing.T) {
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
+
+	result, err := registry.RunEventHandlers(context.Background(), "292030", sdk.EventDidRemoveMod, sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{
+			Name:    "Removed Script Mod",
+			ModType: "witcher3tl",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "uninstalled") || result.Notices[0].ToolID != "W3ScriptMerger" {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+}
+
 func TestExtensionWillDeployMergesMenuSettingFragments(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(witcher3.Extension())})
 	root := t.TempDir()

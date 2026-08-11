@@ -97,15 +97,30 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 	}
 	var notices []sdk.EventNotice
 	if deployIncludesScriptMergeRelevantMods(input) {
-		notices = append(notices, sdk.EventNotice{
-			Message:     "Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet.",
-			ActionKind:  sdk.EventNoticeActionRunLaunchTool,
-			ToolID:      scriptMergerToolID,
-			ToolName:    "W3 Script Merger",
-			ActionLabel: "Run Script Merger",
-		})
+		notices = append(notices, scriptMergerNotice("Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet."))
 	}
 	return sdk.EventHandlerResult{Notices: notices}, nil
+}
+
+func didRemoveModScriptMergerReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	var notices []sdk.EventNotice
+	if removedModsMayNeedScriptMerge(input) {
+		notices = append(notices, scriptMergerNotice("A Witcher 3 script or menu mod was uninstalled. Run Witcher Script Merger before launching so merge output and load-order state match the active profile."))
+	}
+	return sdk.EventHandlerResult{Notices: notices}, nil
+}
+
+func scriptMergerNotice(message string) sdk.EventNotice {
+	return sdk.EventNotice{
+		Message:     message,
+		ActionKind:  sdk.EventNoticeActionRunLaunchTool,
+		ToolID:      scriptMergerToolID,
+		ToolName:    "W3 Script Merger",
+		ActionLabel: "Run Script Merger",
+	}
 }
 
 func deployIncludesScriptMergeRelevantMods(input sdk.EventHandlerInput) bool {
@@ -115,6 +130,30 @@ func deployIncludesScriptMergeRelevantMods(input sdk.EventHandlerInput) bool {
 		}
 		if _, ok := scriptMergeRelevantModTypes[mod.ModType]; ok {
 			return true
+		}
+	}
+	for _, mapping := range input.Mappings {
+		if witcherTargetMayNeedScriptMerge(mapping.TargetRelative) {
+			return true
+		}
+	}
+	for _, file := range input.ManagedFiles {
+		if witcherTargetMayNeedScriptMerge(file.TargetPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func removedModsMayNeedScriptMerge(input sdk.EventHandlerInput) bool {
+	for _, mod := range input.Mods {
+		if _, ok := scriptMergeRelevantModTypes[mod.ModType]; ok {
+			return true
+		}
+		for _, file := range mod.Files {
+			if witcherTargetMayNeedScriptMerge(file.TargetRelative) || witcherTargetMayNeedScriptMerge(file.Path) {
+				return true
+			}
 		}
 	}
 	for _, mapping := range input.Mappings {
