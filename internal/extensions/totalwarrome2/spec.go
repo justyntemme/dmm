@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -16,9 +17,10 @@ const (
 	VortexGameID = "totalwarrome2"
 	Name         = "Total War: ROME II - Emperor Edition"
 
-	packModType     = "totalwarrome2-pack"
-	dataRoot        = "data"
-	packNoticeEvent = "did-deploy"
+	packModType      = "totalwarrome2-pack"
+	dataRoot         = "data"
+	userScriptRootID = "totalwarrome2-user-script-root"
+	packNoticeEvent  = "did-deploy"
 )
 
 var requiredGameFiles = []string{
@@ -46,6 +48,11 @@ func Register(r sdk.Registrar) {
 			DefaultStrategy: installplan.DeployStrategyCopy,
 		},
 	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       userScriptRootID,
+		Name:     "Total War: ROME II Proton user scripts",
+		Resolver: targetroots.ProtonRoamingAppData(SteamAppID, "The Creative Assembly", "Rome2", "scripts"),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:totalwarrome2:pack",
@@ -67,6 +74,11 @@ func Register(r sdk.Registrar) {
 		OKMessage:   "The Total War: ROME II game folder contains the expected executable and pack-file layout.",
 		InstallHint: "Verify the game files in Steam before testing Total War: ROME II mods.",
 		Check:       checkRequiredGameFiles,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    "Total War: ROME II user.script generator",
+		Handler: willDeployUserScript,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   packNoticeEvent,

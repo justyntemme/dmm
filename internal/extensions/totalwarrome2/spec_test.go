@@ -33,7 +33,10 @@ func TestExtensionRegistersPackInstaller(t *testing.T) {
 	if len(ext.RuntimeRequirements.RuntimeRequirements) != 1 || ext.RuntimeRequirements.RuntimeRequirements[0].ID != "totalwarrome2-required-files" {
 		t.Fatalf("runtime requirements = %+v", ext.RuntimeRequirements.RuntimeRequirements)
 	}
-	if len(ext.EventHandlers) != 1 || ext.EventHandlers[0].Event != "did-deploy" {
+	if len(ext.TargetRoots) != 1 || ext.TargetRoots[0].ID != userScriptRootID {
+		t.Fatalf("target roots = %+v", ext.TargetRoots)
+	}
+	if len(ext.EventHandlers) != 2 || ext.EventHandlers[0].Event != "will-deploy" || ext.EventHandlers[1].Event != "did-deploy" {
 		t.Fatalf("event handlers = %+v", ext.EventHandlers)
 	}
 }
@@ -67,14 +70,61 @@ func TestRomeIIPackArchivePlansToData(t *testing.T) {
 }
 
 func TestRomeIIDidDeployNoticeForPack(t *testing.T) {
-	result, err := gameext.MustCompileExtension(Extension()).EventHandlers[0].Handler(context.Background(), sdk.EventHandlerInput{
+	result, err := gameext.MustCompileExtension(Extension()).EventHandlers[1].Handler(context.Background(), sdk.EventHandlerInput{
 		Mappings: []deploy.FileMapping{{TargetRelative: "data/example.pack"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "pack files") {
+	if len(result.Notices) != 1 || !strings.Contains(result.Notices[0].Message, "user.script.txt") {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestRomeIIWillDeployGeneratesUserScriptForEnabledPacks(t *testing.T) {
+	library := t.TempDir()
+	gamePath := filepath.Join(library, "steamapps", "common", "Total War Rome II")
+	scriptRoot := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Roaming", "The Creative Assembly", "Rome2", "scripts")
+	writeFile(t, filepath.Join(scriptRoot, userScriptFile), "mod \"old.pack\";\r\n")
+	workDir := t.TempDir()
+
+	result, err := gameext.MustCompileExtension(Extension()).EventHandlers[0].Handler(context.Background(), sdk.EventHandlerInput{
+		GamePath:    gamePath,
+		LibraryPath: library,
+		WorkDir:     workDir,
+		Mods: []sdk.DeploymentMod{
+			{ID: 1, Name: "Enabled", ModType: packModType, Enabled: true, Priority: 20},
+			{ID: 2, Name: "Disabled", ModType: packModType, Enabled: false, Priority: 10},
+		},
+		Mappings: []deploy.FileMapping{
+			{InstalledModID: 2, TargetRelative: "data/disabled.pack", Priority: 10},
+			{InstalledModID: 1, TargetRelative: "data/enabled.pack", Priority: 20},
+			{InstalledModID: 1, TargetRelative: "data/readme.txt", Priority: 20},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Mappings) != 1 {
+		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+	mapping := result.Mappings[0]
+	if mapping.TargetRoot != scriptRoot || mapping.TargetRelative != userScriptFile || mapping.TargetPolicy != deploy.TargetPolicyPatchExisting || mapping.RestorePath == "" {
+		t.Fatalf("mapping = %+v", mapping)
+	}
+	body, err := os.ReadFile(mapping.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "mod \"enabled.pack\";\r\n" {
+		t.Fatalf("user script = %q", string(body))
+	}
+	restore, err := os.ReadFile(mapping.RestorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restore) != "mod \"old.pack\";\r\n" {
+		t.Fatalf("restore = %q", string(restore))
 	}
 }
 
