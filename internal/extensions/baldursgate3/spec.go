@@ -332,6 +332,7 @@ func registerActions(r sdk.Registrar) {
 			ID:      "bg3-" + sanitizeID(action),
 			Name:    action,
 			Scope:   VortexGameID,
+			Kind:    sdk.ExtensionActionKindDialog,
 			Status:  sdk.CapabilityStatusNotApplicable,
 			Message: "Vortex exposes this as a desktop file-picker or Vortex-state migration action. DMM-created Steam Deck state exports to the game through profile deployment; arbitrary file import/export is a post-MVP advanced management workflow.",
 		})

@@ -2592,7 +2592,15 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			continue
 		}
 		kind := strings.TrimSpace(spec.Kind)
-		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool && kind != sdk.ExtensionActionKindApplyProfile && kind != sdk.ExtensionActionKindSetSetting {
+		if kind == "" {
+			errs = append(errs, errors.New("extension action "+id+" kind is required"))
+			continue
+		}
+		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool && kind != sdk.ExtensionActionKindApplyProfile && kind != sdk.ExtensionActionKindSetSetting && kind != sdk.ExtensionActionKindDialog && kind != sdk.ExtensionActionKindPage && kind != sdk.ExtensionActionKindAPI && kind != sdk.ExtensionActionKindReport {
+			errs = append(errs, errors.New("extension action "+id+" kind is invalid"))
+			continue
+		}
+		if kind == sdk.ExtensionActionKindDialog || kind == sdk.ExtensionActionKindPage || kind == sdk.ExtensionActionKindAPI || kind == sdk.ExtensionActionKindReport {
 			continue
 		}
 		status := strings.TrimSpace(spec.Status)

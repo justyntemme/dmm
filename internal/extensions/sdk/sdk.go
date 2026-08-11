@@ -759,6 +759,10 @@ const (
 	ExtensionActionKindAcquireTool   = "acquire-tool"
 	ExtensionActionKindApplyProfile  = "apply-profile"
 	ExtensionActionKindSetSetting    = "set-extension-setting"
+	ExtensionActionKindDialog        = "dialog"
+	ExtensionActionKindPage          = "page"
+	ExtensionActionKindAPI           = "api"
+	ExtensionActionKindReport        = "report"
 
 	OpenDirectoryBaseGame       = "game"
 	OpenDirectoryBaseDownloads  = "downloads"
