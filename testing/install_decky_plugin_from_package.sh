@@ -24,6 +24,7 @@ Environment overrides:
   BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
   DMM_RESTART_DECKY_AFTER_INSTALL=1
   DMM_STOP_BACKEND_FOR_INSTALL=0
+  DMM_RESTART_BACKEND_AFTER_INSTALL=1
   DMM_REBOOT_AFTER_INSTALL=1
 
 The install requires sudo because Decky plugin files are root-owned and the
@@ -33,8 +34,10 @@ DMM_RESTART_DECKY_AFTER_INSTALL=0 when you only want to replace files.
 DMM_STOP_BACKEND_FOR_INSTALL=1 only when the backend binary itself must be
 stopped before replacement. By default the Go backend stays up across Decky
 plugin reloads so phone/Deck workflows do not lose the server during testing.
-Set DMM_REBOOT_AFTER_INSTALL=1 only when Gaming Mode has stale Decky frontend
-state and an explicit reboot is worth the interruption.
+DMM_RESTART_BACKEND_AFTER_INSTALL=1 restarts the backend from the newly
+installed binary after package verification. Set DMM_REBOOT_AFTER_INSTALL=1
+only when Gaming Mode has stale Decky frontend state and an explicit reboot is
+worth the interruption.
 USAGE
 }
 
@@ -138,6 +141,30 @@ fi
 
 echo "==> Installed ${PLUGIN_NAME}"
 sync
+if [[ "${DMM_RESTART_BACKEND_AFTER_INSTALL:-1}" == "1" ]]; then
+	echo "==> Restarting ${PLUGIN_NAME} backend from installed package"
+	sudo pkill -TERM -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" 2>/dev/null || true
+	sleep 1
+	if pgrep -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" >/dev/null 2>&1; then
+		sudo pkill -KILL -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" 2>/dev/null || true
+		sleep 1
+	fi
+	log_dir="/home/deck/.local/state/${PLUGIN_NAME}"
+	mkdir -p "${log_dir}"
+	token="$(cat "${log_dir}/api-token" 2>/dev/null || true)"
+	nohup env DMM_DECKY_PLUGIN_DIR="${DECK_PLUGIN_DIR}" DMM_AUTH_TOKEN="${token}" DMM_AUTH_TOKEN_FILE="${log_dir}/api-token" "${DECK_PLUGIN_DIR}/bin/dmm-server" >>"${log_dir}/backend.log" 2>&1 &
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		if curl -fsS --max-time 1 http://127.0.0.1:17942/api/health >/dev/null 2>&1; then
+			echo "Backend is healthy"
+			break
+		fi
+		sleep 0.5
+	done
+	if ! curl -fsS --max-time 1 http://127.0.0.1:17942/api/health >/dev/null 2>&1; then
+		echo "Backend did not become healthy after restart; check ${log_dir}/backend.log" >&2
+		exit 1
+	fi
+fi
 if [[ "${DMM_REBOOT_AFTER_INSTALL:-0}" == "1" ]]; then
 	echo "==> Rebooting Steam Deck because DMM_REBOOT_AFTER_INSTALL=1"
 	sudo shutdown -r now
