@@ -113,6 +113,41 @@ func readModConfig(path string) (readConfigResult, error) {
 	return readConfigResult{Config: cfg, Raw: data}, nil
 }
 
+func checkModConfig(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.ExtensionTestResult{}, err
+	}
+	configRoot, err := localLowConfigRoot(ctx, sdk.TargetRootInput{
+		AppID:       input.AppID,
+		GamePath:    input.GamePath,
+		LibraryPath: input.LibraryPath,
+	})
+	if err != nil {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "Unable to locate Pillars II modconfig.json.",
+			Details:  err.Error(),
+			Actions:  []string{"Verify the Steam library path or launch the game once."},
+		}, nil
+	}
+	configPath := filepath.Join(configRoot.Path, modConfigFile)
+	if _, err := readModConfig(configPath); err != nil {
+		return sdk.ExtensionTestResult{
+			Status:   sdk.HealthCheckStatusFailed,
+			Severity: sdk.HealthCheckSeverityError,
+			Message:  "Pillars II modconfig.json is invalid.",
+			Details:  err.Error(),
+			Actions:  []string{"Fix or reset modconfig.json before deploying Pillars II mods."},
+		}, nil
+	}
+	return sdk.ExtensionTestResult{
+		Status:   sdk.HealthCheckStatusPassed,
+		Severity: sdk.HealthCheckSeverityInfo,
+		Message:  "Pillars II modconfig.json is readable.",
+	}, nil
+}
+
 func mergeModConfig(current modConfig, managed []managedFolderEntry, previousManaged map[string]struct{}) modConfig {
 	managedNames := map[string]struct{}{}
 	for _, entry := range managed {

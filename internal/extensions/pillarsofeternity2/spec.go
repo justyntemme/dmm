@@ -88,6 +88,14 @@ func Register(r sdk.Registrar) {
 			sdk.EnsureTargetRootFiles(configRootID, "{\n  \"Entries\": []\n}\n", modConfigFile)...,
 		),
 	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "poe2-modconfig-valid",
+		Name:    "Pillars II modconfig.json",
+		Trigger: sdk.EventGamemodeActivated,
+		Check:   checkModConfig,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Pillars II startWatch/updateLoadOrder validation by warning when modconfig.json is invalid before deployment.",
+	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "poe2-xbox-launcher",
 		Name:     "Xbox launcher",

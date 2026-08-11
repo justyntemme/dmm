@@ -23,7 +23,7 @@ func TestExtensionRegistersPillarsCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || !summary.Capabilities.GameRegistration.QueryModPathDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
+	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.AttributeExtractors[0].Message == "" {
@@ -31,6 +31,9 @@ func TestExtensionRegistersPillarsCapabilities(t *testing.T) {
 	}
 	if !hasSetupFile(summary.Capabilities.GameSetups, configRootID, modConfigFile) {
 		t.Fatalf("setup actions = %+v", summary.Capabilities.GameSetups)
+	}
+	if summary.Capabilities.ExtensionTests[0].ID != "poe2-modconfig-valid" || summary.Capabilities.ExtensionTests[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("extension tests = %+v", summary.Capabilities.ExtensionTests)
 	}
 }
 
@@ -122,6 +125,26 @@ func TestWillDeployGeneratesModConfig(t *testing.T) {
 	}
 	if result.Mappings[0].RestorePath == "" {
 		t.Fatalf("missing restore path in %+v", result.Mappings[0])
+	}
+}
+
+func TestCheckModConfigReportsInvalidJSON(t *testing.T) {
+	root := t.TempDir()
+	library := filepath.Join(root, "library")
+	gamePath := filepath.Join(library, "steamapps", "common", "Pillars of Eternity II")
+	configPath := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "LocalLow", "Obsidian Entertainment", "Pillars of Eternity II", modConfigFile)
+	writeFile(t, configPath, `{bad json`)
+
+	result, err := checkModConfig(context.Background(), sdk.ExtensionTestInput{
+		AppID:       SteamAppID,
+		GamePath:    gamePath,
+		LibraryPath: library,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != sdk.HealthCheckStatusFailed || result.Severity != sdk.HealthCheckSeverityError || !strings.Contains(result.Details, "invalid character") {
+		t.Fatalf("check result = %+v", result)
 	}
 }
 
