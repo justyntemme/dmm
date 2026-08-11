@@ -91,14 +91,6 @@ func Register(r sdk.Registrar, game GameSpec) {
 			URL:  "https://www.nexusmods.com/site/mods/" + strings.TrimSpace(game.SupportModID),
 		})
 	}
-	if game.HasLoadOrder {
-		r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
-			ID:      game.ID + "-load-order",
-			Name:    game.Name + " load-order parity",
-			Status:  sdk.CapabilityStatusNotApplicable,
-			Message: "The Vortex game extension registers load-order behavior. This catalog shim is not a runtime game extension; promote the game into a dedicated extension before claiming support.",
-		})
-	}
 }
 
 func nexusDomains(game GameSpec) []string {
