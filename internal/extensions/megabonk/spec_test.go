@@ -29,7 +29,7 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	}
 }
 
-func TestNativeLinuxPlatformSkipsWindowsRuntimeInstaller(t *testing.T) {
+func TestNativeLinuxPlatformInstallsCompatibleBepInExRuntime(t *testing.T) {
 	gamePath := t.TempDir()
 	writeFile(t, filepath.Join(gamePath, gameExecutableLinux), "elf")
 	writeFile(t, filepath.Join(gamePath, "GameAssembly.so"), "so")
@@ -44,9 +44,16 @@ func TestNativeLinuxPlatformSkipsWindowsRuntimeInstaller(t *testing.T) {
 	if !ok || platform.ID != platformLinux {
 		t.Fatalf("platform = %+v, ok=%v", platform, ok)
 	}
-	_, err := registry.BuildInstallPlanWithGamePath(SteamAppID, root, gamePath)
-	if err == nil || !strings.Contains(err.Error(), "native Linux") {
-		t.Fatalf("expected native Linux to skip Windows BepInEx installer, err=%v", err)
+	plan, err := registry.BuildInstallPlanWithGamePath(SteamAppID, root, gamePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != bepInExRuntimeModType || plan.PlannerID != "vortex:megabonk:bepinex:native-linux" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "BepInEx/core/BepInEx.Core.dll")
+	if !hasTarget(plan, "winhttp.dll") {
+		t.Fatalf("runtime plan did not preserve loader entrypoint: %+v", plan.Instructions)
 	}
 }
 
@@ -164,6 +171,15 @@ func assertTarget(t *testing.T, plan installplan.Plan, target string) {
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+}
+
+func hasTarget(plan installplan.Plan, target string) bool {
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRelative == target {
+			return true
+		}
+	}
+	return false
 }
 
 func writeFile(t *testing.T, path string, body string) {

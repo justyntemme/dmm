@@ -151,15 +151,15 @@ func modTypes() []installplan.ModTypeSpec {
 func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
 		{
-			ID:                "vortex:megabonk:bepinex:native-linux-blocked",
+			ID:                "vortex:megabonk:bepinex:native-linux",
 			VortexInstallerID: "megabonk-bepinex",
 			PlatformID:        platformLinux,
 			Priority:          25,
 			ModType:           bepInExRuntimeModType,
 			NameSource:        installplan.NameSourceArchive,
 			CustomMatch:       matchBepInExRuntime,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "The source-verified Megabonk Vortex BepInEx installer downloads a Windows x64 payload. This Steam Deck install is native Linux, so DMM blocks that runtime until a Linux Megabonk loader package and launch behavior are verified.",
+			CustomBuild:       buildBepInExRuntime,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:megabonk:bepinex",
@@ -173,15 +173,15 @@ func installers() []installplan.InstallerSpec {
 			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
-			ID:                "vortex:megabonk:melonloader:native-linux-blocked",
+			ID:                "vortex:megabonk:melonloader:native-linux",
 			VortexInstallerID: "megabonk-melonloader",
 			PlatformID:        platformLinux,
 			Priority:          26,
 			ModType:           melonRuntimeModType,
 			NameSource:        installplan.NameSourceArchive,
 			CustomMatch:       matchMelonRuntime,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "The source-verified Megabonk Vortex MelonLoader installer downloads a Windows x64 payload. This Steam Deck install is native Linux, so DMM blocks that runtime until a Linux Megabonk loader package and launch behavior are verified.",
+			CustomBuild:       buildMelonRuntime,
+			InstructionMode:   installplan.InstructionCustom,
 		},
 		{
 			ID:                "vortex:megabonk:melonloader",
