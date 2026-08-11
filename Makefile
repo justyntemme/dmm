@@ -24,7 +24,18 @@ loot-sorter:
 
 loot-sorter-linux:
 	mkdir -p bin
-	cd helpers/loot-sorter && $(CARGO) build --release --target x86_64-unknown-linux-gnu
+	cd helpers/loot-sorter && \
+		RUSTC="$$(rustup which rustc 2>/dev/null || command -v rustc)" && \
+		if [ "$$(uname -s)" = "Linux" ]; then \
+			$(CARGO) build --release --target x86_64-unknown-linux-gnu; \
+		else \
+			mkdir -p target; \
+			printf '%s\n' '#!/bin/sh' 'exec zig cc -target x86_64-linux-gnu "$$@"' > target/dmm-zigcc-linux-amd64; \
+			chmod +x target/dmm-zigcc-linux-amd64; \
+			CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$$PWD/target/dmm-zigcc-linux-amd64" \
+				RUSTC="$$RUSTC" \
+				$(CARGO) build --release --target x86_64-unknown-linux-gnu; \
+		fi
 	cp helpers/loot-sorter/target/x86_64-unknown-linux-gnu/release/dmm-loot-sorter bin/dmm-loot-sorter-linux-amd64
 
 web:
