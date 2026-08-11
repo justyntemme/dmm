@@ -502,8 +502,8 @@ func validateExtension(extension Extension) error {
 		if len(extension.SteamAppIDs) > 0 {
 			errs = append(errs, errors.New("framework extension must not register Steam app ids"))
 		}
-		if !hasFrameworkCapability(extension) {
-			errs = append(errs, errors.New("framework extension must register at least one framework capability"))
+		if !hasFrameworkCapability(extension) && len(extension.Sources) == 0 {
+			errs = append(errs, errors.New("framework extension must register at least one framework capability or verified source reference"))
 		}
 	default:
 		errs = append(errs, errors.New("extension kind must be game or framework"))

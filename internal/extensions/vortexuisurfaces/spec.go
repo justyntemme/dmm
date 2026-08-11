@@ -9,8 +9,6 @@ const (
 	BuildID = "first-party-go"
 )
 
-const surfaceMessage = "Vortex source uses this desktop UI/state surface. DMM's Steam Deck MVP uses Decky-native and phone/tablet UI surfaces instead, so this desktop renderer is not applicable to DMM-created state; source references remain for future parity review when a concrete extension needs equivalent UX."
-
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:      ID,
@@ -27,90 +25,6 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	for _, ref := range Sources() {
 		r.RegisterSource(ref)
-	}
-	for _, api := range []sdk.ExtensionAPISpec{
-		surfaceAPI("registerAction", "Register extension action"),
-		surfaceAPI("registerActionCheck", "Register extension action reducer guard"),
-		surfaceAPI("registerDialog", "Register extension dialog"),
-		surfaceAPI("registerDashlet", "Register dashboard tile"),
-		surfaceAPI("registerMainPage", "Register main page"),
-		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
-		surfaceAPI("registerReducer", "Register extension state reducer"),
-	} {
-		r.RegisterExtensionAPI(api)
-	}
-	r.RegisterExtensionAction(surfaceAction("registerAction", "Vortex registerAction", "extension-ui", "action"))
-	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
-		ID:       "registerControlWrapper",
-		Name:     "Vortex registerControlWrapper",
-		Target:   "extension-ui",
-		Priority: 0,
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  surfaceMessage,
-	})
-	r.RegisterExtensionDialog(surfaceDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
-	r.RegisterExtensionDashlet(surfaceDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
-	r.RegisterExtensionMainPage(surfaceMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
-	r.RegisterStateReducer(surfaceReducer("registerReducer", "Vortex registerReducer", "extension-state"))
-}
-
-func surfaceAPI(id, name string) sdk.ExtensionAPISpec {
-	return sdk.ExtensionAPISpec{
-		ID:      id,
-		Name:    name,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	}
-}
-
-func surfaceAction(id, name, scope, kind string) sdk.ExtensionActionSpec {
-	return sdk.ExtensionActionSpec{
-		ID:      id,
-		Name:    name,
-		Scope:   scope,
-		Kind:    kind,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	}
-}
-
-func surfaceDialog(id, name, scope string) sdk.ExtensionDialogSpec {
-	return sdk.ExtensionDialogSpec{
-		ID:      id,
-		Name:    name,
-		Scope:   scope,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	}
-}
-
-func surfaceDashlet(id, name, scope string) sdk.ExtensionDashletSpec {
-	return sdk.ExtensionDashletSpec{
-		ID:      id,
-		Name:    name,
-		Scope:   scope,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	}
-}
-
-func surfaceMainPage(id, name, scope string) sdk.ExtensionMainPageSpec {
-	return sdk.ExtensionMainPageSpec{
-		ID:      id,
-		Name:    name,
-		Scope:   scope,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	}
-}
-
-func surfaceReducer(id, name, scope string) sdk.StateReducerSpec {
-	return sdk.StateReducerSpec{
-		ID:      id,
-		Name:    name,
-		Scope:   scope,
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
 	}
 }
 

@@ -3,7 +3,6 @@ package vortexuisurfaces
 import (
 	"testing"
 
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
@@ -15,30 +14,13 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertNonApplicable(t, "extension API", summary.Capabilities.ExtensionAPIs, "registerAction", "registerDialog", "registerReducer")
-	assertNonApplicable(t, "dialog", summary.Capabilities.ExtensionDialogs, "registerDialog")
-	assertNonApplicable(t, "dashlet", summary.Capabilities.ExtensionDashlets, "registerDashlet")
-	assertNonApplicable(t, "main page", summary.Capabilities.ExtensionMainPages, "registerMainPage")
-	assertNonApplicable(t, "control wrapper", summary.Capabilities.ExtensionControlWrappers, "registerControlWrapper")
-	assertNonApplicable(t, "state reducer", summary.Capabilities.StateReducers, "registerReducer")
+	if len(summary.Sources) == 0 {
+		t.Fatalf("summary should retain source references: %+v", summary)
+	}
+	if len(summary.ParityGaps) != 0 {
+		t.Fatalf("source-only UI surface extension should not advertise runtime gaps: %+v", summary.ParityGaps)
+	}
 	if len(summary.Capabilities.StartHooks) != 0 {
 		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
-	}
-}
-
-func assertNonApplicable(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {
-	t.Helper()
-	featuresByID := map[string]gameext.FeatureSummary{}
-	for _, feature := range features {
-		featuresByID[feature.ID] = feature
-	}
-	for _, id := range ids {
-		feature, ok := featuresByID[id]
-		if !ok {
-			t.Fatalf("%s %s missing from %+v", kind, id, features)
-		}
-		if feature.Status != sdk.CapabilityStatusNotApplicable || feature.Message == "" {
-			t.Fatalf("%s %s = %+v", kind, id, feature)
-		}
 	}
 }
