@@ -93,18 +93,12 @@ func Register(r sdk.Registrar, game GameSpec) {
 			URL:  "https://www.nexusmods.com/site/mods/" + strings.TrimSpace(game.SupportModID),
 		})
 	}
-	if game.HasCustomInstallers || game.HasModTypes {
-		registerBlockedModType(r, game)
-	}
-	if game.HasCustomInstallers {
-		registerBlockedInstaller(r, game)
-	}
 	if game.HasLoadOrder {
 		r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 			ID:      game.ID + "-load-order",
 			Name:    game.Name + " load-order parity",
-			Status:  sdk.CapabilityStatusBlocked,
-			Message: "The Vortex game extension registers load-order behavior; DMM needs a source-reviewed reusable load-order implementation before enabling it.",
+			Status:  sdk.CapabilityStatusMetadata,
+			Message: "The Vortex game extension registers load-order behavior. This catalog shim records source metadata only; promote the game into a dedicated extension before claiming runtime support.",
 		})
 	}
 	for i, note := range game.Notes {
@@ -120,34 +114,6 @@ func Register(r sdk.Registrar, game GameSpec) {
 			Message: note,
 		})
 	}
-}
-
-func registerBlockedModType(r sdk.Registrar, game GameSpec) {
-	r.RegisterModType(installplan.ModTypeSpec{
-		ID:      blockedModTypeID(game),
-		Status:  sdk.CapabilityStatusBlocked,
-		Message: "The Vortex game extension declares game-specific mod-type or installer output behavior. DMM has not ported that behavior into a reusable extension capability yet.",
-	})
-}
-
-func registerBlockedInstaller(r sdk.Registrar, game GameSpec) {
-	reason := "DMM has source metadata for this Vortex game extension, but its custom installer logic has not been ported into a reusable DMM extension capability yet."
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                game.ID + "-vortex-source-installer",
-		VortexInstallerID: game.VortexDir,
-		Priority:          10000,
-		ModType:           blockedModTypeID(game),
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       func(string) bool { return true },
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: reason,
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           reason,
-	})
-}
-
-func blockedModTypeID(game GameSpec) string {
-	return game.ID + "-vortex-source"
 }
 
 func nexusDomains(game GameSpec) []string {
