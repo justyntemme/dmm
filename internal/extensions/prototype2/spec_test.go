@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -20,7 +21,7 @@ func TestExtensionRegistersASIInstaller(t *testing.T) {
 	if len(extension.NexusDomains) != 1 || extension.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", extension.NexusDomains)
 	}
-	if len(extension.InstallPlan.Installers) != 2 {
+	if len(extension.InstallPlan.Installers) != 4 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
 	}
 	coverage, _ := gameext.ExtensionCoverage(extension)
@@ -55,9 +56,54 @@ func TestASIArchivePlansToGameRoot(t *testing.T) {
 	}
 }
 
+func TestTexModPackagePlansToDMMTexModFolder(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "texture", "Prototype2Skin.tpf"), "tpf")
+	writeFile(t, filepath.Join(root, "readme.txt"), "readme")
+
+	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
+	plan, err := registry.Build(SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != tpfModType || plan.PlannerID != "source:prototype2:tpf" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.Instructions) != 1 || plan.Instructions[0].TargetRelative != "DMM/TexMod/Packages/Prototype2Skin.tpf" {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
+}
+
+func TestTexModToolStagesManagedTool(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "tool", texmodExec), "exe")
+	writeFile(t, filepath.Join(root, "tool", "support.dll"), "dll")
+
+	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
+	plan, err := registry.Build(SteamAppID, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != texmodToolType || plan.PlannerID != "source:prototype2:texmod-tool" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	targets := map[string]bool{}
+	for _, instruction := range plan.Instructions {
+		targets[instruction.TargetRelative] = true
+	}
+	for _, want := range []string{"DMM/TexMod/Texmod.exe", "DMM/TexMod/support.dll"} {
+		if !targets[want] {
+			t.Fatalf("targets = %+v, missing %s", targets, want)
+		}
+	}
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != "tool" || plan.Metadata[0].UniqueID != "prototype2-texmod" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+}
+
 func TestArchiveIsBlockedWithResearchReason(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "Texmod.exe"), "tool")
+	writeFile(t, filepath.Join(root, "art", "some-file.bin"), "rcf extracted")
 
 	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
 	_, err := registry.Build(SteamAppID, root)
@@ -78,6 +124,26 @@ func TestRequiredFilesCheck(t *testing.T) {
 	got := checkRequiredGameFiles(context.Background(), root)
 	if len(got) != len(requiredGameFiles) {
 		t.Fatalf("required details = %+v", got)
+	}
+	writeFile(t, filepath.Join(root, filepath.FromSlash(texmodRoot), texmodExec), "tool")
+	if got := checkTexModTool(context.Background(), root); len(got) != 1 {
+		t.Fatalf("texmod details = %+v", got)
+	}
+}
+
+func TestDidDeployTexModQueuesManualToolAction(t *testing.T) {
+	result, err := didDeployTexMod(context.Background(), sdk.EventHandlerInput{
+		Mods: []sdk.DeploymentMod{{Enabled: true, ModType: tpfModType}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+	notice := result.Notices[0]
+	if notice.ActionKind != sdk.EventNoticeActionRunLaunchTool || notice.ToolID != "prototype2-texmod" || notice.AutoRun {
+		t.Fatalf("notice = %+v", notice)
 	}
 }
 
