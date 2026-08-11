@@ -2,6 +2,7 @@ package masterchiefcollection
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +151,71 @@ func TestWillDeployManifestUsesEnabledPlugAndPlayStagingPaths(t *testing.T) {
 	}
 }
 
+func TestHaloCEMultiplayerDiagnosticWarnsForEnabledHaloCEMod(t *testing.T) {
+	root := t.TempDir()
+	result, err := checkHaloCEMultiplayerMaps(context.Background(), sdk.ExtensionTestInput{
+		GamePath: root,
+		Mods: []sdk.DeploymentMod{{
+			Enabled: true,
+			ModType: plugAndPlayModType,
+			Metadata: []installplan.ModMetadata{{
+				Kind:                       "halo-mcc-modinfo",
+				AdditionalLogicalFileNames: []string{"1"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != sdk.HealthCheckStatusWarning || !strings.Contains(result.Details, "halo1/maps") {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestHaloCEMultiplayerDiagnosticPassesWhenMapFolderIsComplete(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < halo1MinMaps; i++ {
+		writeFile(t, filepath.Join(root, "halo1", "maps", fmt.Sprintf("map%02d.map", i)), "map")
+	}
+	result, err := checkHaloCEMultiplayerMaps(context.Background(), sdk.ExtensionTestInput{
+		GamePath: root,
+		Mods: []sdk.DeploymentMod{{
+			Enabled: true,
+			ModType: plugAndPlayModType,
+			Metadata: []installplan.ModMetadata{{
+				Kind:                       "halo-mcc-modinfo",
+				AdditionalLogicalFileNames: []string{"Halo: CE"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestHaloCEMultiplayerDiagnosticSkipsNonCEMods(t *testing.T) {
+	result, err := checkHaloCEMultiplayerMaps(context.Background(), sdk.ExtensionTestInput{
+		GamePath: t.TempDir(),
+		Mods: []sdk.DeploymentMod{{
+			Enabled: true,
+			ModType: plugAndPlayModType,
+			Metadata: []installplan.ModMetadata{{
+				Kind:                       "halo-mcc-modinfo",
+				AdditionalLogicalFileNames: []string{"2"},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	extension := gameext.MustCompileExtension(Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
@@ -160,7 +226,7 @@ func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	if len(summary.NexusDomains) != 1 || summary.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", summary.NexusDomains)
 	}
-	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 1 || len(summary.Capabilities.LaunchTools) != 1 {
+	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }

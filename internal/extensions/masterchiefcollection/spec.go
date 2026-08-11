@@ -22,6 +22,9 @@ const (
 	rootModType        = "halo-mcc-root"
 
 	modManifestFile = "ModManifest.txt"
+	halo1MapsRel    = "halo1/maps"
+	halo1InternalID = "1"
+	halo1MinMaps    = 28
 )
 
 func Extension() sdk.Extension {
@@ -63,6 +66,12 @@ func Register(r sdk.Registrar) {
 		Event:   "will-deploy",
 		Name:    "Update Halo MCC ModManifest.txt for managed plug-and-play mods",
 		Handler: willDeployManifest,
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "mcc-ce-mp-test",
+		Name:    "Halo CE multiplayer maps",
+		Trigger: sdk.EventGamemodeActivated,
+		Check:   checkHaloCEMultiplayerMaps,
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -118,6 +127,50 @@ func gameVersion(ctx context.Context, input sdk.GameVersionInput) (sdk.GameVersi
 	}
 	line := strings.TrimSpace(strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")[0])
 	return sdk.GameVersionResult{Version: line, Source: "build_tag.txt"}, nil
+}
+
+func checkHaloCEMultiplayerMaps(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.ExtensionTestResult{}, err
+	}
+	if !hasEnabledHaloCEMod(input.Mods) {
+		return sdk.ExtensionTestResult{}, nil
+	}
+	mapsPath := filepath.Join(strings.TrimSpace(input.GamePath), filepath.FromSlash(halo1MapsRel))
+	entries, err := os.ReadDir(mapsPath)
+	if err == nil && len(entries) >= halo1MinMaps {
+		return sdk.ExtensionTestResult{}, nil
+	}
+	details := "The " + filepath.ToSlash(mapsPath) + " folder is missing, inaccessible, or has fewer than 28 map files. Vortex warns that this usually means Halo: CE Multiplayer is not installed, and some Halo CE mods may not work properly due to a game-engine issue."
+	if err != nil {
+		details += " Read error: " + err.Error()
+	}
+	return sdk.ExtensionTestResult{
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "Halo: CE Multiplayer maps are missing.",
+		Details:  details,
+		Actions:  []string{"Install Halo: CE Multiplayer through Steam, then rerun diagnostics."},
+	}, nil
+}
+
+func hasEnabledHaloCEMod(mods []sdk.DeploymentMod) bool {
+	for _, mod := range mods {
+		if !mod.Enabled || !strings.EqualFold(strings.TrimSpace(mod.ModType), plugAndPlayModType) {
+			continue
+		}
+		for _, metadata := range mod.Metadata {
+			if !strings.EqualFold(strings.TrimSpace(metadata.Kind), "halo-mcc-modinfo") {
+				continue
+			}
+			for _, logical := range metadata.AdditionalLogicalFileNames {
+				if strings.EqualFold(strings.TrimSpace(logical), halo1InternalID) || strings.EqualFold(strings.TrimSpace(logical), "halo: ce") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func willDeployManifest(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
