@@ -1581,6 +1581,8 @@
     exploreSourceID = "nexus";
     resolvedCapture = "";
     bulkCaptureMessage = "";
+    extensionSurfaceMessage = "";
+    extensionSurfaceBusyID = "";
     captureBrowserPrompt = null;
     captureBrowserOpenBusy = false;
     nexusSearchResults = [];
