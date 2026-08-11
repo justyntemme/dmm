@@ -70,6 +70,9 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], bg3PlayerProfileRootID, "modsettings.lsx") {
 		t.Fatalf("game setup = %+v", compiled.GameSetups)
 	}
+	if len(compiled.ExtensionToDos) != 0 {
+		t.Fatalf("BG3 must not expose non-executable TODO capabilities: %+v", compiled.ExtensionToDos)
+	}
 	playerProfile := extensionSettingByID(compiled.ExtensionSettings, "bg3-player-profile")
 	if playerProfile == nil || playerProfile.Status != sdk.CapabilityStatusReady || playerProfile.ValueType != sdk.ExtensionSettingValueString || string(playerProfile.DefaultValue) != `"Public"` {
 		t.Fatalf("player profile setting = %+v", playerProfile)
