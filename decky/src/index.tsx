@@ -3283,7 +3283,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
                     <Focusable flow-children="down" style={{ display: "grid", gap: "8px" }}>
                       {fomodGroupType(group) === "selectatmostone" && (
                         <Focusable
-                          className="dmm-sidebar-row"
+                          className="dmm-sidebar-row dmm-content-card"
                           focusClassName="dmm-sidebar-row-focused"
                           onActivate={() => {
                             if (!busy) clearGroupSelection(group);
@@ -3309,7 +3309,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
                         return (
                           <Focusable
                             key={plugin.id}
-                            className="dmm-sidebar-row"
+                            className="dmm-sidebar-row dmm-content-card"
                             focusClassName="dmm-sidebar-row-focused"
                             onActivate={() => togglePluginSelection(group, plugin)}
                             onClick={() => togglePluginSelection(group, plugin)}
@@ -3731,7 +3731,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
 	          {mods.map((mod) => (
 	            <Focusable
 	              key={mod.mod_id}
-	              className="dmm-sidebar-row"
+	              className="dmm-sidebar-row dmm-content-card"
 	              focusClassName="dmm-sidebar-row-focused"
 	              onActivate={() => void openModPage(mod)}
 	              onClick={() => void openModPage(mod)}
@@ -4554,7 +4554,7 @@ function FreshProfilePickerModal(props: {
           {props.profiles.map((profile) => (
             <Focusable
               key={profile.id}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 void props.onSelectProfile(profile).then(props.closeModal);
@@ -4680,7 +4680,7 @@ function FreshLocalArchiveBrowser(props: {
           return (
             <Focusable
               key={entry.path}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 if (isFile) void importArchive(entry);
@@ -5749,7 +5749,7 @@ function FreshDeckyModManagerRoute() {
       <>
         {runningGame && (
           <Focusable
-            className="dmm-sidebar-row"
+            className="dmm-sidebar-row dmm-content-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={() => {
               if (runningReady) {
@@ -5784,7 +5784,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={job.id}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => void activateActionJob(job)}
               onClick={() => void activateActionJob(job)}
@@ -5837,7 +5837,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={game.app_id}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => void selectGame(game.app_id)}
               onClick={() => void selectGame(game.app_id)}
@@ -5874,7 +5874,7 @@ function FreshDeckyModManagerRoute() {
       <>
         <Focusable
           ref={selectedGameRef}
-          className="dmm-sidebar-row"
+          className="dmm-sidebar-row dmm-content-card"
           focusClassName="dmm-sidebar-row-focused"
           preferredFocus
           onCancelButton={(event) => {
@@ -5905,7 +5905,7 @@ function FreshDeckyModManagerRoute() {
           </FreshActionButton>
         </div>
         {selectedNexusDomain && nexusCatalog?.status && nexusCatalog.status !== "ready" && (
-          <div style={{ ...freshSectionStyle, borderColor: "#92400e", color: "#fbbf24" }}>
+          <div className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#92400e", color: "#fbbf24" }}>
             Nexus browsing may need attention: {nexusCatalog.notes?.[0] || nexusCatalog.status}
           </div>
         )}
@@ -5941,7 +5941,7 @@ function FreshDeckyModManagerRoute() {
         ) : null}
         {executableExtensionActions().length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
               <div style={{ color: "#f8fafc", fontWeight: 900 }}>Extension Actions</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Source-backed tools and folders from the game extension.</div>
             </div>
@@ -5950,7 +5950,7 @@ function FreshDeckyModManagerRoute() {
               return (
                 <Focusable
                   key={action.id}
-                  className="dmm-sidebar-row"
+                  className="dmm-sidebar-row dmm-content-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onActivate={() => void runSelectedGameExtensionAction(action)}
                   onClick={() => void runSelectedGameExtensionAction(action)}
@@ -5969,7 +5969,7 @@ function FreshDeckyModManagerRoute() {
         )}
         {deploymentStatus?.restore_available && (
           <Focusable
-            className="dmm-sidebar-row"
+            className="dmm-sidebar-row dmm-content-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={askRestoreDeployment}
             onClick={askRestoreDeployment}
@@ -5987,7 +5987,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={requirement.id}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
@@ -6008,19 +6008,19 @@ function FreshDeckyModManagerRoute() {
           );
         })}
         {launcherWarnings.map((requirement) => (
-          <div key={requirement.id} style={{ ...freshSectionStyle, borderColor: "#d97706" }}>
+          <div key={requirement.id} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#d97706" }}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message || "This game extension requires a launcher DMM cannot currently verify."}</div>
             {requirement.details?.length ? <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.details.join(" · ")}</div> : null}
           </div>
         ))}
         {validationWarnings.map((warning, index) => (
-          <div key={`${warning}:${index}`} style={{ ...freshSectionStyle, borderColor: "#d97706", color: "#fbbf24" }}>Warning: {warning}</div>
+          <div key={`${warning}:${index}`} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#d97706", color: "#fbbf24" }}>Warning: {warning}</div>
         ))}
         {gameActionJobs.map((job) => (
           <Focusable
             key={job.id}
-            className="dmm-sidebar-row"
+            className="dmm-sidebar-row dmm-content-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={() => void activateActionJob(job)}
             onClick={() => void activateActionJob(job)}
@@ -6040,13 +6040,13 @@ function FreshDeckyModManagerRoute() {
           </Focusable>
         ))}
         {installCandidates.filter((candidate) => candidate.status === "blocked").map((candidate) => (
-          <div key={candidate.id} style={{ ...freshSectionStyle, borderColor: "#7f1d1d" }}>
+          <div key={candidate.id} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#7f1d1d" }}>
             <div style={{ color: "#f87171", fontWeight: 900 }}>Warning: {candidate.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{candidate.reason}</div>
           </div>
         ))}
         {mods.length === 0 && workshopItems.length === 0 && (
-          <div style={freshSectionStyle}>
+          <div className="dmm-content-card" style={freshSectionStyle}>
             <div style={{ fontWeight: 900 }}>No installed mods</div>
             <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Use Explore Mods or Import Archive to add mods to this profile.</div>
           </div>
@@ -6057,7 +6057,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={mod.id}
-              className="dmm-sidebar-row"
+              className="dmm-sidebar-row dmm-content-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => void toggleMod(mod)}
               onClick={() => void toggleMod(mod)}
@@ -6096,7 +6096,7 @@ function FreshDeckyModManagerRoute() {
         })}
         {pluginLoadOrder?.activation_id && pluginLoadOrder.plugins.length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
               <div style={{ fontWeight: 900 }}>Plugin Files</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                 {pluginLoadOrder.name || "Extension plugin activation"} · {pluginLoadOrder.plugins_file || "plugins.txt"}
@@ -6132,7 +6132,7 @@ function FreshDeckyModManagerRoute() {
               return (
                 <Focusable
                   key={key}
-                  className="dmm-sidebar-row"
+                  className="dmm-sidebar-row dmm-content-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onActivate={() => void setPluginActivationEnabled(plugin, !plugin.active)}
                   onClick={() => void setPluginActivationEnabled(plugin, !plugin.active)}
@@ -6160,7 +6160,7 @@ function FreshDeckyModManagerRoute() {
         )}
         {pluginLoadOrder?.extension_orders?.map((order) => (
           <div key={order.id} style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
               <div style={{ fontWeight: 900 }}>Extension Order</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                 {order.name || order.id} · {order.target_relative || order.target_root_id || order.target_root || "Profile order"}
@@ -6202,7 +6202,7 @@ function FreshDeckyModManagerRoute() {
               return (
                 <Focusable
                   key={key}
-                  className="dmm-sidebar-row"
+                  className="dmm-sidebar-row dmm-content-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onSecondaryActionDescription="Move Up"
                   onSecondaryButton={(event) => {
@@ -6252,7 +6252,7 @@ function FreshDeckyModManagerRoute() {
       <>
         <FreshSettingsSection title="Server" primary>
           <Focusable
-            className="dmm-sidebar-row"
+            className="dmm-sidebar-row dmm-content-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={() => void toggleFreshServer()}
             onClick={() => void toggleFreshServer()}
