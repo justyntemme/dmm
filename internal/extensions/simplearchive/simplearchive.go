@@ -156,6 +156,7 @@ func BuildCopyPlan(input installplan.BuildInput, contentRoot, targetRoot, detect
 			Kind:            installplan.InstructionKindCopy,
 			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
 			StagingRelative: targetRel,
+			TargetRoot:      input.TargetRootID,
 			TargetRelative:  targetRel,
 		})
 	}

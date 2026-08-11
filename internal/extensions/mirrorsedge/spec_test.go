@@ -18,7 +18,7 @@ func TestExtensionRegistersInstallerCoverage(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.TargetRoots) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }
@@ -56,6 +56,20 @@ func TestCookedPCTopLevelArchiveTargetsCookedPC(t *testing.T) {
 	assertTarget(t, plan, "TdGame/CookedPC/Characters/CH_TKY_Crim_Fixer_1P.upk")
 }
 
+func TestPublishedCookedPCArchiveTargetsProtonDocumentsRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "TdGame", "Published", "CookedPC", "Maps", "CustomMap.umap"), "umap")
+
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "mirrorsedge-published-cookedpc" || plan.PlannerID != "source:mirrorsedge:published-cookedpc" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTargetRoot(t, plan, "mirrorsedge-published-cookedpc-root", "Maps/CustomMap.umap")
+}
+
 func TestExecutableArchiveIsBlocked(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "installer.exe"), "exe")
@@ -80,6 +94,16 @@ func assertTarget(t *testing.T, plan installplan.Plan, target string) {
 		}
 	}
 	t.Fatalf("missing target %q in %+v", target, plan.Instructions)
+}
+
+func assertTargetRoot(t *testing.T, plan installplan.Plan, rootID, target string) {
+	t.Helper()
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRoot == rootID && instruction.TargetRelative == target {
+			return
+		}
+	}
+	t.Fatalf("missing target root %q target %q in %+v", rootID, target, plan.Instructions)
 }
 
 func writeFile(t *testing.T, path string, body string) {

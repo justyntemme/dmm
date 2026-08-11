@@ -19,9 +19,10 @@
 - DMM declares the verified Nexus domain for browsing/capture.
 - DMM supports game-root `TdGame/CookedPC` replacement archives.
 - Archives rooted at `TdGame/CookedPC`, `CookedPC`, or known CookedPC top-level folders are normalized under `TdGame/CookedPC`.
-- User-Documents `Published/CookedPC` mod-menu flows, executable tools, and unclassified payloads remain blocked until a source-reviewed target-root rule can place them safely.
+- DMM supports user-Documents `Published/CookedPC` mod-menu archives through the `mirrorsedge-published-cookedpc-root` Proton Documents target root.
+- Executable tools and unclassified payloads remain blocked until a specific extension-owned rule can place them safely.
 
 ## Beta Gaps
 
 - Live-test one Nexus `TdGame/CookedPC` package replacement archive.
-- Add Proton Documents `Published/CookedPC` support only after we decide the correct profile/deployment semantics.
+- Live-test one user-Documents `Published/CookedPC` mod-menu archive and verify the Proton Documents path on Deck.

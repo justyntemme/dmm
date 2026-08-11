@@ -21,7 +21,19 @@ func matchCookedPCArchive(root string) bool {
 	if err != nil || simplearchive.ContainsFOMOD(files) || hasExecutablePayload(files) {
 		return false
 	}
+	if _, _, ok := publishedCookedPCArchiveRoot(files); ok {
+		return false
+	}
 	_, _, ok := cookedPCArchiveRoot(files)
+	return ok
+}
+
+func matchPublishedCookedPCArchive(root string) bool {
+	files, err := simplearchive.ListFiles(root)
+	if err != nil || simplearchive.ContainsFOMOD(files) || hasExecutablePayload(files) {
+		return false
+	}
+	_, _, ok := publishedCookedPCArchiveRoot(files)
 	return ok
 }
 
@@ -46,6 +58,27 @@ func buildCookedPCArchive(input installplan.BuildInput) (installplan.Plan, error
 	)
 }
 
+func buildPublishedCookedPCArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	contentRoot, marker, ok := publishedCookedPCArchiveRoot(files)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("Mirror's Edge archive does not contain a supported Published/CookedPC mod-menu layout")
+	}
+	return simplearchive.BuildCopyPlan(
+		input,
+		contentRoot,
+		"",
+		"mirrorsedge-published-cookedpc",
+		marker,
+		"Mirror's Edge mod-menu packages are placed under the user Documents Published/CookedPC folder",
+		"Mirror's Edge Published/CookedPC installer matched but produced no deployable files",
+		cookedPCDeployable,
+	)
+}
+
 func cookedPCArchiveRoot(files []string) (string, string, bool) {
 	if root, marker, ok := simplearchive.FirstSegmentRoot(files, "CookedPC", cookedPCDeployable); ok && hasTdGameParent(root) {
 		return root, marker, true
@@ -56,6 +89,22 @@ func cookedPCArchiveRoot(files []string) (string, string, bool) {
 	for _, file := range files {
 		if hasCookedPCTopLevel(file) && cookedPCDeployable(file) {
 			return "", file, true
+		}
+	}
+	return "", "", false
+}
+
+func publishedCookedPCArchiveRoot(files []string) (string, string, bool) {
+	for _, file := range files {
+		segments := strings.Split(filepath.ToSlash(strings.Trim(file, "/")), "/")
+		for idx, segment := range segments {
+			if !strings.EqualFold(segment, "CookedPC") || idx == 0 || !strings.EqualFold(segments[idx-1], "Published") || idx >= len(segments)-1 {
+				continue
+			}
+			if !cookedPCDeployable(strings.Join(segments[idx+1:], "/")) {
+				continue
+			}
+			return strings.Join(segments[:idx+1], "/"), file, true
 		}
 	}
 	return "", "", false

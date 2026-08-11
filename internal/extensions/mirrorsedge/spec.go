@@ -8,6 +8,7 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -17,12 +18,14 @@ const (
 	VortexGameID = "mirrorsedge"
 	Name         = "Mirror's Edge"
 
-	cookedPCModType = "mirrorsedge-cookedpc"
-	blockedModType  = "mirrorsedge-unclassified-blocked"
-	cookedPCRoot    = "TdGame/CookedPC"
+	cookedPCModType          = "mirrorsedge-cookedpc"
+	publishedCookedPCModType = "mirrorsedge-published-cookedpc"
+	blockedModType           = "mirrorsedge-unclassified-blocked"
+	cookedPCRoot             = "TdGame/CookedPC"
+	publishedCookedPCRootID  = "mirrorsedge-published-cookedpc-root"
 )
 
-const blockedReason = "Mirror's Edge archive layout is not classified by the verified extension rules. DMM currently supports game-root TdGame/CookedPC Unreal package replacement archives only; user-Documents Published/CookedPC mod-menu flows, executable tools, and unclassified payloads stay blocked until a source-reviewed target-root rule can place them safely."
+const blockedReason = "Mirror's Edge archive layout is not classified by the verified extension rules. DMM currently supports game-root TdGame/CookedPC Unreal package replacement archives and user-Documents Published/CookedPC mod-menu archives; executable tools and unclassified payloads stay blocked until a source-reviewed target-root rule can place them safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -43,8 +46,25 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       publishedCookedPCRootID,
+		Name:     "Mirror's Edge Published CookedPC folder",
+		Resolver: targetroots.ProtonDocuments(SteamAppID, "EA Games", "Mirror's Edge", "TdGame", "Published", "CookedPC"),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: cookedPCModType, TargetRoot: cookedPCRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: publishedCookedPCModType, TargetRootID: publishedCookedPCRootID})
 	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "source:mirrorsedge:published-cookedpc",
+		VortexInstallerID: "mirrorsedge-published-cookedpc",
+		Priority:          25,
+		ModType:           publishedCookedPCModType,
+		NameSource:        installplan.NameSourceArchive,
+		TargetRootID:      publishedCookedPCRootID,
+		CustomMatch:       matchPublishedCookedPCArchive,
+		CustomBuild:       buildPublishedCookedPCArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:mirrorsedge:cookedpc",
 		VortexInstallerID: "mirrorsedge-cookedpc",
@@ -70,7 +90,7 @@ func Register(r sdk.Registrar) {
 		Name:        "Mirror's Edge CookedPC folder",
 		Kind:        "game-folder",
 		Required:    true,
-		ModTypes:    []string{cookedPCModType},
+		ModTypes:    []string{cookedPCModType, publishedCookedPCModType},
 		Message:     "Mirror's Edge is missing the expected executable or TdGame/CookedPC folder.",
 		OKMessage:   "Mirror's Edge has the expected executable and TdGame/CookedPC folder markers.",
 		InstallHint: "Verify Mirror's Edge files in Steam before testing CookedPC replacement mods.",
@@ -121,7 +141,7 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{Name: "Nexus API game list verified the Mirror's Edge domain", URL: "https://www.nexusmods.com/mirrorsedge"},
 		{Name: "Mirror's Edge Nexus CookedPC/Characters replacement instructions", URL: "https://www.nexusmods.com/mirrorsedge/mods/31"},
-		{Name: "Mirror's Edge community Published/CookedPC mod-menu guide kept blocked", URL: "https://steamcommunity.com/sharedfiles/filedetails/?id=1981216701"},
+		{Name: "Mirror's Edge community Published/CookedPC mod-menu guide", URL: "https://steamcommunity.com/sharedfiles/filedetails/?id=1981216701"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		{Name: "Checked bundled Vortex game extension source; no reviewed Mirror's Edge handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
