@@ -518,6 +518,25 @@ type DeploymentStatus = {
   restore_summary?: string;
 };
 
+type DeploymentSourceSummary = {
+  catalog?: string;
+  source_tag?: string;
+  file_count: number;
+};
+
+type DeploymentSummary = {
+  id: number;
+  profile_id: number;
+  profile_name: string;
+  status: string;
+  active: boolean;
+  strategy: string;
+  file_count: number;
+  sources?: DeploymentSourceSummary[];
+  created_at: string;
+  updated_at: string;
+};
+
 type DeployAction = {
   target_path?: string;
   target_relative?: string;
@@ -536,6 +555,27 @@ type DeployAction = {
 type DeployPlan = {
   actions: DeployAction[];
   conflicts: DeployAction[];
+  strategy?: string;
+};
+
+type DeployPreviewSummary = {
+  available?: boolean;
+  add?: number;
+  replace?: number;
+  remove?: number;
+  keep?: number;
+  skip?: number;
+  conflicts?: number;
+  error?: string;
+};
+
+type DeploymentRestorePreview = {
+  deployment_id: number;
+  current_file_count: number;
+  target_file_count: number;
+  summary?: DeployPreviewSummary;
+  sample_files?: string[];
+  plan?: DeployPlan;
 };
 
 type ConflictChoiceTarget = {
@@ -4349,6 +4389,187 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
   );
 }
 
+function formatDeckyTimestamp(value?: string) {
+  if (!value) return "Unknown time";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function deploymentSourceSummaryLabel(sources?: DeploymentSourceSummary[]) {
+  if (!sources || sources.length === 0) return "No source breakdown recorded";
+  return sources
+    .map((source) => `${sourceLabel(source.source_tag || source.catalog)} ${source.file_count}`)
+    .join(" · ");
+}
+
+function deploymentRestoreDeltaLabel(preview?: DeploymentRestorePreview | null) {
+  if (!preview?.summary) return "";
+  const summary = preview.summary;
+  const parts = [
+    summary.add ? `${summary.add} add` : "",
+    summary.replace ? `${summary.replace} replace` : "",
+    summary.remove ? `${summary.remove} remove` : "",
+    summary.conflicts ? `${summary.conflicts} conflict${summary.conflicts === 1 ? "" : "s"}` : ""
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "No file changes required";
+}
+
+function DeploymentRecoveryModal(props: { appID: string; gameName: string; status: DeploymentStatus | null; closeModal: () => void; onRestored: () => Promise<void> }) {
+  const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [selectedID, setSelectedID] = useState<number | null>(null);
+  const [previewByID, setPreviewByID] = useState<Record<number, DeploymentRestorePreview>>({});
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory() {
+      try {
+        setMessage("");
+        const result = await call<[string, number], { ok: boolean; error?: string; deployments: DeploymentSummary[] }>("game_deploy_history", props.appID, 12);
+        if (cancelled) return;
+        if (!result.ok) {
+          setMessage(result.error || "Unable to load deployment history.");
+          return;
+        }
+        setDeployments(result.deployments ?? []);
+        setSelectedID((current) => current ?? result.deployments?.find((deployment) => deployment.active)?.id ?? result.deployments?.[0]?.id ?? null);
+      } catch (err) {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : String(err));
+      }
+    }
+    void loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.appID]);
+
+  useEffect(() => {
+    if (!selectedID || previewByID[selectedID]) return;
+    const deploymentID = selectedID;
+    let cancelled = false;
+    async function loadPreview() {
+      try {
+        const result = await call<[string, number], { ok: boolean; error?: string; preview?: DeploymentRestorePreview | null }>("preview_game_deployment_restore", props.appID, deploymentID);
+        if (cancelled) return;
+        if (!result.ok || !result.preview) {
+          setMessage(result.error || "Unable to preview restore point.");
+          return;
+        }
+        setPreviewByID((current) => ({ ...current, [deploymentID]: result.preview as DeploymentRestorePreview }));
+      } catch (err) {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : String(err));
+      }
+    }
+    void loadPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.appID, previewByID, selectedID]);
+
+  async function restoreSelectedPoint() {
+    if (!selectedID || busy) return;
+    try {
+      setBusy(true);
+      setMessage("");
+      const result = await call<[string, number], { ok: boolean; error?: string; job?: Job }>("restore_game_deployment_point", props.appID, selectedID);
+      if (!result.ok) {
+        setMessage(result.error || "Unable to restore selected point.");
+        return;
+      }
+      await maybeShowDeckyActionToast(result.job, "decky-restore-point");
+      await props.onRestored();
+      props.closeModal();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selectedPreview = selectedID ? previewByID[selectedID] : null;
+
+  return (
+    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
+      <Focusable
+        className="dmm-sidebar-surface"
+        focusClassName="dmm-sidebar-surface-focused"
+        style={{
+          ...deckySidebarSurfaceStyle,
+          maxHeight: "calc(100vh - 96px)",
+          overflowY: "auto",
+          padding: "4px 2px 18px",
+          width: "100%"
+        }}
+      >
+        <div style={{ fontSize: "16px", fontWeight: 900 }}>Deployment Recovery</div>
+        <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
+          Restore {props.gameName} to a previous DMM deployment point. DMM only touches files recorded in its deployment manifests.
+        </div>
+        {props.status?.restore_summary && (
+          <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>Active Deployment</div>
+            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.3 }}>{props.status.restore_summary}</div>
+            <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{props.status.file_count} managed file{props.status.file_count === 1 ? "" : "s"} · {props.status.strategy || "default"} strategy</div>
+          </div>
+        )}
+        {deployments.length === 0 ? (
+          <div style={freshSectionStyle}>
+            <div style={{ fontWeight: 900 }}>No restore points</div>
+            <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Apply a profile once to create a DMM deployment history point.</div>
+          </div>
+        ) : (
+          deployments.map((deployment) => {
+            const selected = selectedID === deployment.id;
+            const preview = previewByID[deployment.id];
+            return (
+              <Focusable
+                key={deployment.id}
+                className="dmm-sidebar-row dmm-content-card"
+                focusClassName="dmm-sidebar-row-focused"
+                onActivate={() => setSelectedID(deployment.id)}
+                onClick={() => setSelectedID(deployment.id)}
+                style={{ ...freshCardStyle(selected), borderColor: selected ? "#7dd3fc" : deployment.active ? "#0f766e" : "#334155" }}
+              >
+                <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: "#f8fafc", fontWeight: 900 }}>{deployment.active ? "Current deployment" : `Restore point ${deployment.id}`}</div>
+                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>{formatDeckyTimestamp(deployment.created_at)} · {deployment.profile_name || "Profile"}</div>
+                  </div>
+                  <div style={{ color: deployment.active ? "#99f6e4" : "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{deployment.active ? "Active" : deployment.status}</div>
+                </div>
+                <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25 }}>{deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy || "default"}</div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{deploymentSourceSummaryLabel(deployment.sources)}</div>
+                {selected && (
+                  <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
+                    {preview ? deploymentRestoreDeltaLabel(preview) : "Loading restore preview"}
+                  </div>
+                )}
+              </Focusable>
+            );
+          })
+        )}
+        {selectedPreview?.sample_files?.length ? (
+          <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
+            <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Preview</div>
+            {selectedPreview.sample_files.map((file) => (
+              <div key={file} style={{ color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.3, overflowWrap: "anywhere" }}>{file}</div>
+            ))}
+          </div>
+        ) : null}
+        {message && <div style={{ color: "#fbbf24", fontSize: "12px", fontWeight: 800, lineHeight: 1.3 }}>{message}</div>}
+        <div style={freshActionRowStyle}>
+          <FreshActionButton disabled={!selectedID || busy} kind="primary" onActivate={restoreSelectedPoint}>
+            {busy ? "Restoring" : "Restore Point"}
+          </FreshActionButton>
+          <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
+        </div>
+      </Focusable>
+    </ModalRoot>
+  );
+}
+
 function freshSettingsToggleCardStyle(disabled = false): CSSProperties {
   return {
     ...deckyFocusableCardBase,
@@ -5058,39 +5279,16 @@ function FreshDeckyModManagerRoute() {
     let modal: { Close: () => void } | null = null;
     const closeModal = () => modal?.Close();
     modal = showModal(
-      <ConfirmModal
-        strTitle="Restore Last Applied State"
-        strDescription={deploymentStatus.restore_summary || deploymentStatus.recovery_summary || "DMM will restore the last DMM-applied deployment for this game. Only DMM-managed files recorded in the deployment manifest are touched."}
-        strOKButtonText="Restore"
-        strCancelButtonText="Cancel"
-        onOK={() => {
-          closeModal();
-          void restoreDeployment();
-        }}
-        onCancel={closeModal}
+      <DeploymentRecoveryModal
+        appID={selectedGameID}
+        gameName={selectedGame?.name || selectedGameID}
+        status={deploymentStatus}
         closeModal={closeModal}
+        onRestored={() => loadSelectedGameState(selectedGameID)}
       />,
       window,
-      { strTitle: "Restore Deployment", bNeverPopOut: true }
+      { strTitle: "Deployment Recovery", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 520, popupHeight: 720 }
     );
-  }
-
-  async function restoreDeployment() {
-    if (!selectedGameID || !deploymentStatus?.restore_available) return;
-    try {
-      setError("");
-      setMessage("");
-      const result = await call<[string], { ok: boolean; error?: string; job?: Job; result?: unknown }>("restore_game_deployment", selectedGameID);
-      if (!result.ok) {
-        setError(result.error || "Unable to restore deployment.");
-        return;
-      }
-      await maybeShowDeckyActionToast(result.job, "fresh-restore-deployment");
-      await loadSelectedGameState(selectedGameID);
-      setMessage(result.job?.message || "Restore started.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
   }
 
   async function acquireRuntimeRequirement(requirement: RuntimeRequirement) {
@@ -5975,9 +6173,9 @@ function FreshDeckyModManagerRoute() {
             onClick={askRestoreDeployment}
             style={{ ...freshCardStyle(false), borderColor: "#0f766e" }}
           >
-            <div style={{ color: "#99f6e4", fontWeight: 900 }}>Recovery Available</div>
+            <div style={{ color: "#99f6e4", fontWeight: 900 }}>Deployment Recovery</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{deploymentStatus.restore_summary || deploymentStatus.recovery_summary || "Restore the last DMM-applied state for this game."}</div>
-            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A Restore Last Applied State</div>
+            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A View Restore Points</div>
           </Focusable>
         )}
         {runtimeWarnings.map((requirement) => {

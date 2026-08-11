@@ -734,6 +734,62 @@ class Plugin:
             "result": result.get("result") if isinstance(result, dict) else None,
         }
 
+    async def game_deploy_history(self, app_id, limit=10):
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return {"ok": False, "error": "app_id is required.", "deployments": []}
+        try:
+            parsed_limit = int(limit)
+        except Exception:
+            parsed_limit = 10
+        parsed_limit = max(1, min(parsed_limit, 50))
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "deployments": []}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/history?limit={parsed_limit}")
+        if not isinstance(result, dict) or not isinstance(result.get("deployments"), list):
+            return {"ok": False, "error": error or "Unable to load deployment history.", "deployments": []}
+        deployments = result.get("deployments")
+        self._log(f"deployment history loaded app_id={app_id} deployments={len(deployments)}")
+        return {"ok": True, "deployments": deployments}
+
+    async def preview_game_deployment_restore(self, app_id, deployment_id):
+        app_id = str(app_id or "").strip()
+        try:
+            parsed_deployment_id = int(deployment_id)
+        except Exception:
+            parsed_deployment_id = 0
+        if not app_id or parsed_deployment_id <= 0:
+            return {"ok": False, "error": "app_id and deployment_id are required.", "preview": None}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running.", "preview": None}
+        result, error = self._backend_json_result("GET", f"/api/games/{urllib.parse.quote(app_id)}/deploy/history/{parsed_deployment_id}/preview")
+        if not isinstance(result, dict):
+            return {"ok": False, "error": error or "Unable to preview restore point.", "preview": None}
+        self._log(f"deployment restore preview loaded app_id={app_id} deployment_id={parsed_deployment_id}")
+        return {"ok": True, "preview": result}
+
+    async def restore_game_deployment_point(self, app_id, deployment_id):
+        app_id = str(app_id or "").strip()
+        try:
+            parsed_deployment_id = int(deployment_id)
+        except Exception:
+            parsed_deployment_id = 0
+        if not app_id or parsed_deployment_id <= 0:
+            return {"ok": False, "error": "app_id and deployment_id are required."}
+        if not self._backend_responds():
+            return {"ok": False, "error": "Server is not running."}
+        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/deploy/history/{parsed_deployment_id}/restore", b"{}")
+        if result is None:
+            return {"ok": False, "error": error or "Unable to restore selected deployment point."}
+        job = result.get("job") if isinstance(result, dict) else None
+        self._log(f"deployment point restore requested app_id={app_id} deployment_id={parsed_deployment_id} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
+        return {
+            "ok": True,
+            "job": job,
+            "plan": result.get("plan") if isinstance(result, dict) else None,
+            "deployment_id": result.get("deployment_id") if isinstance(result, dict) else None,
+        }
+
     async def set_file_conflict_winner(self, app_id, profile_id, target_path, winner_installed_mod_id):
         app_id = str(app_id or "").strip()
         profile_id = str(profile_id or "").strip()
