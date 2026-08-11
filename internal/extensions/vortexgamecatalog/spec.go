@@ -1,7 +1,6 @@
 package vortexgamecatalog
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -37,7 +36,6 @@ type GameSpec struct {
 	HasCustomInstallers  bool
 	HasModTypes          bool
 	HasLoadOrder         bool
-	Notes                []string
 }
 
 func Extensions() []sdk.Extension {
@@ -99,19 +97,6 @@ func Register(r sdk.Registrar, game GameSpec) {
 			Name:    game.Name + " load-order parity",
 			Status:  sdk.CapabilityStatusNotApplicable,
 			Message: "The Vortex game extension registers load-order behavior. This catalog shim is not a runtime game extension; promote the game into a dedicated extension before claiming support.",
-		})
-	}
-	for i, note := range game.Notes {
-		note = strings.TrimSpace(note)
-		if note == "" {
-			continue
-		}
-		r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-			ID:      fmt.Sprintf("%s-source-note-%d", game.ID, i+1),
-			Name:    game.Name + " source parity note",
-			Trigger: "source-review",
-			Status:  sdk.CapabilityStatusNotApplicable,
-			Message: note,
 		})
 	}
 }
