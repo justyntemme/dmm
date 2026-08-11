@@ -790,6 +790,34 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 	}
 }
 
+func TestCompileExtensionRejectsReadyStateMigrationWithoutCommands(t *testing.T) {
+	_, err := CompileExtension(sdk.Extension{
+		ID:      "migration-noop",
+		Name:    "Migration Noop",
+		Version: "0.1.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs: []string{"200"},
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "empty-ready-migration",
+				Name:        "Empty ready migration",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.0",
+				Status:      sdk.CapabilityStatusReady,
+				Message:     "This should fail because it advertises runtime behavior without commands.",
+			})
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "state migration empty-ready-migration is ready but has no executable commands") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestBuildInstallPlanPassesGamePathToCustomInstaller(t *testing.T) {
 	gamePath := t.TempDir()
 	extractRoot := t.TempDir()

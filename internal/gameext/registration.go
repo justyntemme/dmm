@@ -2718,6 +2718,13 @@ func validateStateMigrations(specs []sdk.StateMigrationSpec, targetRoots []sdk.T
 		if err := validateCapabilityStatus("state migration", id, spec.Status, spec.Message); err != nil {
 			errs = append(errs, err)
 		}
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status == sdk.CapabilityStatusReady && len(spec.Commands) == 0 {
+			errs = append(errs, errors.New("state migration "+id+" is ready but has no executable commands"))
+		}
 		errs = append(errs, validateStateMigrationCommands(id, spec.Commands, declaredRoots)...)
 	}
 	return errs
