@@ -16178,10 +16178,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 				Installer: installer,
 			}
 		}
-		if inspection.InstallerKind == "" {
-			return storage.InstalledMod{}, installplan.Unsupported("archive requires an installer UI that is not implemented yet")
-		}
-		return storage.InstalledMod{}, installplan.Unsupported(inspection.InstallerKind + " installer UI is not implemented yet")
+		return storage.InstalledMod{}, installplan.Unsupported("archive requires unsupported installer kind " + strings.TrimSpace(inspection.InstallerKind))
 	}
 	installPlan, err := s.games.BuildInstallPlanForNexusDomainWithGamePathArchiveAndSelections(appID, pending.Resolved.GameDomain, extractPath, game.GamePath, filepath.Base(archivePath), nil)
 	if err != nil {
