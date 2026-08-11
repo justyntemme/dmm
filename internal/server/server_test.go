@@ -9335,6 +9335,85 @@ func TestExtensionMigrationScansStagedFilesIntoManifestMetadata(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationWarnsForMatchingStagedPaths(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(root, "staging", "x4", "mods", "legacy", "files", "1")
+	if err := os.MkdirAll(filepath.Join(stagingPath, "ws_12345"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "ws_12345", "content.xml"), []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999016"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationwarngame",
+		Name:    "Migration Warn Game",
+		Version: "1.0.1",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationwarngame"},
+				VortexGameID: "migrationwarngame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "warn-staged",
+				Name:        "Warn staged paths",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.1",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:                 "warn-prefix",
+					Name:               "Warn prefix",
+					Command:            sdk.StateMigrationCommandWarnStagedPaths,
+					MatchFirstSegments: []string{"ws_*"},
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Warn Game",
+		InstallDir:  "Migration Warn Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationwarngame", ModID: "legacy", FileID: "1"},
+		Name:         "Legacy Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "legacy.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationwarngame","mod_type":"data","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stagingPath, "ws_12345", "content.xml")); err != nil {
+		t.Fatalf("warning migration should not mutate staging: %v", err)
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "warn-staged", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

@@ -265,6 +265,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandScanStagedFiles:
 		changed, err := s.scanStagedFilesForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return changed > 0, err
+	case sdk.StateMigrationCommandWarnStagedPaths:
+		err := s.warnStagedPathsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return true, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -463,6 +466,69 @@ func (s *Server) scanStagedFilesForMigration(ctx context.Context, appID string, 
 		s.logger.Info("extension migration scanned staged files", "app_id", appID, "source", source, "metadata_kind", kind, "mods", changed)
 	}
 	return changed, nil
+}
+
+func (s *Server) warnStagedPathsForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) error {
+	matches := migrationFirstSegmentSet(command.MatchFirstSegments)
+	if len(matches) == 0 {
+		return fmt.Errorf("extension migration command %s match first segments are required", command.ID)
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	affected := []string{}
+	for _, mod := range mods {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !installedModMatchesMigrationCommand(mod, command) {
+			continue
+		}
+		stagingRoot := filepath.Clean(strings.TrimSpace(mod.StagingPath))
+		if stagingRoot == "" || !filepath.IsAbs(stagingRoot) {
+			continue
+		}
+		matched, err := stagedRootHasFirstSegment(stagingRoot, matches)
+		if err != nil {
+			return err
+		}
+		if matched {
+			label := strings.TrimSpace(mod.Name)
+			if label == "" {
+				label = strings.TrimSpace(mod.SourceModID)
+			}
+			if label == "" {
+				label = fmt.Sprintf("installed-mod-%d", mod.ID)
+			}
+			affected = append(affected, label)
+		}
+	}
+	if len(affected) > 0 {
+		s.logger.Warn("extension migration found staged paths requiring user attention", "app_id", appID, "source", source, "mods", strings.Join(affected, ", "))
+	}
+	return nil
+}
+
+func stagedRootHasFirstSegment(stagingRoot string, matches map[string]struct{}) (bool, error) {
+	entries, err := os.ReadDir(stagingRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, entry := range entries {
+		if _, ok := matches[strings.ToLower(entry.Name())]; ok {
+			return true, nil
+		}
+		for match := range matches {
+			if strings.HasSuffix(match, "*") && strings.HasPrefix(strings.ToLower(entry.Name()), strings.TrimSuffix(match, "*")) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func installedModMatchesMigrationCommand(mod storage.InstalledMod, command sdk.StateMigrationCommandSpec) bool {

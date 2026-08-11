@@ -1076,6 +1076,7 @@ const (
 	StateMigrationCommandMoveStagedPaths = "move-staged-paths"
 	StateMigrationCommandWrapStagedRoot  = "wrap-staged-root"
 	StateMigrationCommandScanStagedFiles = "scan-staged-files"
+	StateMigrationCommandWarnStagedPaths = "warn-staged-paths"
 )
 
 type StateMigrationCommandSpec struct {

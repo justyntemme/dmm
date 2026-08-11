@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles, sdk.StateMigrationCommandWarnStagedPaths:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2853,6 +2853,17 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			if strings.Trim(strings.TrimSpace(command.DestinationRelative), "/\\") == "" {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path is required"))
 			}
+			if len(command.MatchFirstSegments) == 0 {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segments are required"))
+			}
+			for _, segment := range command.MatchFirstSegments {
+				value := strings.TrimSpace(segment)
+				if value == "" || strings.ContainsAny(value, "/\\\x00\r\n") {
+					errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segment must be a simple path segment"))
+				}
+			}
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandWarnStagedPaths {
 			if len(command.MatchFirstSegments) == 0 {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segments are required"))
 			}

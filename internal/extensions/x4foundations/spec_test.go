@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -55,6 +56,9 @@ func TestX4ExtensionRegistersDocumentsTargetRoot(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("documents target root %q was not registered", documentsRootID)
+	}
+	if len(extension.StateMigrations) != 1 || len(extension.StateMigrations[0].Commands) != 1 || extension.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandWarnStagedPaths {
+		t.Fatalf("state migrations = %+v", extension.StateMigrations)
 	}
 }
 

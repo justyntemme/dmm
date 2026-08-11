@@ -70,8 +70,14 @@ func Register(r sdk.Registrar) {
 		Name:        "X4 invalid ws_ folder reinstall warning",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.1",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex scans historical staged X4 mods for invalid ws_ folders and warns users to reinstall affected mods. DMM-created state stages content.xml mods with the corrected extension-owned folder rules from the first install; post-MVP Vortex import must scan imported Vortex staging and surface the same reinstall warning when needed.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:                 "warn-ws-folders",
+			Name:               "Warn for historical ws_ staging folders",
+			Command:            sdk.StateMigrationCommandWarnStagedPaths,
+			MatchFirstSegments: []string{"ws_*"},
+			Message:            "Affected X4 mods should be reinstalled because historical Vortex versions could stage invalid ws_ folders.",
+		}},
+		Message: "Mirrors Vortex 1.0.1 migration by scanning historical staged X4 mods for invalid ws_ folders and warning when affected mods need reinstall.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
