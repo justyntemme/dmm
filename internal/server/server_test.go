@@ -15690,6 +15690,59 @@ func TestLaunchToolDynamicArgumentGeneratesEnabledModRoot(t *testing.T) {
 	}
 }
 
+func TestLaunchToolDynamicArgumentResolvesExternalTargetRoot(t *testing.T) {
+	game := storage.Game{
+		SteamAppID: "2210",
+		GamePath:   filepath.ToSlash(t.TempDir()),
+	}
+	targetRoot := filepath.ToSlash(t.TempDir())
+	manifest := stagedManifest{
+		ModType: "texmod-package",
+		Files: []stagedManifestFile{{
+			Path:           "BlueChicken/blue.tpf",
+			TargetRoot:     "texmod-packages",
+			TargetRelative: "BlueChicken/blue.tpf",
+		}},
+	}
+	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := []storage.InstalledMod{{
+		ID:           42,
+		Name:         "Blue Chicken",
+		ManifestJSON: string(manifestJSON),
+		Enabled:      true,
+	}}
+	tool := gameext.LaunchToolSpec{
+		ID:                 "texmod",
+		Name:               "TexMod",
+		ExecutableRelative: "TexMod.exe",
+		DynamicArguments: []gameext.LaunchToolDynamicArgumentSpec{{
+			ID:             "texture-package",
+			Name:           "Texture package",
+			Kind:           gameext.LaunchToolDynamicArgumentEnabledModRoot,
+			SourceModTypes: []string{"texmod-package"},
+			ArgumentTokens: []string{"--folder={mod_folder}", "--path={mod_path_quoted}"},
+		}},
+	}
+	dynamic, details := launchToolDynamicArgumentsWithResolver(game, mods, tool, func(rootID string) (string, error) {
+		if rootID != "texmod-packages" {
+			return "", fmt.Errorf("unexpected root %q", rootID)
+		}
+		return targetRoot, nil
+	})
+	if len(details) > 0 {
+		t.Fatalf("details = %+v", details)
+	}
+	args := launchToolArguments(game.GamePath, tool, dynamic)
+	wantPath := strconv.Quote(filepath.ToSlash(filepath.Join(targetRoot, "BlueChicken")))
+	want := []string{"--folder=BlueChicken", "--path=" + wantPath}
+	if !slices.Equal(args, want) {
+		t.Fatalf("args = %#v, want %#v", args, want)
+	}
+}
+
 func TestLaunchToolDynamicArgumentRequiresOneEnabledModRoot(t *testing.T) {
 	game := storage.Game{
 		SteamAppID: "2210",

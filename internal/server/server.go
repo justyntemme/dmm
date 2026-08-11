@@ -2305,7 +2305,7 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	tool = s.games.ResolveLaunchToolForSteamApp(appID, game.GamePath, tool)
 
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
-	dynamicArguments, dynamicArgumentDetails := launchToolDynamicArguments(game, mods, tool)
+	dynamicArguments, dynamicArgumentDetails := s.launchToolDynamicArguments(ctx, game, mods, tool)
 	arguments := launchToolArguments(game.GamePath, tool, dynamicArguments)
 	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
 	resp.DesiredOptions = desired
@@ -2599,7 +2599,21 @@ type launchToolDynamicModRoot struct {
 	path    string
 }
 
+type launchToolTargetRootResolver func(string) (string, error)
+
+func (s *Server) launchToolDynamicArguments(ctx context.Context, game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec) ([]string, []string) {
+	return launchToolDynamicArgumentsWithResolver(game, mods, tool, func(rootID string) (string, error) {
+		return s.resolveManifestTargetRoot(ctx, game, rootID)
+	})
+}
+
 func launchToolDynamicArguments(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec) ([]string, []string) {
+	return launchToolDynamicArgumentsWithResolver(game, mods, tool, func(rootID string) (string, error) {
+		return "", fmt.Errorf("extension target root %q cannot be resolved without server context", rootID)
+	})
+}
+
+func launchToolDynamicArgumentsWithResolver(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec, resolveRoot launchToolTargetRootResolver) ([]string, []string) {
 	if len(tool.DynamicArguments) == 0 {
 		return nil, nil
 	}
@@ -2608,7 +2622,7 @@ func launchToolDynamicArguments(game storage.Game, mods []storage.InstalledMod, 
 	for _, spec := range tool.DynamicArguments {
 		switch strings.TrimSpace(spec.Kind) {
 		case gameext.LaunchToolDynamicArgumentEnabledModRoot:
-			next, nextDetails := launchToolEnabledModRootArguments(game, mods, tool, spec)
+			next, nextDetails := launchToolEnabledModRootArguments(game, mods, tool, spec, resolveRoot)
 			if len(nextDetails) > 0 {
 				details = append(details, nextDetails...)
 				continue
@@ -2621,7 +2635,7 @@ func launchToolDynamicArguments(game storage.Game, mods []storage.InstalledMod, 
 	return args, details
 }
 
-func launchToolEnabledModRootArguments(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec, spec gameext.LaunchToolDynamicArgumentSpec) ([]string, []string) {
+func launchToolEnabledModRootArguments(game storage.Game, mods []storage.InstalledMod, tool games.LaunchToolSpec, spec gameext.LaunchToolDynamicArgumentSpec, resolveRoot launchToolTargetRootResolver) ([]string, []string) {
 	sourceModTypes := canonicalSet(spec.SourceModTypes)
 	var roots []launchToolDynamicModRoot
 	var details []string
@@ -2632,7 +2646,7 @@ func launchToolEnabledModRootArguments(game storage.Game, mods []storage.Install
 		if _, ok := sourceModTypes[canonicalModType(installedModType(mod))]; !ok {
 			continue
 		}
-		modRoots, err := launchToolModTargetRoots(mod)
+		modRoots, err := launchToolModTargetRoots(game, mod, resolveRoot)
 		if err != nil {
 			details = append(details, fmt.Sprintf("Enabled mod %s cannot provide launch root %s: %v.", mod.Name, spec.Name, err))
 			continue
@@ -2642,15 +2656,10 @@ func launchToolEnabledModRootArguments(game storage.Game, mods []storage.Install
 			continue
 		}
 		if len(modRoots) > 1 {
-			details = append(details, fmt.Sprintf("Enabled mod %s spans multiple launch roots for %s: %s.", mod.Name, spec.Name, strings.Join(modRoots, ", ")))
+			details = append(details, fmt.Sprintf("Enabled mod %s spans multiple launch roots for %s: %s.", mod.Name, spec.Name, strings.Join(launchToolRootLabels(modRoots), ", ")))
 			continue
 		}
-		folder := modRoots[0]
-		roots = append(roots, launchToolDynamicModRoot{
-			modName: strings.TrimSpace(mod.Name),
-			folder:  folder,
-			path:    filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(folder))),
-		})
+		roots = append(roots, modRoots[0])
 	}
 	if len(details) > 0 {
 		return nil, details
@@ -2671,15 +2680,43 @@ func launchToolEnabledModRootArguments(game storage.Game, mods []storage.Install
 	return args, nil
 }
 
-func launchToolModTargetRoots(mod storage.InstalledMod) ([]string, error) {
+func launchToolRootLabels(roots []launchToolDynamicModRoot) []string {
+	out := make([]string, 0, len(roots))
+	for _, root := range roots {
+		label := strings.TrimSpace(root.folder)
+		if path := strings.TrimSpace(root.path); path != "" {
+			label += " (" + path + ")"
+		}
+		out = append(out, label)
+	}
+	return out
+}
+
+func launchToolModTargetRoots(game storage.Game, mod storage.InstalledMod, resolveRoot launchToolTargetRootResolver) ([]launchToolDynamicModRoot, error) {
 	manifest, err := parseStagedManifest(mod.ManifestJSON)
 	if err != nil {
 		return nil, err
 	}
-	roots := map[string]struct{}{}
+	roots := map[string]launchToolDynamicModRoot{}
 	for _, file := range manifest.Files {
-		if strings.TrimSpace(file.TargetRoot) != "" {
-			return nil, errors.New("dynamic launch roots for external target roots are not implemented")
+		basePath := filepath.Clean(game.GamePath)
+		rootID := strings.TrimSpace(file.TargetRoot)
+		if rootID != "" {
+			if resolveRoot == nil {
+				return nil, errors.New("dynamic launch roots for external target roots require an extension target-root resolver")
+			}
+			resolved, err := resolveRoot(rootID)
+			if err != nil {
+				return nil, err
+			}
+			resolved = strings.TrimSpace(resolved)
+			if resolved == "" {
+				return nil, fmt.Errorf("extension target root %q resolved to an empty path", rootID)
+			}
+			if !filepath.IsAbs(resolved) {
+				return nil, fmt.Errorf("extension target root %q resolved to non-absolute path %q", rootID, resolved)
+			}
+			basePath = filepath.Clean(resolved)
 		}
 		targetRelative := filepath.ToSlash(strings.TrimSpace(file.TargetRelative))
 		if targetRelative == "" {
@@ -2693,13 +2730,27 @@ func launchToolModTargetRoots(mod storage.InstalledMod) ([]string, error) {
 		if root == "" || strings.ContainsAny(root, "\x00\r\n") {
 			return nil, fmt.Errorf("unsafe launch root %q", root)
 		}
-		roots[root] = struct{}{}
+		path := filepath.Clean(filepath.Join(basePath, filepath.FromSlash(root)))
+		if !pathWithinRoot(basePath, path) && path != basePath {
+			return nil, fmt.Errorf("launch root %q escapes target root", root)
+		}
+		key := basePath + "\x00" + root
+		roots[key] = launchToolDynamicModRoot{
+			modName: strings.TrimSpace(mod.Name),
+			folder:  root,
+			path:    filepath.ToSlash(path),
+		}
 	}
-	out := make([]string, 0, len(roots))
-	for root := range roots {
+	out := make([]launchToolDynamicModRoot, 0, len(roots))
+	for _, root := range roots {
 		out = append(out, root)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].folder != out[j].folder {
+			return out[i].folder < out[j].folder
+		}
+		return out[i].path < out[j].path
+	})
 	return out, nil
 }
 
@@ -3142,7 +3193,7 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 	if err != nil {
 		return payload, err
 	}
-	dynamicArguments, dynamicDetails := launchToolDynamicArguments(game, mods, tool)
+	dynamicArguments, dynamicDetails := s.launchToolDynamicArguments(ctx, game, mods, tool)
 	if len(dynamicDetails) > 0 {
 		return payload, errors.New(strings.Join(dynamicDetails, " "))
 	}
