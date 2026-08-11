@@ -1845,7 +1845,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: installer.Message,
 		}
 		if installer.InstructionMode == installplan.InstructionUnsupported {
-			feature.Status = sdk.CapabilityStatusBlocked
+			feature.Status = defaultString(installer.Status, sdk.CapabilityStatusBlocked)
 			if feature.Message == "" {
 				feature.Message = installer.UnsupportedReason
 			}
@@ -2377,6 +2377,9 @@ func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGa
 	collect := func(surface string, features []FeatureSummary) {
 		for _, feature := range features {
 			status := strings.TrimSpace(feature.Status)
+			if surface == "unsupported_installers" && status == sdk.CapabilityStatusNotApplicable {
+				continue
+			}
 			switch status {
 			case sdk.CapabilityStatusBlocked, sdk.CapabilityStatusMetadata, sdk.CapabilityStatusNotApplicable:
 				gaps = append(gaps, ExtensionParityGap{

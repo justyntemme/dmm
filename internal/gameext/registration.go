@@ -2472,7 +2472,7 @@ func validateCapabilityStatus(kind, id, status, message string) error {
 		}
 		return nil
 	default:
-		return errors.New(kind + " " + id + " status must be ready, metadata, or blocked")
+		return errors.New(kind + " " + id + " status must be ready, metadata, blocked, or not-applicable")
 	}
 }
 
