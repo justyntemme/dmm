@@ -23,8 +23,11 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "CodeVein/content/paks/~mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	if migration := summary.Capabilities.StateMigrations[0]; migration.ID != "codevein-load-order-migration-1.0.0" || migration.Status != sdk.CapabilityStatusReady || migration.Message == "" {
+		t.Fatalf("state migration = %+v", migration)
 	}
 	adoption := summary.Capabilities.ExternalModAdoptions[0]
 	if adoption.ID != "codevein-external-pak-adoption" || adoption.Path != "CodeVein/content/paks/~mods" || !adoption.DeleteOriginal {
