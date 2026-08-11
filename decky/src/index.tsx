@@ -4349,6 +4349,15 @@ function freshCardStyle(active = false): CSSProperties {
   };
 }
 
+function freshStaticCardStyle(overrides: CSSProperties = {}): CSSProperties {
+  return {
+    ...freshCardStyle(false),
+    alignContent: "center",
+    minHeight: "64px",
+    ...overrides
+  };
+}
+
 function freshGameCardStyle(active = false): CSSProperties {
   return {
     ...freshCardStyle(active),
@@ -6124,7 +6133,7 @@ function FreshDeckyModManagerRoute() {
           </FreshActionButton>
         </div>
         {selectedNexusDomain && nexusCatalog?.status && nexusCatalog.status !== "ready" && (
-          <div className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#92400e", color: "#fbbf24" }}>
+          <div className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#92400e", color: "#fbbf24" })}>
             Nexus browsing may need attention: {nexusCatalog.notes?.[0] || nexusCatalog.status}
           </div>
         )}
@@ -6141,7 +6150,7 @@ function FreshDeckyModManagerRoute() {
         </FreshActionButton>
         {gameInfo?.details?.some((detail) => Boolean(deckyInfoValue(detail.value))) ? (
           <>
-            <div className="dmm-content-card" style={freshInfoRowStyle}>
+            <div className="dmm-content-card" style={freshStaticCardStyle()}>
               <div style={{ color: "#f8fafc", fontWeight: 900 }}>Game Info</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Extension-provided status for this game.</div>
             </div>
@@ -6149,7 +6158,7 @@ function FreshDeckyModManagerRoute() {
               const value = deckyInfoValue(detail.value);
               if (!value) return null;
               return (
-                <div key={detail.id} className="dmm-content-card" style={freshInfoRowStyle}>
+                <div key={detail.id} className="dmm-content-card" style={freshStaticCardStyle()}>
                   <div style={{ color: "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{detail.title || detail.id}</div>
                   <div style={{ color: "#d4d4d8", fontSize: "12px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{value}</div>
                   {detail.source && <div style={{ color: "#64748b", fontSize: "10px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{detail.source}</div>}
@@ -6160,7 +6169,7 @@ function FreshDeckyModManagerRoute() {
         ) : null}
         {executableExtensionActions().length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={freshStaticCardStyle({ padding: "8px 10px" })}>
               <div style={{ color: "#f8fafc", fontWeight: 900 }}>Extension Actions</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Source-backed tools and folders from the game extension.</div>
             </div>
@@ -6228,14 +6237,14 @@ function FreshDeckyModManagerRoute() {
           );
         })}
         {launcherWarnings.map((requirement) => (
-          <div key={requirement.id} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#d97706" }}>
+          <div key={requirement.id} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#d97706" })}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message || "This game extension requires a launcher DMM cannot currently verify."}</div>
             {requirement.details?.length ? <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.details.join(" · ")}</div> : null}
           </div>
         ))}
         {validationWarnings.map((warning, index) => (
-          <div key={`${warning}:${index}`} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#d97706", color: "#fbbf24" }}>Warning: {warning}</div>
+          <div key={`${warning}:${index}`} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#d97706", color: "#fbbf24" })}>Warning: {warning}</div>
         ))}
         {gameActionJobs.map((job) => (
           <Focusable
@@ -6260,13 +6269,13 @@ function FreshDeckyModManagerRoute() {
           </Focusable>
         ))}
         {installCandidates.filter((candidate) => candidate.status === "blocked").map((candidate) => (
-          <div key={candidate.id} className="dmm-content-card" style={{ ...freshSectionStyle, borderColor: "#7f1d1d" }}>
+          <div key={candidate.id} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#7f1d1d" })}>
             <div style={{ color: "#f87171", fontWeight: 900 }}>Warning: {candidate.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{candidate.reason}</div>
           </div>
         ))}
         {mods.length === 0 && workshopItems.length === 0 && (
-          <div className="dmm-content-card" style={freshSectionStyle}>
+          <div className="dmm-content-card" style={freshStaticCardStyle()}>
             <div style={{ fontWeight: 900 }}>No installed mods</div>
             <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Use Explore Mods or Import Archive to add mods to this profile.</div>
           </div>
@@ -6316,7 +6325,7 @@ function FreshDeckyModManagerRoute() {
         })}
         {pluginLoadOrder?.activation_id && pluginLoadOrder.plugins.length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={freshStaticCardStyle({ padding: "8px 10px" })}>
               <div style={{ fontWeight: 900 }}>Plugin Files</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                 {pluginLoadOrder.name || "Extension plugin activation"} · {pluginLoadOrder.plugins_file || "plugins.txt"}
@@ -6380,7 +6389,7 @@ function FreshDeckyModManagerRoute() {
         )}
         {pluginLoadOrder?.extension_orders?.map((order) => (
           <div key={order.id} style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div className="dmm-content-card" style={{ ...freshSectionStyle, padding: "8px 10px" }}>
+            <div className="dmm-content-card" style={freshStaticCardStyle({ padding: "8px 10px" })}>
               <div style={{ fontWeight: 900 }}>Extension Order</div>
               <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
                 {order.name || order.id} · {order.target_relative || order.target_root_id || order.target_root || "Profile order"}
