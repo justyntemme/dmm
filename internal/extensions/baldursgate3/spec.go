@@ -203,8 +203,24 @@ func Register(r sdk.Registrar) {
 		Name:        "BG3 patch 7 load-order migration",
 		FromVersion: "1.4.0",
 		ToVersion:   "1.5.0",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex re-imports game modsettings.lsx and warns about Mod Fixer after patch 7 for existing Vortex state. This is not applicable to DMM-created state because DMM generates current Public-profile modsettings.lsx from enabled managed pak metadata; post-MVP Vortex import must implement a real Patch 7 repair for imported Vortex profiles.",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:                  "backup-public-modsettings",
+				Name:                "Back up Public modsettings.lsx",
+				Command:             sdk.StateMigrationCommandBackupTargetFile,
+				TargetRootID:        bg3LocalDataRootID,
+				TargetRelative:      "PlayerProfiles/Public/modsettings.lsx",
+				DestinationRelative: "PlayerProfiles/Public/modsettings.lsx.backup",
+				Message:             "Back up the current Public profile modsettings.lsx before DMM writes managed BG3 load order output.",
+			},
+			{
+				ID:      "export-active-profile-load-order",
+				Name:    "Export active DMM profile to BG3",
+				Command: sdk.StateMigrationCommandDeployProfile,
+				Message: "Regenerate BG3 modsettings.lsx from enabled managed pak metadata after the Patch 7 migration backup.",
+			},
+		},
+		Message: "Mirrors the source-backed BG3 Patch 7 migration by preserving the existing Public modsettings.lsx before regenerating DMM-managed load-order output. DMM does not need Vortex's desktop import dialog because the active DMM profile is the source of truth for managed mods.",
 	})
 	for _, pattern := range ignorePatterns {
 		r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{ID: "bg3-ignore-conflicts-" + sanitizeID(pattern), Name: "BG3 ignore conflict " + pattern, Patterns: []string{pattern}})

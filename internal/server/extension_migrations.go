@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -271,6 +272,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandWarnInstalled:
 		err := s.warnInstalledModsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return true, err
+	case sdk.StateMigrationCommandBackupTargetFile:
+		changed, err := s.backupTargetFileForMigration(ctx, commandGame, command, source+":"+commandID)
+		return changed, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -542,6 +546,60 @@ func (s *Server) warnInstalledModsForMigration(ctx context.Context, appID string
 		s.logger.Warn("extension migration found installed mods requiring user attention", "app_id", appID, "source", source, "mods", strings.Join(affected, ", "))
 	}
 	return nil
+}
+
+func (s *Server) backupTargetFileForMigration(ctx context.Context, game storage.Game, command sdk.StateMigrationCommandSpec, source string) (bool, error) {
+	sourcePath, err := s.extensionMigrationTargetPath(ctx, game, command)
+	if err != nil {
+		return false, err
+	}
+	backupCommand := command
+	backupCommand.TargetRelative = command.DestinationRelative
+	backupPath, err := s.extensionMigrationTargetPath(ctx, game, backupCommand)
+	if err != nil {
+		return false, err
+	}
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.logger.Info("extension migration backup source file is absent", "app_id", game.SteamAppID, "source", source, "path", sourcePath)
+			return false, nil
+		}
+		return false, err
+	}
+	if info.IsDir() {
+		return false, fmt.Errorf("extension migration backup source %q is a directory", sourcePath)
+	}
+	if _, err := os.Stat(backupPath); err == nil {
+		s.logger.Info("extension migration backup file already exists", "app_id", game.SteamAppID, "source", source, "path", backupPath)
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(backupPath), 0o700); err != nil {
+		return false, err
+	}
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return false, err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(backupPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return false, err
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil {
+		_ = os.Remove(backupPath)
+		return false, copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(backupPath)
+		return false, closeErr
+	}
+	s.logger.Info("extension migration backed up target file", "app_id", game.SteamAppID, "source", source, "from", sourcePath, "to", backupPath)
+	return true, nil
 }
 
 func stagedRootHasFirstSegment(stagingRoot string, matches map[string]struct{}) (bool, error) {

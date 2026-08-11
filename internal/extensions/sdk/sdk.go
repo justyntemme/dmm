@@ -1070,14 +1070,15 @@ type StateMigrationSpec struct {
 }
 
 const (
-	StateMigrationCommandPurgeModsInPath = "purge-mods-in-path"
-	StateMigrationCommandSetModType      = "set-mod-type"
-	StateMigrationCommandDeployProfile   = "deploy-profile"
-	StateMigrationCommandMoveStagedPaths = "move-staged-paths"
-	StateMigrationCommandWrapStagedRoot  = "wrap-staged-root"
-	StateMigrationCommandScanStagedFiles = "scan-staged-files"
-	StateMigrationCommandWarnStagedPaths = "warn-staged-paths"
-	StateMigrationCommandWarnInstalled   = "warn-installed"
+	StateMigrationCommandPurgeModsInPath  = "purge-mods-in-path"
+	StateMigrationCommandSetModType       = "set-mod-type"
+	StateMigrationCommandDeployProfile    = "deploy-profile"
+	StateMigrationCommandMoveStagedPaths  = "move-staged-paths"
+	StateMigrationCommandWrapStagedRoot   = "wrap-staged-root"
+	StateMigrationCommandScanStagedFiles  = "scan-staged-files"
+	StateMigrationCommandWarnStagedPaths  = "warn-staged-paths"
+	StateMigrationCommandWarnInstalled    = "warn-installed"
+	StateMigrationCommandBackupTargetFile = "backup-target-file"
 )
 
 type StateMigrationCommandSpec struct {

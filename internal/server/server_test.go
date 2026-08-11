@@ -9499,6 +9499,95 @@ func TestExtensionMigrationWarnsForInstalledMods(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationBacksUpTargetFile(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	localData := filepath.Join(root, "localdata")
+	sourcePath := filepath.Join(localData, "PlayerProfiles", "Public", "modsettings.lsx")
+	backupPath := sourcePath + ".backup"
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999018"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationbackupgame",
+		Name:    "Migration Backup Game",
+		Version: "1.5.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationbackupgame"},
+				VortexGameID: "migrationbackupgame",
+			})
+			r.RegisterTargetRoot(sdk.TargetRootSpec{
+				ID:   "local-data",
+				Name: "Local Data",
+				Resolver: func(_ context.Context, _ sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+					return sdk.TargetRootResult{Path: localData, Source: "test"}, nil
+				},
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "backup-file",
+				Name:        "Backup file",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.5.0",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:                  "backup",
+					Name:                "Backup",
+					Command:             sdk.StateMigrationCommandBackupTargetFile,
+					TargetRootID:        "local-data",
+					TargetRelative:      "PlayerProfiles/Public/modsettings.lsx",
+					DestinationRelative: "PlayerProfiles/Public/modsettings.lsx.backup",
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Backup Game",
+		InstallDir:  "Migration Backup Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	body, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "original" {
+		t.Fatalf("backup body = %q", body)
+	}
+	if err := os.WriteFile(sourcePath, []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := srv.backupTargetFileForMigration(context.Background(), game, extension.StateMigrations[0].Commands[0], "repeat"); err != nil || changed {
+		t.Fatalf("repeat backup changed=%v err=%v", changed, err)
+	}
+	body, err = os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "original" {
+		t.Fatalf("backup was overwritten: %q", body)
+	}
+}
+
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

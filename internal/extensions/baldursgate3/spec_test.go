@@ -60,7 +60,7 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.StateReducers) != 1 || compiled.StateReducers[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("state reducers = %+v", compiled.StateReducers)
 	}
-	if len(compiled.StateMigrations) != 1 || compiled.StateMigrations[0].Status != sdk.CapabilityStatusNotApplicable {
+	if len(compiled.StateMigrations) != 1 || len(compiled.StateMigrations[0].Commands) != 2 || compiled.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandBackupTargetFile || compiled.StateMigrations[0].Commands[1].Command != sdk.StateMigrationCommandDeployProfile {
 		t.Fatalf("state migrations = %+v", compiled.StateMigrations)
 	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {

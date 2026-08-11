@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles, sdk.StateMigrationCommandWarnStagedPaths, sdk.StateMigrationCommandWarnInstalled:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles, sdk.StateMigrationCommandWarnStagedPaths, sdk.StateMigrationCommandWarnInstalled, sdk.StateMigrationCommandBackupTargetFile:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2838,6 +2838,17 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandSetModType && strings.TrimSpace(command.TargetModType) == "" {
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target mod type is required"))
 		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandBackupTargetFile {
+			if strings.TrimSpace(command.TargetRootID) == "" {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target root id is required"))
+			}
+			if strings.Trim(strings.TrimSpace(command.TargetRelative), "/\\") == "" {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target relative path is required"))
+			}
+			if strings.Trim(strings.TrimSpace(command.DestinationRelative), "/\\") == "" {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path is required"))
+			}
+		}
 		if rootID := strings.TrimSpace(command.TargetRootID); rootID != "" {
 			if _, ok := targetRoots[strings.ToLower(rootID)]; !ok {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" references undeclared target root "+rootID))
@@ -2846,10 +2857,12 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 		if err := validateRelativeOrRoot(command.TargetRelative); err != nil {
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target relative path: "+err.Error()))
 		}
-		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandMoveStagedPaths {
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandMoveStagedPaths || strings.TrimSpace(command.Command) == sdk.StateMigrationCommandBackupTargetFile {
 			if err := validateRelativeOrRoot(command.DestinationRelative); err != nil {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path: "+err.Error()))
 			}
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandMoveStagedPaths {
 			if strings.Trim(strings.TrimSpace(command.DestinationRelative), "/\\") == "" {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path is required"))
 			}
