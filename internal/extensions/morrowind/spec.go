@@ -73,8 +73,8 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"TES Construction Set.exe"},
 		Relative:           true,
 		Exclusive:          true,
-		Status:             sdk.CapabilityStatusMetadata,
-		Message:            "Vortex exposes the Morrowind Construction Set as a supported external tool.",
+		Status:             sdk.CapabilityStatusReady,
+		Message:            "DMM discovers Vortex's game-root Construction Set executable when present and can queue it through the Decky extension-tool launch path.",
 	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
 		ID:             "morrowind-ini-load-order",

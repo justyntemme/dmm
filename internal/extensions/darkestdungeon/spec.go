@@ -51,8 +51,8 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: steamExecutable,
 		RequiredFiles:      []string{steamExecutable},
 		Relative:           true,
-		Status:             sdk.CapabilityStatusMetadata,
-		Message:            "Vortex selects this executable when it exists; DMM records the source-backed Steam executable path for diagnostics.",
+		Status:             sdk.CapabilityStatusReady,
+		Message:            "DMM discovers Vortex's selected Steam executable when present and can queue it through the Decky extension-tool launch path.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "darkestdungeon-epic-launcher",
