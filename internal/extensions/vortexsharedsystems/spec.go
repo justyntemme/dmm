@@ -14,8 +14,6 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source defines this shared system behavior, but DMM has not implemented the reusable runtime for it yet."
-
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:      ID,
@@ -222,48 +220,8 @@ func registerVortexTests(r sdk.Registrar) {
 	})
 }
 
-func blockedAPI(id, name string) sdk.ExtensionAPISpec {
-	return sdk.ExtensionAPISpec{ID: id, Name: name, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
 func readyAPI(id, name string) sdk.ExtensionAPISpec {
 	return sdk.ExtensionAPISpec{ID: id, Name: name, Status: sdk.CapabilityStatusReady}
-}
-
-func blockedAction(id, name, scope, kind string) sdk.ExtensionActionSpec {
-	return sdk.ExtensionActionSpec{ID: id, Name: name, Scope: scope, Kind: kind, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedSetting(id, name, scope string) sdk.ExtensionSettingSpec {
-	return sdk.ExtensionSettingSpec{ID: id, Name: name, Scope: scope, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedTest(id, name, trigger string) sdk.ExtensionTestSpec {
-	return sdk.ExtensionTestSpec{ID: id, Name: name, Trigger: trigger, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedToDo(id, name, trigger string) sdk.ExtensionToDoSpec {
-	return sdk.ExtensionToDoSpec{ID: id, Name: name, Trigger: trigger, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedReducer(id, name, scope string) sdk.StateReducerSpec {
-	return sdk.StateReducerSpec{ID: id, Name: name, Scope: scope, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedTableAttribute(id, name, target string) sdk.ExtensionTableAttributeSpec {
-	return sdk.ExtensionTableAttributeSpec{ID: id, Name: name, Target: target, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedDialog(id, name, scope string) sdk.ExtensionDialogSpec {
-	return sdk.ExtensionDialogSpec{ID: id, Name: name, Scope: scope, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedMainPage(id, name, scope string) sdk.ExtensionMainPageSpec {
-	return sdk.ExtensionMainPageSpec{ID: id, Name: name, Scope: scope, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
-}
-
-func blockedEventHandler(id, event, name string) sdk.EventHandlerSpec {
-	return sdk.EventHandlerSpec{ID: id, Event: event, Name: name, Status: sdk.CapabilityStatusBlocked, Message: blockedMessage}
 }
 
 func Sources() []sdk.SourceRef {
