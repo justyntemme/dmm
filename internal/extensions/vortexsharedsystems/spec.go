@@ -57,6 +57,20 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "gamebryo-incompatible-mod-archives", Name: "Gamebryo incompatible archive check", Trigger: "plugins-changed", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "oblivion-fonts", Name: "Oblivion font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "gamebryo-invalid-userlist",
+		Name:    "Gamebryo invalid LOOT userlist check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM surfaces Vortex's invalid-userlist test through profile-scoped LOOT userlist parsing in game diagnostics.",
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "gamebryo-missing-groups",
+		Name:    "Gamebryo missing LOOT groups check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM surfaces Vortex's missing-groups test through profile-scoped LOOT masterlist/userlist group validation in game diagnostics.",
+	})
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-plugin-index-lock", Name: "Gamebryo plugin index lock state", Scope: "profile_plugin_activations.locked_index", Status: sdk.CapabilityStatusReady})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "gamebryo-plugin-index-lock",
