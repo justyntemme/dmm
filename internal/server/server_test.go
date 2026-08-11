@@ -12539,6 +12539,25 @@ func TestGamebryoBlueprintMasterIssues(t *testing.T) {
 	}
 }
 
+func TestPathWritableDetectsReadOnlyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plugins.txt")
+	if err := os.WriteFile(path, []byte("*Example.esp\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !pathWritable(path) {
+		t.Fatal("expected writable file")
+	}
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can open read-only owner files for writing")
+	}
+	if pathWritable(path) {
+		t.Fatal("expected read-only file to be detected")
+	}
+}
+
 func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "440900"

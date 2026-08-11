@@ -1399,6 +1399,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginFileWritableDiagnostics(game)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
@@ -1702,6 +1703,35 @@ func (s *Server) gamebryoPluginInfo(game storage.Game, spec gameext.PluginActiva
 		return gamebryoplugin.Info{}
 	}
 	return info
+}
+
+func (s *Server) gamebryoPluginFileWritableDiagnostics(game storage.Game) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil
+	}
+	targetRoot, err := protonLocalAppDataTargetRoot(game, spec)
+	if err != nil {
+		s.logger.Debug("Gamebryo plugin-file writable check skipped because target root failed", "app_id", game.SteamAppID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	pluginsPath := filepath.Join(targetRoot, filepath.FromSlash(activationFileName(spec.PluginsFile, "plugins.txt")))
+	if !pathExists(pluginsPath) {
+		return nil
+	}
+	if pathWritable(pluginsPath) {
+		return nil
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-plugins-locked",
+		TestName: "Gamebryo plugins file writable",
+		Trigger:  "gamemode-activated",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  "The plugin activation file is write protected.",
+		Details:  filepath.ToSlash(pluginsPath) + " is used to control which plugins the game loads. DMM cannot safely enable or disable plugins while this file is not writable.",
+		Actions:  []string{"Make the file writable, then deploy the active profile again."},
+	}}
 }
 
 func (s *Server) gamebryoMissingMasterDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
@@ -7533,6 +7563,18 @@ func pathExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func pathWritable(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return false
+	}
+	_ = file.Close()
+	return true
 }
 
 func (s *Server) findActiveExtensionToolAction(appID, toolID string) (jobs.Job, bool) {
