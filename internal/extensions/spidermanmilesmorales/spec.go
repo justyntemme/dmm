@@ -133,6 +133,11 @@ func Register(r sdk.Registrar) {
 		Name:    "Write Miles Morales MMPC load-order file",
 		Handler: willDeployLoadOrder,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "did-deploy",
+		Name:    "Run Miles Morales MMPC installer",
+		Handler: didDeployMMPCInstall,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

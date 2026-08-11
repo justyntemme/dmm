@@ -22,8 +22,8 @@
 - DMM writes Vortex-style `SMPCTool/ModManager/ModManager.txt` entries for enabled DMM-managed `.mmpcmod` files during deployment.
 - Runtime diagnostics verify `MilesMorales.exe`, `asset_archive/toc`, and `SMPCTool/MMPCTool.exe`.
 - DMM installs MMPC Modding Tool archives as managed tool-only payloads under `SMPCTool/`, writes `SMPCTool/assetArchiveDir.txt` from the discovered game path when available, and registers a non-primary MMPC tool entry so the tool is visible in extension capabilities.
+- After `.mmpcmod` deployment, DMM queues the source-backed MMPC Modding Tool action with Vortex's `-install` argument through the generic Decky wait-for-tool-exit path.
 
 ## Beta Gaps
 
-- Vortex runs `MMPCTool.exe -install` after deploy to merge staged `.mmpcmod` files into game archives. DMM does not yet have the generic Proton/Windows tool-execution contract needed to run that automatically.
 - Suit Adder Tool support is not implemented yet.

@@ -145,6 +145,27 @@ func TestWillDeployGeneratesModManagerLoadOrder(t *testing.T) {
 	}
 }
 
+func TestDidDeployQueuesMMPCInstallToolAction(t *testing.T) {
+	result, err := didDeployMMPCInstall(context.Background(), sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{
+			TargetRelative: "SMPCTool/ModManager/MMPCMods/CoolSuit.mmpcmod",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+	notice := result.Notices[0]
+	if notice.ActionKind != sdk.EventNoticeActionRunLaunchTool || notice.ToolID != "spidermanmilesmorales-mmpc-tool" || !notice.AutoRun || !notice.WaitForExit {
+		t.Fatalf("notice = %+v", notice)
+	}
+	if len(notice.ToolArguments) != 1 || notice.ToolArguments[0] != "-install" {
+		t.Fatalf("tool arguments = %+v", notice.ToolArguments)
+	}
+}
+
 func TestRequiredFilesChecks(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, gameExecutable), "game")
