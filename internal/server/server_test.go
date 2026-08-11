@@ -12478,6 +12478,32 @@ func TestBuildGameDeployPlanGeneratesGamebryoPluginActivationFiles(t *testing.T)
 	}
 }
 
+func TestGamebryoPluginLimitWarningsMirrorVortexLimits(t *testing.T) {
+	plugins := make([]pluginLoadOrderEntry, 0, 256)
+	for i := 0; i < 255; i++ {
+		plugins = append(plugins, pluginLoadOrderEntry{Name: fmt.Sprintf("Plugin%03d.esp", i), Active: true})
+	}
+	warnings := gamebryoPluginLimitWarnings("Fallout 4 plugins.txt activation", plugins, gameext.PluginActivationSpec{
+		Name:                 "Fallout 4 plugins.txt activation",
+		SupportsLightPlugins: true,
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "255 active regular plugins") || !strings.Contains(warnings[0], "above 254") {
+		t.Fatalf("regular warnings = %+v", warnings)
+	}
+
+	plugins = []pluginLoadOrderEntry{}
+	for i := 0; i < 4097; i++ {
+		plugins = append(plugins, pluginLoadOrderEntry{Name: fmt.Sprintf("Light%04d.esl", i), Active: true})
+	}
+	warnings = gamebryoPluginLimitWarnings("Fallout 4 plugins.txt activation", plugins, gameext.PluginActivationSpec{
+		Name:                 "Fallout 4 plugins.txt activation",
+		SupportsLightPlugins: true,
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "4097 active light plugins") || !strings.Contains(warnings[0], "above 4096") {
+		t.Fatalf("light warnings = %+v", warnings)
+	}
+}
+
 func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "440900"

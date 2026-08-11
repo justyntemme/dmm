@@ -1394,6 +1394,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
@@ -1682,6 +1683,92 @@ func (s *Server) gamebryoArchiveCompatibilityTests(ctx context.Context, game sto
 		Details:  details,
 		Actions:  []string{"Disable or remove the mod that supplied the incompatible archive."},
 	}}
+}
+
+func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo plugin-limit check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	active, err := s.activeDeploymentMappings(ctx, game, mods)
+	if err != nil {
+		s.logger.Warn("Gamebryo plugin-limit check skipped because deployment mappings failed", "app_id", game.SteamAppID, "profile_id", profileID, "error", err)
+		return nil
+	}
+	states, err := s.db.ProfilePluginActivationStates(ctx, profileID, spec.ID)
+	if err != nil {
+		s.logger.Warn("Gamebryo plugin-limit check skipped because plugin activation state failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	spec = effectivePluginActivationSpec(spec, mods)
+	native := installedNativePluginNames(game.GamePath, spec)
+	plugins := make([]pluginLoadOrderEntry, 0, len(native))
+	for _, name := range native {
+		plugins = append(plugins, pluginLoadOrderEntry{Name: name, Source: "native", Active: true})
+	}
+	for _, entry := range pluginActivationEntries(spec, active.Mappings, native, states) {
+		plugins = append(plugins, pluginLoadOrderEntry{Name: entry.Name, Source: "dmm", Active: entry.Active})
+	}
+	warnings := gamebryoPluginLimitWarnings(strings.TrimSpace(spec.Name), plugins, spec)
+	if len(warnings) == 0 {
+		return nil
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-plugin-limit",
+		TestName: "Gamebryo plugin limit",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "The active plugin list exceeds the limit for this game.",
+		Details:  strings.Join(warnings, " "),
+		Actions:  []string{"Disable plugins or mark supported plugins as light where the game supports ESL/light plugins."},
+	}}
+}
+
+func gamebryoPluginLimitWarnings(name string, plugins []pluginLoadOrderEntry, spec gameext.PluginActivationSpec) []string {
+	regular, light := gamebryoActivePluginCounts(plugins, spec)
+	regularLimit := gamebryoRegularPluginLimit(spec)
+	var warnings []string
+	label := strings.TrimSpace(name)
+	if label == "" {
+		label = "Gamebryo plugin activation"
+	}
+	if regular > regularLimit {
+		warnings = append(warnings, fmt.Sprintf("%s has %d active regular plugins; Vortex warns above %d for this game.", label, regular, regularLimit))
+	}
+	if spec.SupportsLightPlugins && light > 4096 {
+		warnings = append(warnings, fmt.Sprintf("%s has %d active light plugins; Vortex warns above 4096.", label, light))
+	}
+	return warnings
+}
+
+func gamebryoActivePluginCounts(plugins []pluginLoadOrderEntry, spec gameext.PluginActivationSpec) (regular, light int) {
+	for _, plugin := range plugins {
+		if !plugin.Active {
+			continue
+		}
+		if spec.SupportsLightPlugins && strings.EqualFold(filepath.Ext(plugin.Name), ".esl") {
+			light++
+			continue
+		}
+		regular++
+	}
+	return regular, light
+}
+
+func gamebryoRegularPluginLimit(spec gameext.PluginActivationSpec) int {
+	if spec.SupportsMediumMasters {
+		return 253
+	}
+	if spec.SupportsLightPlugins {
+		return 254
+	}
+	return 255
 }
 
 func gamebryoArchiveCheckExtensions(archiveType string) map[string]struct{} {
@@ -16602,6 +16689,7 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	for idx := range resp.Plugins {
 		resp.Plugins[idx].ModIndex = idx
 	}
+	resp.Warnings = append(resp.Warnings, gamebryoPluginLimitWarnings(resp.Name, resp.Plugins, spec)...)
 	return resp, nil
 }
 
