@@ -85,6 +85,16 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install SKSEVR through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"sksevr_loader.exe", "SkyrimVR.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "skyrimvr-sksevr-plugin-errors",
+		Name: "Skyrim Script Extender VR plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{{
+			Base:     gamebryo.ScriptExtenderLogBaseProtonDocuments,
+			MyGames:  "Skyrim VR",
+			Relative: "SKSE/sksevr.log",
+		}},
+		Plugins: []string{"SKSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:skyrimvr:fomod",
 		Name:        "FOMOD installer",

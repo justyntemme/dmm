@@ -2,6 +2,14 @@
 
 These guidelines translate `notes.md` into build decisions. Treat `notes.md` as the raw Q&A record and this file as the working development contract.
 
+## Guideline 0: Do Not Stop Before MVP And Vortex Plugin Parity
+
+- Continue development until MVP is reached and parity with the Vortex game/plugin extension list is 100% functional.
+- Do not stop at status checkpoints, partial parity, metadata-only coverage, source inventory, or local-only implementation notes. Stop only when the requested MVP and Vortex game/plugin parity are complete, or when a true external blocker makes further progress impossible.
+- Treat every placeholder, metadata-only, blocked, source-only, not-applicable, and no-op extension surface as unfinished unless source verification proves it is truly outside DMM's Steam Deck/runtime scope.
+- When a blocker is found, resolve it by implementing the missing generic extension/runtime capability and wiring game-specific behavior through the extension layer. Do not defer it because the work is large.
+- Commit focused source changes as features complete, excluding planning scratch docs unless explicitly requested.
+
 ## Steam Deck SSH Access
 
 - Use the passwordless project test key directly; do not rely on the local SSH agent or 1Password when connecting as Codex.

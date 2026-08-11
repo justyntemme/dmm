@@ -72,6 +72,15 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install FOSE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"fose_loader.exe", "Data/fallout3.esm"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "fallout3-fose-plugin-errors",
+		Name: "Fallout Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "fose.log"},
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "fose_editor.log"},
+		},
+		Plugins: []string{"FOSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout3:fomod",
 		Name:        "FOMOD installer",

@@ -63,6 +63,16 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install F4SE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"f4se_loader.exe", "Fallout4.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "fallout4-f4se-plugin-errors",
+		Name: "Fallout 4 Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{{
+			Base:     gamebryo.ScriptExtenderLogBaseProtonDocuments,
+			MyGames:  "Fallout4",
+			Relative: "F4SE/f4se.log",
+		}},
+		Plugins: []string{"F4SE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout4:fomod",
 		Name:        "FOMOD installer",

@@ -52,6 +52,16 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install SKSE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"skse_loader.exe", "TESV.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "skyrim-skse-plugin-errors",
+		Name: "Skyrim Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{{
+			Base:     gamebryo.ScriptExtenderLogBaseProtonDocuments,
+			MyGames:  "Skyrim",
+			Relative: "SKSE/skse.log",
+		}},
+		Plugins: []string{"SKSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{ID: "vortex:skyrim:fomod", Name: "FOMOD installer", Kind: "fomod", ModType: dataRootModType, TargetRoot: "Data", StopFolders: gamebryo.StopFolders("skse", "SkyProc Patchers")})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{ID: "skse", Name: "Skyrim Script Extender", ExecutableRelative: "skse_loader.exe", RequiredFiles: []string{"skse_loader.exe", "TESV.exe"}, DefaultPrimary: true, ModTypes: []string{scriptExtModType}, ProviderModTypes: []string{scriptExtModType}})
 	registerSupportedTools(r)

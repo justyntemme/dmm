@@ -67,6 +67,15 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install OBSE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"obse_loader.exe", "oblivion.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "oblivion-obse-plugin-errors",
+		Name: "Oblivion Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "obse.log"},
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "obse_editor.log"},
+		},
+		Plugins: []string{"OBSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{ID: "vortex:oblivion:fomod", Name: "FOMOD installer", Kind: "fomod", ModType: dataRootModType, TargetRoot: "Data", StopFolders: gamebryo.StopFolders("obse")})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{ID: "obse", Name: "Oblivion Script Extender", ExecutableRelative: "obse_loader.exe", RequiredFiles: []string{"obse_loader.exe"}, DefaultPrimary: true, ModTypes: []string{scriptExtModType}, ProviderModTypes: []string{scriptExtModType}})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{ID: "TES4Edit", Name: "TES4Edit", ExecutableRelative: "TES4Edit.exe", RequiredFiles: []string{"TES4Edit.exe"}})

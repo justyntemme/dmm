@@ -44,10 +44,16 @@ sFontFile_7=Data\Fonts\Missing_Font.fnt
 	if !ran {
 		t.Fatal("font settings test did not run")
 	}
-	if len(results) != 1 {
-		t.Fatalf("results = %+v", results)
+	var result sdk.ExtensionTestResult
+	for _, candidate := range results {
+		if candidate.TestID == "oblivion-fonts" {
+			result = candidate
+			break
+		}
 	}
-	result := results[0]
+	if result.TestID == "" {
+		t.Fatalf("missing oblivion-fonts result: %+v", results)
+	}
 	if result.TestID != "oblivion-fonts" || result.Status != sdk.HealthCheckStatusFailed || result.Severity != sdk.HealthCheckSeverityError {
 		t.Fatalf("result = %+v", result)
 	}

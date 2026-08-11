@@ -73,6 +73,15 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install NVSE through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"nvse_loader.exe", "FalloutNV.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "falloutnv-nvse-plugin-errors",
+		Name: "New Vegas Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "nvse.log"},
+			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "nvse_editor.log"},
+		},
+		Plugins: []string{"NVSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:falloutnv:fomod",
 		Name:        "FOMOD installer",

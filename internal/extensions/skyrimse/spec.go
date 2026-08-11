@@ -63,6 +63,16 @@ func Register(r sdk.Registrar) {
 		InstallHint:   "Install SKSE64 through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"skse64_loader.exe", "SkyrimSE.exe"},
 	}))
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "skyrimse-skse64-plugin-errors",
+		Name: "Skyrim Script Extender 64 plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{{
+			Base:     gamebryo.ScriptExtenderLogBaseProtonDocuments,
+			MyGames:  "Skyrim Special Edition",
+			Relative: "SKSE/skse64.log",
+		}},
+		Plugins: []string{"SKSE/Plugins"},
+	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:skyrimse:fomod",
 		Name:        "FOMOD installer",

@@ -51,6 +51,16 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
+	r.RegisterExtensionTest(gamebryo.ScriptExtenderErrorTest(gamebryo.ScriptExtenderErrorTestOptions{
+		ID:   "enderal-skse-plugin-errors",
+		Name: "Enderal Script Extender plugin errors",
+		Logs: []gamebryo.ScriptExtenderLogSpec{{
+			Base:     gamebryo.ScriptExtenderLogBaseProtonDocuments,
+			MyGames:  "Skyrim",
+			Relative: "SKSE/skse.log",
+		}},
+		Plugins: []string{"SKSE/Plugins"},
+	}))
 	registerSupportedTools(r)
 	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrim", NexusModID: "11811", PatchListName: "PatchList.txt"})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{
