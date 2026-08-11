@@ -20,11 +20,12 @@
 - DMM declares the verified Nexus domain so game-scoped Nexus browsing works.
 - DMM checks for `Rome2.exe`, `data/manifest.txt`, and `data/data_rome2.pack`.
 - DMM supports `.pack` archives intended for the game `data` folder, including same-root `.png` and `.txt` sidecars.
-- DMM emits a post-deploy notice because movie-format packs may load automatically, while mod/release packs may still need Rome II launcher or `user.script` activation.
+- DMM generates a restore-aware Proton `user.script.txt` file from enabled managed `.pack` mods during deployment, so profile enable/disable state owns the pack activation list.
+- DMM emits a post-deploy notice explaining that movie-format packs may load automatically, while some packages may still expect the native Rome II launcher behavior.
 - Steam Workshop is not advertised for this game because Steam appdetails does not declare the Workshop category and the Deck has no local `214950` Workshop manifest/content.
 
 ## Beta Gaps
 
-- Live-test a safe `.pack` archive and verify whether it is movie-format auto-load or launcher/user-script activated.
-- The extension still needs verified rules for launcher-managed mod activation, data-folder loose files, and any external Total War mod-manager workflow.
-- If support requires patching or generating Total War launcher/load-order state, DMM needs a generic extension-framework capability with preview, rollback, and manifest ownership before enabling installs.
+- Live-test a safe `.pack` archive and verify the generated `user.script.txt` activates it in-game.
+- Verify whether loose non-pack data-folder archives appear in Vortex-compatible Nexus downloads before adding any broader installer.
+- If a package still requires launcher-managed metadata beyond `user.script.txt`, add that as an extension-owned generated mapping with preview, rollback, and manifest ownership.

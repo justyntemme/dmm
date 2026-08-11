@@ -70,7 +70,7 @@ func Register(r sdk.Registrar) {
 		Kind:        "game-files",
 		Required:    true,
 		ModTypes:    []string{packModType},
-		Message:     "The Total War: ROME II game folder is missing files needed for future extension support.",
+		Message:     "The Total War: ROME II game folder is missing files needed for pack deployment.",
 		OKMessage:   "The Total War: ROME II game folder contains the expected executable and pack-file layout.",
 		InstallHint: "Verify the game files in Steam before testing Total War: ROME II mods.",
 		Check:       checkRequiredGameFiles,
