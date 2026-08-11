@@ -5312,25 +5312,56 @@ function FreshDeckyModManagerRoute() {
   }
 
   function openExploreMods() {
-    if (!selectedGameID || !selectedGame || !selectedProfile) return;
-    if (!selectedNexusDomain) {
-      setError("This game does not have a browse-capable source yet.");
+    if (!selectedGameID || !selectedGame || !selectedProfile) {
+      const reason = !selectedGameID || !selectedGame ? "No game is selected." : "No profile is selected.";
+      setError(reason);
+      void logFrontendEvent("decky explore mods blocked", {
+        app_id: selectedGameID,
+        selected_game: selectedGame ? "true" : "false",
+        selected_profile: selectedProfile ? "true" : "false",
+        reason
+      });
       return;
     }
-    let modal: { Close: () => void } | null = null;
-    const closeModal = () => modal?.Close();
-    modal = showModal(
-      <NexusBrowserModal
-        appID={selectedGameID}
-        gameName={selectedGame.name}
-        gameDomain={selectedNexusDomain}
-        profileID={selectedProfile.id}
-        closeModal={closeModal}
-      />,
-      window,
-      { strTitle: "Explore Mods", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
-    );
-    void logFrontendEvent("decky nexus browser opened", { app_id: selectedGameID, domain: selectedNexusDomain });
+    if (!selectedNexusDomain) {
+      setError("This game does not have a browse-capable source yet.");
+      void logFrontendEvent("decky explore mods missing browse source", {
+        app_id: selectedGameID,
+        game: selectedGame.name
+      });
+      return;
+    }
+    try {
+      setError("");
+      void logFrontendEvent("decky nexus browser opening", {
+        app_id: selectedGameID,
+        domain: selectedNexusDomain,
+        profile_id: selectedProfile.id
+      });
+      let modal: { Close: () => void } | null = null;
+      const closeModal = () => modal?.Close();
+      modal = showModal(
+        <NexusBrowserModal
+          appID={selectedGameID}
+          gameName={selectedGame.name}
+          gameDomain={selectedNexusDomain}
+          profileID={selectedProfile.id}
+          closeModal={closeModal}
+        />,
+        window,
+        { strTitle: "Explore Mods", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
+      );
+      void logFrontendEvent("decky nexus browser opened", { app_id: selectedGameID, domain: selectedNexusDomain });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Unable to open Explore Mods: ${message}`);
+      showLaunchToast("DMM Explore Mods failed", message, true);
+      void logFrontendEvent("decky nexus browser open failed", {
+        app_id: selectedGameID,
+        domain: selectedNexusDomain,
+        error: message
+      });
+    }
   }
 
   async function launchSelectedGame() {
