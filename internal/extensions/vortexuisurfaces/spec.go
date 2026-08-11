@@ -57,7 +57,6 @@ func registerImportSurfaces(r sdk.Registrar) {
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "nmm-import-session", Name: "NMM import session state", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
 	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Kind: "dialog", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "import-nmm", Name: "Import from NMM", Trigger: "legacy-import-detected", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
 }
 
 func Sources() []sdk.SourceRef {

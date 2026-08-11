@@ -31,7 +31,9 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "nmm-import", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "mo-import", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "nmm-import", sdk.CapabilityStatusNotApplicable)
-	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "import-nmm", sdk.CapabilityStatusNotApplicable)
+	if len(summary.Capabilities.ExtensionToDos) != 0 {
+		t.Fatalf("extension todos = %+v", summary.Capabilities.ExtensionToDos)
+	}
 	assertStatus(t, "state reducer", summary.Capabilities.StateReducers, "nmm-import-session", sdk.CapabilityStatusNotApplicable)
 }
 
