@@ -3875,9 +3875,6 @@ func (s *Server) runtimeRequirementAcquisition(ctx context.Context, appID, requi
 		acquisition.Name = strings.TrimSpace(acquisition.Name)
 		acquisition.Catalog = strings.TrimSpace(acquisition.Catalog)
 		acquisition.URL = strings.TrimSpace(acquisition.URL)
-		if runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID) == "" {
-			return extension, requirement, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement " + requirement.ID + " acquisition URL is empty")
-		}
 		return extension, requirement, acquisition, nil
 	}
 	return gameext.Extension{}, gamehandler.RuntimeRequirementSpec{}, gamehandler.RuntimeAcquisitionSpec{}, errors.New("runtime requirement is not registered for this game")
@@ -6637,8 +6634,18 @@ func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.
 			return
 		}
 	}
+	resolved, acquisitionURL, err := s.resolveRuntimeAcquisitionTarget(r.Context(), appID, storage.InstalledMod{}, false, acquisition)
+	if err != nil {
+		s.logger.Warn("runtime requirement acquisition resolve failed", "app_id", appID, "requirement_id", requirement.ID, "source_extension", extension.ID, "catalog", acquisition.Catalog, "error", err)
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if acquisitionURL == "" {
+		writeError(w, http.StatusBadRequest, errors.New("runtime requirement "+requirement.ID+" acquisition URL is empty"))
+		return
+	}
 	result, err := s.createCapturedInstall(r.Context(), capturedInstallURLRequest{
-		URL:                   runtimeAcquisitionBrowserURL(acquisition.URL, acquisition.Catalog, acquisition.SourceGame, acquisition.SourceModID, acquisition.SourceFileID),
+		URL:                   acquisitionURL,
 		SteamAppID:            appID,
 		Source:                "runtime-requirement-acquisition:" + strings.TrimSpace(requirement.ID),
 		ProfileID:             req.ProfileID,
@@ -6655,7 +6662,7 @@ func (s *Server) handleAcquireRuntimeRequirement(w http.ResponseWriter, r *http.
 		"extension":        extension.ID,
 		"acquisition":      discoveredRuntimeAcquisition(&acquisition),
 		"job":              result.Job,
-		"resolved":         result.Resolved,
+		"resolved":         firstResolved(result.Resolved, resolved),
 		"duplicate":        result.Duplicate,
 		"browser_required": result.BrowserRequired,
 		"download_started": result.DownloadStarted,
@@ -7063,6 +7070,18 @@ func firstResolvedDownloadURL(resolved catalog.ResolvedDownload) string {
 		}
 	}
 	return ""
+}
+
+func firstResolved(primary, fallback catalog.ResolvedDownload) catalog.ResolvedDownload {
+	if strings.TrimSpace(primary.Catalog) != "" ||
+		strings.TrimSpace(primary.SourceURL) != "" ||
+		strings.TrimSpace(primary.ModID) != "" ||
+		strings.TrimSpace(primary.FileID) != "" ||
+		strings.TrimSpace(primary.FileName) != "" ||
+		len(primary.DownloadLinks) > 0 {
+		return primary
+	}
+	return fallback
 }
 
 func runtimeAutoAcquireSourceIsUpdateCheck(source string) bool {

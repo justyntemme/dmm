@@ -412,6 +412,12 @@ type RuntimeAcquisition = {
   archive_name?: string;
   required?: boolean;
   auto_acquire?: boolean;
+  source_mod_id?: string;
+  source_file_id?: string;
+  source_game?: string;
+  source_provider?: string;
+  latest_asset_pattern?: string;
+  version_constraint?: string;
   message?: string;
 };
 
@@ -1475,6 +1481,21 @@ function runtimeRequirementHelpURL(requirement: RuntimeRequirement) {
 
 function runtimeRequirementAcquisitionURL(requirement: RuntimeRequirement) {
   return safeHTTPURL(requirement.acquisition?.url);
+}
+
+function runtimeRequirementCanAcquire(requirement: RuntimeRequirement) {
+  const acquisition = requirement.acquisition;
+  if (!acquisition) return false;
+  return Boolean(
+    acquisition.url ||
+    acquisition.source_mod_id ||
+    acquisition.source_file_id ||
+    acquisition.source_game ||
+    acquisition.source_provider ||
+    acquisition.latest_asset_pattern ||
+    acquisition.version_constraint ||
+    acquisition.catalog
+  );
 }
 
 function safeHTTPURL(value: unknown) {
@@ -6181,7 +6202,8 @@ function FreshDeckyModManagerRoute() {
         {runtimeWarnings.map((requirement) => {
           const helpURL = runtimeRequirementHelpURL(requirement);
           const acquisitionURL = runtimeRequirementAcquisitionURL(requirement);
-          const actionLabel = requirement.kind === "launch-tool" ? "Retry Launch Setup" : acquisitionURL ? "Install Requirement" : helpURL ? "Open Help" : "";
+          const canAcquire = runtimeRequirementCanAcquire(requirement);
+          const actionLabel = requirement.kind === "launch-tool" ? "Retry Launch Setup" : canAcquire ? "Install Requirement" : helpURL ? "Open Help" : "";
           return (
             <Focusable
               key={requirement.id}
@@ -6189,12 +6211,12 @@ function FreshDeckyModManagerRoute() {
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
-                else if (acquisitionURL) void acquireRuntimeRequirement(requirement);
+                else if (canAcquire) void acquireRuntimeRequirement(requirement);
                 else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
               }}
               onClick={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
-                else if (acquisitionURL) void acquireRuntimeRequirement(requirement);
+                else if (canAcquire) void acquireRuntimeRequirement(requirement);
                 else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
               }}
               style={{ ...freshCardStyle(false), borderColor: "#d97706" }}

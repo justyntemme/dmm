@@ -4062,7 +4062,7 @@
   }
 
   async function acquireRuntimeRequirement(requirement: RuntimeRequirement) {
-    if (!selectedGame || !requirement.acquisition?.url) return;
+    if (!selectedGame || !runtimeRequirementCanAcquire(requirement)) return;
     error = "";
     const response = await apiFetch(`/api/games/${selectedGame.app_id}/requirements/${encodeURIComponent(requirement.id)}/acquire`, {
       method: "POST",
@@ -4863,6 +4863,19 @@
         );
       });
     });
+  }
+
+  function runtimeRequirementCanAcquire(requirement: RuntimeRequirement) {
+    const acquisition = requirement.acquisition;
+    if (!acquisition) return false;
+    return Boolean(
+      acquisition.url ||
+      acquisition.source_mod_id ||
+      acquisition.source_file_id ||
+      acquisition.source_game ||
+      acquisition.source_provider ||
+      acquisition.catalog
+    );
   }
 
   async function confirmCurrentAction() {
@@ -6906,7 +6919,7 @@
                         {/if}
                       </div>
                     {/if}
-                    {#if requirement.status !== "ok" && requirement.kind !== "launch-tool" && requirement.acquisition?.url}
+                    {#if requirement.status !== "ok" && requirement.kind !== "launch-tool" && runtimeRequirementCanAcquire(requirement)}
                       <div class="requirement-actions">
                         <button type="button" on:click={() => acquireRuntimeRequirement(requirement)}>Install Requirement</button>
                         {#if requirement.acquisition.message}<small>{requirement.acquisition.message}</small>{/if}

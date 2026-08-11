@@ -15799,6 +15799,104 @@ func TestRuntimeRequirementNexusAcquisitionBuildsBrowserProviderURL(t *testing.T
 	}
 }
 
+func TestRuntimeRequirementManualAcquireUsesLatestResolver(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999021"
+	const requirementID = "github-runtime"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "latestruntime",
+		Name:    "Latest Runtime",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"latestruntime"},
+				VortexGameID: "latestruntime",
+			})
+			r.RegisterModType(installplan.ModTypeSpec{ID: "runtime-provider", TargetRoot: ""})
+			r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+				ID:               requirementID,
+				Name:             "GitHub Runtime",
+				Kind:             "mod-loader",
+				Required:         true,
+				ProviderModTypes: []string{"runtime-provider"},
+				Acquisition: &gamehandler.RuntimeAcquisitionSpec{
+					ID:                 "runtime-github-latest",
+					Name:               "Runtime latest release",
+					Catalog:            "github",
+					SourceModID:        "example/runtime",
+					LatestAssetPattern: `runtime-.*\.zip`,
+					VersionConstraint:   ">=1.0.0",
+					ArchiveName:        "runtime.zip",
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Latest Runtime",
+		InstallDir:  "Latest Runtime",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Latest Runtime"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("latest runtime archive"))
+	}))
+	defer downloadServer.Close()
+	srv.cfg.Install.AutoInstallCapturedDownloads = false
+	srv.catalogMu.Lock()
+	latestResolved := catalog.ResolvedDownload{
+		Catalog:    "github",
+		SourceURL:  "https://github.com/example/runtime/releases/latest",
+		SteamAppID: appID,
+		GameDomain: "github",
+		ModID:      "example/runtime",
+		FileID:     "v1.2.3/runtime-linux.zip",
+		FileName:   "runtime-linux.zip",
+		Version:    "v1.2.3",
+		DownloadLinks: []catalog.DownloadLink{{
+			Name:      "GitHub latest release asset",
+			ShortName: "github",
+			URI:       downloadServer.URL + "/runtime-linux.zip",
+		}},
+	}
+	srv.catalogs = []catalog.RemoteModCatalog{fakeCatalogResolver{
+		resolved: latestResolved,
+		latest:   latestResolved,
+	}}
+	srv.catalogMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/requirements/"+requirementID+"/acquire", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /requirements/acquire status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var acquired struct {
+		Requirement     string                   `json:"requirement"`
+		Job             jobs.Job                 `json:"job"`
+		Resolved        catalog.ResolvedDownload `json:"resolved"`
+		DownloadStarted bool                     `json:"download_started"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&acquired); err != nil {
+		t.Fatal(err)
+	}
+	if acquired.Requirement != requirementID || acquired.Job.Type != "captured-install" || !acquired.DownloadStarted || acquired.Resolved.FileName != "runtime-linux.zip" || acquired.Resolved.Version != "v1.2.3" {
+		t.Fatalf("latest runtime acquisition response = %+v", acquired)
+	}
+	waiting := waitForJobStatus(t, srv, acquired.Job.ID, jobs.StatusWaiting)
+	pending, ok := srv.capturedInstall(waiting.ID)
+	if !ok || pending.Source != "runtime-requirement-acquisition:"+requirementID || pending.Resolved.FileName != "runtime-linux.zip" || pending.ArchivePath == "" {
+		t.Fatalf("latest runtime acquisition pending = %+v ok=%v", pending, ok)
+	}
+}
+
 func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999005"
@@ -17411,6 +17509,7 @@ func (c fakeNexusClient) SearchMods(_ context.Context, req nexus.ModSearchReques
 
 type fakeCatalogResolver struct {
 	resolved catalog.ResolvedDownload
+	latest   catalog.ResolvedDownload
 	err      error
 }
 
@@ -17418,10 +17517,30 @@ func (r fakeCatalogResolver) Name() string {
 	if r.resolved.Catalog != "" {
 		return r.resolved.Catalog
 	}
+	if r.latest.Catalog != "" {
+		return r.latest.Catalog
+	}
 	return "fake"
 }
 
 func (r fakeCatalogResolver) ResolveURL(context.Context, catalog.ResolveRequest) (catalog.ResolvedDownload, error) {
+	if r.err != nil {
+		return catalog.ResolvedDownload{}, r.err
+	}
+	return r.resolved, nil
+}
+
+func (r fakeCatalogResolver) ResolveLatest(context.Context, catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
+	if r.err != nil {
+		return catalog.ResolvedDownload{}, r.err
+	}
+	if r.latest.Catalog != "" || len(r.latest.DownloadLinks) > 0 {
+		return r.latest, nil
+	}
+	return r.resolved, nil
+}
+
+func (r fakeCatalogResolver) ResolveFile(context.Context, catalog.UpdateResolveRequest) (catalog.ResolvedDownload, error) {
 	if r.err != nil {
 		return catalog.ResolvedDownload{}, r.err
 	}

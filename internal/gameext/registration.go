@@ -1124,7 +1124,7 @@ func validateRuntimeAcquisition(requirementID string, spec gamehandler.RuntimeAc
 		errs = append(errs, errors.New("runtime requirement "+requirementID+" acquisition catalog is required"))
 	}
 	errs = append(errs, integrity.ValidateExpectedHashes("runtime requirement "+requirementID+" acquisition", spec.ExpectedArchiveHashes)...)
-	errs = append(errs, validateAcquisitionSource("runtime requirement "+requirementID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
+	errs = append(errs, validateAcquisitionSource("runtime requirement "+requirementID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID, spec.LatestAssetPattern, spec.VersionConstraint)...)
 	for _, value := range []struct {
 		label string
 		text  string
@@ -1665,7 +1665,7 @@ func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []erro
 		errs = append(errs, errors.New("supported tool "+toolID+" acquisition catalog is required"))
 	}
 	errs = append(errs, integrity.ValidateExpectedHashes("supported tool "+toolID+" acquisition", spec.ExpectedArchiveHashes)...)
-	errs = append(errs, validateAcquisitionSource("supported tool "+toolID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID)...)
+	errs = append(errs, validateAcquisitionSource("supported tool "+toolID+" acquisition", spec.Catalog, spec.URL, spec.SourceGame, spec.SourceModID, "", "")...)
 	for _, value := range []struct {
 		label string
 		text  string
@@ -1685,7 +1685,7 @@ func validateToolAcquisition(toolID string, spec sdk.ToolAcquisitionSpec) []erro
 	return errs
 }
 
-func validateAcquisitionSource(label, catalogName, rawURL, sourceGame, sourceModID string) []error {
+func validateAcquisitionSource(label, catalogName, rawURL, sourceGame, sourceModID, latestAssetPattern, versionConstraint string) []error {
 	var errs []error
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL != "" {
@@ -1698,7 +1698,10 @@ func validateAcquisitionSource(label, catalogName, rawURL, sourceGame, sourceMod
 	if strings.EqualFold(strings.TrimSpace(catalogName), "nexus") && strings.TrimSpace(sourceGame) != "" && strings.TrimSpace(sourceModID) != "" {
 		return nil
 	}
-	return append(errs, errors.New(label+" url is required unless catalog is nexus with source game and source mod id"))
+	if strings.TrimSpace(latestAssetPattern) != "" || strings.TrimSpace(versionConstraint) != "" {
+		return nil
+	}
+	return append(errs, errors.New(label+" url is required unless catalog is nexus with source game and source mod id, or a latest-resolution selector is declared"))
 }
 
 func validateLauncherRequirements(specs []sdk.LauncherRequirementSpec) []error {
