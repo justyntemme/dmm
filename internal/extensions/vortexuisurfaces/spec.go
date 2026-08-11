@@ -34,7 +34,6 @@ func Register(r sdk.Registrar) {
 		surfaceAPI("registerDialog", "Register extension dialog"),
 		surfaceAPI("registerDashlet", "Register dashboard tile"),
 		surfaceAPI("registerMainPage", "Register main page"),
-		surfaceAPI("registerLoadOrderPage", "Register load-order page"),
 		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
 		surfaceAPI("registerProfileFile", "Register profile-managed file"),
 		surfaceAPI("registerReducer", "Register extension state reducer"),
@@ -60,13 +59,6 @@ func Register(r sdk.Registrar) {
 	r.RegisterExtensionDialog(surfaceDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
 	r.RegisterExtensionDashlet(surfaceDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
 	r.RegisterExtensionMainPage(surfaceMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
-	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
-		ID:      "registerLoadOrderPage",
-		Name:    "Vortex registerLoadOrderPage",
-		Scope:   "load-order",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Vortex custom desktop load-order pages map to DMM's generic profile-order Decky and phone/tablet controls for DMM-created state; game extensions register concrete ready load-order pages when they need one.",
-	})
 	r.RegisterProfileFile(sdk.ProfileFileSpec{
 		ID:      "registerProfileFile",
 		Name:    "Vortex registerProfileFile",
