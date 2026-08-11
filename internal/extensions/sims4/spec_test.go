@@ -30,6 +30,9 @@ func TestExtensionRegistersSims4VortexCapabilities(t *testing.T) {
 	if !compiled.AllowNoSteamAppID {
 		t.Fatalf("expected source-compatible no-steam registration")
 	}
+	if len(compiled.StateMigrations) != 1 || len(compiled.StateMigrations[0].Commands) != 3 {
+		t.Fatalf("state migrations = %+v", compiled.StateMigrations)
+	}
 }
 
 func TestUserDataRootResolvesLocalizedProtonDocumentsPath(t *testing.T) {

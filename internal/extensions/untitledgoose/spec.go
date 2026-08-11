@@ -226,15 +226,12 @@ func Register(r sdk.Registrar) {
 		Name:        "Untitled Goose Game VortexMods migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "0.2.0",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex purges the historical Untitled_Data/Managed/VortexMods folder from pre-0.2.0 Vortex state. This is not applicable to DMM-created state because DMM never creates that legacy folder; post-MVP Vortex import must detect and repair imported legacy state explicitly.",
+		Message:     "Mirrors Vortex 0.2.0 migration by purging the historical Untitled_Data/Managed/VortexMods folder when imported or older managed state crosses this extension version.",
 		Commands: []sdk.StateMigrationCommandSpec{{
 			ID:             "purge-vortexmods-managed-folder",
 			Name:           "Purge legacy VortexMods managed folder",
 			Command:        sdk.StateMigrationCommandPurgeModsInPath,
 			TargetRelative: migrationTarget,
-			Status:         sdk.CapabilityStatusNotApplicable,
-			Message:        "Skipped for DMM-created state; only a future Vortex environment import should purge this legacy Vortex-only managed folder.",
 		}},
 	})
 	r.RegisterSource(sdk.SourceRef{

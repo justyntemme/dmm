@@ -31,8 +31,8 @@ func TestUntitledGoosePortsEpicBepInExMetadata(t *testing.T) {
 	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("migration/todos = %+v / %+v", summary.Capabilities.StateMigrations, summary.Capabilities.ExtensionToDos)
 	}
-	if summary.Capabilities.StateMigrations[0].Status != sdk.CapabilityStatusNotApplicable {
-		t.Fatalf("migration status = %+v", summary.Capabilities.StateMigrations[0])
+	if len(summary.Capabilities.StateMigrations[0].Commands) != 1 || summary.Capabilities.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandPurgeModsInPath {
+		t.Fatalf("migration commands = %+v", summary.Capabilities.StateMigrations[0])
 	}
 	if len(summary.Capabilities.RuntimeRequirements) != 1 {
 		t.Fatalf("runtime requirements = %+v", summary.Capabilities.RuntimeRequirements)

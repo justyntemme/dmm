@@ -103,8 +103,24 @@ func Register(r sdk.Registrar) {
 		Name:        "Purge legacy Vortex Mods deployment paths",
 		FromVersion: "0.0.1",
 		ToVersion:   "2.0.1",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex purges legacy profile-local Vortex Mods paths during migration. This is not applicable to DMM-created MVP state; post-MVP Vortex import must implement a real cleanup for imported legacy paths.",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:             "purge-vortex-mods",
+				Name:           "Purge old Mods/Vortex Mods deployment",
+				Command:        sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRootID:   userDataRootID,
+				TargetRelative: filepath.ToSlash(filepath.Join("Mods", vortexModsSubPath)),
+			},
+			{
+				ID:             "purge-mods-root",
+				Name:           "Purge old Sims 4 mod root deployment",
+				Command:        sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRootID:   userDataRootID,
+				TargetRelative: "Mods",
+			},
+			{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
+		},
+		Message: "Mirrors Vortex 2.0.1 migration by purging old Mods/Vortex Mods and Mods deployment paths under the resolved Sims 4 user-data root before redeploying.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
