@@ -333,6 +333,22 @@
     entries: LocalArchiveBrowseEntry[];
   };
 
+  type ExternalModCandidate = {
+    adoption_id: string;
+    name: string;
+    path: string;
+    relative_path: string;
+    root_path: string;
+    mod_type: string;
+    size: number;
+    sha256: string;
+    delete_original: boolean;
+  };
+
+  type ExternalModList = {
+    items: ExternalModCandidate[];
+  };
+
   type InstallerChoicePreset = {
     id: number;
     steam_app_id: string;
@@ -859,6 +875,11 @@
   let deckLocalArchiveBusy = false;
   let deckLocalArchiveMessage = "";
   let busyDeckLocalArchivePath = "";
+  let externalModAdoptionOpen = false;
+  let externalModCandidates: ExternalModCandidate[] = [];
+  let selectedExternalModPaths: Record<string, boolean> = {};
+  let externalModAdoptionBusy = false;
+  let externalModAdoptionMessage = "";
   let deployPlan: DeployPlan | null = null;
   let deploymentStatus: DeploymentStatus | null = null;
   let deploymentSettings: DeploymentSettings | null = null;
@@ -1732,12 +1753,13 @@
   async function loadGameState(game: Game) {
     const sequence = ++selectedGameLoadSequence;
     const requestAppID = game.app_id;
-    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextGameInfo, nextExtensionActions, nextLaunchStatus, nextWorkshopState] = await Promise.all([
+    const [nextProfiles, nextMods, nextCandidates, nextPresets, nextLocalArchives, nextExternalMods, nextDeploymentStatus, nextDeploymentSettings, nextDeploymentHistory, nextPluginLoadOrder, nextDiagnostics, nextGameInfo, nextExtensionActions, nextLaunchStatus, nextWorkshopState] = await Promise.all([
       getJSON<Profile[]>(`/api/games/${game.app_id}/profiles`),
       getJSON<InstalledMod[]>(`/api/games/${game.app_id}/mods`),
       getJSON<InstallCandidate[]>(`/api/games/${game.app_id}/install-candidates`),
       getJSON<InstallerChoicePreset[]>(`/api/games/${game.app_id}/installer-choice-presets`),
       getJSON<LocalArchiveList>(`/api/games/${game.app_id}/local-archives`),
+      getJSON<ExternalModList>(`/api/games/${game.app_id}/external-mods`),
       getJSON<DeploymentStatus>(`/api/games/${game.app_id}/deploy/status`),
       getJSON<DeploymentSettings>(`/api/games/${game.app_id}/deploy/settings`),
       getJSON<{ deployments: DeploymentHistoryItem[] }>(`/api/games/${game.app_id}/deploy/history?limit=5`),
@@ -1777,6 +1799,9 @@
     installerChoicePresets = nextPresets;
     deckLocalArchiveRoots = nextLocalArchives.roots ?? [];
     deckLocalArchives = nextLocalArchives.files ?? [];
+    externalModCandidates = nextExternalMods.items ?? [];
+    selectedExternalModPaths = {};
+    externalModAdoptionMessage = "";
     deploymentStatus = nextDeploymentStatus;
     deploymentSettings = nextDeploymentSettings;
     deploymentHistory = nextDeploymentHistory.deployments ?? [];
@@ -3173,6 +3198,94 @@
       error = err instanceof Error ? err.message : String(err);
     } finally {
       busyDeckLocalArchivePath = "";
+    }
+  }
+
+  function externalModCandidateKey(candidate: ExternalModCandidate) {
+    return `${candidate.adoption_id}\n${candidate.path}`;
+  }
+
+  function externalModAdoptionGroups() {
+    const grouped = new Map<string, ExternalModCandidate[]>();
+    for (const candidate of externalModCandidates) {
+      const key = candidate.adoption_id;
+      grouped.set(key, [...(grouped.get(key) ?? []), candidate]);
+    }
+    return Array.from(grouped.entries()).map(([adoptionID, candidates]) => ({
+      adoptionID,
+      candidates,
+      modType: candidates[0]?.mod_type ?? "",
+      deleteOriginal: Boolean(candidates[0]?.delete_original),
+      rootPath: candidates[0]?.root_path ?? ""
+    }));
+  }
+
+  function selectedExternalCandidates(adoptionID: string) {
+    return externalModCandidates.filter((candidate) => candidate.adoption_id === adoptionID && selectedExternalModPaths[externalModCandidateKey(candidate)]);
+  }
+
+  function toggleExternalModCandidate(candidate: ExternalModCandidate, checked: boolean) {
+    const key = externalModCandidateKey(candidate);
+    selectedExternalModPaths = { ...selectedExternalModPaths, [key]: checked };
+  }
+
+  async function refreshExternalModCandidates() {
+    if (!selectedGame) return;
+    error = "";
+    externalModAdoptionMessage = "";
+    externalModAdoptionBusy = true;
+    try {
+      const result = await getJSON<ExternalModList>(`/api/games/${selectedGame.app_id}/external-mods`);
+      externalModCandidates = result.items ?? [];
+      selectedExternalModPaths = {};
+      externalModAdoptionMessage = externalModCandidates.length > 0
+        ? `Found ${externalModCandidates.length} unmanaged mod candidate${externalModCandidates.length === 1 ? "" : "s"}.`
+        : "No extension-recognized unmanaged mods found.";
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      externalModAdoptionBusy = false;
+    }
+  }
+
+  async function toggleExternalModAdoption() {
+    externalModAdoptionOpen = !externalModAdoptionOpen;
+    if (externalModAdoptionOpen) {
+      await refreshExternalModCandidates();
+    }
+  }
+
+  async function adoptExternalMods(adoptionID: string) {
+    if (!selectedGame || externalModAdoptionBusy) return;
+    const selected = selectedExternalCandidates(adoptionID);
+    if (selected.length === 0) {
+      externalModAdoptionMessage = "Select at least one unmanaged mod first.";
+      return;
+    }
+    error = "";
+    externalModAdoptionMessage = "";
+    externalModAdoptionBusy = true;
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/external-mods/adopt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adoption_id: adoptionID,
+          paths: selected.map((candidate) => candidate.path),
+          profile_id: selectedInstallProfileID()
+        })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: { imported?: InstalledMod[] } = await response.json();
+      externalModAdoptionMessage = `Imported ${result.imported?.length ?? selected.length} unmanaged mod${(result.imported?.length ?? selected.length) === 1 ? "" : "s"} into DMM staging.`;
+      await refreshSelectedGame({ refreshPreview: true, reason: "external-mod-adoption" });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      externalModAdoptionBusy = false;
     }
   }
 
@@ -5656,6 +5769,56 @@
                   {/if}
                   {#if localArchiveMessage}
                     <p class="hint success-copy">{localArchiveMessage}</p>
+                  {/if}
+                {/if}
+              </section>
+              <section class="deck-archive-browser external-adoption-browser" aria-label="Unmanaged mod adoption">
+                <button type="button" class="archive-accordion-trigger" on:click={toggleExternalModAdoption}>
+                  <span>
+                    <strong>Adopt Unmanaged Mods</strong>
+                    <small>Move extension-recognized manual or leftover files into DMM-owned staging</small>
+                  </span>
+                  <em>{externalModAdoptionOpen ? "Hide" : "Open"}</em>
+                </button>
+                {#if externalModAdoptionOpen}
+                  <div class="archive-browser-controls">
+                    <div>
+                      <button type="button" class="secondary-action compact" on:click={refreshExternalModCandidates} disabled={externalModAdoptionBusy}>{externalModAdoptionBusy ? "Scanning..." : "Refresh"}</button>
+                    </div>
+                  </div>
+                  {#if externalModAdoptionGroups().length === 0}
+                    <p class="hint">No unmanaged mods matched this game's extension adoption rules.</p>
+                  {:else}
+                    <div class="external-adoption-list">
+                      {#each externalModAdoptionGroups() as group}
+                        <article class="external-adoption-group">
+                          <div class="external-adoption-heading">
+                            <div>
+                              <strong>{group.adoptionID}</strong>
+                              <small>{group.modType || "extension managed"} · {group.deleteOriginal ? "source files removed after import" : "source files kept after import"}</small>
+                              {#if group.rootPath}<small>{group.rootPath}</small>{/if}
+                            </div>
+                            <button type="button" class="secondary-action compact" on:click={() => adoptExternalMods(group.adoptionID)} disabled={externalModAdoptionBusy || selectedExternalCandidates(group.adoptionID).length === 0}>
+                              {externalModAdoptionBusy ? "Importing..." : `Import ${selectedExternalCandidates(group.adoptionID).length}`}
+                            </button>
+                          </div>
+                          <div class="external-adoption-candidates">
+                            {#each group.candidates as candidate}
+                              <label>
+                                <input type="checkbox" checked={Boolean(selectedExternalModPaths[externalModCandidateKey(candidate)])} on:change={(event) => toggleExternalModCandidate(candidate, event.currentTarget.checked)} />
+                                <span>
+                                  <strong>{candidate.name}</strong>
+                                  <small>{candidate.relative_path} · {formatBytes(candidate.size)}</small>
+                                </span>
+                              </label>
+                            {/each}
+                          </div>
+                        </article>
+                      {/each}
+                    </div>
+                  {/if}
+                  {#if externalModAdoptionMessage}
+                    <p class="hint success-copy">{externalModAdoptionMessage}</p>
                   {/if}
                 {/if}
               </section>

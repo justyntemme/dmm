@@ -1510,6 +1510,59 @@ h2 {
   font-weight: 800;
 }
 
+.external-adoption-list {
+  display: grid;
+  gap: 8px;
+}
+
+.external-adoption-group {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 9px;
+  background: #111827;
+}
+
+.external-adoption-heading,
+.external-adoption-candidates label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.external-adoption-heading > div,
+.external-adoption-candidates span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.external-adoption-candidates {
+  display: grid;
+  gap: 6px;
+}
+
+.external-adoption-candidates label {
+  grid-template-columns: auto minmax(0, 1fr);
+  border: 1px solid #303741;
+  border-radius: 8px;
+  padding: 8px;
+  color: #f4f4f5;
+  background: #171c22;
+}
+
+.external-adoption-heading small,
+.external-adoption-candidates small {
+  overflow: hidden;
+  color: #a1a1aa;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .browser-handoff {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
