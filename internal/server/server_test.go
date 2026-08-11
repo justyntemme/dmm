@@ -13774,6 +13774,13 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 				},
 			})
 			r.RegisterSupportedTool(sdk.SupportedToolSpec{
+				ID:                    "external-sdk",
+				Name:                  "External SDK",
+				InstallRootSteamAppID: "999005",
+				ExecutableRelative:    "SDK/Tool.exe",
+				RequiredFiles:         []string{"SDK/Tool.exe"},
+			})
+			r.RegisterSupportedTool(sdk.SupportedToolSpec{
 				ID:             "umm",
 				Name:           "Unity Mod Manager",
 				Arguments:      []string{"--managed"},
@@ -13790,12 +13797,26 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 		},
 	})
 	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	externalSDKPath := filepath.Join(t.TempDir(), "External SDK")
+	if err := os.MkdirAll(filepath.Join(externalSDKPath, "SDK"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(externalSDKPath, "SDK", "Tool.exe"), []byte("sdk"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       appID,
 		Name:        "Tool Discovery Game",
 		InstallDir:  "Tool Discovery Game",
 		LibraryPath: "/steam",
 		Path:        gamePath,
+		State:       "clean_candidate",
+	}, {
+		AppID:       "999005",
+		Name:        "External SDK",
+		InstallDir:  "External SDK",
+		LibraryPath: "/steam",
+		Path:        externalSDKPath,
 		State:       "clean_candidate",
 	}}); err != nil {
 		t.Fatal(err)
@@ -13859,6 +13880,10 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	managed := discoveredToolByIDSource(result.Tools, "umm", "managed-mod-metadata")
 	if managed == nil || !managed.Present || managed.InstalledModID != installed.ID || managed.Version != "1.2.3" || managed.ExecutablePath != filepath.Join(stagingPath, "Managed", "UnityModManager.exe") || !managed.DefaultPrimary || len(managed.Arguments) != 1 || managed.Arguments[0] != "--managed" {
 		t.Fatalf("managed tool discovery = %+v", managed)
+	}
+	external := discoveredToolByIDSource(result.Tools, "external-sdk", "extension-declared")
+	if external == nil || !external.Present || external.InstallRootSteamAppID != "999005" || external.ExecutablePath != filepath.Join(externalSDKPath, "SDK", "Tool.exe") {
+		t.Fatalf("external SDK discovery = %+v", external)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/games/"+appID+"/tools", nil)

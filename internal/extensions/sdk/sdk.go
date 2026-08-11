@@ -294,22 +294,23 @@ type LaunchOptionResult struct {
 }
 
 type SupportedToolSpec struct {
-	ID                 string
-	Name               string
-	ShortName          string
-	ExecutableRelative string
-	Arguments          []string
-	Environment        map[string]string
-	RequiredFiles      []string
-	Variants           []SupportedToolVariantSpec
-	Acquisition        *ToolAcquisitionSpec
-	Relative           bool
-	Shell              bool
-	Detach             bool
-	Exclusive          bool
-	DefaultPrimary     bool
-	Status             string
-	Message            string
+	ID                    string
+	Name                  string
+	ShortName             string
+	InstallRootSteamAppID string
+	ExecutableRelative    string
+	Arguments             []string
+	Environment           map[string]string
+	RequiredFiles         []string
+	Variants              []SupportedToolVariantSpec
+	Acquisition           *ToolAcquisitionSpec
+	Relative              bool
+	Shell                 bool
+	Detach                bool
+	Exclusive             bool
+	DefaultPrimary        bool
+	Status                string
+	Message               string
 }
 
 type SupportedToolVariantSpec struct {

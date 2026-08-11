@@ -1568,6 +1568,9 @@ func validateSupportedTools(tools []sdk.SupportedToolSpec) []error {
 		if strings.TrimSpace(tool.ExecutableRelative) == "" && len(tool.Variants) == 0 && status != sdk.CapabilityStatusBlocked && status != sdk.CapabilityStatusMetadata {
 			errs = append(errs, errors.New("supported tool "+id+" executable path is required"))
 		}
+		if strings.ContainsAny(tool.InstallRootSteamAppID, "\x00\r\n") {
+			errs = append(errs, errors.New("supported tool "+id+" install root Steam app id must not contain control line breaks"))
+		}
 		if strings.TrimSpace(tool.ExecutableRelative) != "" {
 			if err := validateRelativePath(tool.ExecutableRelative); err != nil {
 				errs = append(errs, errors.New("supported tool "+id+" executable path: "+err.Error()))

@@ -75,8 +75,8 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchMulleArchive,
 		InstructionMode:   installplan.InstructionUnsupported,
 		UnsupportedReason: "Vortex blocks MulleDK19 Blade & Sorcery mod.json archives because that loader is incompatible with Blade & Sorcery 6.0 and newer.",
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           "Vortex blocks MulleDK19 mod.json archives for modern Blade & Sorcery versions.",
+		Status:            sdk.CapabilityStatusReady,
+		Message:           "Vortex blocks MulleDK19 mod.json archives for modern Blade & Sorcery versions; DMM mirrors that install-time rejection.",
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:bladeandsorcery:official",

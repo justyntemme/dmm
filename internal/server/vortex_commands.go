@@ -15,6 +15,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/integrity"
+	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
 
@@ -28,32 +29,33 @@ type toolDiscoveryResult struct {
 }
 
 type discoveredTool struct {
-	ID                 string            `json:"id"`
-	Name               string            `json:"name"`
-	ShortName          string            `json:"short_name,omitempty"`
-	Kind               string            `json:"kind"`
-	Source             string            `json:"source"`
-	SourceExtension    string            `json:"source_extension"`
-	InstalledModID     int64             `json:"installed_mod_id,omitempty"`
-	InstalledModName   string            `json:"installed_mod_name,omitempty"`
-	ModType            string            `json:"mod_type,omitempty"`
-	Version            string            `json:"version,omitempty"`
-	ExecutablePath     string            `json:"executable_path,omitempty"`
-	ExecutableRelative string            `json:"executable_relative,omitempty"`
-	Arguments          []string          `json:"arguments,omitempty"`
-	Environment        map[string]string `json:"environment,omitempty"`
-	RequiredFiles      []string          `json:"required_files,omitempty"`
-	Variants           []toolVariant     `json:"variants,omitempty"`
-	MissingFiles       []string          `json:"missing_files,omitempty"`
-	Present            bool              `json:"present"`
-	Relative           bool              `json:"relative,omitempty"`
-	Shell              bool              `json:"shell,omitempty"`
-	Detach             bool              `json:"detach,omitempty"`
-	Exclusive          bool              `json:"exclusive,omitempty"`
-	DefaultPrimary     bool              `json:"default_primary,omitempty"`
-	Status             string            `json:"status,omitempty"`
-	Message            string            `json:"message,omitempty"`
-	Acquisition        *toolAcquisition  `json:"acquisition,omitempty"`
+	ID                    string            `json:"id"`
+	Name                  string            `json:"name"`
+	ShortName             string            `json:"short_name,omitempty"`
+	Kind                  string            `json:"kind"`
+	Source                string            `json:"source"`
+	SourceExtension       string            `json:"source_extension"`
+	InstalledModID        int64             `json:"installed_mod_id,omitempty"`
+	InstalledModName      string            `json:"installed_mod_name,omitempty"`
+	ModType               string            `json:"mod_type,omitempty"`
+	Version               string            `json:"version,omitempty"`
+	ExecutablePath        string            `json:"executable_path,omitempty"`
+	ExecutableRelative    string            `json:"executable_relative,omitempty"`
+	InstallRootSteamAppID string            `json:"install_root_steam_app_id,omitempty"`
+	Arguments             []string          `json:"arguments,omitempty"`
+	Environment           map[string]string `json:"environment,omitempty"`
+	RequiredFiles         []string          `json:"required_files,omitempty"`
+	Variants              []toolVariant     `json:"variants,omitempty"`
+	MissingFiles          []string          `json:"missing_files,omitempty"`
+	Present               bool              `json:"present"`
+	Relative              bool              `json:"relative,omitempty"`
+	Shell                 bool              `json:"shell,omitempty"`
+	Detach                bool              `json:"detach,omitempty"`
+	Exclusive             bool              `json:"exclusive,omitempty"`
+	DefaultPrimary        bool              `json:"default_primary,omitempty"`
+	Status                string            `json:"status,omitempty"`
+	Message               string            `json:"message,omitempty"`
+	Acquisition           *toolAcquisition  `json:"acquisition,omitempty"`
 }
 
 type toolVariant struct {
@@ -125,7 +127,7 @@ func (s *Server) discoverTools(ctx context.Context, appID, source string) (toolD
 		tools = append(tools, s.discoverLaunchTool(appID, game.GamePath, extension, tool))
 	}
 	for _, tool := range extension.SupportedTools {
-		tools = append(tools, discoverSupportedTool(game.GamePath, extension, tool))
+		tools = append(tools, s.discoverSupportedTool(ctx, game.GamePath, extension, tool))
 	}
 	tools = append(tools, s.discoverManagedTools(appID, mods, extension, game.GamePath)...)
 	sort.SliceStable(tools, func(i, j int) bool {
@@ -176,37 +178,74 @@ func (s *Server) discoverLaunchTool(appID, gamePath string, extension gameext.Ex
 	}
 }
 
-func discoverSupportedTool(gamePath string, extension gameext.Extension, tool gameext.SupportedToolSpec) discoveredTool {
+func (s *Server) discoverSupportedTool(ctx context.Context, gamePath string, extension gameext.Extension, tool gameext.SupportedToolSpec) discoveredTool {
 	resolved := gameext.ResolveSupportedToolForGamePath(gamePath, tool)
-	executablePath, missing := declaredToolFiles(gamePath, resolved.ExecutableRelative, resolved.RequiredFiles)
+	rootPath := gamePath
+	installRootSteamAppID := strings.TrimSpace(resolved.InstallRootSteamAppID)
+	if installRootSteamAppID != "" {
+		if game, ok := s.discoverSteamApp(ctx, installRootSteamAppID); ok {
+			rootPath = game.Path
+		}
+	}
+	executablePath, missing := declaredToolFiles(rootPath, resolved.ExecutableRelative, resolved.RequiredFiles)
 	status := strings.TrimSpace(tool.Status)
 	if status == "" {
 		status = "ready"
 	}
 	return discoveredTool{
-		ID:                 strings.TrimSpace(resolved.ID),
-		Name:               strings.TrimSpace(resolved.Name),
-		ShortName:          strings.TrimSpace(resolved.ShortName),
-		Kind:               "supported-tool",
-		Source:             "extension-declared",
-		SourceExtension:    extension.ID,
-		ExecutablePath:     executablePath,
-		ExecutableRelative: filepath.ToSlash(strings.TrimSpace(resolved.ExecutableRelative)),
-		Arguments:          cleanStrings(resolved.Arguments),
-		Environment:        cloneStringMap(resolved.Environment),
-		RequiredFiles:      cleanStrings(resolved.RequiredFiles),
-		Variants:           supportedToolVariants(tool.Variants),
-		MissingFiles:       missing,
-		Present:            len(missing) == 0 && executablePath != "",
-		Relative:           resolved.Relative,
-		Shell:              resolved.Shell,
-		Detach:             resolved.Detach,
-		Exclusive:          resolved.Exclusive,
-		DefaultPrimary:     resolved.DefaultPrimary,
-		Status:             status,
-		Message:            strings.TrimSpace(tool.Message),
-		Acquisition:        discoveredToolAcquisition(tool.Acquisition),
+		ID:                    strings.TrimSpace(resolved.ID),
+		Name:                  strings.TrimSpace(resolved.Name),
+		ShortName:             strings.TrimSpace(resolved.ShortName),
+		Kind:                  "supported-tool",
+		Source:                "extension-declared",
+		SourceExtension:       extension.ID,
+		ExecutablePath:        executablePath,
+		ExecutableRelative:    filepath.ToSlash(strings.TrimSpace(resolved.ExecutableRelative)),
+		InstallRootSteamAppID: installRootSteamAppID,
+		Arguments:             cleanStrings(resolved.Arguments),
+		Environment:           cloneStringMap(resolved.Environment),
+		RequiredFiles:         cleanStrings(resolved.RequiredFiles),
+		Variants:              supportedToolVariants(tool.Variants),
+		MissingFiles:          missing,
+		Present:               len(missing) == 0 && executablePath != "",
+		Relative:              resolved.Relative,
+		Shell:                 resolved.Shell,
+		Detach:                resolved.Detach,
+		Exclusive:             resolved.Exclusive,
+		DefaultPrimary:        resolved.DefaultPrimary,
+		Status:                status,
+		Message:               strings.TrimSpace(tool.Message),
+		Acquisition:           discoveredToolAcquisition(tool.Acquisition),
 	}
+}
+
+func (s *Server) discoverSteamApp(ctx context.Context, appID string) (steam.Game, bool) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return steam.Game{}, false
+	}
+	if game, err := s.db.GameBySteamApp(ctx, appID); err == nil && strings.TrimSpace(game.GamePath) != "" {
+		return steam.Game{
+			AppID:       strings.TrimSpace(game.SteamAppID),
+			Name:        strings.TrimSpace(game.Name),
+			LibraryPath: strings.TrimSpace(game.LibraryPath),
+			Path:        strings.TrimSpace(game.GamePath),
+			Version:     strings.TrimSpace(game.Version),
+			BuildID:     strings.TrimSpace(game.SteamBuildID),
+			State:       strings.TrimSpace(game.State),
+		}, true
+	}
+	discovered, _, err := s.discoverGames(ctx, false)
+	if err != nil {
+		s.logger.Warn("steam app discovery failed for extension tool", "app_id", appID, "error", err)
+		return steam.Game{}, false
+	}
+	for _, game := range discovered {
+		if strings.TrimSpace(game.AppID) == appID {
+			return game, true
+		}
+	}
+	return steam.Game{}, false
 }
 
 func supportedToolVariants(variants []gameext.SupportedToolVariantSpec) []toolVariant {
