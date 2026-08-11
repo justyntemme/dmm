@@ -1,6 +1,9 @@
 package mountandblade2bannerlord
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexstub"
+)
 
 const (
 	VortexGameID = "mountandblade2bannerlord"
@@ -13,14 +16,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	r.RegisterGame(sdk.GameRegistration{VortexGameID: VortexGameID, VortexStub: true, SupportModID: SupportModID})
-	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-mount-and-blade2 extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-mount-and-blade2/src"})
-	r.RegisterSource(sdk.SourceRef{Name: "Vortex support mod declared by game-mount-and-blade2", URL: "https://www.nexusmods.com/site/mods/" + SupportModID})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      VortexGameID + "-root-query-mod-path",
-		Name:    Name + " root queryModPath metadata",
-		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex registerGameStub declares queryModPath '.'. DMM keeps this as browse-only metadata until installer support is source-reviewed.",
-	})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-mount-and-blade2", SourceDir: "game-mount-and-blade2", SupportModID: SupportModID})
 }

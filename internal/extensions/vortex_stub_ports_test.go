@@ -10,6 +10,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/palworld"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/residentevil22019"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/residentevil32020"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/starfield"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/subnautica"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/subnauticabelowzero"
@@ -85,7 +86,10 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := gameext.NewRegistry([]gameext.Extension{tt.extension})
 			summary := registry.ExtensionSummaries()[0]
-			if summary.Coverage != gameext.CoverageMetadataOnly {
+			if tt.queryModPath == "" && summary.Coverage != gameext.CoverageInstaller {
+				t.Fatalf("coverage = %q", summary.Coverage)
+			}
+			if tt.queryModPath != "" && summary.Coverage != gameext.CoverageMetadataOnly {
 				t.Fatalf("coverage = %q", summary.Coverage)
 			}
 			if summary.SupportModID != tt.supportModID || !summary.VortexStub {
@@ -94,12 +98,16 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 			if len(summary.SteamAppIDs) != 0 {
 				t.Fatalf("stub unexpectedly registered Steam app ids: %+v", summary.SteamAppIDs)
 			}
-			if tt.queryModPath != "" {
-				if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != tt.queryModPath {
-					t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
+			if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != tt.queryModPath {
+				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
+			}
+			if tt.queryModPath == "" {
+				if summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeNone {
+					t.Fatalf("root stub merge mode = %q", summary.Capabilities.GameRegistration.MergeMode)
 				}
-			} else if summary.Capabilities.GameRegistration != nil {
-				t.Fatalf("root stub should not expose empty game registration: %+v", summary.Capabilities.GameRegistration)
+				if len(summary.Capabilities.ModTypes) != 1 || len(summary.Capabilities.Installers) != 1 {
+					t.Fatalf("root stub install capabilities = mod types %+v installers %+v", summary.Capabilities.ModTypes, summary.Capabilities.Installers)
+				}
 			}
 			assertSourceContains(t, summary.Sources, tt.sourceDir)
 			assertSourceContains(t, summary.Sources, "site/mods/"+tt.supportModID)
