@@ -3,7 +3,6 @@ package gamestores
 import (
 	"testing"
 
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
@@ -19,8 +18,8 @@ func TestExtensionRegistersSourceBackedGameStoreMetadata(t *testing.T) {
 	for _, store := range summary.Capabilities.GameStores {
 		byID[store.ID] = store
 	}
-	for _, id := range []string{"gog", "origin", "uplay", "xbox"} {
-		if byID[id].Status != sdk.CapabilityStatusNotApplicable || byID[id].Message == "" {
+	for _, id := range []string{"gog", "origin", "uplay", "epic", "xbox"} {
+		if byID[id].Status != "ready" || byID[id].Message == "" {
 			t.Fatalf("%s store = %+v", id, byID[id])
 		}
 	}

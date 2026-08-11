@@ -607,7 +607,9 @@ func TestExtensionsEndpointReportsRegisteredCapabilities(t *testing.T) {
 	if !ok {
 		t.Fatalf("extensions = %+v", body)
 	}
-	if len(fallout.SteamAppIDs) != 1 || fallout.SteamAppIDs[0] != "377160" {
+	if !containsString(fallout.SteamAppIDs, "377160") ||
+		!containsString(fallout.SteamAppIDs, gameext.StoreBackedAppID("xbox", "BethesdaSoftworks.Fallout4-PC")) ||
+		!containsString(fallout.SteamAppIDs, gameext.StoreBackedAppID("epic", "61d52ce4d09d41e48800c22784d13ae8")) {
 		t.Fatalf("fallout steam ids = %+v", fallout.SteamAppIDs)
 	}
 	if !featureIDsContain(fallout.Capabilities.Installers, "vortex:fallout4:data-root") {

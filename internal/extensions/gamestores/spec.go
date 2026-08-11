@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const nonApplicableMessage = "Verified non-applicable for Steam Deck MVP: Vortex registers this store only on Windows and implements it through Windows client, registry, protocol, or UWP shell integration. DMM's platform-store runtime is Steam/SteamOS."
+const manualRegistrationMessage = "DMM supports this Vortex game-store identity through manual install-path registration for extension-backed games. Automatic store-library discovery and native client launching remain separate verified runtime capabilities."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -32,10 +32,10 @@ func Register(r sdk.Registrar) {
 		{ID: "gog", Name: "GOG"},
 		{ID: "origin", Name: "Origin"},
 		{ID: "uplay", Name: "Uplay"},
+		{ID: "epic", Name: "Epic Games"},
 		{ID: "xbox", Name: "Xbox"},
 	} {
-		store.Status = sdk.CapabilityStatusNotApplicable
-		store.Message = nonApplicableMessage
+		store.Message = manualRegistrationMessage
 		r.RegisterGameStore(store)
 	}
 }

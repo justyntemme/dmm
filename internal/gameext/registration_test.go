@@ -270,7 +270,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if extension.ID != "sample" || extension.Name != "Sample Game" {
 		t.Fatalf("extension identity = %+v", extension)
 	}
-	if len(extension.SteamAppIDs) != 1 || extension.SteamAppIDs[0] != "100" {
+	if !contains(extension.SteamAppIDs, "100") || !contains(extension.SteamAppIDs, StoreBackedAppID("epic", "sample-epic-app")) {
 		t.Fatalf("steam app ids = %#v", extension.SteamAppIDs)
 	}
 	if extension.InstallPlan.VortexGameID != "samplegame" || extension.RuntimeRequirements.SteamAppID != "100" {
@@ -638,6 +638,13 @@ func TestCompileExtensionIndexesStoreBackedGameIDs(t *testing.T) {
 				VortexGameID:       "storegame",
 				ExecutableRelative: "Game.exe",
 			})
+			r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+				ID:       "storegame-epic-launcher",
+				Name:     "Epic Store Game launcher",
+				Launcher: "epic",
+				Store:    "epic",
+				AppID:    "abc123",
+			})
 		},
 	})
 	if err != nil {
@@ -650,8 +657,14 @@ func TestCompileExtensionIndexesStoreBackedGameIDs(t *testing.T) {
 	if !contains(extension.SteamAppIDs, "100") || !contains(extension.SteamAppIDs, storeAppID) {
 		t.Fatalf("indexed app ids = %+v", extension.SteamAppIDs)
 	}
+	if !contains(extension.SteamAppIDs, StoreBackedAppID("epic", "abc123")) {
+		t.Fatalf("launcher-derived app id missing from %+v", extension.SteamAppIDs)
+	}
 	if got := extension.GameMetadata.StoreAppIDs["GOG Galaxy"]; len(got) != 1 || got[0] != "200" {
 		t.Fatalf("store metadata = %+v", extension.GameMetadata.StoreAppIDs)
+	}
+	if got := extension.GameMetadata.StoreAppIDs["epic"]; len(got) != 1 || got[0] != "abc123" {
+		t.Fatalf("launcher-derived store metadata = %+v", extension.GameMetadata.StoreAppIDs)
 	}
 	registry := NewRegistry([]Extension{extension})
 	if !registry.SupportsSteamApp(storeAppID) {
@@ -666,6 +679,9 @@ func TestCompileExtensionIndexesStoreBackedGameIDs(t *testing.T) {
 	}
 	if got := found.GameMetadata.StoreAppIDs["GOG Galaxy"]; len(got) != 1 || got[0] != "200" {
 		t.Fatalf("store extension metadata = %+v", found.GameMetadata.StoreAppIDs)
+	}
+	if !registry.SupportsSteamApp(StoreBackedAppID("epic", "abc123")) {
+		t.Fatalf("registry does not support launcher-derived store app id")
 	}
 }
 

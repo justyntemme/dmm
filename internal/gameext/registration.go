@@ -33,6 +33,7 @@ func CompileExtension(spec sdk.Extension) (Extension, error) {
 	if spec.Register != nil {
 		spec.Register(registrar)
 	}
+	registrar.extension = withDerivedStoreBackedAppIDs(registrar.extension)
 	if registrar.extension.Kind == "" {
 		registrar.extension.Kind = defaultExtensionKind(registrar.extension)
 	}
@@ -2045,6 +2046,28 @@ func copyStoreAppIDs(values map[string][]string) map[string][]string {
 		return nil
 	}
 	return out
+}
+
+func withDerivedStoreBackedAppIDs(extension Extension) Extension {
+	storeAppIDs := copyStoreAppIDs(extension.GameMetadata.StoreAppIDs)
+	for _, requirement := range extension.LauncherRequirements {
+		store := strings.TrimSpace(requirement.Store)
+		storeAppID := strings.TrimSpace(requirement.AppID)
+		if strings.EqualFold(store, "steam") {
+			continue
+		}
+		if store == "" || storeAppID == "" || StoreBackedAppID(store, storeAppID) == "" {
+			continue
+		}
+		if storeAppIDs == nil {
+			storeAppIDs = map[string][]string{}
+		}
+		storeAppIDs[store] = appendClean(storeAppIDs[store], storeAppID)
+		extension.SteamAppIDs = appendClean(extension.SteamAppIDs, StoreBackedAppID(store, storeAppID))
+		extension.InstallPlan.SteamAppIDs = appendClean(extension.InstallPlan.SteamAppIDs, StoreBackedAppID(store, storeAppID))
+	}
+	extension.GameMetadata.StoreAppIDs = storeAppIDs
+	return extension
 }
 
 func validateNamedSpecs[T any](kind string, specs []T, id func(T) string) []error {
