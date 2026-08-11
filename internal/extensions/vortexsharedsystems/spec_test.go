@@ -1,6 +1,10 @@
 package vortexsharedsystems
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -56,6 +60,56 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReady(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertStatusWithMessage(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts", sdk.CapabilityStatusReady)
 	assertReadyWithMessage(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
+	assertReadyWithMessage(t, "game info provider", summary.Capabilities.GameInfoProviders, "steam")
+}
+
+func TestSteamGameInfoProviderReadsSteamAppDetails(t *testing.T) {
+	var gotAppIDs string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAppIDs = r.URL.Query().Get("appids")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"413150": {
+				"success": true,
+				"data": {
+					"release_date": {"date": "Feb 26, 2016"},
+					"website": "https://www.stardewvalley.net/",
+					"metacritic": {"score": "89"}
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	previousURL := steamAppDetailsURL
+	steamAppDetailsURL = server.URL
+	t.Cleanup(func() { steamAppDetailsURL = previousURL })
+
+	result, err := steamGameInfoProvider(context.Background(), sdk.GameInfoInput{AppID: "413150"})
+	if err != nil {
+		t.Fatalf("steamGameInfoProvider returned error: %v", err)
+	}
+	if gotAppIDs != "413150" {
+		t.Fatalf("appids query = %q", gotAppIDs)
+	}
+	got := map[string]sdk.GameInfoDetail{}
+	for _, detail := range result.Details {
+		got[detail.ID] = detail
+	}
+	for _, id := range []string{"release_date", "website", "metacritic_score"} {
+		if got[id].ID == "" {
+			t.Fatalf("missing %s in %+v", id, result.Details)
+		}
+		if got[id].Source != "steam" {
+			t.Fatalf("%s source = %q", id, got[id].Source)
+		}
+	}
+	if got["metacritic_score"].Value != 89 {
+		t.Fatalf("metacritic value = %#v", got["metacritic_score"].Value)
+	}
+	if !strings.Contains(got["website"].Value.(string), "stardewvalley") {
+		t.Fatalf("website detail = %+v", got["website"])
+	}
 }
 
 func assertBlocked(t *testing.T, kind string, features []gameext.FeatureSummary, ids ...string) {

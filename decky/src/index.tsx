@@ -795,9 +795,12 @@ const deckyRuntimeStyles = `
 }
 .dmm-sidebar-row {
   box-sizing: border-box;
+  height: auto !important;
   max-width: 100%;
+  min-height: 64px;
   min-width: 0;
   overflow-x: hidden;
+  overflow-y: visible;
   width: 100%;
 }
 .dmm-sidebar-row-focused,
@@ -4248,9 +4251,15 @@ function freshCardStyle(active = false): CSSProperties {
     ...deckyFocusableCardBase,
     background: active ? "rgba(15, 118, 110, 0.22)" : "rgba(17, 24, 39, 0.78)",
     border: `1px solid ${active ? "#0f766e" : "#334155"}`,
+    boxSizing: "border-box",
     display: "grid",
     gap: "6px",
-    padding: "10px"
+    height: "auto",
+    minHeight: "64px",
+    overflowX: "hidden",
+    overflowY: "visible",
+    padding: "10px",
+    width: "100%"
   };
 }
 
