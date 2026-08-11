@@ -32,6 +32,18 @@ func Register(r sdk.Registrar) {
 		Status: sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's open-directory extension with source-backed extension action targets. Game extensions declare safe game/download/staging/target-root folders or files, the Go backend resolves and validates those paths, and the Decky bridge opens them from the Deck UI.",
 	})
+	registerImportSurfaces(r)
+}
+
+func registerImportSurfaces(r sdk.Registrar) {
+	moMessage := "Vortex's MO import extension is Windows-only and assumes Mod Organizer/Vortex desktop paths. It is not applicable to DMM-created Steam Deck state; DMM must implement a real source-aware MO import wizard before claiming imported-environment support."
+	nmmMessage := "Vortex's NMM import extension is Windows-only and reads Black Tree Gaming/NMM desktop state. It is not applicable to DMM-created Steam Deck state; DMM must implement a real source-aware NMM import wizard before claiming imported-environment support."
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "mo-import", Name: "Import From MO", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: moMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "mo-import", Name: "Import From MO", Scope: "legacy-import", Kind: "dialog", Status: sdk.CapabilityStatusNotApplicable, Message: moMessage})
+	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "nmm-import-session", Name: "NMM import session state", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Kind: "dialog", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
+	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "import-nmm", Name: "Import from NMM", Trigger: "legacy-import-detected", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
 }
 
 func Sources() []sdk.SourceRef {
