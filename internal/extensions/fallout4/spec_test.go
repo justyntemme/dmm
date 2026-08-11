@@ -108,6 +108,29 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersVortexOpenDirectoryActions(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	for _, id := range []string{"fallout4-appdata", "fallout4-settings-documents"} {
+		if _, ok, err := registry.ResolveTargetRoot(context.Background(), fallout4.SteamAppID, id, gameext.TargetRootInput{
+			AppID:       fallout4.SteamAppID,
+			GamePath:    filepath.Join(t.TempDir(), "steamapps", "common", "Fallout 4"),
+			LibraryPath: t.TempDir(),
+		}); err != nil || !ok {
+			t.Fatalf("target root %q ok=%v err=%v", id, ok, err)
+		}
+	}
+	for _, id := range []string{"fallout4-open-appdata-folder", "fallout4-open-settings-folder"} {
+		_, action, ok := registry.ExtensionActionForSteamApp(fallout4.SteamAppID, id)
+		if !ok {
+			t.Fatalf("missing action %q", id)
+		}
+		if action.Kind != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil || action.OpenDirectory.Base != sdk.OpenDirectoryBaseTargetRoot {
+			t.Fatalf("action %q = %+v", id, action)
+		}
+	}
+}
+
 func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 	extension := gameext.MustCompileExtension(fallout4.Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})

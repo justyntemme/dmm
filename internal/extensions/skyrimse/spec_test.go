@@ -91,6 +91,29 @@ func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersVortexOpenDirectoryActions(t *testing.T) {
+	extension := gameext.MustCompileExtension(skyrimse.Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+	for _, id := range []string{"skyrimse-appdata", "skyrimse-settings-documents"} {
+		if _, ok, err := registry.ResolveTargetRoot(context.Background(), skyrimse.SteamAppID, id, gameext.TargetRootInput{
+			AppID:       skyrimse.SteamAppID,
+			GamePath:    filepath.Join(t.TempDir(), "steamapps", "common", "Skyrim Special Edition"),
+			LibraryPath: t.TempDir(),
+		}); err != nil || !ok {
+			t.Fatalf("target root %q ok=%v err=%v", id, ok, err)
+		}
+	}
+	for _, id := range []string{"skyrimse-open-appdata-folder", "skyrimse-open-settings-folder"} {
+		_, action, ok := registry.ExtensionActionForSteamApp(skyrimse.SteamAppID, id)
+		if !ok {
+			t.Fatalf("missing action %q", id)
+		}
+		if action.Kind != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil || action.OpenDirectory.Base != sdk.OpenDirectoryBaseTargetRoot {
+			t.Fatalf("action %q = %+v", id, action)
+		}
+	}
+}
+
 func TestExtensionRegistersFOMODInstallerChoiceRoot(t *testing.T) {
 	extension := gameext.MustCompileExtension(skyrimse.Extension())
 	registry := gameext.NewRegistry([]gameext.Extension{extension})

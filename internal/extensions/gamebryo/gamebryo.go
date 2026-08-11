@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 )
 
 const (
@@ -58,6 +59,7 @@ type LocalGameSettingPatch struct {
 
 func RegisterPluginActivation(r sdk.Registrar, opts PluginActivationOptions) {
 	r.RegisterPluginActivation(PluginActivation(opts))
+	registerAppDataOpenDirectory(r, opts)
 	for _, file := range PluginActivationProfileFiles(opts) {
 		r.RegisterProfileFile(file)
 	}
@@ -154,6 +156,7 @@ func LocalLOOTRulesProfileFeature() sdk.ProfileFeatureSpec {
 
 func RegisterLocalGameSettings(r sdk.Registrar, opts LocalGameSettingsOptions) {
 	r.RegisterProfileFeature(LocalGameSettingsProfileFeature())
+	registerSettingsOpenDirectory(r, opts)
 	if strings.TrimSpace(opts.SaveININame) != "" {
 		r.RegisterProfileFeature(LocalSavesProfileFeature())
 		if savegames := LocalSavegameManagement(opts); savegames.ID != "" {
@@ -163,6 +166,58 @@ func RegisterLocalGameSettings(r sdk.Registrar, opts LocalGameSettingsOptions) {
 	for _, file := range LocalGameSettingsProfileFiles(opts) {
 		r.RegisterProfileFile(file)
 	}
+}
+
+func registerAppDataOpenDirectory(r sdk.Registrar, opts PluginActivationOptions) {
+	gameID := strings.TrimSpace(opts.GameID)
+	appDataPath := strings.Trim(strings.TrimSpace(opts.AppDataPath), "/")
+	if gameID == "" || appDataPath == "" {
+		return
+	}
+	rootID := gameID + "-appdata"
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       rootID,
+		Name:     strings.TrimSpace(opts.Name) + " AppData",
+		Resolver: targetroots.ProtonLocalAppData("", appDataPath),
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      gameID + "-open-appdata-folder",
+		Name:    "Open Game Application Data Folder",
+		Scope:   "mod-icons",
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Open Game Application Data Folder action through DMM's Decky open-directory bridge.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseTargetRoot,
+			TargetRootID: rootID,
+		},
+	})
+}
+
+func registerSettingsOpenDirectory(r sdk.Registrar, opts LocalGameSettingsOptions) {
+	gameID := strings.TrimSpace(opts.GameID)
+	myGamesPath := strings.Trim(strings.TrimSpace(opts.MyGamesPath), "/")
+	if gameID == "" || myGamesPath == "" {
+		return
+	}
+	rootID := gameID + "-settings-documents"
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       rootID,
+		Name:     gameID + " Documents settings",
+		Resolver: targetroots.ProtonDocuments("", "My Games", myGamesPath),
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      gameID + "-open-settings-folder",
+		Name:    "Open Game Settings Folder",
+		Scope:   "mod-icons",
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Open Game Settings Folder action through DMM's Decky open-directory bridge.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseTargetRoot,
+			TargetRootID: rootID,
+		},
+	})
 }
 
 func LocalGameSettingsProfileFeature() sdk.ProfileFeatureSpec {
