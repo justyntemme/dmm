@@ -125,6 +125,7 @@ require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Auto-ena
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Build:" "Decky build metadata UI"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Refresh Debug" "Decky debug refresh action"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Debug Tools" "Decky debug tools"
+require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "dmm-fresh-body" "Decky shared body row layout"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/build-info.json" "short_commit" "build metadata"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
 for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do

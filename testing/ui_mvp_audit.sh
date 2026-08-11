@@ -78,6 +78,10 @@ require_text "$DECKY_APP" "freshSettingsCardStyle" \
   "Decky Settings cards must use fixed settings row sizing instead of generic collapsible sections"
 require_text "$DECKY_APP" "freshSettingsToggleCardStyle" \
   "Decky Settings toggle rows must have an explicit minimum height for controller focus"
+require_text "$DECKY_APP" "className=\"dmm-fresh-body\"" \
+  "Decky route body must keep a shared row-layout class for controller-safe card sizing"
+require_text "$DECKY_APP" ".dmm-fresh-body > *" \
+  "Decky route body rows must have a shared minimum-height invariant"
 require_text "$DECKY_APP" "label: \"Games\"" \
   "Decky route tab must be labeled Games for the game-selection workflow"
 require_text "$DECKY_APP" "Dependencies" \
