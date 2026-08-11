@@ -530,6 +530,48 @@ func TestStardewRuntimeRequirementsWarnForPrereleaseBelowRelease(t *testing.T) {
 	}
 }
 
+func TestRuntimeRequirementsWarnForMetadataConflicts(t *testing.T) {
+	registry := NewRegistry([]GameSpec{{
+		SteamAppID:                    "1",
+		DependencyMetadataKinds:       []string{"script-extender"},
+		DependencyRequirementIDPrefix: "metadata:",
+		DependencyRequirementKind:     "metadata-conflict",
+	}})
+	reqs := registry.RuntimeRequirements(context.Background(), "1", t.TempDir(), []RuntimeMod{
+		{
+			Enabled: true,
+			ModType: "script-extender",
+			Metadata: []ModMetadata{{
+				Kind:                       "script-extender",
+				Name:                       "Skyrim Script Extender 64 (SKSE64)",
+				UniqueID:                   "skse64",
+				Version:                    "2.2.6",
+				AdditionalLogicalFileNames: []string{"Skyrim Script Extender 64 (SKSE64)"},
+				Conflicts: []ModConflict{{
+					UniqueID:        "Skyrim Script Extender 64 (SKSE64)",
+					VersionNotEqual: "2.2.6",
+					Comment:         "Incompatible Script Extender",
+				}},
+			}},
+		},
+		{
+			Enabled: true,
+			ModType: "script-extender",
+			Metadata: []ModMetadata{{
+				Kind:                       "script-extender",
+				Name:                       "Skyrim Script Extender 64 (SKSE64)",
+				UniqueID:                   "skse64",
+				Version:                    "2.2.5",
+				AdditionalLogicalFileNames: []string{"Skyrim Script Extender 64 (SKSE64)"},
+			}},
+		},
+	})
+	req, ok := reqByID(reqs, "metadata:conflict:skyrim script extender 64 (skse64)")
+	if !ok || req.Status != RequirementMissing || req.Kind != "metadata-conflict" || !strings.Contains(strings.Join(req.Details, " "), "Incompatible Script Extender") {
+		t.Fatalf("requirements = %+v", reqs)
+	}
+}
+
 func reqByID(reqs []RuntimeRequirement, id string) (RuntimeRequirement, bool) {
 	for _, req := range reqs {
 		if req.ID == id {

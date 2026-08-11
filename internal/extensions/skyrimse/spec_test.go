@@ -71,6 +71,12 @@ func TestExtensionPlansScriptExtenderArchiveIntoGameRoot(t *testing.T) {
 	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != "script-extender" || plan.Metadata[0].UniqueID != "skse64" {
 		t.Fatalf("metadata = %+v", plan.Metadata)
 	}
+	if !contains(plan.Metadata[0].AdditionalLogicalFileNames, "Skyrim Script Extender 64 (SKSE64)") || !contains(plan.Metadata[0].AdditionalLogicalFileNames, "skse64") {
+		t.Fatalf("script extender logical names = %+v", plan.Metadata[0].AdditionalLogicalFileNames)
+	}
+	if len(plan.Metadata[0].Conflicts) != 1 || plan.Metadata[0].Conflicts[0].UniqueID != "Skyrim Script Extender 64 (SKSE64)" || plan.Metadata[0].Conflicts[0].Comment != "Incompatible Script Extender" {
+		t.Fatalf("script extender conflicts = %+v", plan.Metadata[0].Conflicts)
+	}
 }
 
 func TestExtensionRegistersGamebryoPluginActivation(t *testing.T) {

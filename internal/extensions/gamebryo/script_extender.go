@@ -120,6 +120,14 @@ func buildScriptExtenderPlan(input installplan.BuildInput, opts ScriptExtenderIn
 	if version, err := peversion.FileVersion(filepath.Join(input.ExtractedRoot, filepath.FromSlash(loaderRel))); err == nil && strings.TrimSpace(version) != "" {
 		metadata[0].Version = strings.TrimSpace(version)
 	}
+	metadata[0].AdditionalLogicalFileNames = uniqueNonEmptyStrings(metadata[0].Name, metadata[0].UniqueID)
+	if metadata[0].Name != "" {
+		metadata[0].Conflicts = append(metadata[0].Conflicts, installplan.ModConflict{
+			UniqueID:        metadata[0].Name,
+			VersionNotEqual: metadata[0].Version,
+			Comment:         "Incompatible Script Extender",
+		})
+	}
 
 	return installplan.Plan{
 		GameID:     input.GameID,
@@ -134,6 +142,24 @@ func buildScriptExtenderPlan(input installplan.BuildInput, opts ScriptExtenderIn
 		Metadata:     metadata,
 		Instructions: instructions,
 	}, nil
+}
+
+func uniqueNonEmptyStrings(values ...string) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func findScriptExtenderLoader(root, loaderExecutable string) (string, bool) {

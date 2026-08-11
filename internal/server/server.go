@@ -8987,12 +8987,19 @@ type gameModMetadataSummary struct {
 	ManifestVersion            string                     `json:"manifest_version,omitempty"`
 	ContentPackFor             *gameModDependencySummary  `json:"content_pack_for,omitempty"`
 	Dependencies               []gameModDependencySummary `json:"dependencies,omitempty"`
+	Conflicts                  []gameModConflictSummary   `json:"conflicts,omitempty"`
 }
 
 type gameModDependencySummary struct {
 	UniqueID       string `json:"unique_id,omitempty"`
 	MinimumVersion string `json:"minimum_version,omitempty"`
 	Required       bool   `json:"required"`
+}
+
+type gameModConflictSummary struct {
+	UniqueID        string `json:"unique_id,omitempty"`
+	VersionNotEqual string `json:"version_not_equal,omitempty"`
+	Comment         string `json:"comment,omitempty"`
 }
 
 type gameModReportResponse struct {
@@ -9262,7 +9269,17 @@ func gameModMetadataSummaries(metadata []installplan.ModMetadata) []gameModMetad
 				Required:       dependency.Required,
 			})
 		}
-		if next.Kind == "" && next.Name == "" && next.UniqueID == "" && next.Version == "" && next.MinGameVersion == "" && next.MaxGameVersion == "" && len(next.Dependencies) == 0 && len(next.AdditionalLogicalFileNames) == 0 && next.ManifestVersion == "" && next.ContentPackFor == nil {
+		for _, conflict := range item.Conflicts {
+			if strings.TrimSpace(conflict.UniqueID) == "" {
+				continue
+			}
+			next.Conflicts = append(next.Conflicts, gameModConflictSummary{
+				UniqueID:        strings.TrimSpace(conflict.UniqueID),
+				VersionNotEqual: strings.TrimSpace(conflict.VersionNotEqual),
+				Comment:         strings.TrimSpace(conflict.Comment),
+			})
+		}
+		if next.Kind == "" && next.Name == "" && next.UniqueID == "" && next.Version == "" && next.MinGameVersion == "" && next.MaxGameVersion == "" && len(next.Dependencies) == 0 && len(next.Conflicts) == 0 && len(next.AdditionalLogicalFileNames) == 0 && next.ManifestVersion == "" && next.ContentPackFor == nil {
 			continue
 		}
 		out = append(out, next)
@@ -16920,6 +16937,13 @@ func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.Mo
 				UniqueID:       dependency.UniqueID,
 				MinimumVersion: dependency.MinimumVersion,
 				Required:       dependency.Required,
+			})
+		}
+		for _, conflict := range metadata.Conflicts {
+			next.Conflicts = append(next.Conflicts, gamehandler.ModConflict{
+				UniqueID:        conflict.UniqueID,
+				VersionNotEqual: conflict.VersionNotEqual,
+				Comment:         conflict.Comment,
 			})
 		}
 		out = append(out, next)

@@ -63,12 +63,19 @@ type ModMetadata struct {
 	ManifestVersion            string          `json:"manifest_version,omitempty"`
 	ContentPackFor             *ModDependency  `json:"content_pack_for,omitempty"`
 	Dependencies               []ModDependency `json:"dependencies,omitempty"`
+	Conflicts                  []ModConflict   `json:"conflicts,omitempty"`
 }
 
 type ModDependency struct {
 	UniqueID       string `json:"unique_id,omitempty"`
 	MinimumVersion string `json:"minimum_version,omitempty"`
 	Required       bool   `json:"required"`
+}
+
+type ModConflict struct {
+	UniqueID        string `json:"unique_id,omitempty"`
+	VersionNotEqual string `json:"version_not_equal,omitempty"`
+	Comment         string `json:"comment,omitempty"`
 }
 
 type UnsupportedError struct {

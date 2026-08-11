@@ -48,12 +48,19 @@ type ModMetadata struct {
 	ManifestVersion            string
 	ContentPackFor             *ModDependency
 	Dependencies               []ModDependency
+	Conflicts                  []ModConflict
 }
 
 type ModDependency struct {
 	UniqueID       string
 	MinimumVersion string
 	Required       bool
+}
+
+type ModConflict struct {
+	UniqueID        string
+	VersionNotEqual string
+	Comment         string
 }
 
 type UnfulfilledDependencyRule struct {
@@ -313,6 +320,9 @@ func modMetadataDependencyRequirements(ctx context.Context, spec GameSpec, mods 
 	}
 
 	problems := map[string]RuntimeRequirement{}
+	for _, conflict := range modMetadataConflictRequirements(mods, kinds, idPrefix, reqKind) {
+		problems[conflict.ID] = conflict
+	}
 	for _, mod := range mods {
 		if !mod.Enabled {
 			continue
@@ -456,6 +466,45 @@ func dependencyDetails(metadata ModMetadata, dependency ModDependency) []string 
 	return details
 }
 
+func conflictDetails(left, right ModMetadata, conflict ModConflict) []string {
+	details := []string{}
+	leftName := metadataDisplayName(left)
+	rightName := metadataDisplayName(right)
+	if leftName != "" && rightName != "" {
+		details = append(details, leftName+" conflicts with "+rightName)
+	}
+	if comment := strings.TrimSpace(conflict.Comment); comment != "" {
+		details = append(details, comment)
+	}
+	if version := strings.TrimSpace(conflict.VersionNotEqual); version != "" {
+		details = append(details, "Expected a single enabled version matching "+version)
+	}
+	return details
+}
+
+func metadataDisplayName(metadata ModMetadata) string {
+	if name := strings.TrimSpace(metadata.Name); name != "" {
+		if version := strings.TrimSpace(metadata.Version); version != "" {
+			return name + " " + version
+		}
+		return name
+	}
+	if id := strings.TrimSpace(metadata.UniqueID); id != "" {
+		if version := strings.TrimSpace(metadata.Version); version != "" {
+			return id + " " + version
+		}
+		return id
+	}
+	return ""
+}
+
+func sameMetadataIdentity(left, right ModMetadata) bool {
+	return strings.EqualFold(strings.TrimSpace(left.Kind), strings.TrimSpace(right.Kind)) &&
+		strings.EqualFold(strings.TrimSpace(left.UniqueID), strings.TrimSpace(right.UniqueID)) &&
+		strings.TrimSpace(left.Version) == strings.TrimSpace(right.Version) &&
+		strings.TrimSpace(left.Name) == strings.TrimSpace(right.Name)
+}
+
 func dependencyMessage(spec GameSpec, dependency ModDependency, status RequirementStatus) string {
 	if dependency.Required {
 		if message := strings.TrimSpace(spec.DependencyRequirementMessage); message != "" && status == RequirementMissing {
@@ -503,6 +552,79 @@ func uniqueStrings(values []string) []string {
 		seen[value] = struct{}{}
 		out = append(out, value)
 	}
+	return out
+}
+
+func modMetadataConflictRequirements(mods []RuntimeMod, kinds map[string]struct{}, idPrefix, reqKind string) []RuntimeRequirement {
+	installed := map[string][]ModMetadata{}
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		for _, metadata := range mod.Metadata {
+			if _, ok := kinds[strings.TrimSpace(metadata.Kind)]; !ok {
+				continue
+			}
+			for _, logicalID := range metadataLogicalIDs(metadata) {
+				key := strings.ToLower(logicalID)
+				installed[key] = append(installed[key], metadata)
+			}
+		}
+	}
+
+	problems := map[string]RuntimeRequirement{}
+	for _, mod := range mods {
+		if !mod.Enabled {
+			continue
+		}
+		for _, metadata := range mod.Metadata {
+			if _, ok := kinds[strings.TrimSpace(metadata.Kind)]; !ok {
+				continue
+			}
+			for _, conflict := range metadata.Conflicts {
+				uniqueID := strings.TrimSpace(conflict.UniqueID)
+				if uniqueID == "" {
+					continue
+				}
+				others := installed[strings.ToLower(uniqueID)]
+				if len(others) == 0 {
+					continue
+				}
+				for _, other := range others {
+					if sameMetadataIdentity(metadata, other) {
+						continue
+					}
+					if versionNotEqual := strings.TrimSpace(conflict.VersionNotEqual); versionNotEqual != "" && strings.TrimSpace(other.Version) == versionNotEqual {
+						continue
+					}
+					id := idPrefix + "conflict:" + strings.ToLower(uniqueID)
+					details := conflictDetails(metadata, other, conflict)
+					next := RuntimeRequirement{
+						ID:       id,
+						Name:     uniqueID,
+						Kind:     reqKind,
+						Required: true,
+						Status:   RequirementMissing,
+						Message:  "Enabled mods conflict in this profile.",
+						Details:  details,
+					}
+					if existing, ok := problems[id]; ok {
+						existing.Details = uniqueStrings(append(existing.Details, details...))
+						problems[id] = existing
+						continue
+					}
+					problems[id] = next
+				}
+			}
+		}
+	}
+	out := make([]RuntimeRequirement, 0, len(problems))
+	for _, problem := range problems {
+		out = append(out, problem)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
 	return out
 }
 
