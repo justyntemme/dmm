@@ -879,6 +879,8 @@ const deckyRuntimeStyles = `
 }
 .dmm-content-card {
   box-sizing: border-box;
+  display: grid;
+  gap: 6px;
   height: auto !important;
   max-width: 100%;
   min-height: 64px !important;
@@ -886,6 +888,20 @@ const deckyRuntimeStyles = `
   overflow-x: hidden !important;
   overflow-y: visible !important;
   width: 100%;
+}
+.dmm-sidebar-surface .dmm-content-card,
+.dmm-sidebar-surface [class*="dmm-content-card"] {
+  block-size: auto !important;
+  contain: none !important;
+  min-block-size: 64px !important;
+}
+.dmm-sidebar-surface .dmm-fresh-action-card,
+.dmm-sidebar-surface [class*="dmm-fresh-action-card"] {
+  min-block-size: 82px !important;
+}
+.dmm-sidebar-surface .dmm-settings-row,
+.dmm-sidebar-surface [class*="dmm-settings-row"] {
+  min-block-size: 72px !important;
 }
 .dmm-focus-card > * {
   min-width: 0;
