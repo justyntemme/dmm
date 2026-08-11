@@ -1158,11 +1158,11 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	}
 
 	brawlhalla := gameExtensionInfoForSteamApp(games.DefaultRegistry, "291550")
-	if brawlhalla == nil || !brawlhalla.Supported || brawlhalla.Coverage != gameext.CoverageResearchBlocked || !brawlhalla.Nexus || brawlhalla.Installers {
+	if brawlhalla == nil || !brawlhalla.Supported || brawlhalla.Coverage != gameext.CoverageBrowseOnly || !brawlhalla.Nexus || brawlhalla.Installers {
 		t.Fatalf("brawlhalla extension info = %+v", brawlhalla)
 	}
-	if brawlhalla.ParityGapCount == 0 || len(brawlhalla.ParityGaps) == 0 || brawlhalla.ParityGaps[0].Status == "" {
-		t.Fatalf("brawlhalla parity gaps were not exposed: %+v", brawlhalla)
+	if brawlhalla.ParityGapCount != 0 || len(brawlhalla.ParityGaps) != 0 {
+		t.Fatalf("brawlhalla should not expose fake parity gaps: %+v", brawlhalla)
 	}
 
 	bastion := gameExtensionInfoForSteamApp(games.DefaultRegistry, "107100")
