@@ -747,6 +747,14 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 				InstructionMode:   installplan.InstructionUnsupported,
 				UnsupportedReason: "source review required",
 			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "old-vortex-layout",
+				Name:        "Old Vortex layout",
+				FromVersion: "0.0.0",
+				ToVersion:   "0.1.0",
+				Status:      sdk.CapabilityStatusNotApplicable,
+				Message:     "DMM-created state never used this layout; Vortex import must detect it explicitly.",
+			})
 		},
 	})
 	if err != nil {
@@ -762,6 +770,23 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 	}
 	if len(summaries[0].Capabilities.Installers) != 0 || len(summaries[0].Capabilities.UnsupportedInstallers) != 1 {
 		t.Fatalf("research-blocked installer capabilities = %+v", summaries[0].Capabilities)
+	}
+	if len(summaries[0].ParityGaps) != 2 {
+		t.Fatalf("parity gaps = %+v", summaries[0].ParityGaps)
+	}
+	wantGaps := map[string]string{
+		"state_migrations/old-vortex-layout":      sdk.CapabilityStatusNotApplicable,
+		"unsupported_installers/research:blocked": sdk.CapabilityStatusBlocked,
+	}
+	for _, gap := range summaries[0].ParityGaps {
+		key := gap.Surface + "/" + gap.ID
+		if wantGaps[key] != gap.Status || gap.Message == "" {
+			t.Fatalf("unexpected parity gap %+v from %+v", gap, summaries[0].ParityGaps)
+		}
+		delete(wantGaps, key)
+	}
+	if len(wantGaps) != 0 {
+		t.Fatalf("missing parity gaps: %+v from %+v", wantGaps, summaries[0].ParityGaps)
 	}
 }
 

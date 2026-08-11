@@ -220,6 +220,7 @@ type ExtensionSummary struct {
 	CoverageLabel     string                `json:"coverage_label"`
 	Sources           []SourceRef           `json:"sources,omitempty"`
 	Capabilities      ExtensionCapabilities `json:"capabilities"`
+	ParityGaps        []ExtensionParityGap  `json:"parity_gaps,omitempty"`
 }
 
 type ExtensionCapabilities struct {
@@ -275,6 +276,14 @@ type ExtensionCapabilities struct {
 	StartHooks               []FeatureSummary         `json:"start_hooks,omitempty"`
 	EventHandlers            []FeatureSummary         `json:"event_handlers,omitempty"`
 	GameRegistration         *GameRegistrationSummary `json:"game_registration,omitempty"`
+}
+
+type ExtensionParityGap struct {
+	Surface string `json:"surface"`
+	ID      string `json:"id"`
+	Name    string `json:"name,omitempty"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
 }
 
 type FeatureSummary struct {
@@ -2300,7 +2309,84 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.AttributeExtractors)
 	sortFeatureSummaries(summary.Capabilities.StartHooks)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
+	summary.ParityGaps = extensionParityGaps(summary.Capabilities)
 	return summary
+}
+
+func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGap {
+	var gaps []ExtensionParityGap
+	collect := func(surface string, features []FeatureSummary) {
+		for _, feature := range features {
+			status := strings.TrimSpace(feature.Status)
+			switch status {
+			case sdk.CapabilityStatusBlocked, sdk.CapabilityStatusMetadata, sdk.CapabilityStatusNotApplicable:
+				gaps = append(gaps, ExtensionParityGap{
+					Surface: surface,
+					ID:      feature.ID,
+					Name:    feature.Name,
+					Status:  status,
+					Message: feature.Message,
+				})
+			}
+		}
+	}
+	collect("mod_types", capabilities.ModTypes)
+	collect("installers", capabilities.Installers)
+	collect("unsupported_installers", capabilities.UnsupportedInstallers)
+	collect("installer_choices", capabilities.InstallerChoices)
+	collect("runtime_requirements", capabilities.RuntimeRequirements)
+	collect("launch_tools", capabilities.LaunchTools)
+	collect("launch_option_requirements", capabilities.LaunchOptionRequirements)
+	collect("supported_tools", capabilities.SupportedTools)
+	collect("launcher_requirements", capabilities.LauncherRequirements)
+	collect("install_platforms", capabilities.InstallPlatforms)
+	collect("game_versions", capabilities.GameVersions)
+	collect("game_info_providers", capabilities.GameInfoProviders)
+	collect("plugin_activations", capabilities.PluginActivations)
+	collect("unmanaged_markers", capabilities.UnmanagedMarkers)
+	collect("external_mod_adoptions", capabilities.ExternalModAdoptions)
+	collect("conflict_ignores", capabilities.ConflictIgnores)
+	collect("deploy_ignores", capabilities.DeployIgnores)
+	collect("packed_archive_mutations", capabilities.PackedArchiveMutations)
+	collect("target_roots", capabilities.TargetRoots)
+	collect("merges", capabilities.Merges)
+	collect("load_orders", capabilities.LoadOrders)
+	collect("archive_types", capabilities.ArchiveTypes)
+	collect("interpreters", capabilities.Interpreters)
+	collect("game_stores", capabilities.GameStores)
+	collect("game_setups", capabilities.GameSetups)
+	collect("extension_actions", capabilities.ExtensionActions)
+	collect("extension_settings", capabilities.ExtensionSettings)
+	collect("extension_tests", capabilities.ExtensionTests)
+	collect("extension_todos", capabilities.ExtensionToDos)
+	collect("extension_dialogs", capabilities.ExtensionDialogs)
+	collect("extension_dashlets", capabilities.ExtensionDashlets)
+	collect("extension_main_pages", capabilities.ExtensionMainPages)
+	collect("extension_table_attributes", capabilities.ExtensionTableAttrs)
+	collect("extension_load_order_pages", capabilities.ExtensionLoadOrderPages)
+	collect("extension_action_checks", capabilities.ExtensionActionChecks)
+	collect("extension_control_wrappers", capabilities.ExtensionControlWrappers)
+	collect("extension_apis", capabilities.ExtensionAPIs)
+	collect("profile_features", capabilities.ProfileFeatures)
+	collect("profile_files", capabilities.ProfileFiles)
+	collect("savegame_management", capabilities.SavegameManagement)
+	collect("collection_features", capabilities.CollectionFeatures)
+	collect("state_reducers", capabilities.StateReducers)
+	collect("state_stores", capabilities.StateStores)
+	collect("state_persistors", capabilities.StatePersistors)
+	collect("state_migrations", capabilities.StateMigrations)
+	collect("history_stacks", capabilities.HistoryStacks)
+	collect("health_checks", capabilities.HealthChecks)
+	collect("attribute_extractors", capabilities.AttributeExtractors)
+	collect("start_hooks", capabilities.StartHooks)
+	collect("event_handlers", capabilities.EventHandlers)
+	sort.Slice(gaps, func(i, j int) bool {
+		if gaps[i].Surface != gaps[j].Surface {
+			return gaps[i].Surface < gaps[j].Surface
+		}
+		return gaps[i].ID < gaps[j].ID
+	})
+	return gaps
 }
 
 func ExtensionCoverage(extension Extension) (string, string) {
