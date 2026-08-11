@@ -35,7 +35,6 @@ func Register(r sdk.Registrar) {
 		surfaceAPI("registerDashlet", "Register dashboard tile"),
 		surfaceAPI("registerMainPage", "Register main page"),
 		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
-		surfaceAPI("registerProfileFile", "Register profile-managed file"),
 		surfaceAPI("registerReducer", "Register extension state reducer"),
 	} {
 		r.RegisterExtensionAPI(api)
@@ -59,13 +58,6 @@ func Register(r sdk.Registrar) {
 	r.RegisterExtensionDialog(surfaceDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
 	r.RegisterExtensionDashlet(surfaceDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
 	r.RegisterExtensionMainPage(surfaceMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
-	r.RegisterProfileFile(sdk.ProfileFileSpec{
-		ID:      "registerProfileFile",
-		Name:    "Vortex registerProfileFile",
-		GameID:  "dynamic",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "The generic profile-file runtime is implemented through concrete extension declarations. The unbound Vortex desktop registration surface itself is not applicable without a concrete game extension.",
-	})
 	r.RegisterStateReducer(surfaceReducer("registerReducer", "Vortex registerReducer", "extension-state"))
 }
 

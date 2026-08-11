@@ -21,7 +21,6 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	assertNonApplicable(t, "main page", summary.Capabilities.ExtensionMainPages, "registerMainPage")
 	assertNonApplicable(t, "action check", summary.Capabilities.ExtensionActionChecks, "registerActionCheck")
 	assertNonApplicable(t, "control wrapper", summary.Capabilities.ExtensionControlWrappers, "registerControlWrapper")
-	assertNonApplicable(t, "profile file", summary.Capabilities.ProfileFiles, "registerProfileFile")
 	assertNonApplicable(t, "state reducer", summary.Capabilities.StateReducers, "registerReducer")
 	if len(summary.Capabilities.StartHooks) != 0 {
 		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
