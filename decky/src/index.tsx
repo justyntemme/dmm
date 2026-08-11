@@ -485,8 +485,6 @@ type GameExtensionActionTarget = {
 
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
-type GameVisibility = "manageable" | "extensions" | "all";
-
 type NexusModResult = {
   mod_id: number;
   name: string;
@@ -1651,12 +1649,6 @@ function gameSortLabel(sort: GameSort) {
   if (sort === "az") return "A-Z";
   if (sort === "za") return "Z-A";
   return "Recent";
-}
-
-function gameVisibilityLabel(visibility: GameVisibility) {
-  if (visibility === "all") return "All Installed";
-  if (visibility === "extensions") return "DMM Extensions";
-  return "Manage Ready";
 }
 
 function nexusDomainLabel(domain: string) {
