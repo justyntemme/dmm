@@ -20,9 +20,7 @@ type Spec struct {
 	NexusDomains           []string
 	VortexGameID           string
 	ModTypeID              string
-	InstallerID            string
-	VortexInstallerID      string
-	UnsupportedReason      string
+	ResearchReason         string
 	RequiredFiles          []string
 	RequirementID          string
 	RequirementName        string
