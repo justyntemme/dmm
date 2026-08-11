@@ -774,8 +774,25 @@ type ExtensionSettingSpec struct {
 	ValueType    string
 	DefaultValue json.RawMessage
 	Placeholder  string
+	Options      ExtensionSettingOptionsFunc
 	Status       string
 	Message      string
+}
+
+type ExtensionSettingOptionsFunc func(context.Context, ExtensionSettingOptionsInput) ([]ExtensionSettingOption, error)
+
+type ExtensionSettingOptionsInput struct {
+	AppID     string
+	GameID    string
+	GamePath  string
+	ProfileID int64
+}
+
+type ExtensionSettingOption struct {
+	ID          string
+	Label       string
+	Description string
+	Disabled    bool
 }
 
 const (

@@ -54,15 +54,17 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		Name:      "FNIS profile patches",
 		Scope:     "profile",
 		ValueType: sdk.ExtensionSettingValueJSON,
-		Message:   "Stores Vortex-style selected FNIS patch IDs per profile. DMM can parse FNIS patch lists; the profile patch picker UI is still pending.",
+		Options:   patchOptions(opts),
+		Status:    sdk.CapabilityStatusReady,
+		Message:   "Stores Vortex-style selected FNIS patch IDs per profile. DMM reads the deployed FNIS PatchList*.txt and renders those patch IDs as profile-scoped checkbox options.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "fnis-configure-patches",
 		Name:    "Configure FNIS patches",
 		Scope:   "profile",
 		Kind:    "dialog",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex opens a checkbox dialog from PatchList*.txt. DMM has the source-backed patch parser, but still needs a generic extension dialog renderer before this action can be interactive.",
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "Vortex opens a desktop checkbox dialog from PatchList*.txt. DMM renders the same source-backed patch choices through the profile-scoped FNIS patch setting instead of a Vortex desktop action.",
 	})
 	r.RegisterExtensionTest(FNISTest(opts))
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
@@ -125,6 +127,38 @@ func FNISTest(opts SupportOptions) sdk.ExtensionTestSpec {
 		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
 			return checkFNIS(ctx, opts, input), nil
 		},
+	}
+}
+
+func patchOptions(opts SupportOptions) sdk.ExtensionSettingOptionsFunc {
+	return func(ctx context.Context, input sdk.ExtensionSettingOptionsInput) ([]sdk.ExtensionSettingOption, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		patchList, ok, err := FindPatchList(input.GamePath, opts)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, nil
+		}
+		patches, err := ReadPatches(patchList)
+		if err != nil {
+			return nil, err
+		}
+		options := make([]sdk.ExtensionSettingOption, 0, len(patches))
+		for _, patch := range patches {
+			id := strings.TrimSpace(patch.ID)
+			if id == "" {
+				continue
+			}
+			options = append(options, sdk.ExtensionSettingOption{
+				ID:          id,
+				Label:       firstNonEmpty(patch.Description, id),
+				Description: strings.TrimSpace(patch.RequiredFile),
+			})
+		}
+		return options, nil
 	}
 }
 
@@ -314,6 +348,43 @@ func PatchListPath(gamePath string, opts SupportOptions) string {
 	return filepath.Join(strings.TrimSpace(gamePath), name)
 }
 
+func FindPatchList(gamePath string, opts SupportOptions) (string, bool, error) {
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return "", false, nil
+	}
+	name := strings.TrimSpace(opts.PatchListName)
+	if name == "" {
+		name = "PatchList.txt"
+	}
+	direct := PatchListPath(gamePath, opts)
+	if info, err := os.Stat(direct); err == nil && !info.IsDir() {
+		return direct, true, nil
+	}
+	var found string
+	err := filepath.WalkDir(gamePath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if d.IsDir() {
+			base := strings.ToLower(d.Name())
+			switch base {
+			case ".git", "__macosx", "content", "textures", "meshes", "sound", "video":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(d.Name(), name) {
+			found = path
+		}
+		return nil
+	})
+	if err != nil {
+		return "", false, err
+	}
+	return found, found != "", nil
+}
+
 func buildToolPlan(input installplan.BuildInput, opts SupportOptions) (installplan.Plan, error) {
 	executableRel, ok := findExecutable(input.ExtractedRoot, ToolExecutable)
 	if !ok {
@@ -367,6 +438,15 @@ func buildToolPlan(input installplan.BuildInput, opts SupportOptions) (installpl
 		Metadata:     []installplan.ModMetadata{metadata},
 		Instructions: instructions,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func toolPayloadFiles(root, executableRel string) ([]string, error) {

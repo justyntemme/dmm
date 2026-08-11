@@ -741,12 +741,13 @@ func TestExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "251570"
+	gamePath := t.TempDir()
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
 		AppID:       appID,
 		Name:        "7 Days to Die",
 		InstallDir:  "7 Days To Die",
 		LibraryPath: "/steam",
-		Path:        "/steam/steamapps/common/7 Days To Die",
+		Path:        gamePath,
 		State:       "clean_candidate",
 	}}); err != nil {
 		t.Fatal(err)
@@ -778,6 +779,18 @@ func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) 
 				Status:    sdk.CapabilityStatusBlocked,
 				Message:   "not ready",
 			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:        "patches",
+				Name:      "Patch Choices",
+				Scope:     "profile",
+				ValueType: sdk.ExtensionSettingValueJSON,
+				Options: func(ctx context.Context, input sdk.ExtensionSettingOptionsInput) ([]sdk.ExtensionSettingOption, error) {
+					if input.GamePath != gamePath || input.ProfileID != profile.ID {
+						t.Fatalf("options input = %+v", input)
+					}
+					return []sdk.ExtensionSettingOption{{ID: "first", Label: "First Patch"}}, nil
+				},
+			})
 		},
 	})
 	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
@@ -793,8 +806,16 @@ func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) 
 	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 2 || list[1].SettingID != "prefix_offset" || string(list[1].Value) != `0` || string(list[1].DefaultValue) != `0` {
+	if len(list) != 3 {
 		t.Fatalf("initial profile settings = %+v", list)
+	}
+	prefix := extensionSettingResponseByID(list, "prefix_offset")
+	if prefix == nil || string(prefix.Value) != `0` || string(prefix.DefaultValue) != `0` {
+		t.Fatalf("prefix setting = %+v", prefix)
+	}
+	patches := extensionSettingResponseByID(list, "patches")
+	if patches == nil || len(patches.Options) != 1 || patches.Options[0].ID != "first" || patches.Options[0].Label != "First Patch" {
+		t.Fatalf("patch setting options = %+v", patches)
 	}
 	settingsMap, err := srv.extensionSettingValueMapForProfile(context.Background(), profile.ID)
 	if err != nil {
@@ -844,6 +865,15 @@ func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) 
 	if blockedRec.Code != http.StatusConflict {
 		t.Fatalf("blocked status = %d, body = %s", blockedRec.Code, blockedRec.Body.String())
 	}
+}
+
+func extensionSettingResponseByID(settings []extensionSettingResponse, id string) *extensionSettingResponse {
+	for idx := range settings {
+		if settings[idx].SettingID == id {
+			return &settings[idx]
+		}
+	}
+	return nil
 }
 
 func TestExtensionSettingsEndpointValidatesTypedValues(t *testing.T) {

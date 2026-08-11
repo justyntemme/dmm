@@ -52,7 +52,16 @@
     status: string;
     message?: string;
     value: unknown;
+    options?: ExtensionSettingOption[];
+    options_error?: string;
     updated_at?: string;
+  };
+
+  type ExtensionSettingOption = {
+    id: string;
+    label: string;
+    description?: string;
+    disabled?: boolean;
   };
 
   type Game = {
@@ -801,6 +810,7 @@
   let profiles: Profile[] = [];
   let profileFeatures: ProfileFeature[] = [];
   let profileFiles: ProfileFile[] = [];
+  let profileExtensionSettings: ExtensionSetting[] = [];
   let installedMods: InstalledMod[] = [];
   let installCandidates: InstallCandidate[] = [];
   let installerChoicePresets: InstallerChoicePreset[] = [];
@@ -1646,19 +1656,21 @@
 
   async function getProfileCapabilities(profileID: number) {
     if (profileID <= 0) {
-      return { features: [] as ProfileFeature[], files: [] as ProfileFile[] };
+      return { features: [] as ProfileFeature[], files: [] as ProfileFile[], settings: [] as ExtensionSetting[] };
     }
-    const [features, files] = await Promise.all([
+    const [features, files, settings] = await Promise.all([
       getJSON<ProfileFeature[]>(`/api/profiles/${profileID}/features`),
-      getJSON<ProfileFile[]>(`/api/profiles/${profileID}/files`)
+      getJSON<ProfileFile[]>(`/api/profiles/${profileID}/files`),
+      getJSON<ExtensionSetting[]>(`/api/profiles/${profileID}/extension-settings`)
     ]);
-    return { features, files };
+    return { features, files, settings };
   }
 
   async function loadProfileCapabilities(profileID = defaultProfileID()) {
-    const { features, files } = await getProfileCapabilities(profileID);
+    const { features, files, settings } = await getProfileCapabilities(profileID);
     profileFeatures = features;
     profileFiles = files;
+    profileExtensionSettings = settings;
   }
 
   async function loadGameState(game: Game) {
@@ -1700,10 +1712,11 @@
       });
       return;
     }
-    profiles = nextProfiles;
-    profileFeatures = nextProfileCapabilities.features;
-    profileFiles = nextProfileCapabilities.files;
-    installedMods = nextMods;
+	profiles = nextProfiles;
+	profileFeatures = nextProfileCapabilities.features;
+	profileFiles = nextProfileCapabilities.files;
+	profileExtensionSettings = nextProfileCapabilities.settings;
+	installedMods = nextMods;
     installCandidates = nextCandidates;
     installerChoicePresets = nextPresets;
     deckLocalArchiveRoots = nextLocalArchives.roots ?? [];
@@ -1996,6 +2009,52 @@
     } finally {
       extensionSettingBusy = "";
     }
+  }
+
+  async function saveProfileExtensionSetting(setting: ExtensionSetting) {
+    if (!selectedProfile) return;
+    const key = extensionSettingKey(setting);
+    extensionSettingBusy = key;
+    extensionSettingsMessage = "";
+    error = "";
+    try {
+      const value = extensionSettingPayload(setting);
+      const response = await apiFetch(`/api/profiles/${selectedProfile.id}/extensions/${encodeURIComponent(setting.extension_id)}/settings/${encodeURIComponent(setting.setting_id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const updated = await response.json() as ExtensionSetting;
+      profileExtensionSettings = profileExtensionSettings.map((item) => extensionSettingKey(item) === key ? { ...updated, options: setting.options, options_error: setting.options_error } : item);
+      extensionSettingDrafts = { ...extensionSettingDrafts, [key]: extensionSettingDisplayValue(updated) };
+      extensionSettingsMessage = `${updated.name} saved for ${selectedProfile.name}.`;
+      if (selectedGame) await refreshSelectedGame({ refreshPreview: true, reason: "profile-extension-setting" });
+    } catch (err) {
+      error = err instanceof SyntaxError ? "Setting value must be valid JSON." : err instanceof Error ? err.message : String(err);
+    } finally {
+      extensionSettingBusy = "";
+    }
+  }
+
+  function extensionSettingSelectedIDs(setting: ExtensionSetting) {
+    const draft = extensionSettingDraft(setting);
+    try {
+      const parsed = JSON.parse(draft || "[]");
+      return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function toggleExtensionSettingOption(setting: ExtensionSetting, optionID: string, checked: boolean) {
+    const selected = new Set(extensionSettingSelectedIDs(setting));
+    if (checked) selected.add(optionID);
+    else selected.delete(optionID);
+    updateExtensionSettingDraft(setting, JSON.stringify(Array.from(selected), null, 2));
   }
 
   async function createProfile() {
@@ -6596,6 +6655,67 @@
                     {/each}
                   </div>
                 </details>
+              {/if}
+              {#if profileExtensionSettings.length > 0}
+                <section class="profile-feature-panel" aria-label="Profile extension settings">
+                  <div class="panel-heading compact-heading">
+                    <h3>Profile Extension Settings</h3>
+                    <span>{profileExtensionSettings.length}</span>
+                  </div>
+                  <p class="hint">Profile-specific extension choices such as FNIS patch selections. These settings are stored per profile.</p>
+                  <div class="extension-settings-list">
+                    {#each profileExtensionSettings as setting}
+                      {@const ready = extensionSettingReady(setting)}
+                      {@const busy = extensionSettingBusy === extensionSettingKey(setting)}
+                      {@const options = setting.options ?? []}
+                      <article class:disabled-setting={!ready}>
+                        <div class="extension-setting-title">
+                          <div>
+                            <strong>{setting.name || setting.setting_id}</strong>
+                            <p>{setting.extension_id} · {extensionSettingValueType(setting)}</p>
+                          </div>
+                          <span class={`catalog-status ${ready ? "catalog-status-ready" : "catalog-status-deferred"}`}>{ready ? "Ready" : setting.status}</span>
+                        </div>
+                        {#if setting.message}<p class="hint">{setting.message}</p>{/if}
+                        {#if setting.options_error}<p class="deploy-message warning">{setting.options_error}</p>{/if}
+                        {#if options.length > 0}
+                          <div class="profile-feature-list">
+                            {#each options as option}
+                              <label class="mod-toggle option-toggle">
+                                <span>
+                                  <strong>{option.label || option.id}</strong>
+                                  {#if option.description}<small>{option.description}</small>{/if}
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={extensionSettingSelectedIDs(setting).includes(option.id)}
+                                  disabled={!ready || busy || Boolean(option.disabled)}
+                                  on:change={(event) => toggleExtensionSettingOption(setting, option.id, event.currentTarget.checked)}
+                                />
+                              </label>
+                            {/each}
+                          </div>
+                        {:else}
+                          <label class="settings-control compact-setting-control">
+                            <span>JSON Value</span>
+                            <textarea
+                              rows="4"
+                              spellcheck="false"
+                              value={extensionSettingDraft(setting)}
+                              placeholder={setting.placeholder || "[]"}
+                              disabled={!ready || busy}
+                              on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
+                            ></textarea>
+                          </label>
+                        {/if}
+                        <div class="setting-actions">
+                          {#if setting.updated_at}<small>Updated {new Date(setting.updated_at).toLocaleString()}</small>{:else}<small>Not set</small>{/if}
+                          <button type="button" on:click={() => saveProfileExtensionSetting(setting)} disabled={!ready || busy}>{busy ? "Saving..." : "Save"}</button>
+                        </div>
+                      </article>
+                    {/each}
+                  </div>
+                </section>
               {/if}
             </section>
           {/if}

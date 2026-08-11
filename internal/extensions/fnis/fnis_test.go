@@ -71,6 +71,36 @@ func TestRegisterSupportMarksDeployHooksReady(t *testing.T) {
 	if byID["fnis-did-deploy"].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("did-deploy handler = %+v", byID["fnis-did-deploy"])
 	}
+	var patchSetting *sdk.ExtensionSettingSpec
+	for idx := range extension.ExtensionSettings {
+		if extension.ExtensionSettings[idx].ID == SettingPatches {
+			patchSetting = &extension.ExtensionSettings[idx]
+		}
+	}
+	if patchSetting == nil || patchSetting.Status != sdk.CapabilityStatusReady || patchSetting.Options == nil {
+		t.Fatalf("patch setting = %+v", patchSetting)
+	}
+}
+
+func TestPatchOptionsDiscoverDeployedPatchList(t *testing.T) {
+	gamePath := t.TempDir()
+	patchPath := filepath.Join(gamePath, "Data", "tools", "GenerateFNIS_for_Users", "PatchListSE.txt")
+	if err := os.MkdirAll(filepath.Dir(patchPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(patchPath, []byte("FNIS Patch List\nGenderSpecific#0#0##Gender Specific Animations#\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options, err := patchOptions(SupportOptions{GameID: "skyrimse", PatchListName: "PatchListSE.txt"})(context.Background(), sdk.ExtensionSettingOptionsInput{
+		GamePath:  gamePath,
+		ProfileID: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(options) != 1 || options[0].ID != "GenderSpecific" || options[0].Label != "Gender Specific Animations" {
+		t.Fatalf("options = %+v", options)
+	}
 }
 
 func TestCheckFNISWarnsWhenAutoRunEnabledAndVersionMissing(t *testing.T) {

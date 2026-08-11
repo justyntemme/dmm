@@ -3872,7 +3872,16 @@ type extensionSettingResponse struct {
 	Status       string          `json:"status"`
 	Message      string          `json:"message,omitempty"`
 	Value        json.RawMessage `json:"value"`
+	Options      []settingOption `json:"options,omitempty"`
+	OptionsError string          `json:"options_error,omitempty"`
 	UpdatedAt    string          `json:"updated_at,omitempty"`
+}
+
+type settingOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"`
 }
 
 type updateExtensionSettingRequest struct {
@@ -11229,7 +11238,7 @@ func (s *Server) handleProfileExtensionSettings(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.profileExtensionSettingResponses(appID, profileID, values))
+	writeJSON(w, http.StatusOK, s.profileExtensionSettingResponses(r.Context(), appID, profileID, values))
 }
 
 func (s *Server) handleSetProfileExtensionSetting(w http.ResponseWriter, r *http.Request) {
@@ -11306,7 +11315,7 @@ func (s *Server) handleSetProfileExtensionSetting(w http.ResponseWriter, r *http
 	})
 }
 
-func (s *Server) profileExtensionSettingResponses(appID string, profileID int64, values []storage.ProfileExtensionSettingValue) []extensionSettingResponse {
+func (s *Server) profileExtensionSettingResponses(ctx context.Context, appID string, profileID int64, values []storage.ProfileExtensionSettingValue) []extensionSettingResponse {
 	valueByKey := map[string]storage.ProfileExtensionSettingValue{}
 	for _, value := range values {
 		key := extensionSettingKey(value.ExtensionID, value.SettingID)
@@ -11315,6 +11324,7 @@ func (s *Server) profileExtensionSettingResponses(appID string, profileID int64,
 		}
 		valueByKey[key] = value
 	}
+	game, gameErr := s.db.GameBySteamApp(ctx, appID)
 	responses := []extensionSettingResponse{}
 	for _, extension := range s.games.ExtensionsForSteamApp(appID) {
 		for _, setting := range extension.ExtensionSettings {
@@ -11334,7 +11344,7 @@ func (s *Server) profileExtensionSettingResponses(appID string, profileID int64,
 			if !json.Valid([]byte(valueJSON)) {
 				valueJSON = "null"
 			}
-			responses = append(responses, extensionSettingResponse{
+			response := extensionSettingResponse{
 				ExtensionID:  extension.ID,
 				SettingID:    settingID,
 				Name:         fallbackString(strings.TrimSpace(setting.Name), settingID),
@@ -11346,7 +11356,25 @@ func (s *Server) profileExtensionSettingResponses(appID string, profileID int64,
 				Message:      setting.Message,
 				Value:        json.RawMessage(valueJSON),
 				UpdatedAt:    updatedAt,
-			})
+			}
+			if setting.Options != nil {
+				if gameErr != nil {
+					response.OptionsError = gameErr.Error()
+				} else {
+					options, err := setting.Options(ctx, sdk.ExtensionSettingOptionsInput{
+						AppID:     strings.TrimSpace(appID),
+						GameID:    strings.TrimSpace(extension.ID),
+						GamePath:  strings.TrimSpace(game.GamePath),
+						ProfileID: profileID,
+					})
+					if err != nil {
+						response.OptionsError = err.Error()
+					} else {
+						response.Options = settingOptionsResponse(options)
+					}
+				}
+			}
+			responses = append(responses, response)
 		}
 	}
 	sort.Slice(responses, func(i, j int) bool {
@@ -11355,8 +11383,28 @@ func (s *Server) profileExtensionSettingResponses(appID string, profileID int64,
 		}
 		return responses[i].ExtensionID < responses[j].ExtensionID
 	})
-	_ = profileID
 	return responses
+}
+
+func settingOptionsResponse(options []sdk.ExtensionSettingOption) []settingOption {
+	out := make([]settingOption, 0, len(options))
+	for _, option := range options {
+		id := strings.TrimSpace(option.ID)
+		if id == "" {
+			continue
+		}
+		label := strings.TrimSpace(option.Label)
+		if label == "" {
+			label = id
+		}
+		out = append(out, settingOption{
+			ID:          id,
+			Label:       label,
+			Description: strings.TrimSpace(option.Description),
+			Disabled:    option.Disabled,
+		})
+	}
+	return out
 }
 
 func (s *Server) profileExtensionSettingForSteamApp(appID, extensionID, settingID string) (gameext.Extension, sdk.ExtensionSettingSpec, bool) {
