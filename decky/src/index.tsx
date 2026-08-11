@@ -5330,7 +5330,7 @@ function FreshDeckyModManagerRoute() {
     modal = showModal(
       <ConfirmModal
         strTitle={`Uninstall ${mod.name}`}
-        strDescription="DMM will remove this mod from every profile, delete its staged files, and apply the active profile."
+        strDescription="DMM will remove this mod from every profile, delete its installed files, and apply the active profile."
         strOKButtonText="Uninstall"
         strCancelButtonText="Cancel"
         onOK={() => {

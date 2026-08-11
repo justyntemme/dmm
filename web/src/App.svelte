@@ -2857,7 +2857,7 @@
   function askRemoveInstalledMod(mod: InstalledMod) {
     confirmation = {
       title: "Uninstall mod",
-      message: `Remove ${mod.name} from every profile and delete its staged files.`,
+      message: `Remove ${mod.name} from every profile and delete its installed files.`,
       detail: `${mod.source_game_domain}/mods/${mod.source_mod_id}/files/${mod.source_file_id}`,
       confirmLabel: "Uninstall Mod",
       danger: true,
