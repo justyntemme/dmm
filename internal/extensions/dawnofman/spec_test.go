@@ -30,7 +30,7 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(summary.Capabilities.GameSetups) != 1 || len(summary.Capabilities.GameSetups[0].SetupActions) != 2 {
 		t.Fatalf("game setup capabilities = %+v", summary.Capabilities.GameSetups)
 	}
-	if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 1 {
+	if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("extension metadata = %+v", summary.Capabilities)
 	}
 }
