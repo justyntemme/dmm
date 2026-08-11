@@ -1240,7 +1240,7 @@ func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	}
 
 	braid := gameExtensionInfoForSteamApp(games.DefaultRegistry, "26800")
-	if braid == nil || !braid.Supported || braid.Coverage != gameext.CoverageMetadataOnly || braid.Nexus || braid.Installers || len(braid.Sources) == 0 {
+	if braid == nil || !braid.Supported || braid.Coverage != gameext.CoverageInstaller || braid.Nexus || !braid.Installers || len(braid.Sources) == 0 {
 		t.Fatalf("braid extension info = %+v", braid)
 	}
 

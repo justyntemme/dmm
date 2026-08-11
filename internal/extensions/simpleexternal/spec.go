@@ -1,4 +1,4 @@
-package metadataonly
+package simpleexternal
 
 import (
 	"strings"
@@ -8,12 +8,15 @@ import (
 )
 
 type Spec struct {
-	ID          string
-	Name        string
-	Version     string
-	BuildID     string
-	SteamAppIDs []string
-	Sources     []sdk.SourceRef
+	ID           string
+	Name         string
+	Version      string
+	BuildID      string
+	SteamAppIDs  []string
+	Sources      []sdk.SourceRef
+	ModTypeID    string
+	InstallerID  string
+	InstallerMsg string
 }
 
 func Extension(spec Spec) sdk.Extension {
@@ -35,11 +38,33 @@ func Extension(spec Spec) sdk.Extension {
 }
 
 func Register(r sdk.Registrar, spec Spec) {
+	modType := strings.TrimSpace(spec.ModTypeID)
+	if modType == "" {
+		modType = strings.TrimSpace(spec.ID) + "-game-root"
+	}
+	installerID := strings.TrimSpace(spec.InstallerID)
+	if installerID == "" {
+		installerID = "dmm:" + strings.TrimSpace(spec.ID) + ":archive-root"
+	}
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs: spec.SteamAppIDs,
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
+	})
+	r.RegisterModType(installplan.ModTypeSpec{
+		ID:         modType,
+		TargetRoot: "",
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                installerID,
+		VortexInstallerID: installerID,
+		Priority:          100,
+		ModType:           modType,
+		NameSource:        installplan.NameSourceArchive,
+		StripCommonRoot:   true,
+		InstructionMode:   installplan.InstructionArchiveRoot,
+		Message:           strings.TrimSpace(spec.InstallerMsg),
 	})
 	for _, ref := range spec.Sources {
 		r.RegisterSource(ref)
@@ -57,7 +82,7 @@ func ModDBSources(appID, gameName, gameSlug string) []sdk.SourceRef {
 			URL:  "extensionTargets.md#installed-games-snapshot",
 		},
 		{
-			Name: "Checked bundled Vortex game extension source; no reviewed " + strings.TrimSpace(gameName) + " handler found",
+			Name: "No bundled Vortex game extension exists; DMM uses an explicit simple external-source archive-root profile for " + strings.TrimSpace(gameName),
 			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
 		},
 	}

@@ -7,8 +7,12 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
+func TestInstalledSimpleExternalExtensionsExposeVerifiedSourcesAndInstaller(t *testing.T) {
 	registry := gameext.NewRegistry(extensions.FirstParty())
+	summaries := map[string]gameext.ExtensionSummary{}
+	for _, summary := range registry.ExtensionSummaries() {
+		summaries[summary.ID] = summary
+	}
 	tests := []struct {
 		appID string
 		id    string
@@ -40,14 +44,21 @@ func TestInstalledMetadataOnlyExtensionsExposeVerifiedSources(t *testing.T) {
 				t.Fatalf("extension id = %q, want %q", extension.ID, tt.id)
 			}
 			if len(extension.NexusDomains) != 0 {
-				t.Fatalf("metadata-only extension must not declare Nexus domains: %+v", extension.NexusDomains)
+				t.Fatalf("simple external extension must not declare Nexus domains: %+v", extension.NexusDomains)
 			}
 			if extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) != 0 {
-				t.Fatalf("metadata-only extension must not declare Steam Workshop actions: %+v", extension.SteamWorkshop)
+				t.Fatalf("simple external extension must not declare Steam Workshop actions: %+v", extension.SteamWorkshop)
 			}
 			coverage, _ := gameext.ExtensionCoverage(extension)
-			if coverage != gameext.CoverageMetadataOnly {
+			if coverage != gameext.CoverageInstaller {
 				t.Fatalf("coverage = %q", coverage)
+			}
+			summary, ok := summaries[extension.ID]
+			if !ok {
+				t.Fatalf("extension summary missing for %q", extension.ID)
+			}
+			if len(summary.Capabilities.ModTypes) != 1 || len(summary.Capabilities.Installers) != 1 {
+				t.Fatalf("simple external extension must declare one mod type and installer: modTypes=%+v installers=%+v", summary.Capabilities.ModTypes, summary.Capabilities.Installers)
 			}
 			if !sourceURLPresent(extension.Sources, tt.url) {
 				t.Fatalf("sources = %+v, want %s", extension.Sources, tt.url)

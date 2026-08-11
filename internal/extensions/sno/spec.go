@@ -1,8 +1,8 @@
 package sno
 
 import (
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/metadataonly"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/simpleexternal"
 )
 
 const (
@@ -12,7 +12,7 @@ const (
 )
 
 func Extension() sdk.Extension {
-	return metadataonly.Extension(metadataonly.Spec{
+	return simpleexternal.Extension(simpleexternal.Spec{
 		ID:          ID,
 		Name:        Name,
 		SteamAppIDs: []string{SteamAppID},
