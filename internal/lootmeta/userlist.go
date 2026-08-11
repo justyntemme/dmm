@@ -26,6 +26,13 @@ type UserlistPlugin struct {
 	Incompatible []string `json:"incompatible,omitempty" yaml:"inc,omitempty"`
 }
 
+type PluginRule struct {
+	Plugin  string
+	Kind    string
+	Target  string
+	Display string
+}
+
 type UserlistGroup struct {
 	Name  string   `json:"name" yaml:"name"`
 	After []string `json:"after,omitempty" yaml:"after,omitempty"`

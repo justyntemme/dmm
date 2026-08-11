@@ -1402,6 +1402,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginFileWritableDiagnostics(game)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTRuleDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -1858,6 +1859,100 @@ func gamebryoBlueprintMasterIssues(plugins []pluginLoadOrderEntry) []string {
 	}
 	sort.Strings(issues)
 	return issues
+}
+
+func (s *Server) gamebryoLOOTRuleDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok || strings.TrimSpace(spec.LOOTGameID) == "" {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo LOOT rule check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	loadOrder, err := s.profilePluginLoadOrder(ctx, game, profileID, mods)
+	if err != nil {
+		s.logger.Warn("Gamebryo LOOT rule check skipped because load order failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	rules, err := s.loot.PluginRulesForProfile(spec, profileID)
+	if err != nil {
+		s.logger.Warn("Gamebryo LOOT rule check skipped because metadata failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	dataPath := filepath.Join(game.GamePath, filepath.FromSlash(spec.GameDataRoot))
+	issues := gamebryoLOOTRuleIssues(loadOrder.Plugins, rules, dataPath)
+	if len(issues) == 0 {
+		return nil
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-rules-unfulfilled",
+		TestName: "Gamebryo plugin rules",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "Some enabled plugins have unmet LOOT requirements or active incompatibilities.",
+		Details:  strings.Join(issues, "; "),
+		Actions:  []string{"Install or enable missing requirements, disable incompatible plugins, or update LOOT user rules."},
+	}}
+}
+
+func gamebryoLOOTRuleIssues(plugins []pluginLoadOrderEntry, rules []lootmeta.PluginRule, dataPath string) []string {
+	activePlugins := map[string]string{}
+	activeRuleSources := map[string]string{}
+	for _, plugin := range plugins {
+		name := strings.TrimSpace(plugin.Name)
+		if name == "" || !plugin.Active {
+			continue
+		}
+		key := strings.ToLower(name)
+		activePlugins[key] = name
+		activeRuleSources[key] = name
+	}
+	var issues []string
+	for _, rule := range rules {
+		sourceKey := strings.ToLower(strings.TrimSpace(rule.Plugin))
+		sourceName, sourceActive := activeRuleSources[sourceKey]
+		if !sourceActive {
+			continue
+		}
+		target := strings.TrimSpace(rule.Target)
+		if target == "" {
+			continue
+		}
+		display := strings.TrimSpace(rule.Display)
+		if display == "" {
+			display = target
+		}
+		targetExists := false
+		if gamebryoRuleTargetIsPlugin(target) {
+			_, targetExists = activePlugins[strings.ToLower(target)]
+		} else {
+			targetExists = pathExists(filepath.Join(dataPath, filepath.FromSlash(target)))
+		}
+		switch strings.TrimSpace(rule.Kind) {
+		case "requires":
+			if !targetExists {
+				issues = append(issues, sourceName+" requires "+display)
+			}
+		case "incompatible":
+			if targetExists {
+				issues = append(issues, sourceName+" is incompatible with "+display)
+			}
+		}
+	}
+	sort.Strings(issues)
+	return issues
+}
+
+func gamebryoRuleTargetIsPlugin(target string) bool {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(target))) {
+	case ".esp", ".esm", ".esl":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {

@@ -157,6 +157,52 @@ func TestStatusWarnsForMissingUserlistGroups(t *testing.T) {
 	}
 }
 
+func TestPluginRulesForProfileReadsMasterlistAndUserlistRules(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+	masterlistDir := filepath.Join(dir, "loot", "fallout4", "masterlist")
+	if err := os.MkdirAll(masterlistDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	masterlist := `plugins:
+  - name: Main.esp
+    req:
+      - Fallout4.esm
+      - name: DLCUltraHighResolution.esm
+        display: High Resolution DLC
+    inc:
+      - OldPatch.esp
+`
+	if err := os.WriteFile(filepath.Join(masterlistDir, "masterlist.yaml"), []byte(masterlist), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.WriteUserlistForProfile(spec, 7, Userlist{
+		Plugins: []UserlistPlugin{{Name: "Main.esp", Requires: []string{"Loose/File.txt"}, Incompatible: []string{"Conflict.esp"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := service.PluginRulesForProfile(spec, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, rule := range rules {
+		got[rule.Plugin+"\x00"+rule.Kind+"\x00"+rule.Target] = rule.Display
+	}
+	for key, display := range map[string]string{
+		"Main.esp\x00requires\x00Fallout4.esm":               "Fallout4.esm",
+		"Main.esp\x00requires\x00DLCUltraHighResolution.esm": "High Resolution DLC",
+		"Main.esp\x00incompatible\x00OldPatch.esp":           "OldPatch.esp",
+		"Main.esp\x00requires\x00Loose/File.txt":             "Loose/File.txt",
+		"Main.esp\x00incompatible\x00Conflict.esp":           "Conflict.esp",
+	} {
+		if got[key] != display {
+			t.Fatalf("rule %q display = %q, want %q; rules=%+v", key, got[key], display, rules)
+		}
+	}
+}
+
 func TestProfileUserlistsAreIsolated(t *testing.T) {
 	dir := t.TempDir()
 	service := Service{DataDir: dir}

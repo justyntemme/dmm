@@ -12539,6 +12539,35 @@ func TestGamebryoBlueprintMasterIssues(t *testing.T) {
 	}
 }
 
+func TestGamebryoLOOTRuleIssues(t *testing.T) {
+	dataPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataPath, "Meshes"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataPath, "Meshes", "present.nif"), []byte("mesh"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	issues := gamebryoLOOTRuleIssues([]pluginLoadOrderEntry{
+		{Name: "Main.esp", Active: true},
+		{Name: "Conflict.esp", Active: true},
+		{Name: "Disabled.esp", Active: false},
+	}, []lootmeta.PluginRule{
+		{Plugin: "Main.esp", Kind: "requires", Target: "Missing.esm"},
+		{Plugin: "Main.esp", Kind: "requires", Target: "Meshes/present.nif"},
+		{Plugin: "Main.esp", Kind: "requires", Target: "Meshes/missing.nif", Display: "Required Mesh"},
+		{Plugin: "Main.esp", Kind: "incompatible", Target: "Conflict.esp"},
+		{Plugin: "Disabled.esp", Kind: "requires", Target: "Ignored.esm"},
+	}, dataPath)
+	want := []string{
+		"Main.esp is incompatible with Conflict.esp",
+		"Main.esp requires Missing.esm",
+		"Main.esp requires Required Mesh",
+	}
+	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("issues = %+v, want %+v", issues, want)
+	}
+}
+
 func TestPathWritableDetectsReadOnlyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plugins.txt")
 	if err := os.WriteFile(path, []byte("*Example.esp\n"), 0o600); err != nil {

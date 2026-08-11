@@ -142,6 +142,118 @@ func readMasterlistGroups(path string) (masterlistGroups, error) {
 	return parsed, nil
 }
 
+type lootRuleList struct {
+	Plugins []lootRulePlugin `yaml:"plugins"`
+}
+
+type lootRulePlugin struct {
+	Name         string          `yaml:"name"`
+	Requires     []lootReference `yaml:"req"`
+	Incompatible []lootReference `yaml:"inc"`
+}
+
+type lootReference struct {
+	Name    string
+	Display string
+}
+
+func (r *lootReference) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		r.Name = cleanName(value.Value)
+		r.Display = r.Name
+		return nil
+	case yaml.MappingNode:
+		var raw struct {
+			Name    string `yaml:"name"`
+			Display string `yaml:"display"`
+		}
+		if err := value.Decode(&raw); err != nil {
+			return err
+		}
+		r.Name = cleanName(raw.Name)
+		r.Display = cleanName(raw.Display)
+		if r.Display == "" {
+			r.Display = r.Name
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (s Service) PluginRulesForProfile(spec sdk.PluginActivationSpec, profileID int64) ([]PluginRule, error) {
+	paths, ok, err := s.paths(spec)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("LOOT plugin rules are not supported")
+	}
+	if profileID < 0 {
+		return nil, errors.New("profile id is invalid")
+	}
+	var rules []PluginRule
+	if masterRules, err := readPluginRules(paths.masterlistPath); err == nil {
+		rules = append(rules, masterRules...)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("LOOT masterlist rule parse failed: %w", err)
+	}
+	userlist, err := s.ReadUserlistForProfile(spec, profileID)
+	if err != nil {
+		return nil, err
+	}
+	for _, plugin := range userlist.Plugins {
+		for _, target := range plugin.Requires {
+			rules = append(rules, PluginRule{Plugin: plugin.Name, Kind: "requires", Target: target, Display: target})
+		}
+		for _, target := range plugin.Incompatible {
+			rules = append(rules, PluginRule{Plugin: plugin.Name, Kind: "incompatible", Target: target, Display: target})
+		}
+	}
+	sort.SliceStable(rules, func(i, j int) bool {
+		if strings.ToLower(rules[i].Plugin) != strings.ToLower(rules[j].Plugin) {
+			return strings.ToLower(rules[i].Plugin) < strings.ToLower(rules[j].Plugin)
+		}
+		if rules[i].Kind != rules[j].Kind {
+			return rules[i].Kind < rules[j].Kind
+		}
+		return strings.ToLower(rules[i].Target) < strings.ToLower(rules[j].Target)
+	})
+	return rules, nil
+}
+
+func readPluginRules(path string) ([]PluginRule, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var parsed lootRuleList
+	if err := yaml.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	var rules []PluginRule
+	for _, plugin := range parsed.Plugins {
+		name := cleanName(plugin.Name)
+		if name == "" {
+			continue
+		}
+		for _, ref := range plugin.Requires {
+			if ref.Name == "" {
+				continue
+			}
+			rules = append(rules, PluginRule{Plugin: name, Kind: "requires", Target: ref.Name, Display: ref.Display})
+		}
+		for _, ref := range plugin.Incompatible {
+			if ref.Name == "" {
+				continue
+			}
+			rules = append(rules, PluginRule{Plugin: name, Kind: "incompatible", Target: ref.Name, Display: ref.Display})
+		}
+	}
+	return rules, nil
+}
+
 func missingUserlistGroups(masterlistGroups []UserlistGroup, userlist Userlist) []string {
 	known := map[string]struct{}{}
 	for _, group := range masterlistGroups {
