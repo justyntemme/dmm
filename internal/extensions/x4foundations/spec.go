@@ -65,6 +65,14 @@ func Register(r sdk.Registrar) {
 		Name:     "X4 version.dat",
 		Provider: gameVersion,
 	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "x4foundations-1.0.1-invalid-folder-migration",
+		Name:        "X4 invalid ws_ folder reinstall warning",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.0.1",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex scans historical staged X4 mods for invalid ws_ folders and warns users to reinstall affected mods. DMM-created state stages content.xml mods with the corrected extension-owned folder rules from the first install; post-MVP Vortex import must scan imported Vortex staging and surface the same reinstall warning when needed.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

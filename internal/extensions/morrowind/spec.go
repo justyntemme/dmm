@@ -115,6 +115,14 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM extracts ESP/ESM plugin attributes during extension-owned install planning and uses them with deployment mappings for Morrowind.ini load order.",
 	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "morrowind-1.0.3-plugin-attribute-migration",
+		Name:        "Morrowind plugin attribute migration",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.0.3",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex scans historical staged Morrowind mods and writes ESP/ESM plugin attributes onto old mod records. This is not applicable to DMM-created state because DMM extracts those attributes during install planning; post-MVP Vortex import must scan imported staging and populate equivalent metadata for old Vortex mods.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

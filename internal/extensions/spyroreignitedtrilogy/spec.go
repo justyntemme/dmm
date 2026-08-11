@@ -61,6 +61,26 @@ func Register(r sdk.Registrar) {
 			ModType:    modType,
 		}),
 	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "spyro-1.0.0-load-order-migration",
+		Name:        "Spyro pak load-order migration",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.0.0",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:             "purge-old-pak-deployment",
+				Name:           "Purge old Spyro pak deployment",
+				Command:        sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRelative: pakRoot,
+			},
+			{
+				ID:      "redeploy-active-profile",
+				Name:    "Redeploy active Spyro profile",
+				Command: sdk.StateMigrationCommandDeployProfile,
+			},
+		},
+		Message: "Source-backed Vortex migration serializes load order, purges the old pak deployment folder, and marks deployment necessary. DMM represents this for imported Vortex state with generic purge/redeploy commands while DMM-created state uses profile priority from the start.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

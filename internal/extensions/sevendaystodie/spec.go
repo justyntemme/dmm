@@ -140,6 +140,54 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM stores Vortex-equivalent profile prefix offset state through profile-scoped extension settings.",
 	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "7daystodie-0.2.0-reinstall-warning",
+		Name:        "7 Days to Die v17 reinstall warning",
+		FromVersion: "0.0.0",
+		ToVersion:   "0.2.0",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex warned users to reinstall historical pre-v17 7 Days to Die mods. This is not applicable to DMM-created state because DMM only installs through the current extension rules; post-MVP Vortex import must detect and flag imported pre-v17 Vortex staging explicitly.",
+	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "7daystodie-1.0.0-load-order-migration",
+		Name:        "7 Days to Die load-order file migration",
+		FromVersion: "0.2.0",
+		ToVersion:   "1.0.0",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:           "purge-old-mods-root",
+				Name:         "Purge old 7 Days to Die Mods deployment",
+				Command:      sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRootID: modsRootID,
+			},
+			{
+				ID:      "redeploy-active-profile",
+				Name:    "Redeploy active 7 Days to Die profile",
+				Command: sdk.StateMigrationCommandDeployProfile,
+			},
+		},
+		Message: "Source-backed Vortex migration serializes profile load-order state, purges the old Mods deployment, and marks deployment necessary. DMM represents this with the generic purge/redeploy migration commands for imported Vortex state.",
+	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "7daystodie-1.0.11-load-order-location-migration",
+		Name:        "7 Days to Die old load-order file cleanup",
+		FromVersion: "1.0.0",
+		ToVersion:   "1.0.11",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:           "purge-old-mods-root",
+				Name:         "Purge old 7 Days to Die Mods deployment",
+				Command:      sdk.StateMigrationCommandPurgeModsInPath,
+				TargetRootID: modsRootID,
+			},
+			{
+				ID:      "redeploy-active-profile",
+				Name:    "Redeploy active 7 Days to Die profile",
+				Command: sdk.StateMigrationCommandDeployProfile,
+			},
+		},
+		Message: "Source-backed Vortex migration moves old per-profile load-order files, removes the obsolete game-root JSON files, purges the old Mods deployment, and redeploys. DMM-created state already stores profile order internally; Vortex import must preserve the cleanup obligation.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

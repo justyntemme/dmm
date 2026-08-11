@@ -173,6 +173,14 @@ func Register(r sdk.Registrar) {
 		Message: "Validates the DMM-managed Witcher 3 Script Merger executable and config file before launch.",
 		Check:   checkScriptMergerInstall,
 	})
+	r.RegisterStateMigration(sdk.StateMigrationSpec{
+		ID:          "witcher3-1.4.8-mod-limit-patcher-warning",
+		Name:        "Witcher 3 faulty mod limit patch warning",
+		FromVersion: "0.0.0",
+		ToVersion:   "1.4.8",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex warns users when an enabled historical w3modlimitpatcher mod was created by a faulty old Vortex patcher. DMM-created state does not create that patcher mod; post-MVP Vortex import must detect imported w3modlimitpatcher records and surface the same remove/reapply warning.",
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventProfileWillChange,
 		Name:    "Store Witcher 3 Script Merger output in the old profile",
