@@ -51,6 +51,30 @@ func TestResolveURLUsesNumericAPIFileURL(t *testing.T) {
 	}
 }
 
+func TestSearchModsUsesGameScopedAPI(t *testing.T) {
+	api := newModIOTestAPI(t)
+	result, err := (Resolver{APIKey: "test-key", APIBaseURL: api.URL, HTTPClient: api.Client()}).SearchMods(context.Background(), catalog.SearchRequest{
+		GameDomain: "modio-7",
+		Query:      "test",
+		Sort:       "downloads",
+		Count:      10,
+		Offset:     5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != 1 || len(result.Mods) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	mod := result.Mods[0]
+	if mod.Catalog != "modio" || mod.SourceTag != "modio" || mod.ModID != "42" || mod.Name != "Test Mod" || !mod.SupportsVortex {
+		t.Fatalf("mod = %+v", mod)
+	}
+	if mod.URL != "https://mod.io/g/test-game/m/test-mod" || mod.Downloads != 123 || mod.Endorsements != 7 {
+		t.Fatalf("metadata = %+v", mod)
+	}
+}
+
 func TestResolveURLRequiresAPIKey(t *testing.T) {
 	_, err := (Resolver{}).ResolveURL(context.Background(), catalog.ResolveRequest{
 		URL:        "https://mod.io/g/test-game/m/test-mod",
@@ -91,6 +115,17 @@ func newModIOTestAPI(t *testing.T) *httptest.Server {
 		case "/games":
 			writeModIOJSON(t, w, pagedGames{Data: []gameResponse{{ID: 7, NameID: "test-game"}}})
 		case "/games/7/mods":
+			if r.URL.Query().Get("_limit") == "10" {
+				if r.URL.Query().Get("_offset") != "5" || r.URL.Query().Get("_sort") != "-stats_downloads_total" || r.URL.Query().Get("name-lk") != "*test*" {
+					t.Fatalf("search query = %s", r.URL.RawQuery)
+				}
+				mod := modResponse{ID: 42, NameID: "test-mod", Name: "Test Mod", Summary: "A fixture mod", DateUpdated: 2000, GameNameID: "test-game"}
+				mod.Logo.Thumb320x180 = "https://cdn.mod.io/logo.png"
+				mod.Stats.DownloadsTotal = 123
+				mod.Stats.RatingsPositive = 7
+				writeModIOJSON(t, w, pagedMods{Data: []modResponse{mod}, ResultTotal: 1})
+				return
+			}
 			writeModIOJSON(t, w, pagedMods{Data: []modResponse{{ID: 42, NameID: "test-mod"}}})
 		case "/games/7/mods/42/files":
 			writeModIOJSON(t, w, pagedFiles{Data: []modfileResponse{

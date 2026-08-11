@@ -71,6 +71,63 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	return r.resolveDownload(ctx, modAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
+func (r Resolver) SearchMods(ctx context.Context, req catalog.SearchRequest) (catalog.SearchResponse, error) {
+	if strings.TrimSpace(r.APIKey) == "" {
+		return catalog.SearchResponse{}, errors.New("configure a mod.io API key before browsing mod.io")
+	}
+	gameID := strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "modio-")
+	if gameID == "" && len(req.SourceHints) > 0 {
+		gameID = strings.TrimPrefix(strings.TrimSpace(req.SourceHints[0]), "modio-")
+	}
+	if gameID == "" {
+		return catalog.SearchResponse{}, errors.New("mod.io browse/search requires an extension-provided numeric game id")
+	}
+	if _, err := strconv.ParseInt(gameID, 10, 64); err != nil {
+		return catalog.SearchResponse{}, errors.New("mod.io game id must be numeric")
+	}
+	count := req.Count
+	if count <= 0 {
+		count = 20
+	}
+	if count > 50 {
+		count = 50
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	params := map[string]string{
+		"_limit":  fmt.Sprintf("%d", count),
+		"_offset": fmt.Sprintf("%d", offset),
+		"_sort":   modioSort(req.Sort),
+	}
+	if query := strings.TrimSpace(req.Query); query != "" {
+		params["name-lk"] = "*" + query + "*"
+	}
+	var response pagedMods
+	if err := r.getJSON(ctx, "/games/"+url.PathEscape(gameID)+"/mods", params, &response); err != nil {
+		return catalog.SearchResponse{}, err
+	}
+	results := make([]catalog.SearchResult, 0, len(response.Data))
+	for _, item := range response.Data {
+		modID := strconv.FormatInt(item.ID, 10)
+		results = append(results, catalog.SearchResult{
+			Catalog:        "modio",
+			SourceTag:      "modio",
+			ModID:          modID,
+			Name:           firstNonEmpty(item.Name, item.NameID),
+			Summary:        strings.TrimSpace(item.Summary),
+			ThumbnailURL:   strings.TrimSpace(item.Logo.Thumb320x180),
+			Downloads:      item.Stats.DownloadsTotal,
+			Endorsements:   item.Stats.RatingsPositive,
+			UpdatedAt:      unixTimeString(item.DateUpdated),
+			SupportsVortex: true,
+			URL:            "https://mod.io/g/" + url.PathEscape(firstNonEmpty(item.GameNameID, gameID)) + "/m/" + url.PathEscape(firstNonEmpty(item.NameID, modID)),
+		})
+	}
+	return catalog.SearchResponse{TotalCount: response.ResultTotal, Mods: results}, nil
+}
+
 func (r Resolver) resolveDownload(ctx context.Context, sourceURL, selectedSteamAppID string, ref modRef) (catalog.ResolvedDownload, error) {
 	if !steamAppID.MatchString(selectedSteamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("mod.io URLs must be added from a selected Steam game")
@@ -151,12 +208,24 @@ type gameResponse struct {
 }
 
 type pagedMods struct {
-	Data []modResponse `json:"data"`
+	Data        []modResponse `json:"data"`
+	ResultTotal int           `json:"result_total"`
 }
 
 type modResponse struct {
-	ID     int64  `json:"id"`
-	NameID string `json:"name_id"`
+	ID          int64  `json:"id"`
+	NameID      string `json:"name_id"`
+	Name        string `json:"name"`
+	Summary     string `json:"summary"`
+	DateUpdated int64  `json:"date_updated"`
+	GameNameID  string `json:"game_name_id"`
+	Logo        struct {
+		Thumb320x180 string `json:"thumb_320x180"`
+	} `json:"logo"`
+	Stats struct {
+		DownloadsTotal  int64 `json:"downloads_total"`
+		RatingsPositive int64 `json:"ratings_positive"`
+	} `json:"stats"`
 }
 
 type pagedFiles struct {
@@ -332,4 +401,35 @@ func unescapePathPart(value string) string {
 		return value
 	}
 	return strings.TrimSpace(path.Base(decoded))
+}
+
+func modioSort(sortValue string) string {
+	switch strings.ToLower(strings.TrimSpace(sortValue)) {
+	case "downloads", "popular":
+		return "-stats_downloads_total"
+	case "endorsements":
+		return "-stats_ratings_positive"
+	case "updated":
+		return "-date_updated"
+	case "name", "az", "a-z":
+		return "name"
+	default:
+		return "-date_updated"
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func unixTimeString(value int64) string {
+	if value <= 0 {
+		return ""
+	}
+	return time.Unix(value, 0).UTC().Format(time.RFC3339)
 }

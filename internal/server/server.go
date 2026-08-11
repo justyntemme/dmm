@@ -4315,9 +4315,11 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Configured:          modIOConfigured,
 			CredentialsRequired: true,
 			URLImport:           registered["modio"] && modIOConfigured,
+			Search:              searchable["modio"] && modIOConfigured,
+			Browse:              searchable["modio"] && modIOConfigured,
 			Download:            registered["modio"] && modIOConfigured,
 			SourceTag:           "modio",
-			Notes:               []string{"Official REST API imports resolve mod.io pages through game/mod slugs and download the latest or selected file."},
+			Notes:               []string{"Official REST API imports resolve mod.io pages through game/mod slugs and download the latest or selected file. Browse/search uses extension-provided numeric mod.io game IDs."},
 		},
 		{
 			ID:                  "curseforge",
