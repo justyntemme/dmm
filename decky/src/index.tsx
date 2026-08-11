@@ -818,6 +818,16 @@ const deckyRuntimeStyles = `
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   width: 100%;
 }
+.dmm-content-card {
+  box-sizing: border-box;
+  height: auto !important;
+  max-width: 100%;
+  min-height: 64px !important;
+  min-width: 0;
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+  width: 100%;
+}
 .dmm-focus-card > * {
   min-width: 0;
 }
@@ -4159,6 +4169,12 @@ const freshSectionStyle: CSSProperties = {
   width: "100%"
 };
 
+const freshInfoRowStyle: CSSProperties = {
+  ...freshSectionStyle,
+  minHeight: "64px",
+  padding: "8px 10px"
+};
+
 const freshSettingsPrimaryCardStyle: CSSProperties = {
   ...freshSectionStyle,
   alignItems: "stretch",
@@ -5904,23 +5920,24 @@ function FreshDeckyModManagerRoute() {
         <FreshActionButton disabled={modUpdateBusy || mods.length === 0} onActivate={checkModUpdates}>
           {modUpdateBusy ? "Checking Updates" : "Check Updates"}
         </FreshActionButton>
-        {gameInfo?.details?.length ? (
-          <div style={{ ...freshSectionStyle, padding: "8px 10px" }}>
-            <div style={{ color: "#f8fafc", fontWeight: 900 }}>Game Info</div>
-            <div style={{ display: "grid", gap: "6px", marginTop: "6px", minWidth: 0 }}>
-              {gameInfo.details.map((detail) => {
-                const value = deckyInfoValue(detail.value);
-                if (!value) return null;
-                return (
-                  <div key={detail.id} style={{ display: "grid", gap: "2px", minWidth: 0 }}>
-                    <div style={{ color: "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{detail.title || detail.id}</div>
-                    <div style={{ color: "#d4d4d8", fontSize: "12px", fontWeight: 800, overflowWrap: "anywhere" }}>{value}</div>
-                    {detail.source && <div style={{ color: "#64748b", fontSize: "10px", overflowWrap: "anywhere" }}>{detail.source}</div>}
-                  </div>
-                );
-              })}
+        {gameInfo?.details?.some((detail) => Boolean(deckyInfoValue(detail.value))) ? (
+          <>
+            <div className="dmm-content-card" style={freshInfoRowStyle}>
+              <div style={{ color: "#f8fafc", fontWeight: 900 }}>Game Info</div>
+              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Extension-provided status for this game.</div>
             </div>
-          </div>
+            {gameInfo.details.map((detail) => {
+              const value = deckyInfoValue(detail.value);
+              if (!value) return null;
+              return (
+                <div key={detail.id} className="dmm-content-card" style={freshInfoRowStyle}>
+                  <div style={{ color: "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{detail.title || detail.id}</div>
+                  <div style={{ color: "#d4d4d8", fontSize: "12px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{value}</div>
+                  {detail.source && <div style={{ color: "#64748b", fontSize: "10px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{detail.source}</div>}
+                </div>
+              );
+            })}
+          </>
         ) : null}
         {executableExtensionActions().length > 0 && (
           <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
@@ -6110,7 +6127,7 @@ function FreshDeckyModManagerRoute() {
                 </>
               );
               if (!plugin.mutable) {
-                return <div key={key} style={freshModCardStyle(plugin.active)}>{row}</div>;
+                return <div key={key} className="dmm-content-card" style={freshModCardStyle(plugin.active)}>{row}</div>;
               }
               return (
                 <Focusable
@@ -6180,7 +6197,7 @@ function FreshDeckyModManagerRoute() {
                 </>
               );
               if (!entry.mutable) {
-                return <div key={key} style={freshModCardStyle(entry.active)}>{row}</div>;
+                return <div key={key} className="dmm-content-card" style={freshModCardStyle(entry.active)}>{row}</div>;
               }
               return (
                 <Focusable
@@ -6212,7 +6229,7 @@ function FreshDeckyModManagerRoute() {
         {workshopItems.map((item) => {
           const disabled = item.disabled_known && item.disabled_locally;
           return (
-            <div key={item.published_file_id} style={freshModCardStyle(!disabled)}>
+            <div key={item.published_file_id} className="dmm-content-card" style={freshModCardStyle(!disabled)}>
               <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
                 <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{item.title || item.published_file_id}</div>
                 <span style={deckySourcePillStyle(item.source_tag || "steam_workshop")}>{sourceLabel(item.source_tag || "steam_workshop")}</span>
