@@ -2667,7 +2667,7 @@ func validateOpenDirectoryActionTarget(actionID, label, base, rootID string, dec
 	base = strings.TrimSpace(base)
 	rootID = strings.TrimSpace(rootID)
 	switch base {
-	case sdk.OpenDirectoryBaseGame, sdk.OpenDirectoryBaseDownloads, sdk.OpenDirectoryBaseStaging:
+	case sdk.OpenDirectoryBaseGame, sdk.OpenDirectoryBaseDownloads, sdk.OpenDirectoryBaseStaging, sdk.OpenDirectoryBaseUserConfig:
 		if rootID != "" {
 			return []error{errors.New("extension action " + actionID + " open-directory " + label + " must not declare a target root id for base " + base)}
 		}
@@ -2681,7 +2681,7 @@ func validateOpenDirectoryActionTarget(actionID, label, base, rootID string, dec
 		}
 		return nil
 	default:
-		return []error{errors.New("extension action " + actionID + " open-directory " + label + " must be game, downloads, staging, or target-root")}
+		return []error{errors.New("extension action " + actionID + " open-directory " + label + " must be game, downloads, staging, target-root, or user-config")}
 	}
 }
 

@@ -37,6 +37,25 @@ func TestExtensionRegistersFOMODInstallerChoice(t *testing.T) {
 	}
 }
 
+func TestExtensionRegistersSMAPILogAction(t *testing.T) {
+	extension := gameext.MustCompileExtension(Extension())
+	registry := gameext.NewRegistry([]gameext.Extension{extension})
+
+	_, action, ok := registry.ExtensionActionForSteamApp(SteamAppID, "stardew-smapi-log")
+	if !ok {
+		t.Fatal("missing SMAPI log action")
+	}
+	if action.Kind != sdk.ExtensionActionKindOpenPath || action.OpenPath == nil {
+		t.Fatalf("SMAPI log action target = %+v", action)
+	}
+	if action.OpenPath.Base != sdk.OpenDirectoryBaseUserConfig || action.OpenPath.FallbackBase != sdk.OpenDirectoryBaseUserConfig {
+		t.Fatalf("SMAPI log action bases = %+v", action.OpenPath)
+	}
+	if action.OpenPath.RelativePath != "StardewValley/ErrorLogs/SMAPI-crash.txt" || action.OpenPath.FallbackRelative != "StardewValley/ErrorLogs" {
+		t.Fatalf("SMAPI log action paths = %+v", action.OpenPath)
+	}
+}
+
 func TestSMAPIManifestDependenciesAreRecommendations(t *testing.T) {
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
 	body := []byte(`{

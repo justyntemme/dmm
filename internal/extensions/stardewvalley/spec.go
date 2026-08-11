@@ -121,6 +121,20 @@ func Register(r sdk.Registrar) {
 		DefaultValue: json.RawMessage("true"),
 		Message:      "Mirrors Vortex's Stardew merge-configs profile setting. When enabled, DMM adopts generated SMAPI config.json files into profile-owned staging and restores them when mods are re-enabled.",
 	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "stardew-smapi-log",
+		Name:    "Open SMAPI Log",
+		Scope:   "diagnostics",
+		Kind:    sdk.ExtensionActionKindOpenPath,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Stardew SMAPI Log action by opening the latest SMAPI log from the user config ErrorLogs folder.",
+		OpenPath: &sdk.OpenPathActionSpec{
+			Base:             sdk.OpenDirectoryBaseUserConfig,
+			RelativePath:     "StardewValley/ErrorLogs/SMAPI-crash.txt",
+			FallbackBase:     sdk.OpenDirectoryBaseUserConfig,
+			FallbackRelative: "StardewValley/ErrorLogs",
+		},
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "will-deploy",
 		Name:    "Preserve generated SMAPI config files",

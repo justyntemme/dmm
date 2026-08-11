@@ -762,6 +762,7 @@ const (
 	OpenDirectoryBaseDownloads  = "downloads"
 	OpenDirectoryBaseStaging    = "staging"
 	OpenDirectoryBaseTargetRoot = "target-root"
+	OpenDirectoryBaseUserConfig = "user-config"
 )
 
 type AcquireToolActionSpec struct {

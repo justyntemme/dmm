@@ -7827,6 +7827,12 @@ func (s *Server) openDirectoryTargetPath(ctx context.Context, game storage.Game,
 			return "", err
 		}
 		root = resolved
+	case sdk.OpenDirectoryBaseUserConfig:
+		resolved, err := os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
+		root = resolved
 	default:
 		return "", errors.New("unsupported open-directory base " + base)
 	}
