@@ -1,13 +1,23 @@
 package kotor
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 const (
-	overrideFolder = "override"
-	rootModType    = "kotor-root"
+	overrideFolder      = "override"
+	rootModType         = "kotor-root"
+	tslPatcherRoot      = "DMM/TSLPatcher"
+	tslPatcherToolType  = "kotor-tslpatcher-tool"
+	tslPatcherPatchType = "kotor-tslpatcher-patch"
+	tslPatcherExec      = "TSLPatcher.exe"
 )
 
 type gameSpec struct {
@@ -15,6 +25,17 @@ type gameSpec struct {
 	Name       string
 	SteamAppID string
 	Executable string
+}
+
+func checkTSLPatcherTool(ctx context.Context, gamePath string) []string {
+	if err := ctx.Err(); err != nil || strings.TrimSpace(gamePath) == "" {
+		return nil
+	}
+	path := filepath.Join(gamePath, filepath.FromSlash(tslPatcherRoot), tslPatcherExec)
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return []string{filepath.ToSlash(path)}
+	}
+	return nil
 }
 
 var games = []gameSpec{
@@ -67,6 +88,8 @@ func Register(r sdk.Registrar, spec gameSpec) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: rootModType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: overrideModType, TargetRoot: overrideFolder})
+	r.RegisterModType(installplan.ModTypeSpec{ID: tslPatcherToolType, TargetRoot: tslPatcherRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: tslPatcherPatchType, TargetRoot: tslPatcherRoot})
 	if spec.ID == "kotor2" {
 		r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 			ID:       "kotor2-steam-launcher",
@@ -79,28 +102,28 @@ func Register(r sdk.Registrar, spec gameSpec) {
 		})
 	}
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:" + spec.ID + ":tslpatcher-tool-blocked",
+		ID:                "vortex:" + spec.ID + ":tslpatcher-tool",
 		VortexInstallerID: "kotor-tslpatcher",
 		Priority:          10,
-		ModType:           rootModType,
+		ModType:           tslPatcherToolType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchTSLPatcherTool,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Vortex rejects TSLPatcher itself as a mod; install or run TSLPatcher separately once DMM has a safe external-tool flow.",
+		CustomBuild:       buildTSLPatcherToolArchive,
+		InstructionMode:   installplan.InstructionCustom,
 		Status:            sdk.CapabilityStatusReady,
-		Message:           "Vortex rejects TSLPatcher itself as a separate utility rather than a deployable mod; DMM mirrors that install-time rejection.",
+		Message:           "DMM stages TSLPatcher as an extension-managed external patcher tool under DMM/TSLPatcher.",
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "vortex:" + spec.ID + ":tslpatcher-mod-blocked",
+		ID:                "vortex:" + spec.ID + ":tslpatcher-mod",
 		VortexInstallerID: "kotor-tslpatcher-mod",
 		Priority:          10,
-		ModType:           rootModType,
+		ModType:           tslPatcherPatchType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchTSLPatcherMod,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Vortex rejects mods that require TSLPatcher because they must be installed by that tool. DMM will support this after the external patcher/tool flow is designed.",
+		CustomBuild:       buildTSLPatcherModArchive,
+		InstructionMode:   installplan.InstructionCustom,
 		Status:            sdk.CapabilityStatusReady,
-		Message:           "Vortex rejects TSLPatcher-required mods during normal mod installation; DMM mirrors that source-backed rejection.",
+		Message:           "DMM stages TSLPatcher mods as extension-managed external patcher payloads and queues an explicit patcher action after deployment.",
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:" + spec.ID + ":root",
@@ -121,6 +144,29 @@ func Register(r sdk.Registrar, spec gameSpec) {
 		CustomMatch:       matchOverrideArchive,
 		CustomBuild:       buildOverrideArchive,
 		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+		ID:          spec.ID + "-tslpatcher-tool",
+		Name:        "TSLPatcher",
+		Kind:        "external-patcher",
+		Required:    true,
+		ModTypes:    []string{tslPatcherPatchType},
+		Message:     "TSLPatcher is required to apply enabled KOTOR patcher mods.",
+		OKMessage:   "TSLPatcher is staged in DMM-owned storage.",
+		InstallHint: "Install a TSLPatcher archive or a patcher mod that includes TSLPatcher.exe. DMM will stage it under DMM/TSLPatcher and open it after deployment.",
+		Check:       checkTSLPatcherTool,
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 spec.ID + "-tslpatcher",
+		Name:               "TSLPatcher",
+		ExecutableRelative: filepath.ToSlash(filepath.Join(tslPatcherRoot, tslPatcherExec)),
+		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(tslPatcherRoot, tslPatcherExec))},
+		ModTypes:           []string{tslPatcherPatchType},
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Open KOTOR TSLPatcher after patcher deployment",
+		Handler: didDeployTSLPatcher(spec.ID),
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

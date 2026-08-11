@@ -86,6 +86,77 @@ func buildRootArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	return finishPlan(plan, "KOTOR root installer matched but produced no deployable files")
 }
 
+func buildTSLPatcherToolArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	contentRoot, marker, ok := tslPatcherToolRoot(files)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("KOTOR TSLPatcher tool archive does not contain " + tslPatcherExec)
+	}
+	plan := basePlan(input, "vortex-kotor-tslpatcher-tool", marker, "DMM stages TSLPatcher under DMM/TSLPatcher for extension-managed patcher actions")
+	plan.Metadata = append(plan.Metadata, installplan.ModMetadata{
+		Kind:            "tool",
+		Name:            "TSLPatcher",
+		UniqueID:        "kotor-tslpatcher",
+		SourcePath:      marker,
+		StagingRelative: filepath.ToSlash(filepath.Join(tslPatcherRoot, tslPatcherExec)),
+	})
+	for _, file := range files {
+		if !pathWithinContentRoot(file, contentRoot) || filepath.Ext(file) == "" {
+			continue
+		}
+		rel := stripContentRoot(file, contentRoot)
+		if rel == "" {
+			continue
+		}
+		if strings.EqualFold(filepath.Base(rel), tslPatcherExec) {
+			rel = tslPatcherExec
+		}
+		if err := addInstruction(&plan, input, rel, file); err != nil {
+			return installplan.Plan{}, err
+		}
+	}
+	return finishPlan(plan, "KOTOR TSLPatcher tool installer matched but produced no deployable files")
+}
+
+func buildTSLPatcherModArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	contentRoot, marker, ok := tslPatcherModRoot(files)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("KOTOR TSLPatcher mod archive does not contain tslpatchdata")
+	}
+	plan := basePlan(input, "vortex-kotor-tslpatcher-mod", marker, "DMM stages TSLPatcher mod payloads under DMM/TSLPatcher and queues an explicit patcher run after deployment")
+	plan.Warnings = append(plan.Warnings, "TSLPatcher mutates game files outside DMM's symlink deployment model. DMM stages the payload and opens the patcher explicitly so the user can review and apply it.")
+	for _, file := range files {
+		if !pathWithinContentRoot(file, contentRoot) || filepath.Ext(file) == "" {
+			continue
+		}
+		rel := stripContentRoot(file, contentRoot)
+		if rel == "" {
+			continue
+		}
+		if strings.EqualFold(filepath.Base(rel), tslPatcherExec) {
+			rel = tslPatcherExec
+			plan.Metadata = append(plan.Metadata, installplan.ModMetadata{
+				Kind:            "tool",
+				Name:            "TSLPatcher",
+				UniqueID:        "kotor-tslpatcher",
+				SourcePath:      file,
+				StagingRelative: filepath.ToSlash(filepath.Join(tslPatcherRoot, tslPatcherExec)),
+			})
+		}
+		if err := addInstruction(&plan, input, rel, file); err != nil {
+			return installplan.Plan{}, err
+		}
+	}
+	return finishPlan(plan, "KOTOR TSLPatcher mod installer matched but produced no deployable files")
+}
+
 func matchOverrideArchive(root string) bool {
 	files, err := simplearchive.ListFiles(root)
 	return err == nil && len(files) > 0
@@ -165,6 +236,48 @@ func rootDestination(file string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func tslPatcherToolRoot(files []string) (string, string, bool) {
+	for _, file := range files {
+		if !strings.EqualFold(filepath.Base(file), tslPatcherExec) {
+			continue
+		}
+		return filepath.ToSlash(filepath.Dir(file)), file, true
+	}
+	return "", "", false
+}
+
+func tslPatcherModRoot(files []string) (string, string, bool) {
+	for _, file := range files {
+		segments := pathSegments(file)
+		for idx, segment := range segments {
+			if !strings.EqualFold(segment, tslFolder) {
+				continue
+			}
+			if idx == 0 {
+				return ".", file, true
+			}
+			return filepath.ToSlash(filepath.Join(segments[:idx]...)), file, true
+		}
+	}
+	return "", "", false
+}
+
+func pathWithinContentRoot(file, root string) bool {
+	root = filepath.ToSlash(strings.Trim(root, "/"))
+	if root == "" || root == "." {
+		return true
+	}
+	return simplearchive.PathWithinRoot(file, root)
+}
+
+func stripContentRoot(file, root string) string {
+	root = filepath.ToSlash(strings.Trim(root, "/"))
+	if root == "" || root == "." {
+		return filepath.ToSlash(strings.Trim(file, "/"))
+	}
+	return simplearchive.StripRoot(file, root)
 }
 
 func firstFileWithExtension(files []string) string {

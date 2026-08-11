@@ -1,10 +1,8 @@
 package kotor_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/kotor"
@@ -21,7 +19,7 @@ func TestExtensionsRegisterVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "override" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 2 || len(summary.Capabilities.ModTypes) != 2 {
+	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.ModTypes) != 4 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }
@@ -60,16 +58,37 @@ func TestOverrideInstallerCopiesPayloadUnderOverrideRoot(t *testing.T) {
 	assertTarget(t, plan, "override/folder/item.uti")
 }
 
-func TestTSLPatcherArchivesAreBlockedBeforeRootOrOverrideInstallers(t *testing.T) {
+func TestTSLPatcherArchivesStageManagedPatcherPayload(t *testing.T) {
 	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "TSLPatcher.exe"), "exe")
 	writeFile(t, filepath.Join(root, "tslpatchdata", "changes.ini"), "patcher")
 	writeFile(t, filepath.Join(root, "override", "item.uti"), "item")
 
-	_, err := build("32370", root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(strings.ToLower(unsupported.Reason), "tslpatcher") {
-		t.Fatalf("err = %v", err)
+	plan, err := build("32370", root)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if plan.PlannerID != "vortex:kotor:tslpatcher-tool" && plan.PlannerID != "vortex:kotor:tslpatcher-mod" {
+		t.Fatalf("planner = %q", plan.PlannerID)
+	}
+	if plan.ModType != "kotor-tslpatcher-tool" && plan.ModType != "kotor-tslpatcher-patch" {
+		t.Fatalf("mod type = %q", plan.ModType)
+	}
+	assertTarget(t, plan, "DMM/TSLPatcher/TSLPatcher.exe")
+}
+
+func TestTSLPatcherModWithoutBundledExeStagesPatchData(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "wrapped", "tslpatchdata", "changes.ini"), "patcher")
+
+	plan, err := build("32370", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.PlannerID != "vortex:kotor:tslpatcher-mod" || plan.ModType != "kotor-tslpatcher-patch" {
+		t.Fatalf("plan identity = %+v", plan)
+	}
+	assertTarget(t, plan, "DMM/TSLPatcher/tslpatchdata/changes.ini")
 }
 
 func build(appID, root string) (installplan.Plan, error) {
