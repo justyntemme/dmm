@@ -3,6 +3,7 @@ package vortexuisurfaces
 import (
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
@@ -22,5 +23,12 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	}
 	if len(summary.Capabilities.StartHooks) != 0 {
 		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
+	}
+	if len(summary.Capabilities.ExtensionAPIs) != 1 {
+		t.Fatalf("extension APIs = %+v", summary.Capabilities.ExtensionAPIs)
+	}
+	api := summary.Capabilities.ExtensionAPIs[0]
+	if api.ID != "open-directory-action" || api.Status != sdk.CapabilityStatusReady || api.Message == "" {
+		t.Fatalf("open-directory API = %+v", api)
 	}
 }

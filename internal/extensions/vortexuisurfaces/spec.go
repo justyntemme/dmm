@@ -26,6 +26,12 @@ func Register(r sdk.Registrar) {
 	for _, ref := range Sources() {
 		r.RegisterSource(ref)
 	}
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:     "open-directory-action",
+		Name:   "Open source-backed folders and paths",
+		Status: sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's open-directory extension with source-backed extension action targets. Game extensions declare safe game/download/staging/target-root folders or files, the Go backend resolves and validates those paths, and the Decky bridge opens them from the Deck UI.",
+	})
 }
 
 func Sources() []sdk.SourceRef {
