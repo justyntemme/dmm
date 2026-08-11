@@ -26,6 +26,9 @@ func TestExtensionRegistersPillarsCapabilities(t *testing.T) {
 	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.AttributeExtractors[0].Message == "" {
+		t.Fatalf("attribute extractors = %+v", summary.Capabilities.AttributeExtractors)
+	}
 	if !hasSetupFile(summary.Capabilities.GameSetups, configRootID, modConfigFile) {
 		t.Fatalf("setup actions = %+v", summary.Capabilities.GameSetups)
 	}

@@ -108,9 +108,11 @@ func Register(r sdk.Registrar) {
 		Message: "DMM exposes modconfig.json order through generic extension load-order profile controls.",
 	})
 	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
-		ID:     "poe2-manifest-version",
-		Name:   "Pillars II manifest game version range",
-		Target: "mods",
+		ID:      "poe2-manifest-version",
+		Name:    "Pillars II manifest game version range",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Pillars II attribute extractor by parsing manifest.json SupportedGameVersion min/max values during install planning and storing them as mod compatibility metadata.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
