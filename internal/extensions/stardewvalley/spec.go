@@ -83,6 +83,28 @@ func Register(r sdk.Registrar) {
 		RequirementKind:     "mod-dependency",
 		RequirementMessage:  "Recommended Stardew mod dependency is not enabled in this profile.",
 	})
+	r.RegisterAttributeExtractor(sdk.AttributeExtractorSpec{
+		ID:      "stardew-manifest-attribute-extractor",
+		Name:    "Stardew manifest metadata extractor",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's createManifestAttributeExtractor by parsing Stardew manifest.json during install planning and storing SMAPI dependency/version metadata for diagnostics and runtime checks.",
+	})
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "stardew-settings-reducer",
+		Name:    "Stardew settings state",
+		Scope:   VortexGameID,
+		Path:    "settings.SDV",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's settings.SDV reducer through DMM extension settings and profile-scoped settings, including generated config preservation and SMAPI launch-tool state.",
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "stardew-smapi-runtime-test",
+		Name:    "SMAPI runtime configuration",
+		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex Stardew diagnostics through DMM runtime requirements, SMAPI launch-tool checks, and SMAPI.io compatibility events.",
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "smapi",
 		Name:               "SMAPI",

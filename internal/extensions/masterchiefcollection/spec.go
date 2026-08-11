@@ -73,6 +73,13 @@ func Register(r sdk.Registrar) {
 		Trigger: sdk.EventGamemodeActivated,
 		Check:   checkHaloCEMultiplayerMaps,
 	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "gameType",
+		Name:    "Game(s)",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's MCC Game(s) mod-table attribute by extracting Halo MCC modinfo game metadata into installed mod content metadata. DMM renders the resulting source-backed Halo game tags in generic mod details instead of a Vortex desktop table cell.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

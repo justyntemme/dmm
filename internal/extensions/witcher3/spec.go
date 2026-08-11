@@ -126,6 +126,14 @@ func Register(r sdk.Registrar) {
 		Message:           "DMM derives the managed mods.settings subset from profile priority and stores Script Merger local merge output per profile through Witcher extension lifecycle hooks.",
 		UsageInstructions: "Move profile mods up or down to change the generated managed Witcher 3 settings order.",
 	})
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "witcher3-settings-reducer",
+		Name:    "Witcher 3 settings state",
+		Scope:   VortexGameID,
+		Path:    "settings.witcher3",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Witcher 3 settings reducer through DMM profile/load-order state plus extension-managed Script Merger and menu merge artifacts.",
+	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "witcher3-load-order-page",
 		Name:    "Witcher 3 load order page",
