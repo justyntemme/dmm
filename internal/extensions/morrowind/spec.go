@@ -63,8 +63,8 @@ func Register(r sdk.Registrar) {
 		ID:                 "tes3edit",
 		Name:               "TES3Edit",
 		ExecutableRelative: "TES3Edit.exe",
-		Status:             sdk.CapabilityStatusMetadata,
-		Message:            "Vortex exposes TES3Edit as a supported external tool.",
+		Status:             sdk.CapabilityStatusReady,
+		Message:            "Vortex exposes TES3Edit as a supported external tool. DMM exposes the same relative executable through the generic extension-tool runtime.",
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "mw-construction-set",

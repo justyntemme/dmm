@@ -63,7 +63,7 @@ func Register(r sdk.Registrar) {
 		ID:      "darksouls2-root-query-mod-path",
 		Name:    "Dark Souls II root queryModPath metadata",
 		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex declares queryModPath '.' for root deployment. DMM uses an empty target root for executable deployment while keeping metadata validation strict against dot-path query roots.",
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "Vortex declares queryModPath '.' for root deployment. DMM's extension encodes the equivalent game-root deployment with an empty target root, so the dot-path registration itself is not a separate runtime surface.",
 	})
 }
