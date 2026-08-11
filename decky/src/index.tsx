@@ -4786,7 +4786,7 @@ function FreshDeckyModManagerRoute() {
     const running = currentRunningGame();
     setRunningGame(running);
     void reportActiveGame(running, gamesResult.ok ? gamesResult.games : []);
-    return { games: gamesResult.ok ? gamesResult.games : [], running };
+    return { games: gamesResult.ok ? gamesResult.games : [], gamesOK: gamesResult.ok, running };
   }
 
   async function reportActiveGame(running: RunningGame | null, loadedGames: ManagedGame[]) {
@@ -4914,9 +4914,15 @@ function FreshDeckyModManagerRoute() {
       const currentSelected = selectedGameIDRef.current;
       const currentSuppressRunningAutoOpen = suppressRunningAutoOpenRef.current;
       const nextSelected = currentSelected || initialReturnContext?.appID || (!currentSuppressRunningAutoOpen && runningManageReady ? runningManageReady.app_id : "");
-      if (nextSelected && result.games.some((game) => game.app_id === nextSelected)) {
+      if (!result.gamesOK && currentSelected) {
+        await logFrontendEvent("fresh refresh preserved selected game after base load failure", { app_id: currentSelected });
+        await loadSelectedGameState(currentSelected);
+      } else if (nextSelected && result.games.some((game) => game.app_id === nextSelected)) {
         setSelectedGameID(nextSelected);
         await loadSelectedGameState(nextSelected);
+      } else if (currentSelected && result.games.length === 0) {
+        await logFrontendEvent("fresh refresh preserved selected game because game list was empty", { app_id: currentSelected });
+        await loadSelectedGameState(currentSelected);
       } else {
         await loadSelectedGameState("");
       }
