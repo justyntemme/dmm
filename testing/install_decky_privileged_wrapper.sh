@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WRAPPER_VERSION="2"
+WRAPPER_VERSION="3"
 PLUGIN_NAME="${PLUGIN_NAME:-decky-mod-manager}"
 TESTING_DIR="${TESTING_DIR:-/home/deck/.testing}"
 PRIVILEGED_BIN="${PRIVILEGED_BIN:-/opt/decky-mod-manager-testing/bin}"

@@ -23,14 +23,18 @@ Environment overrides:
   DECK_PLUGIN_DIR=/home/deck/homebrew/plugins/decky-mod-manager
   BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
   DMM_RESTART_DECKY_AFTER_INSTALL=1
+  DMM_STOP_BACKEND_FOR_INSTALL=0
   DMM_REBOOT_AFTER_INSTALL=1
 
 The install requires sudo because Decky plugin files are root-owned and the
 default test path restarts Decky Loader after package verification so the
 plugin backend autostarts from the freshly installed main.py. Set
-DMM_RESTART_DECKY_AFTER_INSTALL=0 when you only want to replace files. Set
-DMM_REBOOT_AFTER_INSTALL=1 only when Gaming Mode has stale Decky frontend state
-and an explicit reboot is worth the interruption.
+DMM_RESTART_DECKY_AFTER_INSTALL=0 when you only want to replace files.
+DMM_STOP_BACKEND_FOR_INSTALL=1 only when the backend binary itself must be
+stopped before replacement. By default the Go backend stays up across Decky
+plugin reloads so phone/Deck workflows do not lose the server during testing.
+Set DMM_REBOOT_AFTER_INSTALL=1 only when Gaming Mode has stale Decky frontend
+state and an explicit reboot is worth the interruption.
 USAGE
 }
 
@@ -91,9 +95,13 @@ if [[ "${DMM_RESTART_DECKY_AFTER_INSTALL:-1}" == "1" || "${DMM_REBOOT_AFTER_INST
 	sleep 1
 	sudo pkill -KILL -f "/home/deck/homebrew/services/PluginLoader" 2>/dev/null || true
 fi
-echo "==> Stopping existing ${PLUGIN_NAME} backend/plugin processes"
-sudo pkill -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" 2>/dev/null || true
-sudo pkill -f "^Decky Mod Manager \\(${DECK_PLUGIN_DIR}/main.py\\)$" 2>/dev/null || true
+if [[ "${DMM_STOP_BACKEND_FOR_INSTALL:-0}" == "1" ]]; then
+	echo "==> Stopping existing ${PLUGIN_NAME} backend/plugin processes"
+	sudo pkill -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" 2>/dev/null || true
+	sudo pkill -f "^Decky Mod Manager \\(${DECK_PLUGIN_DIR}/main.py\\)$" 2>/dev/null || true
+else
+	echo "==> Preserving existing ${PLUGIN_NAME} backend process"
+fi
 
 if [[ -d "${DECK_PLUGIN_DIR}" ]]; then
   echo "==> Backing up current plugin to ${BACKUP_DIR}"

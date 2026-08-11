@@ -43,8 +43,7 @@ class Plugin:
         asyncio.create_task(self._autostart_server())
 
     async def _unload(self):
-        self._log("plugin unloading")
-        await self.stop_server()
+        self._log("plugin unloading; leaving backend running")
 
     async def _autostart_server(self):
         try:
