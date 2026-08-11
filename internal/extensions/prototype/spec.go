@@ -108,7 +108,15 @@ func Register(r sdk.Registrar) {
 		Name:               "TexMod",
 		ExecutableRelative: filepath.ToSlash(filepath.Join(texmodRoot, texmodExec)),
 		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(texmodRoot, texmodExec))},
+		DefaultPrimary:     true,
 		ModTypes:           []string{tpfModType},
+		DynamicInputs: []sdk.LaunchToolDynamicInputSpec{{
+			ID:             "enabled-tpf-packages",
+			Name:           "Enabled TexMod package list",
+			Kind:           sdk.LaunchToolDynamicInputEnabledModFileList,
+			SourceModTypes: []string{tpfModType},
+			OutputRelative: filepath.ToSlash(filepath.Join(texmodRoot, "profile-packages.txt")),
+		}},
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "did-deploy",

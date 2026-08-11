@@ -22,6 +22,13 @@ func TestExtensionRegistersASIInstaller(t *testing.T) {
 	if len(extension.InstallPlan.Installers) != 3 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
 	}
+	if len(extension.LaunchTools) != 1 || !extension.LaunchTools[0].DefaultPrimary || len(extension.LaunchTools[0].DynamicInputs) != 1 {
+		t.Fatalf("launch tools = %+v", extension.LaunchTools)
+	}
+	input := extension.LaunchTools[0].DynamicInputs[0]
+	if input.Kind != sdk.LaunchToolDynamicInputEnabledModFileList || input.OutputRelative != "DMM/TexMod/profile-packages.txt" {
+		t.Fatalf("dynamic input = %+v", input)
+	}
 	coverage, _ := gameext.ExtensionCoverage(extension)
 	if coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", coverage)

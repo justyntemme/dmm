@@ -15,7 +15,7 @@ func didDeployTexMod(ctx context.Context, input sdk.EventHandlerInput) (sdk.Even
 		return sdk.EventHandlerResult{}, nil
 	}
 	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
-		Message:     "Prototype 2 TexMod packages were deployed. Open TexMod and select the enabled .tpf files from DMM/TexMod/Packages before launching the game through TexMod.",
+		Message:     "Prototype 2 TexMod packages were deployed. DMM generated DMM/TexMod/profile-packages.txt from the enabled profile; open TexMod and select those .tpf files before launching the game through TexMod.",
 		ActionKind:  sdk.EventNoticeActionRunLaunchTool,
 		ToolID:      "prototype2-texmod",
 		ToolName:    "TexMod",
