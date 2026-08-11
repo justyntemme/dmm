@@ -50,6 +50,7 @@ func MustCompileExtension(spec sdk.Extension) Extension {
 func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.SteamAppIDs = appendClean(r.extension.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.NexusDomains = appendClean(r.extension.NexusDomains, spec.NexusDomains...)
+	r.extension.CatalogSources = appendCatalogSources(r.extension.CatalogSources, spec.CatalogSources...)
 	r.extension.VortexStub = spec.VortexStub
 	r.extension.AllowNoSteamAppID = spec.AllowNoSteamAppID
 	r.extension.SupportModID = strings.TrimSpace(spec.SupportModID)
@@ -64,6 +65,7 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 		StopPatterns:        append([]string(nil), spec.StopPatterns...),
 		CompatibleDownloads: append([]string(nil), spec.CompatibleDownloads...),
 		Environment:         copyRegistrationMap(spec.Environment),
+		CatalogSources:      appendCatalogSources(nil, spec.CatalogSources...),
 	}
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
 	r.extension.InstallPlan.QueryModPath = strings.TrimSpace(spec.QueryModPath)
@@ -1795,6 +1797,27 @@ func validateGameRegistrationMetadata(metadata sdk.GameRegistrationMetadata) []e
 			errs = append(errs, errors.New("game compatible download domain must not contain control line breaks"))
 		}
 	}
+	for _, source := range metadata.CatalogSources {
+		catalogID := strings.TrimSpace(source.Catalog)
+		if catalogID == "" {
+			errs = append(errs, errors.New("game catalog source catalog is required"))
+		} else {
+			errs = append(errs, validateSimpleID("game catalog source", catalogID)...)
+		}
+		if strings.TrimSpace(source.GameID) == "" {
+			errs = append(errs, errors.New("game catalog source game id is required"))
+		}
+		for label, value := range map[string]string{"game id": source.GameID, "domain": source.Domain} {
+			if strings.ContainsAny(value, "\x00\r\n") {
+				errs = append(errs, errors.New("game catalog source "+label+" must not contain control line breaks"))
+			}
+		}
+		if rawURL := strings.TrimSpace(source.URL); rawURL != "" {
+			if _, err := url.ParseRequestURI(rawURL); err != nil {
+				errs = append(errs, errors.New("game catalog source url: "+err.Error()))
+			}
+		}
+	}
 	errs = append(errs, validateStringMap("game environment", metadata.Environment)...)
 	return errs
 }
@@ -2946,6 +2969,32 @@ func appendClean(values []string, next ...string) []string {
 		}
 		values = append(values, value)
 		seen[value] = struct{}{}
+	}
+	return values
+}
+
+func appendCatalogSources(values []sdk.GameCatalogSourceSpec, next ...sdk.GameCatalogSourceSpec) []sdk.GameCatalogSourceSpec {
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		key := strings.ToLower(strings.TrimSpace(value.Catalog)) + "\x00" + strings.TrimSpace(value.GameID)
+		if key != "\x00" {
+			seen[key] = struct{}{}
+		}
+	}
+	for _, value := range next {
+		value.Catalog = strings.ToLower(strings.TrimSpace(value.Catalog))
+		value.GameID = strings.TrimSpace(value.GameID)
+		value.Domain = strings.TrimSpace(value.Domain)
+		value.URL = strings.TrimSpace(value.URL)
+		if value.Catalog == "" || value.GameID == "" {
+			continue
+		}
+		key := value.Catalog + "\x00" + value.GameID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		values = append(values, value)
+		seen[key] = struct{}{}
 	}
 	return values
 }

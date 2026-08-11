@@ -91,7 +91,15 @@
     plugin_activation: boolean;
     load_order: boolean;
     game_versions: boolean;
+    catalog_sources?: CatalogSourceHint[];
     sources?: SourceRef[];
+  };
+
+  type CatalogSourceHint = {
+    catalog: string;
+    game_id: string;
+    domain?: string;
+    url?: string;
   };
 
   type SourceRef = {
@@ -3172,6 +3180,12 @@
     return true;
   }
 
+  function selectedCatalogGameID(sourceID: string) {
+    sourceID = sourceID.trim().toLowerCase().replaceAll("-", "_");
+    const hint = selectedGame?.extension?.catalog_sources?.find((item) => item.catalog?.trim().toLowerCase().replaceAll("-", "_") === sourceID);
+    return hint?.game_id?.trim() || "";
+  }
+
   function selectedExtensionSourceNote() {
     const source = selectedGame?.extension?.sources?.find((item) => (item.name || item.url));
     if (!source) return "";
@@ -3323,7 +3337,7 @@
     try {
       const params = new URLSearchParams({
         q: nexusSearchQuery,
-        domain: source.id === "nexus" ? selectedNexusDomain() : selectedGame.app_id,
+        domain: source.id === "nexus" ? selectedNexusDomain() : selectedCatalogGameID(source.id),
         sort: nextSort,
         time_window: nextWindow,
         count: "20",

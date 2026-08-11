@@ -912,6 +912,7 @@ type gameExtensionInfo struct {
 	LoadOrder           bool                         `json:"load_order"`
 	GameVersions        bool                         `json:"game_versions"`
 	GameInfoProviders   bool                         `json:"game_info_providers"`
+	CatalogSources      []sdk.GameCatalogSourceSpec  `json:"catalog_sources,omitempty"`
 	Sources             []gameext.SourceRef          `json:"sources,omitempty"`
 }
 
@@ -4289,9 +4290,11 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Status:     readyIfRegistered(registered, "gamebanana"),
 			Configured: registered["gamebanana"],
 			URLImport:  registered["gamebanana"],
+			Search:     searchable["gamebanana"],
+			Browse:     searchable["gamebanana"],
 			Download:   registered["gamebanana"],
 			SourceTag:  "gamebanana",
-			Notes:      []string{"Mod, tool, sound, and spray page URLs resolve through GameBanana's verified Core/Item/Data API. Bare dl/mmdl URLs fall back to selected-game direct archive import."},
+			Notes:      []string{"Mod, tool, sound, and spray page URLs resolve through GameBanana's verified Core/Item/Data API. Browse/search uses extension-provided GameBanana game IDs. Bare dl/mmdl URLs fall back to selected-game direct archive import."},
 		},
 		{
 			ID:         "direct",
@@ -4786,6 +4789,10 @@ func (s *Server) handleGameCatalogMods(w http.ResponseWriter, r *http.Request) {
 	offset := parseBoundedQueryInt(r.URL.Query().Get("offset"), 0, 0, 5000)
 	vortexOnly := parseQueryBoolDefault(r.URL.Query().Get("vortex_only"), true)
 	gameDomain := strings.TrimSpace(r.URL.Query().Get("domain"))
+	sourceHints := catalogSourceHintsForApp(s.games, appID, catalogID)
+	if gameDomain == "" && len(sourceHints) > 0 {
+		gameDomain = sourceHints[0]
+	}
 
 	if catalogID == "nexus" {
 		s.handleGameNexusMods(w, r)
@@ -4821,14 +4828,15 @@ func (s *Server) handleGameCatalogMods(w http.ResponseWriter, r *http.Request) {
 		"vortex_only", vortexOnly,
 	)
 	result, err := searcher.SearchMods(r.Context(), catalog.SearchRequest{
-		SteamAppID: appID,
-		GameDomain: gameDomain,
-		Query:      query,
-		Sort:       sortValue,
-		TimeWindow: timeWindow,
-		Count:      count,
-		Offset:     offset,
-		VortexOnly: vortexOnly,
+		SteamAppID:  appID,
+		GameDomain:  gameDomain,
+		Query:       query,
+		Sort:        sortValue,
+		TimeWindow:  timeWindow,
+		Count:       count,
+		Offset:      offset,
+		VortexOnly:  vortexOnly,
+		SourceHints: sourceHints,
 	})
 	if err != nil {
 		s.logger.Warn("catalog mod search failed", "app_id", appID, "catalog", catalogID, "error", err)
@@ -5788,8 +5796,27 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		LoadOrder:           len(extension.LoadOrders) > 0 || len(extension.Merges) > 0,
 		GameVersions:        len(extension.GameVersionProviders) > 0,
 		GameInfoProviders:   len(extension.GameInfoProviders) > 0,
+		CatalogSources:      appendCatalogSourceSpecs(nil, extension.CatalogSources...),
 		Sources:             append([]gameext.SourceRef(nil), extension.Sources...),
 	}
+}
+
+func catalogSourceHintsForApp(registry games.Registry, appID, catalogID string) []string {
+	extension, ok := registry.ExtensionForSteamApp(appID)
+	if !ok {
+		return nil
+	}
+	catalogID = normalizeCatalogID(catalogID)
+	hints := make([]string, 0, len(extension.CatalogSources))
+	for _, source := range extension.CatalogSources {
+		if normalizeCatalogID(source.Catalog) != catalogID {
+			continue
+		}
+		if gameID := strings.TrimSpace(source.GameID); gameID != "" {
+			hints = append(hints, gameID)
+		}
+	}
+	return hints
 }
 
 func (s *Server) annotateExtensionKnownExternalMarkers(games []steam.Game) {
@@ -9261,6 +9288,23 @@ func normalizeCatalogID(value string) string {
 	default:
 		return out
 	}
+}
+
+func appendCatalogSourceSpecs(values []sdk.GameCatalogSourceSpec, next ...sdk.GameCatalogSourceSpec) []sdk.GameCatalogSourceSpec {
+	for _, source := range next {
+		catalogID := normalizeCatalogID(source.Catalog)
+		gameID := strings.TrimSpace(source.GameID)
+		if catalogID == "" || gameID == "" {
+			continue
+		}
+		values = append(values, sdk.GameCatalogSourceSpec{
+			Catalog: catalogID,
+			GameID:  gameID,
+			Domain:  strings.TrimSpace(source.Domain),
+			URL:     strings.TrimSpace(source.URL),
+		})
+	}
+	return values
 }
 
 func catalogUpdateMetadataComplete(mod storage.InstalledMod) bool {

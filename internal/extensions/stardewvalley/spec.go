@@ -43,6 +43,11 @@ func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  []string{SteamAppID},
 		NexusDomains: []string{VortexGameID},
+		CatalogSources: []sdk.GameCatalogSourceSpec{{
+			Catalog: "gamebanana",
+			GameID:  "5937",
+			URL:     "https://gamebanana.com/games/5937",
+		}},
 		VortexGameID: VortexGameID,
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,

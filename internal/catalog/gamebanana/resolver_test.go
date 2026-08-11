@@ -80,6 +80,29 @@ func TestResolveFileUsesStructuredSourceMetadata(t *testing.T) {
 	}
 }
 
+func TestSearchModsUsesGameBananaListAndItemData(t *testing.T) {
+	api := newGameBananaTestAPI(t)
+	result, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).SearchMods(context.Background(), catalog.SearchRequest{
+		GameDomain: "5937",
+		Query:      "custom",
+		Sort:       "updated",
+		Count:      10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != 1 || len(result.Mods) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	mod := result.Mods[0]
+	if mod.Catalog != "gamebanana" || mod.SourceTag != "gamebanana" || mod.ModID != "626069" || mod.Name != "Custom Controls API" || !mod.SupportsVortex {
+		t.Fatalf("mod = %+v", mod)
+	}
+	if mod.URL != "https://gamebanana.com/mods/626069" || mod.Downloads != 15 || mod.Version != "0.0.2" {
+		t.Fatalf("metadata = %+v", mod)
+	}
+}
+
 func TestResolveURLUsesDownloadPagePath(t *testing.T) {
 	api := newGameBananaTestAPI(t)
 	resolved, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
@@ -190,6 +213,14 @@ func newGameBananaTestAPI(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/Core/List/Updated" {
+			query := r.URL.Query()
+			if query.Get("itemtype") != "Mod" || query.Get("gameid") != "5937" || query.Get("page") != "1" {
+				t.Fatalf("list query = %s", r.URL.RawQuery)
+			}
+			writeGameBananaJSON(t, w, [][]any{{"Mod", float64(626069)}})
+			return
+		}
 		if r.URL.Path != "/Core/Item/Data" {
 			http.NotFound(w, r)
 			return
@@ -210,16 +241,20 @@ func newGameBananaTestAPI(t *testing.T) *httptest.Server {
 			GameName:    "Friday Night Funkin'",
 			Files: map[string]fileRecord{
 				"1535874": {
-					ID:          "1535874",
-					FileName:    "customcontrolsapi-v001-07x.zip",
-					DateAdded:   1760124186,
-					DownloadURL: "https://gamebanana.com/dl/1535874",
+					ID:            "1535874",
+					FileName:      "customcontrolsapi-v001-07x.zip",
+					DateAdded:     1760124186,
+					DownloadCount: 5,
+					DownloadURL:   "https://gamebanana.com/dl/1535874",
+					Version:       "0.0.1",
 				},
 				"1605644": {
-					ID:          "1605644",
-					FileName:    "customcontrolsapi-v002-08x.zip",
-					DateAdded:   1768783607,
-					DownloadURL: "https://gamebanana.com/dl/1605644",
+					ID:            "1605644",
+					FileName:      "customcontrolsapi-v002-08x.zip",
+					DateAdded:     1768783607,
+					DownloadCount: 10,
+					DownloadURL:   "https://gamebanana.com/dl/1605644",
+					Version:       "0.0.2",
 				},
 			},
 		})

@@ -65,6 +65,78 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	return r.resolveDownload(ctx, itemURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
+func (r Resolver) SearchMods(ctx context.Context, req catalog.SearchRequest) (catalog.SearchResponse, error) {
+	gameID := strings.TrimSpace(req.GameDomain)
+	if gameID == "" && len(req.SourceHints) > 0 {
+		gameID = strings.TrimSpace(req.SourceHints[0])
+	}
+	if gameID == "" {
+		return catalog.SearchResponse{}, errors.New("GameBanana browse/search requires an extension-provided GameBanana game id")
+	}
+	if _, err := strconv.ParseInt(gameID, 10, 64); err != nil {
+		return catalog.SearchResponse{}, errors.New("GameBanana game id must be numeric")
+	}
+	count := req.Count
+	if count <= 0 {
+		count = 20
+	}
+	if count > 30 {
+		count = 30
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	page := offset/10 + 1
+	var ids [][]any
+	params := map[string]string{
+		"itemtype":    "Mod",
+		"gameid":      gameID,
+		"page":        fmt.Sprintf("%d", page),
+		"return_keys": "true",
+		"format":      "json_min",
+	}
+	if err := r.getJSON(ctx, "/Core/List/"+gameBananaListMode(req.Sort), params, &ids); err != nil {
+		return catalog.SearchResponse{}, err
+	}
+	query := strings.ToLower(strings.TrimSpace(req.Query))
+	results := make([]catalog.SearchResult, 0, count)
+	skipped := offset % 10
+	for _, pair := range ids {
+		if skipped > 0 {
+			skipped--
+			continue
+		}
+		if len(results) >= count {
+			break
+		}
+		ref, ok := itemRefFromListPair(pair)
+		if !ok {
+			continue
+		}
+		item, err := r.resolveItem(ctx, ref)
+		if err != nil {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(item.Name+" "+item.GameName), query) {
+			continue
+		}
+		downloads, latestVersion, updatedAt := gameBananaItemSummary(item.Files)
+		results = append(results, catalog.SearchResult{
+			Catalog:        "gamebanana",
+			SourceTag:      "gamebanana",
+			ModID:          ref.ItemID,
+			Name:           strings.TrimSpace(item.Name),
+			Version:        latestVersion,
+			Downloads:      downloads,
+			UpdatedAt:      updatedAt,
+			SupportsVortex: true,
+			URL:            itemURL(ref),
+		})
+	}
+	return catalog.SearchResponse{TotalCount: len(ids), Mods: results}, nil
+}
+
 func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID string, ref itemRef) (catalog.ResolvedDownload, error) {
 	if !steamAppIDPattern.MatchString(steamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("GameBanana URLs must be added from a selected Steam game")
@@ -272,6 +344,61 @@ func titleCaseASCII(value string) string {
 		return ""
 	}
 	return strings.ToUpper(value[:1]) + value[1:]
+}
+
+func gameBananaListMode(sortValue string) string {
+	switch strings.ToLower(strings.TrimSpace(sortValue)) {
+	case "downloads", "popular", "endorsements":
+		return "Popular"
+	case "updated":
+		return "Updated"
+	default:
+		return "New"
+	}
+}
+
+func itemRefFromListPair(pair []any) (itemRef, bool) {
+	if len(pair) < 2 {
+		return itemRef{}, false
+	}
+	itemType, ok := pair[0].(string)
+	if !ok {
+		return itemRef{}, false
+	}
+	var id string
+	switch value := pair[1].(type) {
+	case float64:
+		id = strconv.FormatInt(int64(value), 10)
+	case string:
+		id = strings.TrimSpace(value)
+	default:
+		return itemRef{}, false
+	}
+	ref, err := validateRef(itemRef{ItemType: itemType, ItemID: id})
+	return ref, err == nil
+}
+
+func gameBananaItemSummary(files map[string]fileRecord) (int64, string, string) {
+	ordered := make([]fileRecord, 0, len(files))
+	for _, file := range files {
+		ordered = append(ordered, file)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].DateAdded > ordered[j].DateAdded
+	})
+	var downloads int64
+	for _, file := range ordered {
+		downloads += file.DownloadCount
+	}
+	if len(ordered) == 0 {
+		return downloads, "", ""
+	}
+	latest := ordered[0]
+	updatedAt := ""
+	if latest.DateAdded > 0 {
+		updatedAt = time.Unix(latest.DateAdded, 0).UTC().Format(time.RFC3339)
+	}
+	return downloads, strings.TrimSpace(latest.Version), updatedAt
 }
 
 func supportedItemTypes() map[string]bool {

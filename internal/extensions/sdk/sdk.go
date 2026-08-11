@@ -94,6 +94,7 @@ type Registrar interface {
 type GameRegistration struct {
 	SteamAppIDs         []string
 	NexusDomains        []string
+	CatalogSources      []GameCatalogSourceSpec
 	VortexGameID        string
 	VortexStub          bool
 	AllowNoSteamAppID   bool
@@ -123,6 +124,14 @@ type GameRegistrationMetadata struct {
 	StopPatterns        []string
 	CompatibleDownloads []string
 	Environment         map[string]string
+	CatalogSources      []GameCatalogSourceSpec
+}
+
+type GameCatalogSourceSpec struct {
+	Catalog string `json:"catalog"`
+	GameID  string `json:"game_id"`
+	Domain  string `json:"domain,omitempty"`
+	URL     string `json:"url,omitempty"`
 }
 
 type GameExecutableVariantSpec struct {
