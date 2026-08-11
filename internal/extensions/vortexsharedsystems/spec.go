@@ -111,7 +111,13 @@ func registerDependencyManager(r sdk.Registrar) {
 	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "dependency-connector", Name: "Dependency connector dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: dependencyDialogMessage})
 	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "dependency-editor", Name: "Dependency editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: dependencyDialogMessage})
 	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "conflict-editor", Name: "Conflict editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: conflictDialogMessage})
-	r.RegisterExtensionDialog(blockedDialog("dependency-cycle-graph", "Dependency cycle graph dialog", "dependencies"))
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "dependency-cycle-graph",
+		Name:    "Dependency cycle graph dialog",
+		Scope:   "dependencies",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Verified non-applicable to DMM-created state: Vortex opens this graph only after cyclic mod rules have been persisted. DMM rejects cyclic before/after profile rules when they are saved, so the user resolves the invalid edit before it can become profile state. Imported Vortex environments may need a post-MVP repair wizard.",
+	})
 	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "file-override-editor", Name: "File override editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: conflictDialogMessage + " DMM maps Vortex's file-override modal to file-winner selection routes and advanced conflict review UI."})
 	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
 		ID:       "dependency-mod-name-wrapper",

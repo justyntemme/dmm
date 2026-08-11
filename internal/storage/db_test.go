@@ -1064,10 +1064,7 @@ func TestProfileModRulesRejectCycles(t *testing.T) {
 	if _, err := db.ReplaceProfileModRules(context.Background(), profileID, []ProfileModRule{
 		{SourceInstalledModID: first.ID, ReferenceInstalledModID: second.ID, Type: "before"},
 		{SourceInstalledModID: second.ID, ReferenceInstalledModID: first.ID, Type: "before"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ApplyProfileModRules(context.Background(), profileID); err == nil {
+	}); err == nil {
 		t.Fatal("expected cycle error")
 	}
 }

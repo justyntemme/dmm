@@ -23,7 +23,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "dependency-editor")
 	assertReadyWithMessage(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "conflict-editor")
 	assertReadyWithMessage(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "file-override-editor")
-	assertStatusWithMessage(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "dependency-cycle-graph", sdk.CapabilityStatusBlocked)
+	assertReadyWithMessage(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "dependency-cycle-graph")
 	assertReadyWithMessage(t, "control wrapper", summary.Capabilities.ExtensionControlWrappers, "dependency-mod-name-wrapper")
 	assertReadyWithMessage(t, "extension setting", summary.Capabilities.ExtensionSettings, "dependency-workarounds")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-gamemode")

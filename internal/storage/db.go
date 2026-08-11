@@ -1655,11 +1655,24 @@ func (db *DB) ReplaceProfileModRules(ctx context.Context, profileID int64, rules
 	if err := tx.QueryRowContext(ctx, `SELECT game_id FROM profiles WHERE id = ?`, profileID).Scan(&gameID); err != nil {
 		return nil, err
 	}
+	var normalized []ProfileModRule
+	for _, rule := range rules {
+		rule.Type = strings.TrimSpace(rule.Type)
+		rule.Version = strings.TrimSpace(rule.Version)
+		normalized = append(normalized, rule)
+	}
+	modsForCycleCheck, err := profileModsForRuleValidation(ctx, tx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := SortModsByRules(modsForCycleCheck, normalized); err != nil {
+		return nil, err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM profile_mod_rules WHERE profile_id = ?`, profileID); err != nil {
 		return nil, err
 	}
-	for _, rule := range rules {
-		ruleType := strings.TrimSpace(rule.Type)
+	for _, rule := range normalized {
+		ruleType := rule.Type
 		if ruleType != "before" && ruleType != "after" && ruleType != "conflicts" {
 			return nil, errors.New("profile mod rule type must be before, after, or conflicts")
 		}
@@ -1688,7 +1701,7 @@ WHERE im.id = ? AND m.game_id = ?
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO profile_mod_rules (profile_id, source_installed_mod_id, reference_installed_mod_id, rule_type, version, updated_at)
 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-`, profileID, rule.SourceInstalledModID, rule.ReferenceInstalledModID, ruleType, strings.TrimSpace(rule.Version)); err != nil {
+`, profileID, rule.SourceInstalledModID, rule.ReferenceInstalledModID, ruleType, rule.Version); err != nil {
 			return nil, err
 		}
 	}
@@ -1696,6 +1709,30 @@ VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		return nil, err
 	}
 	return db.ProfileModRules(ctx, profileID)
+}
+
+func profileModsForRuleValidation(ctx context.Context, tx *sql.Tx, profileID int64) ([]InstalledMod, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT im.id, COALESCE(m.name, ''), COALESCE(pm.priority, 0)
+FROM installed_mods im
+JOIN mod_versions mv ON mv.id = im.mod_version_id
+JOIN mods m ON m.id = mv.mod_id
+JOIN profile_mods pm ON pm.installed_mod_id = im.id
+WHERE pm.profile_id = ?
+`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var mods []InstalledMod
+	for rows.Next() {
+		var mod InstalledMod
+		if err := rows.Scan(&mod.ID, &mod.Name, &mod.Priority); err != nil {
+			return nil, err
+		}
+		mods = append(mods, mod)
+	}
+	return mods, rows.Err()
 }
 
 func (db *DB) ApplyProfileModRules(ctx context.Context, profileID int64) ([]InstalledMod, error) {
