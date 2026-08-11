@@ -93,8 +93,11 @@ func Register(r sdk.Registrar) {
 		Name:        "Code Vein load-order state migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Verified non-applicable: Vortex migrates historical pre-1.0 Code Vein load-order state into its serialized load-order file, then purges the old mods path. DMM has no released pre-MVP Code Vein load-order state and already writes the current prefixed pak folder order through the extension load-order handler.",
+		Commands: []sdk.StateMigrationCommandSpec{
+			{ID: "purge-old-paks", Name: "Purge old Code Vein PAK deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, TargetRelative: pakRoot},
+			{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
+		},
+		Message: "Mirrors the deploy side of Vortex 1.0.0 migration by purging the old pak deployment path and redeploying; DMM's load-order handler writes current profile order directly from DMM state.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

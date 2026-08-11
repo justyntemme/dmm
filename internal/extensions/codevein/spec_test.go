@@ -26,7 +26,7 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
-	if migration := summary.Capabilities.StateMigrations[0]; migration.ID != "codevein-load-order-migration-1.0.0" || migration.Status != sdk.CapabilityStatusNotApplicable || migration.Message == "" {
+	if migration := summary.Capabilities.StateMigrations[0]; migration.ID != "codevein-load-order-migration-1.0.0" || len(migration.Commands) != 2 || migration.Message == "" {
 		t.Fatalf("state migration = %+v", migration)
 	}
 	adoption := summary.Capabilities.ExternalModAdoptions[0]
