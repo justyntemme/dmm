@@ -134,8 +134,8 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 }
 
 func registerStoreMetadata(r sdk.Registrar) {
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Oblivion through GOG. DMM's Steam Deck MVP runtime uses Steam discovery."})
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Oblivion through Xbox and defaults to the English language folder. DMM needs future non-Steam store/language selection before enabling this path."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Message: "Vortex can discover Oblivion through GOG. DMM supports this GOG identity through manual install-path registration; automatic GOG discovery is tracked separately."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Oblivion through Xbox and defaults to the English language folder. DMM supports this Xbox identity through manual install-path registration; automatic Xbox library discovery and launcher integration are tracked separately."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "oblivion-hash-version", Name: "Oblivion.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Oblivion.esm"}}))
 }
 

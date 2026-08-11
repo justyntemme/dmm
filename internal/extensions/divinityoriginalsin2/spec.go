@@ -132,8 +132,7 @@ func registerVariant(r sdk.Registrar, current variant) {
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      current.ID + "-gog-registry",
 		Name:    current.Name + " GOG registry discovery",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Vortex can discover this game from the Windows GOG registry key before falling back to Steam. DMM's Steam Deck MVP does not discover GOG installs yet.",
+		Message: "Vortex can discover this game from the Windows GOG registry key before falling back to Steam. DMM supports this GOG identity through manual install-path registration; automatic GOG registry discovery is tracked separately.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-divinityoriginalsin2 extension source",

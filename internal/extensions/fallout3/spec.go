@@ -166,9 +166,9 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 
 func registerStoreMetadata(r sdk.Registrar) {
 	for _, store := range []sdk.GameStoreSpec{
-		{ID: "gog", Name: "GOG", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Fallout 3 through GOG. DMM's Steam Deck MVP runtime uses Steam discovery."},
-		{ID: "epic", Name: "Epic Games", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Fallout 3 through Epic and defaults to the English language folder. DMM's Steam Deck MVP runtime uses Steam discovery; non-Steam store/language selection is future scope."},
-		{ID: "xbox", Name: "Xbox", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Fallout 3 through Xbox and defaults to the English language folder. DMM's Steam Deck MVP runtime uses Steam discovery; non-Steam store/language selection is future scope."},
+		{ID: "gog", Name: "GOG", Message: "Vortex can discover Fallout 3 through GOG. DMM supports this GOG identity through manual install-path registration; automatic GOG discovery is tracked separately."},
+		{ID: "epic", Name: "Epic Games", Message: "Vortex can discover Fallout 3 through Epic and defaults to the English language folder. DMM supports this Epic identity through manual install-path registration; automatic Epic discovery and language selection are tracked separately."},
+		{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Fallout 3 through Xbox and defaults to the English language folder. DMM supports this Xbox identity through manual install-path registration; automatic Xbox discovery and language selection are tracked separately."},
 	} {
 		r.RegisterGameStore(store)
 	}
