@@ -13,9 +13,11 @@
 ## Current DMM Capability
 
 - DMM declares Steam Workshop coexistence and the standard Workshop action contract for installed/subscribed content.
-- DMM does not declare Nexus domains or archive installers for Command & Conquer Generals Zero Hour.
+- DMM supports narrow local/archive `.big` package installs into the Zero Hour game root.
+- DMM does not declare a Nexus domain for Zero Hour because a verified Nexus automatic-download domain has not been confirmed for this Steam app.
 
 ## Beta Gaps
 
 - Workshop enable/disable, unsubscribe, and order operations need live validation with actual subscribed Workshop content.
-- Local map/mod archive behavior needs representative archive review before DMM manages it.
+- Representative `.big` package installs need live validation in-game.
+- GenLauncher packages, patchers, loose INI/data replacements, and full conversion launch flows remain blocked until source-reviewed extension rules exist.

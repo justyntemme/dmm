@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/commandconquergeneralszerohour"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/cultistsimulator"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dirtrally"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/dwarffortress"
@@ -27,7 +26,6 @@ func TestInstalledWorkshopOnlyExtensionsRegisterNoNexusDomains(t *testing.T) {
 		ext   gameext.Extension
 	}{
 		{name: besiege.ID, appID: besiege.SteamAppID, ext: gameext.MustCompileExtension(besiege.Extension())},
-		{name: commandconquergeneralszerohour.ID, appID: commandconquergeneralszerohour.SteamAppID, ext: gameext.MustCompileExtension(commandconquergeneralszerohour.Extension())},
 		{name: cultistsimulator.ID, appID: cultistsimulator.SteamAppID, ext: gameext.MustCompileExtension(cultistsimulator.Extension())},
 		{name: dirtrally.ID, appID: dirtrally.SteamAppID, ext: gameext.MustCompileExtension(dirtrally.Extension())},
 		{name: dwarffortress.ID, appID: dwarffortress.SteamAppID, ext: gameext.MustCompileExtension(dwarffortress.Extension())},
