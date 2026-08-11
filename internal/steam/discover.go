@@ -17,6 +17,8 @@ type Library struct {
 type Game struct {
 	AppID       string       `json:"app_id"`
 	Name        string       `json:"name"`
+	Store       string       `json:"store,omitempty"`
+	StoreAppID  string       `json:"store_app_id,omitempty"`
 	InstallDir  string       `json:"install_dir"`
 	LibraryPath string       `json:"library_path"`
 	Path        string       `json:"path"`
@@ -70,6 +72,8 @@ func Discover(ctx context.Context) ([]Game, error) {
 			game := Game{
 				AppID:       appID,
 				Name:        values["name"],
+				Store:       "steam",
+				StoreAppID:  appID,
 				InstallDir:  installDir,
 				LibraryPath: lib.Path,
 				Path:        path,
@@ -128,6 +132,8 @@ func DiscoverApp(ctx context.Context, appID string, libraries []Library) (Game, 
 		game := Game{
 			AppID:       appID,
 			Name:        values["name"],
+			Store:       "steam",
+			StoreAppID:  appID,
 			InstallDir:  installDir,
 			LibraryPath: libPath,
 			Path:        filepath.Join(libPath, "steamapps", "common", installDir),

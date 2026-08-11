@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS games (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	steam_app_id TEXT NOT NULL UNIQUE,
 	name TEXT NOT NULL,
+	store TEXT NOT NULL DEFAULT 'steam',
+	store_app_id TEXT NOT NULL DEFAULT '',
 	install_dir TEXT NOT NULL,
 	library_path TEXT NOT NULL,
 	game_path TEXT NOT NULL,

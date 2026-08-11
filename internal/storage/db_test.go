@@ -577,6 +577,9 @@ func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 	if game.Version != "1.0.15" || game.SteamBuildID != "165000" {
 		t.Fatalf("game version/build = %+v", game)
 	}
+	if game.Store != "steam" || game.StoreAppID != "287700" {
+		t.Fatalf("game store identity = %+v", game)
+	}
 }
 
 func TestGameVersionObservationTracksLastSeenVersion(t *testing.T) {
