@@ -1,5 +1,7 @@
 # Decky Mod Manager Guidelines
 
+Top directive: continue development until MVP is reached and Vortex game/plugin extension parity is 100% functional. Do not stop for partial parity, metadata-only inventory, placeholders, status reports, or incomplete runtime surfaces.
+
 These guidelines translate `notes.md` into build decisions. Treat `notes.md` as the raw Q&A record and this file as the working development contract.
 
 ## Guideline 0: Do Not Stop Before MVP And Vortex Plugin Parity
