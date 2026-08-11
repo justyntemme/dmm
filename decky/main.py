@@ -1307,10 +1307,38 @@ class Plugin:
 
     async def dependencies(self):
         return [
-            self._dependency("7-Zip", "7z", "Extracts .7z and many Nexus archive formats."),
-            self._dependency("bsdtar", "bsdtar", "Extracts tar and zip archives."),
-            self._dependency("unzip", "unzip", "Extracts .zip archives."),
-            self._dependency("unrar", "unrar", "Extracts .rar archives when available."),
+            self._dependency(
+                "7-Zip",
+                "7z",
+                "Extracts .7z and many Nexus archive formats.",
+                "p7zip",
+                "sudo pacman -S --needed p7zip",
+                "https://wiki.archlinux.org/title/P7zip",
+            ),
+            self._dependency(
+                "bsdtar",
+                "bsdtar",
+                "Extracts tar and zip archives.",
+                "libarchive",
+                "sudo pacman -S --needed libarchive",
+                "https://man.archlinux.org/man/bsdtar.1",
+            ),
+            self._dependency(
+                "unzip",
+                "unzip",
+                "Extracts .zip archives.",
+                "unzip",
+                "sudo pacman -S --needed unzip",
+                "https://man.archlinux.org/man/unzip.1.en",
+            ),
+            self._dependency(
+                "unrar",
+                "unrar",
+                "Extracts .rar archives when available.",
+                "unrar",
+                "sudo pacman -S --needed unrar",
+                "https://man.archlinux.org/man/unrar.1.en",
+            ),
         ]
 
     async def set_lan_only(self, lan_only):
@@ -1902,7 +1930,7 @@ class Plugin:
             self._log(f"backend json request failed: {method} {path}: {error}")
             return None, error
 
-    def _dependency(self, name, command, description):
+    def _dependency(self, name, command, description, package_name, install_command, docs_url):
         path = shutil.which(command)
         return {
             "name": name,
@@ -1910,6 +1938,10 @@ class Plugin:
             "installed": path is not None,
             "path": path,
             "description": description,
+            "package_name": package_name,
+            "install_command": install_command,
+            "install_hint": f"Install {package_name} from a trusted SteamOS package source if this command is missing.",
+            "docs_url": docs_url,
         }
 
     def _nxm_status(self):

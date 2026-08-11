@@ -263,7 +263,10 @@ type Dependency = {
   installed: boolean;
   path?: string;
   description?: string;
+  package_name?: string;
+  install_command?: string;
   install_hint?: string;
+  docs_url?: string;
 };
 
 type NXMStatus = {
@@ -6611,7 +6614,10 @@ function FreshDeckyModManagerRoute() {
                 </div>
                 <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.command}{dep.path ? ` · ${dep.path}` : ""}</div>
                 {dep.description && <div style={{ color: "#d4d4d8", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.description}</div>}
+                {!dep.installed && dep.package_name && <div style={{ color: "#fde68a", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>Package: {dep.package_name}</div>}
+                {!dep.installed && dep.install_command && <div style={{ color: "#e5e7eb", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.install_command}</div>}
                 {!dep.installed && dep.install_hint && <div style={{ color: "#fbbf24", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.install_hint}</div>}
+                {!dep.installed && dep.docs_url && <div style={{ color: "#93c5fd", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{dep.docs_url}</div>}
               </div>
             ))}
             <FreshActionButton settingsRow onActivate={() => void refreshDebugState()}>Refresh Debug</FreshActionButton>
