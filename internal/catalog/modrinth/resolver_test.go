@@ -81,6 +81,29 @@ func TestResolveURLUsesCDNURLWithoutAPI(t *testing.T) {
 	}
 }
 
+func TestSearchModsUsesSearchEndpoint(t *testing.T) {
+	api := newModrinthTestAPI(t)
+	result, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).SearchMods(context.Background(), catalog.SearchRequest{
+		Query:  "sodium",
+		Sort:   "downloads",
+		Count:  10,
+		Offset: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != 1 || len(result.Mods) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	mod := result.Mods[0]
+	if mod.Catalog != "modrinth" || mod.SourceTag != "modrinth" || mod.ModID != "AABBCCDD" || mod.Name != "Sodium" || !mod.SupportsVortex {
+		t.Fatalf("mod = %+v", mod)
+	}
+	if mod.URL != "https://modrinth.com/mod/sodium" || mod.Downloads != 42 || mod.Endorsements != 7 {
+		t.Fatalf("mod metadata = %+v", mod)
+	}
+}
+
 func TestResolveURLRequiresSelectedSteamGame(t *testing.T) {
 	api := newModrinthTestAPI(t)
 	_, err := (Resolver{APIBaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
@@ -166,6 +189,26 @@ func newModrinthTestAPI(t *testing.T) *httptest.Server {
 					URL:      "https://cdn.modrinth.com/data/AABBCCDD/versions/new-version/sodium-new.jar",
 					Filename: "sodium-new.jar",
 					Primary:  true,
+				}},
+			})
+		case "/search":
+			if r.URL.Query().Get("query") != "sodium" || r.URL.Query().Get("index") != "downloads" || r.URL.Query().Get("limit") != "10" || r.URL.Query().Get("offset") != "20" {
+				http.Error(w, "bad search query", http.StatusBadRequest)
+				return
+			}
+			writeModrinthJSON(t, w, modrinthSearchResponse{
+				TotalHits: 1,
+				Hits: []modrinthSearchHit{{
+					ProjectID:     "AABBCCDD",
+					ProjectType:   "mod",
+					Slug:          "sodium",
+					Title:         "Sodium",
+					Description:   "Renderer",
+					IconURL:       "https://cdn.modrinth.com/icon.png",
+					Downloads:     42,
+					Follows:       7,
+					LatestVersion: "2.0.0",
+					DateModified:  "2024-03-01T00:00:00Z",
 				}},
 			})
 		default:

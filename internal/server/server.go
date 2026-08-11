@@ -452,6 +452,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/open-directory/actions/{jobID}/complete", s.handleCompleteOpenDirectoryAction)
 	mux.HandleFunc("GET /api/games/{appID}/extension-actions", s.handleGameExtensionActions)
 	mux.HandleFunc("POST /api/games/{appID}/extension-actions/{actionID}/run", s.handleQueueExtensionAction)
+	mux.HandleFunc("GET /api/games/{appID}/catalogs/{catalogID}/mods", s.handleGameCatalogMods)
 	mux.HandleFunc("GET /api/games/{appID}/nexus/mods", s.handleGameNexusMods)
 	mux.HandleFunc("GET /api/games/{appID}/info", s.handleGameInfo)
 	mux.HandleFunc("GET /api/games/{appID}/workshop", s.handleGameSteamWorkshop)
@@ -4204,6 +4205,12 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 	for _, remoteCatalog := range resolvers {
 		registered[strings.ToLower(strings.TrimSpace(remoteCatalog.Name()))] = true
 	}
+	searchable := make(map[string]bool, len(resolvers))
+	for _, remoteCatalog := range resolvers {
+		if _, ok := remoteCatalog.(catalog.SearchModCatalog); ok {
+			searchable[strings.ToLower(strings.TrimSpace(remoteCatalog.Name()))] = true
+		}
+	}
 	nexusConfigured := strings.TrimSpace(cfg.Nexus.APIKey) != ""
 	nexusStatus := "needs_credentials"
 	if registered["nexus"] && nexusConfigured {
@@ -4245,9 +4252,11 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Status:     readyIfRegistered(registered, "thunderstore"),
 			Configured: registered["thunderstore"],
 			URLImport:  registered["thunderstore"],
+			Search:     searchable["thunderstore"],
+			Browse:     searchable["thunderstore"],
 			Download:   registered["thunderstore"],
 			SourceTag:  "thunderstore",
-			Notes:      []string{"Package URLs resolve through Thunderstore's verified public API. Search/browse UI is not implemented yet."},
+			Notes:      []string{"Package URLs and browse/search resolve through Thunderstore's verified public package API."},
 		},
 		{
 			ID:         "github",
@@ -4267,9 +4276,11 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Status:     readyIfRegistered(registered, "modrinth"),
 			Configured: registered["modrinth"],
 			URLImport:  registered["modrinth"],
+			Search:     searchable["modrinth"],
+			Browse:     searchable["modrinth"],
 			Download:   registered["modrinth"],
 			SourceTag:  "modrinth",
-			Notes:      []string{"Project, version, and CDN file URLs resolve through Modrinth's verified public REST API. Browse/search UI is not implemented yet."},
+			Notes:      []string{"Project, version, CDN file URLs, and browse/search resolve through Modrinth's verified public REST API."},
 		},
 		{
 			ID:         "gamebanana",
@@ -4755,6 +4766,72 @@ func (s *Server) handleGameNexusMods(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Warn("nexus mod search failed", "app_id", appID, "game_domain", gameDomain, "error", err)
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleGameCatalogMods(w http.ResponseWriter, r *http.Request) {
+	appID := strings.TrimSpace(r.PathValue("appID"))
+	catalogID := normalizeCatalogID(r.PathValue("catalogID"))
+	if appID == "" || catalogID == "" {
+		http.Error(w, "appID and catalogID are required", http.StatusBadRequest)
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	sortValue := strings.TrimSpace(r.URL.Query().Get("sort"))
+	timeWindow := strings.TrimSpace(r.URL.Query().Get("time_window"))
+	count := parseBoundedQueryInt(r.URL.Query().Get("count"), 20, 1, 50)
+	offset := parseBoundedQueryInt(r.URL.Query().Get("offset"), 0, 0, 5000)
+	vortexOnly := parseQueryBoolDefault(r.URL.Query().Get("vortex_only"), true)
+	gameDomain := strings.TrimSpace(r.URL.Query().Get("domain"))
+
+	if catalogID == "nexus" {
+		s.handleGameNexusMods(w, r)
+		return
+	}
+	var searcher catalog.SearchModCatalog
+	for _, resolver := range s.catalogResolvers() {
+		if normalizeCatalogID(resolver.Name()) != catalogID {
+			continue
+		}
+		candidate, ok := resolver.(catalog.SearchModCatalog)
+		if !ok {
+			http.Error(w, catalogDisplayLabel(catalogID)+" does not support browse/search", http.StatusConflict)
+			return
+		}
+		searcher = candidate
+		break
+	}
+	if searcher == nil {
+		http.Error(w, "no catalog resolver is configured for "+catalogDisplayLabel(catalogID), http.StatusNotFound)
+		return
+	}
+	s.logger.Info(
+		"catalog mod search requested",
+		"app_id", appID,
+		"catalog", catalogID,
+		"game_domain", gameDomain,
+		"query_present", query != "",
+		"sort", sortValue,
+		"time_window", timeWindow,
+		"count", count,
+		"offset", offset,
+		"vortex_only", vortexOnly,
+	)
+	result, err := searcher.SearchMods(r.Context(), catalog.SearchRequest{
+		SteamAppID: appID,
+		GameDomain: gameDomain,
+		Query:      query,
+		Sort:       sortValue,
+		TimeWindow: timeWindow,
+		Count:      count,
+		Offset:     offset,
+		VortexOnly: vortexOnly,
+	})
+	if err != nil {
+		s.logger.Warn("catalog mod search failed", "app_id", appID, "catalog", catalogID, "error", err)
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}

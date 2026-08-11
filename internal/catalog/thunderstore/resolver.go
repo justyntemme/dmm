@@ -65,6 +65,59 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	return r.resolveDownload(ctx, packageURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
+func (r Resolver) SearchMods(ctx context.Context, req catalog.SearchRequest) (catalog.SearchResponse, error) {
+	count := req.Count
+	if count <= 0 {
+		count = 20
+	}
+	if count > 50 {
+		count = 50
+	}
+	var body packageListResponse
+	if err := r.getJSON(ctx, "/api/experimental/package/?page_size="+url.QueryEscape(fmt.Sprintf("%d", max(count*3, count))), &body); err != nil {
+		return catalog.SearchResponse{}, err
+	}
+	query := strings.ToLower(strings.TrimSpace(req.Query))
+	results := make([]catalog.SearchResult, 0, count)
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	matched := 0
+	for _, pkg := range body.Results {
+		if !pkgMatchesQuery(pkg, query) {
+			continue
+		}
+		matched++
+		if matched <= offset {
+			continue
+		}
+		if len(results) >= count {
+			continue
+		}
+		version := strings.TrimSpace(pkg.Latest.VersionNumber)
+		modID := strings.TrimSpace(pkg.Namespace) + "/" + strings.TrimSpace(pkg.Name)
+		results = append(results, catalog.SearchResult{
+			Catalog:        "thunderstore",
+			SourceTag:      "thunderstore",
+			ModID:          modID,
+			Name:           firstNonEmpty(pkg.FullName, pkg.Name),
+			Summary:        strings.TrimSpace(pkg.PackageDescription),
+			Version:        version,
+			Downloads:      pkg.TotalDownloads,
+			Endorsements:   pkg.RatingScore,
+			UpdatedAt:      strings.TrimSpace(pkg.DateUpdated),
+			SupportsVortex: true,
+			URL:            firstNonEmpty(pkg.PackageURL, packageURL(packageRef{Community: pkg.Community.Identifier, Namespace: pkg.Namespace, Name: pkg.Name})),
+		})
+	}
+	total := matched
+	if total == 0 && query == "" {
+		total = len(body.Results)
+	}
+	return catalog.SearchResponse{TotalCount: total, Mods: results}, nil
+}
+
 func (r Resolver) resolveDownload(ctx context.Context, sourceURL, steamAppID string, ref packageRef) (catalog.ResolvedDownload, error) {
 	if !steamAppIDPattern.MatchString(steamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("Thunderstore URLs must be added from a selected Steam game")
@@ -149,6 +202,27 @@ type packageResponse struct {
 	Latest packageVersion `json:"latest"`
 }
 
+type packageListResponse struct {
+	Results []packageSummary `json:"results"`
+}
+
+type packageSummary struct {
+	Namespace          string           `json:"namespace"`
+	Name               string           `json:"name"`
+	FullName           string           `json:"full_name"`
+	PackageURL         string           `json:"package_url"`
+	PackageDescription string           `json:"package_description"`
+	DateUpdated        string           `json:"date_updated"`
+	RatingScore        int64            `json:"rating_score"`
+	TotalDownloads     int64            `json:"total_downloads"`
+	Community          packageCommunity `json:"community"`
+	Latest             packageVersion   `json:"latest"`
+}
+
+type packageCommunity struct {
+	Identifier string `json:"identifier"`
+}
+
 type packageVersion struct {
 	Namespace     string `json:"namespace"`
 	Name          string `json:"name"`
@@ -209,6 +283,30 @@ func validateRef(ref packageRef) (packageRef, error) {
 		}
 	}
 	return ref, nil
+}
+
+func pkgMatchesQuery(pkg packageSummary, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+	haystack := strings.ToLower(strings.Join([]string{
+		pkg.Namespace,
+		pkg.Name,
+		pkg.FullName,
+		pkg.PackageDescription,
+		pkg.Community.Identifier,
+	}, " "))
+	return strings.Contains(haystack, query)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (r Resolver) resolveVersion(ctx context.Context, ref packageRef) (packageVersion, error) {

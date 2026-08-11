@@ -84,6 +84,61 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	})
 }
 
+func (r Resolver) SearchMods(ctx context.Context, req catalog.SearchRequest) (catalog.SearchResponse, error) {
+	query := strings.TrimSpace(req.Query)
+	count := req.Count
+	if count <= 0 {
+		count = 20
+	}
+	if count > 50 {
+		count = 50
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	params := map[string]string{
+		"query":  query,
+		"limit":  fmt.Sprintf("%d", count),
+		"offset": fmt.Sprintf("%d", offset),
+		"index":  modrinthSearchIndex(req.Sort, req.TimeWindow),
+	}
+	var body modrinthSearchResponse
+	if err := r.getJSON(ctx, "/search", params, &body); err != nil {
+		return catalog.SearchResponse{}, err
+	}
+	results := make([]catalog.SearchResult, 0, len(body.Hits))
+	for _, hit := range body.Hits {
+		projectID := strings.TrimSpace(hit.ProjectID)
+		if projectID == "" {
+			projectID = strings.TrimSpace(hit.Slug)
+		}
+		if projectID == "" {
+			continue
+		}
+		projectType := strings.TrimSpace(hit.ProjectType)
+		if projectType == "" {
+			projectType = "mod"
+		}
+		pageURL := "https://modrinth.com/" + url.PathEscape(projectType) + "/" + url.PathEscape(firstNonEmpty(hit.Slug, projectID))
+		results = append(results, catalog.SearchResult{
+			Catalog:        "modrinth",
+			SourceTag:      "modrinth",
+			ModID:          projectID,
+			Name:           strings.TrimSpace(hit.Title),
+			Summary:        strings.TrimSpace(hit.Description),
+			Version:        strings.TrimSpace(hit.LatestVersion),
+			ThumbnailURL:   strings.TrimSpace(hit.IconURL),
+			Downloads:      hit.Downloads,
+			Endorsements:   hit.Follows,
+			UpdatedAt:      strings.TrimSpace(hit.DateModified),
+			SupportsVortex: true,
+			URL:            pageURL,
+		})
+	}
+	return catalog.SearchResponse{TotalCount: body.TotalHits, Mods: results}, nil
+}
+
 type modrinthRef struct {
 	Project     string
 	ProjectKind string
@@ -106,6 +161,24 @@ type modrinthFile struct {
 	Filename string `json:"filename"`
 	Primary  bool   `json:"primary"`
 	FileType string `json:"file_type"`
+}
+
+type modrinthSearchResponse struct {
+	Hits      []modrinthSearchHit `json:"hits"`
+	TotalHits int                 `json:"total_hits"`
+}
+
+type modrinthSearchHit struct {
+	ProjectID     string `json:"project_id"`
+	ProjectType   string `json:"project_type"`
+	Slug          string `json:"slug"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	IconURL       string `json:"icon_url"`
+	Downloads     int64  `json:"downloads"`
+	Follows       int64  `json:"follows"`
+	LatestVersion string `json:"latest_version"`
+	DateModified  string `json:"date_modified"`
 }
 
 func parseURL(raw string) (modrinthRef, error) {
@@ -340,6 +413,28 @@ func modrinthPublishedAfter(a, b string) bool {
 		return false
 	}
 	return a > b
+}
+
+func modrinthSearchIndex(sortValue, timeWindow string) string {
+	switch strings.ToLower(strings.TrimSpace(sortValue)) {
+	case "downloads":
+		return "downloads"
+	case "updated":
+		return "updated"
+	case "newest":
+		return "newest"
+	case "popular":
+		if window := strings.ToLower(strings.TrimSpace(timeWindow)); window == "week" || window == "month" || window == "year" {
+			return "follows"
+		}
+		return "follows"
+	case "endorsements":
+		return "follows"
+	case "name", "az", "a-z":
+		return "relevance"
+	default:
+		return "relevance"
+	}
 }
 
 func cleanPathParts(escapedPath string) []string {

@@ -92,6 +92,27 @@ func TestResolveFileUsesStructuredSourceMetadata(t *testing.T) {
 	}
 }
 
+func TestSearchModsFiltersPackageList(t *testing.T) {
+	api := newThunderstoreTestAPI(t)
+	result, err := (Resolver{BaseURL: api.URL, HTTPClient: api.Client()}).SearchMods(context.Background(), catalog.SearchRequest{
+		Query: "bepinex",
+		Count: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != 1 || len(result.Mods) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	mod := result.Mods[0]
+	if mod.Catalog != "thunderstore" || mod.SourceTag != "thunderstore" || mod.ModID != "BepInEx/BepInExPack" || mod.Name != "BepInEx-BepInExPack" || !mod.SupportsVortex {
+		t.Fatalf("mod = %+v", mod)
+	}
+	if mod.URL != "https://thunderstore.io/c/lethal-company/p/BepInEx/BepInExPack/" || mod.Version != "5.4.2100" || mod.Downloads != 1234 {
+		t.Fatalf("mod metadata = %+v", mod)
+	}
+}
+
 func TestResolveURLRequiresSelectedSteamGame(t *testing.T) {
 	api := newThunderstoreTestAPI(t)
 	_, err := (Resolver{BaseURL: api.URL, HTTPClient: api.Client()}).ResolveURL(context.Background(), catalog.ResolveRequest{
@@ -134,6 +155,35 @@ func newThunderstoreTestAPI(t *testing.T) *httptest.Server {
 				VersionNumber: "1.0.2",
 				DownloadURL:   "https://thunderstore.io/package/download/AlexCodesGames/AdditionalContentFramework/1.0.2/",
 				IsActive:      true,
+			})
+		case "/api/experimental/package/":
+			if r.URL.Query().Get("page_size") != "30" {
+				http.Error(w, "bad page size", http.StatusBadRequest)
+				return
+			}
+			writeThunderstoreJSON(t, w, packageListResponse{
+				Results: []packageSummary{
+					{
+						Namespace:          "BepInEx",
+						Name:               "BepInExPack",
+						FullName:           "BepInEx-BepInExPack",
+						PackageURL:         "https://thunderstore.io/c/lethal-company/p/BepInEx/BepInExPack/",
+						PackageDescription: "BepInEx pack",
+						DateUpdated:        "2024-03-01T00:00:00Z",
+						TotalDownloads:     1234,
+						RatingScore:        99,
+						Community:          packageCommunity{Identifier: "lethal-company"},
+						Latest:             packageVersion{VersionNumber: "5.4.2100"},
+					},
+					{
+						Namespace:          "Other",
+						Name:               "Package",
+						FullName:           "Other-Package",
+						PackageDescription: "Not matching",
+						Community:          packageCommunity{Identifier: "risk-of-rain-2"},
+						Latest:             packageVersion{VersionNumber: "1.0.0"},
+					},
+				},
 			})
 		default:
 			http.NotFound(w, r)

@@ -36,6 +36,43 @@ type UpdateModCatalog interface {
 	ResolveFile(ctx context.Context, req UpdateResolveRequest) (ResolvedDownload, error)
 }
 
+type SearchModCatalog interface {
+	RemoteModCatalog
+	SearchMods(ctx context.Context, req SearchRequest) (SearchResponse, error)
+}
+
+type SearchRequest struct {
+	SteamAppID  string
+	GameDomain  string
+	Query       string
+	Sort        string
+	TimeWindow  string
+	Count       int
+	Offset      int
+	VortexOnly  bool
+	SourceHints []string
+}
+
+type SearchResponse struct {
+	TotalCount int            `json:"total_count"`
+	Mods       []SearchResult `json:"mods"`
+}
+
+type SearchResult struct {
+	Catalog        string `json:"catalog"`
+	SourceTag      string `json:"source_tag,omitempty"`
+	ModID          string `json:"mod_id"`
+	Name           string `json:"name"`
+	Summary        string `json:"summary,omitempty"`
+	Version        string `json:"version,omitempty"`
+	ThumbnailURL   string `json:"thumbnail_url,omitempty"`
+	Downloads      int64  `json:"downloads,omitempty"`
+	Endorsements   int64  `json:"endorsements,omitempty"`
+	UpdatedAt      string `json:"updated_at,omitempty"`
+	SupportsVortex bool   `json:"supports_vortex"`
+	URL            string `json:"url"`
+}
+
 type ModFile struct {
 	FileID     int64  `json:"file_id"`
 	Name       string `json:"name"`

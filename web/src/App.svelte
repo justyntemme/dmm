@@ -194,8 +194,10 @@
   type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
   type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 
-  type NexusModResult = {
-    mod_id: number;
+  type CatalogModResult = {
+    catalog?: string;
+    source_tag?: string;
+    mod_id: string | number;
     name: string;
     summary: string;
     version: string;
@@ -240,7 +242,7 @@
 
   type ModUpdateBrowserPrompt = {
     url: string;
-    mod_id: number;
+    mod_id: string | number;
     mod_name: string;
     title: string;
   };
@@ -825,13 +827,13 @@
   let nexusSearchSort: NexusSearchSort = "updated";
   let nexusSearchTimeWindow: NexusTimeWindow = "all";
   let nexusSearchVortexOnly = true;
-  let nexusSearchResults: NexusModResult[] = [];
+  let nexusSearchResults: CatalogModResult[] = [];
   let nexusSearchTotal = 0;
   let nexusSearchBusy = false;
   let nexusSearchError = "";
   let nexusSearchMessage = "";
   let nexusBrowseDomain = "";
-  let busyNexusOpenModID = 0;
+  let busyCatalogOpenModID: string | number | null = null;
   let exploreSourceID = "nexus";
   let localArchiveFile: File | null = null;
   let localArchiveInput: HTMLInputElement | null = null;
@@ -1546,7 +1548,7 @@
     nexusSearchError = "";
     nexusSearchMessage = "";
     nexusBrowseDomain = game.nexus_domains?.[0]?.trim().toLowerCase() ?? "";
-    busyNexusOpenModID = 0;
+    busyCatalogOpenModID = null;
     deckLocalArchiveRoots = [];
     deckLocalArchives = [];
     deckArchiveBrowserOpen = false;
@@ -3146,9 +3148,11 @@
 
   function exploreSourceOptions() {
     if (selectedGameMetadataOnly()) return [];
-    const nexus = catalogs.find((catalog) => catalog.id === "nexus");
-    if (!nexus || !selectedNexusDomain() || nexus.status !== "ready" || (!nexus.search && !nexus.browse)) return [];
-    return [nexus];
+    return catalogs.filter((catalog) => {
+      if (catalog.status !== "ready" || (!catalog.search && !catalog.browse)) return false;
+      if (catalog.id === "nexus") return Boolean(selectedNexusDomain());
+      return catalog.download || catalog.url_import;
+    });
   }
 
   function selectedExploreSource() {
@@ -3163,7 +3167,9 @@
 
   function selectedExploreSourceBrowseReady() {
     const source = selectedExploreSource();
-    return Boolean(source && source.id === "nexus" && selectedNexusDomain() && source.search && source.status === "ready");
+    if (!source || !source.search || source.status !== "ready") return false;
+    if (source.id === "nexus") return Boolean(selectedNexusDomain());
+    return true;
   }
 
   function selectedExtensionSourceNote() {
@@ -3178,10 +3184,26 @@
     return selectedGame.extension.sources?.filter((item) => (item.name || item.url)) ?? [];
   }
 
-  function nexusModURL(mod: NexusModResult) {
+  function nexusModURL(mod: CatalogModResult) {
     if (mod.url) return mod.url;
     const domain = selectedNexusDomain();
     return `https://www.nexusmods.com/${encodeURIComponent(domain)}/mods/${mod.mod_id}`;
+  }
+
+  function catalogResultURL(mod: CatalogModResult) {
+    if (mod.url) return mod.url;
+    const source = selectedExploreSource();
+    if (source?.id === "nexus") return nexusModURL(mod);
+    return "";
+  }
+
+  function catalogResultSource(mod: CatalogModResult) {
+    return mod.source_tag || mod.catalog || selectedExploreSource()?.source_tag || selectedExploreSource()?.id || "unknown";
+  }
+
+  function catalogResultActionLabel(mod: CatalogModResult) {
+    if (catalogResultSource(mod) === "nexus") return "Open on Deck";
+    return "Add Mod";
   }
 
   function nextNexusSort(current: NexusSearchSort): NexusSearchSort {
@@ -3293,24 +3315,29 @@
 
   async function searchNexusMods(nextSort = nexusSearchSort, nextWindow = nexusSearchTimeWindow) {
     if (!selectedGame) return;
+    const source = selectedExploreSource();
+    if (!source) return;
     nexusSearchBusy = true;
     nexusSearchError = "";
     nexusSearchMessage = "";
     try {
       const params = new URLSearchParams({
         q: nexusSearchQuery,
-        domain: selectedNexusDomain(),
+        domain: source.id === "nexus" ? selectedNexusDomain() : selectedGame.app_id,
         sort: nextSort,
         time_window: nextWindow,
         count: "20",
         offset: "0",
         vortex_only: nexusSearchVortexOnly ? "true" : "false"
       });
-      const result = await getJSON<{ mods: NexusModResult[]; total_count: number }>(`/api/games/${selectedGame.app_id}/nexus/mods?${params.toString()}`);
+      const endpoint = source.id === "nexus"
+        ? `/api/games/${selectedGame.app_id}/nexus/mods?${params.toString()}`
+        : `/api/games/${selectedGame.app_id}/catalogs/${encodeURIComponent(source.id)}/mods?${params.toString()}`;
+      const result = await getJSON<{ mods: CatalogModResult[]; total_count: number }>(endpoint);
       nexusSearchResults = result.mods ?? [];
       nexusSearchTotal = result.total_count ?? nexusSearchResults.length;
       if (nexusSearchResults.length === 0) {
-        nexusSearchError = nexusSearchVortexOnly ? "No Vortex-compatible Nexus mods matched this search." : "No Nexus mods matched this search.";
+        nexusSearchError = `No ${source.name} mods matched this search.`;
       }
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
@@ -3345,13 +3372,27 @@
     nexusSearchMessage = "";
   }
 
-  async function openNexusModOnDeck(mod: NexusModResult) {
+  async function openCatalogMod(mod: CatalogModResult) {
     if (!selectedGame) return;
-    const url = nexusModURL(mod);
+    const source = selectedExploreSource();
+    const url = catalogResultURL(mod);
+    if (!source || !url) {
+      nexusSearchError = "This result does not include a provider URL.";
+      return;
+    }
     nexusSearchError = "";
     nexusSearchMessage = "";
-    busyNexusOpenModID = mod.mod_id;
+    busyCatalogOpenModID = mod.mod_id;
     try {
+      if (source.id !== "nexus") {
+        const result = await captureInstallURL(url, selectedInstallProfileID(), `catalog-search-${source.id}`);
+        if (result?.job?.status === "failed") {
+          nexusSearchError = result.job.message || "Unable to add this provider mod.";
+          return;
+        }
+        nexusSearchMessage = result?.download_started ? `${source.name} mod added; downloading archive now.` : result?.job?.message || `${source.name} mod added.`;
+        return;
+      }
       const response = await apiFetch("/api/decky/browser/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3359,7 +3400,7 @@
           url,
           steam_app_id: selectedGame.app_id,
           profile_id: selectedInstallProfileID(),
-          source: "web-nexus-search",
+          source: "web-catalog-search:nexus",
           title: `${mod.name} - Nexus Mods`
         })
       });
@@ -3370,7 +3411,7 @@
     } catch (err) {
       nexusSearchError = err instanceof Error ? err.message : String(err);
     } finally {
-      busyNexusOpenModID = 0;
+      busyCatalogOpenModID = null;
     }
   }
 
@@ -5539,8 +5580,8 @@
                 <details class="nexus-browser" aria-label="Explore mods" open={nexusSearchResults.length > 0 || Boolean(nexusSearchMessage || nexusSearchError)}>
                   <summary class="explore-heading">
                     <div>
-                      <strong>Explore Nexus Mods</strong>
-                      <small>Search Vortex-compatible mods for this game</small>
+                      <strong>Explore Mods</strong>
+                      <small>Search supported mod sources for this game</small>
                     </div>
                     {#if selectedExploreSource()}
                       <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
@@ -5571,15 +5612,19 @@
                       </label>
                     {/if}
                     <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
-                      <input bind:value={nexusSearchQuery} aria-label="Search Nexus mods" placeholder="Search Nexus mods" />
+                      <input bind:value={nexusSearchQuery} aria-label="Search mods" placeholder={`Search ${selectedExploreSource()?.name ?? "mods"}`} />
                       <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
                       <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
                       <button type="button" class="secondary-action compact" on:click={toggleNexusCompatibilityFilter}>{nexusSearchVortexOnly ? "Vortex Only" : "All Mods"}</button>
                       <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
                     </form>
                     {#if nexusSearchResults.length > 0}
-                      <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {nexusSearchVortexOnly ? "Vortex-compatible" : "Nexus"} results.</p>
-                      <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
+                      <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {selectedExploreSource()?.name ?? "source"} results.</p>
+                      {#if selectedExploreSource()?.id === "nexus"}
+                        <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
+                      {:else}
+                        <p class="hint">Add a result to download through DMM's normal install pipeline.</p>
+                      {/if}
                       <div class="nexus-results">
                         {#each nexusSearchResults as mod}
                           <article>
@@ -5587,13 +5632,13 @@
                               <span>
                                 <span class="mod-title-line">
                                   <strong>{mod.name}</strong>
-                                  <span class={`source-pill ${sourceClass("nexus")}`}>{sourceLabel("nexus")}</span>
+                                  <span class={`source-pill ${sourceClass(catalogResultSource(mod))}`}>{sourceLabel(catalogResultSource(mod))}</span>
                                 </span>
                                 {#if mod.summary}<small>{mod.summary}</small>{/if}
                                 <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
                               </span>
-                              <button type="button" on:click={() => openNexusModOnDeck(mod)} disabled={busyNexusOpenModID === mod.mod_id}>
-                                {busyNexusOpenModID === mod.mod_id ? "Opening..." : "Open on Deck"}
+                              <button type="button" on:click={() => openCatalogMod(mod)} disabled={busyCatalogOpenModID === mod.mod_id}>
+                                {busyCatalogOpenModID === mod.mod_id ? "Working..." : catalogResultActionLabel(mod)}
                               </button>
                             </div>
                           </article>
