@@ -353,6 +353,13 @@ func (r *Registrar) RegisterExtensionDashlet(spec sdk.ExtensionDashletSpec) {
 	r.extension.ExtensionDashlets = append(r.extension.ExtensionDashlets, spec)
 }
 
+func (r *Registrar) RegisterExtensionDynamicDivider(spec sdk.ExtensionDynamicDividerSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.ExtensionDynamicDividers = append(r.extension.ExtensionDynamicDividers, spec)
+}
+
 func (r *Registrar) RegisterExtensionMainPage(spec sdk.ExtensionMainPageSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -428,6 +435,13 @@ func (r *Registrar) RegisterStateReducer(spec sdk.StateReducerSpec) {
 		return
 	}
 	r.extension.StateReducers = append(r.extension.StateReducers, spec)
+}
+
+func (r *Registrar) RegisterStatePersistor(spec sdk.StatePersistorSpec) {
+	if strings.TrimSpace(spec.ID) == "" {
+		return
+	}
+	r.extension.StatePersistors = append(r.extension.StatePersistors, spec)
 }
 
 func (r *Registrar) RegisterStateStore(spec sdk.StateStoreSpec) {
@@ -554,6 +568,9 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedScoped("extension dashlet", extension.ExtensionDashlets, func(spec sdk.ExtensionDashletSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
+	errs = append(errs, validateStatusedTarget("extension dynamic divider", extension.ExtensionDynamicDividers, func(spec sdk.ExtensionDynamicDividerSpec) (string, string, string, string, string) {
+		return spec.ID, spec.Name, spec.Target, spec.Status, spec.Message
+	})...)
 	errs = append(errs, validateStatusedScoped("extension main page", extension.ExtensionMainPages, func(spec sdk.ExtensionMainPageSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
@@ -577,6 +594,9 @@ func validateExtension(extension Extension) error {
 		return spec.ID, spec.Name, spec.Status, spec.Message
 	})...)
 	errs = append(errs, validateStatusedScoped("state reducer", extension.StateReducers, func(spec sdk.StateReducerSpec) (string, string, string, string, string) {
+		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
+	})...)
+	errs = append(errs, validateStatusedScoped("state persistor", extension.StatePersistors, func(spec sdk.StatePersistorSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
 	errs = append(errs, validateStatusedScoped("state store", extension.StateStores, func(spec sdk.StateStoreSpec) (string, string, string, string, string) {
@@ -633,6 +653,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.ExtensionToDos) > 0 ||
 		len(extension.ExtensionDialogs) > 0 ||
 		len(extension.ExtensionDashlets) > 0 ||
+		len(extension.ExtensionDynamicDividers) > 0 ||
 		len(extension.ExtensionMainPages) > 0 ||
 		len(extension.ExtensionTableAttrs) > 0 ||
 		len(extension.ExtensionLoadOrderPages) > 0 ||
@@ -644,6 +665,7 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.SavegameManagement) > 0 ||
 		len(extension.CollectionFeatures) > 0 ||
 		len(extension.StateReducers) > 0 ||
+		len(extension.StatePersistors) > 0 ||
 		len(extension.StateStores) > 0 ||
 		len(extension.StateMigrations) > 0 ||
 		len(extension.HistoryStacks) > 0 ||

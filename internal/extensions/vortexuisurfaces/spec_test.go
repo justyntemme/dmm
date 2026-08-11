@@ -26,6 +26,8 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	}
 	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "open-directory-action", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "mod-content-classifier", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "mod-highlight-state-divider", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "feedback-state-divider", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mod-report", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mo-import", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "nmm-import", sdk.CapabilityStatusNotApplicable)

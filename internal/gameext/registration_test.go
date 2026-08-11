@@ -216,9 +216,11 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{ID: "rules", Name: "Rules", Scope: "game"})
 			r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "loader-missing", Name: "Loader missing", Trigger: "gamemode-activated"})
 			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "archive-invalidation", Name: "Archive invalidation", Trigger: "gamemode-activated"})
+			r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{ID: "mod-state-divider", Name: "Mod state divider", Target: "mods", Priority: 100})
 			r.RegisterExtensionAPI(sdk.ExtensionAPISpec{ID: "lootSortAsync", Name: "LOOT sort"})
 			r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "plugins", Name: "Plugins"})
 			r.RegisterCollectionFeature(sdk.CollectionFeatureSpec{ID: "rules", Name: "Rules"})
+			r.RegisterStatePersistor(sdk.StatePersistorSpec{ID: "load-order-persistor", Name: "Load order persistor", Scope: "profile"})
 			r.RegisterStateStore(sdk.StateStoreSpec{ID: "load-order", Name: "Load order", Scope: "profile"})
 			r.RegisterStateMigration(sdk.StateMigrationSpec{
 				ID:          "load-order-1",
@@ -466,6 +468,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if len(summary.Capabilities.ExtensionToDos) != 1 || summary.Capabilities.ExtensionToDos[0].ID != "archive-invalidation" {
 		t.Fatalf("extension todo capabilities = %+v", summary.Capabilities.ExtensionToDos)
 	}
+	if len(summary.Capabilities.ExtensionDynamicDividers) != 1 || summary.Capabilities.ExtensionDynamicDividers[0].Target != "mods" {
+		t.Fatalf("extension dynamic divider capabilities = %+v", summary.Capabilities.ExtensionDynamicDividers)
+	}
 	if len(summary.Capabilities.ExtensionAPIs) != 1 || summary.Capabilities.ExtensionAPIs[0].ID != "lootSortAsync" {
 		t.Fatalf("extension api capabilities = %+v", summary.Capabilities.ExtensionAPIs)
 	}
@@ -474,6 +479,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].ID != "rules" {
 		t.Fatalf("collection feature capabilities = %+v", summary.Capabilities.CollectionFeatures)
+	}
+	if len(summary.Capabilities.StatePersistors) != 1 || summary.Capabilities.StatePersistors[0].Scope != "profile" {
+		t.Fatalf("state persistor capabilities = %+v", summary.Capabilities.StatePersistors)
 	}
 	if len(summary.Capabilities.StateStores) != 1 || summary.Capabilities.StateStores[0].Scope != "profile" {
 		t.Fatalf("state store capabilities = %+v", summary.Capabilities.StateStores)

@@ -69,6 +69,7 @@ type Registrar interface {
 	RegisterExtensionToDo(ExtensionToDoSpec)
 	RegisterExtensionDialog(ExtensionDialogSpec)
 	RegisterExtensionDashlet(ExtensionDashletSpec)
+	RegisterExtensionDynamicDivider(ExtensionDynamicDividerSpec)
 	RegisterExtensionMainPage(ExtensionMainPageSpec)
 	RegisterExtensionTableAttribute(ExtensionTableAttributeSpec)
 	RegisterExtensionLoadOrderPage(ExtensionLoadOrderPageSpec)
@@ -80,6 +81,7 @@ type Registrar interface {
 	RegisterSavegameManagement(SavegameManagementSpec)
 	RegisterCollectionFeature(CollectionFeatureSpec)
 	RegisterStateReducer(StateReducerSpec)
+	RegisterStatePersistor(StatePersistorSpec)
 	RegisterStateStore(StateStoreSpec)
 	RegisterStateMigration(StateMigrationSpec)
 	RegisterHistoryStack(HistoryStackSpec)
@@ -885,6 +887,15 @@ type ExtensionDashletSpec struct {
 	Message string
 }
 
+type ExtensionDynamicDividerSpec struct {
+	ID       string
+	Name     string
+	Target   string
+	Priority int
+	Status   string
+	Message  string
+}
+
 type ExtensionMainPageSpec struct {
 	ID      string
 	Name    string
@@ -1019,6 +1030,14 @@ type StateReducerSpec struct {
 	Name    string
 	Scope   string
 	Path    string
+	Status  string
+	Message string
+}
+
+type StatePersistorSpec struct {
+	ID      string
+	Name    string
+	Scope   string
 	Status  string
 	Message string
 }

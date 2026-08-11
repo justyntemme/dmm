@@ -61,6 +61,7 @@ type Extension struct {
 	ExtensionToDos           []sdk.ExtensionToDoSpec
 	ExtensionDialogs         []sdk.ExtensionDialogSpec
 	ExtensionDashlets        []sdk.ExtensionDashletSpec
+	ExtensionDynamicDividers []sdk.ExtensionDynamicDividerSpec
 	ExtensionMainPages       []sdk.ExtensionMainPageSpec
 	ExtensionTableAttrs      []sdk.ExtensionTableAttributeSpec
 	ExtensionLoadOrderPages  []sdk.ExtensionLoadOrderPageSpec
@@ -72,6 +73,7 @@ type Extension struct {
 	SavegameManagement       []sdk.SavegameManagementSpec
 	CollectionFeatures       []sdk.CollectionFeatureSpec
 	StateReducers            []sdk.StateReducerSpec
+	StatePersistors          []sdk.StatePersistorSpec
 	StateStores              []sdk.StateStoreSpec
 	StateMigrations          []sdk.StateMigrationSpec
 	HistoryStacks            []sdk.HistoryStackSpec
@@ -133,6 +135,7 @@ type ExtensionTestSpec = sdk.ExtensionTestSpec
 type ExtensionToDoSpec = sdk.ExtensionToDoSpec
 type ExtensionDialogSpec = sdk.ExtensionDialogSpec
 type ExtensionDashletSpec = sdk.ExtensionDashletSpec
+type ExtensionDynamicDividerSpec = sdk.ExtensionDynamicDividerSpec
 type ExtensionMainPageSpec = sdk.ExtensionMainPageSpec
 type ExtensionTableAttributeSpec = sdk.ExtensionTableAttributeSpec
 type ExtensionLoadOrderPageSpec = sdk.ExtensionLoadOrderPageSpec
@@ -144,6 +147,7 @@ type ProfileFileSpec = sdk.ProfileFileSpec
 type SavegameManagementSpec = sdk.SavegameManagementSpec
 type CollectionFeatureSpec = sdk.CollectionFeatureSpec
 type StateReducerSpec = sdk.StateReducerSpec
+type StatePersistorSpec = sdk.StatePersistorSpec
 type StateStoreSpec = sdk.StateStoreSpec
 type StateMigrationSpec = sdk.StateMigrationSpec
 type HistoryStackSpec = sdk.HistoryStackSpec
@@ -253,6 +257,7 @@ type ExtensionCapabilities struct {
 	ExtensionToDos           []FeatureSummary         `json:"extension_todos,omitempty"`
 	ExtensionDialogs         []FeatureSummary         `json:"extension_dialogs,omitempty"`
 	ExtensionDashlets        []FeatureSummary         `json:"extension_dashlets,omitempty"`
+	ExtensionDynamicDividers []FeatureSummary         `json:"extension_dynamic_dividers,omitempty"`
 	ExtensionMainPages       []FeatureSummary         `json:"extension_main_pages,omitempty"`
 	ExtensionTableAttrs      []FeatureSummary         `json:"extension_table_attributes,omitempty"`
 	ExtensionLoadOrderPages  []FeatureSummary         `json:"extension_load_order_pages,omitempty"`
@@ -264,6 +269,7 @@ type ExtensionCapabilities struct {
 	SavegameManagement       []FeatureSummary         `json:"savegame_management,omitempty"`
 	CollectionFeatures       []FeatureSummary         `json:"collection_features,omitempty"`
 	StateReducers            []FeatureSummary         `json:"state_reducers,omitempty"`
+	StatePersistors          []FeatureSummary         `json:"state_persistors,omitempty"`
 	StateStores              []FeatureSummary         `json:"state_stores,omitempty"`
 	StateMigrations          []FeatureSummary         `json:"state_migrations,omitempty"`
 	HistoryStacks            []FeatureSummary         `json:"history_stacks,omitempty"`
@@ -2078,6 +2084,16 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: dashlet.Message,
 		})
 	}
+	for _, divider := range extension.ExtensionDynamicDividers {
+		summary.Capabilities.ExtensionDynamicDividers = append(summary.Capabilities.ExtensionDynamicDividers, FeatureSummary{
+			ID:       divider.ID,
+			Name:     divider.Name,
+			Target:   divider.Target,
+			Priority: divider.Priority,
+			Status:   defaultString(divider.Status, sdk.CapabilityStatusReady),
+			Message:  divider.Message,
+		})
+	}
 	for _, page := range extension.ExtensionMainPages {
 		summary.Capabilities.ExtensionMainPages = append(summary.Capabilities.ExtensionMainPages, FeatureSummary{
 			ID:      page.ID,
@@ -2181,6 +2197,15 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: reducer.Message,
 		})
 	}
+	for _, persistor := range extension.StatePersistors {
+		summary.Capabilities.StatePersistors = append(summary.Capabilities.StatePersistors, FeatureSummary{
+			ID:      persistor.ID,
+			Name:    persistor.Name,
+			Scope:   persistor.Scope,
+			Status:  defaultString(persistor.Status, sdk.CapabilityStatusReady),
+			Message: persistor.Message,
+		})
+	}
 	for _, store := range extension.StateStores {
 		summary.Capabilities.StateStores = append(summary.Capabilities.StateStores, FeatureSummary{
 			ID:      store.ID,
@@ -2282,6 +2307,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.ExtensionToDos)
 	sortFeatureSummaries(summary.Capabilities.ExtensionDialogs)
 	sortFeatureSummaries(summary.Capabilities.ExtensionDashlets)
+	sortFeatureSummaries(summary.Capabilities.ExtensionDynamicDividers)
 	sortFeatureSummaries(summary.Capabilities.ExtensionMainPages)
 	sortFeatureSummaries(summary.Capabilities.ExtensionTableAttrs)
 	sortFeatureSummaries(summary.Capabilities.ExtensionLoadOrderPages)
@@ -2293,6 +2319,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.SavegameManagement)
 	sortFeatureSummaries(summary.Capabilities.CollectionFeatures)
 	sortFeatureSummaries(summary.Capabilities.StateReducers)
+	sortFeatureSummaries(summary.Capabilities.StatePersistors)
 	sortFeatureSummaries(summary.Capabilities.StateStores)
 	sortFeatureSummaries(summary.Capabilities.StateMigrations)
 	sortFeatureSummaries(summary.Capabilities.HistoryStacks)
@@ -2352,6 +2379,7 @@ func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGa
 	collect("extension_todos", capabilities.ExtensionToDos)
 	collect("extension_dialogs", capabilities.ExtensionDialogs)
 	collect("extension_dashlets", capabilities.ExtensionDashlets)
+	collect("extension_dynamic_dividers", capabilities.ExtensionDynamicDividers)
 	collect("extension_main_pages", capabilities.ExtensionMainPages)
 	collect("extension_table_attributes", capabilities.ExtensionTableAttrs)
 	collect("extension_load_order_pages", capabilities.ExtensionLoadOrderPages)
@@ -2363,6 +2391,7 @@ func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGa
 	collect("savegame_management", capabilities.SavegameManagement)
 	collect("collection_features", capabilities.CollectionFeatures)
 	collect("state_reducers", capabilities.StateReducers)
+	collect("state_persistors", capabilities.StatePersistors)
 	collect("state_stores", capabilities.StateStores)
 	collect("state_migrations", capabilities.StateMigrations)
 	collect("history_stacks", capabilities.HistoryStacks)

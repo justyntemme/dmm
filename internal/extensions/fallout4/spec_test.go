@@ -229,6 +229,11 @@ func TestExtensionDoesNotClaimUnimplementedBethesdaMergeOrLoadOrder(t *testing.T
 	if !containsFeature(summary.Capabilities.PluginActivations, "fallout4-gamebryo-plugins") {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)
 	}
+	if !containsFeature(summary.Capabilities.StatePersistors, "fallout4-gamebryo-plugins-load-order-persistor") ||
+		!containsFeature(summary.Capabilities.StatePersistors, "fallout4-gamebryo-plugins-userlist-persistor") ||
+		!containsFeature(summary.Capabilities.StatePersistors, "fallout4-gamebryo-plugins-masterlist-persistor") {
+		t.Fatalf("gamebryo persistor capabilities = %+v", summary.Capabilities.StatePersistors)
+	}
 	if len(summary.Capabilities.Merges) != 0 || len(summary.Capabilities.LoadOrders) != 0 {
 		t.Fatalf("placeholder merge/load-order capabilities leaked = %+v", summary.Capabilities)
 	}

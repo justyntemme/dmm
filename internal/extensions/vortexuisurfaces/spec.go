@@ -38,6 +38,22 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's mod-content extension with a backend classifier over staged manifest files. Installed mod APIs expose Vortex-style content tags and empty-state metadata for Decky and phone/tablet clients.",
 	})
+	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
+		ID:       "mod-highlight-state-divider",
+		Name:     "Mod highlight state divider",
+		Target:   "mods",
+		Priority: 100,
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM mirrors Vortex's mod-highlight dynamic divider concept through source-backed mod grouping/filter metadata in the Decky and phone/tablet mod lists.",
+	})
+	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
+		ID:       "feedback-state-divider",
+		Name:     "Feedback state divider",
+		Target:   "feedback",
+		Priority: 100,
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  "Vortex uses dynamic dividers in its desktop feedback UI. DMM's Steam Deck MVP does not ship a desktop feedback workflow; user support/reporting is handled outside the mod deployment runtime.",
+	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "mod-report",
 		Name:    "Generate mod report",

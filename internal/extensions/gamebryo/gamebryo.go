@@ -59,6 +59,27 @@ type LocalGameSettingPatch struct {
 
 func RegisterPluginActivation(r sdk.Registrar, opts PluginActivationOptions) {
 	r.RegisterPluginActivation(PluginActivation(opts))
+	r.RegisterStatePersistor(sdk.StatePersistorSpec{
+		ID:      opts.ID + "-load-order-persistor",
+		Name:    opts.Name + " load order persistor",
+		Scope:   "profile-load-order",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-plugin-management registerPersistor(\"loadOrder\") by persisting the active profile plugin order through DMM's profile/plugin activation state.",
+	})
+	r.RegisterStatePersistor(sdk.StatePersistorSpec{
+		ID:      opts.ID + "-userlist-persistor",
+		Name:    opts.Name + " LOOT userlist persistor",
+		Scope:   "profile-loot-userlist",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-plugin-management registerPersistor(\"userlist\") by keeping user-defined LOOT rules in DMM profile state.",
+	})
+	r.RegisterStatePersistor(sdk.StatePersistorSpec{
+		ID:      opts.ID + "-masterlist-persistor",
+		Name:    opts.Name + " LOOT masterlist persistor",
+		Scope:   "game-loot-masterlist",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-plugin-management registerPersistor(\"masterlist\") by tracking the source-backed LOOT masterlist state used for plugin sorting.",
+	})
 	registerAppDataOpenDirectory(r, opts)
 	for _, file := range PluginActivationProfileFiles(opts) {
 		r.RegisterProfileFile(file)
