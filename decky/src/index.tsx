@@ -839,6 +839,16 @@ const deckyRuntimeStyles = `
   max-width: 100%;
   min-width: 0;
 }
+.dmm-fresh-body > * {
+  align-self: stretch;
+  flex: 0 0 auto;
+  min-height: 64px;
+  min-width: 0;
+  width: 100%;
+}
+.dmm-fresh-body > .dmm-action-row {
+  min-height: 60px;
+}
 .dmm-sidebar-row {
   box-sizing: border-box;
   height: auto !important;
@@ -4275,6 +4285,7 @@ const freshActionRowStyle: CSSProperties = {
   display: "grid",
   gap: "8px",
   gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+  minHeight: "60px",
   minWidth: 0,
   width: "100%"
 };
@@ -6592,6 +6603,7 @@ function FreshDeckyModManagerRoute() {
       </div>
       <Focusable
         key={`${tab}:${selectedGameID || "list"}`}
+        className="dmm-fresh-body"
         ref={bodyRef}
         flow-children="down"
         navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
