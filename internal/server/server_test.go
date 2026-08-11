@@ -12502,6 +12502,19 @@ func TestGamebryoPluginLimitWarningsMirrorVortexLimits(t *testing.T) {
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "4097 active light plugins") || !strings.Contains(warnings[0], "above 4096") {
 		t.Fatalf("light warnings = %+v", warnings)
 	}
+
+	plugins = []pluginLoadOrderEntry{}
+	for i := 0; i < 257; i++ {
+		plugins = append(plugins, pluginLoadOrderEntry{Name: fmt.Sprintf("Medium%03d.esm", i), Active: true, IsMedium: true})
+	}
+	warnings = gamebryoPluginLimitWarnings("Starfield plugins.txt activation", plugins, gameext.PluginActivationSpec{
+		Name:                  "Starfield plugins.txt activation",
+		SupportsLightPlugins:  true,
+		SupportsMediumMasters: true,
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "257 active medium master plugins") || !strings.Contains(warnings[0], "above 256") {
+		t.Fatalf("medium warnings = %+v", warnings)
+	}
 }
 
 func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {

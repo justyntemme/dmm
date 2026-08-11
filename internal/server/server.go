@@ -42,6 +42,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/events"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/fomod"
+	"github.com/justyntemme/decky-mod-manager/internal/gamebryoplugin"
 	"github.com/justyntemme/decky-mod-manager/internal/gamebryosaves"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -592,16 +593,20 @@ type pluginLoadOrderResponse struct {
 }
 
 type pluginLoadOrderEntry struct {
-	Name           string `json:"name"`
-	Source         string `json:"source"`
-	Catalog        string `json:"catalog,omitempty"`
-	InstalledModID int64  `json:"installed_mod_id,omitempty"`
-	ModID          string `json:"mod_id,omitempty"`
-	Priority       int    `json:"priority"`
-	ModIndex       int    `json:"mod_index"`
-	LockedIndex    *int   `json:"locked_index,omitempty"`
-	Active         bool   `json:"active"`
-	Mutable        bool   `json:"mutable"`
+	Name           string   `json:"name"`
+	Source         string   `json:"source"`
+	Catalog        string   `json:"catalog,omitempty"`
+	InstalledModID int64    `json:"installed_mod_id,omitempty"`
+	ModID          string   `json:"mod_id,omitempty"`
+	Priority       int      `json:"priority"`
+	ModIndex       int      `json:"mod_index"`
+	LockedIndex    *int     `json:"locked_index,omitempty"`
+	Active         bool     `json:"active"`
+	Mutable        bool     `json:"mutable"`
+	IsLight        bool     `json:"is_light,omitempty"`
+	IsMedium       bool     `json:"is_medium,omitempty"`
+	IsBlueprint    bool     `json:"is_blueprint,omitempty"`
+	Masters        []string `json:"masters,omitempty"`
 }
 
 type extensionLoadOrderResponse struct {
@@ -1394,6 +1399,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -1685,6 +1691,75 @@ func (s *Server) gamebryoArchiveCompatibilityTests(ctx context.Context, game sto
 	}}
 }
 
+func (s *Server) gamebryoPluginInfo(game storage.Game, spec gameext.PluginActivationSpec, name, sourcePath string) gamebryoplugin.Info {
+	if strings.TrimSpace(sourcePath) == "" {
+		return gamebryoplugin.Info{}
+	}
+	info, err := gamebryoplugin.ReadHeader(sourcePath, strings.TrimSpace(spec.LOOTGameID))
+	if err != nil {
+		s.logger.Debug("Gamebryo plugin header parse skipped", "app_id", game.SteamAppID, "plugin", name, "path", sourcePath, "error", err)
+		return gamebryoplugin.Info{}
+	}
+	return info
+}
+
+func (s *Server) gamebryoMissingMasterDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo missing-master check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	loadOrder, err := s.profilePluginLoadOrder(ctx, game, profileID, mods)
+	if err != nil {
+		s.logger.Warn("Gamebryo missing-master check skipped because load order failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	active := map[string]struct{}{}
+	for _, plugin := range loadOrder.Plugins {
+		if plugin.Active {
+			active[strings.ToLower(strings.TrimSpace(plugin.Name))] = struct{}{}
+		}
+	}
+	var issues []string
+	for _, plugin := range loadOrder.Plugins {
+		if !plugin.Active || len(plugin.Masters) == 0 {
+			continue
+		}
+		var missing []string
+		for _, master := range plugin.Masters {
+			master = strings.TrimSpace(master)
+			if master == "" {
+				continue
+			}
+			if _, ok := active[strings.ToLower(master)]; !ok {
+				missing = append(missing, master)
+			}
+		}
+		if len(missing) > 0 {
+			sort.Strings(missing)
+			issues = append(issues, plugin.Name+" depends on "+strings.Join(missing, ", "))
+		}
+	}
+	if len(issues) == 0 {
+		return nil
+	}
+	sort.Strings(issues)
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-missing-masters",
+		TestName: "Gamebryo missing masters",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  "Some enabled plugins depend on masters that are not enabled.",
+		Details:  strings.Join(issues, "; "),
+		Actions:  []string{"Enable the missing masters, install the mods that provide them, or disable the dependent plugins."},
+	}}
+}
+
 func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
 	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
 	if !ok {
@@ -1709,10 +1784,13 @@ func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storag
 	native := installedNativePluginNames(game.GamePath, spec)
 	plugins := make([]pluginLoadOrderEntry, 0, len(native))
 	for _, name := range native {
-		plugins = append(plugins, pluginLoadOrderEntry{Name: name, Source: "native", Active: true})
+		info := s.gamebryoPluginInfo(game, spec, name, filepath.Join(game.GamePath, filepath.FromSlash(spec.GameDataRoot), name))
+		plugins = append(plugins, pluginLoadOrderEntry{Name: name, Source: "native", Active: true, IsLight: info.IsLight, IsMedium: info.IsMedium, IsBlueprint: info.IsBlueprint})
 	}
 	for _, entry := range pluginActivationEntries(spec, active.Mappings, native, states) {
-		plugins = append(plugins, pluginLoadOrderEntry{Name: entry.Name, Source: "dmm", Active: entry.Active})
+		sourcePath, _ := sourcePathForPluginActivationEntry(spec, entry, active.Mappings)
+		info := s.gamebryoPluginInfo(game, spec, entry.Name, sourcePath)
+		plugins = append(plugins, pluginLoadOrderEntry{Name: entry.Name, Source: "dmm", Active: entry.Active, IsLight: info.IsLight, IsMedium: info.IsMedium, IsBlueprint: info.IsBlueprint})
 	}
 	warnings := gamebryoPluginLimitWarnings(strings.TrimSpace(spec.Name), plugins, spec)
 	if len(warnings) == 0 {
@@ -1731,7 +1809,7 @@ func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storag
 }
 
 func gamebryoPluginLimitWarnings(name string, plugins []pluginLoadOrderEntry, spec gameext.PluginActivationSpec) []string {
-	regular, light := gamebryoActivePluginCounts(plugins, spec)
+	regular, light, medium := gamebryoActivePluginCounts(plugins, spec)
 	regularLimit := gamebryoRegularPluginLimit(spec)
 	var warnings []string
 	label := strings.TrimSpace(name)
@@ -1744,21 +1822,28 @@ func gamebryoPluginLimitWarnings(name string, plugins []pluginLoadOrderEntry, sp
 	if spec.SupportsLightPlugins && light > 4096 {
 		warnings = append(warnings, fmt.Sprintf("%s has %d active light plugins; Vortex warns above 4096.", label, light))
 	}
+	if spec.SupportsMediumMasters && medium > 256 {
+		warnings = append(warnings, fmt.Sprintf("%s has %d active medium master plugins; Vortex warns above 256.", label, medium))
+	}
 	return warnings
 }
 
-func gamebryoActivePluginCounts(plugins []pluginLoadOrderEntry, spec gameext.PluginActivationSpec) (regular, light int) {
+func gamebryoActivePluginCounts(plugins []pluginLoadOrderEntry, spec gameext.PluginActivationSpec) (regular, light, medium int) {
 	for _, plugin := range plugins {
 		if !plugin.Active {
 			continue
 		}
-		if spec.SupportsLightPlugins && strings.EqualFold(filepath.Ext(plugin.Name), ".esl") {
+		if spec.SupportsMediumMasters && plugin.IsMedium {
+			medium++
+			continue
+		}
+		if spec.SupportsLightPlugins && (plugin.IsLight || strings.EqualFold(filepath.Ext(plugin.Name), ".esl")) {
 			light++
 			continue
 		}
 		regular++
 	}
-	return regular, light
+	return regular, light, medium
 }
 
 func gamebryoRegularPluginLimit(spec gameext.PluginActivationSpec) int {
@@ -16655,12 +16740,17 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	}
 	native := installedNativePluginNames(game.GamePath, spec)
 	for _, name := range native {
+		info := s.gamebryoPluginInfo(game, spec, name, filepath.Join(game.GamePath, filepath.FromSlash(spec.GameDataRoot), name))
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
-			Name:     name,
-			Source:   "native",
-			Catalog:  "native",
-			Priority: -1,
-			Active:   true,
+			Name:        name,
+			Source:      "native",
+			Catalog:     "native",
+			Priority:    -1,
+			Active:      true,
+			IsLight:     info.IsLight,
+			IsMedium:    info.IsMedium,
+			IsBlueprint: info.IsBlueprint,
+			Masters:     info.Masters,
 		})
 	}
 	active, err := s.activeDeploymentMappings(ctx, game, mods)
@@ -16674,6 +16764,8 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 	spec = effectivePluginActivationSpec(spec, mods)
 	catalogsByModID := installedModCatalogsByID(mods)
 	for _, entry := range pluginActivationEntries(spec, active.Mappings, native, states) {
+		sourcePath, _ := sourcePathForPluginActivationEntry(spec, entry, active.Mappings)
+		info := s.gamebryoPluginInfo(game, spec, entry.Name, sourcePath)
 		resp.Plugins = append(resp.Plugins, pluginLoadOrderEntry{
 			Name:           entry.Name,
 			Source:         "dmm",
@@ -16684,6 +16776,10 @@ func (s *Server) profilePluginLoadOrder(ctx context.Context, game storage.Game, 
 			LockedIndex:    entry.LockedIndex,
 			Active:         entry.Active,
 			Mutable:        true,
+			IsLight:        info.IsLight,
+			IsMedium:       info.IsMedium,
+			IsBlueprint:    info.IsBlueprint,
+			Masters:        info.Masters,
 		})
 	}
 	for idx := range resp.Plugins {
