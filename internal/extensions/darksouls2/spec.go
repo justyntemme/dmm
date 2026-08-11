@@ -59,11 +59,4 @@ func Register(r sdk.Registrar) {
 		Name: "Vortex game-darksouls2 extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-darksouls2/src",
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      "darksouls2-root-query-mod-path",
-		Name:    "Dark Souls II root queryModPath metadata",
-		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Vortex declares queryModPath '.' for root deployment. DMM's extension encodes the equivalent game-root deployment with an empty target root, so the dot-path registration itself is not a separate runtime surface.",
-	})
 }

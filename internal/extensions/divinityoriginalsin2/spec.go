@@ -135,13 +135,6 @@ func registerVariant(r sdk.Registrar, current variant) {
 		Status:  sdk.CapabilityStatusNotApplicable,
 		Message: "Vortex can discover this game from the Windows GOG registry key before falling back to Steam. DMM's Steam Deck MVP does not discover GOG installs yet.",
 	})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      current.ID + "-native-linux-path-review",
-		Name:    current.Name + " native Linux install review",
-		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "The verified Vortex extension is Windows-oriented and writes to the Windows Documents Mods folder. DMM maps that to the Proton prefix for Steam Deck MVP parity; native Linux install support has no Vortex source-backed path and must be handled as a future live-review target.",
-	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-divinityoriginalsin2 extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-divinityoriginalsin2/src",
