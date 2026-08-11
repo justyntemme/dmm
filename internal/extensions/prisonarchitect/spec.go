@@ -81,8 +81,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex source has a commented Steam launcher probe based on steam_api64.dll. DMM records the launcher fact without forcing a launch-option change.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's source-backed Steam launcher fact against the discovered Steam app and reports it through launcher diagnostics without forcing a launch-option change.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-prisonarchitect extension source",

@@ -60,8 +60,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex requests Steam launcher behavior for the Steam copy of Dark Souls.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "darksouls-dsfix-installed",

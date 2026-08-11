@@ -81,8 +81,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex probes root .vdf files to decide whether Dragon Age should launch through Steam.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "dragonage-addins-xml", Name: "Dragon Age AddIns.xml merge"})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{Event: sdk.EventWillDeploy, Name: "Dragon Age AddIns.xml generation", Handler: dazip.WillDeployAddInsXML})

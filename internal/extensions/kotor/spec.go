@@ -74,8 +74,8 @@ func Register(r sdk.Registrar, spec gameSpec) {
 			Launcher: "steam",
 			Store:    "steam",
 			AppID:    spec.SteamAppID,
-			Status:   sdk.CapabilityStatusMetadata,
-			Message:  "Vortex requires KOTOR II Steam installs to launch through Steam when steam_api.dll is present.",
+			Status:   sdk.CapabilityStatusReady,
+			Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 		})
 	}
 	r.RegisterInstaller(installplan.InstallerSpec{

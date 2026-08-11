@@ -60,8 +60,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex declares a Steam launcher requirement when Steam owns the discovered install path.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: officialModType, TargetRoot: officialRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Status: sdk.CapabilityStatusMetadata, Message: "Vortex keeps this legacy mod type for pre-8.4 installs and migrations."})

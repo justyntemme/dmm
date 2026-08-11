@@ -101,8 +101,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex requests Steam launcher behavior when steamclient64.dll is present in the game folder.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher behavior against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "7daystodie-user-data-folder",

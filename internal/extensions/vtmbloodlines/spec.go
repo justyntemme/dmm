@@ -76,8 +76,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex attempts to launch Bloodlines through Steam when the Steam app is discoverable.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "vampirebloodlines-prepare-folders",

@@ -74,8 +74,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "steam",
 		Store:    "steam",
 		AppID:    SteamAppID,
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex requires Steam copies of Kenshi to launch through Steam so Workshop mods are available.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterGameVersionProvider(gameversiontext.Provider(gameversiontext.Options{
 		ID:        "kenshi-current-version",
