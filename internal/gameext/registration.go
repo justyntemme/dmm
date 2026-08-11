@@ -2603,12 +2603,18 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			continue
 		}
 		kind := strings.TrimSpace(spec.Kind)
-		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool {
+		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool && kind != sdk.ExtensionActionKindApplyProfile {
 			continue
 		}
 		status := strings.TrimSpace(spec.Status)
 		if status == "" {
 			status = sdk.CapabilityStatusReady
+		}
+		if kind == sdk.ExtensionActionKindApplyProfile {
+			if spec.OpenDirectory != nil || spec.OpenPath != nil || spec.AcquireTool != nil {
+				errs = append(errs, errors.New("extension action "+id+" apply-profile must not declare open or acquire targets"))
+			}
+			continue
 		}
 		if kind == sdk.ExtensionActionKindAcquireTool {
 			if spec.AcquireTool == nil {

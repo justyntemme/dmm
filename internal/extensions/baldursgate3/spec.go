@@ -319,7 +319,15 @@ func registerActions(r sdk.Registrar) {
 		AcquireTool: &sdk.AcquireToolActionSpec{ToolID: "bg3-lslib-divine"},
 		Message:     "Vortex downloads LSLib from GitHub and installs it as a hidden tool mod. DMM routes this through the generic extension tool acquisition pipeline.",
 	})
-	for _, action := range []string{"Export to Game", "Export to File", "Import from Game", "Import from File", "Import from BG3MM"} {
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "bg3-export-to-game",
+		Name:    "Export to Game",
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindApplyProfile,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex writes the active BG3 load order to the game's modsettings.lsx. DMM runs the extension deployment hook, which generates the Steam Deck Public profile modsettings.lsx from enabled pak metadata.",
+	})
+	for _, action := range []string{"Export to File", "Import from Game", "Import from File", "Import from BG3MM"} {
 		r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 			ID:      "bg3-" + sanitizeID(action),
 			Name:    action,

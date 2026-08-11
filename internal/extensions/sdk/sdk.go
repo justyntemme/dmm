@@ -757,6 +757,7 @@ const (
 	ExtensionActionKindOpenDirectory = "open-directory"
 	ExtensionActionKindOpenPath      = "open-path"
 	ExtensionActionKindAcquireTool   = "acquire-tool"
+	ExtensionActionKindApplyProfile  = "apply-profile"
 
 	OpenDirectoryBaseGame       = "game"
 	OpenDirectoryBaseDownloads  = "downloads"

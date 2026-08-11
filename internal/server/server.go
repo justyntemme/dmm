@@ -6932,6 +6932,14 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		}
 		writeJSON(w, http.StatusAccepted, response)
 		return
+	case sdk.ExtensionActionKindApplyProfile:
+		apply := s.applyProfileChangesForUserAction(r.Context(), appID, "extension-action:"+action.ID)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"action_id":   action.ID,
+			"action_kind": sdk.ExtensionActionKindApplyProfile,
+			"apply":       apply,
+		})
+		return
 	default:
 		writeError(w, http.StatusConflict, errors.New("extension action kind is not executable"))
 		return

@@ -47,6 +47,10 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if openLoadOrder == nil || openLoadOrder.Kind != sdk.ExtensionActionKindOpenPath || openLoadOrder.OpenPath == nil || openLoadOrder.OpenPath.TargetRootID != bg3LocalDataRootID || openLoadOrder.OpenPath.RelativePath != "PlayerProfiles/Public/modsettings.lsx" || openLoadOrder.Status != sdk.CapabilityStatusReady {
 		t.Fatalf("open load order action = %+v", openLoadOrder)
 	}
+	exportToGame := extensionActionByID(compiled.ExtensionActions, "bg3-export-to-game")
+	if exportToGame == nil || exportToGame.Kind != sdk.ExtensionActionKindApplyProfile || exportToGame.Status != sdk.CapabilityStatusReady {
+		t.Fatalf("export to game action = %+v", exportToGame)
+	}
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}
