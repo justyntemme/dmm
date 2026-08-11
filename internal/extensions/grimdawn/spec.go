@@ -59,8 +59,8 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      "gog",
 		Name:    "GOG",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "Vortex can discover Grim Dawn through the GOG registry key. DMM's current Steam Deck target uses Steam discovery.",
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "Vortex can discover Grim Dawn through the GOG registry key. DMM's Steam Deck MVP runtime uses Steam discovery.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-grimdawn extension source",

@@ -80,8 +80,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "xbox",
 		Store:    "xbox",
 		AppID:    "DeepSilver.KingdomComeDeliverance",
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex uses Xbox launcher metadata for the Microsoft Store version. DMM's current Steam Deck target uses the Steam executable path.",
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  "Vortex uses Xbox launcher metadata for the Microsoft Store version. DMM's Steam Deck MVP runtime uses the Steam executable path.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "kingdomcomedeliverance-epic-launcher",
@@ -89,8 +89,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    "Eel",
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex uses Epic launcher metadata for the Epic version. DMM's current Steam Deck target uses the Steam executable path.",
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  "Vortex uses Epic launcher metadata for the Epic version. DMM's Steam Deck MVP runtime uses the Steam executable path.",
 	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "kingdomcomedeliverance-load-order-page",

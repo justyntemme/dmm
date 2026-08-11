@@ -59,8 +59,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    "769f2fee68e9477180da900ccccbbcf0",
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex declares an Epic launcher requirement for the Epic store variant; DMM's MVP Steam Deck path uses the Steam app registration.",
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  "Vortex declares an Epic launcher requirement for the Epic store variant; DMM's Steam Deck MVP runtime uses the Steam app registration.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "totalwarthreekingdoms-gog-discovery",
@@ -68,8 +68,8 @@ func Register(r sdk.Registrar) {
 		Launcher: "gog",
 		Store:    "gog",
 		AppID:    "1717887914",
-		Status:   sdk.CapabilityStatusMetadata,
-		Message:  "Vortex includes the GOG app ID in discovery; DMM does not execute GOG discovery in the Steam Deck MVP path.",
+		Status:   sdk.CapabilityStatusNotApplicable,
+		Message:  "Vortex includes the GOG app ID in discovery; DMM does not execute GOG discovery in the Steam Deck MVP runtime.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})

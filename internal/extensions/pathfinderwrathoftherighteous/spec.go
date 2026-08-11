@@ -26,7 +26,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, VortexGameID: VortexGameID, ExecutableRelative: executable, RequiredFiles: []string{executable}, QueryModPath: umm.ModRoot, MergeMode: sdk.GameMergeModeAll, Environment: map[string]string{"SteamAPPId": SteamAppID}, Deployment: installplan.DeploymentSpec{AllowNeedsReviewState: true}})
 	umm.RegisterGameSupport(r, umm.GameOptions{GameID: VortexGameID, GameName: Name, AutoDownload: true})
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Status: sdk.CapabilityStatusMetadata, Message: "Vortex can discover Pathfinder: Wrath of the Righteous through GOG app 1207187357. DMM's current Steam Deck target uses Steam discovery."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex can discover Pathfinder: Wrath of the Righteous through GOG app 1207187357. DMM's Steam Deck MVP runtime uses Steam discovery."})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{ID: "pathfinderwotr-version-info", Name: "Wrath_Data StreamingAssets Version.info", Provider: gameVersion})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
