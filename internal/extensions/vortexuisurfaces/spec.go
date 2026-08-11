@@ -62,15 +62,6 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's mod-report action with GET /api/games/{appID}/mods/{installedModID}/report, returning staged/deployed file status as JSON or readable text.",
 	})
-	registerImportSurfaces(r)
-}
-
-func registerImportSurfaces(r sdk.Registrar) {
-	moMessage := "Vortex's MO import extension is Windows-only and assumes Mod Organizer/Vortex desktop paths. DMM must implement a real source-aware MO import wizard before claiming imported-environment support."
-	nmmMessage := "Vortex's NMM import extension is Windows-only and reads Black Tree Gaming/NMM desktop state. DMM must implement a real source-aware NMM import wizard and session state before claiming imported-environment support."
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "mo-import", Name: "Import From MO", Trigger: "post-mvp-legacy-import", Message: moMessage})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "nmm-import", Name: "Import From NMM", Trigger: "post-mvp-legacy-import", Message: nmmMessage})
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "nmm-import-session", Name: "NMM import session state", Trigger: "post-mvp-legacy-import", Message: nmmMessage})
 }
 
 func Sources() []sdk.SourceRef {

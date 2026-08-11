@@ -35,9 +35,9 @@ func TestExtensionRegistersVortexUISurfaceMetadata(t *testing.T) {
 	if len(summary.Capabilities.StateReducers) != 0 {
 		t.Fatalf("state reducers should not advertise unimplemented import session state: %+v", summary.Capabilities.StateReducers)
 	}
-	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "mo-import", sdk.CapabilityStatusReady)
-	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "nmm-import", sdk.CapabilityStatusReady)
-	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "nmm-import-session", sdk.CapabilityStatusReady)
+	if len(summary.Capabilities.ExtensionToDos) != 0 {
+		t.Fatalf("post-MVP import TODOs must not be advertised as runtime capabilities: %+v", summary.Capabilities.ExtensionToDos)
+	}
 }
 
 func assertStatus(t *testing.T, kind string, features []gameext.FeatureSummary, id, status string) {
