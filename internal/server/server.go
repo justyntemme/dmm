@@ -3031,6 +3031,16 @@ func launcherRequirementStatusForGame(game storage.Game, extensionID string, req
 		resp.Details = append(resp.Details, "Steam app "+game.SteamAppID+" is managed through the Steam Deck launcher.")
 		return resp
 	}
+	if store != "" && strings.EqualFold(store, strings.TrimSpace(game.Store)) && (requirementAppID == "" || strings.EqualFold(requirementAppID, strings.TrimSpace(game.StoreAppID))) {
+		resp.Required = true
+		resp.Satisfied = true
+		resp.Status = string(gamehandler.RequirementOK)
+		if resp.Message == "" {
+			resp.Message = "This Vortex launcher/store requirement is satisfied by the manually registered DMM game-store identity."
+		}
+		resp.Details = append(resp.Details, fmt.Sprintf("%s app %s is managed at %s.", resp.Store, game.StoreAppID, game.GamePath))
+		return resp
+	}
 	if status == sdk.CapabilityStatusBlocked {
 		resp.Status = sdk.CapabilityStatusBlocked
 		if resp.Message == "" {

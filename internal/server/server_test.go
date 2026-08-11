@@ -1242,6 +1242,36 @@ func TestRegisterManualStoreGamePersistsExtensionBackedInstall(t *testing.T) {
 	}
 }
 
+func TestManualStoreGameSatisfiesMatchingLauncherRequirement(t *testing.T) {
+	extension := gameext.MustCompileExtension(fallout4.Extension())
+	var epicRequirement sdk.LauncherRequirementSpec
+	for _, requirement := range extension.LauncherRequirements {
+		if requirement.Store == "epic" {
+			epicRequirement = requirement
+			break
+		}
+	}
+	if epicRequirement.ID == "" {
+		t.Fatal("missing Fallout 4 Epic launcher requirement")
+	}
+	game := storage.Game{
+		SteamAppID:  gameext.StoreBackedAppID("epic", epicRequirement.AppID),
+		Name:        "Fallout 4",
+		Store:       "epic",
+		StoreAppID:  epicRequirement.AppID,
+		GamePath:    filepath.Join(t.TempDir(), "Fallout 4"),
+		LibraryPath: t.TempDir(),
+		State:       "clean_candidate",
+	}
+	status := launcherRequirementStatusForGame(game, extension.ID, epicRequirement)
+	if status.Status != string(gamehandler.RequirementOK) || !status.Required || !status.Satisfied {
+		t.Fatalf("launcher requirement status = %+v", status)
+	}
+	if len(status.Details) == 0 || !strings.Contains(status.Details[0], game.StoreAppID) {
+		t.Fatalf("launcher details = %+v", status.Details)
+	}
+}
+
 func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	stardew := gameExtensionInfoForSteamApp(games.DefaultRegistry, "413150")
 	if stardew == nil || !stardew.Supported || stardew.Coverage != gameext.CoverageInstaller || !stardew.Nexus || !stardew.Installers || !stardew.RuntimeRequirements || !stardew.LaunchTools {
