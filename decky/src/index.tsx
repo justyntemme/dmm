@@ -6191,8 +6191,8 @@ function FreshDeckyModManagerRoute() {
             {executableExtensionActions().map((action) => {
               const busy = busyJobID === `extension-action:${action.id}`;
               return (
-              <Focusable
-                key={action.id}
+                <Focusable
+                  key={action.id}
                   className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onActivate={() => void runSelectedGameExtensionAction(action)}
