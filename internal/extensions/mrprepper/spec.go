@@ -24,7 +24,6 @@ func Extension() sdk.Extension {
 			"MrPrepper_Data/globalgamemanagers",
 		},
 		RuntimeInstallHint: "Install the Windows x64 BepInEx 5 runtime for Mr. Prepper, then enable and deploy it from DMM before enabling Mr. Prepper BepInEx plugin mods.",
-		UnclassifiedReason: "Mr. Prepper archive layout is not classified by the verified Unity/BepInEx extension rules. DMM supports BepInEx runtime, BepInEx root/config packages, and BepInEx plugin DLL archives; other layouts stay blocked until source-reviewed.",
 		Sources: []sdk.SourceRef{
 			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
 			{Name: "Mr. Prepper Nexus BepInEx plugin instructions", URL: "https://www.nexusmods.com/mrprepper/mods/1?tab=description"},

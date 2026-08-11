@@ -2,10 +2,8 @@ package bepinex_test
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
@@ -111,7 +109,7 @@ func TestUnityExtensionRegistersBepInExCapabilities(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	requirement := summary.Capabilities.RuntimeRequirements[0]
@@ -141,26 +139,6 @@ func TestUnityExtensionRegistersBepInExCapabilities(t *testing.T) {
 	}
 	assertTarget(t, plan, "BepInEx/plugins/Plugin.dll")
 	assertTarget(t, plan, "BepInEx/plugins/README.txt")
-}
-
-func TestUnityExtensionBlocksUnclassifiedArchive(t *testing.T) {
-	extension := gameext.MustCompileExtension(bepinex.UnityExtension(bepinex.UnityGameSpec{
-		ID:                 "exampleunity",
-		Name:               "Example Unity",
-		SteamAppIDs:        []string{"100"},
-		NexusDomains:       []string{"exampleunity"},
-		VortexGameID:       "exampleunity",
-		UnclassifiedReason: "verified BepInEx layouts only",
-	}))
-	registry := gameext.NewRegistry([]gameext.Extension{extension})
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "unknown.dat"), "data")
-
-	_, err := registry.BuildInstallPlan("100", root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "verified BepInEx layouts") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func TestGitHubRuntimeAcquisitionBuildsPinnedAssetURL(t *testing.T) {

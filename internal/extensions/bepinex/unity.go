@@ -28,12 +28,10 @@ const (
 	bepInExPluginModTypeSuffix    = "-bepinex-plugin"
 	bepInExConfigModTypeSuffix    = "-bepinex-config-manager"
 	bepInExRuntimeModTypeSuffix   = "-bepinex-injector"
-	bepInExBlockedModTypeSuffix   = "-bepinex-unclassified-blocked"
 	bepInExConfigInstallerSuffix  = ":bepinex-config-manager"
 	bepInExRuntimeInstallerSuffix = ":bepinex-injector"
 	bepInExRootInstallerSuffix    = ":bepinex-root"
 	bepInExPluginInstallerSuffix  = ":bepinex-plugin"
-	bepInExBlockedInstallerSuffix = ":bepinex-unclassified-blocked"
 )
 
 type RuntimeAcquisitionOptions struct {
@@ -77,7 +75,6 @@ type UnityGameSpec struct {
 	ExcludePluginDLLs        []string
 	NativeLinuxLaunchTool    bool
 	NativeLaunchToolName     string
-	UnclassifiedReason       string
 	Sources                  []sdk.SourceRef
 }
 
@@ -256,16 +253,11 @@ func unityModTypes(id string) []installplan.ModTypeSpec {
 		{ID: id + bepInExRootModTypeSuffix, TargetRoot: rootFolder},
 		{ID: id + bepInExPluginModTypeSuffix, TargetRoot: rootFolder + "/plugins"},
 		{ID: id + bepInExConfigModTypeSuffix, TargetRoot: rootFolder},
-		{ID: id + bepInExBlockedModTypeSuffix, TargetRoot: ""},
 	}
 }
 
 func unityInstallers(id string, spec UnityGameSpec) []installplan.InstallerSpec {
 	excludes := PluginMatchOptions{ExcludeBasenames: spec.ExcludePluginDLLs}
-	reason := strings.TrimSpace(spec.UnclassifiedReason)
-	if reason == "" {
-		reason = spec.Name + " archive layout is not classified by the verified Unity/BepInEx extension rules. DMM blocks it until a specific extension-owned rule can place the files safely."
-	}
 	return []installplan.InstallerSpec{
 		{
 			ID:                "vortex:" + id + bepInExConfigInstallerSuffix,
@@ -306,16 +298,6 @@ func unityInstallers(id string, spec UnityGameSpec) []installplan.InstallerSpec 
 			CustomMatch:       MatchPlugin(excludes),
 			CustomBuild:       BuildPlugin(spec.Name, excludes),
 			InstructionMode:   installplan.InstructionCustom,
-		},
-		{
-			ID:                "vortex:" + id + bepInExBlockedInstallerSuffix,
-			VortexInstallerID: id + "-unclassified",
-			Priority:          10000,
-			ModType:           id + bepInExBlockedModTypeSuffix,
-			NameSource:        installplan.NameSourceArchive,
-			CustomMatch:       matchAnyNonFOMODFile,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: reason,
 		},
 	}
 }
@@ -395,14 +377,6 @@ func unityGameVersionProvider(spec UnityGameSpec) sdk.GameVersionProviderFunc {
 		}
 		return sdk.GameVersionResult{}, os.ErrNotExist
 	}
-}
-
-func matchAnyNonFOMODFile(root string) bool {
-	if ContainsFOMOD(root) {
-		return false
-	}
-	files, err := listFiles(root)
-	return err == nil && len(files) > 0
 }
 
 func cleanUnityID(value string) string {

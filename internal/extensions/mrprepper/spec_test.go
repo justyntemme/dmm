@@ -17,7 +17,7 @@ func TestExtensionRegistersBepInExInstallerSupport(t *testing.T) {
 	if summary.ID != VortexGameID || summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("summary = %+v", summary)
 	}
-	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 4 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 

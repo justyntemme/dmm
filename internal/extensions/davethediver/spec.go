@@ -33,7 +33,6 @@ func Extension() sdk.Extension {
 		},
 		RuntimeInstallHint: "Install the Windows x64 BepInEx IL2CPP runtime for Dave the Diver, then enable and deploy it from DMM before enabling Dave the Diver BepInEx plugin mods.",
 		RuntimeHelpURL:     "https://builds.bepinex.dev/projects/bepinex_be",
-		UnclassifiedReason: "Dave the Diver archive layout is not classified by the verified Unity/BepInEx extension rules. DMM supports BepInEx runtime, BepInEx root/config packages, and BepInEx plugin DLL archives; other layouts stay blocked until source-reviewed.",
 		Sources: []sdk.SourceRef{
 			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
 			{Name: "Dave the Diver Nexus BepInEx IL2CPP plugin archive path verification", URL: "https://www.nexusmods.com/davethediver"},

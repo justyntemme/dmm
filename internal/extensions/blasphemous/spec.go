@@ -37,7 +37,6 @@ func Extension() sdk.Extension {
 		},
 		NativeLinuxLaunchTool: true,
 		RuntimeInstallHint:    "Install the BepInEx Unity runtime for the detected Blasphemous platform, then enable and deploy it from DMM before enabling Blasphemous BepInEx plugin mods. Native Linux installs require run_bepinex.sh to be executable and configured as the Steam launch target.",
-		UnclassifiedReason:    "Blasphemous archive layout is not classified by the verified Unity/BepInEx extension rules. DMM supports BepInEx runtime, BepInEx root/config packages, and BepInEx plugin DLL archives; other layouts stay blocked until source-reviewed.",
 		Sources: []sdk.SourceRef{
 			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
 			{Name: "Blasphemous Nexus BepInEx plugin install instructions", URL: "https://www.nexusmods.com/blasphemous/mods/1"},
