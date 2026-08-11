@@ -31,7 +31,7 @@ reject_text() {
 
 section "MVP UI product audit"
 
-require_text "$WEB_APP" "type SettingsPage = \"overview\" | \"jobs\" | \"install\" | \"sources\" | \"nexus\";" \
+require_text "$WEB_APP" "type SettingsPage = \"overview\" | \"jobs\" | \"install\" | \"sources\" | \"game-stores\" | \"extensions\" | \"nexus\";" \
   "mobile settings pages must keep install/provider settings separate from server settings"
 require_text "$WEB_APP" "Selected Profile" \
   "game Plugins view must lead with selected profile state"
@@ -39,7 +39,7 @@ require_text "$WEB_APP" "Installed, disabled in this profile" \
   "game Mods view must include profile-scoped mod state"
 require_text "$WEB_APP" "Add Mod" \
   "generic mod import must live inside the selected game workspace"
-require_text "$WEB_APP" "Explore Nexus Mods" \
+require_text "$WEB_APP" "Explore Mods" \
   "phone/tablet UI must expose game-scoped source browsing"
 require_text "$WEB_APP" "Open on Deck" \
   "phone/tablet Nexus browsing must use the Deck browser capture flow"
