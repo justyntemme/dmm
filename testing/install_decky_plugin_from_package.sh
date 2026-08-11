@@ -152,7 +152,11 @@ if [[ "${DMM_RESTART_BACKEND_AFTER_INSTALL:-1}" == "1" ]]; then
 	log_dir="/home/deck/.local/state/${PLUGIN_NAME}"
 	mkdir -p "${log_dir}"
 	token="$(cat "${log_dir}/api-token" 2>/dev/null || true)"
-	nohup env DMM_DECKY_PLUGIN_DIR="${DECK_PLUGIN_DIR}" DMM_AUTH_TOKEN="${token}" DMM_AUTH_TOKEN_FILE="${log_dir}/api-token" "${DECK_PLUGIN_DIR}/bin/dmm-server" >>"${log_dir}/backend.log" 2>&1 &
+	if command -v setsid >/dev/null 2>&1; then
+		setsid env DMM_DECKY_PLUGIN_DIR="${DECK_PLUGIN_DIR}" DMM_AUTH_TOKEN="${token}" DMM_AUTH_TOKEN_FILE="${log_dir}/api-token" "${DECK_PLUGIN_DIR}/bin/dmm-server" >>"${log_dir}/backend.log" 2>&1 </dev/null &
+	else
+		nohup env DMM_DECKY_PLUGIN_DIR="${DECK_PLUGIN_DIR}" DMM_AUTH_TOKEN="${token}" DMM_AUTH_TOKEN_FILE="${log_dir}/api-token" "${DECK_PLUGIN_DIR}/bin/dmm-server" >>"${log_dir}/backend.log" 2>&1 </dev/null &
+	fi
 	for _ in 1 2 3 4 5 6 7 8 9 10; do
 		if curl -fsS --max-time 1 http://127.0.0.1:17942/api/health >/dev/null 2>&1; then
 			echo "Backend is healthy"
