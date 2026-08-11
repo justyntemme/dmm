@@ -62,7 +62,7 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		ID:      "fnis-configure-patches",
 		Name:    "Configure FNIS patches",
 		Scope:   "profile",
-		Kind:    "dialog",
+		Kind:    sdk.ExtensionActionKindDialog,
 		Status:  sdk.CapabilityStatusNotApplicable,
 		Message: "Vortex opens a desktop checkbox dialog from PatchList*.txt. DMM renders the same source-backed patch choices through the profile-scoped FNIS patch setting instead of a Vortex desktop action.",
 	})
