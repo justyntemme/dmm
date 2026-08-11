@@ -61,8 +61,12 @@ class Plugin:
             self._log("backend already running")
             return await self.status()
         if self._backend_responds():
-            self._log("backend already reachable on localhost")
-            return await self.status()
+            backend_status, backend_error = self._backend_json_result("GET", "/api/status")
+            if isinstance(backend_status, dict):
+                self._log("backend already reachable on localhost with current auth")
+                return await self.status()
+            self._log(f"backend reachable but status check failed; restarting untracked backend error={self._redact_url(str(backend_error))}")
+            await self._stop_backend("stale auth or unhealthy untracked backend")
 
         plugin_dir = Path(__file__).resolve().parent
         binary = plugin_dir / "bin" / "dmm-server"
