@@ -34,7 +34,7 @@ func Register(r sdk.Registrar) {
 		{ID: "uplay", Name: "Uplay"},
 		{ID: "xbox", Name: "Xbox"},
 	} {
-		store.Status = sdk.CapabilityStatusReady
+		store.Status = sdk.CapabilityStatusNotApplicable
 		store.Message = nonApplicableMessage
 		r.RegisterGameStore(store)
 	}
