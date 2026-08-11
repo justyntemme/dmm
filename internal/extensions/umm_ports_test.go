@@ -52,7 +52,7 @@ func TestUMMVortexPortsExposeModsInstallerToolLaunchAndRuntimeRequirement(t *tes
 			if len(summary.Capabilities.ExtensionAPIs) != 1 || len(summary.Capabilities.ExtensionDashlets) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 {
 				t.Fatalf("UMM metadata = api %+v dashlets %+v todos %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionDashlets, summary.Capabilities.ExtensionToDos)
 			}
-			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionDashlets[0].Status == "ready" {
+			if summary.Capabilities.ExtensionAPIs[0].Status != "ready" || summary.Capabilities.ExtensionDashlets[0].Status != "ready" {
 				t.Fatalf("UMM runtime split = api %+v dashlets %+v", summary.Capabilities.ExtensionAPIs, summary.Capabilities.ExtensionDashlets)
 			}
 			if len(summary.Capabilities.GameStores) != tt.wantGameStores {
