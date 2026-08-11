@@ -8229,6 +8229,98 @@ func TestLOOTUserlistRoutesAreProfileScopedAndCopiedWithProfile(t *testing.T) {
 	}
 }
 
+func TestGamebryoLOOTUserlistDiagnosticsReportInvalidUserlist(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profileID := defaultProfileID(t, srv, "377160")
+	userlistPath := filepath.Join(srv.cfg.DataDir, "loot", "fallout4", "profiles", strconv.FormatInt(profileID, 10), "userlist.yaml")
+	if err := os.MkdirAll(filepath.Dir(userlistPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userlistPath, []byte("plugins:\n  - name: [broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostics, err := srv.gameDiagnostics(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test := findExtensionTest(diagnostics.ExtensionTests, "gamebryo-invalid-userlist")
+	if test == nil || test.Status != sdk.HealthCheckStatusFailed || !strings.Contains(test.Details, "LOOT userlist parse failed") {
+		t.Fatalf("invalid-userlist diagnostic = %+v; all=%+v", test, diagnostics.ExtensionTests)
+	}
+}
+
+func TestGamebryoLOOTUserlistDiagnosticsReportMissingGroups(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := filepath.Join(t.TempDir(), "Fallout 4")
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       "377160",
+		Name:        "Fallout 4",
+		InstallDir:  "Fallout 4",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profileID := defaultProfileID(t, srv, "377160")
+	masterlistPath := filepath.Join(srv.cfg.DataDir, "loot", "fallout4", "masterlist", "masterlist.yaml")
+	if err := os.MkdirAll(filepath.Dir(masterlistPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(masterlistPath, []byte("groups:\n  - name: Known Group\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userlistPath := filepath.Join(srv.cfg.DataDir, "loot", "fallout4", "profiles", strconv.FormatInt(profileID, 10), "userlist.yaml")
+	if err := os.MkdirAll(filepath.Dir(userlistPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userlistPath, []byte("plugins:\n  - name: Example.esp\n    group: Missing Plugin Group\ngroups:\n  - name: Missing Group\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostics, err := srv.gameDiagnostics(context.Background(), fallout4.SteamAppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test := findExtensionTest(diagnostics.ExtensionTests, "gamebryo-missing-groups")
+	if test == nil || test.Status != sdk.HealthCheckStatusWarning || !strings.Contains(test.Details, "Missing Plugin Group") {
+		t.Fatalf("missing-groups diagnostic = %+v; all=%+v", test, diagnostics.ExtensionTests)
+	}
+}
+
+func defaultProfileID(t *testing.T, srv *Server, appID string) int64 {
+	t.Helper()
+	profiles, err := srv.db.ProfilesForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) == 0 {
+		t.Fatalf("no profiles for %s", appID)
+	}
+	return profiles[0].ID
+}
+
+func findExtensionTest(tests []gameExtensionTestResponse, id string) *gameExtensionTestResponse {
+	for i := range tests {
+		if tests[i].TestID == id {
+			return &tests[i]
+		}
+	}
+	return nil
+}
+
 func TestLOOTSortRouteUpdatesProfilePluginOrderThroughHelper(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

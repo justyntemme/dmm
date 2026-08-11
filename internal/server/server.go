@@ -1412,6 +1412,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginFileWritableDiagnostics(game)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTUserlistDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTRuleDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.profileModRuleConflictDiagnostics(ctx, game, mods)...)
@@ -1932,6 +1933,49 @@ func gamebryoBlueprintMasterIssues(plugins []pluginLoadOrderEntry) []string {
 	}
 	sort.Strings(issues)
 	return issues
+}
+
+func (s *Server) gamebryoLOOTUserlistDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok || strings.TrimSpace(spec.LOOTGameID) == "" {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo LOOT userlist check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	status, err := s.loot.StatusForProfile(spec, profileID)
+	if err != nil {
+		s.logger.Warn("Gamebryo LOOT userlist check skipped because LOOT status failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	warning := strings.TrimSpace(status.UserlistWarning)
+	if warning == "" {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(warning), "missing groups") {
+		return []gameExtensionTestResponse{{
+			TestID:   "gamebryo-missing-groups",
+			TestName: "Gamebryo LOOT missing groups",
+			Trigger:  "gamemode-activated",
+			Status:   sdk.HealthCheckStatusWarning,
+			Severity: sdk.HealthCheckSeverityWarning,
+			Message:  "The LOOT userlist references groups that are not in the active masterlist.",
+			Details:  warning,
+			Actions:  []string{"Refresh LOOT metadata or edit the profile's LOOT groups before sorting plugins."},
+		}}
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-invalid-userlist",
+		TestName: "Gamebryo LOOT userlist",
+		Trigger:  "gamemode-activated",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  "The LOOT userlist could not be read.",
+		Details:  warning,
+		Actions:  []string{"Fix or reset the profile's LOOT userlist before sorting plugins."},
+	}}
 }
 
 func (s *Server) gamebryoLOOTRuleDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
