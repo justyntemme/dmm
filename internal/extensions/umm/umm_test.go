@@ -64,7 +64,7 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 	seenUMMModType := false
 	seenToolInstaller := false
 	seenToolAcquisition := false
-	seenSetupToDo := false
+	seenUMMAPI := false
 	for _, modType := range summary.Capabilities.ModTypes {
 		if modType.ID == umm.ToolModType {
 			seenUMMModType = true
@@ -80,13 +80,13 @@ func TestRegisterGameSupportExposesToolOnlyModType(t *testing.T) {
 			seenToolAcquisition = true
 		}
 	}
-	for _, todo := range summary.Capabilities.ExtensionToDos {
-		if todo.ID == "gardenpaws-umm-runtime" && todo.Status == sdk.CapabilityStatusReady && todo.Message != "" {
-			seenSetupToDo = true
+	for _, api := range summary.Capabilities.ExtensionAPIs {
+		if api.ID == "ummAddGame" && api.Status == sdk.CapabilityStatusReady && api.Message != "" {
+			seenUMMAPI = true
 		}
 	}
-	if !seenUMMModType || !seenToolInstaller || !seenToolAcquisition || !seenSetupToDo {
-		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v acquisition=%v todo=%v summary=%+v", seenUMMModType, seenToolInstaller, seenToolAcquisition, seenSetupToDo, summary.Capabilities)
+	if !seenUMMModType || !seenToolInstaller || !seenToolAcquisition || !seenUMMAPI {
+		t.Fatalf("UMM capability summary missing tool support: modType=%v installer=%v acquisition=%v api=%v summary=%+v", seenUMMModType, seenToolInstaller, seenToolAcquisition, seenUMMAPI, summary.Capabilities)
 	}
 }
 

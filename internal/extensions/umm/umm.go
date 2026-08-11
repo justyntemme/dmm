@@ -130,17 +130,6 @@ func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
 		Status:  sdk.CapabilityStatusNotApplicable,
 		Message: "Verified non-applicable to DMM runtime parity: Vortex shows a Unity Mod Manager attribution dashlet on its desktop dashboard. DMM exposes the actionable UMM runtime requirement, acquisition, managed tool discovery, and Decky launch path instead; no mod deployment behavior depends on this dashboard tile.",
 	})
-	message := "Vortex setup requires Unity Mod Manager to be installed from Nexus site mod " + ToolModID + " before " + gameName + " mods can function in game."
-	if opts.AutoDownload {
-		message = "Vortex calls ummAddGame with autoDownloadUMM for " + gameName + " and downloads " + ToolFileName + " from Nexus site mod " + ToolModID + " file " + ToolFileID + " when needed. DMM exposes source-backed acquisition for the same UMM package through GitHub and launches the managed UMM tool through Decky when user-side patch/configuration is required."
-	}
-	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
-		ID:      gameID + "-umm-runtime",
-		Name:    gameName + " Unity Mod Manager runtime",
-		Trigger: "setup",
-		Status:  sdk.CapabilityStatusReady,
-		Message: message + " Source review shows Vortex installs/locates UMM and registers it as a tool; the actual patch/configuration step remains inside UMM's own UI.",
-	})
 }
 
 func ToolInstaller(id string, priority int) installplan.InstallerSpec {
