@@ -55,6 +55,8 @@ require_text "$WEB_APP" "source-native" \
   "native plugin rows must have a visible source-pill style"
 require_text "$WEB_APP" "Advanced Profile Tools" \
   "file-level deployment controls must remain an advanced disclosure"
+require_text "$WEB_APP" "Extension Surfaces" \
+  "phone/tablet Review must expose source-backed page/dialog/API/report extension surfaces"
 require_text "$WEB_APP" "These Deck behavior switches are managed from the Decky sidebar settings." \
   "mobile install settings must point users to Decky-owned behavior switches"
 reject_text "$WEB_APP" "Auto-install captured downloads" \

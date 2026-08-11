@@ -135,6 +135,7 @@ for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
   require_file_contains "${asset_file}" "Open a result on the Deck" "web in-game Nexus source explanation"
   require_file_contains "${asset_file}" "Open on Deck" "web browser-first Nexus result action"
   require_file_contains "${asset_file}" "Advanced Profile Tools" "web advanced profile disclosure"
+  require_file_contains "${asset_file}" "Extension Surfaces" "web extension surface review UI"
   require_file_contains "${asset_file}" "These Deck behavior switches are managed from the Decky sidebar settings." "web install settings Decky ownership note"
 done
 
