@@ -717,23 +717,6 @@ class Plugin:
         self._log(f"deployment status loaded app_id={app_id} deployed={bool(result.get('deployed'))} files={result.get('file_count')}")
         return {"ok": True, "status": result}
 
-    async def restore_game_deployment(self, app_id):
-        app_id = str(app_id or "").strip()
-        if not app_id:
-            return {"ok": False, "error": "app_id is required."}
-        if not self._backend_responds():
-            return {"ok": False, "error": "Server is not running."}
-        result, error = self._backend_json_result("POST", f"/api/games/{urllib.parse.quote(app_id)}/deploy/restore", b"{}")
-        if result is None:
-            return {"ok": False, "error": error or "Unable to restore the last DMM-applied state."}
-        job = result.get("job") if isinstance(result, dict) else None
-        self._log(f"deployment restore requested app_id={app_id} job_id={(job or {}).get('id', '') if isinstance(job, dict) else ''}")
-        return {
-            "ok": True,
-            "job": job,
-            "result": result.get("result") if isinstance(result, dict) else None,
-        }
-
     async def game_deploy_history(self, app_id, limit=10):
         app_id = str(app_id or "").strip()
         if not app_id:
