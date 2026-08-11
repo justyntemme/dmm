@@ -11471,6 +11471,10 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	deletedSettings, settingsErr := s.extensionSettingValueMapForProfile(r.Context(), profileID)
+	if settingsErr != nil {
+		s.logger.Warn("deleted profile extension settings snapshot failed", "app_id", appID, "profile_id", profileID, "error", settingsErr)
+	}
 	deleted, err := s.db.DeleteProfile(r.Context(), profileID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -11488,6 +11492,8 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		Event:     gameext.EventDidRemoveProfile,
 		Source:    "profile-delete",
 		ProfileID: deleted.ID,
+		Profile:   &deleted,
+		Settings:  deletedSettings,
 	}); err != nil {
 		s.logger.Warn("post-profile-remove extension event failed", "app_id", appID, "profile_id", deleted.ID, "event", gameext.EventDidRemoveProfile, "error", err)
 	}
@@ -16737,6 +16743,8 @@ type lifecycleEventRequest struct {
 	Source             string
 	ProfileID          int64
 	OldProfileID       int64
+	Profile            *storage.Profile
+	Settings           map[string]map[string]json.RawMessage
 	ManagedFiles       []deploy.AppliedFile
 	ModIDs             []int64
 	Mods               []storage.InstalledMod
@@ -16761,7 +16769,9 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 		}
 	}
 	var profile storage.Profile
-	if req.ProfileID > 0 {
+	if req.Profile != nil && req.Profile.ID > 0 {
+		profile = *req.Profile
+	} else if req.ProfileID > 0 {
 		profile, err = s.db.Profile(ctx, req.ProfileID)
 		if err != nil {
 			return err
@@ -16781,9 +16791,12 @@ func (s *Server) runLifecycleEventHandlers(ctx context.Context, req lifecycleEve
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return err
 	}
-	settings, err := s.extensionSettingValueMapForProfile(ctx, profileID)
-	if err != nil {
-		return err
+	settings := req.Settings
+	if settings == nil {
+		settings, err = s.extensionSettingValueMapForProfile(ctx, profileID)
+		if err != nil {
+			return err
+		}
 	}
 	result, err := s.games.RunEventHandlers(ctx, appID, event, gameext.EventHandlerInput{
 		AppID:              appID,

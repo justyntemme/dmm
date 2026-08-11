@@ -4,6 +4,7 @@ import (
 	stdzip "archive/zip"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11288,6 +11289,83 @@ func TestProfileSwitchBakesSettingsWithProfileEnabledMods(t *testing.T) {
 	}
 	if calls[1].source != "profile-switch-new" || calls[1].profileID != newProfile.ID || strings.Join(calls[1].mods, ",") != "Second Enabled" {
 		t.Fatalf("new bake call = %+v", calls[1])
+	}
+}
+
+func TestDeleteProfileRunsDidRemoveProfileWithDeletedProfileSnapshot(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999021"
+	type removeCall struct {
+		profileID   int64
+		profileName string
+		setting     string
+	}
+	var calls []removeCall
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "remove-profile-test",
+		Name:    "Remove Profile Test",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"removeprofiletest"},
+				VortexGameID: "removeprofiletest",
+			})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:           "profile_mode",
+				Name:         "Profile Mode",
+				Scope:        "profile",
+				ValueType:    sdk.ExtensionSettingValueString,
+				DefaultValue: json.RawMessage(`"default"`),
+			})
+			r.RegisterEventHandler(sdk.EventHandlerSpec{
+				Event: sdk.EventDidRemoveProfile,
+				Name:  "Observe removed profile",
+				Handler: func(_ context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+					call := removeCall{profileID: input.ProfileID, profileName: input.ProfileName}
+					if input.ExtensionSettings != nil && input.ExtensionSettings["remove-profile-test"] != nil {
+						call.setting = string(input.ExtensionSettings["remove-profile-test"]["profile_mode"])
+					}
+					calls = append(calls, call)
+					return sdk.EventHandlerResult{}, nil
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Remove Profile Test",
+		InstallDir:  "Remove Profile Test",
+		LibraryPath: "/steam",
+		Path:        filepath.Join(t.TempDir(), "Remove Profile Test"),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), appID, "Temporary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.SetProfileExtensionSettingValue(context.Background(), profile.ID, "remove-profile-test", "profile_mode", []byte(`"custom"`)); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/profiles/"+strconv.FormatInt(profile.ID, 10), nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete profile status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls = %+v", calls)
+	}
+	if calls[0].profileID != profile.ID || calls[0].profileName != "Temporary" || calls[0].setting != `"custom"` {
+		t.Fatalf("call = %+v", calls[0])
+	}
+	if _, err := srv.db.Profile(context.Background(), profile.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("profile after delete error = %v", err)
 	}
 }
 
