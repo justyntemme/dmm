@@ -49,6 +49,12 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 		readyAPI("bake-settings", "Bake profile-local game settings"),
 		readyAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
 		readyAPI("registerGameInfoProvider", "Register generic game info provider"),
+		{
+			ID:      "isBlueprintPlugin",
+			Name:    "Detect Starfield blueprint plugin files",
+			Status:  sdk.CapabilityStatusReady,
+			Message: "DMM mirrors Vortex's Gamebryo isBlueprintPlugin API through the shared Gamebryo plugin header parser: only Starfield blueprint-flagged plugin files return true, and unreadable/non-Starfield files return false.",
+		},
 	} {
 		r.RegisterExtensionAPI(api)
 	}

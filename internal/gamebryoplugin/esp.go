@@ -65,6 +65,17 @@ func ReadHeader(path, gameID string) (Info, error) {
 	return parseHeader(buf, gameID)
 }
 
+func IsBlueprintPlugin(path, gameID string) bool {
+	if !strings.EqualFold(strings.TrimSpace(gameID), "starfield") {
+		return false
+	}
+	info, err := ReadHeader(path, gameID)
+	if err != nil {
+		return false
+	}
+	return info.IsBlueprint
+}
+
 func parseHeader(buf []byte, gameID string) (Info, error) {
 	if len(buf) < 24 {
 		return Info{}, errors.New("file incomplete")

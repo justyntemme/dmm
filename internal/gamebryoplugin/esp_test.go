@@ -40,6 +40,23 @@ func TestReadHeaderUsesStarfieldFlagLayout(t *testing.T) {
 	}
 }
 
+func TestIsBlueprintPluginMirrorsVortexAPISemantics(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Blueprint.esm")
+	body := gamebryoHeader(flagStarfieldBlueprint, "Starfield.esm")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !IsBlueprintPlugin(path, "starfield") {
+		t.Fatal("expected Starfield blueprint plugin")
+	}
+	if IsBlueprintPlugin(path, "fallout4") {
+		t.Fatal("non-Starfield games must not report blueprint plugins")
+	}
+	if IsBlueprintPlugin(filepath.Join(t.TempDir(), "missing.esm"), "starfield") {
+		t.Fatal("parse errors must report false")
+	}
+}
+
 func gamebryoHeader(flags uint32, masters ...string) []byte {
 	subrecords := []byte{}
 	hedr := make([]byte, 6+12)
