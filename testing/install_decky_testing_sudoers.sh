@@ -32,8 +32,10 @@ The wrapper calls a root-owned copy of the package installer at:
 
 Allowed passwordless commands:
   ${WRAPPER_TARGET}
+  /usr/bin/systemctl stop plugin_loader.service
   /usr/bin/systemctl restart plugin_loader.service
   /usr/bin/systemctl status plugin_loader.service
+  /usr/bin/systemctl kill plugin_loader.service
   /usr/bin/journalctl -u plugin_loader.service
 
 After installation, run package installs with:
@@ -86,8 +88,10 @@ cat >"${tmp_sudoers}" <<EOF
 # Decky Mod Manager temporary test permissions.
 # Remove with: sudo ${TESTING_DIR}/install_decky_testing_sudoers.sh --remove
 deck ALL=(root) NOPASSWD: ${WRAPPER_TARGET}
+deck ALL=(root) NOPASSWD: /usr/bin/systemctl stop plugin_loader.service
 deck ALL=(root) NOPASSWD: /usr/bin/systemctl restart plugin_loader.service
 deck ALL=(root) NOPASSWD: /usr/bin/systemctl status plugin_loader.service
+deck ALL=(root) NOPASSWD: /usr/bin/systemctl kill plugin_loader.service
 deck ALL=(root) NOPASSWD: /usr/bin/journalctl -u plugin_loader.service
 EOF
 

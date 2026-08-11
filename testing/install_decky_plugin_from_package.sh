@@ -84,6 +84,13 @@ fi
 
 echo "==> Installing to ${DECK_PLUGIN_DIR}"
 echo "    You may be prompted for the Steam Deck sudo/root password."
+if [[ "${DMM_RESTART_DECKY_AFTER_INSTALL:-1}" == "1" || "${DMM_REBOOT_AFTER_INSTALL:-0}" == "1" ]]; then
+	echo "==> Stopping Decky plugin loader before replacing files"
+	sudo systemctl stop plugin_loader.service 2>/dev/null || sudo systemctl stop plugin_loader-release.service 2>/dev/null || true
+	sudo pkill -TERM -f "/home/deck/homebrew/services/PluginLoader" 2>/dev/null || true
+	sleep 1
+	sudo pkill -KILL -f "/home/deck/homebrew/services/PluginLoader" 2>/dev/null || true
+fi
 echo "==> Stopping existing ${PLUGIN_NAME} backend/plugin processes"
 sudo pkill -f "^${DECK_PLUGIN_DIR}/bin/dmm-server$" 2>/dev/null || true
 sudo pkill -f "^Decky Mod Manager \\(${DECK_PLUGIN_DIR}/main.py\\)$" 2>/dev/null || true
