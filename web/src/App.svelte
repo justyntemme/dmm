@@ -748,6 +748,7 @@
 
   type GameExtensionActionTarget = {
     type?: string;
+    scope?: string;
     base?: string;
     target_root_id?: string;
     relative_path?: string;
@@ -847,6 +848,8 @@
   let captureURL = "";
   let resolvedCapture = "";
   let bulkCaptureMessage = "";
+  let extensionSurfaceMessage = "";
+  let extensionSurfaceBusyID = "";
   let captureBrowserPrompt: DeckBrowserPrompt | null = null;
   let captureBrowserOpenBusy = false;
   let nexusSearchQuery = "";
@@ -4941,6 +4944,52 @@
     });
   }
 
+  function extensionSurfaceActions() {
+    return gameExtensionActions.filter((action) => {
+      const status = (action.status || "ready").trim();
+      const kind = (action.kind || "").trim();
+      return status === "ready" && (kind === "page" || kind === "dialog" || kind === "api" || kind === "report");
+    });
+  }
+
+  function extensionSurfaceLabel(action: GameExtensionAction) {
+    const kind = (action.kind || action.action_target?.type || "surface").trim();
+    if (kind === "page") return "Page";
+    if (kind === "dialog") return "Dialog";
+    if (kind === "api") return "API";
+    if (kind === "report") return "Report";
+    return kind;
+  }
+
+  function extensionSurfaceDescription(action: GameExtensionAction) {
+    const scope = action.action_target?.scope || action.scope || "";
+    if (scope) return `Source-backed ${extensionSurfaceLabel(action).toLowerCase()} surface: ${scope}.`;
+    return `Source-backed ${extensionSurfaceLabel(action).toLowerCase()} surface.`;
+  }
+
+  async function resolveGameExtensionSurface(action: GameExtensionAction) {
+    if (!selectedGame) return;
+    error = "";
+    extensionSurfaceMessage = "";
+    extensionSurfaceBusyID = action.id;
+    try {
+      const response = await apiFetch(`/api/games/${selectedGame.app_id}/extension-actions/${encodeURIComponent(action.id)}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: selectedInstallProfileID() })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const result: { surface?: { type?: string; scope?: string; message?: string } } = await response.json();
+      const surface = result.surface;
+      extensionSurfaceMessage = surface?.message || `${action.name || action.id} is available as ${surface?.scope || action.action_target?.scope || action.scope || "an extension surface"}.`;
+    } finally {
+      extensionSurfaceBusyID = "";
+    }
+  }
+
   async function runGameExtensionAction(action: GameExtensionAction) {
     if (!selectedGame) return;
     error = "";
@@ -7050,6 +7099,28 @@
                     {#if action.source_extension}<small>{action.source_extension}</small>{/if}
                   </div>
                   <button type="button" on:click={() => runGameExtensionAction(action)}>Run</button>
+                </article>
+              {/each}
+            </section>
+          {/if}
+          {#if extensionSurfaceActions().length}
+            <section class="requirement-list" aria-label="Extension surfaces">
+              <div class="panel-heading compact-heading">
+                <h3>Extension Surfaces</h3>
+                <span>{extensionSurfaceActions().length}</span>
+              </div>
+              {#if extensionSurfaceMessage}<p class="hint success-copy">{extensionSurfaceMessage}</p>{/if}
+              {#each extensionSurfaceActions() as action}
+                <article>
+                  <div>
+                    <strong>{action.name || action.id}</strong>
+                    <p>{extensionSurfaceDescription(action)}</p>
+                    {#if action.message}<small>{action.message}</small>{/if}
+                    {#if action.source_extension}<small>{action.source_extension}</small>{/if}
+                  </div>
+                  <button type="button" on:click={() => resolveGameExtensionSurface(action)} disabled={extensionSurfaceBusyID === action.id}>
+                    {extensionSurfaceBusyID === action.id ? "Resolving..." : extensionSurfaceLabel(action)}
+                  </button>
                 </article>
               {/each}
             </section>
