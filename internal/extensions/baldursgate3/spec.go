@@ -20,8 +20,9 @@ const (
 	VortexGameID = "baldursgate3"
 	Name         = "Baldur's Gate 3"
 
-	bg3ModsRootID      = "bg3-local-mods"
-	bg3LocalDataRootID = "bg3-local-data"
+	bg3ModsRootID          = "bg3-local-mods"
+	bg3LocalDataRootID     = "bg3-local-data"
+	bg3PlayerProfileRootID = "bg3-player-profile"
 
 	pakModType            = "bg3-pak"
 	lslibModType          = "bg3-lslib-divine-tool"
@@ -85,6 +86,7 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterTargetRoot(sdk.TargetRootSpec{ID: bg3ModsRootID, Name: "BG3 local Mods folder", Resolver: localModsRoot})
 	r.RegisterTargetRoot(sdk.TargetRootSpec{ID: bg3LocalDataRootID, Name: "BG3 local app data", Resolver: localDataRoot})
+	r.RegisterTargetRoot(sdk.TargetRootSpec{ID: bg3PlayerProfileRootID, Name: "BG3 active player profile", Resolver: playerProfileRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRootID: bg3ModsRootID})
 	r.RegisterModType(installplan.ModTypeSpec{ID: lslibModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly})
 	r.RegisterModType(installplan.ModTypeSpec{ID: bg3seModType, TargetRoot: "bin"})
@@ -127,13 +129,13 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:   "bg3-prepare-modding",
-		Name: "Prepare BG3 local Mods folder and Public profile modsettings.lsx",
+		Name: "Prepare BG3 local Mods folder and active player profile modsettings.lsx",
 		Actions: append(
 			append(
 				sdk.EnsureTargetRootDirectories(bg3ModsRootID, "."),
-				sdk.EnsureTargetRootDirectories(bg3LocalDataRootID, "PlayerProfiles/Public")...,
+				sdk.EnsureTargetRootDirectories(bg3PlayerProfileRootID, ".")...,
 			),
-			sdk.EnsureTargetRootFiles(bg3LocalDataRootID, defaultModSettingsV8, "PlayerProfiles/Public/modsettings.lsx")...,
+			sdk.EnsureTargetRootFiles(bg3PlayerProfileRootID, defaultModSettingsV8, "modsettings.lsx")...,
 		),
 	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
@@ -207,12 +209,12 @@ func Register(r sdk.Registrar) {
 		Commands: []sdk.StateMigrationCommandSpec{
 			{
 				ID:                  "backup-public-modsettings",
-				Name:                "Back up Public modsettings.lsx",
+				Name:                "Back up active player profile modsettings.lsx",
 				Command:             sdk.StateMigrationCommandBackupTargetFile,
-				TargetRootID:        bg3LocalDataRootID,
-				TargetRelative:      "PlayerProfiles/Public/modsettings.lsx",
-				DestinationRelative: "PlayerProfiles/Public/modsettings.lsx.backup",
-				Message:             "Back up the current Public profile modsettings.lsx before DMM writes managed BG3 load order output.",
+				TargetRootID:        bg3PlayerProfileRootID,
+				TargetRelative:      "modsettings.lsx",
+				DestinationRelative: "modsettings.lsx.backup",
+				Message:             "Back up the active BG3 player profile modsettings.lsx before DMM writes managed load order output.",
 			},
 			{
 				ID:      "export-active-profile-load-order",
@@ -221,7 +223,7 @@ func Register(r sdk.Registrar) {
 				Message: "Regenerate BG3 modsettings.lsx from enabled managed pak metadata after the Patch 7 migration backup.",
 			},
 		},
-		Message: "Mirrors the source-backed BG3 Patch 7 migration by preserving the existing Public modsettings.lsx before regenerating DMM-managed load-order output. DMM does not need Vortex's desktop import dialog because the active DMM profile is the source of truth for managed mods.",
+		Message: "Mirrors the source-backed BG3 Patch 7 migration by preserving the selected player profile modsettings.lsx before regenerating DMM-managed load-order output. DMM does not need Vortex's desktop import dialog because the active DMM profile is the source of truth for managed mods.",
 	})
 	for _, pattern := range ignorePatterns {
 		r.RegisterConflictIgnore(sdk.ConflictIgnoreSpec{ID: "bg3-ignore-conflicts-" + sanitizeID(pattern), Name: "BG3 ignore conflict " + pattern, Patterns: []string{pattern}})
@@ -278,6 +280,39 @@ func localDataRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRo
 		return sdk.TargetRootResult{}, err
 	}
 	return sdk.TargetRootResult{Path: root, Source: source}, nil
+}
+
+func playerProfileRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+	root, source, err := localDataPath(ctx, input)
+	if err != nil {
+		return sdk.TargetRootResult{}, err
+	}
+	profile := bg3PlayerProfile(input.ExtensionSettings)
+	return sdk.TargetRootResult{Path: filepath.Join(root, "PlayerProfiles", profile), Source: source + " player profile " + profile}, nil
+}
+
+func bg3PlayerProfile(settings map[string]map[string]json.RawMessage) string {
+	const fallback = "Public"
+	raw := settings[VortexGameID]["bg3-player-profile"]
+	if len(raw) == 0 {
+		return fallback
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fallback
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	if strings.ContainsAny(value, `/\`) {
+		return fallback
+	}
+	value = filepath.Base(filepath.Clean(filepath.FromSlash(value)))
+	if value == "." || value == string(filepath.Separator) {
+		return fallback
+	}
+	return value
 }
 
 func localDataPath(ctx context.Context, input sdk.TargetRootInput) (string, string, error) {
@@ -342,7 +377,7 @@ func registerActions(r sdk.Registrar) {
 		Scope:   VortexGameID,
 		Kind:    sdk.ExtensionActionKindApplyProfile,
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Vortex writes the active BG3 load order to the game's modsettings.lsx. DMM runs the extension deployment hook, which generates the Steam Deck Public profile modsettings.lsx from enabled pak metadata.",
+		Message: "Vortex writes the active BG3 load order to the selected player profile modsettings.lsx. DMM runs the extension deployment hook, which generates the Steam Deck player profile modsettings.lsx from enabled pak metadata.",
 	})
 	for _, action := range []string{"Export to File", "Import from Game", "Import from File", "Import from BG3MM"} {
 		r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
@@ -358,12 +393,22 @@ func registerActions(r sdk.Registrar) {
 		Scope:   VortexGameID,
 		Kind:    sdk.ExtensionActionKindOpenPath,
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Vortex opens the active player profile modsettings.lsx from the BG3 load-order toolbar. DMM targets the Steam Deck Public profile modsettings.lsx through the extension-owned local data root.",
+		Message: "Vortex opens the active player profile modsettings.lsx from the BG3 load-order toolbar. DMM targets the configured Steam Deck player profile modsettings.lsx through an extension-owned target root.",
 		OpenPath: &sdk.OpenPathActionSpec{
 			Base:         sdk.OpenDirectoryBaseTargetRoot,
-			TargetRootID: bg3LocalDataRootID,
-			RelativePath: "PlayerProfiles/Public/modsettings.lsx",
+			TargetRootID: bg3PlayerProfileRootID,
+			RelativePath: "modsettings.lsx",
 		},
+	})
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:           "bg3-player-profile",
+		Name:         "BG3 player profile",
+		Scope:        VortexGameID,
+		ValueType:    sdk.ExtensionSettingValueString,
+		DefaultValue: json.RawMessage(`"Public"`),
+		Placeholder:  "Public",
+		Status:       sdk.CapabilityStatusReady,
+		Message:      "Vortex stores playerProfile in the BG3 settings reducer and uses it to read/write modsettings.lsx. DMM exposes the same state as a typed extension setting consumed by the BG3 target root and deployment hook.",
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:           "bg3-auto-export-load-order",

@@ -2,6 +2,7 @@ package baldursgate3
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if got := compiled.GameMetadata.StoreAppIDs["gog"]; len(got) != 1 || got[0] != GOGAppID {
 		t.Fatalf("store app ids = %+v", compiled.GameMetadata.StoreAppIDs)
 	}
-	if len(compiled.TargetRoots) != 2 {
+	if len(compiled.TargetRoots) != 3 {
 		t.Fatalf("target roots = %+v", compiled.TargetRoots)
 	}
 	if len(compiled.InstallPlan.Installers) != 6 {
@@ -47,7 +48,7 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 		t.Fatalf("reinstall action = %+v", reinstallAction)
 	}
 	openLoadOrder := extensionActionByID(compiled.ExtensionActions, "bg3-open-load-order-file")
-	if openLoadOrder == nil || openLoadOrder.Kind != sdk.ExtensionActionKindOpenPath || openLoadOrder.OpenPath == nil || openLoadOrder.OpenPath.TargetRootID != bg3LocalDataRootID || openLoadOrder.OpenPath.RelativePath != "PlayerProfiles/Public/modsettings.lsx" || openLoadOrder.Status != sdk.CapabilityStatusReady {
+	if openLoadOrder == nil || openLoadOrder.Kind != sdk.ExtensionActionKindOpenPath || openLoadOrder.OpenPath == nil || openLoadOrder.OpenPath.TargetRootID != bg3PlayerProfileRootID || openLoadOrder.OpenPath.RelativePath != "modsettings.lsx" || openLoadOrder.Status != sdk.CapabilityStatusReady {
 		t.Fatalf("open load order action = %+v", openLoadOrder)
 	}
 	exportToGame := extensionActionByID(compiled.ExtensionActions, "bg3-export-to-game")
@@ -66,8 +67,12 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if len(compiled.StateMigrations) != 1 || len(compiled.StateMigrations[0].Commands) != 2 || compiled.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandBackupTargetFile || compiled.StateMigrations[0].Commands[1].Command != sdk.StateMigrationCommandDeployProfile {
 		t.Fatalf("state migrations = %+v", compiled.StateMigrations)
 	}
-	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], "PlayerProfiles/Public/modsettings.lsx") {
+	if len(compiled.GameSetups) != 1 || !setupEnsuresFile(compiled.GameSetups[0], bg3PlayerProfileRootID, "modsettings.lsx") {
 		t.Fatalf("game setup = %+v", compiled.GameSetups)
+	}
+	playerProfile := extensionSettingByID(compiled.ExtensionSettings, "bg3-player-profile")
+	if playerProfile == nil || playerProfile.Status != sdk.CapabilityStatusReady || playerProfile.ValueType != sdk.ExtensionSettingValueString || string(playerProfile.DefaultValue) != `"Public"` {
+		t.Fatalf("player profile setting = %+v", playerProfile)
 	}
 	autoExport := extensionSettingByID(compiled.ExtensionSettings, "bg3-auto-export-load-order")
 	if autoExport == nil || autoExport.Status != sdk.CapabilityStatusReady || autoExport.ValueType != sdk.ExtensionSettingValueBool || string(autoExport.DefaultValue) != "true" {
@@ -91,6 +96,35 @@ func TestLocalModsRootResolvesProtonLocalAppData(t *testing.T) {
 	want := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Larian Studios", "Baldur's Gate 3", "Mods")
 	if got.Path != want {
 		t.Fatalf("mods root = %q, want %q", got.Path, want)
+	}
+}
+
+func TestPlayerProfileRootUsesExtensionSetting(t *testing.T) {
+	library := t.TempDir()
+	got, err := playerProfileRoot(context.Background(), sdk.TargetRootInput{
+		LibraryPath: library,
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {"bg3-player-profile": json.RawMessage(`"global"`)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Larian Studios", "Baldur's Gate 3", "PlayerProfiles", "global")
+	if got.Path != want {
+		t.Fatalf("player profile root = %q, want %q", got.Path, want)
+	}
+	fallback, err := playerProfileRoot(context.Background(), sdk.TargetRootInput{
+		LibraryPath: library,
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			VortexGameID: {"bg3-player-profile": json.RawMessage(`"../bad"`)},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(fallback.Path, filepath.Join("PlayerProfiles", "Public")) {
+		t.Fatalf("unsafe profile did not fall back to Public: %q", fallback.Path)
 	}
 }
 
@@ -242,8 +276,8 @@ func TestWillDeployGeneratesBG3ModSettingsWithManagedDivine(t *testing.T) {
 		t.Fatalf("mappings = %+v", result.Mappings)
 	}
 	mapping := result.Mappings[0]
-	wantTargetRoot := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Larian Studios", "Baldur's Gate 3")
-	if mapping.TargetRoot != wantTargetRoot || mapping.TargetRelative != "PlayerProfiles/Public/modsettings.lsx" || mapping.Strategy != deploy.StrategyCopy {
+	wantTargetRoot := filepath.Join(library, "steamapps", "compatdata", SteamAppID, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Larian Studios", "Baldur's Gate 3", "PlayerProfiles", "Public")
+	if mapping.TargetRoot != wantTargetRoot || mapping.TargetRelative != "modsettings.lsx" || mapping.Strategy != deploy.StrategyCopy {
 		t.Fatalf("mapping = %+v", mapping)
 	}
 	body, err := os.ReadFile(mapping.SourcePath)
@@ -383,9 +417,9 @@ func extensionSettingByID(settings []sdk.ExtensionSettingSpec, id string) *sdk.E
 	return nil
 }
 
-func setupEnsuresFile(setup sdk.GameSetupSpec, rel string) bool {
+func setupEnsuresFile(setup sdk.GameSetupSpec, targetRootID, rel string) bool {
 	for _, action := range setup.Actions {
-		if action.Kind == sdk.GameSetupActionEnsureFile && action.TargetRootID == bg3LocalDataRootID && action.RelativePath == rel && strings.Contains(action.Content, "GustavX") {
+		if action.Kind == sdk.GameSetupActionEnsureFile && action.TargetRootID == targetRootID && action.RelativePath == rel && strings.Contains(action.Content, "GustavX") {
 			return true
 		}
 	}

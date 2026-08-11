@@ -132,13 +132,15 @@ func findManagedDivineTool(input sdk.EventHandlerInput) (string, bool) {
 
 func generateModSettingsMapping(ctx context.Context, input sdk.EventHandlerInput, toolPath string, paks []pakCandidate) (deploy.FileMapping, int, int, error) {
 	localData, _, err := localDataPath(ctx, sdk.TargetRootInput{
-		AppID:       input.AppID,
-		GamePath:    input.GamePath,
-		LibraryPath: input.LibraryPath,
+		AppID:             input.AppID,
+		GamePath:          input.GamePath,
+		LibraryPath:       input.LibraryPath,
+		ExtensionSettings: input.ExtensionSettings,
 	})
 	if err != nil {
 		return deploy.FileMapping{}, 0, 0, err
 	}
+	playerProfile := bg3PlayerProfile(input.ExtensionSettings)
 	workDir := filepath.Join(input.WorkDir, "bg3-modsettings")
 	if err := os.RemoveAll(workDir); err != nil {
 		return deploy.FileMapping{}, 0, 0, err
@@ -161,7 +163,7 @@ func generateModSettingsMapping(ctx context.Context, input sdk.EventHandlerInput
 		}
 		infos = append(infos, info)
 	}
-	sourcePath := filepath.Join(workDir, "PlayerProfiles", "Public", "modsettings.lsx")
+	sourcePath := filepath.Join(workDir, "PlayerProfiles", playerProfile, "modsettings.lsx")
 	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
 		return deploy.FileMapping{}, 0, locked, err
 	}
@@ -175,8 +177,8 @@ func generateModSettingsMapping(ctx context.Context, input sdk.EventHandlerInput
 	}
 	return deploy.FileMapping{
 		SourcePath:     sourcePath,
-		TargetRoot:     localData,
-		TargetRelative: "PlayerProfiles/Public/modsettings.lsx",
+		TargetRoot:     filepath.Join(localData, "PlayerProfiles", playerProfile),
+		TargetRelative: "modsettings.lsx",
 		TargetPolicy:   deploy.TargetPolicyPatchExisting,
 		Strategy:       deploy.StrategyCopy,
 		Catalog:        "dmm-generated",
