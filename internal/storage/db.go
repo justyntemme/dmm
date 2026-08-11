@@ -64,6 +64,7 @@ type Game struct {
 	Name         string `json:"name"`
 	Store        string `json:"store"`
 	StoreAppID   string `json:"store_app_id"`
+	InstallDir   string `json:"install_dir"`
 	LibraryPath  string `json:"library_path"`
 	GamePath     string `json:"game_path"`
 	Version      string `json:"version"`
@@ -972,7 +973,7 @@ func (db *DB) GameCount(ctx context.Context) (int, error) {
 
 func (db *DB) Games(ctx context.Context) ([]Game, error) {
 	rows, err := db.conn.QueryContext(ctx, `
-SELECT id, steam_app_id, name, store, store_app_id, library_path, game_path, version, steam_build_id, state
+SELECT id, steam_app_id, name, store, store_app_id, install_dir, library_path, game_path, version, steam_build_id, state
 FROM games
 ORDER BY LOWER(name), steam_app_id
 `)
@@ -983,7 +984,7 @@ ORDER BY LOWER(name), steam_app_id
 	var games []Game
 	for rows.Next() {
 		var game Game
-		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.Store, &game.StoreAppID, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State); err != nil {
+		if err := rows.Scan(&game.ID, &game.SteamAppID, &game.Name, &game.Store, &game.StoreAppID, &game.InstallDir, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State); err != nil {
 			return nil, err
 		}
 		if steam.IsHelperApp(game.SteamAppID, game.Name, "") {
@@ -1205,10 +1206,10 @@ func (db *DB) DeleteCapturedInstall(ctx context.Context, jobID string) error {
 func (db *DB) GameBySteamApp(ctx context.Context, appID string) (Game, error) {
 	var game Game
 	err := db.conn.QueryRowContext(ctx, `
-SELECT id, steam_app_id, name, store, store_app_id, library_path, game_path, version, steam_build_id, state
+SELECT id, steam_app_id, name, store, store_app_id, install_dir, library_path, game_path, version, steam_build_id, state
 FROM games
 WHERE steam_app_id = ?
-`, appID).Scan(&game.ID, &game.SteamAppID, &game.Name, &game.Store, &game.StoreAppID, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State)
+`, appID).Scan(&game.ID, &game.SteamAppID, &game.Name, &game.Store, &game.StoreAppID, &game.InstallDir, &game.LibraryPath, &game.GamePath, &game.Version, &game.SteamBuildID, &game.State)
 	return game, err
 }
 

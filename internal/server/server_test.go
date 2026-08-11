@@ -1210,6 +1210,36 @@ func TestGameResponseKeepsEmptyNexusDomainsArray(t *testing.T) {
 	}
 }
 
+func TestRegisterManualStoreGamePersistsExtensionBackedInstall(t *testing.T) {
+	srv := newTestServer(t)
+	gamePath := t.TempDir()
+	reqBody := `{"store":"gog","store_app_id":"1456460669","name":"Baldur's Gate 3","path":` + strconv.Quote(gamePath) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/games/manual", strings.NewReader(reqBody))
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body manualGameResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.OK || body.Game.AppID != gameext.StoreBackedAppID("gog", "1456460669") || body.Game.Store != "gog" || body.Game.StoreAppID != "1456460669" {
+		t.Fatalf("manual game response = %+v", body)
+	}
+	if body.Game.Extension == nil || !body.Game.Extension.Supported || !containsString(body.Game.NexusDomains, "baldursgate3") {
+		t.Fatalf("manual game extension response = %+v", body.Game)
+	}
+	stored, err := srv.db.GameBySteamApp(context.Background(), body.Game.AppID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Store != "gog" || stored.StoreAppID != "1456460669" || stored.GamePath != gamePath || stored.InstallDir != filepath.Base(gamePath) {
+		t.Fatalf("stored game = %+v", stored)
+	}
+}
+
 func TestGameExtensionInfoReportsCapabilityBadges(t *testing.T) {
 	stardew := gameExtensionInfoForSteamApp(games.DefaultRegistry, "413150")
 	if stardew == nil || !stardew.Supported || stardew.Coverage != gameext.CoverageInstaller || !stardew.Nexus || !stardew.Installers || !stardew.RuntimeRequirements || !stardew.LaunchTools {
@@ -17420,4 +17450,13 @@ func writeSteamLaunchOptions(t *testing.T, appID, options string) {
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

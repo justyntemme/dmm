@@ -428,6 +428,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/extensions/{extensionID}/settings/{settingID}", s.handleSetExtensionSetting)
 	mux.HandleFunc("GET /api/interpreters/resolve", s.handleResolveInterpreter)
 	mux.HandleFunc("GET /api/games", s.handleGames)
+	mux.HandleFunc("POST /api/games/manual", s.handleRegisterManualGame)
 	mux.HandleFunc("GET /api/install-candidates", s.handleInstallCandidates)
 	mux.HandleFunc("POST /api/decky/browser/open", s.handleDeckyBrowserOpen)
 	mux.HandleFunc("GET /api/launch/actions", s.handleLaunchActions)
@@ -839,6 +840,8 @@ type gameSetupApplyResult struct {
 type gameResponse struct {
 	AppID         string              `json:"app_id"`
 	Name          string              `json:"name"`
+	Store         string              `json:"store,omitempty"`
+	StoreAppID    string              `json:"store_app_id,omitempty"`
 	InstallDir    string              `json:"install_dir"`
 	LibraryPath   string              `json:"library_path"`
 	Path          string              `json:"path"`
@@ -849,6 +852,21 @@ type gameResponse struct {
 	SteamWorkshop *steam.WorkshopInfo `json:"steam_workshop,omitempty"`
 	NexusDomains  []string            `json:"nexus_domains"`
 	Extension     *gameExtensionInfo  `json:"extension,omitempty"`
+}
+
+type manualGameRequest struct {
+	Store       string `json:"store"`
+	StoreAppID  string `json:"store_app_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	LibraryPath string `json:"library_path,omitempty"`
+	InstallDir  string `json:"install_dir,omitempty"`
+	Version     string `json:"version,omitempty"`
+}
+
+type manualGameResponse struct {
+	OK   bool         `json:"ok"`
+	Game gameResponse `json:"game"`
 }
 
 type gameInfoResponse struct {
@@ -5528,30 +5546,138 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	forceRefresh := truthyQueryValue(r.URL.Query().Get("refresh"))
 	games, cached, err := s.discoverGames(r.Context(), forceRefresh)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		if !errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.logger.Debug("steam game discovery unavailable; returning stored games", "error", err)
+		games = nil
+		cached = false
 	}
 	if cached {
 		s.logger.Debug("using cached steam game discovery", "games", len(games))
 	}
-	responses := make([]gameResponse, 0, len(games))
+	stored, err := s.db.Games(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	seen := map[string]struct{}{}
+	responses := make([]gameResponse, 0, len(games)+len(stored))
 	for _, game := range games {
-		responses = append(responses, gameResponse{
-			AppID:         game.AppID,
-			Name:          game.Name,
-			InstallDir:    game.InstallDir,
-			LibraryPath:   game.LibraryPath,
-			Path:          game.Path,
-			Version:       game.Version,
-			SteamBuildID:  game.BuildID,
-			State:         game.State,
-			Markers:       game.Markers,
-			SteamWorkshop: workshopResponse(game.Workshop),
-			NexusDomains:  s.games.NexusDomainsForSteamAppID(game.AppID),
-			Extension:     gameExtensionInfoForSteamApp(s.games, game.AppID),
-		})
+		seen[game.AppID] = struct{}{}
+		responses = append(responses, s.gameResponseFromSteamGame(game))
+	}
+	for _, game := range stored {
+		if _, ok := seen[game.SteamAppID]; ok {
+			continue
+		}
+		responses = append(responses, s.gameResponseFromStoredGame(game))
 	}
 	writeJSON(w, http.StatusOK, responses)
+}
+
+func (s *Server) handleRegisterManualGame(w http.ResponseWriter, r *http.Request) {
+	var req manualGameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	store := strings.TrimSpace(req.Store)
+	storeAppID := strings.TrimSpace(req.StoreAppID)
+	name := strings.TrimSpace(req.Name)
+	gamePath := filepath.Clean(strings.TrimSpace(req.Path))
+	if store == "" || storeAppID == "" || name == "" || gamePath == "." {
+		writeError(w, http.StatusBadRequest, errors.New("store, store_app_id, name, and path are required"))
+		return
+	}
+	if !filepath.IsAbs(gamePath) {
+		writeError(w, http.StatusBadRequest, errors.New("path must be absolute"))
+		return
+	}
+	info, err := os.Stat(gamePath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("game path is not accessible: %w", err))
+		return
+	}
+	if !info.IsDir() {
+		writeError(w, http.StatusBadRequest, errors.New("path must be a directory"))
+		return
+	}
+	appID := gameext.StoreBackedAppID(store, storeAppID)
+	if appID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("store and store_app_id must contain letters or digits"))
+		return
+	}
+	if !s.games.SupportsSteamApp(appID) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no DMM extension supports %s app %s", store, storeAppID))
+		return
+	}
+	libraryPath := filepath.Clean(strings.TrimSpace(req.LibraryPath))
+	if libraryPath == "." {
+		libraryPath = filepath.Dir(gamePath)
+	}
+	installDir := strings.TrimSpace(req.InstallDir)
+	if installDir == "" {
+		installDir = filepath.Base(gamePath)
+	}
+	game := steam.Game{
+		AppID:       appID,
+		Name:        name,
+		Store:       store,
+		StoreAppID:  storeAppID,
+		InstallDir:  installDir,
+		LibraryPath: libraryPath,
+		Path:        gamePath,
+		Version:     strings.TrimSpace(req.Version),
+		State:       "clean_candidate",
+	}
+	if err := s.db.SyncGames(r.Context(), []steam.Game{game}); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.gameDiscoveryMu.Lock()
+	s.gameDiscoveryCache = nil
+	s.gameDiscoveryCacheAt = time.Time{}
+	s.gameDiscoveryMu.Unlock()
+	s.publishGameEvent(events.TypeGameChanged, appID, map[string]any{"action": "manual_game_registered", "store": store, "store_app_id": storeAppID})
+	writeJSON(w, http.StatusOK, manualGameResponse{OK: true, Game: s.gameResponseFromSteamGame(game)})
+}
+
+func (s *Server) gameResponseFromSteamGame(game steam.Game) gameResponse {
+	return gameResponse{
+		AppID:         game.AppID,
+		Name:          game.Name,
+		Store:         game.Store,
+		StoreAppID:    game.StoreAppID,
+		InstallDir:    game.InstallDir,
+		LibraryPath:   game.LibraryPath,
+		Path:          game.Path,
+		Version:       game.Version,
+		SteamBuildID:  game.BuildID,
+		State:         game.State,
+		Markers:       game.Markers,
+		SteamWorkshop: workshopResponse(game.Workshop),
+		NexusDomains:  s.games.NexusDomainsForSteamAppID(game.AppID),
+		Extension:     gameExtensionInfoForSteamApp(s.games, game.AppID),
+	}
+}
+
+func (s *Server) gameResponseFromStoredGame(game storage.Game) gameResponse {
+	return gameResponse{
+		AppID:        game.SteamAppID,
+		Name:         game.Name,
+		Store:        game.Store,
+		StoreAppID:   game.StoreAppID,
+		InstallDir:   game.InstallDir,
+		LibraryPath:  game.LibraryPath,
+		Path:         game.GamePath,
+		Version:      game.Version,
+		SteamBuildID: game.SteamBuildID,
+		State:        game.State,
+		NexusDomains: s.games.NexusDomainsForSteamAppID(game.SteamAppID),
+		Extension:    gameExtensionInfoForSteamApp(s.games, game.SteamAppID),
+	}
 }
 
 func (s *Server) handleGameInfo(w http.ResponseWriter, r *http.Request) {
