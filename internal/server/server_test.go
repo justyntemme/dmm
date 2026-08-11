@@ -12568,6 +12568,24 @@ func TestGamebryoLOOTRuleIssues(t *testing.T) {
 	}
 }
 
+func TestProfileModConflictRuleIssues(t *testing.T) {
+	issues := profileModConflictRuleIssues([]storage.InstalledMod{
+		{ID: 1, ProfileID: 10, Name: "Weather A", Enabled: true},
+		{ID: 2, ProfileID: 10, Name: "Weather B", Enabled: true},
+		{ID: 3, ProfileID: 10, Name: "Disabled Conflict", Enabled: false},
+		{ID: 4, ProfileID: 11, Name: "Other Profile", Enabled: true},
+	}, []storage.ProfileModRule{
+		{SourceInstalledModID: 1, ReferenceInstalledModID: 2, Type: "conflicts"},
+		{SourceInstalledModID: 2, ReferenceInstalledModID: 1, Type: "conflicts"},
+		{SourceInstalledModID: 1, ReferenceInstalledModID: 3, Type: "conflicts"},
+		{SourceInstalledModID: 1, ReferenceInstalledModID: 4, Type: "conflicts"},
+		{SourceInstalledModID: 1, ReferenceInstalledModID: 2, Type: "before"},
+	}, 10)
+	if len(issues) != 1 || issues[0] != "Weather A conflicts with Weather B" {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
 func TestPathWritableDetectsReadOnlyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plugins.txt")
 	if err := os.WriteFile(path, []byte("*Example.esp\n"), 0o600); err != nil {

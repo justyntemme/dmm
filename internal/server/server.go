@@ -1404,6 +1404,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTRuleDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.profileModRuleConflictDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
 		if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusCanceled || job.Status == jobs.StatusFailed {
@@ -1602,6 +1603,68 @@ func (s *Server) extensionHealthChecks(ctx context.Context, game storage.Game, m
 		})
 	}
 	return out
+}
+
+func (s *Server) profileModRuleConflictDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("profile mod conflict-rule check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	rules, err := s.db.ProfileModRules(ctx, profileID)
+	if err != nil {
+		s.logger.Warn("profile mod conflict-rule check skipped because rules failed", "app_id", game.SteamAppID, "profile_id", profileID, "error", err)
+		return nil
+	}
+	issues := profileModConflictRuleIssues(mods, rules, profileID)
+	if len(issues) == 0 {
+		return nil
+	}
+	return []gameExtensionTestResponse{{
+		TestID:   "dependency-conflict-rules",
+		TestName: "Mod dependency conflict rules",
+		Trigger:  "mods-enabled",
+		Status:   sdk.HealthCheckStatusWarning,
+		Severity: sdk.HealthCheckSeverityWarning,
+		Message:  "Some enabled mods conflict with each other.",
+		Details:  strings.Join(issues, "; "),
+		Actions:  []string{"Disable one of the conflicting mods or move it to another profile."},
+	}}
+}
+
+func profileModConflictRuleIssues(mods []storage.InstalledMod, rules []storage.ProfileModRule, profileID int64) []string {
+	enabled := map[int64]storage.InstalledMod{}
+	for _, mod := range mods {
+		if mod.ProfileID == profileID && mod.Enabled {
+			enabled[mod.ID] = mod
+		}
+	}
+	seen := map[string]struct{}{}
+	var issues []string
+	for _, rule := range rules {
+		if strings.TrimSpace(rule.Type) != "conflicts" {
+			continue
+		}
+		source, sourceOK := enabled[rule.SourceInstalledModID]
+		reference, referenceOK := enabled[rule.ReferenceInstalledModID]
+		if !sourceOK || !referenceOK {
+			continue
+		}
+		left, right := source.Name, reference.Name
+		leftID, rightID := source.ID, reference.ID
+		if leftID > rightID {
+			left, right = right, left
+			leftID, rightID = rightID, leftID
+		}
+		key := strconv.FormatInt(leftID, 10) + ":" + strconv.FormatInt(rightID, 10)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		issues = append(issues, left+" conflicts with "+right)
+	}
+	sort.Strings(issues)
+	return issues
 }
 
 func (s *Server) gamebryoArchiveCompatibilityTests(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
