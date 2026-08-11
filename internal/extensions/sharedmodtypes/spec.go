@@ -21,8 +21,6 @@ const (
 	BuildID = "first-party-go"
 )
 
-const blockedMessage = "Vortex source defines this shared mod-type behavior, but DMM has not implemented the reusable runtime/helper for game extensions yet."
-
 const (
 	DInputModType = "dinput"
 	ENBModType    = "enb"
@@ -59,16 +57,6 @@ func Register(r sdk.Registrar) {
 		ENBModTypeSpec(),
 		{ID: GeDoSaToType, TargetRoot: "", Status: sdk.CapabilityStatusMetadata, Message: "GeDoSaTo helper support is implemented for game extensions that declare a concrete texture target root and runtime requirement."},
 	} {
-		if modType.ID == DInputModType {
-			r.RegisterModType(modType)
-			continue
-		}
-		if modType.Status == "" {
-			modType.Status = sdk.CapabilityStatusBlocked
-		}
-		if modType.Message == "" {
-			modType.Message = blockedMessage
-		}
 		r.RegisterModType(modType)
 	}
 	r.RegisterInstaller(DInputInstaller("dinput", 50))
