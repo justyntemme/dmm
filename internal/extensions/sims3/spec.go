@@ -77,6 +77,6 @@ func Register(r sdk.Registrar) {
 		Paths:     []string{"game/bin/skuversion.txt"},
 		Extractor: gameversiontext.KeyValueLine("GameVersion", "="),
 	}))
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex discovers The Sims 3 through the Windows registry. DMM's Steam Deck MVP runtime uses Steam discovery, while the extension adapts the install target to the Steam Deck Proton Documents path for Steam app 47890."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Message: "Vortex discovers The Sims 3 through the Windows registry. DMM represents this store identity through manual install-path registration for extension-backed games, while the Steam Deck extension adapts the install target to the Proton Documents path for Steam app 47890."})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-sims3 extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-sims3/src"})
 }

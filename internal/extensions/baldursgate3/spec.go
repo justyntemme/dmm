@@ -345,13 +345,11 @@ func registerActions(r sdk.Registrar) {
 		Message: "Vortex writes the active BG3 load order to the game's modsettings.lsx. DMM runs the extension deployment hook, which generates the Steam Deck Public profile modsettings.lsx from enabled pak metadata.",
 	})
 	for _, action := range []string{"Export to File", "Import from Game", "Import from File", "Import from BG3MM"} {
-		r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
 			ID:      "bg3-" + sanitizeID(action),
 			Name:    action,
-			Scope:   VortexGameID,
-			Kind:    sdk.ExtensionActionKindDialog,
-			Status:  sdk.CapabilityStatusNotApplicable,
-			Message: "Vortex exposes this as a desktop file-picker or Vortex-state migration action. DMM-created Steam Deck state exports to the game through profile deployment; arbitrary file import/export is a post-MVP advanced management workflow.",
+			Trigger: "advanced-load-order-import",
+			Message: "Vortex implements this with desktop file-picker and BG3 load-order import/export callbacks. DMM must add a real BG3 advanced load-order import/export surface before exposing this workflow.",
 		})
 	}
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{

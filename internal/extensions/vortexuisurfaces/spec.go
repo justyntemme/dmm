@@ -66,13 +66,11 @@ func Register(r sdk.Registrar) {
 }
 
 func registerImportSurfaces(r sdk.Registrar) {
-	moMessage := "Vortex's MO import extension is Windows-only and assumes Mod Organizer/Vortex desktop paths. It is not applicable to DMM-created Steam Deck state; DMM must implement a real source-aware MO import wizard before claiming imported-environment support."
-	nmmMessage := "Vortex's NMM import extension is Windows-only and reads Black Tree Gaming/NMM desktop state. It is not applicable to DMM-created Steam Deck state; DMM must implement a real source-aware NMM import wizard before claiming imported-environment support."
-	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "mo-import", Name: "Import From MO", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: moMessage})
-	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "mo-import", Name: "Import From MO", Scope: "legacy-import", Kind: sdk.ExtensionActionKindDialog, Status: sdk.CapabilityStatusNotApplicable, Message: moMessage})
-	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "nmm-import-session", Name: "NMM import session state", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
-	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
-	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "nmm-import", Name: "Import From NMM", Scope: "legacy-import", Kind: sdk.ExtensionActionKindDialog, Status: sdk.CapabilityStatusNotApplicable, Message: nmmMessage})
+	moMessage := "Vortex's MO import extension is Windows-only and assumes Mod Organizer/Vortex desktop paths. DMM must implement a real source-aware MO import wizard before claiming imported-environment support."
+	nmmMessage := "Vortex's NMM import extension is Windows-only and reads Black Tree Gaming/NMM desktop state. DMM must implement a real source-aware NMM import wizard and session state before claiming imported-environment support."
+	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "mo-import", Name: "Import From MO", Trigger: "post-mvp-legacy-import", Message: moMessage})
+	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "nmm-import", Name: "Import From NMM", Trigger: "post-mvp-legacy-import", Message: nmmMessage})
+	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "nmm-import-session", Name: "NMM import session state", Trigger: "post-mvp-legacy-import", Message: nmmMessage})
 }
 
 func Sources() []sdk.SourceRef {

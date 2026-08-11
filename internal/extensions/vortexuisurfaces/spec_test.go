@@ -7,7 +7,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
+func TestExtensionRegistersVortexUISurfaceMetadata(t *testing.T) {
 	summary := gameext.NewRegistry([]gameext.Extension{
 		gameext.MustCompileExtension(Extension()),
 	}).ExtensionSummaries()[0]
@@ -29,14 +29,15 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "mod-highlight-state-divider", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "feedback-state-divider", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mod-report", sdk.CapabilityStatusReady)
-	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mo-import", sdk.CapabilityStatusNotApplicable)
-	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "nmm-import", sdk.CapabilityStatusNotApplicable)
-	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "mo-import", sdk.CapabilityStatusNotApplicable)
-	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "nmm-import", sdk.CapabilityStatusNotApplicable)
-	if len(summary.Capabilities.ExtensionToDos) != 0 {
-		t.Fatalf("extension todos = %+v", summary.Capabilities.ExtensionToDos)
+	if len(summary.Capabilities.ExtensionDialogs) != 0 {
+		t.Fatalf("extension dialogs should not advertise unimplemented import surfaces: %+v", summary.Capabilities.ExtensionDialogs)
 	}
-	assertStatus(t, "state reducer", summary.Capabilities.StateReducers, "nmm-import-session", sdk.CapabilityStatusNotApplicable)
+	if len(summary.Capabilities.StateReducers) != 0 {
+		t.Fatalf("state reducers should not advertise unimplemented import session state: %+v", summary.Capabilities.StateReducers)
+	}
+	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "mo-import", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "nmm-import", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension todo", summary.Capabilities.ExtensionToDos, "nmm-import-session", sdk.CapabilityStatusReady)
 }
 
 func assertStatus(t *testing.T, kind string, features []gameext.FeatureSummary, id, status string) {
