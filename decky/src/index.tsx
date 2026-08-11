@@ -4427,7 +4427,7 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
       onClick={() => {
         if (!props.disabled) props.onActivate();
       }}
-      style={props.settingsRow ? freshSettingsToggleCardStyle(props.disabled) : freshButtonStyle(props.kind ?? "neutral", props.disabled)}
+      style={props.settingsRow ? freshSettingsActionCardStyle(props.disabled) : freshButtonStyle(props.kind ?? "neutral", props.disabled)}
     >
       {props.children}
     </Focusable>
@@ -4632,6 +4632,15 @@ function freshSettingsToggleCardStyle(disabled = false): CSSProperties {
     padding: "12px",
     scrollMarginBlock: "18px",
     width: "100%"
+  };
+}
+
+function freshSettingsActionCardStyle(disabled = false): CSSProperties {
+  return {
+    ...freshSettingsToggleCardStyle(disabled),
+    display: "flex",
+    justifyContent: "center",
+    textAlign: "center"
   };
 }
 
