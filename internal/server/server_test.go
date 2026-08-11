@@ -269,16 +269,16 @@ func TestCatalogsReportsProviderCapabilities(t *testing.T) {
 	if got := byID["nexus"]; got.Status != "needs_credentials" || got.Configured || !got.CredentialsRequired || !got.URLImport {
 		t.Fatalf("nexus catalog = %+v", got)
 	}
-	if got := byID["thunderstore"]; got.Status != "ready" || !got.URLImport || !got.Download {
+	if got := byID["thunderstore"]; got.Status != "ready" || !got.URLImport || !got.Search || !got.Browse || !got.Download {
 		t.Fatalf("thunderstore catalog = %+v", got)
 	}
 	if got := byID["github"]; got.Status != "ready" || !got.URLImport || !got.Download {
 		t.Fatalf("github catalog = %+v", got)
 	}
-	if got := byID["modrinth"]; got.Status != "ready" || !got.URLImport || !got.Download {
+	if got := byID["modrinth"]; got.Status != "ready" || !got.URLImport || !got.Search || !got.Browse || !got.Download {
 		t.Fatalf("modrinth catalog = %+v", got)
 	}
-	if got := byID["gamebanana"]; got.Status != "ready" || !got.URLImport || !got.Download {
+	if got := byID["gamebanana"]; got.Status != "ready" || !got.URLImport || !got.Search || !got.Browse || !got.Download {
 		t.Fatalf("gamebanana catalog = %+v", got)
 	}
 	if got := byID["direct"]; got.Status != "ready" || got.Kind != "direct" || !got.URLImport || !got.Download {
@@ -355,10 +355,10 @@ func TestUpdateCatalogSettingsPersistsKeysWithoutEchoingSecrets(t *testing.T) {
 	for _, item := range body.Catalogs {
 		byID[item.ID] = item
 	}
-	if got := byID["modio"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Download {
+	if got := byID["modio"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Search || !got.Browse || !got.Download {
 		t.Fatalf("mod.io catalog = %+v", got)
 	}
-	if got := byID["curseforge"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Download {
+	if got := byID["curseforge"]; got.Status != "ready" || !got.Configured || !got.URLImport || !got.Search || !got.Browse || !got.Download {
 		t.Fatalf("curseforge catalog = %+v", got)
 	}
 
