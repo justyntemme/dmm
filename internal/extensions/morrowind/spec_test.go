@@ -35,6 +35,9 @@ func TestExtensionRegistersMorrowindCapabilities(t *testing.T) {
 	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("attribute extractors = %+v", summary.Capabilities.AttributeExtractors)
 	}
+	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.StateMigrations[0].Commands) != 1 || summary.Capabilities.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandScanStagedFiles {
+		t.Fatalf("state migrations = %+v", summary.Capabilities.StateMigrations)
+	}
 }
 
 func TestDataRootInstallerTargetsDataFiles(t *testing.T) {

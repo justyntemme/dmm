@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2872,6 +2872,20 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			}
 			if field := strings.TrimSpace(command.MetadataNameField); field == "" || strings.ContainsAny(field, "/\\\x00\r\n") {
 				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" metadata name field must be a simple field name"))
+			}
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandScanStagedFiles {
+			if kind := strings.TrimSpace(command.MetadataKind); kind == "" || strings.ContainsAny(kind, "/\\\x00\r\n") {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" metadata kind must be a simple identifier"))
+			}
+			if len(command.FileExtensions) == 0 {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" file extensions are required"))
+			}
+			for _, ext := range command.FileExtensions {
+				value := strings.TrimSpace(ext)
+				if !strings.HasPrefix(value, ".") || strings.ContainsAny(value, "/\\\x00\r\n") {
+					errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" file extension must start with a dot and be a simple suffix"))
+				}
 			}
 		}
 		if err := validateCapabilityStatus("state migration "+migrationID+" command", id, command.Status, command.Message); err != nil {

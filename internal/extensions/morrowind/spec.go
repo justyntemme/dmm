@@ -120,8 +120,14 @@ func Register(r sdk.Registrar) {
 		Name:        "Morrowind plugin attribute migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.3",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex scans historical staged Morrowind mods and writes ESP/ESM plugin attributes onto old mod records. This is not applicable to DMM-created state because DMM extracts those attributes during install planning; post-MVP Vortex import must scan imported staging and populate equivalent metadata for old Vortex mods.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:             "scan-plugins",
+			Name:           "Scan staged ESP/ESM plugins",
+			Command:        sdk.StateMigrationCommandScanStagedFiles,
+			MetadataKind:   "morrowind-plugin",
+			FileExtensions: []string{".esm", ".esp"},
+		}},
+		Message: "Mirrors Vortex 1.0.3 migration by scanning historical staged mods for ESP/ESM plugin files and storing equivalent DMM metadata for load-order generation.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

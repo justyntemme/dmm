@@ -9230,6 +9230,111 @@ func TestExtensionMigrationWrapsStagedRootByMetadataName(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationScansStagedFilesIntoManifestMetadata(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(root, "staging", "morrowind", "mods", "plugins", "files", "1")
+	for rel, content := range map[string]string{
+		"Example.esp":        "plugin",
+		"Nested/Addon.ESM":   "master",
+		"Meshes/ignored.nif": "mesh",
+	} {
+		path := filepath.Join(stagingPath, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const appID = "999015"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationscangame",
+		Name:    "Migration Scan Game",
+		Version: "1.0.3",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationscangame"},
+				VortexGameID: "migrationscangame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "scan-staged",
+				Name:        "Scan staged files",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.3",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:             "scan-plugins",
+					Name:           "Scan plugins",
+					Command:        sdk.StateMigrationCommandScanStagedFiles,
+					MetadataKind:   "plugin",
+					FileExtensions: []string{".esp", ".esm"},
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Scan Game",
+		InstallDir:  "Migration Scan Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationscangame", ModID: "plugins", FileID: "1"},
+		Name:         "Plugin Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "plugins.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationscangame","mod_type":"data","metadata":[{"kind":"other","name":"keep"}],"files":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated storage.InstalledMod
+	for _, candidate := range mods {
+		if candidate.ID == mod.ID {
+			updated = candidate
+		}
+	}
+	manifest, err := parseStagedManifest(updated.ManifestJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	keptOther := false
+	for _, metadata := range manifest.Metadata {
+		if metadata.Kind == "other" && metadata.Name == "keep" {
+			keptOther = true
+		}
+		if metadata.Kind == "plugin" {
+			names[metadata.Name] = true
+		}
+	}
+	if !keptOther || !names["Example.esp"] || !names["Addon.ESM"] || len(names) != 2 {
+		t.Fatalf("metadata = %+v", manifest.Metadata)
+	}
+}
+
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

@@ -262,6 +262,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandWrapStagedRoot:
 		changed, err := s.wrapStagedRootsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return changed > 0, err
+	case sdk.StateMigrationCommandScanStagedFiles:
+		changed, err := s.scanStagedFilesForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return changed > 0, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -410,6 +413,58 @@ func (s *Server) wrapStagedRootsForMigration(ctx context.Context, appID string, 
 	return changed, nil
 }
 
+func (s *Server) scanStagedFilesForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) (int, error) {
+	kind := strings.TrimSpace(command.MetadataKind)
+	if kind == "" {
+		return 0, fmt.Errorf("extension migration command %s metadata kind is required", command.ID)
+	}
+	extensions := migrationExtensionSet(command.FileExtensions)
+	if len(extensions) == 0 {
+		return 0, fmt.Errorf("extension migration command %s file extensions are required", command.ID)
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, mod := range mods {
+		if err := ctx.Err(); err != nil {
+			return changed, err
+		}
+		if !installedModMatchesMigrationCommand(mod, command) {
+			continue
+		}
+		stagingRoot := filepath.Clean(strings.TrimSpace(mod.StagingPath))
+		if stagingRoot == "" || !filepath.IsAbs(stagingRoot) {
+			continue
+		}
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			return changed, err
+		}
+		metadata, err := scanStagedFileMetadata(stagingRoot, kind, extensions)
+		if err != nil {
+			return changed, err
+		}
+		if len(metadata) == 0 {
+			continue
+		}
+		manifest.Metadata = replaceMigrationMetadata(manifest.Metadata, kind, metadata)
+		body, err := json.Marshal(manifest)
+		if err != nil {
+			return changed, err
+		}
+		if err := s.db.UpdateInstalledModManifest(ctx, mod.ID, string(body)); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	if changed > 0 {
+		s.logger.Info("extension migration scanned staged files", "app_id", appID, "source", source, "metadata_kind", kind, "mods", changed)
+	}
+	return changed, nil
+}
+
 func installedModMatchesMigrationCommand(mod storage.InstalledMod, command sdk.StateMigrationCommandSpec) bool {
 	modType := canonicalModType(command.ModType)
 	if modType == "" {
@@ -420,6 +475,69 @@ func installedModMatchesMigrationCommand(mod storage.InstalledMod, command sdk.S
 		return false
 	}
 	return canonicalModType(manifest.ModType) == modType
+}
+
+func migrationExtensionSet(extensions []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(extensions))
+	for _, ext := range extensions {
+		value := strings.ToLower(strings.TrimSpace(ext))
+		if strings.HasPrefix(value, ".") && !strings.ContainsAny(value, "/\\\x00\r\n") {
+			out[value] = struct{}{}
+		}
+	}
+	return out
+}
+
+func scanStagedFileMetadata(stagingRoot, kind string, extensions map[string]struct{}) ([]installplan.ModMetadata, error) {
+	out := []installplan.ModMetadata{}
+	err := filepath.WalkDir(stagingRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(stagingRoot, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if _, ok := extensions[strings.ToLower(filepath.Ext(entry.Name()))]; !ok {
+			return nil
+		}
+		name := strings.TrimSpace(entry.Name())
+		if name == "" {
+			return nil
+		}
+		out = append(out, installplan.ModMetadata{
+			Kind:            kind,
+			SourcePath:      rel,
+			StagingRelative: rel,
+			TargetRelative:  rel,
+			Name:            name,
+			UniqueID:        strings.ToLower(name),
+		})
+		return nil
+	})
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+func replaceMigrationMetadata(existing []installplan.ModMetadata, kind string, scanned []installplan.ModMetadata) []installplan.ModMetadata {
+	out := make([]installplan.ModMetadata, 0, len(existing)+len(scanned))
+	for _, metadata := range existing {
+		if strings.EqualFold(metadata.Kind, kind) {
+			continue
+		}
+		out = append(out, metadata)
+	}
+	out = append(out, scanned...)
+	return out
 }
 
 func migrationFirstSegmentSet(segments []string) map[string]struct{} {

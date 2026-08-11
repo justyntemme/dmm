@@ -1075,6 +1075,7 @@ const (
 	StateMigrationCommandDeployProfile   = "deploy-profile"
 	StateMigrationCommandMoveStagedPaths = "move-staged-paths"
 	StateMigrationCommandWrapStagedRoot  = "wrap-staged-root"
+	StateMigrationCommandScanStagedFiles = "scan-staged-files"
 )
 
 type StateMigrationCommandSpec struct {
@@ -1091,6 +1092,8 @@ type StateMigrationCommandSpec struct {
 	MatchFirstSegments  []string
 	MetadataFile        string
 	MetadataNameField   string
+	MetadataKind        string
+	FileExtensions      []string
 	Status              string
 	Message             string
 }
