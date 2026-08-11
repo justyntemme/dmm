@@ -9414,6 +9414,91 @@ func TestExtensionMigrationWarnsForMatchingStagedPaths(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationWarnsForInstalledMods(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(root, "staging", "witcher3", "mods", "limit", "files", "1")
+	if err := os.MkdirAll(stagingPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, "patch.bin"), []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const appID = "999017"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationinstalledwarninggame",
+		Name:    "Migration Installed Warning Game",
+		Version: "1.4.8",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationinstalledwarninggame"},
+				VortexGameID: "migrationinstalledwarninggame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "warn-installed",
+				Name:        "Warn installed mods",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.4.8",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:             "warn-type",
+					Name:           "Warn type",
+					Command:        sdk.StateMigrationCommandWarnInstalled,
+					ModType:        "legacy-patcher",
+					RequireEnabled: true,
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Installed Warning Game",
+		InstallDir:  "Migration Installed Warning Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	mod, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationinstalledwarninggame", ModID: "legacy", FileID: "1"},
+		Name:         "Legacy Patcher",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "legacy.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationinstalledwarninggame","mod_type":"legacy-patcher","files":[]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := srv.db.SetProfileModState(context.Background(), mod.ProfileID, mod.ID, &enabled, nil); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stagingPath, "patch.bin")); err != nil {
+		t.Fatalf("warning migration should not mutate staging: %v", err)
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "warn-installed", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

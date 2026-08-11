@@ -268,6 +268,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandWarnStagedPaths:
 		err := s.warnStagedPathsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return true, err
+	case sdk.StateMigrationCommandWarnInstalled:
+		err := s.warnInstalledModsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return true, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -506,6 +509,37 @@ func (s *Server) warnStagedPathsForMigration(ctx context.Context, appID string, 
 	}
 	if len(affected) > 0 {
 		s.logger.Warn("extension migration found staged paths requiring user attention", "app_id", appID, "source", source, "mods", strings.Join(affected, ", "))
+	}
+	return nil
+}
+
+func (s *Server) warnInstalledModsForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) error {
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	affected := []string{}
+	for _, mod := range mods {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if command.RequireEnabled && !mod.Enabled {
+			continue
+		}
+		if !installedModMatchesMigrationCommand(mod, command) {
+			continue
+		}
+		label := strings.TrimSpace(mod.Name)
+		if label == "" {
+			label = strings.TrimSpace(mod.SourceModID)
+		}
+		if label == "" {
+			label = fmt.Sprintf("installed-mod-%d", mod.ID)
+		}
+		affected = append(affected, label)
+	}
+	if len(affected) > 0 {
+		s.logger.Warn("extension migration found installed mods requiring user attention", "app_id", appID, "source", source, "mods", strings.Join(affected, ", "))
 	}
 	return nil
 }

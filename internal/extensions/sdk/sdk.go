@@ -1077,6 +1077,7 @@ const (
 	StateMigrationCommandWrapStagedRoot  = "wrap-staged-root"
 	StateMigrationCommandScanStagedFiles = "scan-staged-files"
 	StateMigrationCommandWarnStagedPaths = "warn-staged-paths"
+	StateMigrationCommandWarnInstalled   = "warn-installed"
 )
 
 type StateMigrationCommandSpec struct {
@@ -1087,6 +1088,7 @@ type StateMigrationCommandSpec struct {
 	ModType             string
 	TargetModType       string
 	ExcludeModTypes     []string
+	RequireEnabled      bool
 	TargetRootID        string
 	TargetRelative      string
 	DestinationRelative string

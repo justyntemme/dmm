@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles, sdk.StateMigrationCommandWarnStagedPaths:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths, sdk.StateMigrationCommandWrapStagedRoot, sdk.StateMigrationCommandScanStagedFiles, sdk.StateMigrationCommandWarnStagedPaths, sdk.StateMigrationCommandWarnInstalled:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}

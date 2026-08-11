@@ -157,8 +157,13 @@ func Register(r sdk.Registrar) {
 		Name:        "7 Days to Die v17 reinstall warning",
 		FromVersion: "0.0.0",
 		ToVersion:   "0.2.0",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex warned users to reinstall historical pre-v17 7 Days to Die mods. This is not applicable to DMM-created state because DMM only installs through the current extension rules; post-MVP Vortex import must detect and flag imported pre-v17 Vortex staging explicitly.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:      "warn-installed-mods",
+			Name:    "Warn when historical 7 Days to Die mods exist",
+			Command: sdk.StateMigrationCommandWarnInstalled,
+			Message: "7 Days to Die version 17 changed the mod install layout; historical mods should be reinstalled.",
+		}},
+		Message: "Mirrors Vortex 0.2.0 migration by warning when any historical 7 Days to Die mods exist and need reinstall after the v17 layout change.",
 	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "7daystodie-1.0.0-load-order-migration",
