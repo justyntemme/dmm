@@ -19,7 +19,6 @@ const (
 	asiModType     = "prototype-asi"
 	tpfModType     = "prototype-texmod-package"
 	texmodToolType = "prototype-texmod-tool"
-	blockedModType = "prototype-unclassified-blocked"
 	texmodRoot     = "DMM/TexMod"
 	texmodExec     = "Texmod.exe"
 )
@@ -29,8 +28,6 @@ var requiredGameFiles = []string{
 	"art.rcf",
 	"scripts.rcf",
 }
-
-const unsupportedReason = "Prototype archive layout is not classified by the verified extension rules. DMM currently supports root ASI plugin packages and TexMod .tpf packages; extracted RCF folders, standalone patchers, and broad root-copy archives stay blocked until their activation and rollback behavior are source-reviewed."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -54,7 +51,6 @@ func Register(r sdk.Registrar) {
 	r.RegisterModType(installplan.ModTypeSpec{ID: asiModType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: tpfModType, TargetRoot: texmodRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: texmodToolType, TargetRoot: texmodRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:prototype:asi",
 		VortexInstallerID: "prototype-asi",
@@ -84,16 +80,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchTPFArchive,
 		CustomBuild:       buildTPFArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "research:prototype:blocked",
-		VortexInstallerID: "prototype-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: unsupportedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "prototype-required-files",
