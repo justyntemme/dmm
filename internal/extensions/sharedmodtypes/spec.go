@@ -72,14 +72,6 @@ func Register(r sdk.Registrar) {
 		r.RegisterModType(modType)
 	}
 	r.RegisterInstaller(DInputInstaller("dinput", 50))
-	for _, installer := range []installplan.InstallerSpec{
-		{ID: "gedosato", VortexInstallerID: "gedosato", ModType: GeDoSaToType, UnsupportedReason: "GeDoSaTo installer planning is implemented as an opt-in helper; a game extension must declare the target root before DMM can run it."},
-	} {
-		installer.InstructionMode = installplan.InstructionUnsupported
-		installer.Status = sdk.CapabilityStatusBlocked
-		installer.Message = installer.UnsupportedReason
-		r.RegisterInstaller(installer)
-	}
 }
 
 func DInputModTypeSpec() installplan.ModTypeSpec {

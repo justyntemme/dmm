@@ -36,7 +36,7 @@ func TestExtensionRegistersSharedModTypeMetadata(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "dinput" {
 		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
 	}
-	if len(summary.Capabilities.UnsupportedInstallers) != 1 || summary.Capabilities.UnsupportedInstallers[0].Status != sdk.CapabilityStatusBlocked {
+	if len(summary.Capabilities.UnsupportedInstallers) != 0 {
 		t.Fatalf("unsupported installers = %+v", summary.Capabilities.UnsupportedInstallers)
 	}
 	if len(summary.Capabilities.ExtensionAPIs) != 0 {
