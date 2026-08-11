@@ -16367,6 +16367,10 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte(`{"Name":"Visible Fish"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	configPath := filepath.Join(stagingPath, "VisibleFish", "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"enabled":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	manifestJSON, err := stagedManifestJSONWithPlan(stagingPath, installplan.Plan{
 		GameID:    "413150",
 		ModType:   "stardew-smapi-mod",
@@ -16386,6 +16390,9 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 		Instructions: []installplan.Instruction{{
 			StagingRelative: "VisibleFish/manifest.json",
 			TargetRelative:  "Mods/VisibleFish/manifest.json",
+		}, {
+			StagingRelative: "VisibleFish/config.json",
+			TargetRelative:  "Mods/VisibleFish/config.json",
 		}},
 	})
 	if err != nil {
@@ -16419,10 +16426,12 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 		t.Fatalf("raw internals leaked in response: %s", rec.Body.String())
 	}
 	var mods []struct {
-		Name      string `json:"name"`
-		ModType   string `json:"mod_type"`
-		PlannerID string `json:"planner_id"`
-		Metadata  []struct {
+		Name         string   `json:"name"`
+		ModType      string   `json:"mod_type"`
+		PlannerID    string   `json:"planner_id"`
+		ContentTypes []string `json:"content_types"`
+		NoContent    bool     `json:"no_content"`
+		Metadata     []struct {
 			Name           string `json:"name"`
 			UniqueID       string `json:"unique_id"`
 			MinGameVersion string `json:"min_game_version"`
@@ -16439,6 +16448,9 @@ func TestGameModsEndpointReturnsMetadataWithoutRawManifest(t *testing.T) {
 	}
 	if len(mods) != 1 || mods[0].ModType != "stardew-smapi-mod" || mods[0].PlannerID != "vortex:stardewvalley:stardew-valley-installer" {
 		t.Fatalf("mods = %+v", mods)
+	}
+	if mods[0].NoContent || len(mods[0].ContentTypes) != 1 || mods[0].ContentTypes[0] != "config" {
+		t.Fatalf("content for manifest-only Stardew mod = %+v", mods[0].ContentTypes)
 	}
 	if len(mods[0].Metadata) != 1 || mods[0].Metadata[0].UniqueID != "shekurika.WaterFish" || mods[0].Metadata[0].ContentPackFor == nil {
 		t.Fatalf("metadata = %+v", mods[0].Metadata)

@@ -27,10 +27,16 @@ func Register(r sdk.Registrar) {
 		r.RegisterSource(ref)
 	}
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
-		ID:     "open-directory-action",
-		Name:   "Open source-backed folders and paths",
-		Status: sdk.CapabilityStatusReady,
+		ID:      "open-directory-action",
+		Name:    "Open source-backed folders and paths",
+		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's open-directory extension with source-backed extension action targets. Game extensions declare safe game/download/staging/target-root folders or files, the Go backend resolves and validates those paths, and the Decky bridge opens them from the Deck UI.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "mod-content-classifier",
+		Name:    "Installed mod content classifier",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's mod-content extension with a backend classifier over staged manifest files. Installed mod APIs expose Vortex-style content tags and empty-state metadata for Decky and phone/tablet clients.",
 	})
 	registerImportSurfaces(r)
 }

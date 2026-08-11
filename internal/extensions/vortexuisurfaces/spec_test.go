@@ -21,13 +21,11 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	if len(summary.Capabilities.StartHooks) != 0 {
 		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
 	}
-	if len(summary.Capabilities.ExtensionAPIs) != 1 {
+	if len(summary.Capabilities.ExtensionAPIs) != 2 {
 		t.Fatalf("extension APIs = %+v", summary.Capabilities.ExtensionAPIs)
 	}
-	api := summary.Capabilities.ExtensionAPIs[0]
-	if api.ID != "open-directory-action" || api.Status != sdk.CapabilityStatusReady || api.Message == "" {
-		t.Fatalf("open-directory API = %+v", api)
-	}
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "open-directory-action", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "mod-content-classifier", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mo-import", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "nmm-import", sdk.CapabilityStatusNotApplicable)
 	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "mo-import", sdk.CapabilityStatusNotApplicable)

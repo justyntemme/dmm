@@ -51,6 +51,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
+	"github.com/justyntemme/decky-mod-manager/internal/modcontent"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -8527,6 +8528,8 @@ type gameModResponse struct {
 	Status           string                   `json:"status"`
 	ModType          string                   `json:"mod_type,omitempty"`
 	PlannerID        string                   `json:"planner_id,omitempty"`
+	ContentTypes     []string                 `json:"content_types,omitempty"`
+	NoContent        bool                     `json:"no_content,omitempty"`
 	Metadata         []gameModMetadataSummary `json:"metadata,omitempty"`
 	Update           *gameModUpdateSummary    `json:"update,omitempty"`
 }
@@ -8596,6 +8599,13 @@ func gameModResponseFor(mod storage.InstalledMod, update *storage.ModUpdate) gam
 		resp.ModType = strings.TrimSpace(manifest.ModType)
 		resp.PlannerID = strings.TrimSpace(manifest.PlannerID)
 		resp.Metadata = gameModMetadataSummaries(manifest.Metadata)
+		files := make([]string, 0, len(manifest.Files))
+		for _, file := range manifest.Files {
+			files = append(files, file.Path)
+		}
+		content := modcontent.FromFiles(firstNonEmpty(manifest.GameID, mod.SourceGameDomain), files)
+		resp.ContentTypes = content.Types
+		resp.NoContent = content.Empty
 	}
 	if update != nil {
 		resp.Update = &gameModUpdateSummary{
