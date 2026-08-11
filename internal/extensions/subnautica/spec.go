@@ -23,7 +23,6 @@ func Register(r sdk.Registrar) {
 		SteamAppIDs:  []string{SteamAppID},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
-		VortexStub:   true,
 		SupportModID: SupportModID,
 		QueryModPath: qmodsRoot,
 		MergeMode:    sdk.GameMergeModeNone,

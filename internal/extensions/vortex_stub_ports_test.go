@@ -112,8 +112,14 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 			if tt.queryModPath != "" && !tt.deployable && summary.Coverage != gameext.CoverageMetadataOnly {
 				t.Fatalf("coverage = %q", summary.Coverage)
 			}
-			if summary.SupportModID != tt.supportModID || !summary.VortexStub {
-				t.Fatalf("stub metadata = support %q stub %v", summary.SupportModID, summary.VortexStub)
+			if summary.SupportModID != tt.supportModID {
+				t.Fatalf("support mod id = %q", summary.SupportModID)
+			}
+			if tt.deployable && summary.VortexStub {
+				t.Fatalf("deployable support-mod port must not remain a Vortex stub")
+			}
+			if !tt.deployable && !summary.VortexStub {
+				t.Fatalf("metadata-only support-mod port must retain Vortex stub marker")
 			}
 			if tt.appID == "" && len(summary.SteamAppIDs) != 0 {
 				t.Fatalf("stub unexpectedly registered Steam app ids: %+v", summary.SteamAppIDs)

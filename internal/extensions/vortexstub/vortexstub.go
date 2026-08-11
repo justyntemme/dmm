@@ -19,7 +19,6 @@ func RegisterRootSupportMod(r sdk.Registrar, spec RootSupportModSpec) {
 		SteamAppIDs:  spec.SteamAppIDs,
 		NexusDomains: spec.NexusDomains,
 		VortexGameID: spec.GameID,
-		VortexStub:   true,
 		SupportModID: spec.SupportModID,
 		MergeMode:    sdk.GameMergeModeNone,
 		Deployment:   installplan.DeploymentSpec{AllowNeedsReviewState: true},
