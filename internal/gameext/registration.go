@@ -49,12 +49,18 @@ func MustCompileExtension(spec sdk.Extension) Extension {
 
 func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 	r.extension.SteamAppIDs = appendClean(r.extension.SteamAppIDs, spec.SteamAppIDs...)
+	for store, storeAppIDs := range spec.StoreAppIDs {
+		for _, storeAppID := range storeAppIDs {
+			r.extension.SteamAppIDs = appendClean(r.extension.SteamAppIDs, StoreBackedAppID(store, storeAppID))
+		}
+	}
 	r.extension.NexusDomains = appendClean(r.extension.NexusDomains, spec.NexusDomains...)
 	r.extension.CatalogSources = appendCatalogSources(r.extension.CatalogSources, spec.CatalogSources...)
 	r.extension.VortexStub = spec.VortexStub
 	r.extension.AllowNoSteamAppID = spec.AllowNoSteamAppID
 	r.extension.SupportModID = strings.TrimSpace(spec.SupportModID)
 	r.extension.GameMetadata = sdk.GameRegistrationMetadata{
+		StoreAppIDs:         copyStoreAppIDs(spec.StoreAppIDs),
 		ExecutableRelative:  spec.ExecutableRelative,
 		ExecutableVariants:  append([]sdk.GameExecutableVariantSpec(nil), spec.ExecutableVariants...),
 		RequiredFiles:       append([]string(nil), spec.RequiredFiles...),
@@ -68,6 +74,11 @@ func (r *Registrar) RegisterGame(spec sdk.GameRegistration) {
 		CatalogSources:      appendCatalogSources(nil, spec.CatalogSources...),
 	}
 	r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, spec.SteamAppIDs...)
+	for store, storeAppIDs := range spec.StoreAppIDs {
+		for _, storeAppID := range storeAppIDs {
+			r.extension.InstallPlan.SteamAppIDs = appendClean(r.extension.InstallPlan.SteamAppIDs, StoreBackedAppID(store, storeAppID))
+		}
+	}
 	r.extension.InstallPlan.QueryModPath = strings.TrimSpace(spec.QueryModPath)
 	r.extension.InstallPlan.QueryModPathDynamic = spec.QueryModPathDynamic
 	r.extension.InstallPlan.StopPatterns = appendClean(nil, spec.StopPatterns...)
@@ -2010,6 +2021,28 @@ func copyRegistrationMap(values map[string]string) map[string]string {
 	out := make(map[string]string, len(values))
 	for key, value := range values {
 		out[key] = value
+	}
+	return out
+}
+
+func copyStoreAppIDs(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(values))
+	for store, appIDs := range values {
+		store = strings.TrimSpace(store)
+		if store == "" {
+			continue
+		}
+		cleaned := appendClean([]string{}, appIDs...)
+		if len(cleaned) == 0 {
+			continue
+		}
+		out[store] = cleaned
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

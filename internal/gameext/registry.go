@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -406,16 +407,17 @@ type LauncherParameter struct {
 }
 
 type GameRegistrationSummary struct {
-	ExecutableRelative  string            `json:"executable_relative,omitempty"`
-	ExecutableVariants  []FeatureSummary  `json:"variants,omitempty"`
-	RequiredFiles       []string          `json:"required_files,omitempty"`
-	QueryModPath        string            `json:"query_mod_path,omitempty"`
-	QueryModPathDynamic bool              `json:"query_mod_path_dynamic,omitempty"`
-	MergeMode           string            `json:"merge_mode,omitempty"`
-	RequiresCleanup     bool              `json:"requires_cleanup,omitempty"`
-	StopPatterns        []string          `json:"stop_patterns,omitempty"`
-	CompatibleDownloads []string          `json:"compatible_downloads,omitempty"`
-	Environment         map[string]string `json:"environment,omitempty"`
+	ExecutableRelative  string              `json:"executable_relative,omitempty"`
+	ExecutableVariants  []FeatureSummary    `json:"variants,omitempty"`
+	StoreAppIDs         map[string][]string `json:"store_app_ids,omitempty"`
+	RequiredFiles       []string            `json:"required_files,omitempty"`
+	QueryModPath        string              `json:"query_mod_path,omitempty"`
+	QueryModPathDynamic bool                `json:"query_mod_path_dynamic,omitempty"`
+	MergeMode           string              `json:"merge_mode,omitempty"`
+	RequiresCleanup     bool                `json:"requires_cleanup,omitempty"`
+	StopPatterns        []string            `json:"stop_patterns,omitempty"`
+	CompatibleDownloads []string            `json:"compatible_downloads,omitempty"`
+	Environment         map[string]string   `json:"environment,omitempty"`
 }
 
 type LaunchToolDynamicInput struct {
@@ -474,7 +476,13 @@ func NewRegistry(extensions []Extension) Registry {
 	}
 	for _, extension := range extensions {
 		registry.extensions = append(registry.extensions, extension)
-		for _, appID := range extension.SteamAppIDs {
+		indexedAppIDs := appendClean([]string{}, extension.SteamAppIDs...)
+		for store, storeAppIDs := range extension.GameMetadata.StoreAppIDs {
+			for _, storeAppID := range storeAppIDs {
+				indexedAppIDs = appendClean(indexedAppIDs, StoreBackedAppID(store, storeAppID))
+			}
+		}
+		for _, appID := range indexedAppIDs {
 			appID = canonical(appID)
 			if appID == "" {
 				continue
@@ -522,6 +530,36 @@ func NewRegistry(extensions []Extension) Registry {
 	registry.installPlans = installplan.NewRegistry(installSpecs)
 	registry.runtimeRequirements = gamehandler.NewRegistry(runtimeSpecs)
 	return registry
+}
+
+func StoreBackedAppID(store, storeAppID string) string {
+	store = safeStoreIdentifier(store)
+	storeAppID = safeStoreIdentifier(storeAppID)
+	if store == "" || storeAppID == "" {
+		return ""
+	}
+	return store + "-" + storeAppID
+}
+
+func safeStoreIdentifier(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastSeparator := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastSeparator = false
+			continue
+		}
+		if !lastSeparator {
+			b.WriteByte('_')
+			lastSeparator = true
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 func (r Registry) ReadyStartHooksForTrigger(trigger string) []StartHookSpec {
@@ -2487,6 +2525,7 @@ func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegis
 	summary := GameRegistrationSummary{
 		ExecutableRelative:  strings.TrimSpace(metadata.ExecutableRelative),
 		ExecutableVariants:  gameExecutableVariants(metadata.ExecutableVariants),
+		StoreAppIDs:         cleanStoreAppIDs(metadata.StoreAppIDs),
 		RequiredFiles:       appendClean([]string{}, metadata.RequiredFiles...),
 		QueryModPath:        strings.TrimSpace(metadata.QueryModPath),
 		QueryModPathDynamic: metadata.QueryModPathDynamic,
@@ -2498,6 +2537,7 @@ func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegis
 	}
 	ok := summary.ExecutableRelative != "" ||
 		len(summary.ExecutableVariants) > 0 ||
+		len(summary.StoreAppIDs) > 0 ||
 		len(summary.RequiredFiles) > 0 ||
 		summary.QueryModPath != "" ||
 		summary.QueryModPathDynamic ||
@@ -2507,6 +2547,28 @@ func summarizeGameRegistration(metadata sdk.GameRegistrationMetadata) (GameRegis
 		len(summary.CompatibleDownloads) > 0 ||
 		len(summary.Environment) > 0
 	return summary, ok
+}
+
+func cleanStoreAppIDs(values map[string][]string) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := map[string][]string{}
+	for store, appIDs := range values {
+		store = strings.TrimSpace(store)
+		if store == "" {
+			continue
+		}
+		cleaned := appendClean([]string{}, appIDs...)
+		if len(cleaned) == 0 {
+			continue
+		}
+		out[store] = cleaned
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func launcherParameters(parameters []sdk.LauncherParameterSpec) []LauncherParameter {

@@ -174,6 +174,7 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
+		StoreAppIDs:         map[string][]string{"epic": {EpicAppID}},
 		NexusDomains:        []string{VortexGameID},
 		VortexGameID:        VortexGameID,
 		AllowNoSteamAppID:   true,

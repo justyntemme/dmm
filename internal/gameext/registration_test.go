@@ -624,6 +624,51 @@ func TestRegistryBuildInstallPlanUsesNexusDomainForSharedSteamApp(t *testing.T) 
 	}
 }
 
+func TestCompileExtensionIndexesStoreBackedGameIDs(t *testing.T) {
+	extension, err := CompileExtension(sdk.Extension{
+		ID:      "storegame",
+		Name:    "Store Game",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:        []string{"100"},
+				StoreAppIDs:        map[string][]string{"GOG Galaxy": {"200"}},
+				NexusDomains:       []string{"storegame"},
+				VortexGameID:       "storegame",
+				ExecutableRelative: "Game.exe",
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeAppID := StoreBackedAppID("GOG Galaxy", "200")
+	if storeAppID != "gog_galaxy-200" {
+		t.Fatalf("store app id = %q", storeAppID)
+	}
+	if !contains(extension.SteamAppIDs, "100") || !contains(extension.SteamAppIDs, storeAppID) {
+		t.Fatalf("indexed app ids = %+v", extension.SteamAppIDs)
+	}
+	if got := extension.GameMetadata.StoreAppIDs["GOG Galaxy"]; len(got) != 1 || got[0] != "200" {
+		t.Fatalf("store metadata = %+v", extension.GameMetadata.StoreAppIDs)
+	}
+	registry := NewRegistry([]Extension{extension})
+	if !registry.SupportsSteamApp(storeAppID) {
+		t.Fatalf("registry does not support store app id %q", storeAppID)
+	}
+	if domains := registry.NexusDomainsForSteamAppID(storeAppID); !contains(domains, "storegame") {
+		t.Fatalf("store app nexus domains = %+v", domains)
+	}
+	found, ok := registry.ExtensionForSteamApp(storeAppID)
+	if !ok || found.ID != "storegame" {
+		t.Fatalf("store extension = %+v ok=%v", found, ok)
+	}
+	if got := found.GameMetadata.StoreAppIDs["GOG Galaxy"]; len(got) != 1 || got[0] != "200" {
+		t.Fatalf("store extension metadata = %+v", found.GameMetadata.StoreAppIDs)
+	}
+}
+
 func staticTestTargetRoot(ctx context.Context, input sdk.TargetRootInput) (sdk.TargetRootResult, error) {
 	if err := ctx.Err(); err != nil {
 		return sdk.TargetRootResult{}, err

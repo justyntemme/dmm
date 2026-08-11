@@ -93,6 +93,7 @@ type Registrar interface {
 
 type GameRegistration struct {
 	SteamAppIDs         []string
+	StoreAppIDs         map[string][]string
 	NexusDomains        []string
 	CatalogSources      []GameCatalogSourceSpec
 	VortexGameID        string
@@ -114,6 +115,7 @@ type GameRegistration struct {
 }
 
 type GameRegistrationMetadata struct {
+	StoreAppIDs         map[string][]string
 	ExecutableRelative  string
 	ExecutableVariants  []GameExecutableVariantSpec
 	RequiredFiles       []string

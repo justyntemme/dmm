@@ -124,6 +124,8 @@ CREATE TABLE captured_installs (
 		{"games", "state"},
 		{"games", "version"},
 		{"games", "steam_build_id"},
+		{"games", "store"},
+		{"games", "store_app_id"},
 		{"mods", "source_game_domain"},
 		{"mods", "source_mod_id"},
 		{"mod_versions", "source_file_id"},

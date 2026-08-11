@@ -70,6 +70,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:         []string{SteamAppID},
+		StoreAppIDs:         map[string][]string{"gog": {GOGAppID}},
 		NexusDomains:        []string{VortexGameID},
 		VortexGameID:        VortexGameID,
 		ExecutableRelative:  "bin/bg3_dx11.exe",

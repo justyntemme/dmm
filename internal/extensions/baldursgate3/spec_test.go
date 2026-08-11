@@ -18,8 +18,11 @@ import (
 
 func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	compiled := gameext.MustCompileExtension(Extension())
-	if len(compiled.SteamAppIDs) != 1 || compiled.SteamAppIDs[0] != SteamAppID {
+	if !contains(compiled.SteamAppIDs, SteamAppID) || !contains(compiled.SteamAppIDs, gameext.StoreBackedAppID("gog", GOGAppID)) {
 		t.Fatalf("steam app ids = %+v", compiled.SteamAppIDs)
+	}
+	if got := compiled.GameMetadata.StoreAppIDs["gog"]; len(got) != 1 || got[0] != GOGAppID {
+		t.Fatalf("store app ids = %+v", compiled.GameMetadata.StoreAppIDs)
 	}
 	if len(compiled.TargetRoots) != 2 {
 		t.Fatalf("target roots = %+v", compiled.TargetRoots)
@@ -73,6 +76,9 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{compiled})
 	if !registry.HasEventHandlerForSteamApp(SteamAppID, sdk.EventCheckModsVersion) {
 		t.Fatal("missing BG3 check-mods-version event handler")
+	}
+	if !registry.HasEventHandlerForSteamApp(gameext.StoreBackedAppID("gog", GOGAppID), sdk.EventCheckModsVersion) {
+		t.Fatal("missing BG3 check-mods-version event handler for GOG app")
 	}
 }
 
@@ -478,4 +484,13 @@ func assertEqual(t *testing.T, got, want []string) {
 			t.Fatalf("got %+v, want %+v", got, want)
 		}
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

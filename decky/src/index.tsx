@@ -4421,14 +4421,27 @@ function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () =>
   return (
     <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
       <style>{deckyRuntimeStyles}</style>
-      <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "12px", minWidth: 0, padding: "4px", width: "100%" }}>
+      <Focusable
+        className="dmm-modal-scroll"
+        flow-children="down"
+        style={{
+          color: "#f8fafc",
+          display: "grid",
+          gap: "10px",
+          maxHeight: "calc(100vh - 156px)",
+          minWidth: 0,
+          overflowY: "auto",
+          padding: "4px 8px 28px",
+          width: "100%"
+        }}
+      >
         <div style={{ fontSize: "16px", fontWeight: 900 }}>Pair Phone</div>
         <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
           Scan this QR code from your phone or tablet while connected to the same network.
         </div>
-        <div style={{ alignItems: "center", background: "#f8fafc", borderRadius: "8px", display: "flex", justifyContent: "center", minHeight: "236px", padding: "12px", width: "100%" }}>
+        <div style={{ alignItems: "center", background: "#f8fafc", borderRadius: "8px", display: "flex", justifyContent: "center", minHeight: "196px", padding: "10px", width: "100%" }}>
           {qrDataURL ? (
-            <img alt="DMM phone pairing QR code" src={qrDataURL} style={{ display: "block", height: "212px", imageRendering: "pixelated", width: "212px" }} />
+            <img alt="DMM phone pairing QR code" src={qrDataURL} style={{ display: "block", height: "176px", imageRendering: "pixelated", width: "176px" }} />
           ) : (
             <div style={{ color: "#991b1b", fontWeight: 900 }}>QR unavailable</div>
           )}
@@ -4956,6 +4969,7 @@ function FreshDeckyModManagerRoute() {
       window,
       { strTitle: "Explore Mods", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 760, popupHeight: 820 }
     );
+    void logFrontendEvent("decky nexus browser opened", { app_id: selectedGameID, domain: selectedNexusDomain });
   }
 
   async function launchSelectedGame() {
@@ -5786,7 +5800,8 @@ function FreshDeckyModManagerRoute() {
   }
 
   function renderSelectedGame() {
-    const canBrowse = Boolean(selectedNexusDomain && catalogs.find((catalog) => catalog.id === "nexus")?.status === "ready");
+    const canBrowse = Boolean(selectedNexusDomain);
+    const nexusCatalog = catalogs.find((catalog) => catalog.id === "nexus");
     return (
       <>
         <Focusable
@@ -5821,6 +5836,11 @@ function FreshDeckyModManagerRoute() {
             {archiveBrowserOpen ? "Hide Import" : "Import Archive"}
           </FreshActionButton>
         </div>
+        {selectedNexusDomain && nexusCatalog?.status && nexusCatalog.status !== "ready" && (
+          <div style={{ ...freshSectionStyle, borderColor: "#92400e", color: "#fbbf24" }}>
+            Nexus browsing may need attention: {nexusCatalog.notes?.[0] || nexusCatalog.status}
+          </div>
+        )}
         {archiveBrowserOpen && selectedProfile && (
           <FreshLocalArchiveBrowser
             key={`${selectedGameID}:${selectedProfile.id}`}
