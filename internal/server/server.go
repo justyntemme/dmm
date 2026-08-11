@@ -4329,9 +4329,11 @@ func (s *Server) catalogStatuses(cfg config.Config) []catalogStatusResponse {
 			Configured:          curseForgeConfigured,
 			CredentialsRequired: true,
 			URLImport:           registered["curseforge"] && curseForgeConfigured,
+			Search:              searchable["curseforge"] && curseForgeConfigured,
+			Browse:              searchable["curseforge"] && curseForgeConfigured,
 			Download:            registered["curseforge"] && curseForgeConfigured,
 			SourceTag:           "curseforge",
-			Notes:               []string{"Official API imports resolve CurseForge mod pages through game slug plus mod slug, then use the file download-url endpoint."},
+			Notes:               []string{"Official API imports resolve CurseForge mod pages through game slug plus mod slug, then use the file download-url endpoint. Browse/search uses extension-provided numeric CurseForge game IDs."},
 		},
 		{
 			ID:        "moddb",

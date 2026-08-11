@@ -69,6 +69,72 @@ func (r Resolver) ResolveFile(ctx context.Context, req catalog.UpdateResolveRequ
 	return r.resolveDownload(ctx, curseForgeAPIURL(ref), strings.TrimSpace(req.SteamAppID), ref)
 }
 
+func (r Resolver) SearchMods(ctx context.Context, req catalog.SearchRequest) (catalog.SearchResponse, error) {
+	if strings.TrimSpace(r.APIKey) == "" {
+		return catalog.SearchResponse{}, errors.New("configure a CurseForge API key before browsing CurseForge")
+	}
+	gameID := strings.TrimPrefix(strings.TrimSpace(req.GameDomain), "curseforge-")
+	if gameID == "" && len(req.SourceHints) > 0 {
+		gameID = strings.TrimPrefix(strings.TrimSpace(req.SourceHints[0]), "curseforge-")
+	}
+	if gameID == "" {
+		return catalog.SearchResponse{}, errors.New("CurseForge browse/search requires an extension-provided numeric game id")
+	}
+	if _, err := strconv.ParseInt(gameID, 10, 64); err != nil {
+		return catalog.SearchResponse{}, errors.New("CurseForge game id must be numeric")
+	}
+	count := req.Count
+	if count <= 0 {
+		count = 20
+	}
+	if count > 50 {
+		count = 50
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	params := map[string]string{
+		"gameId":    gameID,
+		"pageSize":  fmt.Sprintf("%d", count),
+		"index":     fmt.Sprintf("%d", offset),
+		"sortField": curseForgeSortField(req.Sort),
+		"sortOrder": "desc",
+	}
+	if query := strings.TrimSpace(req.Query); query != "" {
+		params["searchFilter"] = query
+	}
+	var response dataResponse[[]modResponse]
+	if err := r.getJSON(ctx, "/mods/search", params, &response); err != nil {
+		return catalog.SearchResponse{}, err
+	}
+	results := make([]catalog.SearchResult, 0, len(response.Data))
+	for _, item := range response.Data {
+		modID := strconv.FormatInt(item.ID, 10)
+		gameDomain := gameID
+		if item.GameID > 0 {
+			gameDomain = strconv.FormatInt(item.GameID, 10)
+		}
+		results = append(results, catalog.SearchResult{
+			Catalog:        "curseforge",
+			SourceTag:      "curseforge",
+			ModID:          modID,
+			Name:           strings.TrimSpace(item.Name),
+			Summary:        strings.TrimSpace(item.Summary),
+			ThumbnailURL:   firstNonEmpty(item.Logo.ThumbnailURL, item.Logo.URL),
+			Downloads:      item.DownloadCount,
+			UpdatedAt:      strings.TrimSpace(item.DateModified),
+			SupportsVortex: true,
+			URL:            curseForgeModURL(gameDomain, item.Slug, modID),
+		})
+	}
+	total := response.Pagination.TotalCount
+	if total == 0 {
+		total = len(results)
+	}
+	return catalog.SearchResponse{TotalCount: total, Mods: results}, nil
+}
+
 func (r Resolver) resolveDownload(ctx context.Context, sourceURL, selectedSteamAppID string, ref curseForgeRef) (catalog.ResolvedDownload, error) {
 	if !curseForgeSteamApp.MatchString(selectedSteamAppID) {
 		return catalog.ResolvedDownload{}, errors.New("CurseForge URLs must be added from a selected Steam game")
@@ -148,7 +214,12 @@ type curseForgeRef struct {
 }
 
 type dataResponse[T any] struct {
-	Data T `json:"data"`
+	Data       T          `json:"data"`
+	Pagination pagination `json:"pagination"`
+}
+
+type pagination struct {
+	TotalCount int `json:"totalCount"`
 }
 
 type gameResponse struct {
@@ -158,10 +229,17 @@ type gameResponse struct {
 }
 
 type modResponse struct {
-	ID     int64  `json:"id"`
-	GameID int64  `json:"gameId"`
-	Name   string `json:"name"`
-	Slug   string `json:"slug"`
+	ID            int64  `json:"id"`
+	GameID        int64  `json:"gameId"`
+	Name          string `json:"name"`
+	Slug          string `json:"slug"`
+	Summary       string `json:"summary"`
+	DateModified  string `json:"dateModified"`
+	DownloadCount int64  `json:"downloadCount"`
+	Logo          struct {
+		URL          string `json:"url"`
+		ThumbnailURL string `json:"thumbnailUrl"`
+	} `json:"logo"`
 }
 
 type fileResponse struct {
@@ -359,4 +437,34 @@ func (r Resolver) getJSON(ctx context.Context, requestPath string, params map[st
 		return err
 	}
 	return nil
+}
+
+func curseForgeSortField(sortValue string) string {
+	switch strings.ToLower(strings.TrimSpace(sortValue)) {
+	case "downloads", "popular":
+		return "6"
+	case "updated":
+		return "3"
+	case "name", "az", "a-z":
+		return "2"
+	default:
+		return "3"
+	}
+}
+
+func curseForgeModURL(gameID, slug, modID string) string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		slug = strings.TrimSpace(modID)
+	}
+	return "https://www.curseforge.com/games/" + url.PathEscape(strings.TrimSpace(gameID)) + "/mods/" + url.PathEscape(slug)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

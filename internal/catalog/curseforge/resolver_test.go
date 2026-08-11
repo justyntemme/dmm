@@ -54,6 +54,30 @@ func TestResolveURLUsesNumericAPIFileURL(t *testing.T) {
 	}
 }
 
+func TestSearchModsUsesOfficialSearchEndpoint(t *testing.T) {
+	api := newCurseForgeTestAPI(t)
+	result, err := (Resolver{APIKey: "test-key", APIBaseURL: api.URL, HTTPClient: api.Client()}).SearchMods(context.Background(), catalog.SearchRequest{
+		GameDomain: "curseforge-432",
+		Query:      "test",
+		Sort:       "downloads",
+		Count:      10,
+		Offset:     5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalCount != 1 || len(result.Mods) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	mod := result.Mods[0]
+	if mod.Catalog != "curseforge" || mod.SourceTag != "curseforge" || mod.ModID != "99" || mod.Name != "Test Mod" || !mod.SupportsVortex {
+		t.Fatalf("mod = %+v", mod)
+	}
+	if mod.URL != "https://www.curseforge.com/games/432/mods/test-mod" || mod.Downloads != 123 || mod.ThumbnailURL != "https://cdn.curseforge.com/thumb.png" {
+		t.Fatalf("metadata = %+v", mod)
+	}
+}
+
 func TestResolveURLRequiresAPIKey(t *testing.T) {
 	_, err := (Resolver{}).ResolveURL(context.Background(), catalog.ResolveRequest{
 		URL:        "https://www.curseforge.com/minecraft/mc-mods/test-mod",
@@ -94,6 +118,15 @@ func newCurseForgeTestAPI(t *testing.T) *httptest.Server {
 		case "/games":
 			writeCurseForgeJSON(t, w, dataResponse[[]gameResponse]{Data: []gameResponse{{ID: 432, Name: "Minecraft", Slug: "minecraft"}}})
 		case "/mods/search":
+			if r.URL.Query().Get("searchFilter") == "test" {
+				if r.URL.Query().Get("gameId") != "432" || r.URL.Query().Get("pageSize") != "10" || r.URL.Query().Get("index") != "5" || r.URL.Query().Get("sortField") != "6" {
+					t.Fatalf("search query = %s", r.URL.RawQuery)
+				}
+				mod := modResponse{ID: 99, GameID: 432, Name: "Test Mod", Slug: "test-mod", Summary: "A fixture mod", DateModified: "2024-02-01T00:00:00Z", DownloadCount: 123}
+				mod.Logo.ThumbnailURL = "https://cdn.curseforge.com/thumb.png"
+				writeCurseForgeJSON(t, w, dataResponse[[]modResponse]{Data: []modResponse{mod}, Pagination: pagination{TotalCount: 1}})
+				return
+			}
 			if r.URL.Query().Get("gameId") != "432" || r.URL.Query().Get("slug") != "test-mod" {
 				http.Error(w, "bad search", http.StatusBadRequest)
 				return
