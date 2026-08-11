@@ -361,7 +361,6 @@ const (
 )
 
 const (
-	LaunchToolDynamicInputGeneratedConfig    = "generated-config"
 	LaunchToolDynamicInputEnabledModFileList = "enabled-mod-file-list"
 )
 

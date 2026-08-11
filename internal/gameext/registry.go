@@ -171,7 +171,6 @@ const (
 	SteamWorkshopActionDisable     = sdk.SteamWorkshopActionDisable
 	SteamWorkshopActionOrder       = sdk.SteamWorkshopActionOrder
 
-	LaunchToolDynamicInputGeneratedConfig    = sdk.LaunchToolDynamicInputGeneratedConfig
 	LaunchToolDynamicInputEnabledModFileList = sdk.LaunchToolDynamicInputEnabledModFileList
 	LaunchToolDynamicArgumentEnabledModRoot  = sdk.LaunchToolDynamicArgumentEnabledModRoot
 	EventNoticeActionRunLaunchTool           = sdk.EventNoticeActionRunLaunchTool

@@ -1038,7 +1038,7 @@ func TestCompileExtensionRejectsUnsafeExtensionOutputs(t *testing.T) {
 		"launch tool tool argument: must not contain control line breaks",
 		"launch tool tool dynamic input bad/id id must be a simple identifier",
 		"launch tool tool dynamic input bad/id name is required",
-		"launch tool tool dynamic input bad/id kind must be generated-config or enabled-mod-file-list",
+		"launch tool tool dynamic input bad/id kind must be enabled-mod-file-list",
 		"launch tool tool dynamic input bad/id source mod type is required",
 		"launch tool tool dynamic input bad/id output path: path traversal is not allowed",
 		"launch tool tool dynamic input bad/id argument token: must not contain control line breaks",

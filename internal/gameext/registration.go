@@ -1846,9 +1846,9 @@ func validateLaunchToolDynamicInputs(toolID string, inputs []sdk.LaunchToolDynam
 			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" name is required"))
 		}
 		switch strings.TrimSpace(input.Kind) {
-		case sdk.LaunchToolDynamicInputGeneratedConfig, sdk.LaunchToolDynamicInputEnabledModFileList:
+		case sdk.LaunchToolDynamicInputEnabledModFileList:
 		default:
-			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" kind must be generated-config or enabled-mod-file-list"))
+			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" kind must be enabled-mod-file-list"))
 		}
 		if len(input.SourceModTypes) == 0 {
 			errs = append(errs, errors.New("launch tool "+toolID+" dynamic input "+id+" must declare source mod types"))

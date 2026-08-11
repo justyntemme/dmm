@@ -15954,8 +15954,6 @@ func (s *Server) launchToolDynamicInputMappings(ctx context.Context, game storag
 				return nil, err
 			}
 			out = append(out, mapping)
-		case gameext.LaunchToolDynamicInputGeneratedConfig:
-			return nil, fmt.Errorf("launch tool %q dynamic input %q uses generated-config, which is not implemented yet", tool.ID, input.ID)
 		default:
 			return nil, fmt.Errorf("launch tool %q dynamic input %q uses unsupported kind %q", tool.ID, input.ID, input.Kind)
 		}
