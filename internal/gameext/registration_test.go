@@ -400,7 +400,7 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	if !ran || version.Version != "1.2.0" || version.Source != "test" {
 		t.Fatalf("detected version = %+v, ran = %v", version, ran)
 	}
-	info, ran, err := registry.QueryGameInfo(context.Background(), "100", sdk.GameInfoInput{
+	info, ran, cacheSeconds, err := registry.QueryGameInfo(context.Background(), "100", sdk.GameInfoInput{
 		GamePath:     "/games/sample",
 		SteamBuildID: "build-1",
 		GameVersion:  version.Version,
@@ -410,6 +410,9 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 	if !ran || len(info) != 1 || info[0].ID != "game_version" || info[0].Value != "1.2.0" {
 		t.Fatalf("game info = %+v, ran = %v", info, ran)
+	}
+	if cacheSeconds != 60 {
+		t.Fatalf("game info cache seconds = %d, want 60", cacheSeconds)
 	}
 	if len(summary.Capabilities.PluginActivations) != 1 || summary.Capabilities.PluginActivations[0].ID != "sample-plugins" {
 		t.Fatalf("plugin activation capabilities = %+v", summary.Capabilities.PluginActivations)

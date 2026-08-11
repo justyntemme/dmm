@@ -1014,6 +1014,7 @@ func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	runCount := 0
 	extension := gameext.MustCompileExtension(sdk.Extension{
 		ID:      "infotest",
 		Name:    "Info Test",
@@ -1028,6 +1029,7 @@ func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
 				CacheSeconds: 300,
 				Priority:     15,
 				Provider: func(_ context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
+					runCount++
 					if input.AppID != "900" || input.GamePath != "/library/steamapps/common/Info Game" || input.SteamBuildID != "build-42" || input.GameVersion != "2.3.4" {
 						t.Fatalf("game info input = %+v", input)
 					}
@@ -1058,6 +1060,24 @@ func TestGameInfoEndpointRunsExtensionProviders(t *testing.T) {
 	}
 	if body.Details[0].ID != "game_version" || body.Details[0].Title != "Installed Version" || body.Details[0].Value != "2.3.4" || body.Details[0].Source != "installed-version" {
 		t.Fatalf("detail = %+v", body.Details[0])
+	}
+	if runCount != 1 {
+		t.Fatalf("provider run count = %d, want 1", runCount)
+	}
+
+	cachedReq := httptest.NewRequest(http.MethodGet, "/api/games/900/info", nil)
+	cachedReq.RemoteAddr = "127.0.0.1:1"
+	cachedRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(cachedRec, cachedReq)
+	if cachedRec.Code != http.StatusOK {
+		t.Fatalf("cached status = %d, body = %s", cachedRec.Code, cachedRec.Body.String())
+	}
+	var cachedBody gameInfoResponse
+	if err := json.Unmarshal(cachedRec.Body.Bytes(), &cachedBody); err != nil {
+		t.Fatal(err)
+	}
+	if !cachedBody.Cached || runCount != 1 || len(cachedBody.Details) != 1 {
+		t.Fatalf("cached body = %+v, run count = %d", cachedBody, runCount)
 	}
 }
 

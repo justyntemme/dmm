@@ -76,6 +76,8 @@ type Server struct {
 	gameDiscoveryMu      sync.Mutex
 	gameDiscoveryCache   []steam.Game
 	gameDiscoveryCacheAt time.Time
+	gameInfoMu           sync.Mutex
+	gameInfoCache        map[string]gameInfoCacheEntry
 	startupHooksMu       sync.Mutex
 	startupHooksRan      bool
 
@@ -100,6 +102,11 @@ type capturedInstall struct {
 	ReplaceStagingPath     string
 	TargetProfileID        int64
 	PromptInstallerChoices bool
+}
+
+type gameInfoCacheEntry struct {
+	ExpiresAt time.Time
+	Response  gameInfoResponse
 }
 
 type nexusClient interface {
@@ -251,6 +258,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 
 		capturedInstalls: map[string]capturedInstall{},
 		activeCancels:    map[string]context.CancelFunc{},
+		gameInfoCache:    map[string]gameInfoCacheEntry{},
 		downloadGate: newDownloadSlotGate(
 			config.NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads),
 			config.NormalizeMaxConcurrentCapturedDownloadsPerGame(cfg.Download.MaxConcurrentCapturedDownloadsPerGame, cfg.Download.MaxConcurrentCapturedDownloads),
@@ -844,6 +852,7 @@ type gameInfoResponse struct {
 	AppID   string                   `json:"app_id"`
 	Name    string                   `json:"name"`
 	Ran     bool                     `json:"ran"`
+	Cached  bool                     `json:"cached,omitempty"`
 	Details []gameInfoDetailResponse `json:"details"`
 }
 
@@ -5421,13 +5430,19 @@ func (s *Server) handleGameInfo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	details, ran, err := s.games.QueryGameInfo(r.Context(), appID, gameext.GameInfoInput{
+	input := gameext.GameInfoInput{
 		AppID:        game.SteamAppID,
 		GamePath:     game.GamePath,
 		LibraryPath:  game.LibraryPath,
 		SteamBuildID: game.SteamBuildID,
 		GameVersion:  game.Version,
-	})
+	}
+	cacheKey := gameInfoCacheKey(input)
+	if cached, ok := s.cachedGameInfo(cacheKey, time.Now()); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	details, ran, cacheSeconds, err := s.games.QueryGameInfo(r.Context(), appID, input)
 	if err != nil {
 		s.logger.Warn("game info provider failed", "app_id", appID, "name", game.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, err)
@@ -5439,7 +5454,43 @@ func (s *Server) handleGameInfo(w http.ResponseWriter, r *http.Request) {
 		Ran:     ran,
 		Details: gameInfoDetailsResponse(details),
 	}
+	if ran && cacheSeconds > 0 {
+		s.storeGameInfoCache(cacheKey, response, time.Now().Add(time.Duration(cacheSeconds)*time.Second))
+	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func gameInfoCacheKey(input gameext.GameInfoInput) string {
+	return strings.Join([]string{
+		strings.TrimSpace(input.AppID),
+		strings.TrimSpace(input.GamePath),
+		strings.TrimSpace(input.LibraryPath),
+		strings.TrimSpace(input.SteamBuildID),
+		strings.TrimSpace(input.GameVersion),
+	}, "\x00")
+}
+
+func (s *Server) cachedGameInfo(key string, now time.Time) (gameInfoResponse, bool) {
+	s.gameInfoMu.Lock()
+	defer s.gameInfoMu.Unlock()
+	entry, ok := s.gameInfoCache[key]
+	if !ok {
+		return gameInfoResponse{}, false
+	}
+	if !now.Before(entry.ExpiresAt) {
+		delete(s.gameInfoCache, key)
+		return gameInfoResponse{}, false
+	}
+	resp := entry.Response
+	resp.Cached = true
+	return resp, true
+}
+
+func (s *Server) storeGameInfoCache(key string, response gameInfoResponse, expiresAt time.Time) {
+	s.gameInfoMu.Lock()
+	defer s.gameInfoMu.Unlock()
+	response.Cached = false
+	s.gameInfoCache[key] = gameInfoCacheEntry{ExpiresAt: expiresAt, Response: response}
 }
 
 func gameInfoDetailsResponse(details []gameext.GameInfoDetail) []gameInfoDetailResponse {

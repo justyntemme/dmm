@@ -1104,7 +1104,7 @@ func (r Registry) DetectGameVersion(ctx context.Context, appID string, input sdk
 	return sdk.GameVersionResult{}, false, nil
 }
 
-func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.GameInfoInput) ([]sdk.GameInfoDetail, bool, error) {
+func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.GameInfoInput) ([]sdk.GameInfoDetail, bool, int, error) {
 	extensions := r.ExtensionsForSteamApp(appID)
 	for _, extension := range r.extensions {
 		if strings.TrimSpace(extension.Kind) == sdk.ExtensionKindFramework {
@@ -1129,7 +1129,7 @@ func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.Gam
 		}
 	}
 	if len(providers) == 0 {
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 	sort.SliceStable(providers, func(i, j int) bool {
 		if providers[i].spec.Priority == providers[j].spec.Priority {
@@ -1138,10 +1138,14 @@ func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.Gam
 		return providers[i].spec.Priority > providers[j].spec.Priority
 	})
 	details := []sdk.GameInfoDetail{}
+	cacheSeconds := 0
 	for _, provider := range providers {
 		result, err := provider.spec.Provider(ctx, input)
 		if err != nil {
-			return nil, true, err
+			return nil, true, 0, err
+		}
+		if provider.spec.CacheSeconds > 0 && (cacheSeconds == 0 || provider.spec.CacheSeconds < cacheSeconds) {
+			cacheSeconds = provider.spec.CacheSeconds
 		}
 		for _, detail := range result.Details {
 			detail.ID = strings.TrimSpace(detail.ID)
@@ -1160,7 +1164,7 @@ func (r Registry) QueryGameInfo(ctx context.Context, appID string, input sdk.Gam
 			details = append(details, detail)
 		}
 	}
-	return details, true, nil
+	return details, true, cacheSeconds, nil
 }
 
 func (r Registry) ResolveInterpreter(executablePath, platform string) (InterpreterResolution, bool) {
