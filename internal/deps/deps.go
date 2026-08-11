@@ -17,6 +17,13 @@ type Tool struct {
 func CheckArchiveTools() []Tool {
 	tools := []Tool{
 		{
+			Name:        "DMM LOOT sorter",
+			Command:     "dmm-loot-sorter",
+			Description: "Sorts Bethesda/Gamebryo plugin load order through the bundled libloot helper.",
+			InstallHint: "This helper is bundled with DMM release packages. Reinstall the Decky package if it is missing.",
+			DocsURL:     "https://loot.github.io/",
+		},
+		{
 			Name:           "7-Zip",
 			Command:        "7z",
 			Description:    "Extracts .7z and many Nexus archive formats.",
