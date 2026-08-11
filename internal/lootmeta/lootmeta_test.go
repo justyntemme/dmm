@@ -334,6 +334,72 @@ func TestSortInvokesHelperWithProfileLOOTPaths(t *testing.T) {
 	}
 }
 
+func TestSortRejectsHelperOutputOutsideInputSet(t *testing.T) {
+	service, gamePath, plugins := sortServiceFixture(t, `{"sorted_plugins":["A.esp","Injected.esp"],"engine":"fake-libloot"}`)
+
+	_, err := service.Sort(context.Background(), sdk.PluginActivationSpec{LOOTGameID: "fallout4"}, 42, SortInput{
+		GamePath:      gamePath,
+		Plugins:       plugins,
+		CurrentOrder:  []string{"A.esp", "B.esp"},
+		GameLocalPath: "",
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown plugin "Injected.esp"`) {
+		t.Fatalf("Sort() error = %v, want unknown plugin rejection", err)
+	}
+}
+
+func TestSortRejectsDuplicateHelperOutput(t *testing.T) {
+	service, gamePath, plugins := sortServiceFixture(t, `{"sorted_plugins":["A.esp","A.esp"],"engine":"fake-libloot"}`)
+
+	_, err := service.Sort(context.Background(), sdk.PluginActivationSpec{LOOTGameID: "fallout4"}, 42, SortInput{
+		GamePath:     gamePath,
+		Plugins:      plugins,
+		CurrentOrder: []string{"A.esp", "B.esp"},
+	})
+	if err == nil || !strings.Contains(err.Error(), `duplicate plugin "A.esp"`) {
+		t.Fatalf("Sort() error = %v, want duplicate plugin rejection", err)
+	}
+}
+
+func TestSortRejectsOutputMissingActivePlugins(t *testing.T) {
+	service, gamePath, plugins := sortServiceFixture(t, `{"sorted_plugins":["A.esp"],"engine":"fake-libloot"}`)
+
+	_, err := service.Sort(context.Background(), sdk.PluginActivationSpec{LOOTGameID: "fallout4"}, 42, SortInput{
+		GamePath:     gamePath,
+		Plugins:      plugins,
+		CurrentOrder: []string{"A.esp", "B.esp"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "fewer than the 2 active plugin") {
+		t.Fatalf("Sort() error = %v, want missing active plugin rejection", err)
+	}
+}
+
+func sortServiceFixture(t *testing.T, response string) (Service, string, []SortPlugin) {
+	t.Helper()
+	dir := t.TempDir()
+	gamePath := filepath.Join(dir, "game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(gamePath, "A.esp")
+	bPath := filepath.Join(gamePath, "B.esp")
+	for _, path := range []string{aPath, bPath} {
+		if err := os.WriteFile(path, []byte("plugin"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "loot", "fallout4", "masterlist"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "loot", "fallout4", "masterlist", "masterlist.yaml"), []byte("plugins: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return Service{DataDir: dir, SorterCommand: fakeSorter(t, response)}, gamePath, []SortPlugin{
+		{Name: "A.esp", Path: aPath, Source: "dmm", Active: true},
+		{Name: "B.esp", Path: bPath, Source: "dmm", Active: true},
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

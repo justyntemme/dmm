@@ -154,10 +154,10 @@ func (s Service) Sort(ctx context.Context, spec sdk.PluginActivationSpec, profil
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
 		return SortOutput{}, fmt.Errorf("LOOT sorter helper returned invalid JSON: %w", err)
 	}
-	out.SortedPlugins = cleanPluginNames(out.SortedPlugins)
+	out.SortedPlugins = cleanPluginNamesKeepDuplicates(out.SortedPlugins)
 	out.Warnings = cleanMessages(out.Warnings)
-	if len(out.SortedPlugins) == 0 {
-		return SortOutput{}, errors.New("LOOT sorter helper returned no sorted plugins")
+	if err := validateSortedPlugins(out.SortedPlugins, plugins); err != nil {
+		return SortOutput{}, err
 	}
 	if out.Engine == "" {
 		out.Engine = sorterEngine
@@ -235,6 +235,39 @@ func normalizeSortInput(input SortInput) ([]SortPlugin, []string, error) {
 	return plugins, order, nil
 }
 
+func validateSortedPlugins(sorted []string, plugins []SortPlugin) error {
+	if len(sorted) == 0 {
+		return errors.New("LOOT sorter helper returned no sorted plugins")
+	}
+	allowed := make(map[string]string, len(plugins))
+	active := 0
+	for _, plugin := range plugins {
+		key := strings.ToLower(strings.TrimSpace(plugin.Name))
+		if key == "" {
+			continue
+		}
+		allowed[key] = plugin.Name
+		if plugin.Active {
+			active++
+		}
+	}
+	seen := make(map[string]struct{}, len(sorted))
+	for _, name := range sorted {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("LOOT sorter helper returned unknown plugin %q", name)
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("LOOT sorter helper returned duplicate plugin %q", name)
+		}
+		seen[key] = struct{}{}
+	}
+	if active > 0 && len(sorted) < active {
+		return fmt.Errorf("LOOT sorter helper returned %d plugin(s), fewer than the %d active plugin(s) provided", len(sorted), active)
+	}
+	return nil
+}
+
 func cleanPluginNames(values []string) []string {
 	out := make([]string, 0, len(values))
 	seen := map[string]struct{}{}
@@ -249,6 +282,17 @@ func cleanPluginNames(values []string) []string {
 		}
 		seen[key] = struct{}{}
 		out = append(out, value)
+	}
+	return out
+}
+
+func cleanPluginNamesKeepDuplicates(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
 	}
 	return out
 }
