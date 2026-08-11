@@ -64,7 +64,7 @@ func Register(r sdk.Registrar) {
 		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: officialModType, TargetRoot: officialRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Status: sdk.CapabilityStatusMetadata, Message: "Vortex keeps this legacy mod type for pre-8.4 installs and migrations."})
+	r.RegisterModType(installplan.ModTypeSpec{ID: legacyModType, TargetRoot: legacyRoot, Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex keeps this legacy mod type for pre-8.4 installs and migrations. This is not applicable to DMM-created MVP state; post-MVP Vortex import must detect and repair historical legacy staging explicitly."})
 	r.RegisterModType(sharedmodtypes.DInputModTypeSpec())
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:bladeandsorcery:mulle-blocked",

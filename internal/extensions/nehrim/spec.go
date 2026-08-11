@@ -72,8 +72,8 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{launcher},
 		Relative:           true,
 		Exclusive:          true,
-		Status:             sdk.CapabilityStatusMetadata,
-		Message:            "Vortex exposes Nehrim Launcher as an exclusive supported tool.",
+		Status:             sdk.CapabilityStatusReady,
+		Message:            "Vortex exposes Nehrim Launcher as an exclusive supported tool. DMM exposes the same relative executable through the generic extension-tool runtime.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-nehrim extension source",

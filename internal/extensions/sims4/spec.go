@@ -103,8 +103,8 @@ func Register(r sdk.Registrar) {
 		Name:        "Purge legacy Vortex Mods deployment paths",
 		FromVersion: "0.0.1",
 		ToVersion:   "2.0.1",
-		Status:      sdk.CapabilityStatusMetadata,
-		Message:     "Vortex purges legacy profile-local Vortex Mods paths during migration; DMM records this source behavior but pre-MVP does not import or mutate Vortex state.",
+		Status:      sdk.CapabilityStatusNotApplicable,
+		Message:     "Vortex purges legacy profile-local Vortex Mods paths during migration. This is not applicable to DMM-created MVP state; post-MVP Vortex import must implement a real cleanup for imported legacy paths.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
