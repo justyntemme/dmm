@@ -128,7 +128,7 @@ For Prototype/Prototype 2, TexMod support should likely be modeled as:
 - `will-deploy` may generate additional deployment mappings; those mappings still flow through core validation, preview, deployment manifests, and rollback.
 - `did-deploy` and `did-purge` are observational hooks. They must not write files directly or bypass the deployment manifest.
 - Post-event hook messages are promoted to deduped `extension-notice` jobs. This lets game extensions surface Vortex-style manual follow-up work through Action Center, WebSocket updates, and Decky toasts without adding game-specific backend code.
-- Current examples: the Ghost Recon Breakpoint extension mirrors Vortex's `did-deploy` AnvilToolkit repack warning, and the Witcher 3 extension mirrors Vortex's Script Merger reminder after managed mod changes. Running those tools from the notices still needs a generic extension tool-runtime action contract before it can be completed from DMM.
+- Current examples: the Ghost Recon Breakpoint extension mirrors Vortex's `did-deploy` AnvilToolkit repack warning, and the Witcher 3 extension mirrors Vortex's Script Merger reminder after managed mod changes. Extension notices can declare a generic `run-launch-tool` action that resolves only against extension-registered launch tools or managed tool providers and is executed by Decky through Steam's tool-launch boundary.
 
 ## Extension Boundary Rules For New Games
 

@@ -40,10 +40,11 @@
   - root-folder archives containing `videos`
 - Publishes Vortex-equivalent readme conflict/deploy ignores for `**/readme.txt`.
 - Adds runtime diagnostics for required game files and AnvilToolkit presence.
+- Queues a source-backed post-deploy AnvilToolkit action through DMM's generic extension `run-launch-tool` contract. When `anviltoolkit.exe` is present as an enabled managed tool/provider, Decky can launch it through the same Steam-owned tool execution path used by other extension tools.
 
 ## Beta Gaps
 
 - `.data` folder archives and loose `.data` archives now use DMM's generic extension text-choice flow instead of Vortex's post-install rename dialog. This still needs live validation with representative Nexus archives.
 - The Vortex fallback installer remains blocked because arbitrary root placement is not safe without a specific extension-owned rule.
-- DMM does not yet mirror Vortex's post-deploy "Run AnvilToolkit to repack .forge files" notification/action as a complete tool lifecycle.
+- The AnvilToolkit action still needs live Deck validation with the actual Nexus tool archive and a representative data-mod deployment.
 - Live-test representative Breakpoint archives through the BrowserView `nxm://` flow before treating this as release-ready.
