@@ -5324,14 +5324,14 @@ function FreshDeckyModManagerRoute() {
   }
 
   function askRemoveMod(mod: ManagedMod) {
-    if (!selectedGameID || !selectedProfile) return;
+    if (!selectedGameID) return;
     let modal: { Close: () => void } | null = null;
     const closeModal = () => modal?.Close();
     modal = showModal(
       <ConfirmModal
-        strTitle={`Remove ${mod.name}`}
-        strDescription="DMM will remove this mod from the selected profile and apply the profile. Cached downloads are kept."
-        strOKButtonText="Remove"
+        strTitle={`Uninstall ${mod.name}`}
+        strDescription="DMM will remove this mod from every profile, delete its staged files, and apply the active profile."
+        strOKButtonText="Uninstall"
         strCancelButtonText="Cancel"
         onOK={() => {
           closeModal();
@@ -5341,29 +5341,28 @@ function FreshDeckyModManagerRoute() {
         closeModal={closeModal}
       />,
       window,
-      { strTitle: "Remove Mod", bNeverPopOut: true }
+      { strTitle: "Uninstall Mod", bNeverPopOut: true }
     );
   }
 
   async function removeMod(mod: ManagedMod) {
-    if (!selectedGameID || !selectedProfile || busyModID) return;
+    if (!selectedGameID || busyModID) return;
     try {
       setBusyModID(mod.id);
       setError("");
       setMessage("");
-      const result = await call<[string, number, number], { ok: boolean; error?: string; result?: { apply?: ProfileApplyResult } }>(
-        "remove_profile_mod",
+      const result = await call<[string, number], { ok: boolean; error?: string; result?: { apply?: ProfileApplyResult } }>(
+        "delete_game_mod",
         selectedGameID,
-        selectedProfile.id,
         mod.id
       );
       if (!result.ok) {
-        setError(result.error || "Unable to remove mod.");
+        setError(result.error || "Unable to uninstall mod.");
         return;
       }
       await maybeShowDeckyActionToast(result.result?.apply?.job, "fresh-remove-mod");
       await loadSelectedGameState(selectedGameID);
-      setMessage(result.result?.apply?.message || "Mod removed.");
+      setMessage(result.result?.apply?.message || "Mod uninstalled.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -5980,7 +5979,7 @@ function FreshDeckyModManagerRoute() {
                 if (mod.update?.status === "available") void installModUpdate(mod);
                 else void reinstallMod(mod, false);
               }}
-              onOptionsActionDescription="Remove"
+              onOptionsActionDescription="Uninstall"
               onOptionsButton={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -6002,7 +6001,7 @@ function FreshDeckyModManagerRoute() {
                 {busy ? "Working" : mod.enabled ? "Enabled" : "Disabled"} · {deckyModStateLabel(mod)}
               </div>
               {mod.update?.status === "available" && <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 900 }}>Update available{mod.update.latest_version ? ` · ${mod.update.latest_version}` : ""}</div>}
-              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y {mod.update?.status === "available" ? "Update" : "Reinstall"} · Options Remove · Menu Reconfigure</div>
+              <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y {mod.update?.status === "available" ? "Update" : "Reinstall"} · Options Uninstall · Menu Reconfigure</div>
             </Focusable>
           );
         })}
