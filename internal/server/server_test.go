@@ -15932,6 +15932,13 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 				Status:  sdk.CapabilityStatusBlocked,
 				Message: "Dialog actions are metadata-only in this test.",
 			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:     "profile-rules",
+				Name:   "Profile Rules",
+				Scope:  "profile-mod-rules",
+				Kind:   sdk.ExtensionActionKindPage,
+				Status: sdk.CapabilityStatusReady,
+			})
 		},
 	})
 	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
@@ -15957,7 +15964,7 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&listed); err != nil {
 		t.Fatal(err)
 	}
-	if listed.AppID != appID || len(listed.Actions) != 2 {
+	if listed.AppID != appID || len(listed.Actions) != 3 {
 		t.Fatalf("listed actions = %+v", listed)
 	}
 	if listed.Actions[0].ID != "open-mods" || listed.Actions[0].Status != sdk.CapabilityStatusReady || listed.Actions[0].Kind != sdk.ExtensionActionKindOpenDirectory || listed.Actions[0].SourceExtension != "opendirectory" {
@@ -15966,8 +15973,11 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	if listed.Actions[0].ActionTarget == nil || listed.Actions[0].ActionTarget.Base != sdk.OpenDirectoryBaseGame || listed.Actions[0].ActionTarget.RelativePath != "Mods" {
 		t.Fatalf("ready action target = %+v", listed.Actions[0].ActionTarget)
 	}
-	if listed.Actions[1].ID != "blocked-action" || listed.Actions[1].Status != sdk.CapabilityStatusBlocked {
-		t.Fatalf("blocked action = %+v", listed.Actions[1])
+	if listed.Actions[1].ID != "profile-rules" || listed.Actions[1].Kind != sdk.ExtensionActionKindPage || listed.Actions[1].ActionTarget == nil || listed.Actions[1].ActionTarget.Scope != "profile-mod-rules" {
+		t.Fatalf("page action = %+v", listed.Actions[1])
+	}
+	if listed.Actions[2].ID != "blocked-action" || listed.Actions[2].Status != sdk.CapabilityStatusBlocked {
+		t.Fatalf("blocked action = %+v", listed.Actions[2])
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/open-mods/run", nil)
@@ -15989,6 +15999,28 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	}
 	if queued.Job.Payload["directory_path"] != filepath.ToSlash(filepath.Join(gamePath, "Mods")) {
 		t.Fatalf("directory path = %q", queued.Job.Payload["directory_path"])
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/profile-rules/run", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page action status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var surface struct {
+		ActionID   string `json:"action_id"`
+		ActionKind string `json:"action_kind"`
+		Surface    struct {
+			Type  string `json:"type"`
+			Scope string `json:"scope"`
+		} `json:"surface"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&surface); err != nil {
+		t.Fatal(err)
+	}
+	if surface.ActionID != "profile-rules" || surface.ActionKind != sdk.ExtensionActionKindPage || surface.Surface.Type != sdk.ExtensionActionKindPage || surface.Surface.Scope != "profile-mod-rules" {
+		t.Fatalf("page action response = %+v", surface)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/open-directory/actions", nil)

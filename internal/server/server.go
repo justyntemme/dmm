@@ -902,6 +902,7 @@ type gameExtensionActionResponse struct {
 
 type gameExtensionActionTargetInfo struct {
 	Type             string `json:"type,omitempty"`
+	Scope            string `json:"scope,omitempty"`
 	Base             string `json:"base,omitempty"`
 	TargetRootID     string `json:"target_root_id,omitempty"`
 	RelativePath     string `json:"relative_path,omitempty"`
@@ -7763,6 +7764,11 @@ func gameExtensionActionTarget(action sdk.ExtensionActionSpec) *gameExtensionAct
 			Type:   sdk.ExtensionActionKindAcquireTool,
 			ToolID: strings.TrimSpace(action.AcquireTool.ToolID),
 		}
+	case sdk.ExtensionActionKindPage, sdk.ExtensionActionKindDialog, sdk.ExtensionActionKindAPI, sdk.ExtensionActionKindReport:
+		return &gameExtensionActionTargetInfo{
+			Type:  strings.TrimSpace(action.Kind),
+			Scope: strings.TrimSpace(action.Scope),
+		}
 	default:
 		return nil
 	}
@@ -7838,6 +7844,19 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 			"action_id":   action.ID,
 			"action_kind": sdk.ExtensionActionKindApplyProfile,
 			"apply":       apply,
+		})
+		return
+	case sdk.ExtensionActionKindPage, sdk.ExtensionActionKindDialog, sdk.ExtensionActionKindAPI, sdk.ExtensionActionKindReport:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"action_id":        strings.TrimSpace(action.ID),
+			"action_kind":      strings.TrimSpace(action.Kind),
+			"action_name":      strings.TrimSpace(action.Name),
+			"source_extension": strings.TrimSpace(extension.ID),
+			"surface": map[string]any{
+				"type":    strings.TrimSpace(action.Kind),
+				"scope":   strings.TrimSpace(action.Scope),
+				"message": strings.TrimSpace(action.Message),
+			},
 		})
 		return
 	default:
