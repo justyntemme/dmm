@@ -22,14 +22,15 @@
 - F4SE primary launch-tool metadata is registered.
 - FO4Edit, Wrye Bash, and BodySlide tool metadata are registered.
 - BodySlide x64 is preferred when present, with BodySlide.exe kept as the fallback executable, matching the Vortex extension source.
-- Gamebryo plugin activation generation is represented.
+- Gamebryo plugin activation generation is represented, including LOOT metadata and profile-local LOOT rules.
+- The backend exposes LOOT refresh/sort/userlist endpoints for Gamebryo plugin activation profiles.
 - Steam Workshop coexistence/actions are declared.
 
 ## Beta Gaps
 
 - Live Fallout 4 archive validation is still required.
-- LOOT-style sorting is not implemented.
-- Plugin dependency validation is not complete.
+- Packaged LOOT sorter validation against a real Fallout 4 plugin set is still required.
+- Plugin dependency validation is present through the shared Gamebryo diagnostics, but needs live validation against representative Fallout 4 missing-master and blueprint-master fixtures.
 - Archive invalidation needs live verification against Proton paths.
 - Workshop enable/disable/unsubscribe needs safe manual validation.
 
