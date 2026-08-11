@@ -16,6 +16,38 @@ const (
 	invalidModType     = "dragonsdogma-invalid-confirmed"
 )
 
+var romMigrationSegments = []string{
+	"dl1",
+	"enemy",
+	"eq",
+	"etc",
+	"event",
+	"gui",
+	"h_enemy",
+	"ingamemanual",
+	"item_b",
+	"map",
+	"message",
+	"mnpc",
+	"npc",
+	"npcfca",
+	"npcfsm",
+	"om",
+	"pwnmsg",
+	"quest",
+	"shell",
+	"sk",
+	"sound",
+	"stage",
+	"voice",
+	"wp",
+	"bbs_rpg.arc",
+	"bbsrpg_core.arc",
+	"game_main.arc",
+	"Initialize.arc",
+	"title.arc",
+}
+
 func Extension() sdk.Extension {
 	return sdk.Extension{
 		ID:       VortexGameID,
@@ -87,8 +119,14 @@ func Register(r sdk.Registrar) {
 		Name:        "Dragon's Dogma nativePC/rom migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.1",
-		Status:      sdk.CapabilityStatusNotApplicable,
-		Message:     "Vortex migrates historical staged mods after an old rom-only packaging bug. This is not applicable to DMM-created state because DMM's first-party installer has always staged the full nativePC layout and never emitted the affected rom-only broken layout. If DMM later imports historical Vortex staging, that importer must implement a real repair instead of treating this migration as complete.",
+		Commands: []sdk.StateMigrationCommandSpec{{
+			ID:                  "move-rom-segments",
+			Name:                "Move historical ROM files into rom/",
+			Command:             sdk.StateMigrationCommandMoveStagedPaths,
+			DestinationRelative: "rom",
+			MatchFirstSegments:  romMigrationSegments,
+		}},
+		Message: "Mirrors Vortex 1.0.1 historical staging repair by moving known nativePC ROM content segments into a nested rom/ folder for imported/older staged mods.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

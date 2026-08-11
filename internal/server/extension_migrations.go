@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -250,6 +251,9 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 	case sdk.StateMigrationCommandSetModType:
 		changed, err := s.setInstalledModTypesForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return changed > 0, err
+	case sdk.StateMigrationCommandMoveStagedPaths:
+		changed, err := s.moveStagedPathsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
+		return changed > 0, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {
@@ -321,6 +325,100 @@ func (s *Server) setInstalledModTypesForMigration(ctx context.Context, appID str
 		s.logger.Info("extension migration retagged installed mods", "app_id", appID, "source", source, "from_mod_type", command.ModType, "target_mod_type", targetType, "excluded_mod_types", strings.Join(command.ExcludeModTypes, ","), "mods", changed)
 	}
 	return changed, nil
+}
+
+func (s *Server) moveStagedPathsForMigration(ctx context.Context, appID string, command sdk.StateMigrationCommandSpec, source string) (int, error) {
+	destination, ok := safeRelative(command.DestinationRelative)
+	if !ok || destination == "." {
+		return 0, fmt.Errorf("extension migration command %s destination relative path is required", command.ID)
+	}
+	destination = filepath.ToSlash(destination)
+	matches := migrationFirstSegmentSet(command.MatchFirstSegments)
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("extension migration command %s match first segments are required", command.ID)
+	}
+	mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, mod := range mods {
+		if err := ctx.Err(); err != nil {
+			return changed, err
+		}
+		stagingRoot := filepath.Clean(strings.TrimSpace(mod.StagingPath))
+		if stagingRoot == "" || !filepath.IsAbs(stagingRoot) {
+			continue
+		}
+		modChanged, err := moveMatchingStagedPaths(stagingRoot, destination, matches)
+		if err != nil {
+			return changed, err
+		}
+		changed += modChanged
+	}
+	if changed > 0 {
+		s.logger.Info("extension migration moved staged paths", "app_id", appID, "source", source, "destination", destination, "paths", changed)
+	}
+	return changed, nil
+}
+
+func migrationFirstSegmentSet(segments []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(segments))
+	for _, segment := range segments {
+		value := strings.ToLower(strings.TrimSpace(segment))
+		if value != "" && !strings.ContainsAny(value, "/\\\x00\r\n") {
+			out[value] = struct{}{}
+		}
+	}
+	return out
+}
+
+func moveMatchingStagedPaths(stagingRoot, destination string, matches map[string]struct{}) (int, error) {
+	entries, err := os.ReadDir(stagingRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	destination = filepath.ToSlash(strings.Trim(destination, "/"))
+	destinationRoot := filepath.Join(stagingRoot, filepath.FromSlash(destination))
+	changed := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.EqualFold(name, firstPathSegment(destination)) {
+			continue
+		}
+		if _, ok := matches[strings.ToLower(name)]; !ok {
+			continue
+		}
+		from := filepath.Join(stagingRoot, name)
+		to := filepath.Join(destinationRoot, name)
+		if !pathWithinRoot(stagingRoot, from) || !pathWithinRoot(stagingRoot, to) {
+			return changed, fmt.Errorf("extension migration staged move would leave staging root")
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			return changed, err
+		}
+		if _, err := os.Stat(to); err == nil {
+			return changed, fmt.Errorf("extension migration destination already exists: %s", to)
+		} else if !os.IsNotExist(err) {
+			return changed, err
+		}
+		if err := os.Rename(from, to); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
+func firstPathSegment(value string) string {
+	value = filepath.ToSlash(strings.Trim(value, "/"))
+	if idx := strings.Index(value, "/"); idx >= 0 {
+		return value[:idx]
+	}
+	return value
 }
 
 func retargetManifestForModTypeMigration(appID string, registry gameext.Registry, manifest *stagedManifest, fromType, targetType string) {

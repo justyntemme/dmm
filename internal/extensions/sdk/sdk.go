@@ -1073,20 +1073,23 @@ const (
 	StateMigrationCommandPurgeModsInPath = "purge-mods-in-path"
 	StateMigrationCommandSetModType      = "set-mod-type"
 	StateMigrationCommandDeployProfile   = "deploy-profile"
+	StateMigrationCommandMoveStagedPaths = "move-staged-paths"
 )
 
 type StateMigrationCommandSpec struct {
-	ID              string
-	Name            string
-	Command         string
-	SteamAppID      string
-	ModType         string
-	TargetModType   string
-	ExcludeModTypes []string
-	TargetRootID    string
-	TargetRelative  string
-	Status          string
-	Message         string
+	ID                  string
+	Name                string
+	Command             string
+	SteamAppID          string
+	ModType             string
+	TargetModType       string
+	ExcludeModTypes     []string
+	TargetRootID        string
+	TargetRelative      string
+	DestinationRelative string
+	MatchFirstSegments  []string
+	Status              string
+	Message             string
 }
 
 type HistoryStackSpec struct {

@@ -2817,7 +2817,7 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" name is required"))
 		}
 		switch strings.TrimSpace(command.Command) {
-		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile:
+		case sdk.StateMigrationCommandPurgeModsInPath, sdk.StateMigrationCommandSetModType, sdk.StateMigrationCommandDeployProfile, sdk.StateMigrationCommandMoveStagedPaths:
 		default:
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" has unsupported command "+strings.TrimSpace(command.Command)))
 		}
@@ -2845,6 +2845,23 @@ func validateStateMigrationCommands(migrationID string, commands []sdk.StateMigr
 		}
 		if err := validateRelativeOrRoot(command.TargetRelative); err != nil {
 			errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" target relative path: "+err.Error()))
+		}
+		if strings.TrimSpace(command.Command) == sdk.StateMigrationCommandMoveStagedPaths {
+			if err := validateRelativeOrRoot(command.DestinationRelative); err != nil {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path: "+err.Error()))
+			}
+			if strings.Trim(strings.TrimSpace(command.DestinationRelative), "/\\") == "" {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" destination relative path is required"))
+			}
+			if len(command.MatchFirstSegments) == 0 {
+				errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segments are required"))
+			}
+			for _, segment := range command.MatchFirstSegments {
+				value := strings.TrimSpace(segment)
+				if value == "" || strings.ContainsAny(value, "/\\\x00\r\n") {
+					errs = append(errs, errors.New("state migration "+migrationID+" command "+id+" match first segment must be a simple path segment"))
+				}
+			}
 		}
 		if err := validateCapabilityStatus("state migration "+migrationID+" command", id, command.Status, command.Message); err != nil {
 			errs = append(errs, err)

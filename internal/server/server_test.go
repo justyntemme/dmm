@@ -9037,6 +9037,100 @@ func TestExtensionMigrationRetagsInstalledModTypes(t *testing.T) {
 	}
 }
 
+func TestExtensionMigrationMovesMatchingStagedPaths(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	stagingPath := filepath.Join(root, "staging", "dragonsdogma", "mods", "rom-bug", "files", "1")
+	for rel, content := range map[string]string{
+		"eq/armor.arc": "armor",
+		"title.arc":    "title",
+		"readme.txt":   "readme",
+	} {
+		path := filepath.Join(stagingPath, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const appID = "999013"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationmovegame",
+		Name:    "Migration Move Game",
+		Version: "1.0.1",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationmovegame"},
+				VortexGameID: "migrationmovegame",
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "move-staged",
+				Name:        "Move staged paths",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.0.1",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:                  "move-rom",
+					Name:                "Move ROM files",
+					Command:             sdk.StateMigrationCommandMoveStagedPaths,
+					DestinationRelative: "rom",
+					MatchFirstSegments:  []string{"eq", "title.arc"},
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Move Game",
+		InstallDir:  "Migration Move Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordInstalledMod(context.Background(), storage.RecordInstalledModParams{
+		SteamAppID:   appID,
+		Resolved:     catalog.ResolvedDownload{Catalog: "nexus", GameDomain: "migrationmovegame", ModID: "rom-bug", FileID: "1"},
+		Name:         "ROM Bug Mod",
+		Version:      "1",
+		ArchivePath:  filepath.Join(root, "rom-bug.zip"),
+		StagingPath:  stagingPath,
+		ManifestJSON: `{"game_id":"migrationmovegame","mod_type":"nativepc","files":[]}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	for _, rel := range []string{"rom/eq/armor.arc", "rom/title.arc", "readme.txt"} {
+		if _, err := os.Stat(filepath.Join(stagingPath, filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("expected %s: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{"eq", "title.arc"} {
+		if _, err := os.Stat(filepath.Join(stagingPath, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("expected old %s removed, err=%v", rel, err)
+		}
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "move-staged", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
 	srv := newTestServer(t)
 	root := t.TempDir()

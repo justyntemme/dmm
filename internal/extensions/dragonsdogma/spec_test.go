@@ -70,7 +70,7 @@ func TestExtensionSummaryRecordsARCMergeRuntime(t *testing.T) {
 	if len(summary.Capabilities.EventHandlers) != 1 || summary.Capabilities.EventHandlers[0].ID != sdk.EventWillDeploy {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
-	if len(summary.Capabilities.StateMigrations) != 1 || summary.Capabilities.StateMigrations[0].Status != sdk.CapabilityStatusNotApplicable {
+	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.StateMigrations[0].Commands) != 1 || summary.Capabilities.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandMoveStagedPaths {
 		t.Fatalf("migrations = %+v", summary.Capabilities.StateMigrations)
 	}
 }
