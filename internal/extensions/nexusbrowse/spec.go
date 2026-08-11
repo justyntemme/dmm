@@ -1,4 +1,4 @@
-package manifestblocked
+package nexusbrowse
 
 import (
 	"context"
@@ -19,8 +19,6 @@ type Spec struct {
 	SteamAppIDs            []string
 	NexusDomains           []string
 	VortexGameID           string
-	ModTypeID              string
-	ResearchReason         string
 	RequiredFiles          []string
 	RequirementID          string
 	RequirementName        string
@@ -49,10 +47,6 @@ func Extension(spec Spec) sdk.Extension {
 }
 
 func Register(r sdk.Registrar, spec Spec) {
-	modType := strings.TrimSpace(spec.ModTypeID)
-	if modType == "" {
-		modType = strings.TrimSpace(spec.ID) + "-research-blocked"
-	}
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  spec.SteamAppIDs,
 		NexusDomains: spec.NexusDomains,
@@ -61,14 +55,12 @@ func Register(r sdk.Registrar, spec Spec) {
 			AllowNeedsReviewState: true,
 		},
 	})
-	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: ""})
 	if len(spec.RequiredFiles) > 0 {
 		r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 			ID:          defaultString(spec.RequirementID, strings.TrimSpace(spec.ID)+"-required-files"),
 			Name:        defaultString(spec.RequirementName, strings.TrimSpace(spec.Name)+" install files"),
 			Kind:        "game-files",
 			Required:    true,
-			ModTypes:    []string{modType},
 			Message:     spec.RequirementMessage,
 			OKMessage:   spec.RequirementOKMessage,
 			InstallHint: spec.RequirementInstallHint,
@@ -114,7 +106,7 @@ func RequiredFilesCheck(required []string) func(context.Context, string) []strin
 	}
 }
 
-func NexusResearchSources(appID, name, domain string) []sdk.SourceRef {
+func BrowseSources(appID, name, domain string) []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{Name: name + " Nexus API game-domain verification", URL: "https://api.nexusmods.com/v1/games.json"},
 		{Name: "Steam Deck installed app manifest snapshot for " + strings.TrimSpace(appID), URL: "extensionTargets.md#installed-games-snapshot"},

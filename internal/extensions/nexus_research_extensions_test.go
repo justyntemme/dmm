@@ -6,7 +6,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestNexusResearchBlockedExtensionsExposeVerifiedDomains(t *testing.T) {
+func TestNexusBrowseOnlyExtensionsExposeVerifiedDomains(t *testing.T) {
 	registry := gameext.NewRegistry(FirstParty())
 	tests := []struct {
 		appID  string

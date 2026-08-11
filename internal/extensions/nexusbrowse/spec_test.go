@@ -1,4 +1,4 @@
-package manifestblocked
+package nexusbrowse
 
 import (
 	"context"
@@ -11,15 +11,14 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestExtensionRegistersBlockedManifestShape(t *testing.T) {
+func TestExtensionRegistersBrowseOnlyShape(t *testing.T) {
 	spec := Spec{
-		ID:             "examplegame",
-		Name:           "Example Game",
-		SteamAppIDs:    []string{"123"},
-		NexusDomains:   []string{"examplegame"},
-		VortexGameID:   "examplegame",
-		ResearchReason: "source package has not been inspected",
-		RequiredFiles:  []string{"Example.exe", "Data"},
+		ID:            "examplegame",
+		Name:          "Example Game",
+		SteamAppIDs:   []string{"123"},
+		NexusDomains:  []string{"examplegame"},
+		VortexGameID:  "examplegame",
+		RequiredFiles: []string{"Example.exe", "Data"},
 		Sources: []sdk.SourceRef{{
 			Name: "source",
 			URL:  "https://example.test",
@@ -37,14 +36,13 @@ func TestExtensionRegistersBlockedManifestShape(t *testing.T) {
 	}
 }
 
-func TestResearchOnlyExtensionDoesNotClaimArchiveSupport(t *testing.T) {
+func TestBrowseOnlyExtensionDoesNotClaimArchiveSupport(t *testing.T) {
 	extension := gameext.MustCompileExtension(Extension(Spec{
-		ID:             "examplegame",
-		Name:           "Example Game",
-		SteamAppIDs:    []string{"123"},
-		NexusDomains:   []string{"examplegame"},
-		VortexGameID:   "examplegame",
-		ResearchReason: "pending Vortex package source review",
+		ID:           "examplegame",
+		Name:         "Example Game",
+		SteamAppIDs:  []string{"123"},
+		NexusDomains: []string{"examplegame"},
+		VortexGameID: "examplegame",
 	}))
 	if len(extension.InstallPlan.Installers) != 0 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
