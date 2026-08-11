@@ -6193,8 +6193,8 @@ function FreshDeckyModManagerRoute() {
               return (
                 <Focusable
                   key={action.id}
-                  className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
-                  focusClassName="dmm-sidebar-row-focused"
+                  className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
+                  focusClassName="dmm-focus-card-focused"
                   onActivate={() => void runSelectedGameExtensionAction(action)}
                   onClick={() => void runSelectedGameExtensionAction(action)}
                   style={freshActionCardStyle(busy)}
@@ -6231,8 +6231,8 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={requirement.id}
-              className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
-              focusClassName="dmm-sidebar-row-focused"
+              className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
+              focusClassName="dmm-focus-card-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
                 else if (canAcquire) void acquireRuntimeRequirement(requirement);
@@ -6264,8 +6264,8 @@ function FreshDeckyModManagerRoute() {
         {gameActionJobs.map((job) => (
           <Focusable
             key={job.id}
-            className="dmm-sidebar-row dmm-content-card dmm-fresh-action-card"
-            focusClassName="dmm-sidebar-row-focused"
+            className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
+            focusClassName="dmm-focus-card-focused"
             onActivate={() => void activateActionJob(job)}
             onClick={() => void activateActionJob(job)}
             style={{ ...freshActionCardStyle(false), background: job.status === "waiting" || job.status === "running" ? "rgba(15, 118, 110, 0.22)" : "rgba(17, 24, 39, 0.78)", borderColor: job.status === "failed" ? "#7f1d1d" : "#334155" }}
