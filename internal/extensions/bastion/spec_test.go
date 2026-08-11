@@ -1,10 +1,8 @@
 package bastion_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
@@ -18,7 +16,7 @@ func TestExtensionRegistersInstallerCoverage(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.InstallPlatforms) != 2 || len(summary.Capabilities.RuntimeRequirements) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.InstallPlatforms) != 2 || len(summary.Capabilities.RuntimeRequirements) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }
@@ -49,20 +47,6 @@ func TestWindowsGameConfigArchiveTargetsWindowsContentGame(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTarget(t, plan, "Content/Game/Players.xml")
-}
-
-func TestExecutablePatchArchiveIsBlocked(t *testing.T) {
-	gamePath := t.TempDir()
-	writeFile(t, filepath.Join(gamePath, "Linux", "Bastion"), "exe")
-	writeFile(t, filepath.Join(gamePath, "Linux", "Content", "Game", "Players.xml"), "players")
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "Bastion.exe"), "patched")
-
-	_, err := buildWithGamePath(root, gamePath)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "not classified") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func buildWithGamePath(root, gamePath string) (installplan.Plan, error) {

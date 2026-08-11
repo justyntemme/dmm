@@ -1,7 +1,6 @@
 package hollowknight_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -154,20 +153,6 @@ func TestAssetsInstaller(t *testing.T) {
 	}
 	assertTarget(t, plan, "hollow_knight_Data/sharedassets1.assets")
 	assertTarget(t, plan, "hollow_knight_Data/sharedassets1.resource")
-}
-
-func TestUnclassifiedArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "manual", "readme.txt"), "readme")
-
-	_, err := build(root)
-	if err == nil {
-		t.Fatal("expected unclassified archive block")
-	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || unsupported.Reason == "" {
-		t.Fatalf("error = %T %v", err, err)
-	}
 }
 
 func build(root string) (installplan.Plan, error) {

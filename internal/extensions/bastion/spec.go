@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -22,12 +21,9 @@ const (
 
 	gameConfigModTypeLinux   = "bastion-game-config-linux"
 	gameConfigModTypeWindows = "bastion-game-config-windows"
-	blockedModType           = "bastion-unclassified-blocked"
 	linuxGameConfigRoot      = "Linux/Content/Game"
 	windowsGameConfigRoot    = "Content/Game"
 )
-
-const blockedReason = "Bastion archive layout is not classified by the verified extension rules. DMM currently supports Content/Game config replacement archives only; executable patches, binary tools, save edits, and unclassified payloads stay blocked until a source-reviewed extension rule can transform them safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -53,19 +49,8 @@ func Register(r sdk.Registrar) {
 	}
 	r.RegisterModType(installplan.ModTypeSpec{ID: gameConfigModTypeLinux, TargetRoot: linuxGameConfigRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: gameConfigModTypeWindows, TargetRoot: windowsGameConfigRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(gameConfigInstaller(platformLinux, gameConfigModTypeLinux))
 	r.RegisterInstaller(gameConfigInstaller(platformWindows, gameConfigModTypeWindows))
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:bastion:unclassified-blocked",
-		VortexInstallerID: "bastion-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
-	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "bastion-content-game-present",
 		Name:        "Bastion Content/Game folder",
@@ -153,9 +138,4 @@ func sources() []sdk.SourceRef {
 		{Name: "Live Steam Deck native executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		{Name: "Checked bundled Vortex game extension source; no reviewed Bastion handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
-}
-
-func matchAnyArchive(root string) bool {
-	files, err := simplearchive.ListFiles(root)
-	return err == nil && !simplearchive.ContainsFOMOD(files) && len(files) > 0
 }

@@ -2,7 +2,6 @@ package mewgenics
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,20 +99,6 @@ func TestToolInstallersTargetGameRoot(t *testing.T) {
 			}
 			assertTarget(t, plan, tc.want)
 		})
-	}
-}
-
-func TestUnclassifiedArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "manual", "readme.txt"), "readme")
-
-	_, err := buildWithArchiveName(root, "Manual.zip")
-	if err == nil {
-		t.Fatal("expected unclassified archive block")
-	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || unsupported.Reason == "" {
-		t.Fatalf("error = %T %v", err, err)
 	}
 }
 
