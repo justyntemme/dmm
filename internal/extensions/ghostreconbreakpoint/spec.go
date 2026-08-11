@@ -253,16 +253,6 @@ func installers() []installplan.InstallerSpec {
 			CustomBuild:       buildRoot,
 			InstructionMode:   installplan.InstructionCustom,
 		},
-		{
-			ID:                "vortex:ghostreconbreakpoint:unclassified-blocked",
-			VortexInstallerID: VortexGameID + "-unclassified",
-			Priority:          43,
-			ModType:           rootModType,
-			NameSource:        installplan.NameSourceArchive,
-			CustomMatch:       matchUnclassifiedArchive,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Ghost Recon Breakpoint archive layout is not classified by the verified extension rules. DMM blocks arbitrary root placement until a specific extension-owned rule classifies the archive safely.",
-		},
 	}
 }
 

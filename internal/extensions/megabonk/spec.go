@@ -41,7 +41,6 @@ const (
 	melonConfigModType          = "megabonk-melonloader-config"
 	customCharsBepInExModType   = "megabonk-customcharacters-bepinex"
 	customCharsMelonModType     = "megabonk-customcharacters-melonloader"
-	unclassifiedModType         = "megabonk-unclassified-blocked"
 
 	bepInExRoot             = "BepInEx"
 	bepInExPluginsRoot      = "BepInEx/plugins"
@@ -146,7 +145,6 @@ func modTypes() []installplan.ModTypeSpec {
 		{ID: melonConfigModType, TargetRoot: melonConfigRoot},
 		{ID: customCharsBepInExModType, TargetRoot: customCharsBepInExRoot},
 		{ID: customCharsMelonModType, TargetRoot: customCharsMelonRoot},
-		{ID: unclassifiedModType, TargetRoot: ""},
 	}
 }
 
@@ -256,16 +254,6 @@ func installers() []installplan.InstallerSpec {
 			CustomMatch:       matchCustomCharacters,
 			CustomBuild:       buildCustomCharacters,
 			InstructionMode:   installplan.InstructionCustom,
-		},
-		{
-			ID:                "vortex:megabonk:unclassified-blocked",
-			VortexInstallerID: "megabonk-unclassified",
-			Priority:          99,
-			ModType:           unclassifiedModType,
-			NameSource:        installplan.NameSourceArchive,
-			CustomMatch:       matchUnclassifiedArchive,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Megabonk archive layout is not classified by the verified extension rules. DMM blocks arbitrary root-file placement until a specific extension-owned rule can classify it safely.",
 		},
 	}
 }

@@ -24,7 +24,7 @@ func TestExtensionRegistersSourceBackedInstallers(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 9 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.ModTypes) != 9 {
+	if len(summary.Capabilities.Installers) != 9 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.ModTypes) != 9 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	if len(summary.Capabilities.RuntimeRequirements) != 2 || len(summary.Capabilities.LaunchTools) != 4 {
