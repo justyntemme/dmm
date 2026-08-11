@@ -877,22 +877,24 @@ type gameExtensionActionTargetInfo struct {
 }
 
 type gameExtensionInfo struct {
-	ID                  string              `json:"id"`
-	Name                string              `json:"name"`
-	Supported           bool                `json:"supported"`
-	Coverage            string              `json:"coverage"`
-	CoverageLabel       string              `json:"coverage_label"`
-	Nexus               bool                `json:"nexus"`
-	SteamWorkshop       bool                `json:"steam_workshop"`
-	Installers          bool                `json:"installers"`
-	InstallerChoices    bool                `json:"installer_choices"`
-	RuntimeRequirements bool                `json:"runtime_requirements"`
-	LaunchTools         bool                `json:"launch_tools"`
-	PluginActivation    bool                `json:"plugin_activation"`
-	LoadOrder           bool                `json:"load_order"`
-	GameVersions        bool                `json:"game_versions"`
-	GameInfoProviders   bool                `json:"game_info_providers"`
-	Sources             []gameext.SourceRef `json:"sources,omitempty"`
+	ID                  string                       `json:"id"`
+	Name                string                       `json:"name"`
+	Supported           bool                         `json:"supported"`
+	Coverage            string                       `json:"coverage"`
+	CoverageLabel       string                       `json:"coverage_label"`
+	ParityGapCount      int                          `json:"parity_gap_count,omitempty"`
+	ParityGaps          []gameext.ExtensionParityGap `json:"parity_gaps,omitempty"`
+	Nexus               bool                         `json:"nexus"`
+	SteamWorkshop       bool                         `json:"steam_workshop"`
+	Installers          bool                         `json:"installers"`
+	InstallerChoices    bool                         `json:"installer_choices"`
+	RuntimeRequirements bool                         `json:"runtime_requirements"`
+	LaunchTools         bool                         `json:"launch_tools"`
+	PluginActivation    bool                         `json:"plugin_activation"`
+	LoadOrder           bool                         `json:"load_order"`
+	GameVersions        bool                         `json:"game_versions"`
+	GameInfoProviders   bool                         `json:"game_info_providers"`
+	Sources             []gameext.SourceRef          `json:"sources,omitempty"`
 }
 
 type steamWorkshopStateResponse struct {
@@ -5115,6 +5117,13 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 	if !ok {
 		return nil
 	}
+	summary := gameext.ExtensionSummary{}
+	for _, candidate := range registry.ExtensionSummaries() {
+		if strings.TrimSpace(candidate.ID) == strings.TrimSpace(extension.ID) {
+			summary = candidate
+			break
+		}
+	}
 	coverage, coverageLabel := gameext.ExtensionCoverage(extension)
 	return &gameExtensionInfo{
 		ID:                  strings.TrimSpace(extension.ID),
@@ -5122,6 +5131,8 @@ func gameExtensionInfoForSteamApp(registry games.Registry, appID string) *gameEx
 		Supported:           true,
 		Coverage:            coverage,
 		CoverageLabel:       coverageLabel,
+		ParityGapCount:      len(summary.ParityGaps),
+		ParityGaps:          append([]gameext.ExtensionParityGap(nil), summary.ParityGaps...),
 		Nexus:               len(extension.NexusDomains) > 0,
 		SteamWorkshop:       extension.SteamWorkshop.AllowCoexistence || len(extension.SteamWorkshop.Actions) > 0,
 		Installers:          gameext.HasSupportedInstallers(extension),
