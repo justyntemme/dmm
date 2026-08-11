@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -100,6 +101,90 @@ func buildMMPCModArchive(input installplan.BuildInput) (installplan.Plan, error)
 		NameSource:   installplan.NameSourceArchive,
 		DetectedFrom: []installplan.Detection{{Kind: "vortex-custom-installer", Path: detected, Reason: "Vortex installer smpc-mod-installer matched Miles Morales .mmpcmod content"}},
 		Metadata:     metadata,
+		Instructions: instructions,
+	}, nil
+}
+
+func buildToolArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := listFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	execRel := ""
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file), mmpcToolExec) {
+			execRel = file
+			break
+		}
+	}
+	if execRel == "" {
+		return installplan.Plan{}, installplan.Unsupported("Miles Morales MMPC tool archive matched but no " + mmpcToolExec + " was found")
+	}
+	basePath := filepath.ToSlash(filepath.Dir(execRel))
+	if basePath == "." {
+		basePath = ""
+	}
+	instructions := make([]installplan.Instruction, 0, len(files)+1)
+	for _, file := range files {
+		if !simplearchive.PathWithinRoot(file, basePath) {
+			continue
+		}
+		rel := simplearchive.StripRoot(file, basePath)
+		if strings.TrimSpace(rel) == "" || rel == "." {
+			continue
+		}
+		targetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, rel))
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
+			StagingRelative: targetRel,
+			TargetRelative:  targetRel,
+			DeployStrategy:  installplan.DeployStrategyCopy,
+		})
+	}
+	if gamePath := strings.TrimSpace(input.GamePath); gamePath != "" {
+		sourcePath := filepath.Join(input.ExtractedRoot, ".dmm-generated", "assetArchiveDir.txt")
+		if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+			return installplan.Plan{}, err
+		}
+		assetArchiveDir := filepath.Join(gamePath, "asset_archive")
+		if err := os.WriteFile(sourcePath, []byte(assetArchiveDir), 0o644); err != nil {
+			return installplan.Plan{}, err
+		}
+		targetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, "assetArchiveDir.txt"))
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      sourcePath,
+			StagingRelative: targetRel,
+			TargetRelative:  targetRel,
+			DeployStrategy:  installplan.DeployStrategyCopy,
+		})
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, errors.New("Miles Morales MMPC tool installer matched but produced no deployable files")
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return instructions[i].TargetRelative < instructions[j].TargetRelative
+	})
+	execTargetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, simplearchive.StripRoot(execRel, basePath)))
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    mmpcToolModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-custom-installer",
+			Path:   execRel,
+			Reason: "Vortex MMPC tool installer matched MMPCTool.exe and DMM stages it as a managed extension tool",
+		}},
+		Metadata: []installplan.ModMetadata{{
+			Kind:            "tool",
+			Name:            "MMPC Modding Tool",
+			UniqueID:        "spidermanmilesmorales-mmpc-tool",
+			SourcePath:      execRel,
+			StagingRelative: execTargetRel,
+		}},
+		Warnings:     []string{"MMPC tool archives are staged as managed tools. Running the tool remains a Decky/user action after deployment."},
 		Instructions: instructions,
 	}, nil
 }

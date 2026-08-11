@@ -84,20 +84,33 @@ func TestMultipleMMPCModArchiveRequiresChoice(t *testing.T) {
 	}
 }
 
-func TestModpackAndToolArchivesAreBlocked(t *testing.T) {
-	for name, file := range map[string]string{
-		"modpack": "Bundle.mmpcmodpack",
-		"tool":    mmpcToolExec,
-	} {
-		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			writeFile(t, filepath.Join(root, file), "payload")
-			_, err := build(root, nil)
-			var unsupported installplan.UnsupportedError
-			if !errors.As(err, &unsupported) {
-				t.Fatalf("error = %T %v", err, err)
-			}
-		})
+func TestModpackArchiveIsBlocked(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Bundle.mmpcmodpack"), "payload")
+	_, err := build(root, nil)
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("error = %T %v", err, err)
+	}
+}
+
+func TestToolArchiveStagesManagedMMPCTool(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Tool", mmpcToolExec), "tool")
+	writeFile(t, filepath.Join(root, "Tool", "Support.dll"), "dll")
+	gamePath := filepath.Join(t.TempDir(), "Miles")
+	plan, err := buildWithOptions(root, installplan.BuildOptions{GamePath: gamePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != mmpcToolModType || plan.PlannerID != "vortex:spidermanmilesmorales:mmpc-tool" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "SMPCTool/MMPCTool.exe")
+	assertTarget(t, plan, "SMPCTool/Support.dll")
+	assertTarget(t, plan, "SMPCTool/assetArchiveDir.txt")
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != "tool" || plan.Metadata[0].UniqueID != "spidermanmilesmorales-mmpc-tool" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
 	}
 }
 
@@ -140,8 +153,22 @@ func TestRequiredFilesChecks(t *testing.T) {
 }
 
 func build(root string, selections map[string][]string) (installplan.Plan, error) {
+	return buildWithOptions(root, installplan.BuildOptions{Selections: selections})
+}
+
+func buildWithOptions(root string, options installplan.BuildOptions) (installplan.Plan, error) {
 	registry := installplan.NewRegistry([]installplan.GameSpec{gameext.MustCompileExtension(Extension()).InstallPlan})
-	return registry.BuildWithOptions(SteamAppID, root, installplan.BuildOptions{Selections: selections})
+	return registry.BuildWithOptions(SteamAppID, root, options)
+}
+
+func assertTarget(t *testing.T, plan installplan.Plan, target string) {
+	t.Helper()
+	for _, instruction := range plan.Instructions {
+		if instruction.TargetRelative == target {
+			return
+		}
+	}
+	t.Fatalf("missing target %q in %+v", target, plan.Instructions)
 }
 
 func writeFile(t *testing.T, path string, body string) {

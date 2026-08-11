@@ -72,8 +72,8 @@ func Register(r sdk.Registrar) {
 		ModType:           mmpcToolModType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchToolArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Miles Morales MMPC tool archives require DMM to generate assetArchiveDir.txt from the live game path and run the Windows tool after deployment. The extension blocks tool installs until that generic tool-runtime capability is complete.",
+		CustomBuild:       buildToolArchive,
+		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                mmpcModInstaller,
