@@ -4150,7 +4150,11 @@ const freshSectionStyle: CSSProperties = {
   boxSizing: "border-box",
   display: "grid",
   gap: "8px",
+  height: "auto",
+  minHeight: "64px",
   minWidth: 0,
+  overflowX: "hidden",
+  overflowY: "visible",
   padding: "10px",
   width: "100%"
 };
