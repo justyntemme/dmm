@@ -1,9 +1,6 @@
 package untitledgoose
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
@@ -24,7 +21,6 @@ const (
 	rootModType     = "untitledgoosegame-bepinex-root"
 	pluginModType   = "untitledgoosegame-bepinex-plugin"
 	configModType   = "untitledgoosegame-bepinex-config-manager"
-	blockedModType  = "untitledgoosegame-bepinex-unclassified-blocked"
 	migrationTarget = "Untitled_Data/Managed/VortexMods"
 )
 
@@ -257,7 +253,6 @@ func modTypes() []installplan.ModTypeSpec {
 		{ID: rootModType, TargetRoot: "BepInEx"},
 		{ID: pluginModType, TargetRoot: queryModPath},
 		{ID: configModType, TargetRoot: "BepInEx"},
-		{ID: blockedModType, TargetRoot: "", Status: sdk.CapabilityStatusBlocked, Message: "Untitled Goose Game archive layout is not classified by Vortex BepInEx rules."},
 	}
 }
 
@@ -303,34 +298,10 @@ func installers() []installplan.InstallerSpec {
 			CustomBuild:       bepinex.BuildPlugin(Name, bepinex.PluginMatchOptions{}),
 			InstructionMode:   installplan.InstructionCustom,
 		},
-		{
-			ID:                "vortex:untitledgoosegame:bepinex-unclassified",
-			VortexInstallerID: "untitledgoosegame-unclassified",
-			Priority:          10000,
-			ModType:           blockedModType,
-			NameSource:        installplan.NameSourceArchive,
-			CustomMatch:       matchAnyNonFOMODFile,
-			InstructionMode:   installplan.InstructionUnsupported,
-			UnsupportedReason: "Untitled Goose Game archive layout is not classified by the verified Vortex BepInEx extension rules. DMM blocks it until an extension-owned rule can place the files safely.",
-		},
 	}
 }
 
 func runtimeAcquisition() *gamehandler.RuntimeAcquisitionSpec {
 	acquisition := bepinex.DefaultRuntimeAcquisition(true)
 	return &acquisition
-}
-
-func matchAnyNonFOMODFile(root string) bool {
-	if bepinex.ContainsFOMOD(root) {
-		return false
-	}
-	found := false
-	_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			found = true
-		}
-		return nil
-	})
-	return found
 }

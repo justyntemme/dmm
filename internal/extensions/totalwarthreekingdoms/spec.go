@@ -16,14 +16,11 @@ const (
 	VortexGameID = "totalwarthreekingdoms"
 	Name         = "Total War: Three Kingdoms"
 
-	dataRoot       = "data"
-	packModType    = "totalwarthreekingdoms-pack"
-	blockedModType = "totalwarthreekingdoms-unclassified-blocked"
+	dataRoot    = "data"
+	packModType = "totalwarthreekingdoms-pack"
 )
 
 var requiredGameFiles = []string{"Three_Kingdoms.exe"}
-
-const unsupportedReason = "Total War: Three Kingdoms archive layout is not classified by the verified Vortex extension rules. DMM currently supports .pack archives by copying files from the .pack folder into the game data folder."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -72,7 +69,6 @@ func Register(r sdk.Registrar) {
 		Message:  "Vortex includes the GOG app ID in discovery; DMM does not execute GOG discovery in the Steam Deck MVP runtime.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:totalwarthreekingdoms:pack",
 		VortexInstallerID: "tw3kingdoms-mod",
@@ -82,18 +78,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchPackArchive,
 		CustomBuild:       buildPackArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "research:totalwarthreekingdoms:blocked",
-		VortexInstallerID: "totalwarthreekingdoms-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: unsupportedReason,
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           unsupportedReason,
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "totalwarthreekingdoms-ensure-data-folder",

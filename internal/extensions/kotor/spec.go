@@ -87,8 +87,8 @@ func Register(r sdk.Registrar, spec gameSpec) {
 		CustomMatch:       matchTSLPatcherTool,
 		InstructionMode:   installplan.InstructionUnsupported,
 		UnsupportedReason: "Vortex rejects TSLPatcher itself as a mod; install or run TSLPatcher separately once DMM has a safe external-tool flow.",
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           "TSLPatcher utility packages are not deployable mods.",
+		Status:            sdk.CapabilityStatusReady,
+		Message:           "Vortex rejects TSLPatcher itself as a separate utility rather than a deployable mod; DMM mirrors that install-time rejection.",
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:" + spec.ID + ":tslpatcher-mod-blocked",
@@ -99,8 +99,8 @@ func Register(r sdk.Registrar, spec gameSpec) {
 		CustomMatch:       matchTSLPatcherMod,
 		InstructionMode:   installplan.InstructionUnsupported,
 		UnsupportedReason: "Vortex rejects mods that require TSLPatcher because they must be installed by that tool. DMM will support this after the external patcher/tool flow is designed.",
-		Status:            sdk.CapabilityStatusBlocked,
-		Message:           "TSLPatcher-required mods are blocked until DMM has a safe patcher runtime.",
+		Status:            sdk.CapabilityStatusReady,
+		Message:           "Vortex rejects TSLPatcher-required mods during normal mod installation; DMM mirrors that source-backed rejection.",
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:" + spec.ID + ":root",

@@ -2,7 +2,6 @@ package totalwarthreekingdoms
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +21,7 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(ext.NexusDomains) != 1 || ext.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", ext.NexusDomains)
 	}
-	if len(ext.InstallPlan.Installers) != 2 || len(ext.InstallPlan.ModTypes) != 2 {
+	if len(ext.InstallPlan.Installers) != 1 || len(ext.InstallPlan.ModTypes) != 1 {
 		t.Fatalf("install plan = %+v", ext.InstallPlan)
 	}
 	if len(ext.SupportedTools) != 2 {
@@ -73,8 +72,7 @@ func TestUnclassifiedArchivesAreBlocked(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unsupported archive")
 	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Total War: Three Kingdoms") {
+	if !strings.Contains(err.Error(), "no Vortex installer metadata matched this archive") {
 		t.Fatalf("unsupported error = %v", err)
 	}
 }
