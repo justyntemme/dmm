@@ -6665,6 +6665,8 @@ function FreshDeckyModManagerRoute() {
         ref={bodyRef}
         flow-children="down"
         navEntryPreferPosition={NavEntryPositionPreferences.PREFERRED_CHILD}
+        onButtonDown={handleRouteButtonDown}
+        onCancelButton={handleRouteCancel}
         onFocusCapture={keepFocusedElementVisible}
         preferredFocus
         style={freshDeckyBodyStyle}
