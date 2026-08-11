@@ -87,7 +87,7 @@ func Register(r sdk.Registrar) {
 		Kind:        "game-files",
 		Required:    true,
 		ModTypes:    []string{asiModType},
-		Message:     "The Prototype 2 game folder is missing files needed for future extension support.",
+		Message:     "The Prototype 2 game folder is missing files needed for ASI and TexMod deployment.",
 		OKMessage:   "The Prototype 2 game folder contains the expected executable and RCF archives.",
 		InstallHint: "Verify the game files in Steam before testing Prototype 2 mods.",
 		Check:       checkRequiredGameFiles,

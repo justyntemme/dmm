@@ -132,7 +132,7 @@ func Register(r sdk.Registrar) {
 		Message:     "The MMPC Modding Tool is required before enabled .mmpcmod files can be merged into Miles Morales archives.",
 		OKMessage:   "The MMPC Modding Tool is present in the game folder.",
 		HelpURL:     "https://www.nexusmods.com/spidermanmilesmorales/mods/8",
-		InstallHint: "Install the MMPC Modding Tool into the game's SMPCTool folder. DMM can stage .mmpcmod files, but automatic tool execution is still incomplete.",
+		InstallHint: "Install the MMPC Modding Tool into the game's SMPCTool folder. DMM stages enabled .mmpcmod files and queues the extension-owned MMPC install tool after deployment.",
 		Check:       checkMMPCTool,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
