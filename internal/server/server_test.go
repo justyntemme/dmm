@@ -12517,6 +12517,28 @@ func TestGamebryoPluginLimitWarningsMirrorVortexLimits(t *testing.T) {
 	}
 }
 
+func TestGamebryoMissingMasterIssues(t *testing.T) {
+	issues := gamebryoMissingMasterIssues([]pluginLoadOrderEntry{
+		{Name: "Fallout4.esm", Active: true},
+		{Name: "Dependent.esp", Active: true, Masters: []string{"Fallout4.esm", "Missing.esm"}},
+		{Name: "Disabled.esp", Active: false, Masters: []string{"AlsoMissing.esm"}},
+	})
+	if len(issues) != 1 || issues[0] != "Dependent.esp depends on Missing.esm" {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestGamebryoBlueprintMasterIssues(t *testing.T) {
+	issues := gamebryoBlueprintMasterIssues([]pluginLoadOrderEntry{
+		{Name: "BlueprintShips.esm", Active: true, IsBlueprint: true},
+		{Name: "Broken.esp", Active: true, Masters: []string{"BlueprintShips.esm"}},
+		{Name: "BlueprintAddon.esm", Active: true, IsBlueprint: true, Masters: []string{"BlueprintShips.esm"}},
+	})
+	if len(issues) != 1 || issues[0] != "Broken.esp declares blueprint master BlueprintShips.esm" {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
 func TestGameLoadOrderIncludesExtensionDeclaredOrders(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "440900"

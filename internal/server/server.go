@@ -1400,6 +1400,7 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
+	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
 	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -1718,14 +1719,64 @@ func (s *Server) gamebryoMissingMasterDiagnostics(ctx context.Context, game stor
 		s.logger.Warn("Gamebryo missing-master check skipped because load order failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
 		return nil
 	}
+	issues := gamebryoMissingMasterIssues(loadOrder.Plugins)
+	if len(issues) == 0 {
+		return nil
+	}
+	sort.Strings(issues)
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-missing-masters",
+		TestName: "Gamebryo missing masters",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  "Some enabled plugins depend on masters that are not enabled.",
+		Details:  strings.Join(issues, "; "),
+		Actions:  []string{"Enable the missing masters, install the mods that provide them, or disable the dependent plugins."},
+	}}
+}
+
+func (s *Server) gamebryoBlueprintMasterDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
+	spec, ok := s.games.PluginActivationForSteamApp(game.SteamAppID)
+	if !ok || !spec.SupportsBlueprintFiles {
+		return nil
+	}
+	profileID, err := s.activeProfileID(ctx, game.SteamAppID, mods)
+	if err != nil {
+		s.logger.Debug("Gamebryo blueprint-master check skipped without active profile", "app_id", game.SteamAppID, "error", err)
+		return nil
+	}
+	loadOrder, err := s.profilePluginLoadOrder(ctx, game, profileID, mods)
+	if err != nil {
+		s.logger.Warn("Gamebryo blueprint-master check skipped because load order failed", "app_id", game.SteamAppID, "profile_id", profileID, "activation_id", spec.ID, "error", err)
+		return nil
+	}
+	issues := gamebryoBlueprintMasterIssues(loadOrder.Plugins)
+	if len(issues) == 0 {
+		return nil
+	}
+	sort.Strings(issues)
+	return []gameExtensionTestResponse{{
+		TestID:   "gamebryo-blueprint-master",
+		TestName: "Gamebryo blueprint master",
+		Trigger:  "plugins-changed",
+		Status:   sdk.HealthCheckStatusFailed,
+		Severity: sdk.HealthCheckSeverityError,
+		Message:  "A non-blueprint plugin depends on a blueprint plugin master.",
+		Details:  strings.Join(issues, "; "),
+		Actions:  []string{"Disable the dependent plugin or rebuild it against a non-blueprint master."},
+	}}
+}
+
+func gamebryoMissingMasterIssues(plugins []pluginLoadOrderEntry) []string {
 	active := map[string]struct{}{}
-	for _, plugin := range loadOrder.Plugins {
+	for _, plugin := range plugins {
 		if plugin.Active {
 			active[strings.ToLower(strings.TrimSpace(plugin.Name))] = struct{}{}
 		}
 	}
 	var issues []string
-	for _, plugin := range loadOrder.Plugins {
+	for _, plugin := range plugins {
 		if !plugin.Active || len(plugin.Masters) == 0 {
 			continue
 		}
@@ -1744,20 +1795,39 @@ func (s *Server) gamebryoMissingMasterDiagnostics(ctx context.Context, game stor
 			issues = append(issues, plugin.Name+" depends on "+strings.Join(missing, ", "))
 		}
 	}
-	if len(issues) == 0 {
+	sort.Strings(issues)
+	return issues
+}
+
+func gamebryoBlueprintMasterIssues(plugins []pluginLoadOrderEntry) []string {
+	blueprint := map[string]struct{}{}
+	for _, plugin := range plugins {
+		if plugin.Active && plugin.IsBlueprint {
+			blueprint[strings.ToLower(strings.TrimSpace(plugin.Name))] = struct{}{}
+		}
+	}
+	if len(blueprint) == 0 {
 		return nil
 	}
+	var issues []string
+	for _, plugin := range plugins {
+		if !plugin.Active || plugin.IsBlueprint || len(plugin.Masters) == 0 {
+			continue
+		}
+		var offending []string
+		for _, master := range plugin.Masters {
+			master = strings.TrimSpace(master)
+			if _, ok := blueprint[strings.ToLower(master)]; ok {
+				offending = append(offending, master)
+			}
+		}
+		if len(offending) > 0 {
+			sort.Strings(offending)
+			issues = append(issues, plugin.Name+" declares blueprint master "+strings.Join(offending, ", "))
+		}
+	}
 	sort.Strings(issues)
-	return []gameExtensionTestResponse{{
-		TestID:   "gamebryo-missing-masters",
-		TestName: "Gamebryo missing masters",
-		Trigger:  "plugins-changed",
-		Status:   sdk.HealthCheckStatusFailed,
-		Severity: sdk.HealthCheckSeverityError,
-		Message:  "Some enabled plugins depend on masters that are not enabled.",
-		Details:  strings.Join(issues, "; "),
-		Actions:  []string{"Enable the missing masters, install the mods that provide them, or disable the dependent plugins."},
-	}}
+	return issues
 }
 
 func (s *Server) gamebryoPluginLimitDiagnostics(ctx context.Context, game storage.Game, mods []storage.InstalledMod) []gameExtensionTestResponse {
