@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -17,12 +16,9 @@ const (
 	VortexGameID = "steinsgate"
 	Name         = "Steins;Gate"
 
-	usrdirModType  = "steinsgate-usrdir"
-	blockedModType = "steinsgate-unclassified-blocked"
-	usrdirRoot     = "USRDIR"
+	usrdirModType = "steinsgate-usrdir"
+	usrdirRoot    = "USRDIR"
 )
-
-const blockedReason = "Steins;Gate archive layout is not classified by the verified extension rules. DMM currently supports direct USRDIR replacement archives only; executable launchers, patch tools, and unclassified game-root payloads stay blocked until a source-reviewed extension rule can transform them safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -44,7 +40,6 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: usrdirModType, TargetRoot: usrdirRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:steinsgate:usrdir",
 		VortexInstallerID: "steinsgate-usrdir",
@@ -54,16 +49,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchUSRDIRArchive,
 		CustomBuild:       buildUSRDIRArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:steinsgate:unclassified-blocked",
-		VortexInstallerID: "steinsgate-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "steinsgate-usrdir-present",
@@ -124,9 +109,4 @@ func sources() []sdk.SourceRef {
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		{Name: "Checked bundled Vortex game extension source; no reviewed Steins;Gate handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
-}
-
-func matchAnyArchive(root string) bool {
-	files, err := simplearchive.ListFiles(root)
-	return err == nil && !simplearchive.ContainsFOMOD(files) && len(files) > 0
 }

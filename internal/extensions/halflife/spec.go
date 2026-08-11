@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -19,11 +18,8 @@ const (
 
 	valveModType   = "halflife-valve-content"
 	standaloneType = "halflife-standalone-mod"
-	blockedModType = "halflife-unclassified-blocked"
 	valveRoot      = "valve"
 )
-
-const blockedReason = "Half-Life archive layout is not classified by the verified extension rules. DMM currently supports direct valve-folder content and loose BSP map archives only; standalone GoldSrc mod folders requiring Steam library entries, launch options, or restart semantics stay blocked until DMM has a dynamic per-mod launch contract."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -46,7 +42,6 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: valveModType, TargetRoot: valveRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: standaloneType, TargetRoot: ""})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:halflife:standalone",
 		VortexInstallerID: "halflife-standalone-mod",
@@ -66,16 +61,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchValveArchive,
 		CustomBuild:       buildValveArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:halflife:unclassified-blocked",
-		VortexInstallerID: "halflife-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "halflife-valve-present",
@@ -159,9 +144,4 @@ func sources() []sdk.SourceRef {
 		{Name: "Live Steam Deck native executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		{Name: "Checked bundled Vortex game extension source; no reviewed Half-Life handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
-}
-
-func matchAnyArchive(root string) bool {
-	files, err := simplearchive.ListFiles(root)
-	return err == nil && !simplearchive.ContainsFOMOD(files) && len(files) > 0
 }

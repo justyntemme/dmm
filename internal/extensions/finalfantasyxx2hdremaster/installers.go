@@ -33,11 +33,6 @@ func matchExternalFileMod(root string) bool {
 	return ok
 }
 
-func matchAnyArchive(root string) bool {
-	files, err := simplearchive.ListFiles(root)
-	return err == nil && !simplearchive.ContainsFOMOD(files) && len(files) > 0
-}
-
 func buildExternalFileLoader(input installplan.BuildInput) (installplan.Plan, error) {
 	files, err := simplearchive.ListFiles(input.ExtractedRoot)
 	if err != nil {

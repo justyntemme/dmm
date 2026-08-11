@@ -18,7 +18,6 @@ const (
 
 	loaderModType       = "finalfantasyxx2hdremaster-external-file-loader"
 	externalFileModType = "finalfantasyxx2hdremaster-external-file-mod"
-	blockedModType      = "finalfantasyxx2hdremaster-unclassified-blocked"
 	externalModsRoot    = "data/mods"
 )
 
@@ -29,8 +28,6 @@ var requiredGameFiles = []string{
 	"data/FFX_Data.vbf",
 	"data/FFX2_Data.vbf",
 }
-
-const unsupportedReason = "Final Fantasy X/X-2 HD Remaster archive layout is not classified by the verified extension rules. DMM currently supports ffgriever's External File Loader package and content archives rooted at data/mods, ffx_data, or ffx2_data; VBF patchers, Untitled Project X root packages, and standalone tools stay blocked until source-reviewed extension rules can install and roll them back safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -53,7 +50,6 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: loaderModType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: externalFileModType, TargetRoot: externalModsRoot})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:finalfantasyxx2hdremaster:external-file-loader",
 		VortexInstallerID: "finalfantasyxx2hdremaster-external-file-loader",
@@ -73,16 +69,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchExternalFileMod,
 		CustomBuild:       buildExternalFileMod,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "research:finalfantasyxx2hdremaster:blocked",
-		VortexInstallerID: "finalfantasyxx2hdremaster-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: unsupportedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "finalfantasyxx2hdremaster-required-files",

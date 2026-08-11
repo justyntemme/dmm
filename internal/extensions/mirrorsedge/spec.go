@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -20,12 +19,9 @@ const (
 
 	cookedPCModType          = "mirrorsedge-cookedpc"
 	publishedCookedPCModType = "mirrorsedge-published-cookedpc"
-	blockedModType           = "mirrorsedge-unclassified-blocked"
 	cookedPCRoot             = "TdGame/CookedPC"
 	publishedCookedPCRootID  = "mirrorsedge-published-cookedpc-root"
 )
-
-const blockedReason = "Mirror's Edge archive layout is not classified by the verified extension rules. DMM currently supports game-root TdGame/CookedPC Unreal package replacement archives and user-Documents Published/CookedPC mod-menu archives; executable tools and unclassified payloads stay blocked until a source-reviewed target-root rule can place them safely."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -53,7 +49,6 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: cookedPCModType, TargetRoot: cookedPCRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: publishedCookedPCModType, TargetRootID: publishedCookedPCRootID})
-	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:mirrorsedge:published-cookedpc",
 		VortexInstallerID: "mirrorsedge-published-cookedpc",
@@ -74,16 +69,6 @@ func Register(r sdk.Registrar) {
 		CustomMatch:       matchCookedPCArchive,
 		CustomBuild:       buildCookedPCArchive,
 		InstructionMode:   installplan.InstructionCustom,
-	})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                "source:mirrorsedge:unclassified-blocked",
-		VortexInstallerID: "mirrorsedge-unclassified-blocked",
-		Priority:          10000,
-		ModType:           blockedModType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       matchAnyArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: blockedReason,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 		ID:          "mirrorsedge-cookedpc-present",
@@ -145,9 +130,4 @@ func sources() []sdk.SourceRef {
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		{Name: "Checked bundled Vortex game extension source; no reviewed Mirror's Edge handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
-}
-
-func matchAnyArchive(root string) bool {
-	files, err := simplearchive.ListFiles(root)
-	return err == nil && !simplearchive.ContainsFOMOD(files) && len(files) > 0
 }

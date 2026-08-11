@@ -2,7 +2,6 @@ package finalfantasyxx2hdremaster
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ func TestExtensionRegistersExternalFileInstallers(t *testing.T) {
 	if coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", coverage)
 	}
-	if len(ext.InstallPlan.Installers) != 3 {
+	if len(ext.InstallPlan.Installers) != 2 {
 		t.Fatalf("installers = %+v", ext.InstallPlan.Installers)
 	}
 	if len(ext.RuntimeRequirements.RuntimeRequirements) != 2 {
@@ -73,20 +72,6 @@ func TestExternalFileModPlansToDataMods(t *testing.T) {
 	want := "data/mods/ffx_data/gamedata/ps3data/fonts/d3d11/tuffy.fgen.phyre"
 	if !targets[want] {
 		t.Fatalf("targets = %+v, missing %s", targets, want)
-	}
-}
-
-func TestUnclassifiedFFXArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "UnX.exe"), "tool")
-
-	_, err := buildPlan(root)
-	if err == nil {
-		t.Fatal("expected unsupported archive")
-	}
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "Final Fantasy X/X-2") {
-		t.Fatalf("unsupported error = %v", err)
 	}
 }
 

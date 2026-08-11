@@ -1,10 +1,8 @@
 package mirrorsedge_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/mirrorsedge"
@@ -18,7 +16,7 @@ func TestExtensionRegistersInstallerCoverage(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.TargetRoots) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 0 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.TargetRoots) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }
@@ -68,17 +66,6 @@ func TestPublishedCookedPCArchiveTargetsProtonDocumentsRoot(t *testing.T) {
 		t.Fatalf("plan = %+v", plan)
 	}
 	assertTargetRoot(t, plan, "mirrorsedge-published-cookedpc-root", "Maps/CustomMap.umap")
-}
-
-func TestExecutableArchiveIsBlocked(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "installer.exe"), "exe")
-
-	_, err := build(root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "not classified") {
-		t.Fatalf("err = %v", err)
-	}
 }
 
 func build(root string) (installplan.Plan, error) {
