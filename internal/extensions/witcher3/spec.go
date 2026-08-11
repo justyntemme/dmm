@@ -2,6 +2,7 @@ package witcher3
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/targetroots"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 )
@@ -20,6 +21,7 @@ const (
 	scriptMergerGitHubURL   = "https://github.com/IDCs/WitcherScriptMerger/releases/latest"
 	scriptMergerArchiveName = "WitcherScriptMerger-0.6.5.7z"
 	scriptMergerVersion     = "0.6.5"
+	documentsTargetRootID   = "witcher3-documents"
 	// Vortex game-witcher3/assets/MD5Cache.json pins the downloaded Script Merger archive.
 	scriptMergerArchiveMD5    = "77D57B2384172604E8D859E8BE4F7DF9"
 	scriptMergerExecutableMD5 = "0C2AFAA49E83C680F89F891237F46E5D"
@@ -60,6 +62,11 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterTargetRoot(sdk.TargetRootSpec{
+		ID:       documentsTargetRootID,
+		Name:     "Witcher 3 Proton Documents",
+		Resolver: targetroots.ProtonDocuments(SteamAppID, w3DocumentsFolder),
+	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 scriptMergerToolID,
 		Name:               scriptMergerToolName,
@@ -93,6 +100,17 @@ func Register(r sdk.Registrar) {
 		Kind:        sdk.ExtensionActionKindAcquireTool,
 		AcquireTool: &sdk.AcquireToolActionSpec{ToolID: scriptMergerToolID},
 		Message:     "Install or reinstall Witcher 3 Script Merger through DMM's managed tool acquisition pipeline.",
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "witcher3-open-documents",
+		Name:    "Open Witcher 3 Documents",
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Message: "Mirrors Vortex's Open TW3 Documents Folder action using DMM's Decky open-directory bridge.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseTargetRoot,
+			TargetRootID: documentsTargetRootID,
+		},
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:      "witcher3-ensure-mods-and-dlc",

@@ -148,6 +148,13 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	if action == nil || action.Kind != sdk.ExtensionActionKindAcquireTool || action.AcquireTool == nil || action.AcquireTool.ToolID != "W3ScriptMerger" {
 		t.Fatalf("script merger action = %+v", action)
 	}
+	openDocuments := extensionActionByID(compiled.ExtensionActions, "witcher3-open-documents")
+	if openDocuments == nil || openDocuments.Kind != sdk.ExtensionActionKindOpenDirectory || openDocuments.OpenDirectory == nil || openDocuments.OpenDirectory.TargetRootID != "witcher3-documents" {
+		t.Fatalf("open documents action = %+v", openDocuments)
+	}
+	if len(compiled.TargetRoots) != 1 || compiled.TargetRoots[0].ID != "witcher3-documents" {
+		t.Fatalf("target roots = %+v", compiled.TargetRoots)
+	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresDirectory(compiled.GameSetups[0], "Mods") || !setupEnsuresDirectory(compiled.GameSetups[0], "DLC") {
 		t.Fatalf("game setups = %+v", compiled.GameSetups)
 	}
