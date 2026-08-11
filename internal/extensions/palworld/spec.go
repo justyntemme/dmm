@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	SteamAppID   = "1623730"
 	VortexGameID = "palworld"
 	Name         = "Palworld"
 	SupportModID = "770"
@@ -16,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-palworld", SourceDir: "game-palworld", SupportModID: SupportModID})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-palworld", SourceDir: "game-palworld", SupportModID: SupportModID})
 }

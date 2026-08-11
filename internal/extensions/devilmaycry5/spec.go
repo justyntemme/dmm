@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	SteamAppID   = "601150"
 	VortexGameID = "devilmaycry5"
 	Name         = "Devil May Cry 5"
 	SupportModID = "434"
@@ -16,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-dmc5", SourceDir: "game-dmc5", SupportModID: SupportModID})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-dmc5", SourceDir: "game-dmc5", SupportModID: SupportModID})
 }

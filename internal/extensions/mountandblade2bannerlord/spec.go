@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	SteamAppID   = "261550"
 	VortexGameID = "mountandblade2bannerlord"
 	Name         = "Mount & Blade II: Bannerlord"
 	SupportModID = "875"
@@ -16,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-mount-and-blade2", SourceDir: "game-mount-and-blade2", SupportModID: SupportModID})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-mount-and-blade2", SourceDir: "game-mount-and-blade2", SupportModID: SupportModID})
 }

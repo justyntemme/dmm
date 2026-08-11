@@ -30,43 +30,57 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 		{
 			name:         cyberpunk2077.Name,
 			extension:    gameext.MustCompileExtension(cyberpunk2077.Extension()),
+			appID:        cyberpunk2077.SteamAppID,
 			supportModID: cyberpunk2077.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-cyberpunk2077",
 		},
 		{
 			name:         devilmaycry5.Name,
 			extension:    gameext.MustCompileExtension(devilmaycry5.Extension()),
+			appID:        devilmaycry5.SteamAppID,
 			supportModID: devilmaycry5.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-dmc5",
 		},
 		{
 			name:         mountandblade2bannerlord.Name,
 			extension:    gameext.MustCompileExtension(mountandblade2bannerlord.Extension()),
+			appID:        mountandblade2bannerlord.SteamAppID,
 			supportModID: mountandblade2bannerlord.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-mount-and-blade2",
 		},
 		{
 			name:         palworld.Name,
 			extension:    gameext.MustCompileExtension(palworld.Extension()),
+			appID:        palworld.SteamAppID,
 			supportModID: palworld.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-palworld",
 		},
 		{
 			name:         residentevil22019.Name,
 			extension:    gameext.MustCompileExtension(residentevil22019.Extension()),
+			appID:        residentevil22019.SteamAppID,
 			supportModID: residentevil22019.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-re2remake",
 		},
 		{
 			name:         residentevil32020.Name,
 			extension:    gameext.MustCompileExtension(residentevil32020.Extension()),
+			appID:        residentevil32020.SteamAppID,
 			supportModID: residentevil32020.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-re3remake",
 		},
 		{
 			name:         starfield.Name,
 			extension:    gameext.MustCompileExtension(starfield.Extension()),
+			appID:        starfield.SteamAppID,
 			supportModID: starfield.SupportModID,
+			deployable:   true,
 			sourceDir:    "game-starfield",
 		},
 		{
@@ -123,7 +137,11 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				assertSimpleTarget(t, plan, tt.queryModPath+"/file.txt")
+				wantTarget := "file.txt"
+				if tt.queryModPath != "" {
+					wantTarget = tt.queryModPath + "/" + wantTarget
+				}
+				assertSimpleTarget(t, plan, wantTarget)
 			}
 			assertSourceContains(t, summary.Sources, tt.sourceDir)
 			assertSourceContains(t, summary.Sources, "site/mods/"+tt.supportModID)

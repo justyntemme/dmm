@@ -7,6 +7,8 @@ import (
 
 type RootSupportModSpec struct {
 	GameID       string
+	SteamAppIDs  []string
+	NexusDomains []string
 	SourceName   string
 	SourceDir    string
 	SupportModID string
@@ -14,6 +16,8 @@ type RootSupportModSpec struct {
 
 func RegisterRootSupportMod(r sdk.Registrar, spec RootSupportModSpec) {
 	r.RegisterGame(sdk.GameRegistration{
+		SteamAppIDs:  spec.SteamAppIDs,
+		NexusDomains: spec.NexusDomains,
 		VortexGameID: spec.GameID,
 		VortexStub:   true,
 		SupportModID: spec.SupportModID,

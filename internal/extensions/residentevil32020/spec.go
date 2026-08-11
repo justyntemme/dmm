@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	SteamAppID   = "952060"
 	VortexGameID = "residentevil32020"
 	Name         = "Resident Evil 3 (2020)"
 	SupportModID = "433"
@@ -16,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-re3remake", SourceDir: "game-re3remake", SupportModID: SupportModID})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-re3remake", SourceDir: "game-re3remake", SupportModID: SupportModID})
 }

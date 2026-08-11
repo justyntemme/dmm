@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	SteamAppID   = "1091500"
 	VortexGameID = "cyberpunk2077"
 	Name         = "Cyberpunk 2077"
 	SupportModID = "196"
@@ -16,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SourceName: "game-cyberpunk2077", SourceDir: "game-cyberpunk2077", SupportModID: SupportModID})
+	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-cyberpunk2077", SourceDir: "game-cyberpunk2077", SupportModID: SupportModID})
 }
