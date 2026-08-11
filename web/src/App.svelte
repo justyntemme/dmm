@@ -4687,7 +4687,7 @@
     return gameExtensionActions.filter((action) => {
       const status = (action.status || "ready").trim();
       const kind = (action.kind || "").trim();
-      return status === "ready" && (kind === "open-directory" || kind === "acquire-tool");
+      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool");
     });
   }
 
@@ -6634,7 +6634,7 @@
                 <article>
                   <div>
                     <strong>{action.name || action.id}</strong>
-                    <p>{action.kind === "open-directory" ? "Open a source-backed extension folder." : "Install or reacquire a source-backed extension tool."}</p>
+                    <p>{action.kind === "open-directory" ? "Open a source-backed extension folder." : action.kind === "open-path" ? "Open a source-backed extension file or folder." : "Install or reacquire a source-backed extension tool."}</p>
                     {#if action.message}<small>{action.message}</small>{/if}
                     {#if action.source_extension}<small>{action.source_extension}</small>{/if}
                   </div>

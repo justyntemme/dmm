@@ -1188,26 +1188,24 @@ class Plugin:
         return {"ok": True, "job": result.get("job") if isinstance(result, dict) else None}
 
     async def open_directory_path(self, path):
-        directory = Path(str(path or "")).expanduser()
-        if not directory.is_absolute():
-            return {"ok": False, "error": "Directory path must be absolute."}
+        target = Path(str(path or "")).expanduser()
+        if not target.is_absolute():
+            return {"ok": False, "error": "Path must be absolute."}
         try:
-            resolved = directory.resolve(strict=True)
+            resolved = target.resolve(strict=True)
         except FileNotFoundError:
-            return {"ok": False, "error": "Directory does not exist."}
+            return {"ok": False, "error": "Path does not exist."}
         except Exception as exc:
             return {"ok": False, "error": self._redact_url(str(exc))}
-        if not resolved.is_dir():
-            return {"ok": False, "error": "Path is not a directory."}
         try:
             subprocess.Popen(["xdg-open", str(resolved)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            self._log(f"open-directory launched path={resolved}")
+            self._log(f"open-path launched path={resolved}")
             return {"ok": True}
         except FileNotFoundError:
             return {"ok": False, "error": "xdg-open is not installed."}
         except Exception as exc:
             error = self._redact_url(str(exc))
-            self._log(f"open-directory launch failed path={resolved}: {error}")
+            self._log(f"open-path launch failed path={resolved}: {error}")
             return {"ok": False, "error": error}
 
     async def launch_actions(self):

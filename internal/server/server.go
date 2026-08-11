@@ -6840,6 +6840,20 @@ func gameExtensionActionTarget(action sdk.ExtensionActionSpec) *gameExtensionAct
 			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
 			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
 		}
+	case sdk.ExtensionActionKindOpenPath:
+		if action.OpenPath == nil {
+			return nil
+		}
+		target := action.OpenPath
+		return &gameExtensionActionTargetInfo{
+			Type:             sdk.ExtensionActionKindOpenPath,
+			Base:             strings.TrimSpace(target.Base),
+			TargetRootID:     strings.TrimSpace(target.TargetRootID),
+			RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
+			FallbackBase:     strings.TrimSpace(target.FallbackBase),
+			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
+			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+		}
 	case sdk.ExtensionActionKindAcquireTool:
 		if action.AcquireTool == nil {
 			return nil
@@ -6877,7 +6891,7 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	switch strings.TrimSpace(action.Kind) {
-	case sdk.ExtensionActionKindOpenDirectory:
+	case sdk.ExtensionActionKindOpenDirectory, sdk.ExtensionActionKindOpenPath:
 		if existing, ok := s.findActiveOpenDirectoryAction(appID, action.ID); ok {
 			writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(existing), "duplicate": true})
 			return
@@ -6891,9 +6905,14 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		if actionName == "" {
 			actionName = action.ID
 		}
-		job := s.jobs.CreateWithPayload(jobTypeOpenDirectoryAction, "Open folder: "+actionName, payload)
-		job, _ = s.jobs.Wait(job.ID, "Waiting for Decky to open "+actionName)
-		s.logger.Info("open-directory action queued", "job_id", job.ID, "app_id", appID, "action_id", payload["action_id"], "path", payload["directory_path"], "source_extension", payload["source_extension"])
+		jobLabel := "Open folder: "
+		waitLabel := "Waiting for Decky to open "
+		if strings.TrimSpace(action.Kind) == sdk.ExtensionActionKindOpenPath {
+			jobLabel = "Open path: "
+		}
+		job := s.jobs.CreateWithPayload(jobTypeOpenDirectoryAction, jobLabel+actionName, payload)
+		job, _ = s.jobs.Wait(job.ID, waitLabel+actionName)
+		s.logger.Info("open-path action queued", "job_id", job.ID, "app_id", appID, "action_id", payload["action_id"], "action_kind", payload["action_kind"], "path", payload["directory_path"], "source_extension", payload["source_extension"])
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	case sdk.ExtensionActionKindAcquireTool:
@@ -7021,11 +7040,12 @@ func (s *Server) readyExtensionAction(ctx context.Context, appID, actionID strin
 func (s *Server) extensionOpenDirectoryActionPayload(ctx context.Context, appID string, extension gameext.Extension, action sdk.ExtensionActionSpec) (jobs.JobPayload, error) {
 	appID = strings.TrimSpace(appID)
 	actionID := strings.TrimSpace(action.ID)
+	actionKind := strings.TrimSpace(action.Kind)
 	payload := jobs.JobPayload{
 		"app_id":                     appID,
 		"catalog":                    "extension",
 		"action_id":                  actionID,
-		"action_kind":                sdk.ExtensionActionKindOpenDirectory,
+		"action_kind":                actionKind,
 		"directory_action_available": "false",
 	}
 	game, err := s.db.GameBySteamApp(ctx, appID)
@@ -7035,10 +7055,25 @@ func (s *Server) extensionOpenDirectoryActionPayload(ctx context.Context, appID 
 	payload["source_extension"] = strings.TrimSpace(extension.ID)
 	payload["action_id"] = strings.TrimSpace(action.ID)
 	payload["action_name"] = strings.TrimSpace(action.Name)
-	if strings.TrimSpace(action.Kind) != sdk.ExtensionActionKindOpenDirectory || action.OpenDirectory == nil {
-		return payload, errors.New("extension action is not an executable open-directory action")
+	if actionKind == "" {
+		actionKind = sdk.ExtensionActionKindOpenDirectory
+		payload["action_kind"] = actionKind
 	}
-	path, err := s.resolveOpenDirectoryActionPath(ctx, game, *action.OpenDirectory)
+	var path string
+	switch actionKind {
+	case sdk.ExtensionActionKindOpenDirectory:
+		if action.OpenDirectory == nil {
+			return payload, errors.New("extension action is not an executable open-directory action")
+		}
+		path, err = s.resolveOpenDirectoryActionPath(ctx, game, *action.OpenDirectory)
+	case sdk.ExtensionActionKindOpenPath:
+		if action.OpenPath == nil {
+			return payload, errors.New("extension action is not an executable open-path action")
+		}
+		path, err = s.resolveOpenPathActionPath(ctx, game, *action.OpenPath)
+	default:
+		return payload, errors.New("extension action is not an executable open-path action")
+	}
 	if err != nil {
 		payload["directory_action_error"] = err.Error()
 		return payload, err
@@ -7108,6 +7143,26 @@ func (s *Server) resolveOpenDirectoryActionPath(ctx context.Context, game storag
 	return "", errors.New("open-directory target does not exist or is not a directory: " + filepath.ToSlash(path))
 }
 
+func (s *Server) resolveOpenPathActionPath(ctx context.Context, game storage.Game, target sdk.OpenPathActionSpec) (string, error) {
+	path, err := s.openDirectoryTargetPath(ctx, game, target.Base, target.TargetRootID, target.RelativePath)
+	if err != nil {
+		return "", err
+	}
+	if pathExists(path) {
+		return path, nil
+	}
+	if strings.TrimSpace(target.FallbackBase) != "" || strings.TrimSpace(target.FallbackRootID) != "" || strings.TrimSpace(target.FallbackRelative) != "" {
+		fallback, err := s.openDirectoryTargetPath(ctx, game, target.FallbackBase, target.FallbackRootID, target.FallbackRelative)
+		if err != nil {
+			return "", err
+		}
+		if pathExists(fallback) {
+			return fallback, nil
+		}
+	}
+	return "", errors.New("open-path target does not exist: " + filepath.ToSlash(path))
+}
+
 func (s *Server) openDirectoryTargetPath(ctx context.Context, game storage.Game, base, rootID, rel string) (string, error) {
 	base = strings.TrimSpace(base)
 	rel = strings.TrimSpace(filepath.ToSlash(rel))
@@ -7149,6 +7204,14 @@ func (s *Server) openDirectoryTargetPath(ctx context.Context, game storage.Game,
 func isExistingDirectory(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+func pathExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (s *Server) findActiveExtensionToolAction(appID, toolID string) (jobs.Job, bool) {

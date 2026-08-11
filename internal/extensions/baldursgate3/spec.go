@@ -319,7 +319,7 @@ func registerActions(r sdk.Registrar) {
 		AcquireTool: &sdk.AcquireToolActionSpec{ToolID: "bg3-lslib-divine"},
 		Message:     "Vortex downloads LSLib from GitHub and installs it as a hidden tool mod. DMM routes this through the generic extension tool acquisition pipeline.",
 	})
-	for _, action := range []string{"Export to Game", "Export to File", "Import from Game", "Import from File", "Import from BG3MM", "Open Load Order File"} {
+	for _, action := range []string{"Export to Game", "Export to File", "Import from Game", "Import from File", "Import from BG3MM"} {
 		r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 			ID:      "bg3-" + sanitizeID(action),
 			Name:    action,
@@ -328,6 +328,19 @@ func registerActions(r sdk.Registrar) {
 			Message: "Registered by Vortex BG3 load-order toolbar; DMM will surface this through the advanced phone/tablet management UI.",
 		})
 	}
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "bg3-open-load-order-file",
+		Name:    "Open Load Order File",
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindOpenPath,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex opens the active player profile modsettings.lsx from the BG3 load-order toolbar. DMM targets the Steam Deck Public profile modsettings.lsx through the extension-owned local data root.",
+		OpenPath: &sdk.OpenPathActionSpec{
+			Base:         sdk.OpenDirectoryBaseTargetRoot,
+			TargetRootID: bg3LocalDataRootID,
+			RelativePath: "PlayerProfiles/Public/modsettings.lsx",
+		},
+	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:           "bg3-auto-export-load-order",
 		Name:         "Auto-export BG3 load order",

@@ -728,6 +728,7 @@ type ExtensionActionSpec struct {
 	Scope         string
 	Kind          string
 	OpenDirectory *OpenDirectoryActionSpec
+	OpenPath      *OpenPathActionSpec
 	AcquireTool   *AcquireToolActionSpec
 	Status        string
 	Message       string
@@ -742,8 +743,18 @@ type OpenDirectoryActionSpec struct {
 	FallbackRelative string
 }
 
+type OpenPathActionSpec struct {
+	Base             string
+	TargetRootID     string
+	RelativePath     string
+	FallbackBase     string
+	FallbackRootID   string
+	FallbackRelative string
+}
+
 const (
 	ExtensionActionKindOpenDirectory = "open-directory"
+	ExtensionActionKindOpenPath      = "open-path"
 	ExtensionActionKindAcquireTool   = "acquire-tool"
 
 	OpenDirectoryBaseGame       = "game"

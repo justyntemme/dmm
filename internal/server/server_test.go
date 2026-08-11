@@ -14665,6 +14665,74 @@ func TestOpenDirectoryExtensionActionQueuesDeckyJob(t *testing.T) {
 	}
 }
 
+func TestOpenPathExtensionActionQueuesDeckyJobForFile(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "999006"
+	gamePath := filepath.Join(t.TempDir(), "Open Path Game")
+	filePath := filepath.Join(gamePath, "Profile", "modsettings.lsx")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filePath, []byte("<save/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "openpath",
+		Name:    "Open Path",
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"openpath"},
+				VortexGameID: "openpath",
+			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:     "open-load-order",
+				Name:   "Open Load Order",
+				Scope:  "openpath",
+				Kind:   sdk.ExtensionActionKindOpenPath,
+				Status: sdk.CapabilityStatusReady,
+				OpenPath: &sdk.OpenPathActionSpec{
+					Base:         sdk.OpenDirectoryBaseGame,
+					RelativePath: "Profile/modsettings.lsx",
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Open Path Game",
+		InstallDir:  "Open Path Game",
+		LibraryPath: "/steam",
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/open-load-order/run", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("queue status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var queued struct {
+		Job jobResponse `json:"job"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Job.Type != jobTypeOpenDirectoryAction || queued.Job.Status != jobs.StatusWaiting || queued.Job.Payload["action_kind"] != sdk.ExtensionActionKindOpenPath || queued.Job.Payload["directory_action_available"] != "true" {
+		t.Fatalf("open-path job = %+v", queued.Job)
+	}
+	if queued.Job.Payload["directory_path"] != filepath.ToSlash(filePath) {
+		t.Fatalf("path = %q", queued.Job.Payload["directory_path"])
+	}
+}
+
 func TestAcquireToolExtensionActionUsesCapturedInstallPipeline(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999034"

@@ -43,6 +43,10 @@ func TestExtensionRegistersBG3VortexCapabilities(t *testing.T) {
 	if reinstallAction == nil || reinstallAction.Kind != sdk.ExtensionActionKindAcquireTool || reinstallAction.AcquireTool == nil || reinstallAction.AcquireTool.ToolID != "bg3-lslib-divine" || reinstallAction.Status != "" {
 		t.Fatalf("reinstall action = %+v", reinstallAction)
 	}
+	openLoadOrder := extensionActionByID(compiled.ExtensionActions, "bg3-open-load-order-file")
+	if openLoadOrder == nil || openLoadOrder.Kind != sdk.ExtensionActionKindOpenPath || openLoadOrder.OpenPath == nil || openLoadOrder.OpenPath.TargetRootID != bg3LocalDataRootID || openLoadOrder.OpenPath.RelativePath != "PlayerProfiles/Public/modsettings.lsx" || openLoadOrder.Status != sdk.CapabilityStatusReady {
+		t.Fatalf("open load order action = %+v", openLoadOrder)
+	}
 	if len(compiled.ArchiveTypes) != 1 || compiled.ArchiveTypes[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("archive types = %+v", compiled.ArchiveTypes)
 	}

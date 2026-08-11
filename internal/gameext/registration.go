@@ -2600,7 +2600,7 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			continue
 		}
 		kind := strings.TrimSpace(spec.Kind)
-		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindAcquireTool {
+		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool {
 			continue
 		}
 		status := strings.TrimSpace(spec.Status)
@@ -2623,6 +2623,25 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			}
 			if _, ok := declaredTools[strings.ToLower(toolID)]; !ok {
 				errs = append(errs, errors.New("extension action "+id+" references undeclared supported tool "+toolID))
+			}
+			continue
+		}
+		if kind == sdk.ExtensionActionKindOpenPath {
+			if spec.OpenPath == nil {
+				if status == sdk.CapabilityStatusReady {
+					errs = append(errs, errors.New("extension action "+id+" open-path target is required"))
+				}
+				continue
+			}
+			errs = append(errs, validateOpenDirectoryActionTarget(id, "base", spec.OpenPath.Base, spec.OpenPath.TargetRootID, declaredRoots)...)
+			if err := validateRelativeOrRoot(spec.OpenPath.RelativePath); err != nil {
+				errs = append(errs, errors.New("extension action "+id+" open-path relative path: "+err.Error()))
+			}
+			if strings.TrimSpace(spec.OpenPath.FallbackBase) != "" || strings.TrimSpace(spec.OpenPath.FallbackRootID) != "" || strings.TrimSpace(spec.OpenPath.FallbackRelative) != "" {
+				errs = append(errs, validateOpenDirectoryActionTarget(id, "fallback base", spec.OpenPath.FallbackBase, spec.OpenPath.FallbackRootID, declaredRoots)...)
+				if err := validateRelativeOrRoot(spec.OpenPath.FallbackRelative); err != nil {
+					errs = append(errs, errors.New("extension action "+id+" open-path fallback relative path: "+err.Error()))
+				}
 			}
 			continue
 		}

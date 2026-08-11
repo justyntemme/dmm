@@ -2485,6 +2485,20 @@ func actionTargetSummary(action sdk.ExtensionActionSpec) *ActionTargetSummary {
 			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
 			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
 		}
+	case sdk.ExtensionActionKindOpenPath:
+		if action.OpenPath == nil {
+			return nil
+		}
+		target := action.OpenPath
+		return &ActionTargetSummary{
+			Type:             strings.TrimSpace(action.Kind),
+			Base:             strings.TrimSpace(target.Base),
+			TargetRootID:     strings.TrimSpace(target.TargetRootID),
+			RelativePath:     filepath.ToSlash(strings.TrimSpace(target.RelativePath)),
+			FallbackBase:     strings.TrimSpace(target.FallbackBase),
+			FallbackRootID:   strings.TrimSpace(target.FallbackRootID),
+			FallbackRelative: filepath.ToSlash(strings.TrimSpace(target.FallbackRelative)),
+		}
 	case sdk.ExtensionActionKindAcquireTool:
 		if action.AcquireTool == nil {
 			return nil

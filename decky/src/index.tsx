@@ -1396,7 +1396,8 @@ function openDirectoryActionError(job: Job) {
 
 function openDirectoryActionLabel(job: Job) {
   const label = String(job.payload?.action_name || "").trim();
-  return label || "Open Folder";
+  if (label) return label;
+  return String(job.payload?.action_kind || "").trim() === "open-path" ? "Open Path" : "Open Folder";
 }
 
 function extensionNoticeActionLabel(job: Job) {
@@ -2942,19 +2943,21 @@ async function runOpenDirectoryActionJob(job: Job, source = "decky-auto") {
   const payload = job.payload ?? {};
   const appID = String(job.app_id || payload.app_id || "").trim();
   const actionID = String(payload.action_id || "").trim();
+  const actionKind = String(payload.action_kind || "").trim();
   const actionName = openDirectoryActionLabel(job);
   const directoryPath = String(payload.directory_path || "").trim();
   const unavailable = openDirectoryActionError(job);
+  const noun = actionKind === "open-path" ? "path" : "folder";
   if (!openDirectoryActionAvailable(job)) {
-    throw new Error(unavailable || "This open-folder action is not available.");
+    throw new Error(unavailable || `This open-${noun} action is not available.`);
   }
   if (!directoryPath) {
-    throw new Error("Open-folder action did not include a directory path.");
+    throw new Error(`Open-${noun} action did not include a target path.`);
   }
 
   const started = await call<[string], { ok: boolean; error?: string; proceed?: boolean; job?: Job }>("start_open_directory_action", job.id);
   if (!started.ok) {
-    throw new Error(started.error || "Unable to start open-folder action.");
+    throw new Error(started.error || `Unable to start open-${noun} action.`);
   }
   if (!started.proceed) {
     await logFrontendEvent("open-directory action already handled", { job_id: job.id, app_id: appID, action_id: actionID, source });
@@ -2965,17 +2968,17 @@ async function runOpenDirectoryActionJob(job: Job, source = "decky-auto") {
     await logFrontendEvent("open-directory action running", { job_id: job.id, app_id: appID, action_id: actionID, source });
     const opened = await call<[string], { ok: boolean; error?: string }>("open_directory_path", directoryPath);
     if (!opened.ok) {
-      throw new Error(opened.error || "Unable to open folder.");
+      throw new Error(opened.error || `Unable to open ${noun}.`);
     }
     const report = await call<[string, Record<string, string | boolean>], { ok: boolean; error?: string; job?: Job }>("record_open_directory_action", job.id, {
       applied: true,
       source
     });
     if (!report.ok) {
-      throw new Error(report.error || "Unable to record open-folder action.");
+      throw new Error(report.error || `Unable to record open-${noun} action.`);
     }
     await maybeShowDeckyActionToast(report.job, "open-directory-action");
-    showLaunchToast("DMM folder action", `${actionName} opened.`);
+    showLaunchToast(actionKind === "open-path" ? "DMM path action" : "DMM folder action", `${actionName} opened.`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await logFrontendEvent("open-directory action failed", { job_id: job.id, app_id: appID, action_id: actionID, error: message, source });
@@ -5063,7 +5066,7 @@ function FreshDeckyModManagerRoute() {
     return extensionActions.filter((action) => {
       const status = String(action.status || "ready").trim();
       const kind = String(action.kind || "").trim();
-      return status === "ready" && (kind === "open-directory" || kind === "acquire-tool");
+      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool");
     });
   }
 
@@ -5867,7 +5870,7 @@ function FreshDeckyModManagerRoute() {
                 >
                   <div style={{ color: "#f8fafc", fontWeight: 900 }}>{action.name || action.id}</div>
                   <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                    {action.kind === "open-directory" ? "Open folder" : "Acquire tool"}{action.source_extension ? ` · ${action.source_extension}` : ""}
+                    {action.kind === "open-directory" ? "Open folder" : action.kind === "open-path" ? "Open path" : "Acquire tool"}{action.source_extension ? ` · ${action.source_extension}` : ""}
                   </div>
                   {action.message && <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{action.message}</div>}
                   <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {busy ? "Working" : "Run"}</div>
