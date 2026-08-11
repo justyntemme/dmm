@@ -437,13 +437,6 @@ func (r *Registrar) RegisterStateStore(spec sdk.StateStoreSpec) {
 	r.extension.StateStores = append(r.extension.StateStores, spec)
 }
 
-func (r *Registrar) RegisterStatePersistor(spec sdk.StatePersistorSpec) {
-	if strings.TrimSpace(spec.ID) == "" {
-		return
-	}
-	r.extension.StatePersistors = append(r.extension.StatePersistors, spec)
-}
-
 func (r *Registrar) RegisterStateMigration(spec sdk.StateMigrationSpec) {
 	if strings.TrimSpace(spec.ID) == "" {
 		return
@@ -589,9 +582,6 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedScoped("state store", extension.StateStores, func(spec sdk.StateStoreSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
 	})...)
-	errs = append(errs, validateStatusedScoped("state persistor", extension.StatePersistors, func(spec sdk.StatePersistorSpec) (string, string, string, string, string) {
-		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
-	})...)
 	errs = append(errs, validateStateMigrations(extension.StateMigrations, extension.TargetRoots)...)
 	errs = append(errs, validateStatusedScoped("history stack", extension.HistoryStacks, func(spec sdk.HistoryStackSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Scope, spec.Status, spec.Message
@@ -655,7 +645,6 @@ func hasFrameworkCapability(extension Extension) bool {
 		len(extension.CollectionFeatures) > 0 ||
 		len(extension.StateReducers) > 0 ||
 		len(extension.StateStores) > 0 ||
-		len(extension.StatePersistors) > 0 ||
 		len(extension.StateMigrations) > 0 ||
 		len(extension.HistoryStacks) > 0 ||
 		len(extension.HealthChecks) > 0 ||

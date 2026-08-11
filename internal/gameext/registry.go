@@ -73,7 +73,6 @@ type Extension struct {
 	CollectionFeatures       []sdk.CollectionFeatureSpec
 	StateReducers            []sdk.StateReducerSpec
 	StateStores              []sdk.StateStoreSpec
-	StatePersistors          []sdk.StatePersistorSpec
 	StateMigrations          []sdk.StateMigrationSpec
 	HistoryStacks            []sdk.HistoryStackSpec
 	HealthChecks             []sdk.HealthCheckSpec
@@ -146,7 +145,6 @@ type SavegameManagementSpec = sdk.SavegameManagementSpec
 type CollectionFeatureSpec = sdk.CollectionFeatureSpec
 type StateReducerSpec = sdk.StateReducerSpec
 type StateStoreSpec = sdk.StateStoreSpec
-type StatePersistorSpec = sdk.StatePersistorSpec
 type StateMigrationSpec = sdk.StateMigrationSpec
 type HistoryStackSpec = sdk.HistoryStackSpec
 type HealthCheckSpec = sdk.HealthCheckSpec
@@ -267,7 +265,6 @@ type ExtensionCapabilities struct {
 	CollectionFeatures       []FeatureSummary         `json:"collection_features,omitempty"`
 	StateReducers            []FeatureSummary         `json:"state_reducers,omitempty"`
 	StateStores              []FeatureSummary         `json:"state_stores,omitempty"`
-	StatePersistors          []FeatureSummary         `json:"state_persistors,omitempty"`
 	StateMigrations          []FeatureSummary         `json:"state_migrations,omitempty"`
 	HistoryStacks            []FeatureSummary         `json:"history_stacks,omitempty"`
 	HealthChecks             []FeatureSummary         `json:"health_checks,omitempty"`
@@ -2188,15 +2185,6 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: store.Message,
 		})
 	}
-	for _, persistor := range extension.StatePersistors {
-		summary.Capabilities.StatePersistors = append(summary.Capabilities.StatePersistors, FeatureSummary{
-			ID:      persistor.ID,
-			Name:    persistor.Name,
-			Scope:   persistor.Scope,
-			Status:  defaultString(persistor.Status, sdk.CapabilityStatusReady),
-			Message: persistor.Message,
-		})
-	}
 	for _, migration := range extension.StateMigrations {
 		summary.Capabilities.StateMigrations = append(summary.Capabilities.StateMigrations, FeatureSummary{
 			ID:          migration.ID,
@@ -2301,7 +2289,6 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.CollectionFeatures)
 	sortFeatureSummaries(summary.Capabilities.StateReducers)
 	sortFeatureSummaries(summary.Capabilities.StateStores)
-	sortFeatureSummaries(summary.Capabilities.StatePersistors)
 	sortFeatureSummaries(summary.Capabilities.StateMigrations)
 	sortFeatureSummaries(summary.Capabilities.HistoryStacks)
 	sortFeatureSummaries(summary.Capabilities.HealthChecks)
@@ -2372,7 +2359,6 @@ func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGa
 	collect("collection_features", capabilities.CollectionFeatures)
 	collect("state_reducers", capabilities.StateReducers)
 	collect("state_stores", capabilities.StateStores)
-	collect("state_persistors", capabilities.StatePersistors)
 	collect("state_migrations", capabilities.StateMigrations)
 	collect("history_stacks", capabilities.HistoryStacks)
 	collect("health_checks", capabilities.HealthChecks)

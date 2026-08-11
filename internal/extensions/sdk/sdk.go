@@ -81,7 +81,6 @@ type Registrar interface {
 	RegisterCollectionFeature(CollectionFeatureSpec)
 	RegisterStateReducer(StateReducerSpec)
 	RegisterStateStore(StateStoreSpec)
-	RegisterStatePersistor(StatePersistorSpec)
 	RegisterStateMigration(StateMigrationSpec)
 	RegisterHistoryStack(HistoryStackSpec)
 	RegisterHealthCheck(HealthCheckSpec)
@@ -1011,14 +1010,6 @@ type StateReducerSpec struct {
 }
 
 type StateStoreSpec struct {
-	ID      string
-	Name    string
-	Scope   string
-	Status  string
-	Message string
-}
-
-type StatePersistorSpec struct {
 	ID      string
 	Name    string
 	Scope   string

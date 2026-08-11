@@ -39,7 +39,6 @@ func Register(r sdk.Registrar) {
 		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
 		surfaceAPI("registerProfileFile", "Register profile-managed file"),
 		surfaceAPI("registerReducer", "Register extension state reducer"),
-		surfaceAPI("registerPersistor", "Register extension state persistor"),
 	} {
 		r.RegisterExtensionAPI(api)
 	}
@@ -84,13 +83,6 @@ func Register(r sdk.Registrar) {
 		Message: "The generic profile-file runtime is implemented through concrete extension declarations. The unbound Vortex desktop registration surface itself is not applicable without a concrete game extension.",
 	})
 	r.RegisterStateReducer(surfaceReducer("registerReducer", "Vortex registerReducer", "extension-state"))
-	r.RegisterStatePersistor(sdk.StatePersistorSpec{
-		ID:      "registerPersistor",
-		Name:    "Vortex registerPersistor",
-		Scope:   "extension-state",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	})
 }
 
 func surfaceAPI(id, name string) sdk.ExtensionAPISpec {
