@@ -211,8 +211,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    EpicAppID,
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex discovers Untitled Goose Game through the Epic launcher app id Flour. DMM can manage a manually discovered game path today; automatic Epic library discovery is a future non-Steam store boundary.",
+		Message:  "DMM satisfies Vortex's Epic launcher identity when Untitled Goose Game is manually registered with the Epic app id Flour. Native Epic library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:   "untitledgoosegame-prepare-bepinex",

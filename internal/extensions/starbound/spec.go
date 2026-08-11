@@ -73,8 +73,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "StarboundClient",
 		}},
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Vortex uses Xbox launcher metadata for the Microsoft Store version. DMM's Steam Deck MVP runtime manages the Steam executable path; Xbox launcher integration is a future non-Steam store boundary.",
+		Message: "DMM satisfies Vortex's Xbox launcher identity when Starbound is manually registered with the Xbox store app ID. Native Xbox library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-starbound extension source",

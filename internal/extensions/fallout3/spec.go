@@ -172,8 +172,8 @@ func registerStoreMetadata(r sdk.Registrar) {
 	} {
 		r.RegisterGameStore(store)
 	}
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex uses Xbox launcher metadata for the Microsoft Store version. DMM's Steam Deck MVP runtime uses the Steam launcher path."})
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Status: sdk.CapabilityStatusNotApplicable, Message: "Vortex uses Epic launcher metadata for the Epic version. DMM's Steam Deck MVP runtime uses the Steam launcher path."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM satisfies Vortex's Xbox launcher identity when Fallout 3 is manually registered with the Microsoft Store app ID. Native Xbox library discovery remains a separate store-provider capability."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Message: "DMM satisfies Vortex's Epic launcher identity when Fallout 3 is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "fallout3-hash-version", Name: "Fallout3.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Fallout3.esm"}}))
 }
 

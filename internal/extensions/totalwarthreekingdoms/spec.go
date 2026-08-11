@@ -56,8 +56,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    "769f2fee68e9477180da900ccccbbcf0",
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex declares an Epic launcher requirement for the Epic store variant; DMM's Steam Deck MVP runtime uses the Steam app registration.",
+		Message:  "DMM satisfies Vortex's Epic launcher identity when Total War: Three Kingdoms is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "totalwarthreekingdoms-gog-discovery",
@@ -65,8 +64,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "gog",
 		Store:    "gog",
 		AppID:    "1717887914",
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex includes the GOG app ID in discovery; DMM does not execute GOG discovery in the Steam Deck MVP runtime.",
+		Message:  "DMM satisfies Vortex's GOG identity when Total War: Three Kingdoms is manually registered with the GOG app ID. Native GOG library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{

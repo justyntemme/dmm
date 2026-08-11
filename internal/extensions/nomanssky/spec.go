@@ -61,8 +61,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "xbox",
 		Store:    "xbox",
 		AppID:    "HelloGames.NoMansSky",
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex only requires the Xbox launcher for the Xbox store variant; the Steam Deck path uses the Steam app registration.",
+		Message:  "DMM satisfies Vortex's Xbox launcher identity when No Man's Sky is manually registered with the Xbox store app ID. Native Xbox library discovery remains a separate store-provider capability.",
 		Parameters: []sdk.LauncherParameterSpec{{
 			Name:  "appExecName",
 			Value: "NoMansSky",

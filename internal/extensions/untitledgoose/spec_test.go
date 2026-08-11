@@ -25,7 +25,7 @@ func TestUntitledGoosePortsEpicBepInExMetadata(t *testing.T) {
 	if len(summary.Capabilities.LauncherRequirements) != 1 || summary.Capabilities.LauncherRequirements[0].AppID != EpicAppID {
 		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
 	}
-	if summary.Capabilities.LauncherRequirements[0].Status != sdk.CapabilityStatusNotApplicable {
+	if summary.Capabilities.LauncherRequirements[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("launcher requirement status = %+v", summary.Capabilities.LauncherRequirements[0])
 	}
 	if len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 {

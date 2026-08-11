@@ -22,12 +22,15 @@ Environment overrides:
   PACKAGE=/path/to/decky-mod-manager.tar.gz
   DECK_PLUGIN_DIR=/home/deck/homebrew/plugins/decky-mod-manager
   BACKUP_ROOT=/home/deck/.local/share/decky-mod-manager/backups/plugin-installs
+  DMM_RESTART_DECKY_AFTER_INSTALL=1
   DMM_REBOOT_AFTER_INSTALL=1
 
 The install requires sudo because Decky plugin files are root-owned and the
-default test path does not reboot the Steam Deck. Set DMM_REBOOT_AFTER_INSTALL=1
-only when Gaming Mode has stale Decky frontend state and an explicit reboot is
-worth the interruption.
+default test path restarts Decky Loader after package verification so the
+plugin backend autostarts from the freshly installed main.py. Set
+DMM_RESTART_DECKY_AFTER_INSTALL=0 when you only want to replace files. Set
+DMM_REBOOT_AFTER_INSTALL=1 only when Gaming Mode has stale Decky frontend state
+and an explicit reboot is worth the interruption.
 USAGE
 }
 
@@ -121,8 +124,18 @@ fi
 echo "==> Installed ${PLUGIN_NAME}"
 sync
 if [[ "${DMM_REBOOT_AFTER_INSTALL:-0}" == "1" ]]; then
-  echo "==> Rebooting Steam Deck because DMM_REBOOT_AFTER_INSTALL=1"
-  sudo shutdown -r now
+	echo "==> Rebooting Steam Deck because DMM_REBOOT_AFTER_INSTALL=1"
+	sudo shutdown -r now
+elif [[ "${DMM_RESTART_DECKY_AFTER_INSTALL:-1}" == "1" ]]; then
+	echo "==> Restarting Decky plugin loader"
+	if sudo systemctl restart plugin_loader.service 2>/dev/null; then
+		echo "Restarted plugin_loader.service"
+	elif sudo systemctl restart plugin_loader-release.service 2>/dev/null; then
+		echo "Restarted plugin_loader-release.service"
+	else
+		echo "Decky plugin loader restart failed; restart the Deck or reload Decky manually." >&2
+		exit 1
+	fi
 else
-  echo "==> Reboot skipped. Open or reload Decky Mod Manager to use the new package."
+	echo "==> Decky reload skipped because DMM_RESTART_DECKY_AFTER_INSTALL=0."
 fi

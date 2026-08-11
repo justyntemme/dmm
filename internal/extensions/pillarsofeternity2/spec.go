@@ -98,8 +98,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "App",
 		}},
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Vortex launches the Microsoft Store version through Xbox app metadata. DMM's Steam Deck MVP targets the Steam executable and Proton config path.",
+		Message: "DMM satisfies Vortex's Xbox launcher identity when Pillars II is manually registered with the Microsoft Store app ID. Native Xbox library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "poe2-load-order-page",

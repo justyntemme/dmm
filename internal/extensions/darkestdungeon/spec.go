@@ -60,8 +60,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    epicID,
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex declares an Epic launcher requirement for the Epic store variant; DMM's Steam Deck MVP runtime uses the Steam app registration.",
+		Message:  "DMM satisfies Vortex's Epic launcher identity when Darkest Dungeon is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "darkestdungeon-gog-discovery",
@@ -69,8 +68,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "gog",
 		Store:    "gog",
 		AppID:    gogID,
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex includes GOG discovery for Darkest Dungeon; DMM does not execute GOG discovery in the Steam Deck MVP runtime.",
+		Message:  "DMM satisfies Vortex's GOG identity when Darkest Dungeon is manually registered with the GOG app ID. Native GOG library discovery remains a separate store-provider capability.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modsDir})
 	r.RegisterInstaller(installplan.InstallerSpec{
