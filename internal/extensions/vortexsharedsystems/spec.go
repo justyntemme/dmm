@@ -101,23 +101,25 @@ func registerGamebryoSystems(r sdk.Registrar) {
 
 func registerDependencyManager(r sdk.Registrar) {
 	dependencyRuleMessage := "DMM supports Vortex-style before/after/conflicts profile mod rules through profile rule APIs, cycle rejection, and profile priority normalization during rule updates."
+	dependencyDialogMessage := dependencyRuleMessage + " DMM maps Vortex's connector/editor dialogs to the phone/tablet profile rule editor and Decky/Action Center conflict prompts instead of embedding Vortex's desktop React dialogs."
+	conflictDialogMessage := "DMM supports Vortex-style managed file conflict resolution through duplicate-target deploy blocking, profile-scoped file-winner APIs, startup conflict notices, and the profile deploy preview/read model."
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "dependency-workarounds", Name: "Dependency workaround settings", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "dependency-session", Name: "Dependency connection state", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{ID: "dependency-load-order", Name: "Dependency load-order table attribute", Target: "mods", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{ID: "dependency-rules", Name: "Dependency rules table attribute", Target: "mods", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "dependency-manage-rules", Name: "Manage dependency rules", Scope: "profile-mod-rules", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
-	r.RegisterExtensionDialog(blockedDialog("dependency-connector", "Dependency connector dialog", "dependencies"))
-	r.RegisterExtensionDialog(blockedDialog("dependency-editor", "Dependency editor dialog", "dependencies"))
-	r.RegisterExtensionDialog(blockedDialog("conflict-editor", "Conflict editor dialog", "dependencies"))
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "dependency-connector", Name: "Dependency connector dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: dependencyDialogMessage})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "dependency-editor", Name: "Dependency editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: dependencyDialogMessage})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "conflict-editor", Name: "Conflict editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: conflictDialogMessage})
 	r.RegisterExtensionDialog(blockedDialog("dependency-cycle-graph", "Dependency cycle graph dialog", "dependencies"))
-	r.RegisterExtensionDialog(blockedDialog("file-override-editor", "File override editor dialog", "dependencies"))
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{ID: "file-override-editor", Name: "File override editor dialog", Scope: "dependencies", Status: sdk.CapabilityStatusReady, Message: conflictDialogMessage + " DMM maps Vortex's file-override modal to file-winner selection routes and advanced conflict review UI."})
 	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
 		ID:       "dependency-mod-name-wrapper",
 		Name:     "Dependency mod-name control wrapper",
 		Target:   "mods-name",
 		Priority: 100,
-		Status:   sdk.CapabilityStatusBlocked,
-		Message:  blockedMessage,
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "DMM maps Vortex's mod-name dependency wrapper to profile mod rows that expose rule/conflict badges, unresolved dependency notices, and file-conflict actions from the same profile rule/conflict read models.",
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:      "dependency-workarounds",
