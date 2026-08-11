@@ -950,9 +950,12 @@ const deckyFocusableCardBase: CSSProperties = {
   boxSizing: "border-box",
   color: "#f8fafc",
   cursor: "pointer",
+  height: "auto",
   maxWidth: "100%",
+  minHeight: "44px",
   minWidth: 0,
-  overflow: "hidden",
+  overflowX: "hidden",
+  overflowY: "visible",
   width: "100%"
 };
 
@@ -1141,6 +1144,8 @@ function deckyCompactActionStyle(kind: "neutral" | "danger" = "neutral", focused
     lineHeight: 1.1,
     minHeight: "38px",
     maxWidth: "100%",
+    overflowX: "hidden",
+    overflowY: "visible",
     padding: "8px 6px",
     scrollMarginBlock: "10px",
     textAlign: "center",
