@@ -55,14 +55,6 @@ func Register(r sdk.Registrar, spec Spec) {
 	if modType == "" {
 		modType = strings.TrimSpace(spec.ID) + "-research-blocked"
 	}
-	installerID := strings.TrimSpace(spec.InstallerID)
-	if installerID == "" {
-		installerID = "research:" + strings.TrimSpace(spec.ID) + ":blocked"
-	}
-	vortexInstallerID := strings.TrimSpace(spec.VortexInstallerID)
-	if vortexInstallerID == "" {
-		vortexInstallerID = modType
-	}
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  spec.SteamAppIDs,
 		NexusDomains: spec.NexusDomains,
@@ -72,16 +64,6 @@ func Register(r sdk.Registrar, spec Spec) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: ""})
-	r.RegisterInstaller(installplan.InstallerSpec{
-		ID:                installerID,
-		VortexInstallerID: vortexInstallerID,
-		Priority:          10000,
-		ModType:           modType,
-		NameSource:        installplan.NameSourceArchive,
-		CustomMatch:       func(string) bool { return true },
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: strings.TrimSpace(spec.UnsupportedReason),
-	})
 	if len(spec.RequiredFiles) > 0 {
 		r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
 			ID:          defaultString(spec.RequirementID, strings.TrimSpace(spec.ID)+"-required-files"),

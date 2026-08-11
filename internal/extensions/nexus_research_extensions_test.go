@@ -26,8 +26,8 @@ func TestNexusResearchBlockedExtensionsExposeVerifiedDomains(t *testing.T) {
 		if !containsString(extension.NexusDomains, tt.domain) {
 			t.Fatalf("app %s domains = %+v, want %q", tt.appID, extension.NexusDomains, tt.domain)
 		}
-		if len(extension.InstallPlan.Installers) == 0 {
-			t.Fatalf("app %s has no research-blocking installer", tt.appID)
+		if len(extension.InstallPlan.Installers) != 0 {
+			t.Fatalf("app %s should not claim archive support before source-backed rules exist: %+v", tt.appID, extension.InstallPlan.Installers)
 		}
 	}
 }

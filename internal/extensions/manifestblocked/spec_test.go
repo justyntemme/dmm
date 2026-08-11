@@ -2,7 +2,6 @@ package manifestblocked
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
-	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 func TestExtensionRegistersBlockedManifestShape(t *testing.T) {
@@ -31,35 +29,25 @@ func TestExtensionRegistersBlockedManifestShape(t *testing.T) {
 	if extension.ID != spec.ID || extension.Name != spec.Name {
 		t.Fatalf("extension = %+v", extension)
 	}
-	if len(extension.InstallPlan.Installers) != 1 {
+	if len(extension.InstallPlan.Installers) != 0 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
-	}
-	installer := extension.InstallPlan.Installers[0]
-	if installer.InstructionMode != installplan.InstructionUnsupported {
-		t.Fatalf("installer = %+v", installer)
 	}
 	if len(extension.RuntimeRequirements.RuntimeRequirements) != 1 {
 		t.Fatalf("runtime requirements = %+v", extension.RuntimeRequirements.RuntimeRequirements)
 	}
 }
 
-func TestBlockedInstallerReturnsConfiguredReason(t *testing.T) {
-	const reason = "blocked until Vortex package source is reviewed"
+func TestResearchOnlyExtensionDoesNotClaimArchiveSupport(t *testing.T) {
 	extension := gameext.MustCompileExtension(Extension(Spec{
 		ID:                "examplegame",
 		Name:              "Example Game",
 		SteamAppIDs:       []string{"123"},
 		NexusDomains:      []string{"examplegame"},
 		VortexGameID:      "examplegame",
-		UnsupportedReason: reason,
+		UnsupportedReason: "blocked until Vortex package source is reviewed",
 	}))
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "payload.txt"), "payload")
-	registry := installplan.NewRegistry([]installplan.GameSpec{extension.InstallPlan})
-	_, err := registry.Build("123", root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), reason) {
-		t.Fatalf("error = %T %v", err, err)
+	if len(extension.InstallPlan.Installers) != 0 {
+		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
 	}
 }
 
