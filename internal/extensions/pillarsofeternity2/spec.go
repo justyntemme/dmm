@@ -98,7 +98,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "App",
 		}},
-		Status:  sdk.CapabilityStatusMetadata,
+		Status:  sdk.CapabilityStatusNotApplicable,
 		Message: "Vortex launches the Microsoft Store version through Xbox app metadata. DMM's Steam Deck MVP targets the Steam executable and Proton config path.",
 	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{

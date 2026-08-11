@@ -61,7 +61,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "xbox",
 		Store:    "xbox",
 		AppID:    "HelloGames.NoMansSky",
-		Status:   sdk.CapabilityStatusMetadata,
+		Status:   sdk.CapabilityStatusNotApplicable,
 		Message:  "Vortex only requires the Xbox launcher for the Xbox store variant; the Steam Deck path uses the Steam app registration.",
 		Parameters: []sdk.LauncherParameterSpec{{
 			Name:  "appExecName",

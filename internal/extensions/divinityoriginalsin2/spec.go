@@ -132,7 +132,7 @@ func registerVariant(r sdk.Registrar, current variant) {
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      current.ID + "-gog-registry",
 		Name:    current.Name + " GOG registry discovery",
-		Status:  sdk.CapabilityStatusMetadata,
+		Status:  sdk.CapabilityStatusNotApplicable,
 		Message: "Vortex can discover this game from the Windows GOG registry key before falling back to Steam. DMM's Steam Deck MVP does not discover GOG installs yet.",
 	})
 	r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{
