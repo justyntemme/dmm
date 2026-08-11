@@ -864,8 +864,8 @@ func TestExtensionCoverageReportsResearchBlockedInstallers(t *testing.T) {
 
 func TestCompileExtensionRejectsReadyStateMigrationWithoutCommands(t *testing.T) {
 	_, err := CompileExtension(sdk.Extension{
-		ID:      "migration-noop",
-		Name:    "Migration Noop",
+		ID:      "invalid-empty-migration",
+		Name:    "Invalid Empty Migration",
 		Version: "0.1.0",
 		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
