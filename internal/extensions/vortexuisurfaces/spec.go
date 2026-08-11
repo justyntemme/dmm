@@ -51,8 +51,8 @@ func Register(r sdk.Registrar) {
 		Name:     "Feedback state divider",
 		Target:   "feedback",
 		Priority: 100,
-		Status:   sdk.CapabilityStatusNotApplicable,
-		Message:  "Vortex uses dynamic dividers in its desktop feedback UI. DMM's Steam Deck MVP does not ship a desktop feedback workflow; user support/reporting is handled outside the mod deployment runtime.",
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "Vortex uses dynamic dividers in its desktop feedback UI. DMM's feedback-equivalent runtime is the source-backed debug/log action surface in the Decky settings flow, so no separate desktop feedback divider is required.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "mod-report",

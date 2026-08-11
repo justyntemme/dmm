@@ -127,8 +127,8 @@ func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
 		ID:      gameID + "-umm-support-dashlet",
 		Name:    gameName + " UMM support notice",
 		Scope:   "game",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: "Verified non-applicable to DMM runtime parity: Vortex shows a Unity Mod Manager attribution dashlet on its desktop dashboard. DMM exposes the actionable UMM runtime requirement, acquisition, managed tool discovery, and Decky launch path instead; no mod deployment behavior depends on this dashboard tile.",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex shows a Unity Mod Manager attribution dashlet on its desktop dashboard. DMM exposes the actionable UMM runtime requirement, acquisition, managed tool discovery, and Decky launch path as the game-scoped UMM support surface.",
 	})
 }
 
