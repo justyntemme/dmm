@@ -21,8 +21,10 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 	tests := []struct {
 		name         string
 		extension    gameext.Extension
+		appID        string
 		supportModID string
 		queryModPath string
+		deployable   bool
 		sourceDir    string
 	}{
 		{
@@ -70,15 +72,19 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 		{
 			name:         subnautica.Name,
 			extension:    gameext.MustCompileExtension(subnautica.Extension()),
+			appID:        subnautica.SteamAppID,
 			supportModID: subnautica.SupportModID,
 			queryModPath: "QMods",
+			deployable:   true,
 			sourceDir:    "game-subnautica",
 		},
 		{
 			name:         subnauticabelowzero.Name,
 			extension:    gameext.MustCompileExtension(subnauticabelowzero.Extension()),
+			appID:        subnauticabelowzero.SteamAppID,
 			supportModID: subnauticabelowzero.SupportModID,
 			queryModPath: "QMods",
+			deployable:   true,
 			sourceDir:    "game-subnauticabelowzero",
 		},
 	}
@@ -86,28 +92,38 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := gameext.NewRegistry([]gameext.Extension{tt.extension})
 			summary := registry.ExtensionSummaries()[0]
-			if tt.queryModPath == "" && summary.Coverage != gameext.CoverageInstaller {
+			if (tt.queryModPath == "" || tt.deployable) && summary.Coverage != gameext.CoverageInstaller {
 				t.Fatalf("coverage = %q", summary.Coverage)
 			}
-			if tt.queryModPath != "" && summary.Coverage != gameext.CoverageMetadataOnly {
+			if tt.queryModPath != "" && !tt.deployable && summary.Coverage != gameext.CoverageMetadataOnly {
 				t.Fatalf("coverage = %q", summary.Coverage)
 			}
 			if summary.SupportModID != tt.supportModID || !summary.VortexStub {
 				t.Fatalf("stub metadata = support %q stub %v", summary.SupportModID, summary.VortexStub)
 			}
-			if len(summary.SteamAppIDs) != 0 {
+			if tt.appID == "" && len(summary.SteamAppIDs) != 0 {
 				t.Fatalf("stub unexpectedly registered Steam app ids: %+v", summary.SteamAppIDs)
+			}
+			if tt.appID != "" && (len(summary.SteamAppIDs) != 1 || summary.SteamAppIDs[0] != tt.appID) {
+				t.Fatalf("steam app ids = %+v", summary.SteamAppIDs)
 			}
 			if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != tt.queryModPath {
 				t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 			}
-			if tt.queryModPath == "" {
+			if tt.queryModPath == "" || tt.deployable {
 				if summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeNone {
 					t.Fatalf("root stub merge mode = %q", summary.Capabilities.GameRegistration.MergeMode)
 				}
 				if len(summary.Capabilities.ModTypes) != 1 || len(summary.Capabilities.Installers) != 1 {
 					t.Fatalf("root stub install capabilities = mod types %+v installers %+v", summary.Capabilities.ModTypes, summary.Capabilities.Installers)
 				}
+			}
+			if tt.deployable {
+				plan, err := buildSimplePlan(t, tt.extension, tt.appID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertSimpleTarget(t, plan, tt.queryModPath+"/file.txt")
 			}
 			assertSourceContains(t, summary.Sources, tt.sourceDir)
 			assertSourceContains(t, summary.Sources, "site/mods/"+tt.supportModID)
