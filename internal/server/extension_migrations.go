@@ -273,8 +273,8 @@ func (s *Server) runExtensionMigrationCommand(ctx context.Context, defaultGame s
 		err := s.warnInstalledModsForMigration(ctx, commandGame.SteamAppID, command, source+":"+commandID)
 		return true, err
 	case sdk.StateMigrationCommandBackupTargetFile:
-		changed, err := s.backupTargetFileForMigration(ctx, commandGame, command, source+":"+commandID)
-		return changed, err
+		_, err := s.backupTargetFileForMigration(ctx, commandGame, command, source+":"+commandID)
+		return true, err
 	case sdk.StateMigrationCommandDeployProfile:
 		result := s.applyProfileChangesForUserAction(ctx, commandGame.SteamAppID, source+":"+commandID)
 		switch result.Status {

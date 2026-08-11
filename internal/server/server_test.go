@@ -9586,6 +9586,81 @@ func TestExtensionMigrationBacksUpTargetFile(t *testing.T) {
 	if string(body) != "original" {
 		t.Fatalf("backup was overwritten: %q", body)
 	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "backup-file", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("migration completion was not recorded")
+	}
+}
+
+func TestExtensionMigrationRecordsBackupWhenSourceIsAbsent(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	localData := filepath.Join(root, "localdata")
+	const appID = "999019"
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "migrationmissingbackupgame",
+		Name:    "Migration Missing Backup Game",
+		Version: "1.5.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{appID},
+				NexusDomains: []string{"migrationmissingbackupgame"},
+				VortexGameID: "migrationmissingbackupgame",
+			})
+			r.RegisterTargetRoot(sdk.TargetRootSpec{
+				ID:   "local-data",
+				Name: "Local Data",
+				Resolver: func(_ context.Context, _ sdk.TargetRootInput) (sdk.TargetRootResult, error) {
+					return sdk.TargetRootResult{Path: localData, Source: "test"}, nil
+				},
+			})
+			r.RegisterStateMigration(sdk.StateMigrationSpec{
+				ID:          "backup-missing-file",
+				Name:        "Backup missing file",
+				FromVersion: "0.0.0",
+				ToVersion:   "1.5.0",
+				Commands: []sdk.StateMigrationCommandSpec{{
+					ID:                  "backup",
+					Name:                "Backup",
+					Command:             sdk.StateMigrationCommandBackupTargetFile,
+					TargetRootID:        "local-data",
+					TargetRelative:      "PlayerProfiles/Public/modsettings.lsx",
+					DestinationRelative: "PlayerProfiles/Public/modsettings.lsx.backup",
+				}},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "Migration Missing Backup Game",
+		InstallDir:  "Migration Missing Backup Game",
+		LibraryPath: root,
+		Path:        gamePath,
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	game, err := srv.db.GameBySteamApp(context.Background(), appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.runExtensionMigration(context.Background(), game, extension, extension.StateMigrations[0]); err != nil {
+		t.Fatalf("runExtensionMigration: %v", err)
+	}
+	completed, err := srv.db.ExtensionMigrationCompleted(context.Background(), extension.ID, "backup-missing-file", appID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !completed {
+		t.Fatal("missing-file backup migration completion was not recorded")
+	}
 }
 
 func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *testing.T) {
