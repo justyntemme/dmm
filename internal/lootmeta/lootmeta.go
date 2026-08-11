@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -75,6 +77,7 @@ func (s Service) StatusForProfile(spec sdk.PluginActivationSpec, profileID int64
 	userlistWarning := ""
 	if userlistErr == nil {
 		summary = userlist.Summary()
+		userlistWarning = s.missingGroupWarning(paths, userlist)
 	} else {
 		userlistWarning = userlistErr.Error()
 	}
@@ -105,6 +108,83 @@ func (s Service) StatusForProfile(spec sdk.PluginActivationSpec, profileID int64
 		UserlistWarning:  userlistWarning,
 		Prelude:          fileStatus(paths.preludePath, paths.preludeURL),
 	}, nil
+}
+
+func (s Service) missingGroupWarning(paths lootPaths, userlist Userlist) string {
+	masterlist, err := readMasterlistGroups(paths.masterlistPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ""
+		}
+		return "LOOT masterlist group check failed: " + err.Error()
+	}
+	missing := missingUserlistGroups(masterlist.Groups, userlist)
+	if len(missing) == 0 {
+		return ""
+	}
+	return "LOOT userlist refers to missing groups: " + strings.Join(missing, ", ")
+}
+
+type masterlistGroups struct {
+	Groups []UserlistGroup `yaml:"groups"`
+}
+
+func readMasterlistGroups(path string) (masterlistGroups, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return masterlistGroups{}, err
+	}
+	var parsed masterlistGroups
+	if err := yaml.Unmarshal(body, &parsed); err != nil {
+		return masterlistGroups{}, err
+	}
+	parsed.Groups = normalizeUserlist(Userlist{Groups: parsed.Groups}).Groups
+	return parsed, nil
+}
+
+func missingUserlistGroups(masterlistGroups []UserlistGroup, userlist Userlist) []string {
+	known := map[string]struct{}{}
+	for _, group := range masterlistGroups {
+		name := cleanName(group.Name)
+		if name != "" {
+			known[strings.ToUpper(name)] = struct{}{}
+		}
+	}
+	for _, group := range userlist.Groups {
+		name := cleanName(group.Name)
+		if name != "" {
+			known[strings.ToUpper(name)] = struct{}{}
+		}
+	}
+	missing := map[string]string{}
+	for _, plugin := range userlist.Plugins {
+		group := cleanName(plugin.Group)
+		if group == "" {
+			continue
+		}
+		if _, ok := known[strings.ToUpper(group)]; !ok {
+			missing[strings.ToUpper(group)] = group
+		}
+	}
+	for _, group := range userlist.Groups {
+		for _, after := range group.After {
+			after = cleanName(after)
+			if after == "" {
+				continue
+			}
+			if _, ok := known[strings.ToUpper(after)]; !ok {
+				missing[strings.ToUpper(after)] = after
+			}
+		}
+	}
+	out := make([]string, 0, len(missing))
+	for _, name := range missing {
+		out = append(out, name)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
 }
 
 func (s Service) Refresh(ctx context.Context, spec sdk.PluginActivationSpec) (Status, error) {

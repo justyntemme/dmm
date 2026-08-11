@@ -132,6 +132,31 @@ func TestWriteUserlistRejectsDuplicateVortexRule(t *testing.T) {
 	}
 }
 
+func TestStatusWarnsForMissingUserlistGroups(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+	if err := os.MkdirAll(filepath.Join(dir, "loot", "fallout4", "masterlist"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "loot", "fallout4", "masterlist", "masterlist.yaml"), []byte("groups:\n  - name: Early\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.WriteUserlist(spec, Userlist{
+		Plugins: []UserlistPlugin{{Name: "Example.esp", Group: "Missing Plugin Group"}},
+		Groups:  []UserlistGroup{{Name: "Late", After: []string{"Early", "Missing After Group"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.Status(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status.UserlistWarning, "Missing After Group") || !strings.Contains(status.UserlistWarning, "Missing Plugin Group") {
+		t.Fatalf("warning = %q", status.UserlistWarning)
+	}
+}
+
 func TestProfileUserlistsAreIsolated(t *testing.T) {
 	dir := t.TempDir()
 	service := Service{DataDir: dir}
