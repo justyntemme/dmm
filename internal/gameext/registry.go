@@ -1822,6 +1822,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Name:               tool.Name,
 			ExecutableRelative: tool.ExecutableRelative,
 			Arguments:          append([]string(nil), tool.Arguments...),
+			Environment:        copyStringMap(tool.Environment),
 			RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
 			DynamicInputs:      launchToolDynamicInputs(tool.DynamicInputs),
 			DynamicArguments:   launchToolDynamicArguments(tool.DynamicArguments),

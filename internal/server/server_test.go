@@ -11549,10 +11549,16 @@ func TestGameDiagnosticsWarnsWhenRequiredLocalGameSettingsAreMissing(t *testing.
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.ExtensionTests) != 1 {
-		t.Fatalf("extension tests = %+v", body.ExtensionTests)
+	var test gameExtensionTestResponse
+	for _, candidate := range body.ExtensionTests {
+		if candidate.TestID == "local-game-settings-global-files" {
+			test = candidate
+			break
+		}
 	}
-	test := body.ExtensionTests[0]
+	if test.TestID == "" {
+		t.Fatalf("missing local-game-settings-global-files diagnostic: %+v", body.ExtensionTests)
+	}
 	if test.TestID != "local-game-settings-global-files" || test.Status != sdk.HealthCheckStatusWarning || !strings.Contains(test.Details, "Fallout4.ini") {
 		t.Fatalf("local settings diagnostic = %+v", test)
 	}
@@ -14299,8 +14305,33 @@ func TestDiscoverToolsReportsDeclaredAndManagedTools(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1"
 	rec = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "environment variables") {
+	if rec.Code != http.StatusAccepted {
 		t.Fatalf("environment-dependent tool launch status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var editorQueued struct {
+		Job       jobResponse `json:"job"`
+		Duplicate bool        `json:"duplicate"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&editorQueued); err != nil {
+		t.Fatal(err)
+	}
+	if editorQueued.Job.Type != jobTypeExtensionToolAction || editorQueued.Job.Payload["tool_environment"] == "" || !strings.Contains(editorQueued.Job.Payload["tool_launch_options"], `TOOL_MODE="test"`) {
+		t.Fatalf("environment-dependent tool launch job = %+v", editorQueued.Job)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+editorQueued.Job.ID+"/start", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("environment tool action start status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/tool/actions/"+editorQueued.Job.ID+"/complete", bytes.NewBufferString(`{"applied":true,"source":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("environment tool action complete status = %d body = %s", rec.Code, rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/tools/runner/launch", bytes.NewBufferString(`{"wait_for_exit":true}`))

@@ -2740,7 +2740,7 @@ func (s *Server) gameLaunchStatus(ctx context.Context, appID string) (gameLaunch
 	executablePath := filepath.ToSlash(filepath.Join(game.GamePath, filepath.FromSlash(tool.ExecutableRelative)))
 	dynamicArguments, dynamicArgumentDetails := s.launchToolDynamicArguments(ctx, game, mods, tool)
 	arguments := launchToolArguments(game.GamePath, tool, dynamicArguments)
-	desired := steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
+	desired := steam.DesiredLaunchOptionsWithEnvironment(game.GamePath, tool.ExecutableRelative, tool.Environment, arguments...)
 	resp.DesiredOptions = desired
 	resp.Tool = &launchToolResponse{
 		ID:                 tool.ID,
@@ -3440,7 +3440,7 @@ func (s *Server) extensionNoticeJobPayload(ctx context.Context, appID, event, so
 		executablePath := strings.TrimSpace(payload["tool_executable_path"])
 		if executablePath != "" {
 			args := trimmedStringSlice(notice.ToolArguments)
-			payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(executablePath, args...)
+			payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutableWithEnvironment(executablePath, launchEnvironmentFromPayload(payload), args...)
 		}
 	}
 	addExtensionToolInputFilesPayload(notice.ToolInputFiles, payload)
@@ -3592,7 +3592,8 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 			return payload, errors.New(toolName + ": installed tool executable is missing")
 		}
 		payload["tool_action_available"] = "true"
-		payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutable(tool.ExecutablePath, tool.Arguments...)
+		payload["tool_launch_options"] = steam.DesiredLaunchOptionsForExecutableWithEnvironment(tool.ExecutablePath, tool.Environment, tool.Arguments...)
+		addToolEnvironmentPayload(tool.Environment, payload)
 		return payload, nil
 	}
 	extension, tool, kind, status, message, ok := s.extensionExecutableTool(appID, game.GamePath, toolID)
@@ -3635,8 +3636,43 @@ func (s *Server) extensionToolLaunchPayload(ctx context.Context, appID, toolID s
 	}
 	arguments := launchToolArguments(game.GamePath, tool, dynamicArguments)
 	payload["tool_action_available"] = "true"
-	payload["tool_launch_options"] = steam.DesiredLaunchOptions(game.GamePath, tool.ExecutableRelative, arguments...)
+	payload["tool_launch_options"] = steam.DesiredLaunchOptionsWithEnvironment(game.GamePath, tool.ExecutableRelative, tool.Environment, arguments...)
+	addToolEnvironmentPayload(tool.Environment, payload)
 	return payload, nil
+}
+
+func addToolEnvironmentPayload(environment map[string]string, payload jobs.JobPayload) {
+	if len(environment) == 0 {
+		return
+	}
+	raw, err := json.Marshal(environment)
+	if err != nil {
+		return
+	}
+	payload["tool_environment"] = string(raw)
+}
+
+func launchEnvironmentFromPayload(payload jobs.JobPayload) map[string]string {
+	raw := strings.TrimSpace(payload["tool_environment"])
+	if raw == "" {
+		return nil
+	}
+	var environment map[string]string
+	if err := json.Unmarshal([]byte(raw), &environment); err != nil {
+		return nil
+	}
+	return environment
+}
+
+func copyToolEnvironment(environment map[string]string) map[string]string {
+	if len(environment) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(environment))
+	for key, value := range environment {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Server) managedExecutableTool(ctx context.Context, appID string, game storage.Game, toolID string) (discoveredTool, bool, error) {
@@ -3690,9 +3726,6 @@ func (s *Server) extensionExecutableTool(appID, gamePath, toolID string) (gameex
 		if strings.TrimSpace(resolved.ExecutableRelative) == "" {
 			status = "blocked"
 			message = "extension supported tool does not declare an executable path"
-		} else if len(resolved.Environment) > 0 {
-			status = "blocked"
-			message = "DMM cannot pass extension supported-tool environment variables through the Decky Steam launch bridge yet."
 		}
 		return extension, launchToolFromSupportedTool(resolved), "supported-tool", status, message, true
 	}
@@ -3771,6 +3804,7 @@ func launchToolFromSupportedTool(tool gameext.SupportedToolSpec) gameext.LaunchT
 		Name:               tool.Name,
 		ExecutableRelative: tool.ExecutableRelative,
 		Arguments:          append([]string(nil), tool.Arguments...),
+		Environment:        copyToolEnvironment(tool.Environment),
 		RequiredFiles:      append([]string(nil), tool.RequiredFiles...),
 		Shell:              tool.Shell,
 		Detach:             tool.Detach,

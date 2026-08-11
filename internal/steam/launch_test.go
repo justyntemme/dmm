@@ -55,6 +55,18 @@ func TestDesiredLaunchOptionsForExecutableKeepsAbsolutePath(t *testing.T) {
 	}
 }
 
+func TestDesiredLaunchOptionsWithEnvironment(t *testing.T) {
+	got := DesiredLaunchOptionsWithEnvironment("/games/Tool Game", "Tools/Editor.exe", map[string]string{
+		"TOOL_MODE": "test",
+		"BAD-NAME":  "ignored",
+		"Z_PATH":    `/tmp/tool path`,
+	}, "--safe")
+	want := `TOOL_MODE="test" Z_PATH="/tmp/tool path" "/games/Tool Game/Tools/Editor.exe" --safe %command%`
+	if got != want {
+		t.Fatalf("desired launch options = %q, want %q", got, want)
+	}
+}
+
 func TestLaunchOptionsFromVDFReportsAppWithoutLaunchOptions(t *testing.T) {
 	input := `"Software" { "Valve" { "Steam" { "apps" { "413150" { "LastPlayed" "1785361913" } } } } }`
 

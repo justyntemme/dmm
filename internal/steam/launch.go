@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"unicode"
 )
 
 type LaunchOptionsStatus struct {
@@ -59,15 +61,24 @@ func LocalConfigPaths(ctx context.Context, userdataRoot string) ([]string, error
 }
 
 func DesiredLaunchOptions(gamePath, executableRelative string, arguments ...string) string {
-	return desiredLaunchOptions(filepath.Join(gamePath, filepath.FromSlash(executableRelative)), arguments...)
+	return DesiredLaunchOptionsWithEnvironment(gamePath, executableRelative, nil, arguments...)
 }
 
 func DesiredLaunchOptionsForExecutable(executablePath string, arguments ...string) string {
-	return desiredLaunchOptions(executablePath, arguments...)
+	return DesiredLaunchOptionsForExecutableWithEnvironment(executablePath, nil, arguments...)
 }
 
-func desiredLaunchOptions(executablePath string, arguments ...string) string {
-	parts := []string{fmt.Sprintf("%q", filepath.ToSlash(filepath.Clean(executablePath)))}
+func DesiredLaunchOptionsWithEnvironment(gamePath, executableRelative string, environment map[string]string, arguments ...string) string {
+	return desiredLaunchOptions(filepath.Join(gamePath, filepath.FromSlash(executableRelative)), environment, arguments...)
+}
+
+func DesiredLaunchOptionsForExecutableWithEnvironment(executablePath string, environment map[string]string, arguments ...string) string {
+	return desiredLaunchOptions(executablePath, environment, arguments...)
+}
+
+func desiredLaunchOptions(executablePath string, environment map[string]string, arguments ...string) string {
+	parts := launchEnvironmentAssignments(environment)
+	parts = append(parts, fmt.Sprintf("%q", filepath.ToSlash(filepath.Clean(executablePath))))
 	for _, argument := range arguments {
 		argument = strings.TrimSpace(argument)
 		if argument == "" {
@@ -77,6 +88,43 @@ func desiredLaunchOptions(executablePath string, arguments ...string) string {
 	}
 	parts = append(parts, "%command%")
 	return strings.Join(parts, " ")
+}
+
+func launchEnvironmentAssignments(environment map[string]string) []string {
+	if len(environment) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
+		key = strings.TrimSpace(key)
+		if validLaunchEnvironmentName(key) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+"="+fmt.Sprintf("%q", environment[key]))
+	}
+	return out
+}
+
+func validLaunchEnvironmentName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		if i == 0 {
+			if r != '_' && !unicode.IsLetter(r) {
+				return false
+			}
+			continue
+		}
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func LaunchOptionsContainTarget(ctx context.Context, appID, target string) []string {

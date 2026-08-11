@@ -248,6 +248,7 @@ type LaunchToolSpec struct {
 	Name               string
 	ExecutableRelative string
 	Arguments          []string
+	Environment        map[string]string
 	RequiredFiles      []string
 	Variants           []LaunchToolVariantSpec
 	DynamicInputs      []LaunchToolDynamicInputSpec
