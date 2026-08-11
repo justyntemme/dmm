@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
@@ -72,6 +73,13 @@ func Register(r sdk.Registrar) {
 			Relative: "SKSE/skse64.log",
 		}},
 		Plugins: []string{"SKSE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "skyrimse-archive-backdate",
+		Name:      "Skyrim Special Edition archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"skyrim - "},
+		TargetAge: time.Date(2008, 11, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:skyrimse:fomod",

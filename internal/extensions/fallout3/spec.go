@@ -1,6 +1,8 @@
 package fallout3
 
 import (
+	"time"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gameversionhash"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -80,6 +82,13 @@ func Register(r sdk.Registrar) {
 			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "fose_editor.log"},
 		},
 		Plugins: []string{"FOSE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "fallout3-archive-backdate",
+		Name:      "Fallout 3 archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"fallout - ", "brokensteel - ", "anchorage - ", "pointlookout - ", "zeta - ", "thepitt - "},
+		TargetAge: time.Date(2006, 2, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout3:fomod",

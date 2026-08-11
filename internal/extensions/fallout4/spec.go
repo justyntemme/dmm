@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -72,6 +73,13 @@ func Register(r sdk.Registrar) {
 			Relative: "F4SE/f4se.log",
 		}},
 		Plugins: []string{"F4SE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "fallout4-archive-backdate",
+		Name:      "Fallout 4 archive timestamp backdate",
+		Extension: ".ba2",
+		Prefixes:  []string{"fallout4 - ", "dlccoast - ", "dlcrobot - ", "dlcworkshop", "dlcnukaworld - "},
+		TargetAge: time.Date(2008, 11, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout4:fomod",

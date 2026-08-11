@@ -1,6 +1,8 @@
 package falloutnv
 
 import (
+	"time"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sharedmodtypes"
@@ -81,6 +83,13 @@ func Register(r sdk.Registrar) {
 			{Base: gamebryo.ScriptExtenderLogBaseGame, Relative: "nvse_editor.log"},
 		},
 		Plugins: []string{"NVSE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "falloutnv-archive-backdate",
+		Name:      "Fallout: New Vegas archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"fallout - ", "deadmoney -", "honesthearts - ", "oldworldblues - ", "lonesomeroad - ", "caravanpack - ", "classicpack - ", "mercenarypack - ", "tribalpack - ", "gunrunnersarsenal - "},
+		TargetAge: time.Date(2006, 2, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:falloutnv:fomod",

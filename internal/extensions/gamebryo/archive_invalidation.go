@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -25,6 +26,16 @@ type ArchiveInvalidationOptions struct {
 	ININame      string
 	DataRoot     string
 	RequiredKeys map[string]string
+}
+
+type ArchiveBackdateOptions struct {
+	ID               string
+	Name             string
+	DataRoot         string
+	Extension        string
+	Prefixes         []string
+	TargetAge        time.Time
+	UnsupportedGames []string
 }
 
 func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandlerFunc {
@@ -110,6 +121,143 @@ func ArchiveInvalidationHandler(opts ArchiveInvalidationOptions) sdk.EventHandle
 			Messages: []string{"Gamebryo archive invalidation settings generated from Vortex-compatible extension metadata."},
 		}, nil
 	}
+}
+
+func ArchiveBackdateTest(opts ArchiveBackdateOptions) sdk.ExtensionTestSpec {
+	id := strings.TrimSpace(opts.ID)
+	if id == "" {
+		id = "gamebryo-archive-backdate"
+	}
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		name = "Gamebryo archive timestamps"
+	}
+	return sdk.ExtensionTestSpec{
+		ID:      id,
+		Name:    name,
+		Trigger: sdk.EventGamemodeActivated,
+		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+			files, err := newerArchiveFiles(ctx, input.GamePath, opts)
+			if err != nil {
+				return sdk.ExtensionTestResult{}, err
+			}
+			if len(files) == 0 {
+				return sdk.ExtensionTestResult{
+					Status:   sdk.HealthCheckStatusPassed,
+					Severity: sdk.HealthCheckSeverityInfo,
+					Message:  "Gamebryo archive timestamps are compatible with Vortex archive invalidation behavior.",
+				}, nil
+			}
+			return sdk.ExtensionTestResult{
+				Status:          sdk.HealthCheckStatusWarning,
+				Severity:        sdk.HealthCheckSeverityWarning,
+				Message:         "Gamebryo archive timestamps need to be backdated for Vortex-compatible archive invalidation.",
+				Details:         strings.Join(displayRelativeArchivePaths(files, input.GamePath), "\n"),
+				Actions:         []string{"Backdate official archive timestamps"},
+				RepairAvailable: true,
+			}, nil
+		},
+		Repair: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestRepairResult, error) {
+			files, err := newerArchiveFiles(ctx, input.GamePath, opts)
+			if err != nil {
+				return sdk.ExtensionTestRepairResult{}, err
+			}
+			for _, file := range files {
+				if err := ctx.Err(); err != nil {
+					return sdk.ExtensionTestRepairResult{}, err
+				}
+				if err := os.Chtimes(file, opts.TargetAge, opts.TargetAge); err != nil {
+					return sdk.ExtensionTestRepairResult{}, err
+				}
+			}
+			if len(files) == 0 {
+				return sdk.ExtensionTestRepairResult{Changed: false, Message: "Gamebryo archive timestamps already matched Vortex archive invalidation behavior."}, nil
+			}
+			return sdk.ExtensionTestRepairResult{
+				Changed: true,
+				Message: "Backdated " + strconv.Itoa(len(files)) + " Gamebryo archive timestamp" + plural(len(files)) + ".",
+				Details: strings.Join(displayRelativeArchivePaths(files, input.GamePath), "\n"),
+			}, nil
+		},
+	}
+}
+
+func newerArchiveFiles(ctx context.Context, gamePath string, opts ArchiveBackdateOptions) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	dataRoot := strings.Trim(strings.TrimSpace(opts.DataRoot), `/\`)
+	if dataRoot == "" {
+		dataRoot = "Data"
+	}
+	if opts.TargetAge.IsZero() {
+		return nil, errors.New("Gamebryo archive backdate target age is required")
+	}
+	dataPath := filepath.Join(strings.TrimSpace(gamePath), filepath.FromSlash(dataRoot))
+	entries, err := os.ReadDir(dataPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	extension := strings.ToLower(strings.TrimSpace(opts.Extension))
+	prefixes := lowerCopy(opts.Prefixes)
+	var out []string
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		if extension != "" && strings.ToLower(filepath.Ext(lower)) != extension {
+			continue
+		}
+		if len(prefixes) > 0 && !hasAnyPrefix(lower, prefixes) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		if info.ModTime().After(opts.TargetAge) {
+			out = append(out, filepath.Join(dataPath, name))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func displayRelativeArchivePaths(files []string, gamePath string) []string {
+	out := make([]string, 0, len(files))
+	gamePath = filepath.Clean(strings.TrimSpace(gamePath))
+	for _, file := range files {
+		if rel, err := filepath.Rel(gamePath, file); err == nil && !strings.HasPrefix(rel, "..") {
+			out = append(out, filepath.ToSlash(rel))
+		} else {
+			out = append(out, filepath.ToSlash(file))
+		}
+	}
+	return out
+}
+
+func hasAnyPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func ArchiveInvalidationProfilePatches(opts ArchiveInvalidationOptions) []LocalGameSettingPatch {

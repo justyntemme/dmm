@@ -1,6 +1,8 @@
 package enderal
 
 import (
+	"time"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -60,6 +62,13 @@ func Register(r sdk.Registrar) {
 			Relative: "SKSE/skse.log",
 		}},
 		Plugins: []string{"SKSE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "enderal-archive-backdate",
+		Name:      "Enderal archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"skyrim - ", "e - ", "l - "},
+		TargetAge: time.Date(2008, 11, 1, 0, 0, 0, 0, time.Local),
 	}))
 	registerSupportedTools(r)
 	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrim", NexusModID: "11811", PatchListName: "PatchList.txt"})

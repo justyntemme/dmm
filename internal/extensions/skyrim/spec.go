@@ -1,6 +1,8 @@
 package skyrim
 
 import (
+	"time"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/fnis"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -61,6 +63,13 @@ func Register(r sdk.Registrar) {
 			Relative: "SKSE/skse.log",
 		}},
 		Plugins: []string{"SKSE/Plugins"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "skyrim-archive-backdate",
+		Name:      "Skyrim archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"skyrim - ", "hearthfires", "dragonborn", "highrestexturepack"},
+		TargetAge: time.Date(2008, 11, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{ID: "vortex:skyrim:fomod", Name: "FOMOD installer", Kind: "fomod", ModType: dataRootModType, TargetRoot: "Data", StopFolders: gamebryo.StopFolders("skse", "SkyProc Patchers")})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{ID: "skse", Name: "Skyrim Script Extender", ExecutableRelative: "skse_loader.exe", RequiredFiles: []string{"skse_loader.exe", "TESV.exe"}, DefaultPrimary: true, ModTypes: []string{scriptExtModType}, ProviderModTypes: []string{scriptExtModType}})

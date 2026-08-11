@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -231,5 +232,82 @@ func TestArchiveInvalidationHandlerSkipsMissingMyGamesFolder(t *testing.T) {
 	}
 	if len(result.Mappings) != 0 {
 		t.Fatalf("mappings = %+v", result.Mappings)
+	}
+}
+
+func TestArchiveBackdateTestWarnsAndRepairsNewArchives(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "Data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	targetAge := time.Date(2008, 11, 1, 0, 0, 0, 0, time.UTC)
+	archive := filepath.Join(data, "Fallout4 - Textures.ba2")
+	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(archive, time.Now(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := ArchiveBackdateTest(ArchiveBackdateOptions{
+		ID:        "fallout4-archive-backdate",
+		Name:      "Fallout 4 archive timestamp backdate",
+		Extension: ".ba2",
+		Prefixes:  []string{"Fallout4 - "},
+		TargetAge: targetAge,
+	})
+	result, err := spec.Check(context.Background(), sdk.ExtensionTestInput{GamePath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != sdk.HealthCheckStatusWarning || !result.RepairAvailable || !strings.Contains(result.Details, "Data/Fallout4 - Textures.ba2") {
+		t.Fatalf("check result = %+v", result)
+	}
+
+	repair, err := spec.Repair(context.Background(), sdk.ExtensionTestInput{GamePath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repair.Changed || !strings.Contains(repair.Details, "Data/Fallout4 - Textures.ba2") {
+		t.Fatalf("repair result = %+v", repair)
+	}
+	info, err := os.Stat(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(targetAge) {
+		t.Fatalf("mtime = %s, want %s", info.ModTime(), targetAge)
+	}
+}
+
+func TestArchiveBackdateTestIgnoresOlderArchives(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "Data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	targetAge := time.Date(2006, 2, 1, 0, 0, 0, 0, time.UTC)
+	archive := filepath.Join(data, "Oblivion - Meshes.bsa")
+	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(archive, targetAge.Add(-time.Hour), targetAge.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	spec := ArchiveBackdateTest(ArchiveBackdateOptions{
+		ID:        "oblivion-archive-backdate",
+		Name:      "Oblivion archive timestamp backdate",
+		Extension: ".bsa",
+		Prefixes:  []string{"Oblivion - "},
+		TargetAge: targetAge,
+	})
+	result, err := spec.Check(context.Background(), sdk.ExtensionTestInput{GamePath: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != sdk.HealthCheckStatusPassed || result.RepairAvailable {
+		t.Fatalf("check result = %+v", result)
 	}
 }

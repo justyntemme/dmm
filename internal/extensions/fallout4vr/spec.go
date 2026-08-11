@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/gamebryo"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -83,6 +84,13 @@ func Register(r sdk.Registrar) {
 		HelpURL:       "https://f4se.silverlock.org/",
 		InstallHint:   "Install F4SE VR through the Nexus Mod Manager Download flow, then enable it in the selected profile.",
 		RequiredFiles: []string{"f4sevr_loader.exe", "Fallout4VR.exe"},
+	}))
+	r.RegisterExtensionTest(gamebryo.ArchiveBackdateTest(gamebryo.ArchiveBackdateOptions{
+		ID:        "fallout4vr-archive-backdate",
+		Name:      "Fallout 4 VR archive timestamp backdate",
+		Extension: ".ba2",
+		Prefixes:  []string{"fallout4 - ", "fallout4_vr - "},
+		TargetAge: time.Date(2008, 11, 1, 0, 0, 0, 0, time.Local),
 	}))
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:          "vortex:fallout4vr:fomod",
