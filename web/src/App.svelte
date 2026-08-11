@@ -4001,30 +4001,6 @@
     if (deployPlan) await previewDeploy();
   }
 
-  async function restoreDeployment() {
-    if (!selectedGame || !deploymentStatus?.restore_available) return;
-    error = "";
-    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/restore`, { method: "POST" });
-    if (!response.ok) {
-      error = await response.text();
-      return;
-    }
-    const result = await response.json();
-    upsertJob(result.job);
-    await refreshSelectedGame({ refreshPreview: deployPlan !== null });
-  }
-
-  function askRestoreDeployment() {
-    if (!selectedGame || !deploymentStatus?.restore_available) return;
-    confirmation = {
-      title: "Restore last applied state",
-      message: `DMM will restore ${selectedGame.name}'s DMM-owned files to the last applied state.`,
-      detail: deploymentStatus.restore_summary ?? "Only files recorded by DMM are touched. Unmanaged files are left alone.",
-      confirmLabel: "Restore State",
-      run: restoreDeployment
-    };
-  }
-
   async function previewRestoreDeploymentPoint(deployment: DeploymentHistoryItem) {
     if (!selectedGame) return;
     error = "";
@@ -5544,12 +5520,11 @@
             </section>
           {/if}
           {#if deploymentStatus?.restore_available}
-            <section class="profile-recovery-banner" aria-label="Restore last applied state">
+            <section class="profile-recovery-banner" aria-label="Deployment recovery">
               <div>
-                <strong>Restore available</strong>
-                <p>{deploymentStatus.restore_summary ?? "Return this game to the last DMM-applied state."}</p>
+                <strong>Recovery points available</strong>
+                <p>{deploymentStatus.restore_summary ?? "Open Advanced Profile Tools to preview and restore a specific DMM deployment point."}</p>
               </div>
-              <button type="button" on:click={askRestoreDeployment}>Restore</button>
             </section>
           {/if}
           <section class="management-grid">
@@ -6424,7 +6399,6 @@
               <div class="deploy-actions utility-actions">
                 <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Enabled Mods</button>
                 <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Managed Files</button>
-                <button type="button" class="secondary-action" on:click={askRestoreDeployment} disabled={!deploymentStatus?.restore_available}>Restore Last Applied State</button>
                 <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
                 <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
                 <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Remove DMM Files</button>
