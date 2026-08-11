@@ -40,13 +40,6 @@ func Register(r sdk.Registrar) {
 		r.RegisterExtensionAPI(api)
 	}
 	r.RegisterExtensionAction(surfaceAction("registerAction", "Vortex registerAction", "extension-ui", "action"))
-	r.RegisterExtensionActionCheck(sdk.ExtensionActionCheckSpec{
-		ID:      "registerActionCheck",
-		Name:    "Vortex registerActionCheck",
-		Target:  "extension-state",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	})
 	r.RegisterExtensionControlWrapper(sdk.ExtensionControlWrapperSpec{
 		ID:       "registerControlWrapper",
 		Name:     "Vortex registerControlWrapper",

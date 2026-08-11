@@ -19,7 +19,6 @@ func TestExtensionRegistersNonApplicableVortexUISurfaceMetadata(t *testing.T) {
 	assertNonApplicable(t, "dialog", summary.Capabilities.ExtensionDialogs, "registerDialog")
 	assertNonApplicable(t, "dashlet", summary.Capabilities.ExtensionDashlets, "registerDashlet")
 	assertNonApplicable(t, "main page", summary.Capabilities.ExtensionMainPages, "registerMainPage")
-	assertNonApplicable(t, "action check", summary.Capabilities.ExtensionActionChecks, "registerActionCheck")
 	assertNonApplicable(t, "control wrapper", summary.Capabilities.ExtensionControlWrappers, "registerControlWrapper")
 	assertNonApplicable(t, "state reducer", summary.Capabilities.StateReducers, "registerReducer")
 	if len(summary.Capabilities.StartHooks) != 0 {

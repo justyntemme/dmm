@@ -65,6 +65,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM exposes Vortex's lock-index state through profile plugin activation rows and applies it during generated load-order output; the exact Vortex table widget is represented by DMM's plugin activation update API/UI.",
 	})
+	r.RegisterExtensionActionCheck(sdk.ExtensionActionCheckSpec{
+		ID:      "gamebryo-userlist-duplicate-rule-check",
+		Name:    "Gamebryo duplicate userlist rule check",
+		Target:  "loot-userlist",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex blocks duplicate ADD_USERLIST_RULE actions before they reach state. DMM enforces the same source-backed rule in the LOOT userlist write path, rejecting duplicate after/require/incompatible rules before they can persist.",
+	})
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
 		ID:      "local_saves",
 		Name:    "Gamebryo local save paths",
