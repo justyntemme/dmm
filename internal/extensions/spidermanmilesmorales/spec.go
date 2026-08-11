@@ -62,8 +62,8 @@ func Register(r sdk.Registrar) {
 		ModType:           mmpcModType,
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchModPackArchive,
-		InstructionMode:   installplan.InstructionUnsupported,
-		UnsupportedReason: "Miles Morales .mmpcmodpack support requires a Vortex submodule-equivalent archive expansion step before DMM can safely install it.",
+		CustomBuild:       buildModPackArchive,
+		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:spidermanmilesmorales:mmpc-tool",

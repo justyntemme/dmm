@@ -17,6 +17,7 @@
 ## Current DMM Capability
 
 - `.mmpcmod` archives are installed into `SMPCTool/ModManager/MMPCMods`, matching the Vortex extension's Miles Morales mod path.
+- `.mmpcmodpack` archives are extracted as nested modules and planned through the same `.mmpcmod` installer path when they contain supported MMPC mod files.
 - Archives with multiple `.mmpcmod` files use DMM's installer-choice flow to mirror Vortex's selection prompt.
 - DMM writes Vortex-style `SMPCTool/ModManager/ModManager.txt` entries for enabled DMM-managed `.mmpcmod` files during deployment.
 - Runtime diagnostics verify `MilesMorales.exe`, `asset_archive/toc`, and `SMPCTool/MMPCTool.exe`.
@@ -25,5 +26,4 @@
 ## Beta Gaps
 
 - Vortex runs `MMPCTool.exe -install` after deploy to merge staged `.mmpcmod` files into game archives. DMM does not yet have the generic Proton/Windows tool-execution contract needed to run that automatically.
-- `.mmpcmodpack` support is blocked until DMM has a Vortex submodule-equivalent archive expansion step.
 - Suit Adder Tool support is not implemented yet.

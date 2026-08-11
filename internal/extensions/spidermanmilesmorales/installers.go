@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/archive"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/simplearchive"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -103,6 +105,65 @@ func buildMMPCModArchive(input installplan.BuildInput) (installplan.Plan, error)
 		Metadata:     metadata,
 		Instructions: instructions,
 	}, nil
+}
+
+func buildModPackArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := listFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	packs := filesWithExt(files, mmpcModPackExt)
+	if len(packs) == 0 {
+		return installplan.Plan{}, installplan.Unsupported("Miles Morales modpack archive matched but no .mmpcmodpack files were found")
+	}
+	plan := installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    mmpcModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-mmpcmodpack",
+			Path:   strings.Join(packs, ","),
+			Reason: "Vortex MMPC modpack installer matched nested .mmpcmodpack modules",
+		}},
+		Warnings: []string{"Nested MMPC modpack extracted and planned through the source-backed .mmpcmod helper."},
+	}
+	for idx, packRel := range packs {
+		extractedRoot := filepath.Join(input.ExtractedRoot, ".dmm-mmpcmodpack-submodules", sanitizeSegment(strings.TrimSuffix(filepath.Base(packRel), filepath.Ext(packRel)))+"-"+strconv.Itoa(idx+1))
+		if err := os.RemoveAll(extractedRoot); err != nil {
+			return installplan.Plan{}, err
+		}
+		if _, err := archive.Extract(filepath.Join(input.ExtractedRoot, filepath.FromSlash(packRel)), extractedRoot); err != nil {
+			return installplan.Plan{}, err
+		}
+		innerPlan, err := buildMMPCModArchive(installplan.BuildInput{
+			GameID:        input.GameID,
+			ExtractedRoot: extractedRoot,
+			Installer:     input.Installer,
+			TargetRoot:    input.TargetRoot,
+			TargetRootID:  input.TargetRootID,
+			ArchiveName:   filepath.Base(packRel),
+			GamePath:      input.GamePath,
+			LibraryPath:   input.LibraryPath,
+			Selections:    input.Selections,
+		})
+		if err != nil {
+			return installplan.Plan{}, err
+		}
+		for _, detection := range innerPlan.DetectedFrom {
+			detection.Path = filepath.ToSlash(filepath.Join(packRel, detection.Path))
+			plan.DetectedFrom = append(plan.DetectedFrom, detection)
+		}
+		plan.Metadata = append(plan.Metadata, innerPlan.Metadata...)
+		plan.Instructions = append(plan.Instructions, innerPlan.Instructions...)
+	}
+	if len(plan.Instructions) == 0 {
+		return installplan.Plan{}, errors.New("Miles Morales MMPC modpack installer matched but produced no deployable files")
+	}
+	sort.SliceStable(plan.Instructions, func(i, j int) bool {
+		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
+	})
+	return plan, nil
 }
 
 func buildToolArchive(input installplan.BuildInput) (installplan.Plan, error) {
@@ -304,4 +365,31 @@ func listFiles(root string) ([]string, error) {
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+func sanitizeSegment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "archive"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-_.")
+	if out == "" {
+		return "archive"
+	}
+	return out
 }

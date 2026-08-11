@@ -1,6 +1,7 @@
 package spidermanmilesmorales
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"os"
@@ -84,14 +85,19 @@ func TestMultipleMMPCModArchiveRequiresChoice(t *testing.T) {
 	}
 }
 
-func TestModpackArchiveIsBlocked(t *testing.T) {
+func TestModpackArchiveExtractsNestedMMPCMod(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "Bundle.mmpcmodpack"), "payload")
-	_, err := build(root, nil)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) {
-		t.Fatalf("error = %T %v", err, err)
+	createZip(t, filepath.Join(root, "Bundle.mmpcmodpack"), map[string]string{
+		"NestedSuit.mmpcmod": "mod",
+	})
+	plan, err := build(root, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if plan.ModType != mmpcModType || plan.PlannerID != "vortex:spidermanmilesmorales:mmpc-modpack" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "SMPCTool/ModManager/MMPCMods/NestedSuit.mmpcmod")
 }
 
 func TestToolArchiveStagesManagedMMPCTool(t *testing.T) {
@@ -177,6 +183,38 @@ func writeFile(t *testing.T, path string, body string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createZip(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zipper := zip.NewWriter(out)
+	for name, body := range files {
+		writer, err := zipper.Create(filepath.ToSlash(name))
+		if err != nil {
+			_ = zipper.Close()
+			_ = out.Close()
+			t.Fatal(err)
+		}
+		if _, err := writer.Write([]byte(body)); err != nil {
+			_ = zipper.Close()
+			_ = out.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := zipper.Close(); err != nil {
+		_ = out.Close()
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
