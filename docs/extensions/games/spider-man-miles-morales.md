@@ -12,6 +12,7 @@
 - Spider-Man Remastered and Miles Morales Vortex extension page: `https://www.nexusmods.com/site/mods/443`
 - Verified Vortex extension package file: `https://www.nexusmods.com/site/mods/443?tab=files&file_id=1831`
 - Miles Morales MMPC Modding Tool page: `https://www.nexusmods.com/spidermanmilesmorales/mods/8`
+- ASC Suit Adder Tool instructions: `https://www.nexusmods.com/marvelsspidermanremastered/mods/2318`
 - Live Steam Deck path check: `/home/deck/.local/share/Steam/steamapps/common/Marvel's Spider-Man Miles Morales`
 
 ## Current DMM Capability
@@ -23,7 +24,9 @@
 - Runtime diagnostics verify `MilesMorales.exe`, `asset_archive/toc`, and `SMPCTool/MMPCTool.exe`.
 - DMM installs MMPC Modding Tool archives as managed tool-only payloads under `SMPCTool/`, writes `SMPCTool/assetArchiveDir.txt` from the discovered game path when available, and registers a non-primary MMPC tool entry so the tool is visible in extension capabilities.
 - After `.mmpcmod` deployment, DMM queues the source-backed MMPC Modding Tool action with Vortex's `-install` argument through the generic Decky wait-for-tool-exit path.
+- `.suit` archives are staged beside extension tools under `SMPCTool/` and DMM registers ASC Suit Adder Tool as an extension launch tool.
+- After `.suit` deployment, DMM queues ASC Suit Adder Tool with the deployed `.suit` paths as arguments, mirroring the verified drag/drop tool contract through the generic Decky wait-for-tool-exit path.
 
 ## Beta Gaps
 
-- Suit Adder Tool support is not implemented yet.
+- Live Suit Adder validation on the Steam Deck remains pending.

@@ -23,12 +23,15 @@ func TestExtensionRegistersMilesCapabilities(t *testing.T) {
 	if len(extension.NexusDomains) != 1 || extension.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", extension.NexusDomains)
 	}
-	if len(extension.InstallPlan.Installers) != 3 {
+	if len(extension.InstallPlan.Installers) != 5 {
 		t.Fatalf("installers = %+v", extension.InstallPlan.Installers)
 	}
 	registry := gameext.NewRegistry([]gameext.Extension{extension})
 	if !registry.HasEventHandlerForSteamApp(SteamAppID, "will-deploy") {
 		t.Fatal("expected will-deploy load order handler")
+	}
+	if !registry.HasEventHandlerForSteamApp(SteamAppID, "did-deploy") {
+		t.Fatal("expected did-deploy tool handlers")
 	}
 }
 
@@ -120,6 +123,43 @@ func TestToolArchiveStagesManagedMMPCTool(t *testing.T) {
 	}
 }
 
+func TestSuitArchivePlansSuitFileBesideTool(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Suits", "CoolSuit.suit"), "suit")
+	writeFile(t, filepath.Join(root, "readme.txt"), "ignore")
+
+	plan, err := build(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != suitModType || plan.PlannerID != suitInstaller {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if len(plan.Instructions) != 1 {
+		t.Fatalf("instructions = %+v", plan.Instructions)
+	}
+	assertTarget(t, plan, "SMPCTool/CoolSuit.suit")
+}
+
+func TestSuitAdderToolArchiveStagesManagedTool(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "SuitAdder", suitAdderExec), "tool")
+	writeFile(t, filepath.Join(root, "SuitAdder", "Support.dll"), "dll")
+
+	plan, err := build(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != suitAdderModType || plan.PlannerID != "vortex:spidermanmilesmorales:suit-adder-tool" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "SMPCTool/New Suit Adder.exe")
+	assertTarget(t, plan, "SMPCTool/Support.dll")
+	if len(plan.Metadata) != 1 || plan.Metadata[0].Kind != "tool" || plan.Metadata[0].UniqueID != "spidermanmilesmorales-suit-adder-tool" {
+		t.Fatalf("metadata = %+v", plan.Metadata)
+	}
+}
+
 func TestWillDeployGeneratesModManagerLoadOrder(t *testing.T) {
 	workDir := t.TempDir()
 	result, err := willDeployLoadOrder(context.Background(), sdk.EventHandlerInput{
@@ -166,6 +206,28 @@ func TestDidDeployQueuesMMPCInstallToolAction(t *testing.T) {
 	}
 }
 
+func TestDidDeployQueuesSuitAdderAction(t *testing.T) {
+	result, err := didDeploySuitAdder(context.Background(), sdk.EventHandlerInput{
+		GamePath: "/games/Miles",
+		ManagedFiles: []deploy.AppliedFile{{
+			TargetPath: "SMPCTool/CoolSuit.suit",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("notices = %+v", result.Notices)
+	}
+	notice := result.Notices[0]
+	if notice.ActionKind != sdk.EventNoticeActionRunLaunchTool || notice.ToolID != "spidermanmilesmorales-suit-adder-tool" || !notice.AutoRun || !notice.WaitForExit {
+		t.Fatalf("notice = %+v", notice)
+	}
+	if len(notice.ToolArguments) != 1 || notice.ToolArguments[0] != "/games/Miles/SMPCTool/CoolSuit.suit" {
+		t.Fatalf("tool arguments = %+v", notice.ToolArguments)
+	}
+}
+
 func TestRequiredFilesChecks(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, gameExecutable), "game")
@@ -176,6 +238,10 @@ func TestRequiredFilesChecks(t *testing.T) {
 	writeFile(t, filepath.Join(root, smpcToolRoot, mmpcToolExec), "tool")
 	if got := checkMMPCTool(context.Background(), root); len(got) != 1 {
 		t.Fatalf("tool files = %+v", got)
+	}
+	writeFile(t, filepath.Join(root, smpcToolRoot, suitAdderExec), "tool")
+	if got := checkSuitAdderTool(context.Background(), root); len(got) != 1 {
+		t.Fatalf("suit adder files = %+v", got)
 	}
 }
 

@@ -42,6 +42,27 @@ func matchToolArchive(root string) bool {
 	return false
 }
 
+func matchSuitAdderToolArchive(root string) bool {
+	files, err := listFiles(root)
+	if err != nil {
+		return false
+	}
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file), suitAdderExec) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchSuitArchive(root string) bool {
+	files, err := listFiles(root)
+	if err != nil {
+		return false
+	}
+	return len(filesWithExt(files, suitExt)) > 0
+}
+
 func buildMMPCModArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	files, err := listFiles(input.ExtractedRoot)
 	if err != nil {
@@ -107,6 +128,47 @@ func buildMMPCModArchive(input installplan.BuildInput) (installplan.Plan, error)
 	}, nil
 }
 
+func buildSuitArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := listFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	suitFiles := filesWithExt(files, suitExt)
+	if len(suitFiles) == 0 {
+		return installplan.Plan{}, installplan.Unsupported("Miles Morales Suit Adder archive does not contain a .suit file")
+	}
+	instructions := make([]installplan.Instruction, 0, len(suitFiles))
+	for _, file := range suitFiles {
+		targetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, filepath.Base(file)))
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
+			StagingRelative: targetRel,
+			TargetRelative:  targetRel,
+			DeployStrategy:  installplan.DeployStrategyCopy,
+		})
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return instructions[i].TargetRelative < instructions[j].TargetRelative
+	})
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    suitModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-custom-installer",
+			Path:   strings.Join(suitFiles, ","),
+			Reason: "Miles Morales Suit Adder support matched .suit content for the extension-managed Suit Adder launch tool",
+		}},
+		Metadata: []installplan.ModMetadata{{
+			Kind:                       "spidermanmilesmorales-suit-files",
+			AdditionalLogicalFileNames: logicalMMPCModNames(suitFiles),
+		}},
+		Instructions: instructions,
+	}, nil
+}
+
 func buildModPackArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	files, err := listFiles(input.ExtractedRoot)
 	if err != nil {
@@ -164,6 +226,71 @@ func buildModPackArchive(input installplan.BuildInput) (installplan.Plan, error)
 		return plan.Instructions[i].TargetRelative < plan.Instructions[j].TargetRelative
 	})
 	return plan, nil
+}
+
+func buildSuitAdderToolArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := listFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	execRel := ""
+	for _, file := range files {
+		if strings.EqualFold(filepath.Base(file), suitAdderExec) {
+			execRel = file
+			break
+		}
+	}
+	if execRel == "" {
+		return installplan.Plan{}, installplan.Unsupported("Miles Morales Suit Adder archive matched but no " + suitAdderExec + " was found")
+	}
+	basePath := filepath.ToSlash(filepath.Dir(execRel))
+	if basePath == "." {
+		basePath = ""
+	}
+	instructions := make([]installplan.Instruction, 0, len(files))
+	for _, file := range files {
+		if !simplearchive.PathWithinRoot(file, basePath) {
+			continue
+		}
+		rel := simplearchive.StripRoot(file, basePath)
+		if strings.TrimSpace(rel) == "" || rel == "." {
+			continue
+		}
+		targetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, rel))
+		instructions = append(instructions, installplan.Instruction{
+			Kind:            installplan.InstructionKindCopy,
+			SourcePath:      filepath.Join(input.ExtractedRoot, filepath.FromSlash(file)),
+			StagingRelative: targetRel,
+			TargetRelative:  targetRel,
+			DeployStrategy:  installplan.DeployStrategyCopy,
+		})
+	}
+	if len(instructions) == 0 {
+		return installplan.Plan{}, errors.New("Miles Morales Suit Adder tool installer matched but produced no deployable files")
+	}
+	sort.SliceStable(instructions, func(i, j int) bool {
+		return instructions[i].TargetRelative < instructions[j].TargetRelative
+	})
+	execTargetRel := filepath.ToSlash(filepath.Join(smpcToolRoot, simplearchive.StripRoot(execRel, basePath)))
+	return installplan.Plan{
+		GameID:     input.GameID,
+		ModType:    suitAdderModType,
+		PlannerID:  input.Installer.ID,
+		NameSource: installplan.NameSourceArchive,
+		DetectedFrom: []installplan.Detection{{
+			Kind:   "vortex-custom-installer",
+			Path:   execRel,
+			Reason: "Miles Morales Suit Adder support matched New Suit Adder.exe and stages it as a managed extension tool",
+		}},
+		Metadata: []installplan.ModMetadata{{
+			Kind:            "tool",
+			Name:            "ASC Suit Adder Tool",
+			UniqueID:        "spidermanmilesmorales-suit-adder-tool",
+			SourcePath:      execRel,
+			StagingRelative: execTargetRel,
+		}},
+		Instructions: instructions,
+	}, nil
 }
 
 func buildToolArchive(input installplan.BuildInput) (installplan.Plan, error) {

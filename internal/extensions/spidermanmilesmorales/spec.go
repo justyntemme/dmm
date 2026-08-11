@@ -25,12 +25,17 @@ const (
 	loadOrderFile    = "SMPCTool/ModManager/ModManager.txt"
 	mmpcModExt       = ".mmpcmod"
 	mmpcModPackExt   = ".mmpcmodpack"
+	suitExt          = ".suit"
+	suitAdderExec    = "New Suit Adder.exe"
 	smpcInfoFile     = "SMPCMod.info"
 	thumbnailFile    = "Thumbnail.png"
 	mmpcModType      = "smpc-mod"
 	mmpcToolModType  = "smpc-modding-tool"
+	suitModType      = "spiderman-suit"
+	suitAdderModType = "spiderman-suit-adder-tool"
 	mmpcModChoiceID  = "spidermanmilesmorales-mmpcmod-choice"
 	mmpcModInstaller = "vortex:spidermanmilesmorales:mmpc-mod"
+	suitInstaller    = "vortex:spidermanmilesmorales:suit"
 )
 
 func Extension() sdk.Extension {
@@ -55,6 +60,8 @@ func Register(r sdk.Registrar) {
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: mmpcToolModType, TargetRoot: smpcToolRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: mmpcModType, TargetRoot: ""})
+	r.RegisterModType(installplan.ModTypeSpec{ID: suitAdderModType, TargetRoot: smpcToolRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: suitModType, TargetRoot: smpcToolRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:spidermanmilesmorales:mmpc-modpack",
 		VortexInstallerID: "smpc-modpack-installer",
@@ -76,6 +83,16 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "vortex:spidermanmilesmorales:suit-adder-tool",
+		VortexInstallerID: "suit-adder-tool-installer",
+		Priority:          12,
+		ModType:           suitAdderModType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchSuitAdderToolArchive,
+		CustomBuild:       buildSuitAdderToolArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                mmpcModInstaller,
 		VortexInstallerID: "smpc-mod-installer",
 		Priority:          15,
@@ -83,6 +100,16 @@ func Register(r sdk.Registrar) {
 		NameSource:        installplan.NameSourceArchive,
 		CustomMatch:       matchMMPCModArchive,
 		CustomBuild:       buildMMPCModArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                suitInstaller,
+		VortexInstallerID: "suit-installer",
+		Priority:          20,
+		ModType:           suitModType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchSuitArchive,
+		CustomBuild:       buildSuitArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
@@ -108,12 +135,31 @@ func Register(r sdk.Registrar) {
 		InstallHint: "Install the MMPC Modding Tool into the game's SMPCTool folder. DMM can stage .mmpcmod files, but automatic tool execution is still incomplete.",
 		Check:       checkMMPCTool,
 	})
+	r.RegisterRuntimeRequirement(gamehandler.RuntimeRequirementSpec{
+		ID:          "spidermanmilesmorales-suit-adder-tool",
+		Name:        "ASC Suit Adder Tool",
+		Kind:        "mod-launcher",
+		Required:    true,
+		ModTypes:    []string{suitModType},
+		Message:     "ASC Suit Adder Tool is required before enabled .suit files can be added to Miles Morales.",
+		OKMessage:   "ASC Suit Adder Tool is present in the game folder.",
+		HelpURL:     "https://www.nexusmods.com/marvelsspidermanremastered/mods/2318",
+		InstallHint: "Install ASC Suit Adder Tool. DMM stages the tool beside SMPCTool and passes enabled .suit files to it after deployment.",
+		Check:       checkSuitAdderTool,
+	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "spidermanmilesmorales-mmpc-tool",
 		Name:               "MMPC Modding Tool",
 		ExecutableRelative: filepath.ToSlash(filepath.Join(smpcToolRoot, mmpcToolExec)),
 		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(smpcToolRoot, mmpcToolExec))},
 		ModTypes:           []string{mmpcModType},
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "spidermanmilesmorales-suit-adder-tool",
+		Name:               "ASC Suit Adder Tool",
+		ExecutableRelative: filepath.ToSlash(filepath.Join(smpcToolRoot, suitAdderExec)),
+		RequiredFiles:      []string{filepath.ToSlash(filepath.Join(smpcToolRoot, suitAdderExec))},
+		ModTypes:           []string{suitModType},
 	})
 	r.RegisterMerge(sdk.MergeSpec{ID: "spidermanmilesmorales-mmpc-load-order", Name: "Miles Morales MMPC load order"})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
@@ -137,6 +183,11 @@ func Register(r sdk.Registrar) {
 		Event:   "did-deploy",
 		Name:    "Run Miles Morales MMPC installer",
 		Handler: didDeployMMPCInstall,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "did-deploy",
+		Name:    "Run Miles Morales Suit Adder",
+		Handler: didDeploySuitAdder,
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
@@ -181,6 +232,22 @@ func checkMMPCTool(ctx context.Context, gamePath string) []string {
 	return nil
 }
 
+func checkSuitAdderTool(ctx context.Context, gamePath string) []string {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return nil
+	}
+	rel := filepath.Join(smpcToolRoot, suitAdderExec)
+	path := filepath.Join(gamePath, rel)
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return []string{filepath.ToSlash(path)}
+	}
+	return nil
+}
+
 func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
@@ -198,6 +265,10 @@ func sources() []sdk.SourceRef {
 		{
 			Name: "Miles Morales MMPC Modding Tool",
 			URL:  "https://www.nexusmods.com/spidermanmilesmorales/mods/8",
+		},
+		{
+			Name: "ASC Suit Adder Tool instructions",
+			URL:  "https://www.nexusmods.com/marvelsspidermanremastered/mods/2318",
 		},
 		{
 			Name: "Live Steam Deck executable/path verification",
