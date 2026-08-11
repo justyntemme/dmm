@@ -97,8 +97,8 @@ func Register(r sdk.Registrar, game GameSpec) {
 		r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 			ID:      game.ID + "-load-order",
 			Name:    game.Name + " load-order parity",
-			Status:  sdk.CapabilityStatusMetadata,
-			Message: "The Vortex game extension registers load-order behavior. This catalog shim records source metadata only; promote the game into a dedicated extension before claiming runtime support.",
+			Status:  sdk.CapabilityStatusNotApplicable,
+			Message: "The Vortex game extension registers load-order behavior. This catalog shim is not a runtime game extension; promote the game into a dedicated extension before claiming support.",
 		})
 	}
 	for i, note := range game.Notes {
@@ -110,7 +110,7 @@ func Register(r sdk.Registrar, game GameSpec) {
 			ID:      fmt.Sprintf("%s-source-note-%d", game.ID, i+1),
 			Name:    game.Name + " source parity note",
 			Trigger: "source-review",
-			Status:  sdk.CapabilityStatusMetadata,
+			Status:  sdk.CapabilityStatusNotApplicable,
 			Message: note,
 		})
 	}

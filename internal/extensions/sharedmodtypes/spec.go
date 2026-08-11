@@ -55,7 +55,7 @@ func Register(r sdk.Registrar) {
 	for _, modType := range []installplan.ModTypeSpec{
 		DInputModTypeSpec(),
 		ENBModTypeSpec(),
-		{ID: GeDoSaToType, TargetRoot: "", Status: sdk.CapabilityStatusMetadata, Message: "GeDoSaTo helper support is implemented for game extensions that declare a concrete texture target root and runtime requirement."},
+		{ID: GeDoSaToType, TargetRoot: "", Status: sdk.CapabilityStatusReady, Message: "GeDoSaTo helper support is implemented for game extensions that declare a concrete texture target root and runtime requirement."},
 	} {
 		r.RegisterModType(modType)
 	}

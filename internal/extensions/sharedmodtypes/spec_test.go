@@ -30,7 +30,7 @@ func TestExtensionRegistersSharedModTypeMetadata(t *testing.T) {
 	if modTypes[ENBModType].Status != sdk.CapabilityStatusReady || modTypes[ENBModType].Message == "" {
 		t.Fatalf("enb mod type = %+v", modTypes[ENBModType])
 	}
-	if modTypes[GeDoSaToType].Status != sdk.CapabilityStatusMetadata || modTypes[GeDoSaToType].Message == "" {
+	if modTypes[GeDoSaToType].Status != sdk.CapabilityStatusReady || modTypes[GeDoSaToType].Message == "" {
 		t.Fatalf("gedosato mod type = %+v", modTypes[GeDoSaToType])
 	}
 	if len(summary.Capabilities.Installers) != 1 || summary.Capabilities.Installers[0].ID != "dinput" {

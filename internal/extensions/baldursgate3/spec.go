@@ -332,8 +332,8 @@ func registerActions(r sdk.Registrar) {
 			ID:      "bg3-" + sanitizeID(action),
 			Name:    action,
 			Scope:   VortexGameID,
-			Status:  sdk.CapabilityStatusMetadata,
-			Message: "Registered by Vortex BG3 load-order toolbar; DMM will surface this through the advanced phone/tablet management UI.",
+			Status:  sdk.CapabilityStatusNotApplicable,
+			Message: "Vortex exposes this as a desktop file-picker or Vortex-state migration action. DMM-created Steam Deck state exports to the game through profile deployment; arbitrary file import/export is a post-MVP advanced management workflow.",
 		})
 	}
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{

@@ -139,8 +139,8 @@ func registerVariant(r sdk.Registrar, current variant) {
 		ID:      current.ID + "-native-linux-path-review",
 		Name:    current.Name + " native Linux install review",
 		Trigger: "source-parity",
-		Status:  sdk.CapabilityStatusMetadata,
-		Message: "The verified Vortex extension is Windows-oriented and writes to the Windows Documents Mods folder. DMM maps that to the Proton prefix; a native Linux Steam install path should be source/live verified before being enabled.",
+		Status:  sdk.CapabilityStatusNotApplicable,
+		Message: "The verified Vortex extension is Windows-oriented and writes to the Windows Documents Mods folder. DMM maps that to the Proton prefix for Steam Deck MVP parity; native Linux install support has no Vortex source-backed path and must be handled as a future live-review target.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-divinityoriginalsin2 extension source",
