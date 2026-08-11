@@ -46,14 +46,14 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 	}
 
 	cyberpunk := summaryByID(t, registry, "cyberpunk2077")
-	if !cyberpunk.VortexStub {
-		t.Fatalf("Cyberpunk summary did not preserve Vortex registerGameStub source metadata: %+v", cyberpunk)
+	if cyberpunk.VortexStub {
+		t.Fatalf("Cyberpunk support-mod port must not remain a Vortex stub after DMM adds deployable installer support: %+v", cyberpunk)
 	}
 	if cyberpunk.SupportModID != "196" {
 		t.Fatalf("Cyberpunk support mod id = %q, want 196", cyberpunk.SupportModID)
 	}
 	if len(cyberpunk.SteamAppIDs) != 1 || cyberpunk.SteamAppIDs[0] != "1091500" || !containsString(cyberpunk.NexusDomains, "cyberpunk2077") {
-		t.Fatalf("Cyberpunk source stub should be promoted to deployable Steam/Nexus identity: steam %+v domains %+v", cyberpunk.SteamAppIDs, cyberpunk.NexusDomains)
+		t.Fatalf("Cyberpunk support-mod port should expose deployable Steam/Nexus identity: steam %+v domains %+v", cyberpunk.SteamAppIDs, cyberpunk.NexusDomains)
 	}
 	if !summarySourceContains(cyberpunk, "/extensions/games/game-cyberpunk2077/src") {
 		t.Fatalf("Cyberpunk sources = %+v, want Vortex source URL", cyberpunk.Sources)
