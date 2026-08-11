@@ -18,6 +18,7 @@ const (
 	Name         = "Half-Life"
 
 	valveModType   = "halflife-valve-content"
+	standaloneType = "halflife-standalone-mod"
 	blockedModType = "halflife-unclassified-blocked"
 	valveRoot      = "valve"
 )
@@ -44,7 +45,18 @@ func Register(r sdk.Registrar) {
 		},
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: valveModType, TargetRoot: valveRoot})
+	r.RegisterModType(installplan.ModTypeSpec{ID: standaloneType, TargetRoot: ""})
 	r.RegisterModType(installplan.ModTypeSpec{ID: blockedModType, TargetRoot: ""})
+	r.RegisterInstaller(installplan.InstallerSpec{
+		ID:                "source:halflife:standalone",
+		VortexInstallerID: "halflife-standalone-mod",
+		Priority:          20,
+		ModType:           standaloneType,
+		NameSource:        installplan.NameSourceArchive,
+		CustomMatch:       matchStandaloneModArchive,
+		CustomBuild:       buildStandaloneModArchive,
+		InstructionMode:   installplan.InstructionCustom,
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "source:halflife:valve-content",
 		VortexInstallerID: "halflife-valve-content",
@@ -70,7 +82,7 @@ func Register(r sdk.Registrar) {
 		Name:        "Half-Life valve folder",
 		Kind:        "game-folder",
 		Required:    true,
-		ModTypes:    []string{valveModType},
+		ModTypes:    []string{valveModType, standaloneType},
 		Message:     "Half-Life is missing the expected executable or valve folder.",
 		OKMessage:   "Half-Life has the expected executable and valve folder markers.",
 		InstallHint: "Verify Half-Life files in Steam before testing valve-folder content mods.",
@@ -80,6 +92,26 @@ func Register(r sdk.Registrar) {
 		ID:       "halflife-executable",
 		Name:     "Half-Life executable marker",
 		Provider: gameVersion,
+	})
+	r.RegisterLaunchTool(sdk.LaunchToolSpec{
+		ID:                 "halflife-standalone-launch",
+		Name:               "Half-Life standalone mod launch",
+		ExecutableRelative: "hl.exe",
+		RequiredFiles:      []string{"hl.exe"},
+		DefaultPrimary:     true,
+		ModTypes:           []string{standaloneType},
+		Variants: []sdk.LaunchToolVariantSpec{
+			{PlatformID: "linux", ExecutableRelative: "hl.sh", RequiredFiles: []string{"hl.sh"}},
+			{PlatformID: "windows", ExecutableRelative: "hl.exe", RequiredFiles: []string{"hl.exe"}},
+		},
+		DynamicArguments: []sdk.LaunchToolDynamicArgumentSpec{{
+			ID:                "game-folder",
+			Name:              "Enabled GoldSrc game folder",
+			Kind:              sdk.LaunchToolDynamicArgumentEnabledModRoot,
+			SourceModTypes:    []string{standaloneType},
+			ArgumentTokens:    []string{"-game {mod_folder_quoted}"},
+			RequireExactlyOne: true,
+		}},
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

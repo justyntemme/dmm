@@ -19,9 +19,10 @@
 - DMM declares the verified Nexus domain for browsing/capture.
 - DMM supports direct `valve` folder replacement/content archives.
 - DMM supports loose `.bsp` map archives by staging them under `valve/maps`.
-- Standalone GoldSrc mod folders with `liblist.gam`, Steam library entry/restart requirements, launch-option flows, executable tools, and unclassified archives remain blocked.
+- DMM supports standalone GoldSrc mod folders with `liblist.gam` by staging them as game-root mod folders and declaring a dynamic primary launch tool that sets Half-Life's `-game "<folder>"` argument when exactly one standalone mod is enabled.
+- Executable patchers/tools and unclassified archives remain blocked until a specific extension-owned rule can transform them safely.
 
 ## Beta Gaps
 
 - Live-test one `valve` replacement archive and one loose BSP map archive.
-- Add standalone GoldSrc mod-folder launch support after DMM has a dynamic per-mod launch entry/launch-option contract.
+- Live-test one standalone GoldSrc mod folder and confirm Steam launch options are updated through the Decky launch-tool bridge.

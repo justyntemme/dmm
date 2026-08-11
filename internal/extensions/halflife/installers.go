@@ -28,6 +28,15 @@ func matchValveArchive(root string) bool {
 	return ok && targetRoot != ""
 }
 
+func matchStandaloneModArchive(root string) bool {
+	files, err := simplearchive.ListFiles(root)
+	if err != nil || simplearchive.ContainsFOMOD(files) {
+		return false
+	}
+	_, _, ok := standaloneModRoot(files)
+	return ok
+}
+
 func buildValveArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	files, err := simplearchive.ListFiles(input.ExtractedRoot)
 	if err != nil {
@@ -53,6 +62,33 @@ func buildValveArchive(input installplan.BuildInput) (installplan.Plan, error) {
 	)
 }
 
+func buildStandaloneModArchive(input installplan.BuildInput) (installplan.Plan, error) {
+	files, err := simplearchive.ListFiles(input.ExtractedRoot)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	contentRoot, marker, ok := standaloneModRoot(files)
+	if !ok {
+		return installplan.Plan{}, installplan.Unsupported("Half-Life archive does not contain a standalone GoldSrc mod folder")
+	}
+	targetRoot := standaloneTargetRoot(contentRoot)
+	plan, err := simplearchive.BuildCopyPlan(
+		input,
+		contentRoot,
+		targetRoot,
+		"halflife-standalone-mod",
+		marker,
+		"GoldSrc standalone mods are deployed as a game-root mod folder and launched with Half-Life's -game argument",
+		"Half-Life standalone mod installer matched but produced no deployable files",
+		standaloneDeployable,
+	)
+	if err != nil {
+		return installplan.Plan{}, err
+	}
+	plan.Warnings = append(plan.Warnings, "Enable exactly one Half-Life standalone mod at a time so DMM can set Steam launch options with the correct -game folder.")
+	return plan, nil
+}
+
 func valveArchiveRoot(files []string) (string, string, string, bool) {
 	if root, marker, ok := simplearchive.FirstSegmentRoot(files, valveRoot, valveDeployable); ok {
 		return root, marker, valveRoot, true
@@ -66,6 +102,28 @@ func valveArchiveRoot(files []string) (string, string, string, bool) {
 		}
 	}
 	return "", "", "", false
+}
+
+func standaloneModRoot(files []string) (string, string, bool) {
+	for _, file := range files {
+		if !strings.EqualFold(filepath.Base(file), "liblist.gam") {
+			continue
+		}
+		root := filepath.ToSlash(filepath.Dir(file))
+		if root == "." || strings.EqualFold(root, valveRoot) {
+			continue
+		}
+		return root, file, true
+	}
+	return "", "", false
+}
+
+func standaloneTargetRoot(contentRoot string) string {
+	parts := strings.Split(filepath.ToSlash(strings.Trim(contentRoot, "/")), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 func mapFolderArchiveRoot(files []string) (string, string, bool) {
@@ -101,6 +159,19 @@ func mapDeployable(rel string) bool {
 		return !strings.HasPrefix(filepath.Base(rel), ".")
 	default:
 		return false
+	}
+}
+
+func standaloneDeployable(rel string) bool {
+	rel = strings.Trim(rel, "/")
+	if rel == "" || strings.HasPrefix(filepath.Base(rel), ".") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(rel)) {
+	case ".bat", ".cmd", ".exe", ".ps1", ".sh":
+		return false
+	default:
+		return true
 	}
 }
 

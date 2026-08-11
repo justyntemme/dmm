@@ -1,14 +1,13 @@
 package halflife_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/halflife"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
+	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
@@ -18,7 +17,7 @@ func TestExtensionRegistersInstallerCoverage(t *testing.T) {
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.UnsupportedInstallers) != 1 || len(summary.Capabilities.RuntimeRequirements) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.LaunchTools) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	if !registry.SupportsSteamApp(halflife.SteamAppID) {
@@ -52,15 +51,31 @@ func TestLooseMapArchiveTargetsValveMaps(t *testing.T) {
 	}
 }
 
-func TestStandaloneGoldSrcModFolderIsBlocked(t *testing.T) {
+func TestStandaloneGoldSrcModFolderDeploysToGameRootAndRequiresLaunchArgument(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "sm_valve", "liblist.gam"), "game")
 	writeFile(t, filepath.Join(root, "sm_valve", "maps", "intro.bsp"), "map")
+	writeFile(t, filepath.Join(root, "sm_valve", "installer.exe"), "ignored")
 
-	_, err := build(root)
-	var unsupported installplan.UnsupportedError
-	if !errors.As(err, &unsupported) || !strings.Contains(unsupported.Reason, "not classified") {
-		t.Fatalf("err = %v", err)
+	plan, err := build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ModType != "halflife-standalone-mod" {
+		t.Fatalf("plan = %+v", plan)
+	}
+	assertTarget(t, plan, "sm_valve/liblist.gam")
+	assertTarget(t, plan, "sm_valve/maps/intro.bsp")
+	if hasTarget(plan, "sm_valve/installer.exe") {
+		t.Fatalf("unexpected installer executable target in %+v", plan.Instructions)
+	}
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(halflife.Extension())})
+	_, tool, required := registry.RequiredPrimaryLaunchToolForSteamApp(halflife.SteamAppID, []gamehandler.RuntimeMod{{
+		Enabled: true,
+		ModType: "halflife-standalone-mod",
+	}})
+	if !required || tool.ID != "halflife-standalone-launch" || len(tool.DynamicArguments) != 1 {
+		t.Fatalf("launch tool = %+v required=%v", tool, required)
 	}
 }
 
