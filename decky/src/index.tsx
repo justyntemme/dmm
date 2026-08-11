@@ -5066,7 +5066,7 @@ function FreshDeckyModManagerRoute() {
     return extensionActions.filter((action) => {
       const status = String(action.status || "ready").trim();
       const kind = String(action.kind || "").trim();
-      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool");
+      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool" || kind === "set-extension-setting");
     });
   }
 

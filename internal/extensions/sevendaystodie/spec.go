@@ -133,6 +133,18 @@ func Register(r sdk.Registrar) {
 		Placeholder:  "0",
 		Message:      "Profile-specific numeric offset for generated modlet folder prefixes. Vortex prompts for AAA-ZZZ; DMM stores the equivalent numeric offset and applies makePrefix(priority + offset).",
 	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "7daystodie-prefix-offset-reset",
+		Name:    "Reset Prefix Offset",
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindSetSetting,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Prefix Offset Reset action by resetting the active profile's generated modlet prefix offset to zero.",
+		SetSetting: &sdk.SetExtensionSettingActionSpec{
+			SettingID: prefixOffsetSettingID,
+			Value:     json.RawMessage("0"),
+		},
+	})
 	r.RegisterStateReducer(sdk.StateReducerSpec{
 		ID:      "7daystodie-settings-state",
 		Name:    "7 Days to Die extension settings",

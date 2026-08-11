@@ -4746,7 +4746,7 @@
     return gameExtensionActions.filter((action) => {
       const status = (action.status || "ready").trim();
       const kind = (action.kind || "").trim();
-      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool");
+      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool" || kind === "set-extension-setting");
     });
   }
 

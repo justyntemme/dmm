@@ -868,6 +868,75 @@ func TestProfileExtensionSettingsEndpointPersistsRegisteredValues(t *testing.T) 
 	}
 }
 
+func TestExtensionSetSettingActionUpdatesProfileSetting(t *testing.T) {
+	srv := newTestServer(t)
+	const appID = "251570"
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID:       appID,
+		Name:        "7 Days to Die",
+		InstallDir:  "7 Days To Die",
+		LibraryPath: "/steam",
+		Path:        t.TempDir(),
+		State:       "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := srv.db.CreateProfileForSteamApp(context.Background(), appID, "Deck")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extension := gameext.MustCompileExtension(sdk.Extension{
+		ID:      "7daystodie",
+		Name:    "7 Days to Die",
+		Kind:    sdk.ExtensionKindGame,
+		Version: "1.0.0",
+		BuildID: "test-build",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{appID}, NexusDomains: []string{"7daystodie"}, VortexGameID: "7daystodie"})
+			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+				ID:           "prefix_offset",
+				Name:         "Prefix Offset",
+				Scope:        "profile",
+				ValueType:    sdk.ExtensionSettingValueNumber,
+				DefaultValue: json.RawMessage(`3`),
+			})
+			r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+				ID:    "prefix-reset",
+				Name:  "Reset Prefix Offset",
+				Scope: "7daystodie",
+				Kind:  sdk.ExtensionActionKindSetSetting,
+				SetSetting: &sdk.SetExtensionSettingActionSpec{
+					SettingID: "prefix_offset",
+					Value:     json.RawMessage(`0`),
+				},
+			})
+		},
+	})
+	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
+	if _, err := srv.db.SetProfileExtensionSettingValue(context.Background(), profile.ID, "7daystodie", "prefix_offset", []byte(`9`)); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/games/"+appID+"/extension-actions/prefix-reset/run", bytes.NewBufferString(`{"profile_id":`+strconv.FormatInt(profile.ID, 10)+`}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("action status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	settingsMap, err := srv.extensionSettingValueMapForProfile(context.Background(), profile.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(settingsMap["7daystodie"]["prefix_offset"]) != `0` {
+		t.Fatalf("profile setting after action = %+v", settingsMap)
+	}
+	if !strings.Contains(rec.Body.String(), `"extension-setting-action"`) {
+		t.Fatalf("action response = %s", rec.Body.String())
+	}
+}
+
 func extensionSettingResponseByID(settings []extensionSettingResponse, id string) *extensionSettingResponse {
 	for idx := range settings {
 		if settings[idx].SettingID == id {

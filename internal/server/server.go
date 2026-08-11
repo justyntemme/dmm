@@ -7562,6 +7562,14 @@ func (s *Server) handleQueueExtensionAction(w http.ResponseWriter, r *http.Reque
 		}
 		writeJSON(w, http.StatusAccepted, response)
 		return
+	case sdk.ExtensionActionKindSetSetting:
+		response, err := s.runSetExtensionSettingAction(r.Context(), appID, extension, action, req.ProfileID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, response)
+		return
 	case sdk.ExtensionActionKindApplyProfile:
 		apply := s.applyProfileChangesForUserAction(r.Context(), appID, "extension-action:"+action.ID)
 		writeJSON(w, http.StatusAccepted, map[string]any{
@@ -7768,6 +7776,130 @@ func (s *Server) runAcquireToolExtensionAction(ctx context.Context, appID string
 		"download_started": result.DownloadStarted,
 		"auto_install":     result.AutoInstall,
 	}, nil
+}
+
+func (s *Server) runSetExtensionSettingAction(ctx context.Context, appID string, extension gameext.Extension, action sdk.ExtensionActionSpec, profileID int64) (map[string]any, error) {
+	if action.SetSetting == nil {
+		return nil, errors.New("extension action does not declare a setting target")
+	}
+	targetExtensionID := strings.TrimSpace(action.SetSetting.ExtensionID)
+	if targetExtensionID == "" {
+		targetExtensionID = strings.TrimSpace(extension.ID)
+	}
+	settingID := strings.TrimSpace(action.SetSetting.SettingID)
+	if settingID == "" {
+		return nil, errors.New("extension action setting id is required")
+	}
+	valueJSON := append(json.RawMessage(nil), action.SetSetting.Value...)
+	if len(valueJSON) == 0 {
+		return nil, errors.New("extension action setting value is required")
+	}
+	settingExtension, setting, ok := s.games.ExtensionSetting(targetExtensionID, settingID)
+	if !ok {
+		return nil, errors.New("extension setting is not registered")
+	}
+	status := strings.TrimSpace(setting.Status)
+	if status == "" {
+		status = sdk.CapabilityStatusReady
+	}
+	if status != sdk.CapabilityStatusReady {
+		message := strings.TrimSpace(setting.Message)
+		if message == "" {
+			message = "extension setting runtime is not available"
+		}
+		return nil, errors.New(message)
+	}
+	if err := validateExtensionSettingValue(setting, valueJSON); err != nil {
+		return nil, err
+	}
+	job := s.jobs.CreateWithPayload("extension-setting-action", "Update setting: "+firstNonEmpty(strings.TrimSpace(action.Name), settingID), jobs.JobPayload{
+		"app_id":           appID,
+		"catalog":          "extension",
+		"action_id":        strings.TrimSpace(action.ID),
+		"action_kind":      sdk.ExtensionActionKindSetSetting,
+		"source_extension": strings.TrimSpace(extension.ID),
+		"extension_id":     settingExtension.ID,
+		"setting_id":       setting.ID,
+	})
+	job, _ = s.jobs.Run(job.ID, "Updating extension setting")
+	if isProfileExtensionSetting(setting) {
+		return s.runSetProfileExtensionSettingAction(ctx, appID, profileID, job, action, settingExtension, setting, valueJSON)
+	}
+	return s.runSetGlobalExtensionSettingAction(ctx, appID, job, action, settingExtension, setting, valueJSON)
+}
+
+func (s *Server) runSetProfileExtensionSettingAction(ctx context.Context, appID string, profileID int64, job jobs.Job, action sdk.ExtensionActionSpec, extension gameext.Extension, setting sdk.ExtensionSettingSpec, valueJSON json.RawMessage) (map[string]any, error) {
+	if profileID <= 0 {
+		mods, err := s.db.InstalledModsForSteamApp(ctx, appID)
+		if err != nil {
+			job, _ = s.jobs.Fail(job.ID, "Unable to resolve active profile: "+err.Error())
+			return map[string]any{"job": jobAPIResponse(job)}, err
+		}
+		profileID, err = s.activeProfileID(ctx, appID, mods)
+		if err != nil {
+			job, _ = s.jobs.Fail(job.ID, "Unable to resolve active profile: "+err.Error())
+			return map[string]any{"job": jobAPIResponse(job)}, err
+		}
+	}
+	if err := s.validateTargetProfile(ctx, appID, profileID); err != nil {
+		job, _ = s.jobs.Fail(job.ID, "Invalid target profile: "+err.Error())
+		return map[string]any{"job": jobAPIResponse(job)}, err
+	}
+	value, err := s.db.SetProfileExtensionSettingValue(ctx, profileID, extension.ID, setting.ID, valueJSON)
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, "Unable to update profile setting: "+err.Error())
+		return map[string]any{"job": jobAPIResponse(job)}, err
+	}
+	s.logger.Info("profile extension setting updated by action", "app_id", appID, "profile_id", profileID, "extension_id", value.ExtensionID, "setting_id", value.SettingID, "action_id", action.ID)
+	s.publishGameEvent(events.TypeProfileModsChanged, appID, map[string]any{
+		"action":       "profile_extension_setting_action",
+		"profile_id":   profileID,
+		"extension_id": value.ExtensionID,
+		"setting_id":   value.SettingID,
+	})
+	job, _ = s.jobs.Complete(job.ID, "Updated profile extension setting")
+	return map[string]any{"job": jobAPIResponse(job), "setting": extensionSettingResponse{
+		ExtensionID:  value.ExtensionID,
+		SettingID:    value.SettingID,
+		Name:         fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
+		Scope:        strings.TrimSpace(setting.Scope),
+		ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+		Value:        json.RawMessage(value.ValueJSON),
+		DefaultValue: setting.DefaultValue,
+		Status:       sdk.CapabilityStatusReady,
+		Message:      strings.TrimSpace(setting.Message),
+		UpdatedAt:    value.UpdatedAt,
+	}}, nil
+}
+
+func (s *Server) runSetGlobalExtensionSettingAction(ctx context.Context, appID string, job jobs.Job, action sdk.ExtensionActionSpec, extension gameext.Extension, setting sdk.ExtensionSettingSpec, valueJSON json.RawMessage) (map[string]any, error) {
+	value, err := s.db.SetExtensionSettingValue(ctx, extension.ID, setting.ID, valueJSON)
+	if err != nil {
+		job, _ = s.jobs.Fail(job.ID, "Unable to update extension setting: "+err.Error())
+		return map[string]any{"job": jobAPIResponse(job)}, err
+	}
+	s.logger.Info("extension setting updated by action", "app_id", appID, "extension_id", value.ExtensionID, "setting_id", value.SettingID, "action_id", action.ID)
+	s.publishEvent(events.Event{
+		Type: events.TypeExtensionSettingsChanged,
+		Payload: events.MustPayload(map[string]any{
+			"action":       "extension_setting_action",
+			"extension_id": value.ExtensionID,
+			"setting_id":   value.SettingID,
+		}),
+	})
+	job, _ = s.jobs.Complete(job.ID, "Updated extension setting")
+	return map[string]any{"job": jobAPIResponse(job), "setting": extensionSettingResponse{
+		ExtensionID:  value.ExtensionID,
+		SettingID:    value.SettingID,
+		Name:         fallbackString(strings.TrimSpace(setting.Name), value.SettingID),
+		Scope:        strings.TrimSpace(setting.Scope),
+		ValueType:    fallbackString(strings.TrimSpace(setting.ValueType), sdk.ExtensionSettingValueJSON),
+		Value:        json.RawMessage(value.ValueJSON),
+		DefaultValue: setting.DefaultValue,
+		Status:       sdk.CapabilityStatusReady,
+		Message:      strings.TrimSpace(setting.Message),
+		UpdatedAt:    value.UpdatedAt,
+	}}, nil
 }
 
 func (s *Server) resolveOpenDirectoryActionPath(ctx context.Context, game storage.Game, target sdk.OpenDirectoryActionSpec) (string, error) {

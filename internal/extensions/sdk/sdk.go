@@ -730,6 +730,7 @@ type ExtensionActionSpec struct {
 	OpenDirectory *OpenDirectoryActionSpec
 	OpenPath      *OpenPathActionSpec
 	AcquireTool   *AcquireToolActionSpec
+	SetSetting    *SetExtensionSettingActionSpec
 	Status        string
 	Message       string
 }
@@ -757,6 +758,7 @@ const (
 	ExtensionActionKindOpenPath      = "open-path"
 	ExtensionActionKindAcquireTool   = "acquire-tool"
 	ExtensionActionKindApplyProfile  = "apply-profile"
+	ExtensionActionKindSetSetting    = "set-extension-setting"
 
 	OpenDirectoryBaseGame       = "game"
 	OpenDirectoryBaseDownloads  = "downloads"
@@ -767,6 +769,12 @@ const (
 
 type AcquireToolActionSpec struct {
 	ToolID string
+}
+
+type SetExtensionSettingActionSpec struct {
+	ExtensionID string
+	SettingID   string
+	Value       json.RawMessage
 }
 
 type ExtensionSettingSpec struct {

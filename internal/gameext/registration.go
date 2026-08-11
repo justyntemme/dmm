@@ -2592,7 +2592,7 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			continue
 		}
 		kind := strings.TrimSpace(spec.Kind)
-		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool && kind != sdk.ExtensionActionKindApplyProfile {
+		if kind != sdk.ExtensionActionKindOpenDirectory && kind != sdk.ExtensionActionKindOpenPath && kind != sdk.ExtensionActionKindAcquireTool && kind != sdk.ExtensionActionKindApplyProfile && kind != sdk.ExtensionActionKindSetSetting {
 			continue
 		}
 		status := strings.TrimSpace(spec.Status)
@@ -2600,8 +2600,23 @@ func validateExtensionActions(specs []sdk.ExtensionActionSpec, targetRoots []sdk
 			status = sdk.CapabilityStatusReady
 		}
 		if kind == sdk.ExtensionActionKindApplyProfile {
-			if spec.OpenDirectory != nil || spec.OpenPath != nil || spec.AcquireTool != nil {
-				errs = append(errs, errors.New("extension action "+id+" apply-profile must not declare open or acquire targets"))
+			if spec.OpenDirectory != nil || spec.OpenPath != nil || spec.AcquireTool != nil || spec.SetSetting != nil {
+				errs = append(errs, errors.New("extension action "+id+" apply-profile must not declare open, acquire, or setting targets"))
+			}
+			continue
+		}
+		if kind == sdk.ExtensionActionKindSetSetting {
+			if spec.SetSetting == nil {
+				if status == sdk.CapabilityStatusReady {
+					errs = append(errs, errors.New("extension action "+id+" setting target is required"))
+				}
+				continue
+			}
+			if strings.TrimSpace(spec.SetSetting.SettingID) == "" {
+				errs = append(errs, errors.New("extension action "+id+" setting id is required"))
+			}
+			if len(spec.SetSetting.Value) == 0 || !json.Valid(spec.SetSetting.Value) {
+				errs = append(errs, errors.New("extension action "+id+" setting value must be valid JSON"))
 			}
 			continue
 		}
