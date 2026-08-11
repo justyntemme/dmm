@@ -34,7 +34,6 @@ func Register(r sdk.Registrar) {
 		surfaceAPI("registerDialog", "Register extension dialog"),
 		surfaceAPI("registerDashlet", "Register dashboard tile"),
 		surfaceAPI("registerMainPage", "Register main page"),
-		surfaceAPI("registerTableAttribute", "Register table attribute"),
 		surfaceAPI("registerLoadOrderPage", "Register load-order page"),
 		surfaceAPI("registerControlWrapper", "Register UI control wrapper"),
 		surfaceAPI("registerProfileFile", "Register profile-managed file"),
@@ -61,13 +60,6 @@ func Register(r sdk.Registrar) {
 	r.RegisterExtensionDialog(surfaceDialog("registerDialog", "Vortex registerDialog", "extension-ui"))
 	r.RegisterExtensionDashlet(surfaceDashlet("registerDashlet", "Vortex registerDashlet", "dashboard"))
 	r.RegisterExtensionMainPage(surfaceMainPage("registerMainPage", "Vortex registerMainPage", "main-page"))
-	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
-		ID:      "registerTableAttribute",
-		Name:    "Vortex registerTableAttribute",
-		Target:  "table",
-		Status:  sdk.CapabilityStatusNotApplicable,
-		Message: surfaceMessage,
-	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "registerLoadOrderPage",
 		Name:    "Vortex registerLoadOrderPage",
