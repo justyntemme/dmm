@@ -309,6 +309,9 @@ func TestFirstPartyCoversVortexRuntimeSupportInventory(t *testing.T) {
 			"game-version",
 			"steam",
 		},
+		"game version provider": {
+			"hash-version-check",
+		},
 		"profile file": {
 			"plugins-file",
 			"loadorder-file",
@@ -340,6 +343,7 @@ func TestFirstPartyCoversVortexRuntimeSupportInventory(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		addFeatureMap(features, "interpreter", summary.Capabilities.Interpreters)
 		addFeatureMap(features, "game info provider", summary.Capabilities.GameInfoProviders)
+		addFeatureMap(features, "game version provider", summary.Capabilities.GameVersions)
 		addFeatureMap(features, "profile file", summary.Capabilities.ProfileFiles)
 		addFeatureMap(features, "state persistor", summary.Capabilities.StatePersistors)
 		addFeatureMap(features, "action check", summary.Capabilities.ExtensionActionChecks)
