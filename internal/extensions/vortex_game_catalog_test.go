@@ -1,6 +1,9 @@
 package extensions
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -288,7 +291,7 @@ func bundledVortexGameExtensionDirs() []string {
 }
 
 func deploymentRelevantVortexRuntimeExtensionDirs() []string {
-	return []string{
+	return vortexRuntimeExtensionDirs([]string{
 		"common-interpreters",
 		"fnis-integration",
 		"gamebryo-archive-check",
@@ -323,11 +326,11 @@ func deploymentRelevantVortexRuntimeExtensionDirs() []string {
 		"script-extender-installer",
 		"test-gameversion",
 		"test-setup",
-	}
+	})
 }
 
 func bundledVortexRuntimeExtensionDirs() []string {
-	return []string{
+	return vortexRuntimeExtensionDirs([]string{
 		"changelog-dashlet",
 		"common-interpreters",
 		"documentation",
@@ -374,7 +377,32 @@ func bundledVortexRuntimeExtensionDirs() []string {
 		"test-setup",
 		"theme-switcher",
 		"titlebar-launcher",
+	})
+}
+
+func vortexRuntimeExtensionDirs(fallback []string) []string {
+	const upstream = "/tmp/dmm-vortex-upstream/extensions"
+	if entries, err := os.ReadDir(upstream); err == nil {
+		ids := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if name == "games" || name == "extensions" {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(upstream, name, "src")); err != nil {
+				continue
+			}
+			ids = append(ids, name)
+		}
+		sort.Strings(ids)
+		if len(ids) > 0 {
+			return ids
+		}
 	}
+	return fallback
 }
 
 func featureIDsContain(features []gameext.FeatureSummary, id string) bool {
