@@ -104,8 +104,94 @@ func Register(r sdk.Registrar) {
 			ModType:    pakModType,
 		}),
 	})
+	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
+		ID:      "ff7rebirth-unreal-pak-load-order-page",
+		Name:    "Final Fantasy VII Rebirth pak load order page",
+		Scope:   VortexGameID,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors the Vortex extension load-order page for sortable UE5 PAK mods with checkbox visibility and deploy-needed marking when order changes.",
+	})
+	for _, action := range extensionActions() {
+		r.RegisterExtensionAction(action)
+	}
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
+	}
+}
+
+func extensionActions() []sdk.ExtensionActionSpec {
+	return []sdk.ExtensionActionSpec{
+		openGameDirectoryAction("finalfantasy7rebirth-open-paks-folder", "Open Paks Folder", pakRoot),
+		openGameDirectoryAction("finalfantasy7rebirth-open-binaries-folder", "Open Binaries Folder", binariesRoot),
+		openGameDirectoryAction("finalfantasy7rebirth-open-ue4ss-mods-folder", "Open UE4SS Mods Folder", scriptsRoot),
+		openGameDirectoryAction("finalfantasy7rebirth-open-logicmods-folder", "Open LogicMods Folder", logicModsRoot),
+		openTargetRootAction("finalfantasy7rebirth-open-config-folder", "Open Config Folder", configRootID),
+		openTargetRootAction("finalfantasy7rebirth-open-saves-folder", "Open Saves Folder (Steam)", saveRootID),
+		{
+			ID:      "finalfantasy7rebirth-download-ue4ss",
+			Name:    "Download UE4SS",
+			Scope:   VortexGameID,
+			Kind:    sdk.ExtensionActionKindAPI,
+			Status:  sdk.CapabilityStatusReady,
+			Message: "Mirrors the Vortex Download UE4SS action by routing Nexus mod 267 file 1351 through DMM's runtime provider acquisition pipeline.",
+		},
+		openPathAction("finalfantasy7rebirth-view-changelog", "View Changelog", sdk.OpenDirectoryBaseExtension, "CHANGELOG.md"),
+		{
+			ID:      "finalfantasy7rebirth-open-downloads-folder",
+			Name:    "Open Downloads Folder",
+			Scope:   VortexGameID,
+			Kind:    sdk.ExtensionActionKindOpenDirectory,
+			Status:  sdk.CapabilityStatusReady,
+			Message: "Mirrors the Vortex action that opens the game-specific downloads folder.",
+			OpenDirectory: &sdk.OpenDirectoryActionSpec{
+				Base: sdk.OpenDirectoryBaseDownloads,
+			},
+		},
+	}
+}
+
+func openGameDirectoryAction(id, name, relative string) sdk.ExtensionActionSpec {
+	return sdk.ExtensionActionSpec{
+		ID:      id,
+		Name:    name,
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors the Vortex folder action for Final Fantasy VII Rebirth.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseGame,
+			RelativePath: relative,
+		},
+	}
+}
+
+func openTargetRootAction(id, name, rootID string) sdk.ExtensionActionSpec {
+	return sdk.ExtensionActionSpec{
+		ID:      id,
+		Name:    name,
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindOpenDirectory,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors the Vortex folder action for Final Fantasy VII Rebirth.",
+		OpenDirectory: &sdk.OpenDirectoryActionSpec{
+			Base:         sdk.OpenDirectoryBaseTargetRoot,
+			TargetRootID: rootID,
+		},
+	}
+}
+
+func openPathAction(id, name, base, relative string) sdk.ExtensionActionSpec {
+	return sdk.ExtensionActionSpec{
+		ID:      id,
+		Name:    name,
+		Scope:   VortexGameID,
+		Kind:    sdk.ExtensionActionKindOpenPath,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors the Vortex path action for Final Fantasy VII Rebirth.",
+		OpenPath: &sdk.OpenPathActionSpec{
+			Base:         base,
+			RelativePath: relative,
+		},
 	}
 }
 

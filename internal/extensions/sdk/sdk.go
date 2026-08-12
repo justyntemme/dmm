@@ -784,6 +784,7 @@ const (
 
 	OpenDirectoryBaseGame       = "game"
 	OpenDirectoryBaseDownloads  = "downloads"
+	OpenDirectoryBaseExtension  = "extension"
 	OpenDirectoryBaseStaging    = "staging"
 	OpenDirectoryBaseTargetRoot = "target-root"
 	OpenDirectoryBaseUserConfig = "user-config"

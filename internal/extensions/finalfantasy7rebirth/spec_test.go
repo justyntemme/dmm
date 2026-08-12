@@ -176,11 +176,44 @@ func TestExtensionRegistersGameAndCapabilitySources(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) == 0 || len(summary.Capabilities.Merges) == 0 {
 		t.Fatalf("summary capabilities = %+v", summary.Capabilities)
 	}
+	if merge := featureByID(summary.Capabilities.Merges, "ff7rebirth-unreal-pak-load-order"); merge == nil {
+		t.Fatalf("summary merges = %+v", summary.Capabilities.Merges)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "ff7rebirth-unreal-pak-load-order"); loadOrder == nil || loadOrder.TargetRoot != "End/Content/Paks/~mods" || len(loadOrder.FileExtensions) != 3 {
+		t.Fatalf("summary load orders = %+v", summary.Capabilities.LoadOrders)
+	}
+	if page := featureByID(summary.Capabilities.ExtensionLoadOrderPages, "ff7rebirth-unreal-pak-load-order-page"); page == nil || page.Scope != finalfantasy7rebirth.VortexGameID {
+		t.Fatalf("summary load-order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
 	if len(summary.Capabilities.EventHandlers) == 0 {
+		t.Fatalf("summary event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventWillDeploy); handler == nil || handler.Trigger != sdk.EventWillDeploy {
 		t.Fatalf("summary event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
 	if len(summary.Capabilities.RuntimeRequirements) != 1 {
 		t.Fatalf("summary runtime requirements = %+v", summary.Capabilities.RuntimeRequirements)
+	}
+	for _, id := range []string{
+		"finalfantasy7rebirth-open-paks-folder",
+		"finalfantasy7rebirth-open-binaries-folder",
+		"finalfantasy7rebirth-open-ue4ss-mods-folder",
+		"finalfantasy7rebirth-open-logicmods-folder",
+		"finalfantasy7rebirth-open-config-folder",
+		"finalfantasy7rebirth-open-saves-folder",
+		"finalfantasy7rebirth-download-ue4ss",
+		"finalfantasy7rebirth-view-changelog",
+		"finalfantasy7rebirth-open-downloads-folder",
+	} {
+		if action := featureByID(summary.Capabilities.ExtensionActions, id); action == nil {
+			t.Fatalf("missing action %s in %+v", id, summary.Capabilities.ExtensionActions)
+		}
+	}
+	if action := featureByID(summary.Capabilities.ExtensionActions, "finalfantasy7rebirth-open-config-folder"); action == nil || action.ActionTarget == nil || action.ActionTarget.Base != sdk.OpenDirectoryBaseTargetRoot || action.ActionTarget.TargetRootID != "finalfantasy7rebirth-config-root" {
+		t.Fatalf("config action = %+v", action)
+	}
+	if action := featureByID(summary.Capabilities.ExtensionActions, "finalfantasy7rebirth-view-changelog"); action == nil || action.ActionTarget == nil || action.ActionTarget.Base != sdk.OpenDirectoryBaseExtension || action.ActionTarget.RelativePath != "CHANGELOG.md" {
+		t.Fatalf("changelog action = %+v", action)
 	}
 }
 
@@ -260,6 +293,15 @@ func build(root string) (installplan.Plan, error) {
 func buildWithSelections(root string, selections map[string][]string) (installplan.Plan, error) {
 	extension := gameext.MustCompileExtension(finalfantasy7rebirth.Extension())
 	return gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathArchiveAndSelections(finalfantasy7rebirth.SteamAppID, root, "", "example.zip", selections)
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
 
 func assertCopyTarget(t *testing.T, instructions []installplan.Instruction, target string) {
