@@ -251,6 +251,7 @@ func Register(r sdk.Registrar) {
 func modTypes() []installplan.ModTypeSpec {
 	return []installplan.ModTypeSpec{
 		{ID: "witcher3menumodroot", TargetRoot: ""},
+		{ID: "witcher3menumoddocuments", TargetRootID: documentsTargetRootID},
 		{ID: "witcher3tl", TargetRoot: ""},
 		{ID: "witcher3dlc", TargetRoot: ""},
 		{ID: "witcher3-mod-root", TargetRoot: "Mods"},

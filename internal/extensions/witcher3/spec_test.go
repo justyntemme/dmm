@@ -155,6 +155,10 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	if len(compiled.TargetRoots) != 1 || compiled.TargetRoots[0].ID != "witcher3-documents" {
 		t.Fatalf("target roots = %+v", compiled.TargetRoots)
 	}
+	documentsModType := modTypeByID(compiled.InstallPlan.ModTypes, "witcher3menumoddocuments")
+	if documentsModType == nil || documentsModType.TargetRootID != "witcher3-documents" {
+		t.Fatalf("documents menu mod type = %+v", documentsModType)
+	}
 	if len(compiled.GameSetups) != 1 || !setupEnsuresDirectory(compiled.GameSetups[0], "Mods") || !setupEnsuresDirectory(compiled.GameSetups[0], "DLC") {
 		t.Fatalf("game setups = %+v", compiled.GameSetups)
 	}
@@ -165,6 +169,32 @@ func TestExtensionRegistersScriptMergerToolAcquisition(t *testing.T) {
 	}
 	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
+	if page := featureByID(summary.Capabilities.ExtensionLoadOrderPages, "witcher3-load-order-page"); page == nil || page.Scope != witcher3.VortexGameID {
+		t.Fatalf("load order page = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "witcher3-mods-settings"); loadOrder == nil || !loadOrder.ToggleableEntries {
+		t.Fatalf("load order = %+v", summary.Capabilities.LoadOrders)
+	}
+	for _, id := range []string{"witcher3-install-script-merger", "witcher3-open-documents"} {
+		if featureByID(summary.Capabilities.ExtensionActions, id) == nil {
+			t.Fatalf("missing action %s in %+v", id, summary.Capabilities.ExtensionActions)
+		}
+	}
+	for _, event := range []string{
+		sdk.EventWillDeploy,
+		sdk.EventGamemodeActivated,
+		sdk.EventDidInstallMod,
+		sdk.EventProfileWillChange,
+		sdk.EventProfileDidChange,
+		sdk.EventModsEnabled,
+		sdk.EventDidDeploy,
+		sdk.EventDidPurge,
+		sdk.EventDidRemoveMod,
+	} {
+		if handler := featureByID(summary.Capabilities.EventHandlers, event); handler == nil || handler.Trigger != event {
+			t.Fatalf("missing event handler %s in %+v", event, summary.Capabilities.EventHandlers)
+		}
 	}
 	if !registry.HasEventHandlerForSteamApp(witcher3.SteamAppID, sdk.EventDidInstallMod) {
 		t.Fatal("missing did-install Script Merger configuration hook")
@@ -668,6 +698,15 @@ func build(root string) (installplan.Plan, error) {
 func buildWithArchive(root, archiveName string) (installplan.Plan, error) {
 	extension := gameext.MustCompileExtension(witcher3.Extension())
 	return gameext.NewRegistry([]gameext.Extension{extension}).BuildInstallPlanWithGamePathArchiveAndSelections("witcher3", root, "", archiveName, nil)
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
 
 func assertTarget(t *testing.T, instructions []installplan.Instruction, target string) {
