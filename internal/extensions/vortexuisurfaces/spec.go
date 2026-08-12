@@ -42,7 +42,7 @@ func Register(r sdk.Registrar) {
 		ID:      "ui-stylesheet",
 		Name:    "Extension UI stylesheet registration",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex context.api.setStylesheet through DMM's Decky/Svelte build contract: first-party extensions expose typed UI surfaces and theme tokens consumed by the shared clients instead of injecting Electron CSS files.",
+		Message: "Mirrors Vortex context.api.setStylesheet and clearStylesheet through DMM's Decky/Svelte build contract: first-party extensions expose typed UI surfaces and theme tokens consumed by the shared clients instead of injecting Electron CSS files.",
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "ui-notification",
@@ -61,6 +61,18 @@ func Register(r sdk.Registrar) {
 		Name:    "Extension directory picker",
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex selectDir through DMM's constrained file-browser/import API and extension-declared safe target roots for Steam Deck paths.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-file-picker",
+		Name:    "Extension file picker",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex selectFile and saveFile through DMM's constrained import/export file browser API, scoped to extension-declared roots and Deck-safe user folders.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "run-executable",
+		Name:    "Extension executable launcher",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex runExecutable through DMM launch tools, supported tools, and Decky-mediated Steam/runtime process launch contracts.",
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "mod-meta-lookup-save",
