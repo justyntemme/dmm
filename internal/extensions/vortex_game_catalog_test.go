@@ -91,6 +91,17 @@ func TestFirstPartyCoversEveryDeploymentRelevantVortexRuntimeExtension(t *testin
 	}
 }
 
+func TestFirstPartyCoversEveryBundledVortexRuntimeExtensionSource(t *testing.T) {
+	registry := gameext.NewRegistry(FirstParty())
+	summaries := registry.ExtensionSummaries()
+	for _, sourceDir := range bundledVortexRuntimeExtensionDirs() {
+		if !summariesContainSourceDir(summaries, "/extensions/"+sourceDir+"/src") &&
+			!summariesContainSourceDir(summaries, "/extensions/"+sourceDir) {
+			t.Fatalf("missing DMM extension source coverage for bundled Vortex runtime extension %s", sourceDir)
+		}
+	}
+}
+
 func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.ExtensionSummary {
 	t.Helper()
 	for _, summary := range registry.ExtensionSummaries() {
@@ -247,6 +258,57 @@ func deploymentRelevantVortexRuntimeExtensionDirs() []string {
 		"script-extender-installer",
 		"test-gameversion",
 		"test-setup",
+	}
+}
+
+func bundledVortexRuntimeExtensionDirs() []string {
+	return []string{
+		"changelog-dashlet",
+		"common-interpreters",
+		"documentation",
+		"extension-dashlet",
+		"feedback",
+		"fnis-integration",
+		"gamebryo-archive-check",
+		"gamebryo-archive-invalidation",
+		"gamebryo-archive-support",
+		"gamebryo-bsa-support",
+		"gamebryo-plugin-indexlock",
+		"gamebryo-plugin-management",
+		"gamebryo-savegame-management",
+		"gamebryo-test-settings",
+		"gameinfo-steam",
+		"gamestore-gog",
+		"gamestore-origin",
+		"gamestore-uplay",
+		"gamestore-xbox",
+		"gameversion-hash",
+		"issue-tracker",
+		"local-gamesettings",
+		"meta-editor",
+		"mo-import",
+		"mod-content",
+		"mod-dependency-manager",
+		"mod-highlight",
+		"mod-report",
+		"modtype-bepinex",
+		"modtype-dazip",
+		"modtype-dinput",
+		"modtype-enb",
+		"modtype-gedosato",
+		"modtype-umm",
+		"morrowind-plugin-management",
+		"mtframework-arc-support",
+		"new-file-monitor",
+		"nmm-import-tool",
+		"open-directory",
+		"quickbms-support",
+		"script-extender-error-check",
+		"script-extender-installer",
+		"test-gameversion",
+		"test-setup",
+		"theme-switcher",
+		"titlebar-launcher",
 	}
 }
 
