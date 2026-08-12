@@ -44,7 +44,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "gamebryo-savegames")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_game_settings")
 	assertReadyWithMessage(t, "profile feature", summary.Capabilities.ProfileFeatures, "local_saves")
-	assertReady(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-plugin-index-lock")
+	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-plugin-index-lock")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "dependency-workarounds")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "dependency-session")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "gamebryo-save-session")

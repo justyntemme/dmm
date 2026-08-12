@@ -80,6 +80,7 @@ func Register(r sdk.Registrar) {
 		Name:        "Dragon Age 2 DAZIP migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
+		Message:     "Mirrors Vortex's Dragon Age 2 DAZIP migration by purging legacy DAZIP deployment under the documents target root before DMM redeploys managed addins and override mods.",
 		Commands: []sdk.StateMigrationCommandSpec{{
 			ID:           "purge-legacy-dazip-documents",
 			Name:         "Purge legacy DAZIP Documents deployment",

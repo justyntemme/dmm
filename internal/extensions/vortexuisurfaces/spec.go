@@ -62,6 +62,60 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's mod-report action with GET /api/games/{appID}/mods/{installedModID}/report, returning staged/deployed file status as JSON or readable text.",
 	})
+	registerDashletAndIssueSurfaces(r)
+}
+
+func registerDashletAndIssueSurfaces(r sdk.Registrar) {
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "changelog-cache",
+		Name:    "Changelog cache",
+		Scope:   "release-notes",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's changelog reducer through build fingerprint, release-channel, and update metadata exposed in the Decky debug/update surface instead of Vortex's desktop dashboard store.",
+	})
+	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
+		ID:      "changelog-dashlet",
+		Name:    "Changelog",
+		Scope:   "release-notes",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes changelog/update state through the Decky debug/update pane and release metadata API, which is the Steam Deck equivalent of Vortex's desktop changelog dashlet.",
+	})
+	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
+		ID:      "extension-dashlet",
+		Name:    "Extensions",
+		Scope:   "extensions",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's extension dashlet with the first-party extension summary API and Decky debug extension inventory.",
+	})
+	issueMessage := "DMM mirrors Vortex's issue tracker state with persisted Action Center diagnostics, Decky debug logs, and phone/tablet action details. Issue-response UI is represented by the same action/log surfaces rather than Vortex's desktop feedback responder dialog."
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "issues-persistent",
+		Name:    "Persistent issues",
+		Scope:   "action-center",
+		Status:  sdk.CapabilityStatusReady,
+		Message: issueMessage,
+	})
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "issues-session",
+		Name:    "Session issues",
+		Scope:   "action-center",
+		Status:  sdk.CapabilityStatusReady,
+		Message: issueMessage,
+	})
+	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
+		ID:      "issue-tracker",
+		Name:    "Issues",
+		Scope:   "action-center",
+		Status:  sdk.CapabilityStatusReady,
+		Message: issueMessage,
+	})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "feedback-responder",
+		Name:    "Feedback responder",
+		Scope:   "diagnostics",
+		Status:  sdk.CapabilityStatusReady,
+		Message: issueMessage,
+	})
 }
 
 func Sources() []sdk.SourceRef {

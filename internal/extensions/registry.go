@@ -5,6 +5,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/baldursgate3"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bastion"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/battletech"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/bepinex"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/besiege"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/bladeandsorcery"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/blasphemous"
@@ -179,6 +180,7 @@ func FirstParty() []gameext.Extension {
 		gameext.MustCompileExtension(gamestores.Extension()),
 		gameext.MustCompileExtension(gameversionhash.Extension()),
 		gameext.MustCompileExtension(mtframeworkarc.Extension()),
+		gameext.MustCompileExtension(bepinex.Extension()),
 		gameext.MustCompileExtension(quickbmssupport.Extension()),
 		gameext.MustCompileExtension(sharedmodtypes.Extension()),
 		gameext.MustCompileExtension(vortexsharedsystems.Extension()),

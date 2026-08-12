@@ -22,4 +22,11 @@ func TestExtensionRegistersSourceBackedArcMetadata(t *testing.T) {
 	if arc.ID != "arc" || arc.Engine != ID || !arc.SupportsWrite || arc.Status != sdk.CapabilityStatusReady || arc.Message == "" {
 		t.Fatalf("arc capability = %+v", arc)
 	}
+	if len(summary.Capabilities.ExtensionDashlets) != 1 {
+		t.Fatalf("dashlets = %+v", summary.Capabilities.ExtensionDashlets)
+	}
+	dashlet := summary.Capabilities.ExtensionDashlets[0]
+	if dashlet.ID != "mtframework-arc-support" || dashlet.Status != sdk.CapabilityStatusReady || dashlet.Message == "" {
+		t.Fatalf("dashlet = %+v", dashlet)
+	}
 }

@@ -108,6 +108,47 @@ func TestFirstPartyCoversVortexToDoSurfacesWithRuntimeActions(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexDashletSurfaces(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerDashlet calls:
+	// mtframework-arc-support, modtype-umm, extension-dashlet,
+	// changelog-dashlet, issue-tracker, modtype-bepinex, quickbms-support.
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range summaries {
+		for _, feature := range summary.Capabilities.ExtensionDashlets {
+			features[feature.ID] = feature
+		}
+	}
+	required := []string{
+		"mtframework-arc-support",
+		"extension-dashlet",
+		"changelog-dashlet",
+		"issue-tracker",
+		"bepinex-support",
+		"quickbms-support",
+	}
+	for _, id := range required {
+		feature, ok := features[id]
+		if !ok {
+			t.Fatalf("missing runtime counterpart for Vortex registerDashlet surface %q", id)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+			t.Fatalf("dashlet %s = %+v", id, feature)
+		}
+	}
+
+	foundUMM := false
+	for id, feature := range features {
+		if strings.HasSuffix(id, "-umm-support-dashlet") && feature.Status == sdk.CapabilityStatusReady && feature.Message != "" {
+			foundUMM = true
+			break
+		}
+	}
+	if !foundUMM {
+		t.Fatalf("missing runtime counterpart for Vortex modtype-umm registerDashlet surface")
+	}
+}
+
 func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		if summary.VortexGameID != "" && summary.Coverage == gameext.CoverageMetadataOnly {

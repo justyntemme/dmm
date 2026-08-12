@@ -85,6 +85,7 @@ func Register(r sdk.Registrar) {
 		Name:        "Bloodstained load-order state migration",
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
+		Message:     "Mirrors Vortex 1.0.0 migration by purging the historical singular ~mod deployment path before redeploying under the sortable ~mods load-order root.",
 		Commands: []sdk.StateMigrationCommandSpec{{
 			ID:             "purge-legacy-singular-mod-folder",
 			Name:           "Purge legacy ~mod deployment",

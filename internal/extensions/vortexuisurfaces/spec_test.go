@@ -29,12 +29,13 @@ func TestExtensionRegistersVortexUISurfaceMetadata(t *testing.T) {
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "mod-highlight-state-divider", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "feedback-state-divider", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mod-report", sdk.CapabilityStatusReady)
-	if len(summary.Capabilities.ExtensionDialogs) != 0 {
-		t.Fatalf("extension dialogs should not advertise unimplemented import surfaces: %+v", summary.Capabilities.ExtensionDialogs)
-	}
-	if len(summary.Capabilities.StateReducers) != 0 {
-		t.Fatalf("state reducers should not advertise unimplemented import session state: %+v", summary.Capabilities.StateReducers)
-	}
+	assertStatus(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "changelog-dashlet", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "extension-dashlet", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "issue-tracker", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dialog", summary.Capabilities.ExtensionDialogs, "feedback-responder", sdk.CapabilityStatusReady)
+	assertStatus(t, "state reducer", summary.Capabilities.StateReducers, "changelog-cache", sdk.CapabilityStatusReady)
+	assertStatus(t, "state reducer", summary.Capabilities.StateReducers, "issues-persistent", sdk.CapabilityStatusReady)
+	assertStatus(t, "state reducer", summary.Capabilities.StateReducers, "issues-session", sdk.CapabilityStatusReady)
 	if len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("post-MVP import TODOs must not be advertised as runtime capabilities: %+v", summary.Capabilities.ExtensionToDos)
 	}

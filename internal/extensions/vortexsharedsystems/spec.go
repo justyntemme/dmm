@@ -84,7 +84,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM surfaces Vortex's missing-groups test through profile-scoped LOOT masterlist/userlist group validation in game diagnostics.",
 	})
-	r.RegisterStateReducer(sdk.StateReducerSpec{ID: "gamebryo-plugin-index-lock", Name: "Gamebryo plugin index lock state", Scope: "profile_plugin_activations.locked_index", Status: sdk.CapabilityStatusReady})
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "gamebryo-plugin-index-lock",
+		Name:    "Gamebryo plugin index lock state",
+		Scope:   "profile_plugin_activations.locked_index",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's locked plugin index reducer with profile plugin activation rows that persist locked load-order indices and feed generated Gamebryo plugin output.",
+	})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "gamebryo-plugin-index-lock",
 		Name:    "Gamebryo plugin index lock table attribute",

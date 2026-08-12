@@ -44,6 +44,13 @@ func Register(r sdk.Registrar) {
 		Status:         sdk.CapabilityStatusReady,
 		Message:        "DMM runs Vortex-compatible ARCtool list/extract/create operations when " + ARCToolPathEnv + " points at ARCtool.exe.",
 	})
+	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
+		ID:      "mtframework-arc-support",
+		Name:    "ARC Support",
+		Scope:   "archive-runtime",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM mirrors Vortex's MT Framework ARC support dashlet with the source-backed ARC archive runtime, ARCTool environment validation, and extension diagnostics for games that register ARC-backed installers.",
+	})
 }
 
 func RunnerFromEnvironment() (arctool.Runner, error) {
