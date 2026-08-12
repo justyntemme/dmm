@@ -69,6 +69,28 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 
 }
 
+func TestFirstPartyCoversEveryBundledVortexGameExtension(t *testing.T) {
+	registry := gameext.NewRegistry(FirstParty())
+	summaries := registry.ExtensionSummaries()
+	for _, sourceDir := range bundledVortexGameExtensionDirs() {
+		if !summariesContainSourceDir(summaries, "/extensions/games/"+sourceDir+"/src") &&
+			!summariesContainSourceDir(summaries, "/extensions/games/"+sourceDir) {
+			t.Fatalf("missing DMM extension source coverage for bundled Vortex game extension %s", sourceDir)
+		}
+	}
+}
+
+func TestFirstPartyCoversEveryDeploymentRelevantVortexRuntimeExtension(t *testing.T) {
+	registry := gameext.NewRegistry(FirstParty())
+	summaries := registry.ExtensionSummaries()
+	for _, sourceDir := range deploymentRelevantVortexRuntimeExtensionDirs() {
+		if !summariesContainSourceDir(summaries, "/extensions/"+sourceDir+"/src") &&
+			!summariesContainSourceDir(summaries, "/extensions/"+sourceDir) {
+			t.Fatalf("missing DMM extension source coverage for deployment-relevant Vortex runtime extension %s", sourceDir)
+		}
+	}
+}
+
 func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.ExtensionSummary {
 	t.Helper()
 	for _, summary := range registry.ExtensionSummaries() {
@@ -87,6 +109,145 @@ func summarySourceContains(summary gameext.ExtensionSummary, needle string) bool
 		}
 	}
 	return false
+}
+
+func summariesContainSourceDir(summaries []gameext.ExtensionSummary, needle string) bool {
+	for _, summary := range summaries {
+		if summarySourceContains(summary, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func bundledVortexGameExtensionDirs() []string {
+	return []string{
+		"game-7daystodie",
+		"game-ahatintime",
+		"game-baldursgate3",
+		"game-battletech",
+		"game-bladeandsorcery",
+		"game-bloodstainedritualofthenight",
+		"game-breakingwheel",
+		"game-codevein",
+		"game-conanexiles",
+		"game-cyberpunk2077",
+		"game-daggerfallunity",
+		"game-darkestdungeon",
+		"game-darksouls",
+		"game-darksouls2",
+		"game-dawnofman",
+		"game-divinityoriginalsin2",
+		"game-dmc5",
+		"game-dragonage",
+		"game-dragonage2",
+		"game-dragons-dogma",
+		"game-elex",
+		"game-enderal",
+		"game-factorio",
+		"game-fallout3",
+		"game-fallout4",
+		"game-fallout4vr",
+		"game-falloutnv",
+		"game-galciv3",
+		"game-gardenpaws",
+		"game-greedfall",
+		"game-grimdawn",
+		"game-grimrock",
+		"game-kenshi",
+		"game-kerbalspaceprogram",
+		"game-kingdomcome-deliverance",
+		"game-masterchiefcollection",
+		"game-microsoftflightsimulator",
+		"game-monster-hunter-world",
+		"game-morrowind",
+		"game-mount-and-blade",
+		"game-mount-and-blade2",
+		"game-nehrim",
+		"game-neverwinter-nights",
+		"game-neverwinter-nights2",
+		"game-nomanssky",
+		"game-oblivion",
+		"game-oni",
+		"game-palworld",
+		"game-pathfinderkingmaker",
+		"game-pathfinderwrathoftherighteous",
+		"game-pillarsofeternity2",
+		"game-prisonarchitect",
+		"game-re2remake",
+		"game-re3remake",
+		"game-rimworld",
+		"game-sekiro",
+		"game-shadowrunreturns",
+		"game-sims3",
+		"game-sims4",
+		"game-skyrim",
+		"game-skyrimse",
+		"game-skyrimvr",
+		"game-spyroreignitedtrilogy",
+		"game-starbound",
+		"game-stardewvalley",
+		"game-starfield",
+		"game-stateofdecay",
+		"game-subnautica",
+		"game-subnauticabelowzero",
+		"game-survivingmars",
+		"game-sw-kotor",
+		"game-teamfortress2",
+		"game-teso",
+		"game-torchlight2",
+		"game-totalwarthreekingdoms",
+		"game-untitledgoose",
+		"game-vtmbloodlines",
+		"game-warthunder",
+		"game-witcher",
+		"game-witcher2",
+		"game-witcher3",
+		"game-wolcen",
+		"game-worldoftanks",
+		"game-x4foundations",
+		"game-xcom2",
+		"game-xrebirth",
+	}
+}
+
+func deploymentRelevantVortexRuntimeExtensionDirs() []string {
+	return []string{
+		"common-interpreters",
+		"fnis-integration",
+		"gamebryo-archive-check",
+		"gamebryo-archive-invalidation",
+		"gamebryo-archive-support",
+		"gamebryo-bsa-support",
+		"gamebryo-plugin-indexlock",
+		"gamebryo-plugin-management",
+		"gamebryo-savegame-management",
+		"gamebryo-test-settings",
+		"gameinfo-steam",
+		"gamestore-gog",
+		"gamestore-origin",
+		"gamestore-uplay",
+		"gamestore-xbox",
+		"gameversion-hash",
+		"local-gamesettings",
+		"mod-content",
+		"mod-dependency-manager",
+		"modtype-bepinex",
+		"modtype-dazip",
+		"modtype-dinput",
+		"modtype-enb",
+		"modtype-gedosato",
+		"modtype-umm",
+		"morrowind-plugin-management",
+		"mtframework-arc-support",
+		"new-file-monitor",
+		"open-directory",
+		"quickbms-support",
+		"script-extender-error-check",
+		"script-extender-installer",
+		"test-gameversion",
+		"test-setup",
+	}
 }
 
 func featureIDsContain(features []gameext.FeatureSummary, id string) bool {

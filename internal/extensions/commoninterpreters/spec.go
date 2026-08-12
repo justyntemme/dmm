@@ -31,6 +31,10 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
+	r.RegisterSource(sdk.SourceRef{
+		Name: "Vortex common-interpreters extension source",
+		URL:  "https://github.com/Nexus-Mods/Vortex/tree/2349a17900a37c2120e90733045dc6b303135b89/extensions/common-interpreters/src",
+	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "jar",
 		Name:           "Java archive",
