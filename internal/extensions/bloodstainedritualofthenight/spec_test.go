@@ -23,8 +23,14 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "BloodstainedRotN/Content/Paks/~mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 {
+	if !contains(summary.Capabilities.GameRegistration.StoreAppIDs["epic"], bloodstainedritualofthenight.EpicAppID) || summary.Capabilities.GameRegistration.Environment["EpicAPPId"] != bloodstainedritualofthenight.EpicAppID {
+		t.Fatalf("epic metadata = %+v", summary.Capabilities.GameRegistration)
+	}
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 || len(summary.Capabilities.LauncherRequirements) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	if summary.Capabilities.LauncherRequirements[0].ID != "bloodstainedrotn-epic-launcher" || summary.Capabilities.LauncherRequirements[0].AppID != bloodstainedritualofthenight.EpicAppID {
+		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
 	}
 	migration := summary.Capabilities.StateMigrations[0]
 	if migration.ID != "bloodstainedrotn-load-order-migration-1.0.0" || len(migration.Commands) != 1 || migration.Commands[0].Command != sdk.StateMigrationCommandPurgeModsInPath || migration.Commands[0].Path != "BloodstainedRotN/Content/Paks/~mod" {
@@ -129,4 +135,13 @@ func writeFile(t *testing.T, path string, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

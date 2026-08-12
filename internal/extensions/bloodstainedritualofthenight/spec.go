@@ -8,6 +8,7 @@ import (
 
 const (
 	SteamAppID   = "692850"
+	EpicAppID    = "a2ac59c83b704e40b4ab3a9e963fef52"
 	VortexGameID = "bloodstainedritualofthenight"
 	Name         = "Bloodstained: Ritual of the Night"
 
@@ -29,6 +30,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"epic": {EpicAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "BloodstainedROTN.exe",
@@ -39,10 +41,17 @@ func Register(r sdk.Registrar) {
 		QueryModPath:    pakRoot,
 		MergeMode:       sdk.GameMergeModeDynamic,
 		RequiresCleanup: true,
-		Environment:     map[string]string{"SteamAPPId": SteamAppID},
+		Environment:     map[string]string{"SteamAPPId": SteamAppID, "EpicAPPId": EpicAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
+	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "bloodstainedrotn-epic-launcher",
+		Name:     "Epic Games launcher",
+		Launcher: "epic",
+		Store:    "epic",
+		AppID:    EpicAppID,
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRoot: pakRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
