@@ -98,6 +98,39 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM exposes Vortex's lock-index state through profile plugin activation rows and applies it during generated load-order output; the exact Vortex table widget is represented by DMM's plugin activation update API/UI.",
 	})
+	gamebryoRulesMessage := "DMM mirrors Vortex Gamebryo plugin-management toolbar actions through profile plugin activation state, LOOT masterlist/userlist models, profile rule APIs, and deployment history."
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "gamebryo-plugin-manage-rules",
+		Name:    "Manage plugin rules",
+		Scope:   "gamebryo-plugins",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: gamebryoRulesMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "gamebryo-plugin-manage-groups",
+		Name:    "Manage plugin groups",
+		Scope:   "gamebryo-plugins",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: gamebryoRulesMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "gamebryo-plugin-reset-rules",
+		Name:    "Reset plugin rules",
+		Scope:   "gamebryo-plugins",
+		Kind:    sdk.ExtensionActionKindAPI,
+		Status:  sdk.CapabilityStatusReady,
+		Message: gamebryoRulesMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "gamebryo-plugin-history",
+		Name:    "Plugin history",
+		Scope:   "gamebryo-plugins",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: gamebryoRulesMessage,
+	})
 	r.RegisterExtensionActionCheck(sdk.ExtensionActionCheckSpec{
 		ID:      "gamebryo-userlist-duplicate-rule-check",
 		Name:    "Gamebryo duplicate userlist rule check",

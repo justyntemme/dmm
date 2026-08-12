@@ -188,6 +188,54 @@ func TestFirstPartyCoversVortexSettingsSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexActionAndPageSurfaces(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerAction,
+	// registerMainPage, and registerLoadOrderPage calls. Repeated open-folder
+	// actions are represented by DMM's generic open-directory API plus
+	// extension-declared safe path targets.
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range summaries {
+		for _, feature := range allFeatureSummaries(summary.Capabilities) {
+			features[feature.ID] = feature
+		}
+	}
+	for _, id := range []string{
+		"gamebryo-save-transfer",
+		"gamebryo-save-refresh",
+		"gamebryo-save-open",
+		"gamebryo-savegames",
+		"morrowind-plugins",
+		"gamebryo-plugin-manage-rules",
+		"gamebryo-plugin-manage-groups",
+		"gamebryo-plugin-history",
+		"gamebryo-plugin-reset-rules",
+		"import-from-nmm",
+		"import-from-mo",
+		"mod-report",
+		"fnis-configure-patches",
+		"stardew-smapi-log",
+		"stardew_merge_configs",
+		"view-mod-metadata",
+		"open-directory-action",
+		"witcher3-install-script-merger",
+		"witcher3-open-documents",
+		"witcher3-load-order-page",
+		"bladeandsorcery-loadorder-page",
+		"conanexiles-load-order-page",
+		"msfs-load-order-page",
+		"xcom2-load-order-page",
+	} {
+		feature, ok := features[id]
+		if !ok {
+			t.Fatalf("missing runtime counterpart for Vortex action/page surface %q", id)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+			t.Fatalf("action/page %s = %+v", id, feature)
+		}
+	}
+}
+
 func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		if summary.VortexGameID != "" && summary.Coverage == gameext.CoverageMetadataOnly {
