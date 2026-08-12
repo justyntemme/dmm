@@ -173,7 +173,7 @@ func Register(r sdk.Registrar) {
 		Handler: didInstallScriptMerger,
 	})
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
-		ID:      "witcher3-script-merges",
+		ID:      "local_merges",
 		Name:    "Witcher 3 profile-local Script Merger output",
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex local_merges behavior by storing Script Merger inventory, load order, and merged scripts per profile during profile changes.",

@@ -59,6 +59,13 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		Status:    sdk.CapabilityStatusReady,
 		Message:   "Stores Vortex-style selected FNIS patch IDs per profile. DMM reads the deployed FNIS PatchList*.txt and renders those patch IDs as profile-scoped checkbox options.",
 	})
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "fnis-settings",
+		Name:    "FNIS settings state",
+		Scope:   "settings.fnis",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex fnis-integration registerReducer([\"settings\", \"fnis\"]) by storing auto-run and selected patch IDs as typed DMM extension settings.",
+	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "fnis-configure-patches",
 		Name:    "Configure FNIS patches",

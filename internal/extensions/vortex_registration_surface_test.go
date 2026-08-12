@@ -365,6 +365,99 @@ func TestFirstPartyCoversVortexRuntimeSupportInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
+	// Source inventory verified from Vortex registerGameStore,
+	// registerProfileFeature, optional.registerCollectionFeature,
+	// registerReducer, and registerMigration calls. Per-game migration IDs may
+	// be DMM-owned, but each upstream migration surface must have a concrete
+	// state migration with executable commands in that extension.
+	required := map[string][]string{
+		"game store": {
+			"gog",
+			"origin",
+			"uplay",
+			"xbox",
+		},
+		"profile feature": {
+			"local_game_settings",
+			"gamebryo-savegames",
+			"local_loot_rules",
+			"local_merges",
+		},
+		"collection feature": {
+			"morrowind-collection-data",
+			"witcher3-collection-data",
+			"kingdomcomedeliverance-collection-data",
+		},
+		"state reducer": {
+			"test-gameversion-state",
+			"external-manager-import-session",
+			"issues-persistent",
+			"issues-session",
+			"changelog-cache",
+			"gamebryo-save-session",
+			"gamebryo-save-settings",
+			"gamebryo-plugin-index-lock",
+			"dependency-workarounds",
+			"dependency-session",
+			"fnis-settings",
+			"interface-theme-settings",
+			"managed-mod-metadata",
+			"stardew-settings-reducer",
+			"witcher3-settings-reducer",
+		},
+	}
+
+	features := map[string]map[string]gameext.FeatureSummary{}
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	for _, summary := range summaries {
+		addFeatureMap(features, "game store", summary.Capabilities.GameStores)
+		addFeatureMap(features, "profile feature", summary.Capabilities.ProfileFeatures)
+		addFeatureMap(features, "collection feature", summary.Capabilities.CollectionFeatures)
+		addFeatureMap(features, "state reducer", summary.Capabilities.StateReducers)
+	}
+	for kind, ids := range required {
+		for _, id := range ids {
+			feature, ok := features[kind][id]
+			if !ok {
+				t.Fatalf("missing runtime counterpart for Vortex %s surface %q", kind, id)
+			}
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("%s %s = %+v", kind, id, feature)
+			}
+		}
+	}
+
+	requiredMigrationExtensions := map[string]int{
+		"dragonage2":                    1,
+		"dragonsdogma":                 1,
+		"codevein":                     1,
+		"nomanssky":                    1,
+		"bloodstainedritualofthenight": 1,
+		"spyroreignitedtrilogy":        1,
+		"untitledgoosegame":            1,
+		"witcher3":                     1,
+		"morrowind":                    1,
+		"thesims4":                     1,
+		"x4foundations":                1,
+		"bladeandsorcery":              2,
+	}
+	byExtension := map[string]int{}
+	for _, summary := range summaries {
+		for _, migration := range summary.Capabilities.StateMigrations {
+			if migration.Status != sdk.CapabilityStatusReady || migration.Message == "" || len(migration.Commands) == 0 {
+				t.Fatalf("state migration %s = %+v", migration.ID, migration)
+			}
+			byExtension[strings.ToLower(summary.ID)]++
+		}
+	}
+	for extensionID, count := range requiredMigrationExtensions {
+		if byExtension[extensionID] < count {
+			t.Fatalf("missing runtime counterpart for Vortex migration extension %q: got %d want >= %d", extensionID, byExtension[extensionID], count)
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerInstaller calls.
 	// DMM expands shared Vortex installers per game, so this test checks that
