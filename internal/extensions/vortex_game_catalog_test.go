@@ -102,6 +102,71 @@ func TestFirstPartyCoversEveryBundledVortexRuntimeExtensionSource(t *testing.T) 
 	}
 }
 
+func TestFirstPartyCoversBundledVortexInstallerIDs(t *testing.T) {
+	// Source inventory verified from /tmp/dmm-vortex-upstream/extensions/games
+	// context.registerInstaller calls. Vortex registerGameStub and shared
+	// Gamebryo data-folder installers are represented by the DMM generic
+	// game-query-mod-path IDs because the upstream game extension delegates to
+	// Vortex shared runtime behavior instead of declaring a game-local installer.
+	required := map[string][]string{
+		"7daystodie":                   {"7dtd-mod", "7dtd-root-mod"},
+		"ahatintime":                   {"ahatintime-mod"},
+		"baldursgate3":                 {"bg3-bg3se", "bg3-engine-injector", "bg3-lslib-divine-tool", "bg3-modfixer", "bg3-replacer"},
+		"bladeandsorcery":              {"bas-mulledk19-mod", "bas-official-mod"},
+		"bloodstainedritualofthenight": {"bloodstainedrotn-mod"},
+		"codevein":                     {"codevein-mod"},
+		"daggerfallunity":              {"dfmodmultiplatform"},
+		"darkestdungeon":               {"dd-noproject-mod", "dd-project-mod"},
+		"dawnofman":                    {"dom-mod", "dom-scene-installer"},
+		"dragonsdogma":                 {"dddainvalidmod"},
+		"elex":                         {"elex-mod"},
+		"fallout4vr":                   {"fallout4vr-esl-enabler"},
+		"falloutnv":                    {"falloutnv-4gb-patch"},
+		"galacticcivilizations3":       {"galciv3installer"},
+		"greedfall":                    {"greedfall-mod"},
+		"kenshi":                       {"kenshi-mod"},
+		"halothemasterchiefcollection": {"masterchiefinstaller", "masterchiefmodconfiginstaller", "mcc-plug-and-play-installer"},
+		"microsoftflightsimulator":     {"msfs-pack", "msfs-replacer"},
+		"monsterhunterworld":           {"mhwreshadeinstaller", "monster-hunter-mod"},
+		"mountandblade":                {"mount-and-blade-mod"},
+		"nwn":                          {"nwn-mod"},
+		"neverwinter2":                 {"moduleinstaller"},
+		"rimworld":                     {"rimworld-steam-mod"},
+		"sekiro":                       {"sek-loose-files", "sek-root-mod"},
+		"thesims4":                     {"sims4mixed"},
+		"skyrimvr":                     {"skyvr-esl-enabler"},
+		"spyroreignitedtrilogy":        {"spyroreignitedtrilogy-mod"},
+		"survivingmars":                {"survivingmars-mod"},
+		"kotor":                        {"kotor-override-mod", "kotor-root-mod", "kotor-tslpatcher", "kotor-tslpatcher-mod"},
+		"teamfortress2":                {"teamfortress2-mod"},
+		"torchlight2":                  {"torchlight2-mod"},
+		"totalwarthreekingdoms":        {"tw3kingdoms-mod"},
+		"witcher3":                     {"scriptmergerdummy", "witcher3content", "witcher3dlcmod", "witcher3menumodroot", "witcher3mixed", "witcher3tl"},
+		"x4foundations":                {"x4foundations"},
+		"xcom2":                        {"xcom2-installer"},
+		"xrebirth":                     {"xrebirth"},
+	}
+	byID := map[string]gameext.Extension{}
+	for _, extension := range FirstParty() {
+		byID[strings.ToLower(extension.ID)] = extension
+	}
+	for extensionID, installerIDs := range required {
+		extension, ok := byID[extensionID]
+		if !ok {
+			t.Fatalf("missing extension %s for Vortex installer inventory", extensionID)
+		}
+		available := map[string]struct{}{}
+		for _, installer := range extension.InstallPlan.Installers {
+			available[strings.ToLower(installer.VortexInstallerID)] = struct{}{}
+		}
+		for _, installerID := range installerIDs {
+			if _, ok := available[strings.ToLower(installerID)]; !ok {
+				t.Fatalf("%s missing runtime installer counterpart for Vortex installer %q: %+v", extensionID, installerID, extension.InstallPlan.Installers)
+			}
+		}
+	}
+}
+
 func summaryByID(t *testing.T, registry gameext.Registry, id string) gameext.ExtensionSummary {
 	t.Helper()
 	for _, summary := range registry.ExtensionSummaries() {

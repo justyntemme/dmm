@@ -26,7 +26,7 @@ func installers() []installplan.InstallerSpec {
 	return []installplan.InstallerSpec{
 		{
 			ID:                "vortex:xrebirth:content-xml",
-			VortexInstallerID: "xrebirth-content-xml",
+			VortexInstallerID: "xrebirth",
 			Priority:          50,
 			ModType:           modTypeContent,
 			NameSource:        installplan.NameSourceArchive,
@@ -174,7 +174,7 @@ func buildContentArchive(input installplan.BuildInput) (installplan.Plan, error)
 		DetectedFrom: []installplan.Detection{{
 			Kind:   "vortex-custom-installer",
 			Path:   contentPath,
-			Reason: "Vortex installer xrebirth-content-xml matched an X Rebirth content.xml archive",
+			Reason: "Vortex installer xrebirth matched an X Rebirth content.xml archive",
 		}},
 		Metadata: []installplan.ModMetadata{{
 			Kind:     "xrebirth-content",

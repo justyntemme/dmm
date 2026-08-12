@@ -823,7 +823,7 @@ func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 		"witcher3mixed",
 		"witcher3tl",
 		"xcom2-installer",
-		"xrebirth-content-xml",
+		"xrebirth",
 	}
 	covered := map[string]gameext.FeatureSummary{}
 	for _, extension := range FirstParty() {
