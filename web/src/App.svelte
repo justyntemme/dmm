@@ -2274,7 +2274,7 @@
         body: JSON.stringify({
           enabled,
           cascade_dependencies: true,
-          include_recommended_dependencies: true
+          include_recommended_dependencies: false
         })
       });
       if (!response.ok) {
@@ -2286,7 +2286,7 @@
       for (const cascadeMod of result.cascade ?? []) updatedMods.set(cascadeMod.id, cascadeMod);
       installedMods = installedMods.map((item) => updatedMods.get(item.id) ?? item);
       if ((result.cascade?.length ?? 0) > 0) {
-        actionMessage = `${enabled ? "Enabled" : "Disabled"} ${mod.name} and ${result.cascade?.length} dependent mod${result.cascade?.length === 1 ? "" : "s"}.`;
+        actionMessage = `${enabled ? "Enabled" : "Disabled"} ${mod.name} and ${result.cascade?.length} required dependenc${result.cascade?.length === 1 ? "y" : "ies"}.`;
       }
       if ((result.cascade_notes?.length ?? 0) > 0) {
         error = result.cascade_notes?.join(" ") ?? "";

@@ -988,7 +988,7 @@ class Plugin:
         payload = json.dumps({
             "enabled": bool(enabled),
             "cascade_dependencies": True,
-            "include_recommended_dependencies": True,
+            "include_recommended_dependencies": False,
         }).encode("utf-8")
         result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/mods/{urllib.parse.quote(installed_mod_id)}", payload)
         if result is None:

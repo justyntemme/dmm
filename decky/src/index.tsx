@@ -5646,7 +5646,7 @@ function FreshDeckyModManagerRoute() {
       await maybeShowDeckyActionToast(result.apply?.job, "fresh-toggle-mod");
       await loadSelectedGameState(selectedGameID);
       const cascadeCount = result.cascade?.length ?? 0;
-      const cascadeSuffix = cascadeCount > 0 ? ` and ${cascadeCount} dependent mod${cascadeCount === 1 ? "" : "s"}` : "";
+      const cascadeSuffix = cascadeCount > 0 ? ` and ${cascadeCount} required dependenc${cascadeCount === 1 ? "y" : "ies"}` : "";
       const notes = result.cascade_notes?.length ? ` ${result.cascade_notes.join(" ")}` : "";
       setMessage(result.apply?.message || `${mod.enabled ? "Disabled" : "Enabled"} ${mod.name}${cascadeSuffix}.${notes}`);
     } catch (err) {
