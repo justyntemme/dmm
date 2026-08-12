@@ -122,7 +122,7 @@ func buildTPFArchive(input installplan.BuildInput) (installplan.Plan, error) {
 			Path:   strings.Join(tpfFiles, ","),
 			Reason: "Prototype 2 TexMod package archive matched .tpf files",
 		}},
-		Warnings: []string{"TexMod packages are staged safely, but TexMod itself requires manual package selection after DMM opens the tool."},
+		Warnings: []string{"TexMod packages are staged safely; DMM writes the enabled package list for the TexMod launch tool."},
 	}
 	for _, file := range tpfFiles {
 		targetRel := filepath.ToSlash(filepath.Join(texmodRoot, "Packages", filepath.Base(file)))

@@ -26,7 +26,7 @@ func TestExtensionRegistersASIInstaller(t *testing.T) {
 		t.Fatalf("launch tools = %+v", extension.LaunchTools)
 	}
 	input := extension.LaunchTools[0].DynamicInputs[0]
-	if input.Kind != sdk.LaunchToolDynamicInputEnabledModFileList || input.OutputRelative != "DMM/TexMod/profile-packages.txt" {
+	if input.Kind != sdk.LaunchToolDynamicInputEnabledModFileList || input.OutputRelative != "DMM/TexMod/profile-packages.txt" || input.ArgumentToken != "-load:{path}" {
 		t.Fatalf("dynamic input = %+v", input)
 	}
 	coverage, _ := gameext.ExtensionCoverage(extension)

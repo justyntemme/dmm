@@ -100,7 +100,7 @@ func Register(r sdk.Registrar) {
 		ModTypes:    []string{tpfModType},
 		Message:     "TexMod is required to load enabled Prototype .tpf texture packages.",
 		OKMessage:   "TexMod is present in the DMM TexMod folder.",
-		InstallHint: "Install a TexMod archive containing Texmod.exe. DMM stages .tpf packages under DMM/TexMod and can open TexMod, but the verified TexMod tool still requires manual package selection.",
+		InstallHint: "Install a TexMod archive containing Texmod.exe. DMM stages .tpf packages under DMM/TexMod, writes the enabled package list, and launches TexMod with that profile list.",
 		Check:       checkTexModTool,
 	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
@@ -116,6 +116,7 @@ func Register(r sdk.Registrar) {
 			Kind:           sdk.LaunchToolDynamicInputEnabledModFileList,
 			SourceModTypes: []string{tpfModType},
 			OutputRelative: filepath.ToSlash(filepath.Join(texmodRoot, "profile-packages.txt")),
+			ArgumentToken:  "-load:{path}",
 		}},
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
