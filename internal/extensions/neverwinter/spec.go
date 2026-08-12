@@ -173,9 +173,30 @@ func registerNWNGame(r sdk.Registrar, spec nwnGameSpec) {
 		CustomBuild:       buildNWNLooseArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      spec.ID + "-prepare-mod-folders",
+		Name:    "Prepare " + spec.Name + " mod folders",
+		Actions: nwnSetupActions(spec.TargetRootID),
+	})
 	for _, ref := range nwnSources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func nwnSetupActions(rootID string) []sdk.GameSetupActionSpec {
+	paths := make([]string, 0, len(nwnDestinations))
+	seen := make(map[string]struct{}, len(nwnDestinations))
+	for _, destination := range nwnDestinations {
+		if _, ok := seen[destination]; ok {
+			continue
+		}
+		seen[destination] = struct{}{}
+		paths = append(paths, destination)
+	}
+	if rootID != "" {
+		return sdk.EnsureTargetRootDirectories(rootID, paths...)
+	}
+	return sdk.EnsureGameDirectories(paths...)
 }
 
 func documentsRoot(rel ...string) sdk.TargetRootResolverFunc {

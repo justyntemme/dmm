@@ -12,15 +12,20 @@ import (
 )
 
 func TestNWNExtensionsRegisterVortexCapabilities(t *testing.T) {
-	summary := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(neverwinter.Extensions()[1])}).ExtensionSummaries()[0]
+	compiled := gameext.MustCompileExtension(neverwinter.Extensions()[1])
+	summary := gameext.NewRegistry([]gameext.Extension{compiled}).ExtensionSummaries()[0]
 	if summary.Coverage != gameext.CoverageInstaller {
 		t.Fatalf("coverage = %q", summary.Coverage)
 	}
 	if summary.Capabilities.GameRegistration == nil || !summary.Capabilities.GameRegistration.QueryModPathDynamic || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.TargetRoots) != 1 {
+	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.TargetRoots) != 1 || len(summary.Capabilities.GameSetups) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	if !hasSetupAction(compiled.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseTargetRoot, "nwnee-documents", "modules") ||
+		!hasSetupAction(compiled.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseTargetRoot, "nwnee-documents", "override") {
+		t.Fatalf("game setup actions = %+v", compiled.GameSetups)
 	}
 }
 
@@ -112,4 +117,15 @@ func writeFile(t *testing.T, path string, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func hasSetupAction(setups []sdk.GameSetupSpec, kind, base, rootID, rel string) bool {
+	for _, setup := range setups {
+		for _, action := range setup.Actions {
+			if action.Kind == kind && action.Base == base && action.TargetRootID == rootID && action.RelativePath == rel {
+				return true
+			}
+		}
+	}
+	return false
 }
