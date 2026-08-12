@@ -16373,9 +16373,15 @@ func TestAcquireToolExtensionActionUsesCapturedInstallPipeline(t *testing.T) {
 func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	srv := newTestServer(t)
 	const appID = "999006"
+	const storeAppID = "store-999006"
 	gamePath := filepath.Join(t.TempDir(), "Setup Game")
 	targetRoot := filepath.Join(t.TempDir(), "External Mods")
+	storeRoot := filepath.Join(t.TempDir(), "Store Setup Game")
+	storeGamePath := filepath.Join(storeRoot, "Setup Game English")
 	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(storeGamePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(gamePath, "Game.exe"), []byte("game"), 0o600); err != nil {
@@ -16387,6 +16393,12 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gamePath, "config.blk"), []byte("sound{\n  enable_mod:b=no\n}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(storeRoot, "Game.exe"), []byte("game"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storeRoot, "config.blk"), []byte("sound{\n  enable_mod:b=no\n}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	extension := gameext.MustCompileExtension(sdk.Extension{
 		ID:      "setupgame",
 		Name:    "Setup Game",
@@ -16394,7 +16406,8 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 		BuildID: "test-build",
 		Register: func(r sdk.Registrar) {
 			r.RegisterGame(sdk.GameRegistration{
-				SteamAppIDs:  []string{appID},
+				SteamAppIDs:  []string{appID, gameext.StoreBackedAppID("xbox", storeAppID)},
+				StoreAppIDs:  map[string][]string{"xbox": {storeAppID}},
 				NexusDomains: []string{"setupgame"},
 				VortexGameID: "setupgame",
 			})
@@ -16419,6 +16432,11 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 				Name:    "Prepare setup game",
 				Actions: actions,
 			})
+			r.RegisterGameSetup(sdk.GameSetupSpec{
+				ID:      "store-locale",
+				Name:    "Select store locale folder",
+				Actions: sdk.SelectStoreLocalePath("xbox", "Setup Game English", "Setup Game English", "Setup Game French"),
+			})
 		},
 	})
 	srv.games = gameext.NewRegistry([]gameext.Extension{extension})
@@ -16428,6 +16446,15 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 		InstallDir:  "Setup Game",
 		LibraryPath: "/steam",
 		Path:        gamePath,
+		State:       "clean_candidate",
+	}, {
+		AppID:       gameext.StoreBackedAppID("xbox", storeAppID),
+		Name:        "Setup Game Xbox",
+		Store:       "xbox",
+		StoreAppID:  storeAppID,
+		InstallDir:  "Store Setup Game",
+		LibraryPath: "/store",
+		Path:        storeRoot,
 		State:       "clean_candidate",
 	}}); err != nil {
 		t.Fatal(err)
@@ -16444,7 +16471,7 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&before); err != nil {
 		t.Fatal(err)
 	}
-	if len(before.GameSetups) != 1 || before.GameSetups[0].Status != "missing" {
+	if setup := gameSetupStatusByID(before.GameSetups, "prepare"); setup == nil || setup.Status != "missing" {
 		t.Fatalf("setup diagnostics before = %+v", before.GameSetups)
 	}
 
@@ -16459,7 +16486,7 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&applied); err != nil {
 		t.Fatal(err)
 	}
-	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 5 || applied.Result.Checked != 6 {
+	if applied.Job.Status != jobs.StatusCompleted || applied.Result.Created != 5 || applied.Result.Checked != 7 {
 		t.Fatalf("setup response = %+v", applied)
 	}
 	if _, err := os.Stat(filepath.Join(gamePath, "Mods")); err != nil {
@@ -16501,9 +16528,48 @@ func TestGameSetupEndpointExecutesExtensionActions(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&after); err != nil {
 		t.Fatal(err)
 	}
-	if len(after.GameSetups) != 1 || after.GameSetups[0].Status != "ready" {
+	if setup := gameSetupStatusByID(after.GameSetups, "prepare"); setup == nil || setup.Status != "ready" {
 		t.Fatalf("setup diagnostics after = %+v", after.GameSetups)
 	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/games/"+gameext.StoreBackedAppID("xbox", storeAppID)+"/diagnostics", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("store diagnostics status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	var storeBefore gameDiagnosticsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&storeBefore); err != nil {
+		t.Fatal(err)
+	}
+	if setup := gameSetupStatusByID(storeBefore.GameSetups, "store-locale"); setup == nil || setup.Status != "missing" {
+		t.Fatalf("store diagnostics before = %+v", storeBefore.GameSetups)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/games/"+gameext.StoreBackedAppID("xbox", storeAppID)+"/setup", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("store setup status = %d body = %s", rec.Code, rec.Body.String())
+	}
+	stored, err := srv.db.GameBySteamApp(context.Background(), gameext.StoreBackedAppID("xbox", storeAppID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.GamePath != storeGamePath {
+		t.Fatalf("store game path = %q, want %q", stored.GamePath, storeGamePath)
+	}
+}
+
+func gameSetupStatusByID(setups []gameSetupStatusResponse, id string) *gameSetupStatusResponse {
+	for i := range setups {
+		if setups[i].SetupID == id {
+			return &setups[i]
+		}
+	}
+	return nil
 }
 
 func discoveredToolByIDSource(tools []discoveredTool, id, source string) *discoveredTool {

@@ -1213,6 +1213,32 @@ WHERE steam_app_id = ?
 	return game, err
 }
 
+func (db *DB) SetGamePath(ctx context.Context, gameID int64, gamePath string) error {
+	if gameID <= 0 {
+		return errors.New("game id is required")
+	}
+	gamePath = strings.TrimSpace(gamePath)
+	if gamePath == "" {
+		return errors.New("game path is required")
+	}
+	result, err := db.conn.ExecContext(ctx, `
+UPDATE games
+SET game_path = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`, gamePath, gameID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (db *DB) GameVersionObservation(ctx context.Context, gameID int64) (GameVersionObservation, bool, error) {
 	if gameID <= 0 {
 		return GameVersionObservation{}, false, errors.New("game id is required")

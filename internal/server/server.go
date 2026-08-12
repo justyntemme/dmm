@@ -2317,6 +2317,22 @@ func (s *Server) gameSetupActionStatus(ctx context.Context, game storage.Game, a
 		return resp
 	}
 	resp.TargetPath = filepath.ToSlash(target)
+	if strings.TrimSpace(action.Kind) == sdk.GameSetupActionSelectStoreLocalePath {
+		selected, applied, err := selectStoreLocalePath(game, action)
+		if err != nil {
+			resp.Status = "blocked"
+			resp.Message = err.Error()
+			return resp
+		}
+		resp.TargetPath = filepath.ToSlash(selected)
+		if applied {
+			resp.Status = "ready"
+			return resp
+		}
+		resp.Status = "missing"
+		resp.Message = "store locale path selection is pending"
+		return resp
+	}
 	if strings.TrimSpace(action.Kind) == sdk.GameSetupActionRenameIfExists {
 		destination, err := s.gameSetupActionDestination(ctx, game, action)
 		if err != nil {
@@ -2483,6 +2499,21 @@ func (s *Server) ensureGameSetupAction(ctx context.Context, game storage.Game, s
 	if kind == sdk.GameSetupActionRenameIfExists {
 		return s.renameGameSetupAction(ctx, game, setupID, actionID, action, target, jobID, source)
 	}
+	if kind == sdk.GameSetupActionSelectStoreLocalePath {
+		selected, applied, err := selectStoreLocalePath(game, action)
+		if err != nil {
+			return false, err
+		}
+		if applied {
+			s.logger.Info("game setup store locale path already selected", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "path", selected, "store", game.Store, "source", source)
+			return false, nil
+		}
+		if err := s.db.SetGamePath(ctx, game.ID, selected); err != nil {
+			return false, err
+		}
+		s.logger.Info("game setup store locale path selected", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "old_path", game.GamePath, "new_path", selected, "store", game.Store, "source", source)
+		return true, nil
+	}
 	info, err := os.Stat(target)
 	if err == nil {
 		switch kind {
@@ -2612,6 +2643,51 @@ func (s *Server) renameGameSetupAction(ctx context.Context, game storage.Game, s
 	}
 	s.logger.Info("game setup path renamed", "job_id", jobID, "app_id", game.SteamAppID, "setup_id", setupID, "action_id", actionID, "source_path", sourcePath, "destination_path", destination, "source", source)
 	return true, nil
+}
+
+func selectStoreLocalePath(game storage.Game, action sdk.GameSetupActionSpec) (string, bool, error) {
+	if !strings.EqualFold(strings.TrimSpace(game.Store), strings.TrimSpace(action.Store)) {
+		return filepath.Clean(strings.TrimSpace(game.GamePath)), true, nil
+	}
+	root := filepath.Clean(strings.TrimSpace(game.GamePath))
+	if root == "." || root == "" {
+		return "", false, errors.New("game setup root is empty")
+	}
+	for _, candidate := range action.CandidatePaths {
+		rel := filepath.ToSlash(strings.TrimSpace(candidate))
+		if rel == "" || filepath.IsAbs(rel) {
+			continue
+		}
+		if sameCleanPath(filepath.Base(root), rel) {
+			return root, true, nil
+		}
+		target := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+		if !pathContains(root, target) {
+			continue
+		}
+		if strings.EqualFold(root, target) {
+			return target, true, nil
+		}
+		if _, err := os.Stat(target); err == nil {
+			return target, sameCleanPath(root, target), nil
+		}
+	}
+	fallback := filepath.ToSlash(strings.TrimSpace(action.RelativePath))
+	if fallback == "" || fallback == "." {
+		return root, true, nil
+	}
+	if filepath.IsAbs(fallback) {
+		return "", false, errors.New("game setup store locale fallback path must not be absolute")
+	}
+	target := filepath.Clean(filepath.Join(root, filepath.FromSlash(fallback)))
+	if !pathContains(root, target) {
+		return "", false, errors.New("game setup store locale fallback escapes its declared root")
+	}
+	return target, sameCleanPath(root, target), nil
+}
+
+func sameCleanPath(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }
 
 func (s *Server) gameSetupActionTarget(ctx context.Context, game storage.Game, action sdk.GameSetupActionSpec) (string, error) {
