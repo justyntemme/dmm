@@ -21,13 +21,21 @@ func TestExtensionRegistersVortexUISurfaceMetadata(t *testing.T) {
 	if len(summary.Capabilities.StartHooks) != 0 {
 		t.Fatalf("generic UI surface extension should not advertise startup hooks after source-backed hook runtime moved to vortexsharedsystems: %+v", summary.Capabilities.StartHooks)
 	}
-	if len(summary.Capabilities.ExtensionAPIs) != 2 {
+	if len(summary.Capabilities.ExtensionAPIs) != 8 {
 		t.Fatalf("extension APIs = %+v", summary.Capabilities.ExtensionAPIs)
 	}
 	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "open-directory-action", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "mod-content-classifier", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "ui-stylesheet", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "ui-notification", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "ui-dialog", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "ui-directory-picker", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "mod-meta-lookup-save", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension API", summary.Capabilities.ExtensionAPIs, "ui-locale-highlight-outdated", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "mod-highlight-state-divider", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "feedback-state-divider", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "titlebar-launcher-main-toolbar", sdk.CapabilityStatusReady)
+	assertStatus(t, "extension dynamic divider", summary.Capabilities.ExtensionDynamicDividers, "titlebar-launcher-tools-controls", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension action", summary.Capabilities.ExtensionActions, "mod-report", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension setting", summary.Capabilities.ExtensionSettings, "interface-theme", sdk.CapabilityStatusReady)
 	assertStatus(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "changelog-dashlet", sdk.CapabilityStatusReady)

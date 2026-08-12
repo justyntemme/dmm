@@ -38,6 +38,42 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's mod-content extension with a backend classifier over staged manifest files. Installed mod APIs expose Vortex-style content tags and empty-state metadata for Decky and phone/tablet clients.",
 	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-stylesheet",
+		Name:    "Extension UI stylesheet registration",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex context.api.setStylesheet through DMM's Decky/Svelte build contract: first-party extensions expose typed UI surfaces and theme tokens consumed by the shared clients instead of injecting Electron CSS files.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-notification",
+		Name:    "Extension notifications",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex sendNotification, dismissNotification, and showErrorNotification through DMM Action Center entries, Decky toast notifications, persisted diagnostics, and backend event-stream updates.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-dialog",
+		Name:    "Extension dialogs and choice prompts",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex showDialog through DMM persisted Action Center prompts, Decky modals, phone/tablet installer choices, dependency dialogs, and diagnostics actions.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-directory-picker",
+		Name:    "Extension directory picker",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex selectDir through DMM's constrained file-browser/import API and extension-declared safe target roots for Steam Deck paths.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "mod-meta-lookup-save",
+		Name:    "Mod metadata lookup and save",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex lookupModMeta/saveModMeta/addMetaServer through DMM source-provider metadata, installed mod records, manifest extraction, and provider-scoped metadata cache updates.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-locale-highlight-outdated",
+		Name:    "UI locale, highlight, and outdated-state helpers",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex locale, highlightControl, and isOutdated helpers through DMM client locale sorting, focus targets, and build/update metadata exposed to Decky and phone/tablet clients.",
+	})
 	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
 		ID:       "mod-highlight-state-divider",
 		Name:     "Mod highlight state divider",
@@ -53,6 +89,22 @@ func Register(r sdk.Registrar) {
 		Priority: 100,
 		Status:   sdk.CapabilityStatusReady,
 		Message:  "Vortex uses dynamic dividers in its desktop feedback UI. DMM's feedback-equivalent runtime is the source-backed debug/log action surface in the Decky settings flow, so no separate desktop feedback divider is required.",
+	})
+	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
+		ID:       "titlebar-launcher-main-toolbar",
+		Name:     "Titlebar launcher main toolbar",
+		Target:   "launch-tools",
+		Priority: 100,
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "Mirrors Vortex titlebar-launcher registerDynDiv('main-toolbar') through DMM's game page launch-game and extension-tool action row.",
+	})
+	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
+		ID:       "titlebar-launcher-tools-controls",
+		Name:     "Titlebar launcher tool controls",
+		Target:   "launch-tools",
+		Priority: 100,
+		Status:   sdk.CapabilityStatusReady,
+		Message:  "Mirrors Vortex titlebar-launcher registerDynDiv('starter-dashlet-tools-controls') through DMM's extension-tool controls in the Decky game detail surface.",
 	})
 	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
 		ID:      "mod-report",
