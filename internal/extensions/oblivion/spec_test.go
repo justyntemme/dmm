@@ -12,6 +12,24 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
+func TestExtensionRegistersVortexStoreLocaleSetup(t *testing.T) {
+	summary := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(oblivion.Extension())}).ExtensionSummaries()[0]
+	if summary.Capabilities.GameRegistration == nil {
+		t.Fatal("missing game registration")
+	}
+	if got := summary.Capabilities.GameRegistration.StoreAppIDs["xbox"]; !contains(got, "BethesdaSoftworks.TESOblivion-PC") {
+		t.Fatalf("xbox store ids = %+v", got)
+	}
+	setup := featureByID(summary.Capabilities.GameSetups, "oblivion-store-locale-paths")
+	if setup == nil || len(setup.SetupActions) != 1 {
+		t.Fatalf("store locale setup = %+v", summary.Capabilities.GameSetups)
+	}
+	action := setup.SetupActions[0]
+	if action.Kind != sdk.GameSetupActionSelectStoreLocalePath || action.Store != "xbox" || action.RelativePath != "Oblivion GOTY English" || len(action.CandidatePaths) != 5 {
+		t.Fatalf("setup action = %+v", action)
+	}
+}
+
 func TestExtensionReportsMissingOblivionFontsFromGamebryoSettings(t *testing.T) {
 	libraryPath := t.TempDir()
 	gamePath := filepath.Join(libraryPath, "steamapps", "common", "Oblivion")
@@ -129,4 +147,22 @@ func writeFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for _, feature := range features {
+		if feature.ID == id {
+			return &feature
+		}
+	}
+	return nil
 }

@@ -612,9 +612,11 @@ type GameSetupActionSpec struct {
 	Name                string
 	Kind                string
 	Base                string
+	Store               string
 	TargetRootID        string
 	RelativePath        string
 	DestinationRelative string
+	CandidatePaths      []string
 	Content             string
 	Pattern             string
 	Replacement         string
@@ -622,11 +624,12 @@ type GameSetupActionSpec struct {
 }
 
 const (
-	GameSetupActionEnsureDirectory = "ensure-directory"
-	GameSetupActionEnsureFile      = "ensure-file"
-	GameSetupActionRequirePath     = "require-path"
-	GameSetupActionRenameIfExists  = "rename-if-exists"
-	GameSetupActionPatchText       = "patch-text"
+	GameSetupActionEnsureDirectory       = "ensure-directory"
+	GameSetupActionEnsureFile            = "ensure-file"
+	GameSetupActionRequirePath           = "require-path"
+	GameSetupActionRenameIfExists        = "rename-if-exists"
+	GameSetupActionPatchText             = "patch-text"
+	GameSetupActionSelectStoreLocalePath = "select-store-locale-path"
 
 	GameSetupBaseGame       = "game"
 	GameSetupBaseTargetRoot = "target-root"
@@ -685,6 +688,19 @@ func PatchTargetRootTextFile(rootID, path, pattern, replacement string) []GameSe
 	return patchTextSetupActions(GameSetupBaseTargetRoot, rootID, path, pattern, replacement)
 }
 
+func SelectStoreLocalePath(store, fallbackPath string, candidates ...string) []GameSetupActionSpec {
+	store = strings.TrimSpace(store)
+	fallbackPath = strings.TrimSpace(fallbackPath)
+	return []GameSetupActionSpec{{
+		ID:             gameSetupActionID(GameSetupActionSelectStoreLocalePath, GameSetupBaseGame, store, fallbackPath),
+		Kind:           GameSetupActionSelectStoreLocalePath,
+		Base:           GameSetupBaseGame,
+		Store:          store,
+		RelativePath:   fallbackPath,
+		CandidatePaths: appendCleanStrings(nil, candidates...),
+	}}
+}
+
 func patchTextSetupActions(base, rootID, path, pattern, replacement string) []GameSetupActionSpec {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -717,6 +733,16 @@ func ensureGameSetupActions(kind, base, rootID, content string, overwriteExistin
 			Content:           content,
 			OverwriteExisting: overwriteExisting,
 		})
+	}
+	return out
+}
+
+func appendCleanStrings(out []string, values ...string) []string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
 	}
 	return out
 }

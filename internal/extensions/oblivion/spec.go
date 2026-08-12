@@ -140,6 +140,12 @@ func registerStoreMetadata(r sdk.Registrar) {
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Message: "Vortex can discover Oblivion through GOG app 1458058109. DMM indexes the same extension-declared GOG identity for supported SteamOS store-provider discovery."})
 	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Oblivion through Xbox app BethesdaSoftworks.TESOblivion-PC and defaults to the English language folder. DMM indexes the same extension-declared Xbox identity and language-folder behavior through the Oblivion extension."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "oblivion-hash-version", Name: "Oblivion.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Oblivion.esm"}}))
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "oblivion-store-locale-paths",
+		Name:    "Oblivion store locale path selection",
+		Message: "Mirrors Vortex queryPath behavior for Xbox installs by selecting the English localized Oblivion folder under the store install root before deployment.",
+		Actions: sdk.SelectStoreLocalePath("xbox", "Oblivion GOTY English", "Oblivion GOTY English", "Oblivion GOTY French", "Oblivion GOTY German", "Oblivion GOTY Italian", "Oblivion GOTY Spanish"),
+	})
 }
 
 func sources() []sdk.SourceRef {

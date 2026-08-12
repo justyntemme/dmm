@@ -182,6 +182,15 @@ func Register(r sdk.Registrar) {
 			},
 		}),
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "falloutnv-store-locale-paths",
+		Name:    "Fallout: New Vegas store locale path selection",
+		Message: "Mirrors Vortex queryPath behavior for Epic and Xbox installs by selecting a localized Fallout New Vegas folder under the store install root before deployment.",
+		Actions: append(
+			sdk.SelectStoreLocalePath("epic", "Fallout New Vegas English", "Fallout New Vegas English", "Fallout New Vegas French", "Fallout New Vegas German", "Fallout New Vegas Italian", "Fallout New Vegas Spanish"),
+			sdk.SelectStoreLocalePath("xbox", "Fallout New Vegas English", "Fallout New Vegas English", "Fallout New Vegas French", "Fallout New Vegas German", "Fallout New Vegas Italian", "Fallout New Vegas Spanish")...,
+		),
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

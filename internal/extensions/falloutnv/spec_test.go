@@ -65,6 +65,15 @@ func TestSummaryRecordsPluginActivationAndLaunchTool(t *testing.T) {
 	if !containsFeature(summary.Capabilities.LauncherRequirements, "falloutnv-xbox-launcher") || !containsFeature(summary.Capabilities.LauncherRequirements, "falloutnv-epic-launcher") {
 		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
 	}
+	setup := featureByID(summary.Capabilities.GameSetups, "falloutnv-store-locale-paths")
+	if setup == nil || len(setup.SetupActions) != 2 {
+		t.Fatalf("store locale setup = %+v", summary.Capabilities.GameSetups)
+	}
+	for _, action := range setup.SetupActions {
+		if action.Kind != sdk.GameSetupActionSelectStoreLocalePath || action.RelativePath != "Fallout New Vegas English" || len(action.CandidatePaths) != 5 {
+			t.Fatalf("setup action = %+v", action)
+		}
+	}
 }
 
 func registry() gameext.Registry {
@@ -116,4 +125,13 @@ func containsFeature(features []gameext.FeatureSummary, id string) bool {
 		}
 	}
 	return false
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for _, feature := range features {
+		if feature.ID == id {
+			return &feature
+		}
+	}
+	return nil
 }

@@ -366,15 +366,17 @@ type FeatureSummary struct {
 }
 
 type SetupActionSummary struct {
-	ID                  string `json:"id"`
-	Name                string `json:"name,omitempty"`
-	Kind                string `json:"kind"`
-	Base                string `json:"base"`
-	TargetRootID        string `json:"target_root_id,omitempty"`
-	RelativePath        string `json:"relative_path,omitempty"`
-	DestinationRelative string `json:"destination_relative,omitempty"`
-	Pattern             string `json:"pattern,omitempty"`
-	OverwriteExisting   bool   `json:"overwrite_existing,omitempty"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name,omitempty"`
+	Kind                string   `json:"kind"`
+	Base                string   `json:"base"`
+	Store               string   `json:"store,omitempty"`
+	TargetRootID        string   `json:"target_root_id,omitempty"`
+	RelativePath        string   `json:"relative_path,omitempty"`
+	DestinationRelative string   `json:"destination_relative,omitempty"`
+	CandidatePaths      []string `json:"candidate_paths,omitempty"`
+	Pattern             string   `json:"pattern,omitempty"`
+	OverwriteExisting   bool     `json:"overwrite_existing,omitempty"`
 }
 
 type ActionTargetSummary struct {
@@ -2776,9 +2778,11 @@ func setupActionSummaries(actions []sdk.GameSetupActionSpec) []SetupActionSummar
 			Name:                strings.TrimSpace(action.Name),
 			Kind:                strings.TrimSpace(action.Kind),
 			Base:                strings.TrimSpace(action.Base),
+			Store:               strings.TrimSpace(action.Store),
 			TargetRootID:        strings.TrimSpace(action.TargetRootID),
 			RelativePath:        filepath.ToSlash(strings.TrimSpace(action.RelativePath)),
 			DestinationRelative: filepath.ToSlash(strings.TrimSpace(action.DestinationRelative)),
+			CandidatePaths:      appendClean([]string{}, action.CandidatePaths...),
 			Pattern:             strings.TrimSpace(action.Pattern),
 			OverwriteExisting:   action.OverwriteExisting,
 		})

@@ -179,6 +179,15 @@ func registerStoreMetadata(r sdk.Registrar) {
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: xboxAppID, Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM indexes Vortex's Xbox launcher identity for Fallout 3 from extension metadata so store-backed registrations satisfy the same app identity."})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: epicAppID, Message: "DMM indexes Vortex's Epic launcher identity for Fallout 3 from extension metadata and matches supported Epic manifests through the generic store-provider discovery path."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "fallout3-hash-version", Name: "Fallout3.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Fallout3.esm"}}))
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "fallout3-store-locale-paths",
+		Name:    "Fallout 3 store locale path selection",
+		Message: "Mirrors Vortex queryPath behavior for Epic and Xbox installs by selecting the English localized game folder under the store install root before deployment.",
+		Actions: append(
+			sdk.SelectStoreLocalePath("epic", "Fallout 3 GOTY English", "Fallout 3 GOTY English", "Fallout 3 GOTY French", "Fallout 3 GOTY German", "Fallout 3 GOTY Italian", "Fallout 3 GOTY Spanish"),
+			sdk.SelectStoreLocalePath("xbox", "Fallout 3 GOTY English", "Fallout 3 GOTY English", "Fallout 3 GOTY French", "Fallout 3 GOTY German", "Fallout 3 GOTY Italian", "Fallout 3 GOTY Spanish")...,
+		),
+	})
 }
 
 func sources() []sdk.SourceRef {
