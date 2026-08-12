@@ -37,6 +37,14 @@ func Register(r sdk.Registrar) {
 			Actions:          sdk.StandardSteamWorkshopActions(),
 		},
 	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "rimworld-steam-launcher",
+		Name:     "Steam launcher",
+		Launcher: "steam",
+		Store:    "steam",
+		AppID:    SteamAppID,
+		Message:  "Mirrors Vortex's RimWorld requiresLauncher check: installs containing steam_api64.dll should launch through Steam.",
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: "rimworld-steam-mod", TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:rimworld:steam-mod",

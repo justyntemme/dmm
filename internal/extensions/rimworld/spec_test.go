@@ -57,8 +57,12 @@ func TestExtensionRegistersRimWorldCapabilities(t *testing.T) {
 	if len(summary.SteamAppIDs) != 1 || summary.SteamAppIDs[0] != rimworld.SteamAppID {
 		t.Fatalf("steam app ids = %+v", summary.SteamAppIDs)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.GameVersions) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.GameVersions) != 1 || len(summary.Capabilities.LauncherRequirements) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	requirement := summary.Capabilities.LauncherRequirements[0]
+	if requirement.ID != "rimworld-steam-launcher" || requirement.Launcher != "steam" || requirement.AppID != rimworld.SteamAppID {
+		t.Fatalf("launcher requirement = %+v", requirement)
 	}
 }
 

@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
 func TestExtensionRegistersMSFSVortexCapabilities(t *testing.T) {
 	compiled := gameext.MustCompileExtension(Extension())
-	if len(compiled.SteamAppIDs) != 1 || compiled.SteamAppIDs[0] != SteamAppID {
+	if !contains(compiled.SteamAppIDs, SteamAppID) {
 		t.Fatalf("steam app ids = %+v", compiled.SteamAppIDs)
 	}
 	if len(compiled.TargetRoots) != 1 || compiled.TargetRoots[0].ID != communityRootID {
@@ -26,6 +27,16 @@ func TestExtensionRegistersMSFSVortexCapabilities(t *testing.T) {
 	}
 	if len(compiled.Merges) != 1 {
 		t.Fatalf("merge specs = %+v", compiled.Merges)
+	}
+	summary := gameext.NewRegistry([]gameext.Extension{compiled}).ExtensionSummaries()[0]
+	if summary.Capabilities.GameRegistration == nil || !contains(summary.Capabilities.GameRegistration.StoreAppIDs["xbox"], msAppID) || summary.Capabilities.GameRegistration.Environment["XboxAPPId"] != msAppID {
+		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
+	}
+	if len(summary.Capabilities.LauncherRequirements) != 1 || summary.Capabilities.LauncherRequirements[0].ID != "msfs-xbox-launcher" || summary.Capabilities.LauncherRequirements[0].AppID != msAppID {
+		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
+	}
+	if summary.Capabilities.LauncherRequirements[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("launcher requirement status = %+v", summary.Capabilities.LauncherRequirements[0])
 	}
 }
 
@@ -242,6 +253,15 @@ func instructionTargets(instructions []installplan.Instruction) []string {
 		out = append(out, instruction.TargetRelative)
 	}
 	return out
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func assertEqualStringSlices(t *testing.T, got, want []string) {

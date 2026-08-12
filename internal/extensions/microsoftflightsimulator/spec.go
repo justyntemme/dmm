@@ -40,6 +40,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:         []string{SteamAppID},
+		StoreAppIDs:         map[string][]string{"xbox": {msAppID}},
 		NexusDomains:        []string{VortexGameID},
 		VortexGameID:        VortexGameID,
 		ExecutableRelative:  executableName,
@@ -47,11 +48,23 @@ func Register(r sdk.Registrar) {
 		QueryModPathDynamic: true,
 		MergeMode:           sdk.GameMergeModeDynamic,
 		StopPatterns:        []string{"(^|/)manifest.json(/|$)"},
-		Environment:         map[string]string{"SteamAPPId": SteamAppID},
+		Environment:         map[string]string{"SteamAPPId": SteamAppID, "XboxAPPId": msAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 			DefaultStrategy:       installplan.DeployStrategyCopy,
 		},
+	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "msfs-xbox-launcher",
+		Name:     "Xbox app launcher",
+		Launcher: "xbox",
+		Store:    "xbox",
+		AppID:    msAppID,
+		Parameters: []sdk.LauncherParameterSpec{{
+			Name:  "appExecName",
+			Value: "App",
+		}},
+		Message: "Mirrors Vortex's Microsoft Flight Simulator requiresLauncher check for Microsoft Store installs that cannot be launched by directly statting FlightSimulator.exe.",
 	})
 	r.RegisterTargetRoot(sdk.TargetRootSpec{
 		ID:       communityRootID,
