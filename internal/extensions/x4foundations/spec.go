@@ -65,6 +65,14 @@ func Register(r sdk.Registrar) {
 		Name:     "X4 version.dat",
 		Provider: gameVersion,
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:   "x4foundations-prepare-extensions",
+		Name: "Prepare X4 game and Documents extension folders",
+		Actions: append(
+			sdk.EnsureGameDirectories(gameExtensionsRoot),
+			sdk.EnsureTargetRootDirectories(documentsRootID, ".")...,
+		),
+	})
 	r.RegisterStateMigration(sdk.StateMigrationSpec{
 		ID:          "x4foundations-1.0.1-invalid-folder-migration",
 		Name:        "X4 invalid ws_ folder reinstall warning",

@@ -57,9 +57,24 @@ func TestX4ExtensionRegistersDocumentsTargetRoot(t *testing.T) {
 	if !found {
 		t.Fatalf("documents target root %q was not registered", documentsRootID)
 	}
+	if !hasSetupAction(extension.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseGame, "", gameExtensionsRoot) ||
+		!hasSetupAction(extension.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseTargetRoot, documentsRootID, ".") {
+		t.Fatalf("game setups = %+v", extension.GameSetups)
+	}
 	if len(extension.StateMigrations) != 1 || len(extension.StateMigrations[0].Commands) != 1 || extension.StateMigrations[0].Commands[0].Command != sdk.StateMigrationCommandWarnStagedPaths {
 		t.Fatalf("state migrations = %+v", extension.StateMigrations)
 	}
+}
+
+func hasSetupAction(setups []sdk.GameSetupSpec, kind, base, rootID, rel string) bool {
+	for _, setup := range setups {
+		for _, action := range setup.Actions {
+			if action.Kind == kind && action.Base == base && action.TargetRootID == rootID && action.RelativePath == rel {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func assertX4Target(t *testing.T, instructions []installplan.Instruction, target string) {
