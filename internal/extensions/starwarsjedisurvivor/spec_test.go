@@ -21,17 +21,41 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.ID != starwarsjedisurvivor.VortexGameID {
 		t.Fatalf("summary id = %q", summary.ID)
 	}
-	if len(summary.SteamAppIDs) != 1 || summary.SteamAppIDs[0] != starwarsjedisurvivor.SteamAppID {
+	if !contains(summary.SteamAppIDs, starwarsjedisurvivor.SteamAppID) {
 		t.Fatalf("steam app ids = %+v", summary.SteamAppIDs)
+	}
+	if got := extension.GameMetadata.StoreAppIDs["origin"]; len(got) != 1 || got[0] != starwarsjedisurvivor.OriginAppID {
+		t.Fatalf("store app ids = %+v", extension.GameMetadata.StoreAppIDs)
 	}
 	if len(summary.NexusDomains) != 1 || summary.NexusDomains[0] != starwarsjedisurvivor.VortexGameID {
 		t.Fatalf("nexus domains = %+v", summary.NexusDomains)
 	}
+	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "" || summary.Capabilities.GameRegistration.ExecutableRelative != "SwGame/Binaries/Win64/jedisurvivor.exe" || !summary.Capabilities.GameRegistration.RequiresCleanup {
+		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
+	}
 	if len(summary.Capabilities.Installers) != 2 || len(summary.Capabilities.ModTypes) != 2 {
 		t.Fatalf("installer/mod-type capabilities = %+v", summary.Capabilities)
 	}
+	if featureByID(summary.Capabilities.Installers, "vortex:starwarsjedisurvivor:r457loader") == nil || featureByID(summary.Capabilities.Installers, "vortex:starwarsjedisurvivor:pak") == nil {
+		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
+	}
+	if modType := featureByID(summary.Capabilities.ModTypes, "starwarsjedi2-pak-modtype"); modType == nil || modType.Name != "SwGame/Content/Paks/~mods" {
+		t.Fatalf("mod types = %+v", summary.Capabilities.ModTypes)
+	}
 	if len(summary.Capabilities.Merges) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("load-order capabilities = %+v", summary.Capabilities)
+	}
+	if featureByID(summary.Capabilities.Merges, "starwarsjedi2-pak-load-order") == nil {
+		t.Fatalf("merges = %+v", summary.Capabilities.Merges)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "starwarsjedi2-pak-load-order"); loadOrder == nil || loadOrder.TargetRoot != "SwGame/Content/Paks/~mods" || len(loadOrder.FileExtensions) != 3 {
+		t.Fatalf("load orders = %+v", summary.Capabilities.LoadOrders)
+	}
+	if page := featureByID(summary.Capabilities.ExtensionLoadOrderPages, "starwarsjedi2-load-order-page"); page == nil || page.Scope != starwarsjedisurvivor.VortexGameID {
+		t.Fatalf("load-order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventWillDeploy); handler == nil || handler.Trigger != sdk.EventWillDeploy {
+		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
 }
 
@@ -199,4 +223,22 @@ func writeFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

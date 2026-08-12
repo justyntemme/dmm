@@ -8,6 +8,8 @@ import (
 
 const (
 	SteamAppID   = "1774580"
+	OriginAppID  = "Origin.SFT.50.0001331"
+	EpicAppID    = ""
 	VortexGameID = "starwarsjedisurvivor"
 	Name         = "Star Wars Jedi: Survivor"
 
@@ -29,9 +31,14 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:  []string{SteamAppID},
-		NexusDomains: []string{VortexGameID},
-		VortexGameID: VortexGameID,
+		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"origin": {OriginAppID}},
+		NexusDomains:       []string{VortexGameID},
+		VortexGameID:       VortexGameID,
+		ExecutableRelative: "SwGame/Binaries/Win64/jedisurvivor.exe",
+		RequiredFiles:      []string{"SwGame/Binaries/Win64/jedisurvivor.exe"},
+		RequiresCleanup:    true,
+		Environment:        map[string]string{"SteamAPPId": SteamAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 			DefaultStrategy:       installplan.DeployStrategyCopy,
@@ -66,6 +73,13 @@ func Register(r sdk.Registrar) {
 		TargetRoot:     pakRoot,
 		ModTypes:       []string{pakModType},
 		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+	})
+	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
+		ID:      "starwarsjedi2-load-order-page",
+		Name:    "Star Wars Jedi: Survivor load order page",
+		Scope:   VortexGameID,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors the external Vortex extension load-order page: DMM filters Jedi PAK mods, exposes profile ordering, and marks deployment necessary when the order changes.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",
