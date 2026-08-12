@@ -5,6 +5,8 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
+const verifiedVortexCommit = "2349a17900a37c2120e90733045dc6b303135b89"
+
 const (
 	SteamAppID   = "264710"
 	VortexGameID = "subnautica"
@@ -39,6 +41,6 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-subnautica extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-subnautica/src"})
+	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-subnautica extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/" + verifiedVortexCommit + "/extensions/games/game-subnautica/src"})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex support mod declared by game-subnautica", URL: "https://www.nexusmods.com/site/mods/" + SupportModID})
 }
