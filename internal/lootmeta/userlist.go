@@ -176,7 +176,112 @@ func validateUserlistActionChecks(userlist Userlist) error {
 			}
 		}
 	}
+	normalized := normalizeUserlist(userlist)
+	if err := validateUserlistRuleGraph("LOOT plugin after", pluginAfterGraph(normalized)); err != nil {
+		return err
+	}
+	if err := validateUserlistRuleGraph("LOOT group after", groupAfterGraph(normalized)); err != nil {
+		return err
+	}
 	return nil
+}
+
+func pluginAfterGraph(userlist Userlist) map[string][]string {
+	graph := map[string][]string{}
+	for _, plugin := range userlist.Plugins {
+		name := cleanName(plugin.Name)
+		if name == "" {
+			continue
+		}
+		graph[name] = append([]string(nil), plugin.After...)
+	}
+	return graph
+}
+
+func groupAfterGraph(userlist Userlist) map[string][]string {
+	graph := map[string][]string{}
+	for _, group := range userlist.Groups {
+		name := cleanName(group.Name)
+		if name == "" {
+			continue
+		}
+		graph[name] = append([]string(nil), group.After...)
+	}
+	return graph
+}
+
+func validateUserlistRuleGraph(label string, graph map[string][]string) error {
+	if len(graph) == 0 {
+		return nil
+	}
+	known := make(map[string]string, len(graph))
+	for name := range graph {
+		known[strings.ToUpper(name)] = name
+	}
+	const (
+		unvisited = 0
+		visiting  = 1
+		visited   = 2
+	)
+	state := map[string]int{}
+	var stack []string
+	var visit func(string) error
+	visit = func(name string) error {
+		key := strings.ToUpper(name)
+		switch state[key] {
+		case visiting:
+			return fmt.Errorf("%s rules contain a cycle: %s", label, formatRuleCycle(stack, name))
+		case visited:
+			return nil
+		}
+		state[key] = visiting
+		stack = append(stack, name)
+		for _, target := range graph[name] {
+			target = cleanName(target)
+			if target == "" {
+				continue
+			}
+			resolved, ok := known[strings.ToUpper(target)]
+			if !ok {
+				continue
+			}
+			if err := visit(resolved); err != nil {
+				return err
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[key] = visited
+		return nil
+	}
+	names := make([]string, 0, len(graph))
+	for name := range graph {
+		names = append(names, name)
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+	for _, name := range names {
+		if state[strings.ToUpper(name)] == unvisited {
+			if err := visit(name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func formatRuleCycle(stack []string, repeat string) string {
+	repeatKey := strings.ToUpper(cleanName(repeat))
+	start := 0
+	for idx, name := range stack {
+		if strings.ToUpper(cleanName(name)) == repeatKey {
+			start = idx
+			break
+		}
+	}
+	cycle := append([]string(nil), stack[start:]...)
+	cycle = append(cycle, repeat)
+	return strings.Join(cycle, " -> ")
 }
 
 func (s Service) CopyUserlistForProfile(spec sdk.PluginActivationSpec, sourceProfileID, targetProfileID int64) (bool, error) {

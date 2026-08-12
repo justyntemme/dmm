@@ -132,6 +132,40 @@ func TestWriteUserlistRejectsDuplicateVortexRule(t *testing.T) {
 	}
 }
 
+func TestWriteUserlistRejectsPluginAfterCycles(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	_, err := service.WriteUserlist(spec, Userlist{
+		Plugins: []UserlistPlugin{
+			{Name: "A.esp", After: []string{"B.esp"}},
+			{Name: "B.esp", After: []string{"C.esp"}},
+			{Name: "C.esp", After: []string{"A.esp"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "LOOT plugin after rules contain a cycle") {
+		t.Fatalf("WriteUserlist() cycle error = %v", err)
+	}
+}
+
+func TestWriteUserlistRejectsGroupAfterCycles(t *testing.T) {
+	dir := t.TempDir()
+	service := Service{DataDir: dir}
+	spec := sdk.PluginActivationSpec{LOOTGameID: "fallout4"}
+
+	_, err := service.WriteUserlist(spec, Userlist{
+		Groups: []UserlistGroup{
+			{Name: "Early", After: []string{"Late"}},
+			{Name: "Late", After: []string{"Default"}},
+			{Name: "Default", After: []string{"Early"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "LOOT group after rules contain a cycle") {
+		t.Fatalf("WriteUserlist() cycle error = %v", err)
+	}
+}
+
 func TestStatusWarnsForMissingUserlistGroups(t *testing.T) {
 	dir := t.TempDir()
 	service := Service{DataDir: dir}
