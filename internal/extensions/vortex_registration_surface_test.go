@@ -223,6 +223,8 @@ func TestFirstPartyCoversVortexActionAndPageSurfaces(t *testing.T) {
 		"witcher3-load-order-page",
 		"bladeandsorcery-loadorder-page",
 		"conanexiles-load-order-page",
+		"kingdomcomedeliverance-load-order-page",
+		"poe2-load-order-page",
 		"msfs-load-order-page",
 		"xcom2-load-order-page",
 	} {
