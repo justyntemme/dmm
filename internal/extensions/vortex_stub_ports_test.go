@@ -102,6 +102,9 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 			sourceDir:    "game-subnauticabelowzero",
 		},
 	}
+	if len(tests) != 9 {
+		t.Fatalf("Vortex registerGameStub inventory changed: got %d entries, want 9", len(tests))
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := gameext.NewRegistry([]gameext.Extension{tt.extension})
