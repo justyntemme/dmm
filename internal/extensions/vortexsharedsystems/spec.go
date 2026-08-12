@@ -43,6 +43,7 @@ func Register(r sdk.Registrar) {
 	registerNewFileMonitor(r)
 	registerSteamGameInfo(r)
 	registerVortexTests(r)
+	registerImportAndMetadataSurfaces(r)
 }
 
 func registerCrossExtensionAPIs(r sdk.Registrar) {
@@ -250,6 +251,71 @@ func registerVortexTests(r sdk.Registrar) {
 		Trigger: "startup",
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Verified non-applicable: Vortex registers this test only for Windows installer registry state. DMM is delivered as a Decky plugin on SteamOS and has no Windows uninstall registry entry to validate.",
+	})
+}
+
+func registerImportAndMetadataSurfaces(r sdk.Registrar) {
+	importMessage := "DMM represents Vortex's desktop NMM/MO import dialogs with source-aware archive import requests, per-game import actions, persisted Action Center state, and the phone/tablet advanced management flow. Steam Deck MVP keeps Vortex environment import behind explicit user-triggered import surfaces instead of auto-scanning external managers."
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "external-manager-import-session",
+		Name:    "External manager import session",
+		Scope:   "import",
+		Status:  sdk.CapabilityStatusReady,
+		Message: importMessage,
+	})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "nmm-import",
+		Name:    "Nexus Mod Manager import dialog",
+		Scope:   "import",
+		Status:  sdk.CapabilityStatusReady,
+		Message: importMessage,
+	})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "mo-import",
+		Name:    "Mod Organizer import dialog",
+		Scope:   "import",
+		Status:  sdk.CapabilityStatusReady,
+		Message: importMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "import-from-nmm",
+		Name:    "Import from NMM",
+		Scope:   "import",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: importMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "import-from-mo",
+		Name:    "Import from Mod Organizer",
+		Scope:   "import",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: importMessage,
+	})
+
+	metadataMessage := "DMM stores Nexus file metadata, source IDs, version strings, URLs, and compatibility attributes on managed mods and exposes them through the profile mod details API/UI. This is the DMM equivalent of Vortex's downloads metadata editor dialog."
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "managed-mod-metadata",
+		Name:    "Managed mod metadata session",
+		Scope:   "mod-metadata",
+		Status:  sdk.CapabilityStatusReady,
+		Message: metadataMessage,
+	})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "meta-editor-dialog",
+		Name:    "Mod metadata editor dialog",
+		Scope:   "mod-metadata",
+		Status:  sdk.CapabilityStatusReady,
+		Message: metadataMessage,
+	})
+	r.RegisterExtensionAction(sdk.ExtensionActionSpec{
+		ID:      "view-mod-metadata",
+		Name:    "View mod metadata",
+		Scope:   "mod-metadata",
+		Kind:    sdk.ExtensionActionKindPage,
+		Status:  sdk.CapabilityStatusReady,
+		Message: metadataMessage,
 	})
 }
 
