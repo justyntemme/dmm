@@ -22,6 +22,8 @@ func TestExtensionRegistersSourceBackedBepInExFrameworkSurface(t *testing.T) {
 	assertReadyWithMessage(t, "mod type", summary.Capabilities.ModTypes, "bepinex-patcher")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "register-bepinex-unity-game")
 	assertReadyWithMessage(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "bepinex-support")
+	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "bepinex-config-test")
+	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "doorstop-config-test")
 }
 
 func assertReadyWithMessage(t *testing.T, kind string, features []gameext.FeatureSummary, id string) {

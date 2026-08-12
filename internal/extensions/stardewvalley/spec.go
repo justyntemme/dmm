@@ -90,6 +90,13 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex's createManifestAttributeExtractor by parsing Stardew manifest.json during install planning and storing SMAPI dependency/version metadata for diagnostics and runtime checks.",
 	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "sdv-compatibility",
+		Name:    "Stardew compatibility status",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Stardew sdv-compatibility mods table attribute by rendering SMAPI compatibility metadata from manifest extraction and compatibility diagnostics in DMM mod details.",
+	})
 	r.RegisterStateReducer(sdk.StateReducerSpec{
 		ID:      "stardew-settings-reducer",
 		Name:    "Stardew settings state",
@@ -99,8 +106,8 @@ func Register(r sdk.Registrar) {
 		Message: "Mirrors Vortex's settings.SDV reducer through DMM extension settings and profile-scoped settings, including generated config preservation and SMAPI launch-tool state.",
 	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "stardew-smapi-runtime-test",
-		Name:    "SMAPI runtime configuration",
+		ID:      "sdv-incompatible-mods",
+		Name:    "Stardew incompatible mods check",
 		Trigger: sdk.EventGamemodeActivated,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex Stardew diagnostics through DMM runtime requirements, SMAPI launch-tool checks, and SMAPI.io compatibility events.",

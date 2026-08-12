@@ -71,6 +71,8 @@ func Register(r sdk.Registrar) {
 		ID:      "mcc-ce-mp-test",
 		Name:    "Halo CE multiplayer maps",
 		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Halo CE multiplayer map diagnostic by checking the MCC map folder layout required for managed multiplayer map deployments.",
 		Check:   checkHaloCEMultiplayerMaps,
 	})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{

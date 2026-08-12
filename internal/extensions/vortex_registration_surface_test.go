@@ -458,6 +458,84 @@ func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
+	// Source inventory verified from Vortex registerAPI, registerTest,
+	// registerDialog, and registerTableAttribute calls. Repeated trigger
+	// registrations map to one DMM extension test when the test body is the
+	// same runtime check exposed through DMM's event/test runner.
+	required := map[string][]string{
+		"extension API": {
+			"register-bepinex-unity-game",
+			"ummAddGame",
+			"getHashVersion",
+			"lootSortAsync",
+			"isBlueprintPlugin",
+			"qbmsRegisterGame",
+			"qbmsList",
+			"qbmsExtract",
+			"qbmsWrite",
+			"qbmsReimport",
+		},
+		"extension test": {
+			"gamebryo-incompatible-mod-archives",
+			"gamebryo-plugins-locked",
+			"gamebryo-missing-masters",
+			"gamebryo-blueprint-master",
+			"dependency-unsolved-conflicts",
+			"gamebryo-invalid-userlist",
+			"gamebryo-missing-groups",
+			"gamebryo-exceeded-plugin-limit",
+			"oblivion-fonts",
+			"skyrim-fonts",
+			"bepinex-config-test",
+			"doorstop-config-test",
+			"script-extender-missing",
+			"misconfigured-script-extender",
+			"fnis-integration",
+			"local-game-settings-global-files",
+			"game-version-gamemode",
+			"game-version-mod-installed",
+			"test-setup-uninstall-entry",
+			"sdv-incompatible-mods",
+			"mcc-ce-mp-test",
+		},
+		"extension dialog": {
+			"meta-editor-dialog",
+			"dependency-connector",
+			"dependency-editor",
+			"dependency-group-editor",
+			"nmm-import",
+			"mo-import",
+			"feedback-responder",
+		},
+		"table attribute": {
+			"script-extender-errors",
+			"sdv-compatibility",
+			"gameType",
+			"gamebryo-plugin-index-lock",
+		},
+	}
+
+	features := map[string]map[string]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		addFeatureMap(features, "extension API", summary.Capabilities.ExtensionAPIs)
+		addFeatureMap(features, "extension test", summary.Capabilities.ExtensionTests)
+		addFeatureMap(features, "extension dialog", summary.Capabilities.ExtensionDialogs)
+		addFeatureMap(features, "table attribute", summary.Capabilities.ExtensionTableAttrs)
+	}
+	for kind, ids := range required {
+		for _, id := range ids {
+			feature, ok := features[kind][id]
+			if !ok {
+				t.Fatalf("missing runtime counterpart for Vortex %s surface %q", kind, id)
+			}
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("%s %s = %+v", kind, id, feature)
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerInstaller calls.
 	// DMM expands shared Vortex installers per game, so this test checks that

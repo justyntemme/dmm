@@ -57,6 +57,12 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 		readyAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
 		readyAPI("registerGameInfoProvider", "Register generic game info provider"),
 		{
+			ID:      "lootSortAsync",
+			Name:    "Sort Gamebryo plugins with LOOT",
+			Status:  sdk.CapabilityStatusReady,
+			Message: "Mirrors Vortex gamebryo-plugin-management lootSortAsync by exposing a shared plugin sort surface backed by DMM's LOOT masterlist/userlist state, plugin activation model, and profile load-order writer.",
+		},
+		{
 			ID:      "isBlueprintPlugin",
 			Name:    "Detect Starfield blueprint plugin files",
 			Status:  sdk.CapabilityStatusReady,
@@ -68,8 +74,54 @@ func registerCrossExtensionAPIs(r sdk.Registrar) {
 }
 
 func registerGamebryoSystems(r sdk.Registrar) {
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "gamebryo-incompatible-mod-archives", Name: "Gamebryo incompatible archive check", Trigger: "plugins-changed", Status: sdk.CapabilityStatusReady})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "oblivion-fonts", Name: "Oblivion font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "gamebryo-incompatible-mod-archives",
+		Name:    "Gamebryo incompatible archive check",
+		Trigger: "plugins-changed",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-archive-check by validating extension-declared BSA/BA2 archive compatibility against the active Gamebryo game version and plugin state.",
+	})
+	pluginDiagnosticsMessage := "Mirrors Vortex gamebryo-plugin-management diagnostics through DMM's profile plugin activation state, LOOT masterlist/userlist models, plugin header parser, and profile diagnostics runner."
+	for _, test := range []sdk.ExtensionTestSpec{
+		{ID: "gamebryo-plugins-locked", Name: "Gamebryo locked plugins check", Trigger: "gamemode-activated"},
+		{ID: "gamebryo-missing-masters", Name: "Gamebryo missing masters check", Trigger: "plugins-changed"},
+		{ID: "gamebryo-blueprint-master", Name: "Gamebryo blueprint master check", Trigger: "plugins-changed"},
+		{ID: "dependency-unsolved-conflicts", Name: "Unsolved dependency conflicts check", Trigger: "loot-info-updated"},
+		{ID: "gamebryo-exceeded-plugin-limit", Name: "Gamebryo exceeded plugin limit check", Trigger: "plugins-changed"},
+	} {
+		test.Status = sdk.CapabilityStatusReady
+		test.Message = pluginDiagnosticsMessage
+		r.RegisterExtensionTest(test)
+	}
+	scriptExtenderInstallerMessage := "Mirrors Vortex script-extender-installer tests by validating extension-declared script extender runtime requirements, primary launch-tool wiring, and managed script extender installation state for each supported Gamebryo game."
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "script-extender-missing",
+		Name:    "Script extender missing check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: scriptExtenderInstallerMessage,
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "misconfigured-script-extender",
+		Name:    "Script extender launch configuration check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: scriptExtenderInstallerMessage,
+	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "script-extender-errors",
+		Name:    "Script extender load errors",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex script-extender-error-check table attribute by attaching parsed script-extender plugin load errors to managed mod details and diagnostics output.",
+	})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "oblivion-fonts",
+		Name:    "Oblivion font settings check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-test-settings by checking and repairing missing Oblivion font INI entries through the shared Gamebryo font settings runtime.",
+	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
 		ID:      "gamebryo-invalid-userlist",
 		Name:    "Gamebryo invalid LOOT userlist check",
@@ -145,6 +197,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Vortex observes GAMEBRYO_SET_PLUGIN_MANAGEMENT_ENABLED to start or stop plugin synchronization for the active profile. DMM represents the same state as extension-owned plugin activation support attached to each Gamebryo profile, so enabling the feature switches deployment and profile plugin generation through the profile API.",
 	})
+	r.RegisterExtensionDialog(sdk.ExtensionDialogSpec{
+		ID:      "dependency-group-editor",
+		Name:    "LOOT group editor dialog",
+		Scope:   "gamebryo-plugins",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-plugin-management group-editor by exposing LOOT group assignment and custom group editing through DMM's profile rule/group APIs and advanced profile management UI.",
+	})
 	archiveInvalidationMessage := "DMM mirrors Vortex's Gamebryo archive-invalidation Workarounds settings through extension-declared archive invalidation handlers, profile-local INI patching, timestamp repair tests, and per-game archive validation."
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:        "gamebryo-archive-invalidation-workarounds",
@@ -169,7 +228,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{ID: "gamebryo-savegames", Name: "Save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterExtensionAPI(readyAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "skyrim-fonts", Name: "Skyrim font settings check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady})
+	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+		ID:      "skyrim-fonts",
+		Name:    "Skyrim font settings check",
+		Trigger: "gamemode-activated",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex gamebryo-test-settings by checking Skyrim font files referenced from the default INI through the shared Gamebryo font settings runtime.",
+	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "morrowind-plugins",
 		Name:    "Morrowind plugins",
@@ -221,7 +286,6 @@ func registerDependencyManager(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: dependencyRuleMessage + " DMM stores these as profile-scoped mod rules instead of a Vortex global settings page.",
 	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "dependency-unsolved-conflicts", Name: "Unsolved dependency conflicts check", Trigger: "gamemode-activated", Status: sdk.CapabilityStatusReady, Message: dependencyRuleMessage})
 	r.RegisterStartHook(sdk.StartHookSpec{
 		ID:       "dependency-check-unsolved-conflicts",
 		Name:     "Check unsolved dependency conflicts",

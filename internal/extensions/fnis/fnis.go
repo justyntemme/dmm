@@ -132,6 +132,8 @@ func FNISTest(opts SupportOptions) sdk.ExtensionTestSpec {
 		ID:      "fnis-integration",
 		Name:    "FNIS integration check",
 		Trigger: sdk.EventGamemodeActivated,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex fnis-integration by checking profile auto-run state, FNIS tool installation, selected patches, and generated FNIS Data output for supported Skyrim-family games.",
 		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
 			return checkFNIS(ctx, opts, input), nil
 		},
