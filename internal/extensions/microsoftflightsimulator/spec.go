@@ -82,7 +82,12 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildReplacerArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "msfs-aircraft-cfg", Name: "MSFS aircraft.cfg merge"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      "msfs-aircraft-cfg",
+		Name:    "MSFS aircraft.cfg merge",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Microsoft Flight Simulator registerMerge surface by merging managed aircraft.cfg replacements while preparing Community package deployment.",
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,
 		Name:    "Prepare MSFS Community load order and aircraft.cfg merge",
@@ -94,6 +99,7 @@ func Register(r sdk.Registrar) {
 		TargetRootID:  communityRootID,
 		ModTypes:      []string{packModType, replacerModType},
 		EntryNameMode: sdk.LoadOrderEntryNameFirstChild,
+		Message:       "Mirrors Vortex's Microsoft Flight Simulator load-order page by ordering managed Community package folders from profile priority.",
 	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "msfs-load-order-page",

@@ -58,13 +58,19 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildPakArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "codevein-pak-load-order", Name: "Code Vein pak load order"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      "codevein-pak-load-order",
+		Name:    "Code Vein pak load order",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Applies Vortex-style Unreal PAK folder prefixes from the active profile order during deployment.",
+	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
 		ID:             "codevein-pak-load-order",
 		Name:           "Code Vein pak load order",
 		TargetRoot:     pakRoot,
 		ModTypes:       []string{pakModType},
 		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+		Message:        "Mirrors Vortex's Code Vein load-order surface by prefixing managed PAK folders according to profile priority.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",

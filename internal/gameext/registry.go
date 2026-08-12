@@ -2069,7 +2069,12 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.SteamWorkshop = workshop
 	}
 	for _, merge := range extension.Merges {
-		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{ID: merge.ID, Name: merge.Name})
+		summary.Capabilities.Merges = append(summary.Capabilities.Merges, FeatureSummary{
+			ID:      merge.ID,
+			Name:    merge.Name,
+			Status:  merge.Status,
+			Message: merge.Message,
+		})
 	}
 	for _, loadOrder := range extension.LoadOrders {
 		summary.Capabilities.LoadOrders = append(summary.Capabilities.LoadOrders, FeatureSummary{

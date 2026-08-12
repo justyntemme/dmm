@@ -559,7 +559,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateTargetRoots(extension.TargetRoots)...)
 	errs = append(errs, validateInstallPlanTargetRoots(extension.InstallPlan, extension.TargetRoots)...)
 	errs = append(errs, validateSteamWorkshop(extension.SteamWorkshop)...)
-	errs = append(errs, validateNamedSpecs("merge", extension.Merges, func(spec sdk.MergeSpec) string { return spec.ID })...)
+	errs = append(errs, validateMerges(extension.Merges)...)
 	errs = append(errs, validateLoadOrders(extension.LoadOrders, extension.InstallPlan.ModTypes, extension.TargetRoots)...)
 	errs = append(errs, validateArchiveTypes(extension.ArchiveTypes)...)
 	errs = append(errs, validateInterpreters(extension.Interpreters)...)
@@ -1286,6 +1286,21 @@ func validateLoadOrders(specs []sdk.LoadOrderSpec, modTypes []installplan.ModTyp
 		}
 		if strings.ContainsAny(spec.UsageInstructions, "\x00") {
 			errs = append(errs, errors.New("load order "+id+" usage instructions must not contain NUL"))
+		}
+	}
+	return errs
+}
+
+func validateMerges(specs []sdk.MergeSpec) []error {
+	var errs []error
+	errs = append(errs, validateNamedSpecs("merge", specs, func(spec sdk.MergeSpec) string { return spec.ID })...)
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if id == "" {
+			continue
+		}
+		if err := validateCapabilityStatus("merge", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
 		}
 	}
 	return errs

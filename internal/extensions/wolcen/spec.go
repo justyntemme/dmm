@@ -58,7 +58,12 @@ func Register(r sdk.Registrar) {
 		StripCommonRoot:   true,
 		InstructionMode:   installplan.InstructionArchiveRoot,
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: mergeHandler, Name: "Wolcen XML/MTL merge"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      mergeHandler,
+		Name:    "Wolcen XML/MTL merge",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Wolcen registerMerge surface by generating XML/MTL merged deployment output from enabled profile mappings during the will-deploy event.",
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: sdk.EventWillDeploy,
 		Name:  "Wolcen XML/MTL merge generation",

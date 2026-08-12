@@ -61,6 +61,7 @@ func Register(r sdk.Registrar) {
 		TargetRoot:     modsRoot,
 		ModTypes:       []string{modType},
 		FileExtensions: []string{".pak"},
+		Message:        "Mirrors Vortex's Conan Exiles load-order page by writing the active profile PAK order to modlist.txt during deployment.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: sdk.EventWillDeploy,

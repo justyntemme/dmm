@@ -236,6 +236,59 @@ func TestFirstPartyCoversVortexActionAndPageSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexMergeAndLoadOrderInventory(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerMerge and
+	// registerLoadOrder calls. DMM may expose richer load-order support for
+	// additional games, but each Vortex-backed merge/load-order registration
+	// must have a concrete extension-owned runtime surface.
+	requiredMerges := []string{
+		"wolcen-xml-mtl-merge",
+		"msfs-aircraft-cfg",
+		"dragonage-addins-xml",
+		"witcher3-xml-menu-merge",
+	}
+	requiredLoadOrders := []string{
+		"codevein-pak-load-order",
+		"xcom2-default-mod-options",
+		"spyro-pak-load-order",
+		"bloodstainedrotn-pak-load-order",
+		"morrowind-ini-load-order",
+		"witcher3-mods-settings",
+		"conanexiles-modlist",
+		"msfs-community-load-order",
+		"bladeandsorcery-loadorder-json",
+	}
+
+	merges := map[string]gameext.FeatureSummary{}
+	loadOrders := map[string]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		for _, merge := range summary.Capabilities.Merges {
+			merges[merge.ID] = merge
+		}
+		for _, loadOrder := range summary.Capabilities.LoadOrders {
+			loadOrders[loadOrder.ID] = loadOrder
+		}
+	}
+	for _, id := range requiredMerges {
+		feature, ok := merges[id]
+		if !ok {
+			t.Fatalf("missing runtime counterpart for Vortex registerMerge surface %q", id)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+			t.Fatalf("merge %s = %+v", id, feature)
+		}
+	}
+	for _, id := range requiredLoadOrders {
+		feature, ok := loadOrders[id]
+		if !ok {
+			t.Fatalf("missing runtime counterpart for Vortex registerLoadOrder surface %q", id)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+			t.Fatalf("load order %s = %+v", id, feature)
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerInstaller calls.
 	// DMM expands shared Vortex installers per game, so this test checks that

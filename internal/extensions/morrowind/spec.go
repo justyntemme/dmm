@@ -84,6 +84,7 @@ func Register(r sdk.Registrar) {
 		ModTypes:       []string{dataRootModType, dataFolderModType},
 		FileExtensions: []string{".esm", ".esp"},
 		EntryNameMode:  sdk.LoadOrderEntryNameFileName,
+		Message:        "Mirrors Vortex's Morrowind load-order surface by writing the active profile plugin order into Morrowind.ini and applying timestamp ordering during deployment.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventWillDeploy,

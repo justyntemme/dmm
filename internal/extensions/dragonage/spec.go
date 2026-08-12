@@ -84,7 +84,12 @@ func Register(r sdk.Registrar) {
 		Status:   sdk.CapabilityStatusReady,
 		Message:  "DMM evaluates Vortex's Steam launcher requirement against the discovered Steam app and reports it through launcher diagnostics.",
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "dragonage-addins-xml", Name: "Dragon Age AddIns.xml merge"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      "dragonage-addins-xml",
+		Name:    "Dragon Age AddIns.xml merge",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Dragon Age DAZIP registerMerge surface by regenerating AddIns.xml from enabled profile entries during deployment.",
+	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{Event: sdk.EventWillDeploy, Name: "Dragon Age AddIns.xml generation", Handler: dazip.WillDeployAddInsXML})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-dragonage extension source",

@@ -117,7 +117,12 @@ func Register(r sdk.Registrar) {
 		Name:    "Ensure Witcher 3 mod folders exist",
 		Actions: sdk.EnsureGameDirectories("Mods", "DLC"),
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "witcher3-xml-menu-merge", Name: "Witcher 3 XML/menu merge"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      "witcher3-xml-menu-merge",
+		Name:    "Witcher 3 XML/menu merge",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Witcher 3 registerMerge surface by resolving managed XML/menu changes through the extension-owned menu merge runtime during deployment.",
+	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
 		ID:                "witcher3-mods-settings",
 		Name:              "Witcher 3 mods.settings load order",

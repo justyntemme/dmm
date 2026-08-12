@@ -527,8 +527,10 @@ type PackedArchiveMutationSpec struct {
 }
 
 type MergeSpec struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Status  string
+	Message string
 }
 
 type LoadOrderSpec struct {

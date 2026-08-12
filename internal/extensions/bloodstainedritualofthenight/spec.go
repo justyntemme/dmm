@@ -55,13 +55,19 @@ func Register(r sdk.Registrar) {
 		CustomBuild:       buildPakArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
-	r.RegisterMerge(sdk.MergeSpec{ID: "bloodstainedrotn-pak-load-order", Name: "Bloodstained pak load order"})
+	r.RegisterMerge(sdk.MergeSpec{
+		ID:      "bloodstainedrotn-pak-load-order",
+		Name:    "Bloodstained pak load order",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Applies Vortex-style Unreal PAK folder prefixes from the active profile order during deployment.",
+	})
 	r.RegisterLoadOrder(sdk.LoadOrderSpec{
 		ID:             "bloodstainedrotn-pak-load-order",
 		Name:           "Bloodstained pak load order",
 		TargetRoot:     pakRoot,
 		ModTypes:       []string{pakModType},
 		FileExtensions: []string{".pak", ".ucas", ".utoc"},
+		Message:        "Mirrors Vortex's Bloodstained load-order surface by prefixing managed PAK folders according to profile priority.",
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event: "will-deploy",

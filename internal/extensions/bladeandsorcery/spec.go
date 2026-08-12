@@ -96,6 +96,7 @@ func Register(r sdk.Registrar) {
 		TargetRoot:     officialRoot,
 		ModTypes:       []string{officialModType, dinputModType},
 		EntryNameMode:  sdk.LoadOrderEntryNameFirstChild,
+		Message:        "Mirrors Vortex's Blade & Sorcery load-order page by writing managed loadorder.json entries from profile priority.",
 	})
 	r.RegisterExtensionLoadOrderPage(sdk.ExtensionLoadOrderPageSpec{
 		ID:      "bladeandsorcery-loadorder-page",
