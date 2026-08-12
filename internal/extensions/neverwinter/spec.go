@@ -115,6 +115,14 @@ func RegisterNWN2(r sdk.Registrar) {
 		CustomBuild:       buildNWN2ModuleArchive,
 		InstructionMode:   installplan.InstructionCustom,
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:   "neverwinter2-prepare-mod-folders",
+		Name: "Prepare Neverwinter Nights 2 module and override folders",
+		Actions: append(
+			sdk.EnsureTargetRootDirectories(nwn2DocumentsRootID, "modules"),
+			sdk.EnsureTargetRootDirectories(nwn2OverrideRootID, ".")...,
+		),
+	})
 	for _, ref := range nwn2Sources() {
 		r.RegisterSource(ref)
 	}

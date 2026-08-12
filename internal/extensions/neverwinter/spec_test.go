@@ -81,6 +81,14 @@ func TestNWN2ModuleInstallerTargetsDocumentsModules(t *testing.T) {
 	assertNoTarget(t, plan, "readme.txt")
 }
 
+func TestNWN2RegistersSetupFolders(t *testing.T) {
+	compiled := gameext.MustCompileExtension(neverwinter.Extensions()[2])
+	if !hasSetupAction(compiled.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseTargetRoot, "nwn2-documents", "modules") ||
+		!hasSetupAction(compiled.GameSetups, sdk.GameSetupActionEnsureDirectory, sdk.GameSetupBaseTargetRoot, "nwn2-documents-override", ".") {
+		t.Fatalf("game setup actions = %+v", compiled.GameSetups)
+	}
+}
+
 func build(appID, root string) (installplan.Plan, error) {
 	extensions := neverwinter.Extensions()
 	compiled := make([]gameext.Extension, 0, len(extensions))
