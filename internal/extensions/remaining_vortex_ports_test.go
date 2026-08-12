@@ -115,8 +115,7 @@ func TestDragonAgePortsExposeDAZIPSupport(t *testing.T) {
 			if summary.Coverage != gameext.CoverageInstaller {
 				t.Fatalf("coverage = %q", summary.Coverage)
 			}
-			totalInstallers := len(summary.Capabilities.Installers) + len(summary.Capabilities.UnsupportedInstallers)
-			if len(summary.Capabilities.TargetRoots) == 0 || totalInstallers < 3 {
+			if len(summary.Capabilities.TargetRoots) == 0 || len(summary.Capabilities.Installers) < 3 || len(summary.Capabilities.UnsupportedInstallers) != 0 {
 				t.Fatalf("capabilities = %+v", summary.Capabilities)
 			}
 			if got := len(summary.Capabilities.Merges) > 0; got != tt.wantMerge {
