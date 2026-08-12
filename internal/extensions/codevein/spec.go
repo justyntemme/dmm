@@ -100,10 +100,11 @@ func Register(r sdk.Registrar) {
 		FromVersion: "0.0.0",
 		ToVersion:   "1.0.0",
 		Commands: []sdk.StateMigrationCommandSpec{
+			{ID: "serialize-load-order", Name: "Serialize Code Vein load order", Command: sdk.StateMigrationCommandSerializeState},
 			{ID: "purge-old-paks", Name: "Purge old Code Vein PAK deployment", Command: sdk.StateMigrationCommandPurgeModsInPath, TargetRelative: pakRoot},
 			{ID: "deploy-profile", Name: "Redeploy active profile", Command: sdk.StateMigrationCommandDeployProfile},
 		},
-		Message: "Mirrors the deploy side of Vortex 1.0.0 migration by purging the old pak deployment path and redeploying; DMM's load-order handler writes current profile order directly from DMM state.",
+		Message: "Mirrors Vortex 1.0.0 migration by serializing profile load-order state, purging the old pak deployment path, and redeploying.",
 	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

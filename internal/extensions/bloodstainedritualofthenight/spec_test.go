@@ -23,8 +23,12 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "BloodstainedRotN/Content/Paks/~mods" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 {
+	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
+	}
+	migration := summary.Capabilities.StateMigrations[0]
+	if migration.ID != "bloodstainedrotn-load-order-migration-1.0.0" || len(migration.Commands) != 1 || migration.Commands[0].Command != sdk.StateMigrationCommandPurgeModsInPath || migration.Commands[0].Path != "BloodstainedRotN/Content/Paks/~mod" {
+		t.Fatalf("state migration = %+v", migration)
 	}
 	adoption := summary.Capabilities.ExternalModAdoptions[0]
 	if adoption.ID != "bloodstainedrotn-external-pak-adoption" || adoption.Path != "BloodstainedRotN/Content/Paks/~mods" || !adoption.DeleteOriginal {

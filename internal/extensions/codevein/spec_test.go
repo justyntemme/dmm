@@ -26,8 +26,14 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.ExtensionToDos) != 0 || len(summary.Capabilities.ExternalModAdoptions) != 1 || len(summary.Capabilities.StateMigrations) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
-	if migration := summary.Capabilities.StateMigrations[0]; migration.ID != "codevein-load-order-migration-1.0.0" || len(migration.Commands) != 2 || migration.Message == "" {
+	if migration := summary.Capabilities.StateMigrations[0]; migration.ID != "codevein-load-order-migration-1.0.0" || migration.Message == "" {
 		t.Fatalf("state migration = %+v", migration)
+	} else {
+		assertMigrationCommands(t, &migration, []string{
+			sdk.StateMigrationCommandSerializeState,
+			sdk.StateMigrationCommandPurgeModsInPath,
+			sdk.StateMigrationCommandDeployProfile,
+		})
 	}
 	adoption := summary.Capabilities.ExternalModAdoptions[0]
 	if adoption.ID != "codevein-external-pak-adoption" || adoption.Path != "CodeVein/content/paks/~mods" || !adoption.DeleteOriginal {
@@ -127,5 +133,27 @@ func writeFile(t *testing.T, path string, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertMigrationCommands(t *testing.T, migration *gameext.FeatureSummary, commands []string) {
+	t.Helper()
+	if migration == nil {
+		t.Fatal("missing migration")
+	}
+	if len(migration.Commands) != len(commands) {
+		t.Fatalf("migration commands = %+v", migration.Commands)
+	}
+	counts := make(map[string]int, len(commands))
+	for _, command := range commands {
+		counts[command]++
+	}
+	for _, command := range migration.Commands {
+		counts[command.Command]--
+	}
+	for command, count := range counts {
+		if count != 0 {
+			t.Fatalf("migration command %q unmatched count = %d in %+v", command, count, migration.Commands)
+		}
 	}
 }
