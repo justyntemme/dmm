@@ -18,6 +18,7 @@ const (
 	dataFolderModType = "fallout3-data-folder"
 	dataRootModType   = "fallout3-data-root"
 	scriptExtModType  = "fallout3-script-extender"
+	gogAppID          = "1454315831"
 )
 
 func Extension() sdk.Extension {
@@ -34,6 +35,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppIDGOTY, SteamAppID},
+		StoreAppIDs:        map[string][]string{"gog": {gogAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "fallout3.exe",
@@ -166,14 +168,14 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 
 func registerStoreMetadata(r sdk.Registrar) {
 	for _, store := range []sdk.GameStoreSpec{
-		{ID: "gog", Name: "GOG", Message: "Vortex can discover Fallout 3 through GOG. DMM supports this GOG identity through manual install-path registration; automatic GOG discovery is tracked separately."},
-		{ID: "epic", Name: "Epic Games", Message: "Vortex can discover Fallout 3 through Epic and defaults to the English language folder. DMM supports this Epic identity through manual install-path registration; automatic Epic discovery and language selection are tracked separately."},
-		{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Fallout 3 through Xbox and defaults to the English language folder. DMM supports this Xbox identity through manual install-path registration; automatic Xbox discovery and language selection are tracked separately."},
+		{ID: "gog", Name: "GOG", Message: "Vortex can discover Fallout 3 through GOG app 1454315831. DMM indexes the same extension-declared GOG identity for supported SteamOS store-provider discovery."},
+		{ID: "epic", Name: "Epic Games", Message: "Vortex can discover Fallout 3 through Epic app adeae8bbfc94427db57c7dfecce3f1d4 and defaults to the English language folder. DMM indexes the same extension-declared Epic identity and language-folder behavior through the Fallout 3 extension."},
+		{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Fallout 3 through Xbox app BethesdaSoftworks.Fallout3 and defaults to the English language folder. DMM indexes the same extension-declared Xbox identity and language-folder behavior through the Fallout 3 extension."},
 	} {
 		r.RegisterGameStore(store)
 	}
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM satisfies Vortex's Xbox launcher identity when Fallout 3 is manually registered with the Microsoft Store app ID. Native Xbox library discovery remains a separate store-provider capability."})
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Message: "DMM satisfies Vortex's Epic launcher identity when Fallout 3 is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM indexes Vortex's Xbox launcher identity for Fallout 3 from extension metadata so store-backed registrations satisfy the same app identity."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Message: "DMM indexes Vortex's Epic launcher identity for Fallout 3 from extension metadata and matches supported Epic manifests through the generic store-provider discovery path."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "fallout3-hash-version", Name: "Fallout3.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Fallout3.esm"}}))
 }
 

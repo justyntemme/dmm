@@ -34,6 +34,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"epic": {epicID}, "gog": {gogID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: gogExecutable,
@@ -60,7 +61,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    epicID,
-		Message:  "DMM satisfies Vortex's Epic launcher identity when Darkest Dungeon is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability.",
+		Message:  "DMM indexes Vortex's Epic launcher identity for Darkest Dungeon from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "darkestdungeon-gog-discovery",
@@ -68,7 +69,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "gog",
 		Store:    "gog",
 		AppID:    gogID,
-		Message:  "DMM satisfies Vortex's GOG identity when Darkest Dungeon is manually registered with the GOG app ID. Native GOG library discovery remains a separate store-provider capability.",
+		Message:  "DMM indexes Vortex's GOG identity for Darkest Dungeon from extension metadata and matches supported GOG manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modsDir})
 	r.RegisterInstaller(installplan.InstallerSpec{

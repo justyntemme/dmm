@@ -18,6 +18,8 @@ const (
 	dataFolderModType = "oblivion-data-folder"
 	dataRootModType   = "oblivion-data-root"
 	scriptExtModType  = "oblivion-script-extender"
+	gogAppID          = "1458058109"
+	xboxAppID         = "BethesdaSoftworks.TESOblivion-PC"
 )
 
 var defaultFonts = map[string]string{
@@ -35,6 +37,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID, SteamAppIDAlt},
+		StoreAppIDs:        map[string][]string{"gog": {gogAppID}, "xbox": {xboxAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "oblivion.exe",
@@ -134,8 +137,8 @@ func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {
 }
 
 func registerStoreMetadata(r sdk.Registrar) {
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Message: "Vortex can discover Oblivion through GOG. DMM supports this GOG identity through manual install-path registration; automatic GOG discovery is tracked separately."})
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Oblivion through Xbox and defaults to the English language folder. DMM supports this Xbox identity through manual install-path registration; automatic Xbox library discovery and launcher integration are tracked separately."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "gog", Name: "GOG", Message: "Vortex can discover Oblivion through GOG app 1458058109. DMM indexes the same extension-declared GOG identity for supported SteamOS store-provider discovery."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "xbox", Name: "Xbox", Message: "Vortex can discover Oblivion through Xbox app BethesdaSoftworks.TESOblivion-PC and defaults to the English language folder. DMM indexes the same extension-declared Xbox identity and language-folder behavior through the Oblivion extension."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "oblivion-hash-version", Name: "Oblivion.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Oblivion.esm"}}))
 }
 

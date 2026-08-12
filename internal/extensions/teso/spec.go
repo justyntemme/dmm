@@ -60,6 +60,6 @@ func Register(r sdk.Registrar) {
 			"Bethesda.net_Launcher.version",
 		},
 	}))
-	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Message: "Vortex can discover the standalone ESO launcher through the Windows registry. DMM represents this store identity through manual install-path registration for extension-backed games; automatic Windows registry discovery is outside the Steam Deck runtime boundary."})
+	r.RegisterGameStore(sdk.GameStoreSpec{ID: "registry", Name: "Windows registry", Message: "Vortex can discover the standalone ESO launcher through the Windows registry before falling back to Steam by name. DMM keeps this as an extension-declared registry provider surface while the Steam Deck target resolves ESO through Steam app 306130 and Proton Documents AddOns."})
 	r.RegisterSource(sdk.SourceRef{Name: "Vortex game-teso extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-teso/src"})
 }

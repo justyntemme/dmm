@@ -61,7 +61,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "xbox",
 		Store:    "xbox",
 		AppID:    "HelloGames.NoMansSky",
-		Message:  "DMM satisfies Vortex's Xbox launcher identity when No Man's Sky is manually registered with the Xbox store app ID. Native Xbox library discovery remains a separate store-provider capability.",
+		Message:  "DMM indexes Vortex's Xbox launcher identity for No Man's Sky from extension metadata so store-backed registrations satisfy the same app identity.",
 		Parameters: []sdk.LauncherParameterSpec{{
 			Name:  "appExecName",
 			Value: "NoMansSky",

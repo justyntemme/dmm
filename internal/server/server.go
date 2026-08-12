@@ -5800,6 +5800,7 @@ func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.
 	if err != nil {
 		return nil, false, err
 	}
+	games = mergeDiscoveredGames(games, steam.DiscoverExternalStores(ctx, steam.ExternalStoreIndex(s.games.SupportedStoreAppIDs())))
 	s.detectGameVersions(ctx, games)
 	s.annotateExtensionKnownExternalMarkers(games)
 	s.annotateExtensionUnmanagedMarkers(games)
@@ -5812,6 +5813,27 @@ func (s *Server) discoverGames(ctx context.Context, forceRefresh bool) ([]steam.
 	s.gameDiscoveryCache = cloneSteamGames(games)
 	s.gameDiscoveryCacheAt = time.Now()
 	return cloneSteamGames(games), false, nil
+}
+
+func mergeDiscoveredGames(primary, secondary []steam.Game) []steam.Game {
+	out := make([]steam.Game, 0, len(primary)+len(secondary))
+	seen := map[string]struct{}{}
+	for _, game := range append(append([]steam.Game{}, primary...), secondary...) {
+		appID := strings.TrimSpace(game.AppID)
+		if appID == "" {
+			continue
+		}
+		key := strings.ToLower(appID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, game)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out
 }
 
 func (s *Server) runStartupHooks(ctx context.Context, discovered []steam.Game) {

@@ -80,7 +80,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "xbox",
 		Store:    "xbox",
 		AppID:    "DeepSilver.KingdomComeDeliverance",
-		Message:  "DMM satisfies Vortex's Xbox launcher identity when Kingdom Come: Deliverance is manually registered with the Xbox store app ID. Native Xbox library discovery remains a separate store-provider capability.",
+		Message:  "DMM indexes Vortex's Xbox launcher identity for Kingdom Come: Deliverance from extension metadata so store-backed registrations satisfy the same app identity.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "kingdomcomedeliverance-epic-launcher",
@@ -88,7 +88,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    "Eel",
-		Message:  "DMM satisfies Vortex's Epic launcher identity when Kingdom Come: Deliverance is manually registered with the Epic app ID. Native Epic library discovery remains a separate store-provider capability.",
+		Message:  "DMM indexes Vortex's Epic launcher identity for Kingdom Come: Deliverance from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "kingdomcomedeliverance-load-order-page",

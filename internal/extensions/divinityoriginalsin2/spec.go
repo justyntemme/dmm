@@ -26,6 +26,7 @@ const (
 
 	originalRootID   = "divinityoriginalsin2-documents-mods"
 	definitiveRootID = "divinityoriginalsin2definitiveedition-documents-mods"
+	gogAppID         = "1584823040"
 )
 
 type variant struct {
@@ -86,6 +87,7 @@ func Extensions() []sdk.Extension {
 func registerVariant(r sdk.Registrar, current variant) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:         []string{SteamAppID},
+		StoreAppIDs:         map[string][]string{"gog": {gogAppID}},
 		NexusDomains:        []string{current.ID},
 		VortexGameID:        current.ID,
 		ExecutableRelative:  current.ExecutableRelative,
@@ -132,7 +134,7 @@ func registerVariant(r sdk.Registrar, current variant) {
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      current.ID + "-gog-registry",
 		Name:    current.Name + " GOG registry discovery",
-		Message: "Vortex can discover this game from the Windows GOG registry key before falling back to Steam. DMM supports this GOG identity through manual install-path registration; automatic GOG registry discovery is tracked separately.",
+		Message: "Vortex can discover this game from GOG app 1584823040 before falling back to Steam. DMM indexes the same extension-declared GOG identity for supported SteamOS store-provider discovery.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-divinityoriginalsin2 extension source",

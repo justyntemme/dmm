@@ -1,6 +1,7 @@
 package extensions
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
@@ -99,6 +100,12 @@ func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 			switch feature.Status {
 			case sdk.CapabilityStatusBlocked, sdk.CapabilityStatusMetadata:
 				t.Fatalf("%s advertises unresolved %s capability %s: %+v", summary.ID, feature.Status, feature.ID, feature)
+			}
+			message := strings.ToLower(feature.Message)
+			for _, forbidden := range []string{"tracked separately", "manual install-path registration", "manual registration", "outside the steam deck runtime boundary"} {
+				if strings.Contains(message, forbidden) {
+					t.Fatalf("%s advertises incomplete parity wording %q in %s: %+v", summary.ID, forbidden, feature.ID, feature)
+				}
 			}
 		}
 	}

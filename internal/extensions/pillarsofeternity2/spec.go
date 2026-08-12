@@ -106,7 +106,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "App",
 		}},
-		Message: "DMM satisfies Vortex's Xbox launcher identity when Pillars II is manually registered with the Microsoft Store app ID. Native Xbox library discovery remains a separate store-provider capability.",
+		Message: "DMM indexes Vortex's Xbox launcher identity for Pillars II from extension metadata so store-backed registrations satisfy the same app identity.",
 	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "poe2-load-order-page",

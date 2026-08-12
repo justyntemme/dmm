@@ -511,6 +511,36 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 	}
 }
 
+func TestRegistryIndexesSupportedStoreAppIDs(t *testing.T) {
+	extension := MustCompileExtension(sdk.Extension{
+		ID:      "store-game",
+		Name:    "Store Game",
+		Version: "0.1.0",
+		BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{
+				SteamAppIDs:  []string{"100"},
+				NexusDomains: []string{"storegame"},
+				StoreAppIDs: map[string][]string{
+					"GOG Galaxy": {"1456460669"},
+					"Epic Games": {"61d52ce4d09d41e48800c22784d13ae8"},
+				},
+			})
+		},
+	})
+	registry := NewRegistry([]Extension{extension})
+	if !registry.SupportsStoreApp("gog galaxy", "1456460669") {
+		t.Fatal("expected GOG store app support")
+	}
+	if !registry.SupportsSteamApp(StoreBackedAppID("Epic Games", "61d52ce4d09d41e48800c22784d13ae8")) {
+		t.Fatal("expected derived store-backed app id support")
+	}
+	supported := registry.SupportedStoreAppIDs()
+	if supported["gog"]["1456460669"] != "store-game" {
+		t.Fatalf("supported store ids = %+v", supported)
+	}
+}
+
 func TestResolveGameRegistrationExecutableVariantPredicates(t *testing.T) {
 	metadata := sdk.GameRegistrationMetadata{
 		ExecutableRelative: "win64/game.exe",

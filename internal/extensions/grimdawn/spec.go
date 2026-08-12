@@ -14,6 +14,7 @@ const (
 	executable = "Grim Dawn.exe"
 	modRoot    = "mods"
 	modType    = "grimdawn-mods"
+	gogAppID   = "1449651388"
 )
 
 func Extension() sdk.Extension {
@@ -30,6 +31,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"gog": {gogAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: executable,
@@ -59,7 +61,7 @@ func Register(r sdk.Registrar) {
 	r.RegisterGameStore(sdk.GameStoreSpec{
 		ID:      "gog",
 		Name:    "GOG",
-		Message: "Vortex can discover Grim Dawn through the GOG registry key. DMM supports the GOG identity through manual install-path registration; automatic GOG library discovery is tracked separately.",
+		Message: "Vortex can discover Grim Dawn through GOG app 1449651388. DMM indexes the same extension-declared GOG identity for supported SteamOS store-provider discovery.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-grimdawn extension source",

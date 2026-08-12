@@ -9,7 +9,7 @@ const (
 	BuildID = "first-party-go"
 )
 
-const manualRegistrationMessage = "DMM supports this Vortex game-store identity through manual install-path registration for extension-backed games. Automatic store-library discovery and native client launching remain separate verified runtime capabilities."
+const storeProviderMessage = "DMM models this Vortex game-store identity as extension-owned metadata. SteamOS providers discover matching supported stores where a native manifest exists; platform-specific providers own the remaining runtime discovery surfaces."
 
 func Extension() sdk.Extension {
 	return sdk.Extension{
@@ -35,7 +35,7 @@ func Register(r sdk.Registrar) {
 		{ID: "epic", Name: "Epic Games"},
 		{ID: "xbox", Name: "Xbox"},
 	} {
-		store.Message = manualRegistrationMessage
+		store.Message = storeProviderMessage
 		r.RegisterGameStore(store)
 	}
 }

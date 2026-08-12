@@ -140,6 +140,93 @@ func TestDetectWorkshop(t *testing.T) {
 	}
 }
 
+func TestDiscoverExternalStoresFindsHeroicGOGGame(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "games", "Baldurs Gate 3")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configRoot := filepath.Join(root, "heroic")
+	t.Setenv("DMM_HEROIC_CONFIG_ROOTS", configRoot)
+	t.Setenv("DMM_LEGENDARY_CONFIG_ROOTS", filepath.Join(root, "empty-legendary"))
+	if err := os.MkdirAll(filepath.Join(configRoot, "GamesConfig"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configRoot, "GamesConfig", "bg3.json"), []byte(`{
+		"store": "gog",
+		"appName": "1456460669",
+		"title": "Baldur's Gate 3",
+		"installPath": `+quoteJSON(gamePath)+`
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	games := DiscoverExternalStores(context.Background(), ExternalStoreIndex{"gog": {"1456460669": "baldursgate3"}})
+	if len(games) != 1 {
+		t.Fatalf("games = %+v", games)
+	}
+	if games[0].AppID != "gog-1456460669" || games[0].Store != "gog" || games[0].StoreAppID != "1456460669" || games[0].Path != gamePath {
+		t.Fatalf("game = %+v", games[0])
+	}
+}
+
+func TestDiscoverExternalStoresFindsLegendaryEpicGame(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "games", "Fallout 4")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legendaryRoot := filepath.Join(root, "legendary")
+	t.Setenv("DMM_HEROIC_CONFIG_ROOTS", filepath.Join(root, "empty-heroic"))
+	t.Setenv("DMM_LEGENDARY_CONFIG_ROOTS", legendaryRoot)
+	if err := os.MkdirAll(legendaryRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legendaryRoot, "installed.json"), []byte(`{
+		"61d52ce4d09d41e48800c22784d13ae8": {
+			"app_name": "61d52ce4d09d41e48800c22784d13ae8",
+			"title": "Fallout 4",
+			"install_path": `+quoteJSON(gamePath)+`
+		}
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	games := DiscoverExternalStores(context.Background(), ExternalStoreIndex{"epic": {"61d52ce4d09d41e48800c22784d13ae8": "fallout4"}})
+	if len(games) != 1 {
+		t.Fatalf("games = %+v", games)
+	}
+	if games[0].AppID != "epic-61d52ce4d09d41e48800c22784d13ae8" || games[0].Store != "epic" || games[0].Name != "Fallout 4" {
+		t.Fatalf("game = %+v", games[0])
+	}
+}
+
+func TestDiscoverExternalStoresIgnoresUnsupportedStoreGame(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "games", "Unknown")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configRoot := filepath.Join(root, "heroic")
+	t.Setenv("DMM_HEROIC_CONFIG_ROOTS", configRoot)
+	t.Setenv("DMM_LEGENDARY_CONFIG_ROOTS", filepath.Join(root, "empty-legendary"))
+	if err := os.MkdirAll(filepath.Join(configRoot, "GamesConfig"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configRoot, "GamesConfig", "unknown.json"), []byte(`{
+		"store": "gog",
+		"appName": "1",
+		"title": "Unknown",
+		"installPath": `+quoteJSON(gamePath)+`
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if games := DiscoverExternalStores(context.Background(), ExternalStoreIndex{"gog": {"2": "other"}}); len(games) != 0 {
+		t.Fatalf("unsupported game discovered = %+v", games)
+	}
+}
+
 func writeManifest(t *testing.T, library, appID, name, installDir, buildID string) {
 	t.Helper()
 	path := filepath.Join(library, "steamapps", "appmanifest_"+appID+".acf")
@@ -155,4 +242,8 @@ func writeManifest(t *testing.T, library, appID, name, installDir, buildID strin
 }`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func quoteJSON(value string) string {
+	return `"` + filepath.ToSlash(value) + `"`
 }

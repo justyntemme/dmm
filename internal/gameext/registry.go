@@ -461,6 +461,7 @@ type Registry struct {
 	extensionsByNexusDomain   map[string]Extension
 	steamAppByNexusDomain     map[string]string
 	nexusDomainsBySteamApp    map[string][]string
+	storeAppIDsByStore        map[string]map[string]Extension
 	installPlans              installplan.Registry
 	runtimeRequirements       gamehandler.Registry
 }
@@ -475,6 +476,7 @@ func NewRegistry(extensions []Extension) Registry {
 		extensionsByNexusDomain:   map[string]Extension{},
 		steamAppByNexusDomain:     map[string]string{},
 		nexusDomainsBySteamApp:    map[string][]string{},
+		storeAppIDsByStore:        map[string]map[string]Extension{},
 	}
 	for _, extension := range extensions {
 		registry.extensions = append(registry.extensions, extension)
@@ -482,6 +484,14 @@ func NewRegistry(extensions []Extension) Registry {
 		for store, storeAppIDs := range extension.GameMetadata.StoreAppIDs {
 			for _, storeAppID := range storeAppIDs {
 				indexedAppIDs = appendClean(indexedAppIDs, StoreBackedAppID(store, storeAppID))
+				storeKey := canonicalStore(store)
+				appKey := canonicalStoreAppID(storeAppID)
+				if storeKey != "" && appKey != "" {
+					if registry.storeAppIDsByStore[storeKey] == nil {
+						registry.storeAppIDsByStore[storeKey] = map[string]Extension{}
+					}
+					registry.storeAppIDsByStore[storeKey][appKey] = extension
+				}
 			}
 		}
 		for _, appID := range indexedAppIDs {
@@ -541,6 +551,53 @@ func StoreBackedAppID(store, storeAppID string) string {
 		return ""
 	}
 	return store + "-" + storeAppID
+}
+
+func (r Registry) SupportedStoreAppIDs() map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for store, entries := range r.storeAppIDsByStore {
+		if strings.TrimSpace(store) == "" || len(entries) == 0 {
+			continue
+		}
+		if out[store] == nil {
+			out[store] = map[string]string{}
+		}
+		for storeAppID, extension := range entries {
+			if storeAppID == "" {
+				continue
+			}
+			out[store][storeAppID] = strings.TrimSpace(extension.ID)
+		}
+	}
+	return out
+}
+
+func (r Registry) SupportsStoreApp(store, storeAppID string) bool {
+	store = canonicalStore(store)
+	storeAppID = canonicalStoreAppID(storeAppID)
+	if store == "" || storeAppID == "" {
+		return false
+	}
+	_, ok := r.storeAppIDsByStore[store][storeAppID]
+	return ok
+}
+
+func canonicalStore(value string) string {
+	value = safeStoreIdentifier(value)
+	switch value {
+	case "gog_galaxy", "gog_com", "gogcom":
+		return "gog"
+	case "epic_games", "epicgames", "egs":
+		return "epic"
+	case "ubisoft_connect":
+		return "uplay"
+	default:
+		return value
+	}
+}
+
+func canonicalStoreAppID(value string) string {
+	return safeStoreIdentifier(value)
 }
 
 func safeStoreIdentifier(value string) string {

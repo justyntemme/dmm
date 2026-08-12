@@ -73,7 +73,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "StarboundClient",
 		}},
-		Message: "DMM satisfies Vortex's Xbox launcher identity when Starbound is manually registered with the Xbox store app ID. Native Xbox library discovery remains a separate store-provider capability.",
+		Message: "DMM indexes Vortex's Xbox launcher identity for Starbound from extension metadata so store-backed registrations satisfy the same app identity.",
 	})
 	r.RegisterSource(sdk.SourceRef{
 		Name: "Vortex game-starbound extension source",
