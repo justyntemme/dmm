@@ -91,6 +91,23 @@ func TestFirstPartyCoversVortexRegistrationSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexToDoSurfacesWithRuntimeActions(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerToDo calls:
+	// fnis-integration, bsa-redirection, and import-nmm.
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range summaries {
+		for _, feature := range allFeatureSummaries(summary.Capabilities) {
+			features[feature.ID] = feature
+		}
+	}
+	for _, id := range []string{"fnis-integration", "oblivion-font-repair", "import-from-nmm"} {
+		if _, ok := features[id]; !ok {
+			t.Fatalf("missing runtime counterpart for Vortex registerToDo surface %q", id)
+		}
+	}
+}
+
 func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		if summary.VortexGameID != "" && summary.Coverage == gameext.CoverageMetadataOnly {
