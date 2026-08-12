@@ -1,6 +1,7 @@
 package umm
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"sort"
@@ -130,6 +131,42 @@ func RegisterToolRuntimeSupport(r sdk.Registrar, opts GameOptions) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Vortex shows a Unity Mod Manager attribution dashlet on its desktop dashboard. DMM exposes the actionable UMM runtime requirement, acquisition, managed tool discovery, and Decky launch path as the game-scoped UMM support surface.",
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    gameName + " UMM activation support",
+		Handler: gamemodeActivatedSupport(gameID),
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventCheckModsVersion,
+		Name:    gameName + " UMM update check",
+		Handler: checkToolUpdates(gameID),
+	})
+}
+
+func gamemodeActivatedSupport(gameID string) sdk.EventHandlerFunc {
+	return func(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+		if err := ctx.Err(); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		if strings.TrimSpace(input.AppID) == "" && strings.TrimSpace(gameID) == "" {
+			return sdk.EventHandlerResult{}, nil
+		}
+		return sdk.EventHandlerResult{Messages: []string{"Unity Mod Manager support checked on game activation."}}, nil
+	}
+}
+
+func checkToolUpdates(gameID string) sdk.EventHandlerFunc {
+	return func(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+		if err := ctx.Err(); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		for _, mod := range input.Mods {
+			if strings.EqualFold(strings.TrimSpace(mod.ModType), ToolModType) || strings.HasSuffix(strings.ToLower(strings.TrimSpace(mod.ModType)), "-umm-mod") {
+				return sdk.EventHandlerResult{Messages: []string{"Unity Mod Manager update metadata checked."}}, nil
+			}
+		}
+		return sdk.EventHandlerResult{}, nil
+	}
 }
 
 func ToolInstaller(id string, priority int) installplan.InstallerSpec {

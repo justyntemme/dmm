@@ -461,6 +461,73 @@ func TestFirstPartyCoversVortexLifecycleEventInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexSupportLifecycleEventInventory(t *testing.T) {
+	// Source inventory verified from Vortex framework/support extensions outside
+	// extensions/games. These are shared extension-runtime hooks that game
+	// extensions rely on for BepInEx, UMM, and QuickBMS behavior.
+	required := map[string][]string{
+		"modtype-bepinex": {
+			sdk.EventDidInstallMod,
+			sdk.EventProfileWillChange,
+			sdk.EventGamemodeActivated,
+			sdk.EventWillDeploy,
+			sdk.EventCheckModsVersion,
+		},
+		"quickbms-support": {
+			sdk.EventGamemodeActivated,
+			"quickbms-operation",
+		},
+	}
+
+	byID := map[string]gameext.ExtensionSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		byID[strings.ToLower(summary.ID)] = summary
+	}
+	for extensionID, events := range required {
+		summary, ok := byID[extensionID]
+		if !ok {
+			t.Fatalf("missing first-party support extension %q for Vortex lifecycle inventory", extensionID)
+		}
+		features := map[string]gameext.FeatureSummary{}
+		for _, feature := range summary.Capabilities.EventHandlers {
+			features[strings.ToLower(feature.ID)] = feature
+		}
+		for _, event := range events {
+			feature, ok := features[strings.ToLower(event)]
+			if !ok {
+				t.Fatalf("%s missing runtime counterpart for Vortex support lifecycle event %q", extensionID, event)
+			}
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("%s support lifecycle event %s = %+v", extensionID, event, feature)
+			}
+		}
+	}
+
+	ummEventCoverage := map[string]map[string]bool{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		for _, feature := range summary.Capabilities.ExtensionAPIs {
+			if feature.ID != "ummAddGame" {
+				continue
+			}
+			events := map[string]bool{}
+			for _, handler := range summary.Capabilities.EventHandlers {
+				events[strings.ToLower(handler.ID)] = true
+			}
+			ummEventCoverage[summary.ID] = events
+		}
+	}
+	if len(ummEventCoverage) == 0 {
+		t.Fatalf("missing first-party UMM support extension registrations")
+	}
+	for extensionID, events := range ummEventCoverage {
+		for _, event := range []string{sdk.EventGamemodeActivated, sdk.EventCheckModsVersion} {
+			if !events[strings.ToLower(event)] {
+				t.Fatalf("%s missing runtime counterpart for Vortex UMM lifecycle event %q", extensionID, event)
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
 	// Source inventory verified from Vortex registerGameStore,
 	// registerProfileFeature, optional.registerCollectionFeature,

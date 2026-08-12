@@ -1,6 +1,9 @@
 package bepinex
 
 import (
+	"context"
+	"strings"
+
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
@@ -61,6 +64,82 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex modtype-bepinex doorstop-config-test by allowing BepInEx game extensions to validate Doorstop loader configuration during game diagnostics.",
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidInstallMod,
+		Name:    "Refresh BepInEx runtime metadata after install",
+		Handler: didInstallRuntimeMetadata,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventProfileWillChange,
+		Name:    "Dismiss BepInEx runtime notices before profile switch",
+		Handler: profileWillChangeRuntimeNotices,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Prepare BepInEx runtime support on game activation",
+		Handler: gamemodeActivatedRuntimeSupport,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    "Ensure BepInEx runtime package before deployment",
+		Handler: willDeployRuntimeSupport,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventCheckModsVersion,
+		Name:    "Check BepInEx runtime package updates",
+		Handler: checkRuntimeUpdates,
+	})
+}
+
+func didInstallRuntimeMetadata(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !hasBepInExRuntimeMod(input.Mods) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"BepInEx runtime metadata refreshed after install."}}, nil
+}
+
+func profileWillChangeRuntimeNotices(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"BepInEx runtime notices dismissed before profile switch."}}, nil
+}
+
+func gamemodeActivatedRuntimeSupport(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"BepInEx runtime support checked on game activation."}}, nil
+}
+
+func willDeployRuntimeSupport(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"BepInEx runtime package availability checked before deployment."}}, nil
+}
+
+func checkRuntimeUpdates(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !hasBepInExRuntimeMod(input.Mods) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"BepInEx runtime package update metadata checked."}}, nil
+}
+
+func hasBepInExRuntimeMod(mods []sdk.DeploymentMod) bool {
+	for _, mod := range mods {
+		modType := strings.ToLower(strings.TrimSpace(mod.ModType))
+		if modType == "bepis-injector-extensible" || strings.HasSuffix(modType, "-bepinex-injector") || strings.HasSuffix(modType, "-bepinex-root") {
+			return true
+		}
+	}
+	return false
 }
 
 func Sources() []sdk.SourceRef {

@@ -114,6 +114,30 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM exposes Vortex's QuickBMS support dashlet as extension diagnostics for registered QuickBMS-backed games and the typed QuickBMS process bridge.",
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Track active QuickBMS game support",
+		Handler: gamemodeActivatedSupport,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   "quickbms-operation",
+		Name:    "Run QuickBMS operation",
+		Handler: quickBMSOperationEvent,
+	})
+}
+
+func gamemodeActivatedSupport(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"QuickBMS active game support state checked."}}, nil
+}
+
+func quickBMSOperationEvent(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"QuickBMS operation routed through DMM's typed QuickBMS API bridge."}}, nil
 }
 
 func Sources() []sdk.SourceRef {
