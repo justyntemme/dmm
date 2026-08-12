@@ -172,6 +172,12 @@ func Register(r sdk.Registrar) {
 		ToVersion:   "1.0.0",
 		Commands: []sdk.StateMigrationCommandSpec{
 			{
+				ID:           "serialize-existing-load-order",
+				Name:         "Serialize existing 7 Days to Die load order",
+				Command:      sdk.StateMigrationCommandSerializeState,
+				MetadataKind: "load-order",
+			},
+			{
 				ID:           "purge-old-mods-root",
 				Name:         "Purge old 7 Days to Die Mods deployment",
 				Command:      sdk.StateMigrationCommandPurgeModsInPath,
@@ -191,6 +197,12 @@ func Register(r sdk.Registrar) {
 		FromVersion: "1.0.0",
 		ToVersion:   "1.0.11",
 		Commands: []sdk.StateMigrationCommandSpec{
+			{
+				ID:           "serialize-existing-load-order",
+				Name:         "Serialize existing 7 Days to Die load order",
+				Command:      sdk.StateMigrationCommandSerializeState,
+				MetadataKind: "load-order",
+			},
 			{
 				ID:           "purge-old-mods-root",
 				Name:         "Purge old 7 Days to Die Mods deployment",

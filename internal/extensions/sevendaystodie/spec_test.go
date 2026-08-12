@@ -25,14 +25,32 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 2 {
 		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
 	}
+	if featureByID(summary.Capabilities.Installers, "vortex:7daystodie:root-mod") == nil || featureByID(summary.Capabilities.Installers, "vortex:7daystodie:modlet") == nil {
+		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
+	}
 	if len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "7daystodie-folder-prefix-order"); loadOrder == nil || len(loadOrder.ModTypes) != 1 || loadOrder.ModTypes[0] != modletModType {
+		t.Fatalf("load orders = %+v", summary.Capabilities.LoadOrders)
+	}
+	if featureByID(summary.Capabilities.Merges, "7daystodie-folder-prefix-order") == nil {
+		t.Fatalf("merges = %+v", summary.Capabilities.Merges)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventWillDeploy); handler == nil || handler.Trigger != sdk.EventWillDeploy {
+		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
 	if len(summary.Capabilities.TargetRoots) != 1 || summary.Capabilities.TargetRoots[0].ID != modsRootID {
 		t.Fatalf("target roots = %+v", summary.Capabilities.TargetRoots)
 	}
+	if featureByID(summary.Capabilities.GameSetups, "7daystodie-user-data-folder") == nil {
+		t.Fatalf("game setups = %+v", summary.Capabilities.GameSetups)
+	}
 	if len(summary.Capabilities.LaunchOptionRequirements) != 1 || summary.Capabilities.LaunchOptionRequirements[0].ID != "7daystodie-user-data-folder-argument" {
 		t.Fatalf("launch option requirements = %+v", summary.Capabilities.LaunchOptionRequirements)
+	}
+	if featureByID(summary.Capabilities.LauncherRequirements, "7daystodie-steam-launcher") == nil {
+		t.Fatalf("launcher requirements = %+v", summary.Capabilities.LauncherRequirements)
 	}
 	if len(summary.Capabilities.ExtensionSettings) != 2 {
 		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
@@ -44,6 +62,22 @@ func TestExtensionRegistersSourceBackedCapabilities(t *testing.T) {
 	if settings[udfSettingID].Status != sdk.CapabilityStatusReady || settings[prefixOffsetSettingID].Scope != "profile" || string(settings[prefixOffsetSettingID].DefaultValue) != "0" {
 		t.Fatalf("extension settings = %+v", summary.Capabilities.ExtensionSettings)
 	}
+	if action := featureByID(summary.Capabilities.ExtensionActions, "7daystodie-prefix-offset-reset"); action == nil || action.Kind != sdk.ExtensionActionKindSetSetting {
+		t.Fatalf("extension actions = %+v", summary.Capabilities.ExtensionActions)
+	}
+	assertMigrationCommands(t, featureByID(summary.Capabilities.StateMigrations, "7daystodie-0.2.0-reinstall-warning"), []string{
+		sdk.StateMigrationCommandWarnInstalled,
+	})
+	assertMigrationCommands(t, featureByID(summary.Capabilities.StateMigrations, "7daystodie-1.0.0-load-order-migration"), []string{
+		sdk.StateMigrationCommandSerializeState,
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandDeployProfile,
+	})
+	assertMigrationCommands(t, featureByID(summary.Capabilities.StateMigrations, "7daystodie-1.0.11-load-order-location-migration"), []string{
+		sdk.StateMigrationCommandSerializeState,
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandDeployProfile,
+	})
 }
 
 func TestModletInstallerUsesModInfoRoot(t *testing.T) {
@@ -219,4 +253,35 @@ func writeFile(t *testing.T, path, body string) {
 func strconvQuote(value string) string {
 	data, _ := json.Marshal(value)
 	return string(data)
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
+}
+
+func assertMigrationCommands(t *testing.T, feature *gameext.FeatureSummary, commands []string) {
+	t.Helper()
+	if feature == nil {
+		t.Fatal("missing migration feature")
+	}
+	if len(feature.Commands) != len(commands) {
+		t.Fatalf("migration commands = %+v, want %+v", feature.Commands, commands)
+	}
+	remaining := map[string]int{}
+	for _, command := range commands {
+		remaining[command]++
+	}
+	for _, got := range feature.Commands {
+		remaining[got.Command]--
+	}
+	for command, count := range remaining {
+		if count != 0 {
+			t.Fatalf("migration commands = %+v, missing %s count %d", feature.Commands, command, count)
+		}
+	}
 }
