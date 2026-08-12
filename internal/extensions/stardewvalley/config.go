@@ -79,6 +79,88 @@ func willDeployPreserveConfigs(ctx context.Context, input sdk.EventHandlerInput)
 	return sdk.EventHandlerResult{Mappings: mappings, Messages: messages}, nil
 }
 
+func addedFilesPreserveConfigs(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !mergeConfigsEnabled(input.ExtensionSettings) {
+		return sdk.EventHandlerResult{Messages: []string{"Stardew generated config adoption is disabled for this profile."}}, nil
+	}
+	if strings.TrimSpace(input.StagingRoot) == "" || input.ProfileID <= 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Stardew generated config adoption skipped because profile staging context is incomplete."}}, nil
+	}
+	var adopted []sdk.AdoptedFile
+	for _, file := range input.AddedFiles {
+		targetRel, ok := cleanStardewConfigTarget(file.TargetRelative)
+		if !ok {
+			continue
+		}
+		for _, candidate := range file.Candidates {
+			if candidate.InstalledModID <= 0 || !strings.EqualFold(strings.TrimSpace(candidate.ModType), "stardew-smapi-mod") {
+				continue
+			}
+			stagingRel, err := stardewConfigStagingRelative(input.AppID, input.ProfileID, candidate.InstalledModID, targetRel)
+			if err != nil {
+				return sdk.EventHandlerResult{}, err
+			}
+			adopted = append(adopted, sdk.AdoptedFile{
+				InstalledModID:  candidate.InstalledModID,
+				StagingRelative: stagingRel,
+				TargetRootID:    candidate.TargetRootID,
+				TargetRelative:  targetRel,
+			})
+			break
+		}
+	}
+	if len(adopted) == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{
+		AdoptedFiles: adopted,
+		Messages:     []string{fmt.Sprintf("Stardew generated config adoption prepared %d config file(s).", len(adopted))},
+	}, nil
+}
+
+func willEnableModsPreserveConfigs(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(input.ModIDs) == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	result, err := willDeployPreserveConfigs(ctx, input)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(result.Messages) == 0 {
+		result.Messages = []string{"Stardew generated config state checked before changing enabled mods."}
+	}
+	return result, nil
+}
+
+func didDeploySMAPILaunchTool(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !enabledStardewSMAPIMods(input.Mods) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	if markers := smapiLaunchMarkers(ctx, input.GamePath); len(markers) > 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Stardew SMAPI launch tool is already configured."}}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Stardew SMAPI launch tool is required for enabled SMAPI mods; DMM exposes this through extension launch-tool status and the configure-launch action."}}, nil
+}
+
+func didPurgeSMAPILaunchTool(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if enabledStardewSMAPIMods(input.Mods) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Stardew SMAPI launch tool can be cleared because no enabled SMAPI mods remain."}}, nil
+}
+
 func mergeConfigsEnabled(settings map[string]map[string]json.RawMessage) bool {
 	extensionSettings := settings[VortexGameID]
 	if len(extensionSettings) == 0 {
@@ -198,6 +280,18 @@ func stardewConfigSourcePath(stagingRoot, appID string, profileID, installedModI
 	if !ok {
 		return "", errors.New("Stardew config target path is not supported")
 	}
+	stagingRel, err := stardewConfigStagingRelative(appID, profileID, installedModID, targetRel)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(stagingRoot, filepath.FromSlash(stagingRel)), nil
+}
+
+func stardewConfigStagingRelative(appID string, profileID, installedModID int64, targetRel string) (string, error) {
+	targetRel, ok := cleanStardewConfigTarget(targetRel)
+	if !ok {
+		return "", errors.New("Stardew config target path is not supported")
+	}
 	appID = strings.TrimSpace(appID)
 	if appID == "" || strings.ContainsAny(appID, `/\`) || appID == "." || appID == ".." {
 		return "", errors.New("Steam app id is required for Stardew config preservation")
@@ -206,15 +300,13 @@ func stardewConfigSourcePath(stagingRoot, appID string, profileID, installedModI
 		return "", errors.New("profile id and installed mod id are required for Stardew config preservation")
 	}
 	insideMods := strings.TrimPrefix(targetRel, ModsRelativePath+"/")
-	sourcePath := filepath.Join(
-		stagingRoot,
+	return filepath.ToSlash(filepath.Join(
 		stardewGeneratedConfigDir,
 		appID,
 		strconv.FormatInt(profileID, 10),
 		strconv.FormatInt(installedModID, 10),
 		filepath.FromSlash(insideMods),
-	)
-	return sourcePath, nil
+	)), nil
 }
 
 func refreshManagedStardewConfigSources(input sdk.EventHandlerInput) (int, error) {
@@ -257,6 +349,15 @@ func targetRelativeToGame(gamePath, targetPath string) (string, bool) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+func enabledStardewSMAPIMods(mods []sdk.DeploymentMod) bool {
+	for _, mod := range mods {
+		if mod.Enabled && strings.EqualFold(strings.TrimSpace(mod.ModType), "stardew-smapi-mod") {
+			return true
+		}
+	}
+	return false
 }
 
 func isGeneratedStardewConfigSource(stagingRoot, sourcePath string) bool {

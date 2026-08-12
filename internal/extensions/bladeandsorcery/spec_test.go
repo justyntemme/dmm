@@ -100,7 +100,7 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	if target.Type != sdk.ExtensionActionKindOpenDirectory || target.Base != sdk.OpenDirectoryBaseGame || target.RelativePath != officialRoot {
 		t.Fatalf("action target = %+v", target)
 	}
-	if len(summary.Capabilities.EventHandlers) != 1 {
+	if len(summary.Capabilities.EventHandlers) != 2 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
 	}
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status == sdk.CapabilityStatusBlocked {

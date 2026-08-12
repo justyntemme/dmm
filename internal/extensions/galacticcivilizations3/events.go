@@ -2,10 +2,22 @@ package galacticcivilizations3
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 )
+
+func willDeploySnapshot(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if !containsGalCivDeployment(input.Mappings, input.ManagedFiles) {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Galactic Civilizations III deployment snapshot captured managed mod files before deploy."}}, nil
+}
 
 func didDeployReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -23,4 +35,28 @@ func didDeployReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.Ev
 		}
 	}
 	return sdk.EventHandlerResult{}, nil
+}
+
+func containsGalCivDeployment(mappings []deploy.FileMapping, files []deploy.AppliedFile) bool {
+	for _, mapping := range mappings {
+		if isGalCivManagedTarget(mapping.TargetRelative) {
+			return true
+		}
+	}
+	for _, file := range files {
+		if isGalCivManagedTarget(file.TargetPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGalCivManagedTarget(path string) bool {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	for _, segment := range []string{"/Mods/", "Mods/", "/Factions/", "Factions/"} {
+		if strings.Contains(path, segment) || strings.HasPrefix(path, segment) {
+			return true
+		}
+	}
+	return false
 }

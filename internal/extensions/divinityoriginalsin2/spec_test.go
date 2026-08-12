@@ -73,6 +73,15 @@ func TestDivinityTargetRootsResolveToEditionDocumentsFolders(t *testing.T) {
 
 func TestDivinityDidDeployPakReminder(t *testing.T) {
 	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(Extensions()[0])})
+	snapshot, err := registry.RunEventHandlers(context.Background(), SteamAppID, sdk.EventWillDeploy, sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{TargetRelative: "CoolMod.pak"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Messages) != 1 || !strings.Contains(snapshot.Messages[0], "snapshot") {
+		t.Fatalf("will-deploy result = %+v", snapshot)
+	}
 	result, err := registry.RunEventHandlers(context.Background(), SteamAppID, sdk.EventDidDeploy, sdk.EventHandlerInput{
 		Mappings: []deploy.FileMapping{{TargetRelative: "CoolMod.pak"}},
 	})

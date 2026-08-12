@@ -226,7 +226,7 @@ func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	if len(summary.NexusDomains) != 1 || summary.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", summary.NexusDomains)
 	}
-	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 1 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
+	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 3 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }

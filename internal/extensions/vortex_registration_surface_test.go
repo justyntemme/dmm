@@ -371,6 +371,96 @@ func TestFirstPartyCoversVortexRuntimeSupportInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexLifecycleEventInventory(t *testing.T) {
+	// Source inventory verified from Vortex context.once handlers using
+	// context.api.events.on and context.api.onAsync. These hooks carry runtime
+	// behavior that is not visible from register* calls, so DMM must expose the
+	// equivalent lifecycle event in the game extension itself.
+	required := map[string][]string{
+		"battletech": {
+			sdk.EventAddedFiles,
+		},
+		"bladeandsorcery": {
+			sdk.EventWillDeploy,
+			sdk.EventDidDeploy,
+		},
+		"divinityoriginalsin2": {
+			sdk.EventWillDeploy,
+			sdk.EventDidDeploy,
+		},
+		"fallout4vr": {
+			sdk.EventDidDeploy,
+		},
+		"galacticcivilizations3": {
+			sdk.EventWillDeploy,
+			sdk.EventDidDeploy,
+		},
+		"greedfall": {
+			sdk.EventDidDeploy,
+		},
+		"kingdomcomedeliverance": {
+			sdk.EventModEnabled,
+			sdk.EventDidPurge,
+			sdk.EventDidDeploy,
+		},
+		"halothemasterchiefcollection": {
+			sdk.EventDidDeploy,
+			sdk.EventDidPurge,
+		},
+		"morrowind": {
+			sdk.EventDidInstallMod,
+		},
+		"pillarsofeternity2": {
+			sdk.EventGamemodeActivated,
+		},
+		"skyrimvr": {
+			sdk.EventGamemodeActivated,
+			sdk.EventDidDeploy,
+		},
+		"stardewvalley": {
+			sdk.EventAddedFiles,
+			sdk.EventWillEnableMods,
+			sdk.EventDidDeploy,
+			sdk.EventDidPurge,
+			sdk.EventDidInstallMod,
+			sdk.EventGamemodeActivated,
+		},
+		"witcher3": {
+			sdk.EventGamemodeActivated,
+			sdk.EventProfileWillChange,
+			sdk.EventModsEnabled,
+			sdk.EventWillDeploy,
+			sdk.EventDidDeploy,
+			sdk.EventDidPurge,
+			sdk.EventDidRemoveMod,
+		},
+	}
+
+	byID := map[string]gameext.ExtensionSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		byID[strings.ToLower(summary.ID)] = summary
+	}
+	for extensionID, events := range required {
+		summary, ok := byID[extensionID]
+		if !ok {
+			t.Fatalf("missing first-party extension %q for Vortex lifecycle inventory", extensionID)
+		}
+		features := map[string]gameext.FeatureSummary{}
+		for _, feature := range summary.Capabilities.EventHandlers {
+			features[strings.ToLower(feature.ID)] = feature
+		}
+		for _, event := range events {
+			feature, ok := features[strings.ToLower(event)]
+			if !ok {
+				t.Fatalf("%s missing runtime counterpart for Vortex lifecycle event %q", extensionID, event)
+			}
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("%s lifecycle event %s = %+v", extensionID, event, feature)
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
 	// Source inventory verified from Vortex registerGameStore,
 	// registerProfileFeature, optional.registerCollectionFeature,
@@ -435,7 +525,7 @@ func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
 	}
 
 	requiredMigrationExtensions := map[string]int{
-		"dragonage2":                    1,
+		"dragonage2":                   1,
 		"dragonsdogma":                 1,
 		"codevein":                     1,
 		"nomanssky":                    1,

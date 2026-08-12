@@ -67,6 +67,16 @@ func Register(r sdk.Registrar) {
 		Name:    "Update Halo MCC ModManifest.txt for managed plug-and-play mods",
 		Handler: willDeployManifest,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Apply Halo MCC ModManifest.txt state",
+		Handler: didDeployManifest,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidPurge,
+		Name:    "Clear Halo MCC ModManifest.txt state",
+		Handler: didPurgeManifest,
+	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
 		ID:      "mcc-ce-mp-test",
 		Name:    "Halo CE multiplayer maps",
@@ -240,6 +250,23 @@ func willDeployManifest(ctx context.Context, input sdk.EventHandlerInput) (sdk.E
 		Mappings: []deploy.FileMapping{mapping},
 		Messages: []string{"Halo MCC ModManifest.txt generated from enabled DMM plug-and-play mods."},
 	}, nil
+}
+
+func didDeployManifest(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(enabledPlugAndPlayStagingPaths(input.Mods)) == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Halo MCC ModManifest.txt apply lifecycle completed for enabled plug-and-play mods."}}, nil
+}
+
+func didPurgeManifest(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Halo MCC ModManifest.txt purge lifecycle completed."}}, nil
 }
 
 func enabledPlugAndPlayStagingPaths(mods []sdk.DeploymentMod) []string {

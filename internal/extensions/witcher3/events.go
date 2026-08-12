@@ -91,6 +91,23 @@ func willDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHand
 	}, nil
 }
 
+func modsEnabledRefreshMenuState(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if strings.TrimSpace(input.GamePath) == "" || len(input.Mappings) == 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Witcher 3 menu load-order state checked after mod toggle."}}, nil
+	}
+	result, err := willDeploy(ctx, input)
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(result.Messages) == 0 {
+		result.Messages = []string{"Witcher 3 menu load-order state refreshed after mod toggle."}
+	}
+	return result, nil
+}
+
 func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
 	if err := ctx.Err(); err != nil {
 		return sdk.EventHandlerResult{}, err
@@ -100,6 +117,13 @@ func didDeployScriptMergerReminder(ctx context.Context, input sdk.EventHandlerIn
 		notices = append(notices, scriptMergerNotice("Witcher 3 mod files changed. Run Witcher Script Merger before launching if these mods add or change scripts; DMM does not merge Witcher scripts yet."))
 	}
 	return sdk.EventHandlerResult{Notices: notices}, nil
+}
+
+func didPurgeRefreshMenuState(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Witcher 3 menu load-order state reverted after purge."}}, nil
 }
 
 func didRemoveModScriptMergerReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {

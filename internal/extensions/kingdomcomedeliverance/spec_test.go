@@ -23,6 +23,8 @@ func TestExtensionRegistersKCDCapabilities(t *testing.T) {
 	}
 	if len(summary.Capabilities.LoadOrders) != 1 ||
 		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventWillDeploy) ||
+		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventModEnabled) ||
+		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventDidDeploy) ||
 		!hasFeature(summary.Capabilities.EventHandlers, sdk.EventDidPurge) {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
 	}

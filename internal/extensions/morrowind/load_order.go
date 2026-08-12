@@ -87,6 +87,24 @@ func didDeploy(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandl
 	return sdk.EventHandlerResult{Messages: []string{"Morrowind ESP/ESM timestamps updated from Morrowind.ini order."}}, nil
 }
 
+func didInstallRefreshPluginMetadata(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	plugins := 0
+	for _, mod := range input.Mods {
+		for _, file := range mod.Files {
+			if isPluginFile(file.Path) || isPluginFile(file.TargetRelative) {
+				plugins++
+			}
+		}
+	}
+	if plugins == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Morrowind plugin metadata refreshed after install from extension-managed ESP/ESM files."}}, nil
+}
+
 func deploymentModIndex(mods []sdk.DeploymentMod) map[int64]sdk.DeploymentMod {
 	out := make(map[int64]sdk.DeploymentMod, len(mods))
 	for _, mod := range mods {

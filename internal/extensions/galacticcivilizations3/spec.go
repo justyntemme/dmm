@@ -70,6 +70,11 @@ func Register(r sdk.Registrar) {
 		InstructionMode:   installplan.InstructionCustom,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    "GalCiv3 deployment content snapshot",
+		Handler: willDeploySnapshot,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidDeploy,
 		Name:    "GalCiv3 in-game enable reminder",
 		Handler: didDeployReminder,

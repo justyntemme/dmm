@@ -35,6 +35,18 @@ func TestExtensionRegistersFOMODInstallerChoice(t *testing.T) {
 	if !registry.HasEventHandlerForSteamApp(SteamAppID, sdk.EventCheckModsVersion) {
 		t.Fatal("missing SMAPI compatibility version-check handler")
 	}
+	for _, event := range []string{
+		sdk.EventAddedFiles,
+		sdk.EventWillEnableMods,
+		sdk.EventDidDeploy,
+		sdk.EventDidPurge,
+		sdk.EventDidInstallMod,
+		sdk.EventGamemodeActivated,
+	} {
+		if !registry.HasEventHandlerForSteamApp(SteamAppID, event) {
+			t.Fatalf("missing Stardew runtime event handler %q", event)
+		}
+	}
 }
 
 func TestExtensionRegistersSMAPILogAction(t *testing.T) {
@@ -165,6 +177,68 @@ func TestSMAPICompatibilityCheckSkipsModsWithoutSMAPIManifest(t *testing.T) {
 	}
 	if len(result.Notices) != 0 {
 		t.Fatalf("notices = %+v", result.Notices)
+	}
+}
+
+func TestAddedFilesPreserveConfigsAdoptsGeneratedConfig(t *testing.T) {
+	result, err := addedFilesPreserveConfigs(context.Background(), sdk.EventHandlerInput{
+		AppID:       SteamAppID,
+		ProfileID:   7,
+		StagingRoot: t.TempDir(),
+		AddedFiles: []sdk.AddedFile{{
+			TargetRelative: "Mods/Example/config.json",
+			Candidates: []sdk.AddedFileCandidate{{
+				InstalledModID: 42,
+				ModType:        "stardew-smapi-mod",
+				TargetRootID:   "game",
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.AdoptedFiles) != 1 {
+		t.Fatalf("adopted files = %+v", result.AdoptedFiles)
+	}
+	adopted := result.AdoptedFiles[0]
+	if adopted.InstalledModID != 42 || adopted.TargetRelative != "Mods/Example/config.json" {
+		t.Fatalf("adopted file = %+v", adopted)
+	}
+	wantSuffix := "413150/7/42/Example/config.json"
+	if !strings.HasSuffix(filepath.ToSlash(adopted.StagingRelative), wantSuffix) {
+		t.Fatalf("staging relative = %q, want suffix %q", adopted.StagingRelative, wantSuffix)
+	}
+}
+
+func TestStardewLaunchToolLifecycleMessagesAreExtensionDriven(t *testing.T) {
+	gamePath := t.TempDir()
+	result, err := didDeploySMAPILaunchTool(context.Background(), sdk.EventHandlerInput{
+		GamePath: gamePath,
+		Mods: []sdk.DeploymentMod{{
+			ID:      1,
+			ModType: "stardew-smapi-mod",
+			Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "configure-launch action") {
+		t.Fatalf("did-deploy messages = %+v", result.Messages)
+	}
+	result, err = didPurgeSMAPILaunchTool(context.Background(), sdk.EventHandlerInput{
+		GamePath: gamePath,
+		Mods: []sdk.DeploymentMod{{
+			ID:      1,
+			ModType: "stardew-smapi-mod",
+			Enabled: false,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || !strings.Contains(result.Messages[0], "can be cleared") {
+		t.Fatalf("did-purge messages = %+v", result.Messages)
 	}
 }
 

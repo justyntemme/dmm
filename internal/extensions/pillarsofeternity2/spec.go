@@ -80,6 +80,11 @@ func Register(r sdk.Registrar) {
 		Name:    "Generate Pillars II modconfig.json",
 		Handler: willDeploy,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Validate Pillars II modconfig.json on activation",
+		Handler: gamemodeActivatedValidateModConfig,
+	})
 	r.RegisterGameSetup(sdk.GameSetupSpec{
 		ID:   "poe2-prepare-modding",
 		Name: "Prepare Pillars II override and modconfig paths",

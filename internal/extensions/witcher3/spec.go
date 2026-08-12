@@ -168,6 +168,11 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Restore Witcher 3 profile-local Script Merger output on activation",
+		Handler: gamemodeActivatedScriptMergerArtifacts,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidInstallMod,
 		Name:    "Configure Witcher 3 Script Merger",
 		Handler: didInstallScriptMerger,
@@ -212,9 +217,19 @@ func Register(r sdk.Registrar) {
 		Handler: profileDidChangeScriptMergerArtifacts,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventModsEnabled,
+		Name:    "Refresh Witcher 3 menu load-order state after mod toggles",
+		Handler: modsEnabledRefreshMenuState,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   "did-deploy",
 		Name:    "Remind about Witcher 3 Script Merger after mod changes",
 		Handler: didDeployScriptMergerReminder,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidPurge,
+		Name:    "Revert Witcher 3 menu load-order state after purge",
+		Handler: didPurgeRefreshMenuState,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidRemoveMod,

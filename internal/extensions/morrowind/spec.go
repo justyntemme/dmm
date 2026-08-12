@@ -96,6 +96,11 @@ func Register(r sdk.Registrar) {
 		Name:    "Apply Morrowind plugin timestamps",
 		Handler: didDeploy,
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidInstallMod,
+		Name:    "Refresh Morrowind plugin metadata after install",
+		Handler: didInstallRefreshPluginMetadata,
+	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "morrowind-plugins-page",
 		Name:    "Morrowind Plugins",

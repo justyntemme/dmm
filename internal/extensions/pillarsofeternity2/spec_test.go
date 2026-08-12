@@ -23,7 +23,7 @@ func TestExtensionRegistersPillarsCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || !summary.Capabilities.GameRegistration.QueryModPathDynamic {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
+	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 2 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	if len(summary.Capabilities.AttributeExtractors) != 1 || summary.Capabilities.AttributeExtractors[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.AttributeExtractors[0].Message == "" {

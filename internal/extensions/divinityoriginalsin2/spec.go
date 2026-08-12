@@ -127,6 +127,11 @@ func registerVariant(r sdk.Registrar, current variant) {
 		Provider: versionMarkerProvider(current),
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillDeploy,
+		Name:    current.Name + " deployment pak snapshot",
+		Handler: willDeployPakSnapshot,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidDeploy,
 		Name:    current.Name + " in-game enable reminder",
 		Handler: didDeployPakReminder,
@@ -177,16 +182,34 @@ func didDeployPakReminder(ctx context.Context, input sdk.EventHandlerInput) (sdk
 	}, nil
 }
 
+func willDeployPakSnapshot(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	count := pakDeploymentCount(input.Mappings, input.ManagedFiles)
+	if count == 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	return sdk.EventHandlerResult{
+		Messages: []string{"Divinity Original Sin 2 deployment snapshot captured existing .pak files before deploy."},
+	}, nil
+}
+
 func containsPakDeployment(mappings []deploy.FileMapping, files []deploy.AppliedFile) bool {
+	return pakDeploymentCount(mappings, files) > 0
+}
+
+func pakDeploymentCount(mappings []deploy.FileMapping, files []deploy.AppliedFile) int {
+	count := 0
 	for _, mapping := range mappings {
 		if strings.EqualFold(filepath.Ext(mapping.TargetRelative), ".pak") {
-			return true
+			count++
 		}
 	}
 	for _, file := range files {
 		if strings.EqualFold(filepath.Ext(file.TargetPath), ".pak") {
-			return true
+			count++
 		}
 	}
-	return false
+	return count
 }

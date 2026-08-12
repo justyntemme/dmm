@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/deploy"
@@ -22,7 +23,7 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || !summary.Capabilities.GameRegistration.QueryModPathDynamic || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game registration = %+v", summary.Capabilities.GameRegistration)
 	}
-	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
+	if len(summary.Capabilities.TargetRoots) != 2 || len(summary.Capabilities.ModTypes) != 2 || len(summary.Capabilities.Installers) != 1 || len(summary.Capabilities.EventHandlers) != 2 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 }
@@ -61,8 +62,17 @@ func TestActiveDocumentsRootPrefersCrusadeFolderWhenPresent(t *testing.T) {
 }
 
 func TestDidDeployReminderRequiresGalCivMod(t *testing.T) {
-	extension := gameext.MustCompileExtension(galacticcivilizations3.Extension())
-	result, err := extension.EventHandlers[0].Handler(context.Background(), sdk.EventHandlerInput{
+	registry := gameext.NewRegistry([]gameext.Extension{gameext.MustCompileExtension(galacticcivilizations3.Extension())})
+	snapshot, err := registry.RunEventHandlers(context.Background(), galacticcivilizations3.SteamAppID, sdk.EventWillDeploy, sdk.EventHandlerInput{
+		Mappings: []deploy.FileMapping{{TargetRelative: "Mods/Example/Unit.xml"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Messages) != 1 || !strings.Contains(snapshot.Messages[0], "snapshot") {
+		t.Fatalf("will-deploy result = %+v", snapshot)
+	}
+	result, err := registry.RunEventHandlers(context.Background(), galacticcivilizations3.SteamAppID, sdk.EventDidDeploy, sdk.EventHandlerInput{
 		Mods: []sdk.DeploymentMod{{ModType: "galciv3-mod"}},
 	})
 	if err != nil {
@@ -71,7 +81,7 @@ func TestDidDeployReminderRequiresGalCivMod(t *testing.T) {
 	if len(result.Notices) != 1 || result.Notices[0].ToolID != "galciv3-enable-mods" {
 		t.Fatalf("notices = %+v", result.Notices)
 	}
-	result, err = extension.EventHandlers[0].Handler(context.Background(), sdk.EventHandlerInput{
+	result, err = registry.RunEventHandlers(context.Background(), galacticcivilizations3.SteamAppID, sdk.EventDidDeploy, sdk.EventHandlerInput{
 		Mappings: []deploy.FileMapping{{TargetRelative: "Mods/ignored.xml"}},
 	})
 	if err != nil {

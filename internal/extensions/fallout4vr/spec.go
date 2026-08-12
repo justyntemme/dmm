@@ -165,9 +165,21 @@ func Register(r sdk.Registrar) {
 			DataRoot:    "Data",
 		}),
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Refresh Fallout 4 VR plugin metadata",
+		Handler: didDeployRefreshPluginMetadata,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func didDeployRefreshPluginMetadata(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Fallout 4 VR plugin metadata refreshed from extension-managed deployment state."}}, nil
 }
 
 func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {

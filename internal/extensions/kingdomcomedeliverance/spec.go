@@ -65,6 +65,16 @@ func Register(r sdk.Registrar) {
 		Handler: willDeploy,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventModEnabled,
+		Name:    "Refresh Kingdom Come mod_order.txt after enabling a mod",
+		Handler: modEnabledRefreshOrder,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Refresh Kingdom Come mod_order.txt after deployment",
+		Handler: didDeployRefreshOrder,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidPurge,
 		Name:    "Preserve manual Kingdom Come mod_order.txt entries",
 		Handler: didPurge,

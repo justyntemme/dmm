@@ -2380,7 +2380,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Name:    handler.Name,
 			Trigger: handler.Event,
 			Status:  defaultString(handler.Status, sdk.CapabilityStatusReady),
-			Message: handler.Message,
+			Message: defaultString(handler.Message, "Runs extension-owned lifecycle behavior for the "+handler.Event+" event."),
 		})
 	}
 	sortFeatureSummaries(summary.Capabilities.ModTypes)

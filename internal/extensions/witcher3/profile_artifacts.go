@@ -46,6 +46,23 @@ func profileDidChangeScriptMergerArtifacts(ctx context.Context, input sdk.EventH
 	return sdk.EventHandlerResult{Messages: messages}, nil
 }
 
+func gamemodeActivatedScriptMergerArtifacts(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if input.ProfileID <= 0 {
+		return sdk.EventHandlerResult{}, nil
+	}
+	messages, err := syncScriptMergerProfileArtifacts(ctx, input, input.ProfileID, "import")
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(messages) == 0 {
+		messages = []string{"Witcher 3 profile-local Script Merger artifacts checked on game activation."}
+	}
+	return sdk.EventHandlerResult{Messages: messages}, nil
+}
+
 func syncScriptMergerProfileArtifacts(ctx context.Context, input sdk.EventHandlerInput, profileID int64, op string) ([]string, error) {
 	gamePath := strings.TrimSpace(input.GamePath)
 	if gamePath == "" {

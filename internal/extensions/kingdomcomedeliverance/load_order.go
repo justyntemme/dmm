@@ -79,6 +79,26 @@ func didPurge(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandle
 	return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt was rewritten to preserve manually installed mod folders after purge."}}, nil
 }
 
+func modEnabledRefreshOrder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(input.Mappings) == 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt state checked after mod enablement."}}, nil
+	}
+	return willDeploy(ctx, input)
+}
+
+func didDeployRefreshOrder(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if len(input.Mappings) == 0 {
+		return sdk.EventHandlerResult{Messages: []string{"Kingdom Come mod_order.txt state checked after deployment."}}, nil
+	}
+	return willDeploy(ctx, input)
+}
+
 func deploymentModIndex(mods []sdk.DeploymentMod) map[int64]sdk.DeploymentMod {
 	out := make(map[int64]sdk.DeploymentMod, len(mods))
 	for _, mod := range mods {

@@ -175,6 +175,36 @@ func Register(r sdk.Registrar) {
 		Handler: willDeployPreserveConfigs,
 	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventAddedFiles,
+		Name:    "Adopt generated SMAPI config files",
+		Handler: addedFilesPreserveConfigs,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventWillEnableMods,
+		Name:    "Preserve generated SMAPI config before toggles",
+		Handler: willEnableModsPreserveConfigs,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Verify Stardew SMAPI launch tool after deployment",
+		Handler: didDeploySMAPILaunchTool,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidPurge,
+		Name:    "Verify Stardew SMAPI launch tool after purge",
+		Handler: didPurgeSMAPILaunchTool,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidInstallMod,
+		Name:    "Refresh Stardew SMAPI compatibility after install",
+		Handler: checkSMAPICompatibility,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Refresh Stardew SMAPI compatibility on game activation",
+		Handler: checkSMAPICompatibility,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		ID:      "stardew-smapi-compatibility",
 		Event:   sdk.EventCheckModsVersion,
 		Name:    "Check SMAPI.io compatibility",

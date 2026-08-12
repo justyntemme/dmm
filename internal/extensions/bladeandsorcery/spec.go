@@ -148,6 +148,11 @@ func Register(r sdk.Registrar) {
 			AlreadyPresentMessage:  "Blade & Sorcery loadorder.json is already up to date.",
 		}),
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Refresh Blade & Sorcery load-order metadata",
+		Handler: didDeployRefreshLoadOrder,
+	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "bladeandsorcery-version",
 		Name:     "Blade & Sorcery game/minimum mod version",

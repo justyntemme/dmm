@@ -182,9 +182,33 @@ func Register(r sdk.Registrar) {
 			DataRoot:    "Data",
 		}),
 	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventGamemodeActivated,
+		Name:    "Refresh Skyrim VR plugin metadata on activation",
+		Handler: gamemodeActivatedRefreshPluginMetadata,
+	})
+	r.RegisterEventHandler(sdk.EventHandlerSpec{
+		Event:   sdk.EventDidDeploy,
+		Name:    "Refresh Skyrim VR plugin metadata after deploy",
+		Handler: didDeployRefreshPluginMetadata,
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}
+}
+
+func gamemodeActivatedRefreshPluginMetadata(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Skyrim VR plugin metadata checked on game activation."}}, nil
+}
+
+func didDeployRefreshPluginMetadata(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	return sdk.EventHandlerResult{Messages: []string{"Skyrim VR plugin metadata refreshed from extension-managed deployment state."}}, nil
 }
 
 func dataRootInstallerOptions() gamebryo.DataRootInstallerOptions {

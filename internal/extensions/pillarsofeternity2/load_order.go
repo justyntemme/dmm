@@ -148,6 +148,25 @@ func checkModConfig(ctx context.Context, input sdk.ExtensionTestInput) (sdk.Exte
 	}, nil
 }
 
+func gamemodeActivatedValidateModConfig(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+	result, err := checkModConfig(ctx, sdk.ExtensionTestInput{
+		AppID:       input.AppID,
+		GamePath:    input.GamePath,
+		LibraryPath: input.LibraryPath,
+		ProfileID:   input.ProfileID,
+		Mods:        input.Mods,
+	})
+	if err != nil {
+		return sdk.EventHandlerResult{}, err
+	}
+	if result.Status == sdk.HealthCheckStatusPassed {
+		return sdk.EventHandlerResult{Messages: []string{result.Message}}, nil
+	}
+	return sdk.EventHandlerResult{Notices: []sdk.EventNotice{{
+		Message: strings.TrimSpace(result.Message + " " + result.Details),
+	}}}, nil
+}
+
 func mergeModConfig(current modConfig, managed []managedFolderEntry, previousManaged map[string]struct{}) modConfig {
 	managedNames := map[string]struct{}{}
 	for _, entry := range managed {
