@@ -10109,6 +10109,145 @@ func stagedManifestJSONWithMetadata(t *testing.T, gameID, modType string, metada
 	return string(body)
 }
 
+func TestProfileModDependencyCascadeEnablesRequiredDependencies(t *testing.T) {
+	mods := []storage.InstalledMod{
+		profileCascadeTestMod(t, 1, false, installplan.ModMetadata{
+			Name:     "Consumer",
+			UniqueID: "author.Consumer",
+			Dependencies: []installplan.ModDependency{{
+				UniqueID: "Pathoschild.ContentPatcher",
+				Required: true,
+			}},
+		}),
+		profileCascadeTestMod(t, 2, false, installplan.ModMetadata{
+			Name:                       "Content Patcher Redux",
+			UniqueID:                   "Pathoschild.ContentPatcherRedux",
+			AdditionalLogicalFileNames: []string{"Pathoschild.ContentPatcher"},
+		}),
+	}
+
+	cascade, notes, err := profileModDependencyCascadeFromMods(mods, 1, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cascade, []int64{2}) {
+		t.Fatalf("cascade = %v", cascade)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+}
+
+func TestProfileModDependencyCascadeIncludesRecommendedOnlyWhenRequested(t *testing.T) {
+	mods := []storage.InstalledMod{
+		profileCascadeTestMod(t, 1, false, installplan.ModMetadata{
+			Name:     "Consumer",
+			UniqueID: "author.Consumer",
+			Dependencies: []installplan.ModDependency{{
+				UniqueID: "spacechase0.GenericModConfigMenu",
+				Required: false,
+			}},
+		}),
+		profileCascadeTestMod(t, 2, false, installplan.ModMetadata{
+			Name:     "Generic Mod Config Menu",
+			UniqueID: "spacechase0.GenericModConfigMenu",
+		}),
+	}
+
+	cascade, _, err := profileModDependencyCascadeFromMods(mods, 1, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cascade) != 0 {
+		t.Fatalf("cascade without recommendations = %v", cascade)
+	}
+	cascade, _, err = profileModDependencyCascadeFromMods(mods, 1, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cascade, []int64{2}) {
+		t.Fatalf("cascade with recommendations = %v", cascade)
+	}
+}
+
+func TestProfileModDependencyCascadeDisablesOnlyUnusedDependencies(t *testing.T) {
+	mods := []storage.InstalledMod{
+		profileCascadeTestMod(t, 1, true, installplan.ModMetadata{
+			Name:     "First Consumer",
+			UniqueID: "author.FirstConsumer",
+			Dependencies: []installplan.ModDependency{{
+				UniqueID: "Pathoschild.ContentPatcher",
+				Required: true,
+			}},
+		}),
+		profileCascadeTestMod(t, 2, true, installplan.ModMetadata{
+			Name:     "Content Patcher",
+			UniqueID: "Pathoschild.ContentPatcher",
+		}),
+		profileCascadeTestMod(t, 3, true, installplan.ModMetadata{
+			Name:     "Second Consumer",
+			UniqueID: "author.SecondConsumer",
+			Dependencies: []installplan.ModDependency{{
+				UniqueID: "Pathoschild.ContentPatcher",
+				Required: true,
+			}},
+		}),
+	}
+
+	cascade, _, err := profileModDependencyCascadeFromMods(mods, 1, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cascade) != 0 {
+		t.Fatalf("shared dependency cascade = %v", cascade)
+	}
+	mods[2].Enabled = false
+	cascade, _, err = profileModDependencyCascadeFromMods(mods, 1, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cascade, []int64{2}) {
+		t.Fatalf("unused dependency cascade = %v", cascade)
+	}
+}
+
+func TestProfileModDependencyCascadeReportsMissingDependencies(t *testing.T) {
+	mods := []storage.InstalledMod{
+		profileCascadeTestMod(t, 1, false, installplan.ModMetadata{
+			Name:     "Consumer",
+			UniqueID: "author.Consumer",
+			Dependencies: []installplan.ModDependency{{
+				UniqueID: "Pathoschild.ContentPatcher",
+				Required: true,
+			}},
+		}),
+	}
+
+	cascade, notes, err := profileModDependencyCascadeFromMods(mods, 1, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cascade) != 0 {
+		t.Fatalf("cascade = %v", cascade)
+	}
+	if len(notes) != 1 || !strings.Contains(notes[0], "Pathoschild.ContentPatcher") {
+		t.Fatalf("notes = %v", notes)
+	}
+}
+
+func profileCascadeTestMod(t *testing.T, id int64, enabled bool, metadata installplan.ModMetadata) storage.InstalledMod {
+	t.Helper()
+	return storage.InstalledMod{
+		ID:           id,
+		GameID:       1,
+		ProfileID:    1,
+		SteamAppID:   "413150",
+		Name:         metadata.Name,
+		ManifestJSON: stagedManifestJSONWithMetadata(t, "413150", "stardew-smapi-mod", metadata),
+		Enabled:      enabled,
+	}
+}
+
 func TestStardewRecoveredDownloadDeployAndPurgeEndpoints(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "Stardew Valley")

@@ -4560,8 +4560,10 @@ type deleteProfileResponse struct {
 }
 
 type updateProfileModRequest struct {
-	Enabled  *bool `json:"enabled"`
-	Priority *int  `json:"priority"`
+	Enabled             *bool `json:"enabled"`
+	Priority            *int  `json:"priority"`
+	CascadeDependencies bool  `json:"cascade_dependencies"`
+	IncludeRecommended  bool  `json:"include_recommended_dependencies"`
 }
 
 type updateProfileModOrderRequest struct {
@@ -4602,8 +4604,10 @@ type updateDeploySettingsRequest struct {
 }
 
 type profileModUpdateResponse struct {
-	Mod   storage.InstalledMod `json:"mod"`
-	Apply profileApplyResponse `json:"apply"`
+	Mod          storage.InstalledMod   `json:"mod"`
+	Cascade      []storage.InstalledMod `json:"cascade,omitempty"`
+	CascadeNotes []string               `json:"cascade_notes,omitempty"`
+	Apply        profileApplyResponse   `json:"apply"`
 }
 
 type gameModDeleteResponse struct {
@@ -12933,13 +12937,23 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	cascadeIDs := []int64{}
+	var cascadeNotes []string
+	if req.Enabled != nil && req.CascadeDependencies {
+		cascadeIDs, cascadeNotes, err = s.profileModDependencyCascade(r.Context(), profileID, installedModID, *req.Enabled, req.IncludeRecommended)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	if req.Enabled != nil {
+		eventModIDs := append([]int64{installedModID}, cascadeIDs...)
 		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
 			AppID:     appID,
 			Event:     gameext.EventWillEnableMods,
 			Source:    "profile-mod-update",
 			ProfileID: profileID,
-			ModIDs:    []int64{installedModID},
+			ModIDs:    eventModIDs,
 		}); err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
@@ -12950,29 +12964,200 @@ func (s *Server) handleSetProfileModEnabled(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	s.logger.Info("profile mod state updated", "profile_id", profileID, "installed_mod_id", installedModID, "enabled", req.Enabled, "priority", req.Priority)
+	var cascade []storage.InstalledMod
+	if req.Enabled != nil && len(cascadeIDs) > 0 {
+		cascade, err = s.applyProfileDependencyCascade(r.Context(), profileID, cascadeIDs, *req.Enabled)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
+	s.logger.Info("profile mod state updated", "profile_id", profileID, "installed_mod_id", installedModID, "enabled", req.Enabled, "priority", req.Priority, "cascade_dependencies", len(cascade))
 	s.publishGameEvent(events.TypeProfileModsChanged, mod.SteamAppID, map[string]any{
 		"action":           "updated",
 		"profile_id":       profileID,
 		"installed_mod_id": installedModID,
 		"enabled":          req.Enabled,
 		"priority":         req.Priority,
+		"cascade_mod_ids":  cascadeIDs,
 	})
 	if req.Enabled != nil {
+		eventModIDs := append([]int64{installedModID}, cascadeIDs...)
 		for _, event := range []string{gameext.EventModEnabled, gameext.EventModsEnabled} {
 			if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
 				AppID:     mod.SteamAppID,
 				Event:     event,
 				Source:    "profile-mod-update",
 				ProfileID: profileID,
-				ModIDs:    []int64{installedModID},
+				ModIDs:    eventModIDs,
 			}); err != nil {
 				s.logger.Warn("post-profile-mod-enabled extension event failed", "app_id", mod.SteamAppID, "profile_id", profileID, "installed_mod_id", installedModID, "event", event, "error", err)
 			}
 		}
 	}
 	apply := s.applyProfileChangesForUserAction(r.Context(), mod.SteamAppID, "profile-mod-update")
-	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Apply: apply})
+	writeJSON(w, http.StatusOK, profileModUpdateResponse{Mod: mod, Cascade: cascade, CascadeNotes: cascadeNotes, Apply: apply})
+}
+
+func (s *Server) profileModDependencyCascade(ctx context.Context, profileID, installedModID int64, enabled, includeRecommended bool) ([]int64, []string, error) {
+	mods, err := s.db.InstalledModsForProfile(ctx, profileID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return profileModDependencyCascadeFromMods(mods, installedModID, enabled, includeRecommended)
+}
+
+func profileModDependencyCascadeFromMods(mods []storage.InstalledMod, installedModID int64, enabled, includeRecommended bool) ([]int64, []string, error) {
+	modByID := installedModsByID(mods)
+	target, ok := modByID[installedModID]
+	if !ok {
+		return nil, nil, errors.New("profile mod was not found")
+	}
+	dependencyIDs, notes, err := profileModDependencyIDs(mods, target, includeRecommended)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !enabled {
+		return disableDependencyCascadeIDs(mods, target, dependencyIDs, includeRecommended), notes, nil
+	}
+	seen := map[int64]struct{}{}
+	var cascade []int64
+	for _, dependencyID := range dependencyIDs {
+		dependencyMod := modByID[dependencyID]
+		if dependencyMod.Enabled {
+			continue
+		}
+		if _, exists := seen[dependencyID]; exists {
+			continue
+		}
+		seen[dependencyID] = struct{}{}
+		cascade = append(cascade, dependencyID)
+	}
+	return cascade, notes, nil
+}
+
+func installedModsByID(mods []storage.InstalledMod) map[int64]storage.InstalledMod {
+	modByID := map[int64]storage.InstalledMod{}
+	for _, mod := range mods {
+		modByID[mod.ID] = mod
+	}
+	return modByID
+}
+
+func profileModDependencyIDs(mods []storage.InstalledMod, target storage.InstalledMod, includeRecommended bool) ([]int64, []string, error) {
+	idsByLogicalName := installedModLogicalIDs(mods)
+	manifest, err := parseStagedManifest(target.ManifestJSON)
+	if err != nil {
+		return nil, nil, err
+	}
+	seen := map[int64]struct{}{}
+	var cascade []int64
+	var notes []string
+	for _, metadata := range manifest.Metadata {
+		for _, dependency := range metadata.Dependencies {
+			dependencyName := strings.TrimSpace(dependency.UniqueID)
+			if dependencyName == "" {
+				continue
+			}
+			if !dependency.Required && !includeRecommended {
+				continue
+			}
+			dependencyID, ok := idsByLogicalName[strings.ToLower(dependencyName)]
+			if !ok || dependencyID == target.ID {
+				notes = append(notes, "Dependency "+dependencyName+" is not installed in this profile.")
+				continue
+			}
+			if _, exists := seen[dependencyID]; exists {
+				continue
+			}
+			seen[dependencyID] = struct{}{}
+			cascade = append(cascade, dependencyID)
+		}
+	}
+	return cascade, notes, nil
+}
+
+func disableDependencyCascadeIDs(mods []storage.InstalledMod, target storage.InstalledMod, dependencyIDs []int64, includeRecommended bool) []int64 {
+	modByID := installedModsByID(mods)
+	targetDependencyIDs := map[int64]struct{}{}
+	for _, dependencyID := range dependencyIDs {
+		dependency := modByID[dependencyID]
+		if dependency.ID <= 0 || !dependency.Enabled {
+			continue
+		}
+		targetDependencyIDs[dependencyID] = struct{}{}
+	}
+	if len(targetDependencyIDs) == 0 {
+		return nil
+	}
+	for _, mod := range mods {
+		if mod.ID == target.ID || !mod.Enabled {
+			continue
+		}
+		otherDependencyIDs, _, err := profileModDependencyIDs(mods, mod, includeRecommended)
+		if err != nil {
+			continue
+		}
+		for _, dependencyID := range otherDependencyIDs {
+			delete(targetDependencyIDs, dependencyID)
+		}
+	}
+	var cascade []int64
+	for _, dependencyID := range dependencyIDs {
+		if _, ok := targetDependencyIDs[dependencyID]; ok {
+			cascade = append(cascade, dependencyID)
+		}
+	}
+	return cascade
+}
+
+func (s *Server) applyProfileDependencyCascade(ctx context.Context, profileID int64, installedModIDs []int64, enabled bool) ([]storage.InstalledMod, error) {
+	updated := make([]storage.InstalledMod, 0, len(installedModIDs))
+	for _, installedModID := range installedModIDs {
+		mod, err := s.db.SetProfileModState(ctx, profileID, installedModID, &enabled, nil)
+		if err != nil {
+			return updated, err
+		}
+		updated = append(updated, mod)
+	}
+	return updated, nil
+}
+
+func installedModLogicalIDs(mods []storage.InstalledMod) map[string]int64 {
+	out := map[string]int64{}
+	for _, mod := range mods {
+		if mod.ID <= 0 {
+			continue
+		}
+		manifest, err := parseStagedManifest(mod.ManifestJSON)
+		if err != nil {
+			continue
+		}
+		for _, metadata := range manifest.Metadata {
+			for _, id := range stagedMetadataLogicalIDs(metadata) {
+				key := strings.ToLower(strings.TrimSpace(id))
+				if key != "" {
+					out[key] = mod.ID
+				}
+			}
+		}
+	}
+	return out
+}
+
+func stagedMetadataLogicalIDs(metadata installplan.ModMetadata) []string {
+	ids := []string{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			ids = append(ids, value)
+		}
+	}
+	add(metadata.UniqueID)
+	for _, value := range metadata.AdditionalLogicalFileNames {
+		add(value)
+	}
+	return ids
 }
 
 func (s *Server) handleRemoveProfileMod(w http.ResponseWriter, r *http.Request) {
