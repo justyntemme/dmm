@@ -29,6 +29,9 @@ func TestExtensionRegistersSourceBackedQuickBMSAPIRuntime(t *testing.T) {
 			t.Fatalf("%s capability = %+v", id, byID[id])
 		}
 	}
+	if len(summary.Capabilities.ExtensionDashlets) != 1 || summary.Capabilities.ExtensionDashlets[0].ID != "quickbms-support" {
+		t.Fatalf("dashlets = %+v", summary.Capabilities.ExtensionDashlets)
+	}
 }
 
 func TestAPIGatesOperationsByRegisteredGame(t *testing.T) {

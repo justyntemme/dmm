@@ -107,6 +107,13 @@ func Register(r sdk.Registrar) {
 		api.Message = runtimeMessage
 		r.RegisterExtensionAPI(api)
 	}
+	r.RegisterExtensionDashlet(sdk.ExtensionDashletSpec{
+		ID:      "quickbms-support",
+		Name:    "QBMS Support",
+		Scope:   "quickbms",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes Vortex's QuickBMS support dashlet as extension diagnostics for registered QuickBMS-backed games and the typed QuickBMS process bridge.",
+	})
 }
 
 func Sources() []sdk.SourceRef {
