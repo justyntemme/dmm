@@ -87,21 +87,40 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.LoadOrders) != 1 {
 		t.Fatalf("load orders = %+v", summary.Capabilities.LoadOrders)
 	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "bladeandsorcery-loadorder-json"); loadOrder == nil || loadOrder.TargetRelative != loadOrderFile || loadOrder.TargetRoot != officialRoot {
+		t.Fatalf("load order = %+v", loadOrder)
+	}
 	if len(summary.Capabilities.ExtensionLoadOrderPages) != 1 || summary.Capabilities.ExtensionLoadOrderPages[0].Status != sdk.CapabilityStatusReady {
+		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
+	}
+	if featureByID(summary.Capabilities.ExtensionLoadOrderPages, "bladeandsorcery-loadorder-page") == nil {
 		t.Fatalf("load order pages = %+v", summary.Capabilities.ExtensionLoadOrderPages)
 	}
 	if len(summary.Capabilities.ExternalModAdoptions) != 1 || summary.Capabilities.ExternalModAdoptions[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("external adoptions = %+v", summary.Capabilities.ExternalModAdoptions)
 	}
+	if adoption := featureByID(summary.Capabilities.ExternalModAdoptions, "bladeandsorcery-external-official-mods"); adoption == nil || adoption.Path != officialRoot || len(adoption.ModTypes) != 1 || adoption.ModTypes[0] != officialModType {
+		t.Fatalf("external adoption = %+v", adoption)
+	}
 	if len(summary.Capabilities.ExtensionActions) != 1 || summary.Capabilities.ExtensionActions[0].Status != sdk.CapabilityStatusReady || summary.Capabilities.ExtensionActions[0].ActionTarget == nil {
 		t.Fatalf("extension actions = %+v", summary.Capabilities.ExtensionActions)
 	}
-	target := summary.Capabilities.ExtensionActions[0].ActionTarget
+	action := featureByID(summary.Capabilities.ExtensionActions, "bladeandsorcery-view-loadorder-file")
+	if action == nil || action.ActionTarget == nil {
+		t.Fatalf("extension actions = %+v", summary.Capabilities.ExtensionActions)
+	}
+	target := action.ActionTarget
 	if target.Type != sdk.ExtensionActionKindOpenDirectory || target.Base != sdk.OpenDirectoryBaseGame || target.RelativePath != officialRoot {
 		t.Fatalf("action target = %+v", target)
 	}
 	if len(summary.Capabilities.EventHandlers) != 2 {
 		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventWillDeploy); handler == nil || handler.Trigger != sdk.EventWillDeploy {
+		t.Fatalf("will-deploy handler = %+v", handler)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventDidDeploy); handler == nil || handler.Trigger != sdk.EventDidDeploy {
+		t.Fatalf("did-deploy handler = %+v", handler)
 	}
 	if len(summary.Capabilities.GameVersions) != 1 || summary.Capabilities.GameVersions[0].Status == sdk.CapabilityStatusBlocked {
 		t.Fatalf("game versions = %+v", summary.Capabilities.GameVersions)
@@ -109,11 +128,25 @@ func TestExtensionSummaryRecordsLoadOrderParity(t *testing.T) {
 	if len(summary.Capabilities.StateMigrations) != 2 {
 		t.Fatalf("state migrations = %+v", summary.Capabilities.StateMigrations)
 	}
-	for _, migration := range summary.Capabilities.StateMigrations {
-		if len(migration.Commands) == 0 {
-			t.Fatalf("state migration should have executable commands: %+v", migration)
-		}
+	migration020 := featureByID(summary.Capabilities.StateMigrations, "bladeandsorcery-migration-0.2.0")
+	if migration020 == nil || migration020.FromVersion != "0.1.0" || migration020.ToVersion != "0.2.0" {
+		t.Fatalf("0.2.0 migration = %+v", migration020)
 	}
+	assertMigrationCommands(t, migration020, []string{
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandWrapStagedRoot,
+		sdk.StateMigrationCommandDeployProfile,
+	})
+	migration0212 := featureByID(summary.Capabilities.StateMigrations, "bladeandsorcery-migration-0.2.12")
+	if migration0212 == nil || migration0212.FromVersion != "0.0.0" || migration0212.ToVersion != "0.2.12" {
+		t.Fatalf("0.2.12 migration = %+v", migration0212)
+	}
+	assertMigrationCommands(t, migration0212, []string{
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandSetModType,
+		sdk.StateMigrationCommandDeployProfile,
+	})
 	if len(summary.Capabilities.ExtensionToDos) != 0 {
 		t.Fatalf("extension todos = %+v", summary.Capabilities.ExtensionToDos)
 	}
@@ -205,6 +238,37 @@ func assertEqualStrings(t *testing.T, got, want []string) {
 			t.Fatalf("strings = %+v, want %+v", got, want)
 		}
 	}
+}
+
+func assertMigrationCommands(t *testing.T, feature *gameext.FeatureSummary, commands []string) {
+	t.Helper()
+	if feature == nil {
+		t.Fatal("missing migration feature")
+	}
+	if len(feature.Commands) != len(commands) {
+		t.Fatalf("migration commands = %+v, want %+v", feature.Commands, commands)
+	}
+	remaining := map[string]int{}
+	for _, command := range commands {
+		remaining[command]++
+	}
+	for _, got := range feature.Commands {
+		remaining[got.Command]--
+	}
+	for command, count := range remaining {
+		if count != 0 {
+			t.Fatalf("migration commands = %+v, missing %s count %d", feature.Commands, command, count)
+		}
+	}
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
 
 func assertTargets(t *testing.T, plan installplan.Plan, targets []string) {

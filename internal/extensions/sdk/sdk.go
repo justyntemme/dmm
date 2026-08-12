@@ -1083,6 +1083,7 @@ const (
 	StateMigrationCommandMoveStagedPaths  = "move-staged-paths"
 	StateMigrationCommandWrapStagedRoot   = "wrap-staged-root"
 	StateMigrationCommandScanStagedFiles  = "scan-staged-files"
+	StateMigrationCommandSerializeState   = "serialize-state"
 	StateMigrationCommandWarnStagedPaths  = "warn-staged-paths"
 	StateMigrationCommandWarnInstalled    = "warn-installed"
 	StateMigrationCommandBackupTargetFile = "backup-target-file"
@@ -1229,11 +1230,11 @@ type StateChangeWatcherSpec struct {
 type StateChangeWatcherFunc func(context.Context, StateChangeWatcherInput) (StateChangeWatcherResult, error)
 
 type StateChangeWatcherInput struct {
-	Path     []string
+	Path      []string
 	ProfileID string
 	GameID    string
-	Previous json.RawMessage
-	Current  json.RawMessage
+	Previous  json.RawMessage
+	Current   json.RawMessage
 }
 
 type StateChangeWatcherResult struct {

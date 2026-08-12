@@ -74,6 +74,12 @@ func Register(r sdk.Registrar) {
 		ToVersion:   "1.0.0",
 		Commands: []sdk.StateMigrationCommandSpec{
 			{
+				ID:           "serialize-existing-load-order",
+				Name:         "Serialize existing Spyro load order",
+				Command:      sdk.StateMigrationCommandSerializeState,
+				MetadataKind: "load-order",
+			},
+			{
 				ID:             "purge-old-pak-deployment",
 				Name:           "Purge old Spyro pak deployment",
 				Command:        sdk.StateMigrationCommandPurgeModsInPath,

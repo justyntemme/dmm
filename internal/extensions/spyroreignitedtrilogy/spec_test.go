@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/spyroreignitedtrilogy"
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -32,6 +33,24 @@ func TestExtensionRegistersVortexCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Merges) != 1 || len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	if merge := featureByID(summary.Capabilities.Merges, "spyro-pak-load-order"); merge == nil {
+		t.Fatalf("merges = %+v", summary.Capabilities.Merges)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "spyro-pak-load-order"); loadOrder == nil || loadOrder.TargetRoot != "falcon/content/paks/~mods" || len(loadOrder.FileExtensions) != 3 {
+		t.Fatalf("load order = %+v", loadOrder)
+	}
+	if handler := featureByID(summary.Capabilities.EventHandlers, sdk.EventWillDeploy); handler == nil || handler.Trigger != sdk.EventWillDeploy {
+		t.Fatalf("event handlers = %+v", summary.Capabilities.EventHandlers)
+	}
+	migration := featureByID(summary.Capabilities.StateMigrations, "spyro-1.0.0-load-order-migration")
+	if migration == nil || migration.FromVersion != "0.0.0" || migration.ToVersion != "1.0.0" {
+		t.Fatalf("state migrations = %+v", summary.Capabilities.StateMigrations)
+	}
+	assertMigrationCommands(t, migration, []string{
+		sdk.StateMigrationCommandSerializeState,
+		sdk.StateMigrationCommandPurgeModsInPath,
+		sdk.StateMigrationCommandDeployProfile,
+	})
 }
 
 func TestInstallerBuildsPakFolderPlan(t *testing.T) {
@@ -96,5 +115,36 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
+}
+
+func assertMigrationCommands(t *testing.T, feature *gameext.FeatureSummary, commands []string) {
+	t.Helper()
+	if feature == nil {
+		t.Fatal("missing migration feature")
+	}
+	if len(feature.Commands) != len(commands) {
+		t.Fatalf("migration commands = %+v, want %+v", feature.Commands, commands)
+	}
+	remaining := map[string]int{}
+	for _, command := range commands {
+		remaining[command]++
+	}
+	for _, got := range feature.Commands {
+		remaining[got.Command]--
+	}
+	for command, count := range remaining {
+		if count != 0 {
+			t.Fatalf("migration commands = %+v, missing %s count %d", feature.Commands, command, count)
+		}
 	}
 }
