@@ -89,6 +89,7 @@ type Registrar interface {
 	RegisterAttributeExtractor(AttributeExtractorSpec)
 	RegisterStartHook(StartHookSpec)
 	RegisterEventHandler(EventHandlerSpec)
+	RegisterStateChangeWatcher(StateChangeWatcherSpec)
 }
 
 type GameRegistration struct {
@@ -1214,6 +1215,29 @@ type EventHandlerSpec struct {
 	Handler EventHandlerFunc
 	Status  string
 	Message string
+}
+
+type StateChangeWatcherSpec struct {
+	ID      string
+	Path    []string
+	Name    string
+	Handler StateChangeWatcherFunc
+	Status  string
+	Message string
+}
+
+type StateChangeWatcherFunc func(context.Context, StateChangeWatcherInput) (StateChangeWatcherResult, error)
+
+type StateChangeWatcherInput struct {
+	Path     []string
+	ProfileID string
+	GameID    string
+	Previous json.RawMessage
+	Current  json.RawMessage
+}
+
+type StateChangeWatcherResult struct {
+	Notices []EventNotice
 }
 
 const (

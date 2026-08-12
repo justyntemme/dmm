@@ -236,6 +236,13 @@ func Register(r sdk.Registrar) {
 		Name:    "Remind about Witcher 3 Script Merger after mod uninstall",
 		Handler: didRemoveModScriptMergerReminder,
 	})
+	r.RegisterStateChangeWatcher(sdk.StateChangeWatcherSpec{
+		ID:      "witcher3-settings-change",
+		Path:    []string{"settings", "witcher3"},
+		Name:    "Refresh Witcher 3 priorities after settings change",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex game-witcher3 onStateChange(['settings','witcher3']) by refreshing extension-owned priority/menu state when Witcher settings change.",
+	})
 	for _, ref := range sources() {
 		r.RegisterSource(ref)
 	}

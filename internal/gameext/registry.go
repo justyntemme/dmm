@@ -83,6 +83,7 @@ type Extension struct {
 	AttributeExtractors      []sdk.AttributeExtractorSpec
 	StartHooks               []sdk.StartHookSpec
 	EventHandlers            []sdk.EventHandlerSpec
+	StateChangeWatchers      []sdk.StateChangeWatcherSpec
 }
 
 type SourceRef = sdk.SourceRef
@@ -280,6 +281,7 @@ type ExtensionCapabilities struct {
 	AttributeExtractors      []FeatureSummary         `json:"attribute_extractors,omitempty"`
 	StartHooks               []FeatureSummary         `json:"start_hooks,omitempty"`
 	EventHandlers            []FeatureSummary         `json:"event_handlers,omitempty"`
+	StateChangeWatchers      []FeatureSummary         `json:"state_change_watchers,omitempty"`
 	GameRegistration         *GameRegistrationSummary `json:"game_registration,omitempty"`
 }
 
@@ -2383,6 +2385,16 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Message: defaultString(handler.Message, "Runs extension-owned lifecycle behavior for the "+handler.Event+" event."),
 		})
 	}
+	for _, watcher := range extension.StateChangeWatchers {
+		path := strings.Join(watcher.Path, ".")
+		summary.Capabilities.StateChangeWatchers = append(summary.Capabilities.StateChangeWatchers, FeatureSummary{
+			ID:      watcher.ID,
+			Name:    watcher.Name,
+			Trigger: path,
+			Status:  defaultString(watcher.Status, sdk.CapabilityStatusReady),
+			Message: defaultString(watcher.Message, "Runs extension-owned behavior when "+path+" changes."),
+		})
+	}
 	sortFeatureSummaries(summary.Capabilities.ModTypes)
 	sortFeatureSummaries(summary.Capabilities.Installers)
 	sortFeatureSummaries(summary.Capabilities.UnsupportedInstallers)
@@ -2434,6 +2446,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 	sortFeatureSummaries(summary.Capabilities.AttributeExtractors)
 	sortFeatureSummaries(summary.Capabilities.StartHooks)
 	sortFeatureSummaries(summary.Capabilities.EventHandlers)
+	sortFeatureSummaries(summary.Capabilities.StateChangeWatchers)
 	summary.ParityGaps = extensionParityGaps(summary.Capabilities)
 	return summary
 }
@@ -2509,6 +2522,7 @@ func extensionParityGaps(capabilities ExtensionCapabilities) []ExtensionParityGa
 	collect("attribute_extractors", capabilities.AttributeExtractors)
 	collect("start_hooks", capabilities.StartHooks)
 	collect("event_handlers", capabilities.EventHandlers)
+	collect("state_change_watchers", capabilities.StateChangeWatchers)
 	sort.Slice(gaps, func(i, j int) bool {
 		if gaps[i].Surface != gaps[j].Surface {
 			return gaps[i].Surface < gaps[j].Surface

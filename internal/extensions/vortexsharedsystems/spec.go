@@ -158,6 +158,22 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's locked plugin index reducer with profile plugin activation rows that persist locked load-order indices and feed generated Gamebryo plugin output.",
 	})
+	gamebryoStateMessage := "Mirrors Vortex Gamebryo onStateChange handlers by refreshing plugin activation, LOOT metadata, locked-index state, and profile-local generated files when shared Gamebryo state changes."
+	for _, watcher := range []sdk.StateChangeWatcherSpec{
+		{ID: "gamebryo-index-lock-load-order", Name: "Apply locked indices after load-order changes", Path: []string{"loadOrder"}},
+		{ID: "gamebryo-index-lock-plugin-info", Name: "Apply locked indices after plugin metadata changes", Path: []string{"session", "plugins", "pluginInfo"}},
+		{ID: "gamebryo-index-lock-persistent-indices", Name: "Persist locked plugin indices", Path: []string{"persistent", "plugins", "lockedIndices"}},
+		{ID: "gamebryo-plugin-management-load-order", Name: "Synchronize Gamebryo plugin management after load-order changes", Path: []string{"loadOrder"}},
+		{ID: "gamebryo-plugin-management-discovery", Name: "Synchronize Gamebryo plugin management after discovery changes", Path: []string{"settings", "gameMode", "discovered"}},
+		{ID: "gamebryo-plugin-management-main-page", Name: "Refresh Gamebryo plugin page state", Path: []string{"session", "base", "mainPage"}},
+		{ID: "gamebryo-plugin-management-profiles", Name: "Synchronize Gamebryo plugin state after profile changes", Path: []string{"persistent", "profiles"}},
+		{ID: "gamebryo-savegame-profile-feature", Name: "Synchronize Gamebryo savegame profile feature state", Path: []string{"persistent", "profiles"}},
+		{ID: "gamebryo-savegame-discovery", Name: "Refresh Gamebryo savegame paths after discovery changes", Path: []string{"settings", "gameMode", "discovered"}},
+	} {
+		watcher.Status = sdk.CapabilityStatusReady
+		watcher.Message = gamebryoStateMessage
+		r.RegisterStateChangeWatcher(watcher)
+	}
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "gamebryo-plugin-index-lock",
 		Name:    "Gamebryo plugin index lock table attribute",

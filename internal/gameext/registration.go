@@ -507,6 +507,13 @@ func (r *Registrar) RegisterEventHandler(spec sdk.EventHandlerSpec) {
 	r.extension.EventHandlers = append(r.extension.EventHandlers, spec)
 }
 
+func (r *Registrar) RegisterStateChangeWatcher(spec sdk.StateChangeWatcherSpec) {
+	if strings.TrimSpace(spec.ID) == "" || len(spec.Path) == 0 {
+		return
+	}
+	r.extension.StateChangeWatchers = append(r.extension.StateChangeWatchers, spec)
+}
+
 func validateExtension(extension Extension) error {
 	var errs []error
 	if strings.TrimSpace(extension.ID) == "" {

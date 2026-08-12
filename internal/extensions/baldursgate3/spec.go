@@ -240,6 +240,13 @@ func Register(r sdk.Registrar) {
 		Name:    "Check LSLib/Divine GitHub releases",
 		Handler: checkLSLibUpdates,
 	})
+	r.RegisterStateChangeWatcher(sdk.StateChangeWatcherSpec{
+		ID:      "bg3-tools-running-load-order-refresh",
+		Path:    []string{"session", "base", "toolsRunning"},
+		Name:    "Refresh BG3 load order after tools exit",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex game-baldursgate3 onStateChange(['session','base','toolsRunning']) by re-reading profile load order after extension-managed tools finish.",
+	})
 	registerActions(r)
 	for _, ref := range sources() {
 		r.RegisterSource(ref)

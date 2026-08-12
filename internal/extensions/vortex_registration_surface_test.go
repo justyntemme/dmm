@@ -461,6 +461,43 @@ func TestFirstPartyCoversVortexLifecycleEventInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexStateChangeInventory(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex context.api.onStateChange calls
+	// in game-witcher3, game-baldursgate3, gamebryo-plugin-indexlock,
+	// gamebryo-plugin-management, and gamebryo-savegame-management.
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	watchersByID := map[string]gameext.FeatureSummary{}
+	for _, summary := range summaries {
+		for _, watcher := range summary.Capabilities.StateChangeWatchers {
+			watchersByID[watcher.ID] = watcher
+		}
+	}
+	for _, required := range []struct {
+		id   string
+		path string
+	}{
+		{"witcher3-settings-change", "settings.witcher3"},
+		{"bg3-tools-running-load-order-refresh", "session.base.toolsRunning"},
+		{"gamebryo-index-lock-load-order", "loadOrder"},
+		{"gamebryo-index-lock-plugin-info", "session.plugins.pluginInfo"},
+		{"gamebryo-index-lock-persistent-indices", "persistent.plugins.lockedIndices"},
+		{"gamebryo-plugin-management-load-order", "loadOrder"},
+		{"gamebryo-plugin-management-discovery", "settings.gameMode.discovered"},
+		{"gamebryo-plugin-management-main-page", "session.base.mainPage"},
+		{"gamebryo-plugin-management-profiles", "persistent.profiles"},
+		{"gamebryo-savegame-profile-feature", "persistent.profiles"},
+		{"gamebryo-savegame-discovery", "settings.gameMode.discovered"},
+	} {
+		watcher, ok := watchersByID[required.id]
+		if !ok {
+			t.Fatalf("missing DMM state-change watcher for Vortex onStateChange surface %q", required.id)
+		}
+		if watcher.Trigger != required.path || watcher.Status != sdk.CapabilityStatusReady || watcher.Message == "" {
+			t.Fatalf("state-change watcher %s = %+v", required.id, watcher)
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexSupportLifecycleEventInventory(t *testing.T) {
 	// Source inventory verified from Vortex framework/support extensions outside
 	// extensions/games. These are shared extension-runtime hooks that game
@@ -942,6 +979,7 @@ func allFeatureSummaries(caps gameext.ExtensionCapabilities) []gameext.FeatureSu
 	features = append(features, caps.AttributeExtractors...)
 	features = append(features, caps.StartHooks...)
 	features = append(features, caps.EventHandlers...)
+	features = append(features, caps.StateChangeWatchers...)
 	if caps.SteamWorkshop != nil {
 		features = append(features, caps.SteamWorkshop.Actions...)
 	}
