@@ -118,6 +118,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Rome: Total War Nexus vanilla data-folder install instructions", URL: "https://www.nexusmods.com/rometotalwar/mods/7"},
 		{Name: "Rome: Total War Nexus Alexander data-folder install instructions", URL: "https://www.nexusmods.com/rometotalwar/mods/1"},
 		{Name: "Live Steam Deck Rome/Alexander executable and data-folder verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no reviewed Rome: Total War handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Rome: Total War game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
 }

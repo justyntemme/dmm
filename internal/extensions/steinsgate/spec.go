@@ -107,6 +107,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Nexus API game list verified the Steins;Gate domain", URL: "https://www.nexusmods.com/steinsgate"},
 		{Name: "Steins;Gate Nexus USRDIR replacement instructions", URL: "https://www.nexusmods.com/steinsgate/mods/2"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no reviewed Steins;Gate handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Steins;Gate game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
 }

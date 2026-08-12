@@ -30,7 +30,7 @@ func Extension() sdk.Extension {
 				URL:  "extensionTargets.md#installed-games-snapshot",
 			},
 			{
-				Name: "Checked bundled Vortex game extension source; no reviewed SNØ handler found",
+				Name: "Checked bundled Vortex game extension source; no SNØ game extension ships upstream",
 				URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
 			},
 		},

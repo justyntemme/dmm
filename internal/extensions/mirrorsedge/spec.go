@@ -128,6 +128,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Mirror's Edge Nexus CookedPC/Characters replacement instructions", URL: "https://www.nexusmods.com/mirrorsedge/mods/31"},
 		{Name: "Mirror's Edge community Published/CookedPC mod-menu guide", URL: "https://steamcommunity.com/sharedfiles/filedetails/?id=1981216701"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no reviewed Mirror's Edge handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Mirror's Edge game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
 }

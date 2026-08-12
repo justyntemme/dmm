@@ -94,6 +94,6 @@ func sources() []sdk.SourceRef {
 		{Name: "C&C Labs .big package install guidance", URL: "https://www.cnclabs.com/forums/posts/13491/how-to-install-a-mod-addon-for-zero-hour/"},
 		{Name: "Steam community guide showing GenLauncher as a separate external flow", URL: "https://steamcommunity.com/sharedfiles/filedetails/?id=3175443026"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no reviewed Generals handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Command & Conquer: Generals game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
 }

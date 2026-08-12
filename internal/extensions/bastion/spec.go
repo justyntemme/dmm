@@ -136,6 +136,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Bastion Nexus Content/Game replacement instructions", URL: "https://www.nexusmods.com/bastion/mods/1"},
 		{Name: "Bastion Nexus executable patch example kept blocked", URL: "https://www.nexusmods.com/bastion/mods/3"},
 		{Name: "Live Steam Deck native executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no reviewed Bastion handler found", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Bastion game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
 	}
 }
