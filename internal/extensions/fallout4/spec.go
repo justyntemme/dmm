@@ -14,6 +14,9 @@ import (
 
 const (
 	SteamAppID               = "377160"
+	GOGAppID                 = "1998527297"
+	EpicAppID                = "61d52ce4d09d41e48800c22784d13ae8"
+	XboxAppID                = "BethesdaSoftworks.Fallout4-PC"
 	VortexGameID             = "fallout4"
 	FalloutLondonNexusDomain = "fallout4london"
 	Name                     = "Fallout 4"
@@ -31,7 +34,12 @@ func Extension() sdk.Extension {
 
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
-		SteamAppIDs:         []string{SteamAppID},
+		SteamAppIDs: []string{SteamAppID},
+		StoreAppIDs: map[string][]string{
+			"gog":  {GOGAppID},
+			"epic": {EpicAppID},
+			"xbox": {XboxAppID},
+		},
 		NexusDomains:        []string{VortexGameID, FalloutLondonNexusDomain},
 		VortexGameID:        VortexGameID,
 		ExecutableRelative:  "Fallout4.exe",
@@ -39,7 +47,12 @@ func Register(r sdk.Registrar) {
 		QueryModPath:        "Data",
 		MergeMode:           sdk.GameMergeModeAll,
 		CompatibleDownloads: []string{FalloutLondonNexusDomain},
-		Environment:         map[string]string{"SteamAPPId": SteamAppID},
+		Environment: map[string]string{
+			"SteamAPPId": SteamAppID,
+			"GogAPPId":   GOGAppID,
+			"EpicAPPId":  EpicAppID,
+			"XboxAPPId":  XboxAppID,
+		},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -103,7 +116,7 @@ func Register(r sdk.Registrar) {
 		Name:     "Xbox app launcher",
 		Launcher: "xbox",
 		Store:    "xbox",
-		AppID:    "BethesdaSoftworks.Fallout4-PC",
+		AppID:    XboxAppID,
 		Parameters: []sdk.LauncherParameterSpec{{
 			Name:  "appExecName",
 			Value: "Game",
@@ -114,7 +127,7 @@ func Register(r sdk.Registrar) {
 		Name:     "Epic Games launcher",
 		Launcher: "epic",
 		Store:    "epic",
-		AppID:    "61d52ce4d09d41e48800c22784d13ae8",
+		AppID:    EpicAppID,
 	})
 	r.RegisterUnmanagedMarker(sdk.UnmanagedMarkerSpec{
 		ID:       "fallout4-f4se-loader",

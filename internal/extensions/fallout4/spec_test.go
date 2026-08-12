@@ -165,6 +165,26 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Data" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game metadata = %+v", summary.Capabilities.GameRegistration)
 	}
+	for store, want := range map[string]string{
+		"gog":  fallout4.GOGAppID,
+		"epic": fallout4.EpicAppID,
+		"xbox": fallout4.XboxAppID,
+	} {
+		got := summary.Capabilities.GameRegistration.StoreAppIDs[store]
+		if !contains(got, want) {
+			t.Fatalf("store app ids[%s] = %+v", store, got)
+		}
+	}
+	for key, want := range map[string]string{
+		"SteamAPPId": fallout4.SteamAppID,
+		"GogAPPId":   fallout4.GOGAppID,
+		"EpicAPPId":  fallout4.EpicAppID,
+		"XboxAPPId":  fallout4.XboxAppID,
+	} {
+		if got := summary.Capabilities.GameRegistration.Environment[key]; got != want {
+			t.Fatalf("environment[%s] = %q, want %q", key, got, want)
+		}
+	}
 	for _, id := range []string{"FO4Edit", "WryeBash", "bodyslide"} {
 		if !containsFeature(summary.Capabilities.SupportedTools, id) {
 			t.Fatalf("missing supported tool summary %q in %+v", id, summary.Capabilities.SupportedTools)
