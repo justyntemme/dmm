@@ -15,6 +15,7 @@ import (
 
 const (
 	SteamAppID   = "976730"
+	XboxAppID    = "Microsoft.Chelan"
 	VortexGameID = "halothemasterchiefcollection"
 	Name         = "Halo: The Master Chief Collection"
 
@@ -40,8 +41,12 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  []string{SteamAppID},
+		StoreAppIDs:  map[string][]string{"xbox": {XboxAppID}},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
+		Environment: map[string]string{
+			"SteamAPPId": SteamAppID,
+		},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -56,6 +61,32 @@ func Register(r sdk.Registrar) {
 		Name:               "Assembly",
 		ExecutableRelative: "Assembly.exe",
 		RequiredFiles:      []string{"Assembly.exe"},
+	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "halo-mcc-xbox-launcher",
+		Name:     "Xbox app launcher",
+		Launcher: "xbox",
+		Store:    "xbox",
+		AppID:    XboxAppID,
+		Parameters: []sdk.LauncherParameterSpec{{
+			Name:  "appExecName",
+			Value: "HaloMCCShippingNoEAC",
+		}},
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Halo MCC Xbox launcher requirement so Xbox installs launch the no-EAC executable that can load managed mods.",
+	})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
+		ID:       "halo-mcc-steam-launcher",
+		Name:     "Steam no-EAC launch option",
+		Launcher: "steam",
+		Store:    "steam",
+		AppID:    SteamAppID,
+		Parameters: []sdk.LauncherParameterSpec{{
+			Name:  "launchOption",
+			Value: "option2",
+		}},
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex's Halo MCC Steam launcher requirement by recording the no-EAC launch option needed for modded play.",
 	})
 	r.RegisterGameVersionProvider(sdk.GameVersionProviderSpec{
 		ID:       "mcc-build-tag",

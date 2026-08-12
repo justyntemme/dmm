@@ -226,7 +226,7 @@ func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	if len(summary.NexusDomains) != 1 || summary.NexusDomains[0] != VortexGameID {
 		t.Fatalf("nexus domains = %+v", summary.NexusDomains)
 	}
-	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 3 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
+	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 3 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.LauncherRequirements) != 2 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
 	for _, id := range []string{
@@ -240,6 +240,14 @@ func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	}
 	if featureByID(summary.Capabilities.LaunchTools, "haloassemblytool") == nil {
 		t.Fatalf("launch tools = %+v", summary.Capabilities.LaunchTools)
+	}
+	xboxLauncher := featureByID(summary.Capabilities.LauncherRequirements, "halo-mcc-xbox-launcher")
+	if xboxLauncher == nil || xboxLauncher.AppID != XboxAppID || len(xboxLauncher.Parameters) != 1 || xboxLauncher.Parameters[0].Name != "appExecName" || xboxLauncher.Parameters[0].Value != "HaloMCCShippingNoEAC" {
+		t.Fatalf("xbox launcher requirement = %+v", xboxLauncher)
+	}
+	steamLauncher := featureByID(summary.Capabilities.LauncherRequirements, "halo-mcc-steam-launcher")
+	if steamLauncher == nil || steamLauncher.AppID != SteamAppID || len(steamLauncher.Parameters) != 1 || steamLauncher.Parameters[0].Value != "option2" {
+		t.Fatalf("steam launcher requirement = %+v", steamLauncher)
 	}
 	if featureByID(summary.Capabilities.ExtensionTests, "mcc-ce-mp-test") == nil {
 		t.Fatalf("extension tests = %+v", summary.Capabilities.ExtensionTests)
