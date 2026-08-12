@@ -229,6 +229,29 @@ func TestExtensionRegistersGameAndCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 3 || len(summary.Capabilities.EventHandlers) != 3 || len(summary.Capabilities.LaunchTools) != 1 || len(summary.Capabilities.ExtensionTests) != 1 {
 		t.Fatalf("capabilities = %+v", summary.Capabilities)
 	}
+	for _, id := range []string{
+		"vortex:masterchiefcollection:plug-and-play",
+		"vortex:masterchiefcollection:mod-config",
+		"vortex:masterchiefcollection:game-folder",
+	} {
+		if featureByID(summary.Capabilities.Installers, id) == nil {
+			t.Fatalf("missing installer %s in %+v", id, summary.Capabilities.Installers)
+		}
+	}
+	if featureByID(summary.Capabilities.LaunchTools, "haloassemblytool") == nil {
+		t.Fatalf("launch tools = %+v", summary.Capabilities.LaunchTools)
+	}
+	if featureByID(summary.Capabilities.ExtensionTests, "mcc-ce-mp-test") == nil {
+		t.Fatalf("extension tests = %+v", summary.Capabilities.ExtensionTests)
+	}
+	if featureByID(summary.Capabilities.ExtensionTableAttrs, "gameType") == nil {
+		t.Fatalf("table attrs = %+v", summary.Capabilities.ExtensionTableAttrs)
+	}
+	for _, event := range []string{sdk.EventWillDeploy, sdk.EventDidDeploy, sdk.EventDidPurge} {
+		if handler := featureByID(summary.Capabilities.EventHandlers, event); handler == nil || handler.Trigger != event {
+			t.Fatalf("missing event handler %s in %+v", event, summary.Capabilities.EventHandlers)
+		}
+	}
 }
 
 func build(root string) (installplan.Plan, error) {
@@ -263,4 +286,13 @@ func writeFile(t *testing.T, path, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
