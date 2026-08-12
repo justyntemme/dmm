@@ -2,7 +2,7 @@ package residentevil32020
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexstub"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsupportmod"
 )
 
 const (
@@ -17,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-re3remake", SourceDir: "game-re3remake", SupportModID: SupportModID})
+	vortexsupportmod.RegisterRootSupportMod(r, vortexsupportmod.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-re3remake", SourceDir: "game-re3remake", SupportModID: SupportModID})
 }

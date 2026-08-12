@@ -531,7 +531,7 @@ func validateExtension(extension Extension) error {
 	switch strings.TrimSpace(extension.Kind) {
 	case sdk.ExtensionKindGame:
 		if len(extension.SteamAppIDs) == 0 && !extension.VortexStub && !extension.AllowNoSteamAppID {
-			errs = append(errs, errors.New("game extension must register at least one Steam app id unless it is a source-backed Vortex stub or explicitly allows no Steam app id"))
+			errs = append(errs, errors.New("game extension must register at least one Steam app id unless it is a source-backed Vortex support-mod shell or explicitly allows no Steam app id"))
 		}
 	case sdk.ExtensionKindFramework:
 		if len(extension.SteamAppIDs) > 0 {

@@ -119,10 +119,10 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 				t.Fatalf("support mod id = %q", summary.SupportModID)
 			}
 			if tt.deployable && summary.VortexStub {
-				t.Fatalf("deployable support-mod port must not remain a Vortex stub")
+				t.Fatalf("deployable support-mod port must not remain a source shell")
 			}
 			if !tt.deployable && !summary.VortexStub {
-				t.Fatalf("metadata-only support-mod port must retain Vortex stub marker")
+				t.Fatalf("metadata-only support-mod port must retain source marker")
 			}
 			if tt.appID == "" && len(summary.SteamAppIDs) != 0 {
 				t.Fatalf("stub unexpectedly registered Steam app ids: %+v", summary.SteamAppIDs)
@@ -135,10 +135,10 @@ func TestVortexStubPortsExposeMetadata(t *testing.T) {
 			}
 			if tt.queryModPath == "" || tt.deployable {
 				if summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeNone {
-					t.Fatalf("root stub merge mode = %q", summary.Capabilities.GameRegistration.MergeMode)
+					t.Fatalf("root support-mod merge mode = %q", summary.Capabilities.GameRegistration.MergeMode)
 				}
 				if len(summary.Capabilities.ModTypes) != 1 || len(summary.Capabilities.Installers) != 1 {
-					t.Fatalf("root stub install capabilities = mod types %+v installers %+v", summary.Capabilities.ModTypes, summary.Capabilities.Installers)
+					t.Fatalf("root support-mod install capabilities = mod types %+v installers %+v", summary.Capabilities.ModTypes, summary.Capabilities.Installers)
 				}
 			}
 			if tt.deployable {

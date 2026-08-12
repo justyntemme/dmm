@@ -905,7 +905,7 @@ func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 			t.Fatalf("%s remains metadata-only; bundled Vortex game extensions must expose runtime installer behavior", summary.ID)
 		}
 		if summary.VortexGameID != "" && summary.VortexStub {
-			t.Fatalf("%s remains a Vortex stub; bundled Vortex game extensions must be expanded into DMM runtime behavior", summary.ID)
+			t.Fatalf("%s remains a Vortex support-mod shell; bundled Vortex game extensions must be expanded into DMM runtime behavior", summary.ID)
 		}
 		if len(summary.ParityGaps) != 0 {
 			t.Fatalf("%s advertises unresolved parity gaps: %+v", summary.ID, summary.ParityGaps)

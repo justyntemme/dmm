@@ -2,7 +2,7 @@ package mountandblade2bannerlord
 
 import (
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
-	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexstub"
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/vortexsupportmod"
 )
 
 const (
@@ -17,5 +17,5 @@ func Extension() sdk.Extension {
 }
 
 func Register(r sdk.Registrar) {
-	vortexstub.RegisterRootSupportMod(r, vortexstub.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-mount-and-blade2", SourceDir: "game-mount-and-blade2", SupportModID: SupportModID})
+	vortexsupportmod.RegisterRootSupportMod(r, vortexsupportmod.RootSupportModSpec{GameID: VortexGameID, SteamAppIDs: []string{SteamAppID}, NexusDomains: []string{VortexGameID}, SourceName: "game-mount-and-blade2", SourceDir: "game-mount-and-blade2", SupportModID: SupportModID})
 }

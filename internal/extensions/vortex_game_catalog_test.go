@@ -47,7 +47,7 @@ func TestVortexGameCatalogRegistersSourceBackedGameEntries(t *testing.T) {
 
 	cyberpunk := summaryByID(t, registry, "cyberpunk2077")
 	if cyberpunk.VortexStub {
-		t.Fatalf("Cyberpunk support-mod port must not remain a Vortex stub after DMM adds deployable installer support: %+v", cyberpunk)
+		t.Fatalf("Cyberpunk support-mod port must not remain a Vortex support-mod shell after DMM adds deployable installer support: %+v", cyberpunk)
 	}
 	if cyberpunk.SupportModID != "196" {
 		t.Fatalf("Cyberpunk support mod id = %q, want 196", cyberpunk.SupportModID)
