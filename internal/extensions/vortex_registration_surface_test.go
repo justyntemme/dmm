@@ -236,6 +236,159 @@ func TestFirstPartyCoversVortexActionAndPageSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerInstaller calls.
+	// DMM expands shared Vortex installers per game, so this test checks that
+	// every Vortex installer ID has at least one DMM installer with the same
+	// VortexInstallerID, plus explicit mappings for upstream constant IDs.
+	required := []string{
+		"ahatintime-mod",
+		"bas-mulledk19-mod",
+		"bas-official-mod",
+		"bepinex-root",
+		"bepis-injector-extensible",
+		"bloodstainedrotn-mod",
+		"codevein-mod",
+		"dazipInner",
+		"dazipOuter",
+		"dd-noproject-mod",
+		"dd-project-mod",
+		"dddainvalidmod",
+		"dfmodmultiplatform",
+		"dinput",
+		"dom-mod",
+		"dom-scene-installer",
+		"elex-mod",
+		"fallout4vr-esl-enabler",
+		"falloutnv-4gb-patch",
+		"galciv3installer",
+		"gedosato",
+		"greedfall-mod",
+		"kenshi-mod",
+		"kotor-override-mod",
+		"kotor-root-mod",
+		"kotor-tslpatcher",
+		"kotor-tslpatcher-mod",
+		"masterchiefinstaller",
+		"masterchiefmodconfiginstaller",
+		"mcc-plug-and-play-installer",
+		"mhwreshadeinstaller",
+		"moduleinstaller",
+		"monster-hunter-mod",
+		"mount-and-blade-mod",
+		"msfs-pack",
+		"msfs-replacer",
+		"nwn-mod",
+		"rimworld-steam-mod",
+		"script-extender-installer",
+		"scriptmergerdummy",
+		"sek-loose-files",
+		"sek-root-mod",
+		"sims4mixed",
+		"skyvr-esl-enabler",
+		"smapi-installer",
+		"sdvrootfolder",
+		"stardew-valley-installer",
+		"spyroreignitedtrilogy-mod",
+		"survivingmars-mod",
+		"teamfortress2-mod",
+		"torchlight2-mod",
+		"tw3kingdoms-mod",
+		"umm-installer",
+		"witcher3content",
+		"witcher3dlcmod",
+		"witcher3menumodroot",
+		"witcher3mixed",
+		"witcher3tl",
+		"xcom2-installer",
+		"xrebirth-content-xml",
+	}
+	covered := map[string]gameext.FeatureSummary{}
+	for _, extension := range FirstParty() {
+		for _, installer := range extension.InstallPlan.Installers {
+			if installer.VortexInstallerID != "" {
+				covered[installer.VortexInstallerID] = gameext.FeatureSummary{
+					ID:      installer.ID,
+					Status:  installer.Status,
+					Message: installer.Message,
+				}
+			}
+		}
+	}
+	for _, id := range required {
+		if _, ok := covered[id]; !ok {
+			t.Fatalf("missing DMM installer coverage for Vortex registerInstaller ID %q", id)
+		}
+	}
+	if _, ok := covered["enb"]; ok {
+		t.Fatalf("DMM must not implement Vortex enb installer; upstream registerInstaller is commented out")
+	}
+}
+
+func TestFirstPartyCoversVortexModTypeAndArchiveInventory(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerModType and
+	// registerArchiveType calls. Some shared Vortex mod types are expanded into
+	// game-scoped DMM mod types; those are asserted through representative IDs.
+	requiredModTypes := []string{
+		"bas-legacy-modtype",
+		"bas-official-modtype",
+		"bepinex-patcher",
+		"dazip",
+		"dinput",
+		"dom-scene-modtype",
+		"enb",
+		"galciv3crusade",
+		"gedosato",
+		"kotor-root",
+		"mhwreshade",
+		"mhwstrackermodloader",
+		"msfs-pack",
+		"nwn2-override-mod",
+		"sims4mixed",
+		"umm",
+		"vtmb-up-modtype",
+		"w3modlimitpatcher",
+		"warthunder-audio-modtype",
+		"witcher2user",
+		"witcher3dlc",
+		"witcher3menumodroot",
+		"witcher3tl",
+		"witcheruser",
+		"x4-documents-modtype",
+	}
+	requiredArchives := []string{"arc", "ba2", "bsa"}
+
+	modTypes := map[string]bool{}
+	archiveTypes := map[string]bool{}
+	for _, extension := range FirstParty() {
+		for _, modType := range extension.InstallPlan.ModTypes {
+			modTypes[modType.ID] = true
+		}
+		for _, archiveType := range extension.ArchiveTypes {
+			archiveTypes[archiveType.ID] = true
+		}
+	}
+	for _, id := range requiredModTypes {
+		if !modTypes[id] {
+			t.Fatalf("missing DMM mod type coverage for Vortex registerModType ID %q", id)
+		}
+	}
+	if !hasSuffixModType(modTypes, "-bepinex-injector") {
+		t.Fatalf("missing DMM runtime mod type coverage for Vortex BepInEx injector mod type")
+	}
+	if !hasSuffixModType(modTypes, "-bepinex-root") {
+		t.Fatalf("missing DMM runtime mod type coverage for Vortex BepInEx root mod type")
+	}
+	if !hasSuffixModType(modTypes, "-bepinex-plugin") {
+		t.Fatalf("missing DMM runtime mod type coverage for Vortex BepInEx plugin mod type")
+	}
+	for _, id := range requiredArchives {
+		if !archiveTypes[id] {
+			t.Fatalf("missing DMM archive type coverage for Vortex registerArchiveType ID %q", id)
+		}
+	}
+}
+
 func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		if summary.VortexGameID != "" && summary.Coverage == gameext.CoverageMetadataOnly {
@@ -337,4 +490,13 @@ func supportModFeature(supportModID string) []gameext.FeatureSummary {
 		return nil
 	}
 	return []gameext.FeatureSummary{{ID: "support-mod-" + supportModID}}
+}
+
+func hasSuffixModType(modTypes map[string]bool, suffix string) bool {
+	for id := range modTypes {
+		if strings.HasSuffix(id, suffix) {
+			return true
+		}
+	}
+	return false
 }

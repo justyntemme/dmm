@@ -228,6 +228,10 @@ func modTypes() []installplan.ModTypeSpec {
 		{ID: "witcher3dlc", TargetRoot: ""},
 		{ID: "witcher3-mod-root", TargetRoot: "Mods"},
 		{ID: scriptMergerToolModType, DeploymentMode: installplan.ModTypeDeploymentToolOnly},
+		{
+			ID:      "w3modlimitpatcher",
+			Message: "Source-backed legacy Vortex Witcher 3 Mod Limit Patcher type retained so imported/historical installs can be detected by the 1.4.8 warning migration.",
+		},
 	}
 }
 

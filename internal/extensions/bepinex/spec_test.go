@@ -19,6 +19,7 @@ func TestExtensionRegistersSourceBackedBepInExFrameworkSurface(t *testing.T) {
 	if len(summary.Sources) != 1 {
 		t.Fatalf("sources = %+v", summary.Sources)
 	}
+	assertReadyWithMessage(t, "mod type", summary.Capabilities.ModTypes, "bepinex-patcher")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "register-bepinex-unity-game")
 	assertReadyWithMessage(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "bepinex-support")
 }

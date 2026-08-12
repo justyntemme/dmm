@@ -1,6 +1,9 @@
 package bepinex
 
-import "github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+import (
+	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
+	"github.com/justyntemme/decky-mod-manager/internal/installplan"
+)
 
 const (
 	ID      = "modtype-bepinex"
@@ -26,6 +29,11 @@ func Register(r sdk.Registrar) {
 	for _, ref := range Sources() {
 		r.RegisterSource(ref)
 	}
+	r.RegisterModType(installplan.ModTypeSpec{
+		ID:         "bepinex-patcher",
+		TargetRoot: "BepInEx/patchers",
+		Message:    "Vortex registers BepInEx patchers as a manual mod type because patchers cannot be reliably distinguished from plugins from archive shape alone. DMM exposes the same extension-owned mod type for game extensions or user reassignment without auto-selecting it.",
+	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "register-bepinex-unity-game",
 		Name:    "Register BepInEx Unity game support",
