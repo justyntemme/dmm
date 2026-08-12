@@ -45,7 +45,7 @@ func buildSteamMod(input installplan.BuildInput) (installplan.Plan, error) {
 		return installplan.Plan{}, installplan.Unsupported("RimWorld archive does not contain About.xml")
 	}
 	if len(aboutFiles) > 1 {
-		return installplan.Plan{}, installplan.Unsupported("RimWorld archive contains multiple About.xml files; multi-mod bundles need manual review before DMM can install them")
+		return installplan.Plan{}, installplan.Unsupported("RimWorld archive contains multiple About.xml files; Vortex does not install multi-mod RimWorld bundles automatically")
 	}
 	aboutFile := aboutFiles[0]
 	rootFile := rimWorldRootFile(files, aboutFile)

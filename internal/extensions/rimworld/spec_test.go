@@ -33,7 +33,7 @@ func TestExtensionPlansRimWorldAboutArchive(t *testing.T) {
 	assertNoTarget(t, plan.Instructions, "Mods/Author_VisiblePants/LICENSE")
 }
 
-func TestExtensionRejectsRimWorldMultiModBundle(t *testing.T) {
+func TestExtensionMirrorsVortexMultiAboutBundleRejection(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "One", "About", "About.xml"), `<ModMetaData><packageId>one.mod</packageId></ModMetaData>`)
 	writeFile(t, filepath.Join(root, "Two", "About", "About.xml"), `<ModMetaData><packageId>two.mod</packageId></ModMetaData>`)
@@ -41,6 +41,9 @@ func TestExtensionRejectsRimWorldMultiModBundle(t *testing.T) {
 	_, err := build(root)
 	if err == nil {
 		t.Fatal("expected multi-mod bundle to be unsupported")
+	}
+	if !strings.Contains(err.Error(), "Vortex does not install multi-mod RimWorld bundles automatically") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
