@@ -19,7 +19,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "purge-mods-in-path", "browse-for-download", "nexus-download", "discover-tools", "unfulfilled-rules", "registerGameInfoProvider", "new-file-single-owner-adoption")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "deploy-mods", "purge-mods-in-path", "purge-mods", "create-mod", "remove-mod", "browse-for-download", "nexus-download", "start-download", "start-install-download", "start-quick-discovery", "discover-tools", "unfulfilled-rules", "registerGameInfoProvider", "new-file-single-owner-adoption")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "lootSortAsync")
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "isBlueprintPlugin")
@@ -157,7 +157,7 @@ func assertReady(t *testing.T, kind string, features []gameext.FeatureSummary, i
 		if !ok {
 			t.Fatalf("%s %s missing from %+v", kind, id, features)
 		}
-		if feature.Status != sdk.CapabilityStatusReady || feature.Message != "" {
+		if feature.Status != sdk.CapabilityStatusReady {
 			t.Fatalf("%s %s = %+v", kind, id, feature)
 		}
 	}

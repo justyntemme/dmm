@@ -628,6 +628,8 @@ func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 	// same runtime check exposed through DMM's event/test runner.
 	required := map[string][]string{
 		"extension API": {
+			"create-mod",
+			"deploy-mods",
 			"register-bepinex-unity-game",
 			"ummAddGame",
 			"getHashVersion",
@@ -638,6 +640,11 @@ func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 			"qbmsExtract",
 			"qbmsWrite",
 			"qbmsReimport",
+			"purge-mods",
+			"remove-mod",
+			"start-download",
+			"start-install-download",
+			"start-quick-discovery",
 		},
 		"extension test": {
 			"gamebryo-incompatible-mod-archives",

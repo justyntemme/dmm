@@ -49,9 +49,16 @@ func Register(r sdk.Registrar) {
 func registerCrossExtensionAPIs(r sdk.Registrar) {
 	for _, api := range []sdk.ExtensionAPISpec{
 		readyAPI("deploy-single-mod", "Deploy one mod through the deployment pipeline"),
+		readyAPI("deploy-mods", "Run deployment for the active profile"),
 		readyAPI("purge-mods-in-path", "Purge managed mods under a path"),
+		readyAPI("purge-mods", "Purge managed deployment links for the active profile"),
+		readyAPI("create-mod", "Create a generated managed mod entry"),
+		readyAPI("remove-mod", "Remove a managed mod entry"),
 		readyAPI("browse-for-download", "Open a source-backed download browser"),
 		readyAPI("nexus-download", "Queue a source-backed Nexus manager download"),
+		readyAPI("start-download", "Start a source-backed download request"),
+		readyAPI("start-install-download", "Install a completed source-backed download"),
+		readyAPI("start-quick-discovery", "Refresh game discovery after extension-managed setup"),
 		readyAPI("discover-tools", "Discover extension-declared and DMM-managed external tools"),
 		readyAPI("bake-settings", "Bake profile-local game settings"),
 		readyAPI("unfulfilled-rules", "Resolve unfulfilled dependency rules"),
@@ -543,7 +550,12 @@ func steamMetacriticScore(value any) (int, bool) {
 }
 
 func readyAPI(id, name string) sdk.ExtensionAPISpec {
-	return sdk.ExtensionAPISpec{ID: id, Name: name, Status: sdk.CapabilityStatusReady}
+	return sdk.ExtensionAPISpec{
+		ID:      id,
+		Name:    name,
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes this Vortex shared API surface through typed backend services and the extension runtime event/API bridge.",
+	}
 }
 
 func Sources() []sdk.SourceRef {
