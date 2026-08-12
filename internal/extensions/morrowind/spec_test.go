@@ -26,8 +26,28 @@ func TestExtensionRegistersMorrowindCapabilities(t *testing.T) {
 	if len(summary.Capabilities.Installers) != 2 {
 		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
 	}
+	if featureByID(summary.Capabilities.Installers, "vortex:morrowind:data-root") == nil || featureByID(summary.Capabilities.Installers, "vortex:morrowind:data-folder") == nil {
+		t.Fatalf("installers = %+v", summary.Capabilities.Installers)
+	}
+	if choice := featureByID(summary.Capabilities.InstallerChoices, "vortex:morrowind:fomod"); choice == nil {
+		t.Fatalf("installer choices = %+v", summary.Capabilities.InstallerChoices)
+	}
+	if featureByID(summary.Capabilities.SupportedTools, "tes3edit") == nil || featureByID(summary.Capabilities.SupportedTools, "mw-construction-set") == nil {
+		t.Fatalf("supported tools = %+v", summary.Capabilities.SupportedTools)
+	}
 	if len(summary.Capabilities.LoadOrders) != 1 || len(summary.Capabilities.EventHandlers) != 3 {
 		t.Fatalf("load order/event handlers = %+v / %+v", summary.Capabilities.LoadOrders, summary.Capabilities.EventHandlers)
+	}
+	if loadOrder := featureByID(summary.Capabilities.LoadOrders, "morrowind-ini-load-order"); loadOrder == nil || loadOrder.TargetRelative != morrowindINI || loadOrder.TargetRoot != dataRoot || len(loadOrder.FileExtensions) != 2 {
+		t.Fatalf("load order = %+v", summary.Capabilities.LoadOrders)
+	}
+	for _, event := range []string{sdk.EventWillDeploy, sdk.EventDidDeploy, sdk.EventDidInstallMod} {
+		if handler := featureByID(summary.Capabilities.EventHandlers, event); handler == nil || handler.Trigger != event {
+			t.Fatalf("missing event handler %s in %+v", event, summary.Capabilities.EventHandlers)
+		}
+	}
+	if page := featureByID(summary.Capabilities.ExtensionMainPages, "morrowind-plugins-page"); page == nil || page.Scope != "game" {
+		t.Fatalf("main pages = %+v", summary.Capabilities.ExtensionMainPages)
 	}
 	if len(summary.Capabilities.CollectionFeatures) != 1 || summary.Capabilities.CollectionFeatures[0].Status != sdk.CapabilityStatusReady {
 		t.Fatalf("collection features = %+v", summary.Capabilities.CollectionFeatures)
@@ -185,4 +205,13 @@ func modTime(t *testing.T, path string) time.Time {
 		t.Fatal(err)
 	}
 	return info.ModTime()
+}
+
+func featureByID(features []gameext.FeatureSummary, id string) *gameext.FeatureSummary {
+	for i := range features {
+		if features[i].ID == id {
+			return &features[i]
+		}
+	}
+	return nil
 }
