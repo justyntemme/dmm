@@ -11,7 +11,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/gameext"
 )
 
-func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
+func TestExtensionRegistersVortexSharedSystemRuntimeSurfaces(t *testing.T) {
 	summary := gameext.NewRegistry([]gameext.Extension{
 		gameext.MustCompileExtension(Extension()),
 	}).ExtensionSummaries()[0]
@@ -19,7 +19,7 @@ func TestExtensionRegistersBlockedSharedSystemMetadata(t *testing.T) {
 	if summary.ID != ID || summary.Kind != gameext.ExtensionKindFramework {
 		t.Fatalf("summary = %+v", summary)
 	}
-	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "deploy-mods", "purge-mods-in-path", "purge-mods", "create-mod", "remove-mod", "browse-for-download", "nexus-download", "start-download", "start-install-download", "start-quick-discovery", "discover-tools", "unfulfilled-rules", "registerGameInfoProvider", "new-file-single-owner-adoption")
+	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "deploy-single-mod", "deploy-mods", "purge-mods-in-path", "purge-mods", "create-mod", "remove-mod", "remove-mods", "browse-for-download", "nexus-download", "start-download", "start-install-download", "start-quick-discovery", "discover-tools", "autosort-plugins", "plugin-details", "set-plugin-list", "restart-helpers", "trigger-test-run", "show-main-page", "mods-scroll-to", "unfulfilled-rules", "registerGameInfoProvider", "new-file-single-owner-adoption")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "lootSortAsync")
 	assertReady(t, "extension API", summary.Capabilities.ExtensionAPIs, "oblivion-font-repair")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "isBlueprintPlugin")
