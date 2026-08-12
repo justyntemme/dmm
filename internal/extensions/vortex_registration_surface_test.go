@@ -1,6 +1,10 @@
 package extensions
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -914,6 +918,69 @@ func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 	if _, ok := covered["enb"]; ok {
 		t.Fatalf("DMM must not implement Vortex enb installer; upstream registerInstaller is commented out")
 	}
+}
+
+func TestFirstPartyCoversLiteralVortexInstallerIDs(t *testing.T) {
+	upstreamIDs := literalVortexInstallerIDs(t, "/tmp/dmm-vortex-upstream/extensions")
+	if len(upstreamIDs) == 0 {
+		t.Skip("local Vortex source checkout is unavailable")
+	}
+	covered := map[string]bool{}
+	for _, extension := range FirstParty() {
+		for _, installer := range extension.InstallPlan.Installers {
+			if strings.TrimSpace(installer.VortexInstallerID) != "" {
+				covered[installer.VortexInstallerID] = true
+			}
+		}
+	}
+	for _, id := range upstreamIDs {
+		if id == "enb" {
+			continue
+		}
+		if !covered[id] {
+			t.Fatalf("missing DMM installer coverage for literal Vortex registerInstaller ID %q", id)
+		}
+	}
+}
+
+func literalVortexInstallerIDs(t *testing.T, root string) []string {
+	t.Helper()
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+	rgx := regexp.MustCompile(`registerInstaller\(\s*['"]([^'"]+)['"]`)
+	seen := map[string]struct{}{}
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		switch filepath.Ext(path) {
+		case ".js", ".ts", ".tsx":
+		default:
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, match := range rgx.FindAllStringSubmatch(string(data), -1) {
+			seen[match[1]] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestFirstPartyCoversVortexModTypeAndArchiveInventory(t *testing.T) {
