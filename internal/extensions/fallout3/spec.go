@@ -19,6 +19,8 @@ const (
 	dataRootModType   = "fallout3-data-root"
 	scriptExtModType  = "fallout3-script-extender"
 	gogAppID          = "1454315831"
+	epicAppID         = "adeae8bbfc94427db57c7dfecce3f1d4"
+	xboxAppID         = "BethesdaSoftworks.Fallout3"
 )
 
 func Extension() sdk.Extension {
@@ -35,7 +37,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppIDGOTY, SteamAppID},
-		StoreAppIDs:        map[string][]string{"gog": {gogAppID}},
+		StoreAppIDs:        map[string][]string{"gog": {gogAppID}, "epic": {epicAppID}, "xbox": {xboxAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "fallout3.exe",
@@ -48,7 +50,7 @@ func Register(r sdk.Registrar) {
 		RequiredFiles: []string{"Data/fallout3.esm"},
 		QueryModPath:  "Data",
 		MergeMode:     sdk.GameMergeModeAll,
-		Environment:   map[string]string{"SteamAPPId": SteamAppIDGOTY},
+		Environment:   map[string]string{"SteamAPPId": SteamAppIDGOTY, "GogAPPId": gogAppID, "EpicAPPId": epicAppID, "XboxAPPId": xboxAppID},
 		Deployment:    installplan.DeploymentSpec{AllowNeedsReviewState: true},
 	})
 	for _, modType := range gamebryo.DataRootModTypes(dataRootInstallerOptions()) {
@@ -174,8 +176,8 @@ func registerStoreMetadata(r sdk.Registrar) {
 	} {
 		r.RegisterGameStore(store)
 	}
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: "BethesdaSoftworks.Fallout3", Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM indexes Vortex's Xbox launcher identity for Fallout 3 from extension metadata so store-backed registrations satisfy the same app identity."})
-	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: "adeae8bbfc94427db57c7dfecce3f1d4", Message: "DMM indexes Vortex's Epic launcher identity for Fallout 3 from extension metadata and matches supported Epic manifests through the generic store-provider discovery path."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-xbox-launcher", Name: "Xbox app launcher", Launcher: "xbox", Store: "xbox", AppID: xboxAppID, Parameters: []sdk.LauncherParameterSpec{{Name: "appExecName", Value: "Game"}}, Message: "DMM indexes Vortex's Xbox launcher identity for Fallout 3 from extension metadata so store-backed registrations satisfy the same app identity."})
+	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{ID: "fallout3-epic-launcher", Name: "Epic launcher", Launcher: "epic", Store: "epic", AppID: epicAppID, Message: "DMM indexes Vortex's Epic launcher identity for Fallout 3 from extension metadata and matches supported Epic manifests through the generic store-provider discovery path."})
 	r.RegisterGameVersionProvider(gameversionhash.Provider(gameversionhash.Options{ID: "fallout3-hash-version", Name: "Fallout3.esm hash version", VortexGameID: VortexGameID, HashFiles: []string{"Data/Fallout3.esm"}}))
 }
 

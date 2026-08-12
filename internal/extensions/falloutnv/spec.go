@@ -12,6 +12,9 @@ import (
 const (
 	SteamAppID   = "22380"
 	SteamAppID2  = "22490"
+	GOGAppID     = "1454587428"
+	EpicAppID    = "5daeb974a22a435988892319b3a4f476"
+	XboxAppID    = "BethesdaSoftworks.FalloutNewVegas"
 	VortexGameID = "falloutnv"
 	NexusDomain  = "newvegas"
 	Name         = "Fallout: New Vegas"
@@ -36,13 +39,14 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID, SteamAppID2},
+		StoreAppIDs:        map[string][]string{"gog": {GOGAppID}, "epic": {EpicAppID}, "xbox": {XboxAppID}},
 		NexusDomains:       []string{NexusDomain},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "FalloutNV.exe",
 		RequiredFiles:      []string{"FalloutNV.exe"},
 		QueryModPath:       "Data",
 		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
+		Environment:        map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID, "EpicAPPId": EpicAppID, "XboxAPPId": XboxAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},
@@ -113,7 +117,7 @@ func Register(r sdk.Registrar) {
 		Name:     "Xbox app launcher",
 		Launcher: "xbox",
 		Store:    "xbox",
-		AppID:    "BethesdaSoftworks.FalloutNewVegas",
+		AppID:    XboxAppID,
 		Parameters: []sdk.LauncherParameterSpec{{
 			Name:  "appExecName",
 			Value: "Game",
@@ -124,7 +128,7 @@ func Register(r sdk.Registrar) {
 		Name:     "Epic Games launcher",
 		Launcher: "epic",
 		Store:    "epic",
-		AppID:    "5daeb974a22a435988892319b3a4f476",
+		AppID:    EpicAppID,
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "FNVEdit",

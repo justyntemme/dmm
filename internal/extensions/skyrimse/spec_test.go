@@ -151,9 +151,34 @@ func TestExtensionRegistersVortexTools(t *testing.T) {
 	if summary.Capabilities.GameRegistration == nil || summary.Capabilities.GameRegistration.QueryModPath != "Data" || summary.Capabilities.GameRegistration.MergeMode != sdk.GameMergeModeAll {
 		t.Fatalf("game metadata = %+v", summary.Capabilities.GameRegistration)
 	}
+	for store, want := range map[string]string{
+		"gog":  skyrimse.GOGAppID,
+		"epic": skyrimse.EpicAppID,
+		"xbox": skyrimse.XboxAppID,
+	} {
+		got := summary.Capabilities.GameRegistration.StoreAppIDs[store]
+		if !contains(got, want) {
+			t.Fatalf("store app ids[%s] = %+v", store, got)
+		}
+	}
+	for key, want := range map[string]string{
+		"SteamAPPId": skyrimse.SteamAppID,
+		"GogAPPId":   skyrimse.GOGAppID,
+		"EpicAPPId":  skyrimse.EpicAppID,
+		"XboxAPPId":  skyrimse.XboxAppID,
+	} {
+		if got := summary.Capabilities.GameRegistration.Environment[key]; got != want {
+			t.Fatalf("environment[%s] = %q, want %q", key, got, want)
+		}
+	}
 	for _, id := range []string{"SSEEdit", "WryeBash", "FNIS", "bodyslide", "creation-kit-64"} {
 		if !containsFeature(summary.Capabilities.SupportedTools, id) {
 			t.Fatalf("missing supported tool summary %q in %+v", id, summary.Capabilities.SupportedTools)
+		}
+	}
+	for _, id := range []string{"skyrimse-xbox-launcher", "skyrimse-epic-launcher"} {
+		if !containsFeature(summary.Capabilities.LauncherRequirements, id) {
+			t.Fatalf("missing launcher requirement %q in %+v", id, summary.Capabilities.LauncherRequirements)
 		}
 	}
 	primary, ok := gameext.NewRegistry([]gameext.Extension{extension}).PrimaryLaunchToolForSteamApp(skyrimse.SteamAppID)
