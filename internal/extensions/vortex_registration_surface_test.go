@@ -91,6 +91,64 @@ func TestFirstPartyCoversVortexRegistrationSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexAPIMethodInventory(t *testing.T) {
+	// Source inventory verified from actual api.* call sites in the checked-out
+	// Nexus-Mods/Vortex extension tree. False positives from filenames/native
+	// module objects are intentionally omitted; every listed method must map to
+	// a ready DMM runtime surface.
+	required := map[string][]string{
+		"api.addMetaServer":          {"mod-meta-lookup-save"},
+		"api.awaitUI":                {"ui-await"},
+		"api.clearStylesheet":        {"ui-stylesheet"},
+		"api.dismissNotification":    {"ui-notification"},
+		"api.emitAndAwait":           {"deploy-mods", "purge-mods-in-path", "start-download", "start-install-download"},
+		"api.genMd5Hash":             {"native-system-access"},
+		"api.getState":               {"state-store-access"},
+		"api.lookupModMeta":          {"mod-meta-lookup-save"},
+		"api.onAsync":                {"deploy-mods", "autosort-plugins"},
+		"api.onStateChange":          {"state-store-access"},
+		"api.runExecutable":          {"run-executable"},
+		"api.saveFile":               {"ui-file-picker"},
+		"api.selectDir":              {"ui-directory-picker"},
+		"api.selectFile":             {"ui-file-picker"},
+		"api.sendNotification":       {"ui-notification"},
+		"api.setStylesheet":          {"ui-stylesheet"},
+		"api.showDialog":             {"ui-dialog"},
+		"api.showErrorNotification":  {"ui-notification"},
+		"api.suppressNotification":   {"ui-notification"},
+		"api.translate":              {"ui-locale-highlight-outdated"},
+		"api.GetDiskFreeSpaceEx":     {"native-system-access"},
+		"api.GetProcessList":         {"native-system-access"},
+		"api.GetVolumePathName":      {"native-system-access"},
+		"api.RegEnumKeys":            {"native-system-access"},
+		"api.RegEnumValues":          {"native-system-access"},
+		"api.RegGetValue":            {"native-system-access"},
+		"api.RegSetKeyValue":         {"native-system-access"},
+		"api.WithRegOpen":            {"native-system-access"},
+	}
+
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		for _, feature := range allFeatureSummaries(summary.Capabilities) {
+			features[feature.ID] = feature
+		}
+	}
+	for method, ids := range required {
+		found := false
+		for _, id := range ids {
+			feature, ok := features[id]
+			if !ok || feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				continue
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Fatalf("missing ready DMM runtime surface for Vortex %s; candidate ids: %v", method, ids)
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexToDoSurfacesWithRuntimeActions(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerToDo calls:
 	// fnis-integration, bsa-redirection, and import-nmm.

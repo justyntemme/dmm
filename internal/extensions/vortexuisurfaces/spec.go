@@ -48,7 +48,7 @@ func Register(r sdk.Registrar) {
 		ID:      "ui-notification",
 		Name:    "Extension notifications",
 		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex sendNotification, dismissNotification, and showErrorNotification through DMM Action Center entries, Decky toast notifications, persisted diagnostics, and backend event-stream updates.",
+		Message: "Mirrors Vortex sendNotification, dismissNotification, suppressNotification, and showErrorNotification through DMM Action Center entries, Decky toast notifications, persisted diagnostics, and backend event-stream updates.",
 	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "ui-dialog",
@@ -85,6 +85,24 @@ func Register(r sdk.Registrar) {
 		Name:    "UI locale, highlight, and outdated-state helpers",
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex locale, highlightControl, and isOutdated helpers through DMM client locale sorting, focus targets, and build/update metadata exposed to Decky and phone/tablet clients.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "ui-await",
+		Name:    "UI async scheduling bridge",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex awaitUI through DMM's event-stream/action-center scheduler. Extensions enqueue UI-required work as persisted actions, and Decky or phone/tablet clients resume the flow when available.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "state-store-access",
+		Name:    "Extension state and store access",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex getState/store access through DMM's typed settings, profiles, installed-mod records, extension reducers, and persisted Action Center state.",
+	})
+	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
+		ID:      "native-system-access",
+		Name:    "Native system and registry access",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Mirrors Vortex native Windows/system helper calls through DMM's Steam Deck-safe platform probes, Proton prefix readers, registry helpers, filesystem checks, process listing, and runtime dependency checks.",
 	})
 	r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{
 		ID:       "mod-highlight-state-divider",
