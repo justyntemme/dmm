@@ -682,6 +682,9 @@ func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 			"start-download",
 			"start-install-download",
 			"start-quick-discovery",
+			"enable-download-watch",
+			"preview-files",
+			"analytics-track-click-event",
 		},
 		"extension test": {
 			"gamebryo-incompatible-mod-archives",
