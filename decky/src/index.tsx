@@ -514,6 +514,13 @@ type ProfileModOrderUpdateResult = {
   apply?: ProfileApplyResult;
 };
 
+type ProfileModUpdateResult = {
+  mod?: ManagedMod;
+  cascade?: ManagedMod[];
+  cascade_notes?: string[];
+  apply?: ProfileApplyResult;
+};
+
 type DeploymentStatus = {
   deployed: boolean;
   file_count: number;
@@ -5625,7 +5632,7 @@ function FreshDeckyModManagerRoute() {
       setBusyModID(mod.id);
       setError("");
       setMessage("");
-      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string; apply?: ProfileApplyResult }>(
+      const result = await call<[string, number, number, boolean], { ok: boolean; error?: string } & ProfileModUpdateResult>(
         "set_profile_mod_enabled",
         selectedGameID,
         selectedProfile.id,
@@ -5638,7 +5645,10 @@ function FreshDeckyModManagerRoute() {
       }
       await maybeShowDeckyActionToast(result.apply?.job, "fresh-toggle-mod");
       await loadSelectedGameState(selectedGameID);
-      setMessage(result.apply?.message || `${mod.enabled ? "Disabled" : "Enabled"} ${mod.name}.`);
+      const cascadeCount = result.cascade?.length ?? 0;
+      const cascadeSuffix = cascadeCount > 0 ? ` and ${cascadeCount} dependent mod${cascadeCount === 1 ? "" : "s"}` : "";
+      const notes = result.cascade_notes?.length ? ` ${result.cascade_notes.join(" ")}` : "";
+      setMessage(result.apply?.message || `${mod.enabled ? "Disabled" : "Enabled"} ${mod.name}${cascadeSuffix}.${notes}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -985,12 +985,18 @@ class Plugin:
             return {"ok": False, "error": "app_id, profile_id, and installed_mod_id are required."}
         if not self._backend_responds():
             return {"ok": False, "error": "Server is not running."}
-        payload = json.dumps({"enabled": bool(enabled)}).encode("utf-8")
+        payload = json.dumps({
+            "enabled": bool(enabled),
+            "cascade_dependencies": True,
+            "include_recommended_dependencies": True,
+        }).encode("utf-8")
         result, error = self._backend_json_result("PUT", f"/api/profiles/{urllib.parse.quote(profile_id)}/mods/{urllib.parse.quote(installed_mod_id)}", payload)
         if result is None:
             return {"ok": False, "error": error or "Unable to update mod."}
-        self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)}")
-        return {"ok": True, "mod": result.get("mod"), "apply": result.get("apply")}
+        cascade = result.get("cascade") or []
+        notes = result.get("cascade_notes") or []
+        self._log(f"profile mod updated app_id={app_id} profile_id={profile_id} installed_mod_id={installed_mod_id} enabled={bool(enabled)} cascade={len(cascade)} notes={len(notes)}")
+        return {"ok": True, "mod": result.get("mod"), "cascade": cascade, "cascade_notes": notes, "apply": result.get("apply")}
 
     async def set_profile_mod_order(self, app_id, profile_id, mod_ids):
         app_id = str(app_id or "").strip()
