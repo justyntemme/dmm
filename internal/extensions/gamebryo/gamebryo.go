@@ -151,18 +151,22 @@ func PluginActivationProfileFiles(opts PluginActivationOptions) []sdk.ProfileFil
 	}
 	return []sdk.ProfileFileSpec{
 		{
-			ID:     strings.TrimSpace(opts.ID) + "-plugins-file",
-			Name:   baseName + " plugins file",
-			GameID: gameID,
-			Base:   sdk.ProfileFileBaseProtonLocalAppData,
-			Path:   path.Join(appDataPath, pluginsFile),
+			ID:      strings.TrimSpace(opts.ID) + "-plugins-file",
+			Name:    baseName + " plugins file",
+			GameID:  gameID,
+			Base:    sdk.ProfileFileBaseProtonLocalAppData,
+			Path:    path.Join(appDataPath, pluginsFile),
+			Status:  sdk.CapabilityStatusReady,
+			Message: "Mirrors Vortex gamebryo-plugin-management registerProfileFile for plugins.txt by storing this per-profile plugin activation file in DMM profile state.",
 		},
 		{
-			ID:     strings.TrimSpace(opts.ID) + "-loadorder-file",
-			Name:   baseName + " load order file",
-			GameID: gameID,
-			Base:   sdk.ProfileFileBaseProtonLocalAppData,
-			Path:   path.Join(appDataPath, loadOrderFile),
+			ID:      strings.TrimSpace(opts.ID) + "-loadorder-file",
+			Name:    baseName + " load order file",
+			GameID:  gameID,
+			Base:    sdk.ProfileFileBaseProtonLocalAppData,
+			Path:    path.Join(appDataPath, loadOrderFile),
+			Status:  sdk.CapabilityStatusReady,
+			Message: "Mirrors Vortex gamebryo-plugin-management registerProfileFile for loadorder.txt by storing this per-profile plugin load-order file in DMM profile state.",
 		},
 	}
 }

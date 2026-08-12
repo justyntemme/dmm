@@ -2111,6 +2111,8 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 			Command:        interpreter.Command,
 			Arguments:      appendClean([]string{}, interpreter.Arguments...),
 			Platforms:      appendClean([]string{}, interpreter.Platforms...),
+			Status:         defaultString(interpreter.Status, sdk.CapabilityStatusReady),
+			Message:        interpreter.Message,
 		})
 	}
 	for _, store := range extension.GameStores {

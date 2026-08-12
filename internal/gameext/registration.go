@@ -2586,6 +2586,9 @@ func validateInterpreters(specs []sdk.InterpreterSpec) []error {
 		if strings.TrimSpace(spec.Name) == "" {
 			errs = append(errs, errors.New("interpreter "+id+" name is required"))
 		}
+		if err := validateCapabilityStatus("interpreter", id, spec.Status, spec.Message); err != nil {
+			errs = append(errs, err)
+		}
 		if len(spec.FileExtensions) == 0 {
 			errs = append(errs, errors.New("interpreter "+id+" must declare file extensions"))
 		}

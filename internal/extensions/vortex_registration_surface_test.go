@@ -289,6 +289,82 @@ func TestFirstPartyCoversVortexMergeAndLoadOrderInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexRuntimeSupportInventory(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex calls for runtime
+	// support surfaces not already covered by installer/load-order tests:
+	// common-interpreters, gameinfo-steam, test-gameversion,
+	// gamebryo-plugin-management, game-xrebirth, game-pillarsofeternity2,
+	// and game-stardewvalley.
+	required := map[string][]string{
+		"interpreter": {
+			"jar",
+			"python",
+			"vbs",
+			"cmd",
+			"bat",
+		},
+		"game info provider": {
+			"game-version",
+			"steam",
+		},
+		"profile file": {
+			"plugins-file",
+			"loadorder-file",
+		},
+		"state persistor": {
+			"gamebryo-plugins-load-order-persistor",
+			"gamebryo-plugins-userlist-persistor",
+			"gamebryo-plugins-masterlist-persistor",
+		},
+		"action check": {
+			"gamebryo-management-enabled-sync",
+			"gamebryo-userlist-duplicate-rule-check",
+		},
+		"history stack": {
+			"plugins",
+		},
+		"health check": {
+			"xrebirth-content-xml-metadata",
+			"xrebirth-mod-has-files",
+			"xrebirth-mod-shape-recognised",
+		},
+		"attribute extractor": {
+			"poe2-manifest-version",
+			"stardew-manifest-attribute-extractor",
+		},
+	}
+
+	features := map[string]map[string]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		addFeatureMap(features, "interpreter", summary.Capabilities.Interpreters)
+		addFeatureMap(features, "game info provider", summary.Capabilities.GameInfoProviders)
+		addFeatureMap(features, "profile file", summary.Capabilities.ProfileFiles)
+		addFeatureMap(features, "state persistor", summary.Capabilities.StatePersistors)
+		addFeatureMap(features, "action check", summary.Capabilities.ExtensionActionChecks)
+		addFeatureMap(features, "history stack", summary.Capabilities.HistoryStacks)
+		addFeatureMap(features, "health check", summary.Capabilities.HealthChecks)
+		addFeatureMap(features, "attribute extractor", summary.Capabilities.AttributeExtractors)
+	}
+
+	for kind, ids := range required {
+		for _, id := range ids {
+			feature, ok := features[kind][id]
+			if !ok {
+				if kind == "profile file" || kind == "state persistor" {
+					if feature, ok = findFeatureWithSuffix(features[kind], "-"+id); ok {
+						goto checkFeature
+					}
+				}
+				t.Fatalf("missing runtime counterpart for Vortex %s surface %q", kind, id)
+			}
+		checkFeature:
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("%s %s = %+v", kind, id, feature)
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerInstaller calls.
 	// DMM expands shared Vortex installers per game, so this test checks that
@@ -552,4 +628,22 @@ func hasSuffixModType(modTypes map[string]bool, suffix string) bool {
 		}
 	}
 	return false
+}
+
+func addFeatureMap(dst map[string]map[string]gameext.FeatureSummary, kind string, features []gameext.FeatureSummary) {
+	if dst[kind] == nil {
+		dst[kind] = map[string]gameext.FeatureSummary{}
+	}
+	for _, feature := range features {
+		dst[kind][feature.ID] = feature
+	}
+}
+
+func findFeatureWithSuffix(features map[string]gameext.FeatureSummary, suffix string) (gameext.FeatureSummary, bool) {
+	for id, feature := range features {
+		if strings.HasSuffix(id, suffix) {
+			return feature, true
+		}
+	}
+	return gameext.FeatureSummary{}, false
 }

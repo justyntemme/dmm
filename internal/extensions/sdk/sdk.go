@@ -573,6 +573,8 @@ type InterpreterSpec struct {
 	Command        string
 	Arguments      []string
 	Platforms      []string
+	Status         string
+	Message        string
 	Resolver       InterpreterResolverFunc
 }
 

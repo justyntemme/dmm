@@ -35,6 +35,7 @@ func Register(r sdk.Registrar) {
 		Name: "Vortex common-interpreters extension source",
 		URL:  "https://github.com/Nexus-Mods/Vortex/tree/2349a17900a37c2120e90733045dc6b303135b89/extensions/common-interpreters/src",
 	})
+	message := "Mirrors Vortex common-interpreters by resolving script/tool launch commands through extension-owned interpreter registrations."
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "jar",
 		Name:           "Java archive",
@@ -42,6 +43,8 @@ func Register(r sdk.Registrar) {
 		Command:        "java",
 		Arguments:      []string{"-jar", "{path}"},
 		Platforms:      []string{"linux", "windows"},
+		Status:         sdk.CapabilityStatusReady,
+		Message:        message,
 		Resolver:       resolveJava,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
@@ -51,6 +54,8 @@ func Register(r sdk.Registrar) {
 		Command:        "python",
 		Arguments:      []string{"{path}"},
 		Platforms:      []string{"linux", "windows"},
+		Status:         sdk.CapabilityStatusReady,
+		Message:        message,
 		Resolver:       resolvePython,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
@@ -60,6 +65,8 @@ func Register(r sdk.Registrar) {
 		Command:        "cscript.exe",
 		Arguments:      []string{"{path}"},
 		Platforms:      []string{"windows"},
+		Status:         sdk.CapabilityStatusReady,
+		Message:        message,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "cmd",
@@ -68,6 +75,8 @@ func Register(r sdk.Registrar) {
 		Command:        "cmd.exe",
 		Arguments:      []string{"/K", "{path}"},
 		Platforms:      []string{"windows"},
+		Status:         sdk.CapabilityStatusReady,
+		Message:        message,
 	})
 	r.RegisterInterpreter(sdk.InterpreterSpec{
 		ID:             "bat",
@@ -76,6 +85,8 @@ func Register(r sdk.Registrar) {
 		Command:        "cmd.exe",
 		Arguments:      []string{"/K", "{path}"},
 		Platforms:      []string{"windows"},
+		Status:         sdk.CapabilityStatusReady,
+		Message:        message,
 	})
 }
 

@@ -138,6 +138,13 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Vortex blocks duplicate ADD_USERLIST_RULE actions before they reach state. DMM enforces the same source-backed rule in the LOOT userlist write path, rejecting duplicate after/require/incompatible rules before they can persist.",
 	})
+	r.RegisterExtensionActionCheck(sdk.ExtensionActionCheckSpec{
+		ID:      "gamebryo-management-enabled-sync",
+		Name:    "Gamebryo plugin-management enable sync",
+		Target:  "profile-plugin-management",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "Vortex observes GAMEBRYO_SET_PLUGIN_MANAGEMENT_ENABLED to start or stop plugin synchronization for the active profile. DMM represents the same state as extension-owned plugin activation support attached to each Gamebryo profile, so enabling the feature switches deployment and profile plugin generation through the profile API.",
+	})
 	archiveInvalidationMessage := "DMM mirrors Vortex's Gamebryo archive-invalidation Workarounds settings through extension-declared archive invalidation handlers, profile-local INI patching, timestamp repair tests, and per-game archive validation."
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
 		ID:        "gamebryo-archive-invalidation-workarounds",
@@ -280,6 +287,7 @@ func registerVortexTests(r sdk.Registrar) {
 		Tags:         []string{"game_version"},
 		CacheSeconds: 300,
 		Priority:     15,
+		Message:      "Mirrors Vortex's test-gameversion registerGameInfoProvider by surfacing the detected installed game version as cached game metadata for compatibility diagnostics.",
 		Provider: func(_ context.Context, input sdk.GameInfoInput) (sdk.GameInfoResult, error) {
 			version := strings.TrimSpace(input.GameVersion)
 			if version == "" {

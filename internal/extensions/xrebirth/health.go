@@ -26,6 +26,7 @@ func healthChecks() []sdk.HealthCheckSpec {
 			Name:     "X Rebirth mod has files",
 			Category: sdk.HealthCheckCategoryMods,
 			Triggers: []string{sdk.HealthCheckTriggerModsChanged, sdk.HealthCheckTriggerManual},
+			Message:  "Mirrors Vortex's X Rebirth registerHealthCheck by warning when an installer matched but produced no deployment files.",
 			CheckMod: checkModHasFiles,
 		},
 		{
@@ -33,6 +34,7 @@ func healthChecks() []sdk.HealthCheckSpec {
 			Name:     "X Rebirth content.xml metadata",
 			Category: sdk.HealthCheckCategoryMods,
 			Triggers: []string{sdk.HealthCheckTriggerModsChanged, sdk.HealthCheckTriggerManual},
+			Message:  "Mirrors Vortex's X Rebirth registerHealthCheck by validating that content.xml installs emitted extension-owned id/name metadata.",
 			CheckMod: checkContentXMLMetadata,
 		},
 		{
@@ -40,6 +42,7 @@ func healthChecks() []sdk.HealthCheckSpec {
 			Name:     "X Rebirth mod shape",
 			Category: sdk.HealthCheckCategoryMods,
 			Triggers: []string{sdk.HealthCheckTriggerModsChanged, sdk.HealthCheckTriggerManual},
+			Message:  "Mirrors Vortex's X Rebirth registerHealthCheck by warning when the deployed mod shape does not match content.xml, known mod types, or game stop patterns.",
 			CheckMod: checkModShapeRecognised,
 		},
 	}
