@@ -105,6 +105,15 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Vortex blocks duplicate ADD_USERLIST_RULE actions before they reach state. DMM enforces the same source-backed rule in the LOOT userlist write path, rejecting duplicate after/require/incompatible rules before they can persist.",
 	})
+	archiveInvalidationMessage := "DMM mirrors Vortex's Gamebryo archive-invalidation Workarounds settings through extension-declared archive invalidation handlers, profile-local INI patching, timestamp repair tests, and per-game archive validation."
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:        "gamebryo-archive-invalidation-workarounds",
+		Name:      "Gamebryo archive invalidation workarounds",
+		Scope:     "gamebryo-archive-invalidation",
+		ValueType: sdk.ExtensionSettingValueJSON,
+		Status:    sdk.CapabilityStatusReady,
+		Message:   archiveInvalidationMessage,
+	})
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{
 		ID:      "local_saves",
 		Name:    "Gamebryo local save paths",

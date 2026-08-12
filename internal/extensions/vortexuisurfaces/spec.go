@@ -63,6 +63,26 @@ func Register(r sdk.Registrar) {
 		Message: "DMM mirrors Vortex's mod-report action with GET /api/games/{appID}/mods/{installedModID}/report, returning staged/deployed file status as JSON or readable text.",
 	})
 	registerDashletAndIssueSurfaces(r)
+	registerThemeSurfaces(r)
+}
+
+func registerThemeSurfaces(r sdk.Registrar) {
+	message := "DMM mirrors Vortex's theme-switcher settings reducer as Decky and phone/tablet UI preference state. The Steam Deck UI consumes the same setting surface for theme/display preferences instead of Vortex's Electron CSS editor."
+	r.RegisterStateReducer(sdk.StateReducerSpec{
+		ID:      "interface-theme-settings",
+		Name:    "Interface theme settings",
+		Scope:   "ui-preferences",
+		Status:  sdk.CapabilityStatusReady,
+		Message: message,
+	})
+	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{
+		ID:        "interface-theme",
+		Name:      "Interface theme",
+		Scope:     "ui-preferences",
+		ValueType: sdk.ExtensionSettingValueString,
+		Status:    sdk.CapabilityStatusReady,
+		Message:   message,
+	})
 }
 
 func registerDashletAndIssueSurfaces(r sdk.Registrar) {

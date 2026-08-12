@@ -47,6 +47,7 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		Name:      "Run FNIS automatically",
 		Scope:     "profile",
 		ValueType: sdk.ExtensionSettingValueBool,
+		Status:    sdk.CapabilityStatusReady,
 		Message:   "Matches Vortex's settings.fnis.autoRun flag. When enabled, DMM queues FNIS after relevant animation deployments and records the generated profile output as FNIS Data.",
 	})
 	r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{

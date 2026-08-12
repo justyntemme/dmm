@@ -149,6 +149,45 @@ func TestFirstPartyCoversVortexDashletSurfaces(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexSettingsSurfaces(t *testing.T) {
+	// Source inventory verified from Nexus-Mods/Vortex registerSettings calls:
+	// gamebryo-plugin-management Workarounds, gamebryo-archive-invalidation
+	// Workarounds, theme-switcher Theme, fnis-integration Interface, and
+	// Stardew Valley Mods settings.
+	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range summaries {
+		for _, feature := range summary.Capabilities.ExtensionSettings {
+			features[feature.ID] = feature
+		}
+	}
+	for _, id := range []string{
+		"dependency-workarounds",
+		"gamebryo-archive-invalidation-workarounds",
+		"interface-theme",
+		"stardew_merge_configs",
+	} {
+		feature, ok := features[id]
+		if !ok {
+			t.Fatalf("missing runtime counterpart for Vortex registerSettings surface %q", id)
+		}
+		if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+			t.Fatalf("setting %s = %+v", id, feature)
+		}
+	}
+
+	foundFNIS := false
+	for _, feature := range features {
+		if feature.ID == "fnis_auto_run" && feature.Status == sdk.CapabilityStatusReady && feature.Message != "" {
+			foundFNIS = true
+			break
+		}
+	}
+	if !foundFNIS {
+		t.Fatalf("missing runtime counterpart for Vortex fnis-integration registerSettings surface")
+	}
+}
+
 func TestFirstPartyExtensionsAdvertiseNoUnresolvedParitySurfaces(t *testing.T) {
 	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
 		if summary.VortexGameID != "" && summary.Coverage == gameext.CoverageMetadataOnly {
