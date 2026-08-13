@@ -24,7 +24,7 @@ func TestExtensionRegistersSourceBackedQuickBMSAPIRuntime(t *testing.T) {
 	for _, api := range summary.Capabilities.ExtensionAPIs {
 		byID[api.ID] = api
 	}
-	for _, id := range []string{"qbmsRegisterGame", "qbmsList", "qbmsExtract", "qbmsWrite", "qbmsReimport"} {
+	for _, id := range []string{"qbmsRegisterGame", "qbmsList", "qbmsExtract", "qbmsWrite", "qbmsReimport", "quickbms-operation"} {
 		if byID[id].Status != sdk.CapabilityStatusReady || byID[id].Message == "" {
 			t.Fatalf("%s capability = %+v", id, byID[id])
 		}

@@ -102,6 +102,7 @@ func Register(r sdk.Registrar) {
 		{ID: "qbmsExtract", Name: "Extract QuickBMS archive entries"},
 		{ID: "qbmsWrite", Name: "Write QuickBMS archive entries"},
 		{ID: "qbmsReimport", Name: "Reimport QuickBMS archive entries"},
+		{ID: "quickbms-operation", Name: "Run QuickBMS operation events"},
 	} {
 		api.Status = sdk.CapabilityStatusReady
 		api.Message = runtimeMessage
