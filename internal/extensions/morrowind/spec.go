@@ -11,6 +11,8 @@ import (
 
 const (
 	SteamAppID   = "22320"
+	GOGAppID     = "1435828767"
+	XboxAppID    = "BethesdaSoftworks.TESMorrowind-PC"
 	VortexGameID = "morrowind"
 	Name         = "Morrowind"
 
@@ -34,13 +36,14 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"gog": {GOGAppID}, "xbox": {XboxAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "morrowind.exe",
 		RequiredFiles:      []string{"morrowind.exe"},
 		QueryModPath:       dataRoot,
 		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
+		Environment:        map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID, "XboxAPPId": XboxAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},

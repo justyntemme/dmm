@@ -777,6 +777,53 @@ func TestFirstPartyCoversVortexStateProfileAndStoreInventory(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexStoreAppIDs(t *testing.T) {
+	// Source inventory verified from Vortex game extension findGame/details
+	// literals and gamestore registrations. These are extension-owned because
+	// they decide which store manifests identify each game.
+	required := map[string]map[string][]string{
+		"baldursgate3":                   {"gog": {"1456460669"}},
+		"bloodstainedritualofthenight":   {"epic": {"a2ac59c83b704e40b4ab3a9e963fef52"}},
+		"darkestdungeon":                 {"gog": {"1450711444"}, "epic": {"36cbf259e631478eaac6ea244e55a709"}},
+		"fallout3":                      {"gog": {"1454315831"}, "epic": {"adeae8bbfc94427db57c7dfecce3f1d4"}, "xbox": {"BethesdaSoftworks.Fallout3"}},
+		"fallout4":                      {"gog": {"1998527297"}, "epic": {"61d52ce4d09d41e48800c22784d13ae8"}, "xbox": {"BethesdaSoftworks.Fallout4-PC"}},
+		"falloutnv":                     {"gog": {"1454587428"}, "epic": {"5daeb974a22a435988892319b3a4f476"}, "xbox": {"BethesdaSoftworks.FalloutNewVegas"}},
+		"kingdomcomedeliverance":         {"epic": {"Eel"}, "xbox": {"DeepSilver.KingdomComeDeliverance"}},
+		"morrowind":                     {"gog": {"1435828767"}, "xbox": {"BethesdaSoftworks.TESMorrowind-PC"}},
+		"nomanssky":                     {"xbox": {"HelloGames.NoMansSky"}},
+		"oblivion":                      {"gog": {"1458058109"}, "xbox": {"BethesdaSoftworks.TESOblivion-PC"}},
+		"pathfinderwrathoftherighteous": {"gog": {"1207187357"}},
+		"pillarsofeternity2":             {"xbox": {"VersusEvil.PillarsofEternity2-PC"}},
+		"skyrimse":                      {"gog": {"1711230643"}, "epic": {"ac82db5035584c7f8a2c548d98c86b2c"}, "xbox": {"BethesdaSoftworks.SkyrimSE-PC"}},
+		"starbound":                     {"xbox": {"Chucklefish.StarboundWindows10Edition"}},
+		"torchlight2":                   {"gog": {"1958228073"}},
+		"totalwarthreekingdoms":          {"gog": {"1717887914"}, "epic": {"769f2fee68e9477180da900ccccbbcf0"}},
+		"vampirebloodlines":             {"gog": {"1207659240"}},
+		"witcher3":                      {"gog": {"1495134320", "1207664663", "1207664643", "1640424747"}, "epic": {"725a22e15ed74735bb0d6a19f3cc82d0"}},
+		"x4foundations":                 {"gog": {"1395669635"}},
+		"xcom2":                         {"gog": {"1482002159"}, "epic": {"3be3c4d681bc46b3b8b26c5df3ae0a18"}},
+	}
+
+	summaries := map[string]gameext.ExtensionSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		summaries[summary.ID] = summary
+	}
+	for extensionID, stores := range required {
+		summary, ok := summaries[extensionID]
+		if !ok || summary.Capabilities.GameRegistration == nil {
+			t.Fatalf("missing game registration for Vortex store app ID parity target %s", extensionID)
+		}
+		for store, appIDs := range stores {
+			got := summary.Capabilities.GameRegistration.StoreAppIDs[store]
+			for _, appID := range appIDs {
+				if !containsString(got, appID) {
+					t.Fatalf("%s missing %s store app ID %q from Vortex source; got %+v", extensionID, store, appID, got)
+				}
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 	// Source inventory verified from Vortex registerAPI, registerTest,
 	// registerDialog, and registerTableAttribute calls. Repeated trigger

@@ -10,6 +10,11 @@ import (
 const (
 	SteamAppID   = "292030"
 	SteamAppIDDX = "499450"
+	GOGAppID     = "1207664663"
+	GOGAppIDGOTY = "1495134320"
+	GOGWHAppID   = "1207664643"
+	GOGWHGOTYID  = "1640424747"
+	EpicAppID    = "725a22e15ed74735bb0d6a19f3cc82d0"
 	VortexGameID = "witcher3"
 	Name         = "The Witcher 3"
 
@@ -40,6 +45,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID, SteamAppIDDX},
+		StoreAppIDs:        map[string][]string{"gog": {GOGAppIDGOTY, GOGAppID, GOGWHAppID, GOGWHGOTYID}, "epic": {EpicAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "bin/x64/witcher3.exe",
@@ -47,7 +53,7 @@ func Register(r sdk.Registrar) {
 		QueryModPath:       "Mods",
 		MergeMode:          sdk.GameMergeModeAll,
 		RequiresCleanup:    true,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
+		Environment:        map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID, "EpicAPPId": EpicAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},

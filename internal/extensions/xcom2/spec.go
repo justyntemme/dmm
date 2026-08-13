@@ -7,6 +7,8 @@ import (
 
 const (
 	SteamAppID   = "268500"
+	GOGAppID     = "1482002159"
+	EpicAppID    = "3be3c4d681bc46b3b8b26c5df3ae0a18"
 	VortexGameID = "xcom2"
 	WOTCGameID   = "xcom2-wotc"
 	Name         = "XCOM 2"
@@ -37,6 +39,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:         []string{SteamAppID},
+		StoreAppIDs:         map[string][]string{"gog": {GOGAppID}, "epic": {EpicAppID}},
 		NexusDomains:        []string{VortexGameID},
 		VortexGameID:        VortexGameID,
 		ExecutableRelative:  "Binaries/Win64/XCom2.exe",
@@ -44,7 +47,7 @@ func Register(r sdk.Registrar) {
 		QueryModPathDynamic: true,
 		MergeMode:           sdk.GameMergeModeAll,
 		CompatibleDownloads: []string{WOTCGameID},
-		Environment:         map[string]string{"SteamAPPId": SteamAppID},
+		Environment:         map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID, "EpicAPPId": EpicAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},

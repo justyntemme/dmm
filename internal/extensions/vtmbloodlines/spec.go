@@ -14,6 +14,7 @@ import (
 
 const (
 	SteamAppID   = "2600"
+	GOGAppID     = "1207659240"
 	VortexGameID = "vampirebloodlines"
 	Name         = "Vampire: The Masquerade - Bloodlines"
 
@@ -37,13 +38,14 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"gog": {GOGAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "Vampire.exe",
 		RequiredFiles:      []string{"Vampire.exe"},
 		QueryModPath:       defaultRoot,
 		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
+		Environment:        map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},

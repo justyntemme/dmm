@@ -13,6 +13,7 @@ import (
 
 const (
 	SteamAppID   = "392160"
+	GOGAppID     = "1395669635"
 	VortexGameID = "x4foundations"
 	Name         = "X4: Foundations"
 
@@ -33,6 +34,7 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:  []string{SteamAppID},
+		StoreAppIDs:  map[string][]string{"gog": {GOGAppID}},
 		NexusDomains: []string{VortexGameID},
 		VortexGameID: VortexGameID,
 		Deployment: installplan.DeploymentSpec{

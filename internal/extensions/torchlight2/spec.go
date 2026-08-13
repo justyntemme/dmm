@@ -11,6 +11,7 @@ import (
 
 const (
 	SteamAppID   = "200710"
+	GOGAppID     = "1958228073"
 	VortexGameID = "torchlight2"
 	Name         = "Torchlight II"
 
@@ -32,13 +33,14 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:         []string{SteamAppID},
+		StoreAppIDs:         map[string][]string{"gog": {GOGAppID}},
 		NexusDomains:        []string{VortexGameID},
 		VortexGameID:        VortexGameID,
 		ExecutableRelative:  "ModLauncher.bin.x86",
 		RequiredFiles:       []string{"Torchlight2.bin.x86", "ModLauncher.bin.x86"},
 		QueryModPathDynamic: true,
 		MergeMode:           sdk.GameMergeModeAll,
-		Environment:         map[string]string{"SteamAPPId": SteamAppID},
+		Environment:         map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID},
 		Deployment: installplan.DeploymentSpec{
 			AllowNeedsReviewState: true,
 		},

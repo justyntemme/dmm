@@ -13,6 +13,8 @@ import (
 
 const (
 	SteamAppID   = "779340"
+	GOGAppID     = "1717887914"
+	EpicAppID    = "769f2fee68e9477180da900ccccbbcf0"
 	VortexGameID = "totalwarthreekingdoms"
 	Name         = "Total War: Three Kingdoms"
 
@@ -36,13 +38,14 @@ func Extension() sdk.Extension {
 func Register(r sdk.Registrar) {
 	r.RegisterGame(sdk.GameRegistration{
 		SteamAppIDs:        []string{SteamAppID},
+		StoreAppIDs:        map[string][]string{"gog": {GOGAppID}, "epic": {EpicAppID}},
 		NexusDomains:       []string{VortexGameID},
 		VortexGameID:       VortexGameID,
 		ExecutableRelative: "Three_Kingdoms.exe",
 		RequiredFiles:      requiredGameFiles,
 		QueryModPath:       dataRoot,
 		MergeMode:          sdk.GameMergeModeAll,
-		Environment:        map[string]string{"SteamAPPId": SteamAppID},
+		Environment:        map[string]string{"SteamAPPId": SteamAppID, "GogAPPId": GOGAppID, "EpicAPPId": EpicAppID},
 		Deployment: installplan.DeploymentSpec{
 			DefaultStrategy: installplan.DeployStrategyCopy,
 		},
@@ -55,7 +58,7 @@ func Register(r sdk.Registrar) {
 		Name:     "Epic Total War: Three Kingdoms launcher",
 		Launcher: "epic",
 		Store:    "epic",
-		AppID:    "769f2fee68e9477180da900ccccbbcf0",
+		AppID:    EpicAppID,
 		Message:  "DMM indexes Vortex's Epic launcher identity for Total War: Three Kingdoms from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
@@ -63,7 +66,7 @@ func Register(r sdk.Registrar) {
 		Name:     "GOG Total War: Three Kingdoms discovery",
 		Launcher: "gog",
 		Store:    "gog",
-		AppID:    "1717887914",
+		AppID:    GOGAppID,
 		Message:  "DMM indexes Vortex's GOG identity for Total War: Three Kingdoms from extension metadata and matches supported GOG manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packModType, TargetRoot: dataRoot})
