@@ -62,6 +62,14 @@ func Register(r sdk.Registrar) {
 		ExecutableRelative: "Assembly.exe",
 		RequiredFiles:      []string{"Assembly.exe"},
 	})
+	r.RegisterSupportedTool(sdk.SupportedToolSpec{
+		ID:                 "haloassemblytool",
+		Name:               "Assembly",
+		ExecutableRelative: "Assembly.exe",
+		RequiredFiles:      []string{"Assembly.exe"},
+		Relative:           true,
+		Message:            "Mirrors Vortex's Halo MCC supportedTools registration for Assembly through DMM's generic extension-tool runtime.",
+	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "halo-mcc-xbox-launcher",
 		Name:     "Xbox app launcher",
