@@ -158,6 +158,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "Game",
 		}},
+		Message: "DMM indexes Vortex's Xbox launcher identity for Skyrim Special Edition from extension metadata so store-backed registrations satisfy the same app identity.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "skyrimse-epic-launcher",
@@ -165,6 +166,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    EpicAppID,
+		Message:  "DMM indexes Vortex's Epic launcher identity for Skyrim Special Edition from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	fnis.RegisterSupport(r, fnis.SupportOptions{GameID: VortexGameID, NexusSection: "skyrimspecialedition", NexusModID: "3038", PatchListName: "PatchListSE.txt"})
 	gamebryo.RegisterPluginActivation(r, gamebryo.PluginActivationOptions{

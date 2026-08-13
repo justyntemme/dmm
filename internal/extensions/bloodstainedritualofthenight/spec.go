@@ -52,6 +52,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    EpicAppID,
+		Message:  "DMM indexes Vortex's Epic launcher identity for Bloodstained from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRoot: pakRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{

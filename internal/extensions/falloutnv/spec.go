@@ -122,6 +122,7 @@ func Register(r sdk.Registrar) {
 			Name:  "appExecName",
 			Value: "Game",
 		}},
+		Message: "DMM indexes Vortex's Xbox launcher identity for Fallout: New Vegas from extension metadata so store-backed registrations satisfy the same app identity.",
 	})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "falloutnv-epic-launcher",
@@ -129,6 +130,7 @@ func Register(r sdk.Registrar) {
 		Launcher: "epic",
 		Store:    "epic",
 		AppID:    EpicAppID,
+		Message:  "DMM indexes Vortex's Epic launcher identity for Fallout: New Vegas from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
 	r.RegisterSupportedTool(sdk.SupportedToolSpec{
 		ID:                 "FNVEdit",

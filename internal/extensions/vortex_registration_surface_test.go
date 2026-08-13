@@ -170,6 +170,63 @@ func TestFirstPartyCoversVortexToDoSurfacesWithRuntimeActions(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexLauncherRequirements(t *testing.T) {
+	// Source inventory verified from live requiresLauncher registrations in
+	// Nexus-Mods/Vortex extensions/games. Commented-out requiresLauncher
+	// bindings, such as Morrowind and Prison Architect in the current upstream
+	// tree, are intentionally omitted.
+	required := []string{
+		"7daystodie-steam-launcher",
+		"bladeandsorcery-steam-launcher",
+		"bloodstainedrotn-epic-launcher",
+		"darksouls-steam-launcher",
+		"darkestdungeon-epic-launcher",
+		"dragonage-steam-launcher",
+		"fallout3-epic-launcher",
+		"fallout3-xbox-launcher",
+		"fallout4-epic-launcher",
+		"fallout4-xbox-launcher",
+		"falloutnv-epic-launcher",
+		"falloutnv-xbox-launcher",
+		"halo-mcc-steam-launcher",
+		"halo-mcc-xbox-launcher",
+		"kenshi-steam-launcher",
+		"kingdomcomedeliverance-epic-launcher",
+		"kingdomcomedeliverance-xbox-launcher",
+		"kotor2-steam-launcher",
+		"msfs-xbox-launcher",
+		"nomanssky-xbox-launcher",
+		"poe2-xbox-launcher",
+		"rimworld-steam-launcher",
+		"skyrimse-epic-launcher",
+		"skyrimse-xbox-launcher",
+		"starbound-xbox-launcher",
+		"torchlight2-steam-launcher",
+		"totalwarthreekingdoms-epic-launcher",
+		"untitledgoosegame-epic-launcher",
+		"vampirebloodlines-steam-launcher",
+	}
+
+	features := map[string]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		for _, feature := range summary.Capabilities.LauncherRequirements {
+			features[feature.ID] = feature
+		}
+	}
+	for _, id := range required {
+		feature, ok := features[id]
+		if !ok {
+			t.Fatalf("missing DMM launcher requirement for Vortex requiresLauncher surface %q", id)
+		}
+		if feature.Status != "" && feature.Status != sdk.CapabilityStatusReady {
+			t.Fatalf("launcher requirement %s is not ready: %+v", id, feature)
+		}
+		if strings.TrimSpace(feature.Message) == "" {
+			t.Fatalf("launcher requirement %s must document its Vortex-backed behavior", id)
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexDashletSurfaces(t *testing.T) {
 	// Source inventory verified from Nexus-Mods/Vortex registerDashlet calls:
 	// mtframework-arc-support, modtype-umm, extension-dashlet,
