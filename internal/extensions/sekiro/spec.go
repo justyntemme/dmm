@@ -45,6 +45,11 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "sekiro-ensure-mod-engine-parts-folder",
+		Name:    "Ensure Sekiro Mod Engine parts folder exists",
+		Actions: sdk.EnsureGameDirectories("mods/parts"),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:sekiro:root-mod",

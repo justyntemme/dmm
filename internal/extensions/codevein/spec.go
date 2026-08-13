@@ -47,6 +47,11 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "codevein-ensure-pak-folder",
+		Name:    "Ensure Code Vein PAK mod folder exists",
+		Actions: sdk.EnsureGameDirectories(pakRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRoot: pakRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:codevein:pak",

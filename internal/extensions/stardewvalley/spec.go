@@ -66,6 +66,11 @@ func Register(r sdk.Registrar) {
 	for _, installer := range installers() {
 		r.RegisterInstaller(installer)
 	}
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "stardewvalley-ensure-mods-folder",
+		Name:    "Ensure Stardew Valley Mods folder exists",
+		Actions: sdk.EnsureGameDirectories(ModsRelativePath),
+	})
 	r.RegisterInstallerChoice(sdk.InstallerChoiceSpec{
 		ID:                    "vortex:stardewvalley:fomod",
 		Name:                  "FOMOD installer",

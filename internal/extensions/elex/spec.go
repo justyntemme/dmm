@@ -39,6 +39,11 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "elex-ensure-packed-folder",
+		Name:    "Ensure Elex packed mod folder exists",
+		Actions: sdk.EnsureGameDirectories(packedRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: packedModType, TargetRoot: packedRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:elex:pak",

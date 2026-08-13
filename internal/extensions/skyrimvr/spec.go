@@ -76,6 +76,12 @@ func Register(r sdk.Registrar) {
 		LibraryFile:       eslEnablerLib,
 	}))
 	r.RegisterInstaller(sharedmodtypes.DInputInstaller("vortex:skyrimvr:dinput", 50))
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "skyrimvr-esl-support-check",
+		Name:    "Check Skyrim VR ESL support prerequisites",
+		Message: "Mirrors Vortex's setup-time ESL support check by surfacing the same requirement through DMM's extension runtime diagnostics and ESL enabler installer.",
+		Actions: sdk.RequireGamePaths("SkyrimVR.exe"),
+	})
 	r.RegisterRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirementOptions{
 		ID:            "skyrimvr-sksevr-installed",
 		Name:          "Skyrim Script Extender VR",

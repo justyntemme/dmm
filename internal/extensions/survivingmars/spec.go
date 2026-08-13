@@ -50,6 +50,11 @@ func Register(r sdk.Registrar) {
 		Resolver: appDataModsRoot,
 	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRootID: appDataModsRootID})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "survivingmars-ensure-appdata-mods-folder",
+		Name:    "Ensure Surviving Mars AppData mods folder exists",
+		Actions: sdk.EnsureTargetRootDirectories(appDataModsRootID, "."),
+	})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:survivingmars:mod",
 		VortexInstallerID: "survivingmars-mod",

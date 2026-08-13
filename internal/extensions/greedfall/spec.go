@@ -45,6 +45,11 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "greedfall-ensure-datalocal-folder",
+		Name:    "Ensure GreedFall datalocal folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:greedfall:mod",

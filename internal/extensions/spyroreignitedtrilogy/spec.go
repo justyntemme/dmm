@@ -34,6 +34,11 @@ func Register(r sdk.Registrar) {
 			AllowNeedsReviewState: true,
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "spyro-ensure-pak-folder",
+		Name:    "Ensure Spyro PAK mod folder exists",
+		Actions: sdk.EnsureGameDirectories(pakRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: pakRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:spyroreignitedtrilogy:mod",

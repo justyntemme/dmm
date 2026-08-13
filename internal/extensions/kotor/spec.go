@@ -90,6 +90,11 @@ func Register(r sdk.Registrar, spec gameSpec) {
 	r.RegisterModType(installplan.ModTypeSpec{ID: overrideModType, TargetRoot: overrideFolder})
 	r.RegisterModType(installplan.ModTypeSpec{ID: tslPatcherToolType, TargetRoot: tslPatcherRoot})
 	r.RegisterModType(installplan.ModTypeSpec{ID: tslPatcherPatchType, TargetRoot: tslPatcherRoot})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      spec.ID + "-ensure-override-folder",
+		Name:    "Ensure " + spec.Name + " override folder exists",
+		Actions: sdk.EnsureGameDirectories(overrideFolder),
+	})
 	if spec.ID == "kotor2" {
 		r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 			ID:       "kotor2-steam-launcher",

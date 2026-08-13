@@ -54,6 +54,11 @@ func Register(r sdk.Registrar) {
 		AppID:    EpicAppID,
 		Message:  "DMM indexes Vortex's Epic launcher identity for Bloodstained from extension metadata and matches supported Epic manifests through the generic store-provider discovery path.",
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "bloodstainedrotn-ensure-pak-folder",
+		Name:    "Ensure Bloodstained PAK mod folder exists",
+		Actions: sdk.EnsureGameDirectories(pakRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: pakModType, TargetRoot: pakRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:bloodstainedritualofthenight:pak",

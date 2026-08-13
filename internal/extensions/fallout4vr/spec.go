@@ -75,6 +75,12 @@ func Register(r sdk.Registrar) {
 		LibraryFile:       eslEnablerLib,
 	}))
 	r.RegisterInstaller(sharedmodtypes.DInputInstaller("vortex:fallout4vr:dinput", 50))
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "fallout4vr-esl-support-check",
+		Name:    "Check Fallout 4 VR ESL support prerequisites",
+		Message: "Mirrors Vortex's setup-time ESL support check by surfacing the same requirement through DMM's extension runtime diagnostics and ESL enabler installer.",
+		Actions: sdk.RequireGamePaths("Fallout4VR.exe"),
+	})
 	r.RegisterRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirement(gamebryo.ScriptExtenderRuntimeRequirementOptions{
 		ID:            "fallout4vr-f4sevr-installed",
 		Name:          "F4SE VR",

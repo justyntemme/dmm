@@ -824,6 +824,113 @@ func TestFirstPartyCoversVortexStoreAppIDs(t *testing.T) {
 	}
 }
 
+func TestFirstPartyCoversVortexSetupRegistrations(t *testing.T) {
+	// Source inventory verified from active registerGame({ setup: ... }) calls
+	// in Nexus-Mods/Vortex extensions/games. Every listed game must expose a
+	// DMM game setup surface, either directly or through a shared extension
+	// helper such as UMM or Gamebryo.
+	required := []string{
+		"7daystodie",
+		"ahatintime",
+		"baldursgate3",
+		"battletech",
+		"bladeandsorcery",
+		"bloodstainedritualofthenight",
+		"codevein",
+		"darkestdungeon",
+		"dawnofman",
+		"divinityoriginalsin2",
+		"dragonage",
+		"dragonage2",
+		"dragons-dogma",
+		"elex",
+		"factorio",
+		"fallout3",
+		"fallout4vr",
+		"gardenpaws",
+		"greedfall",
+		"grimdawn",
+		"grimrock",
+		"kenshi",
+		"kingdomcome-deliverance",
+		"monster-hunter-world",
+		"neverwinter-nights",
+		"neverwinter-nights2",
+		"nomanssky",
+		"oblivion",
+		"oni",
+		"pathfinderkingmaker",
+		"pillarsofeternity2",
+		"sekiro",
+		"shadowrunreturns",
+		"sims3",
+		"sims4",
+		"skyrimvr",
+		"spyroreignitedtrilogy",
+		"starbound",
+		"stardewvalley",
+		"survivingmars",
+		"sw-kotor",
+		"torchlight2",
+		"totalwarthreekingdoms",
+		"untitledgoose",
+		"vtmbloodlines",
+		"warthunder",
+		"witcher",
+		"witcher2",
+		"witcher3",
+		"wolcen",
+		"x4foundations",
+		"xcom2",
+	}
+	aliases := map[string][]string{
+		"7daystodie":              {"sevendaystodie"},
+		"dragons-dogma":           {"dragonsdogma"},
+		"kingdomcome-deliverance": {"kingdomcomedeliverance"},
+		"monster-hunter-world":    {"monsterhunterworld"},
+		"neverwinter-nights":      {"neverwinter"},
+		"neverwinter-nights2":     {"neverwinter"},
+		"oni":                     {"oxygennotincluded"},
+		"sims3":                   {"thesims3"},
+		"sims4":                   {"thesims4"},
+		"sw-kotor":                {"kotor", "kotor2"},
+		"untitledgoose":           {"untitledgoosegame"},
+		"vtmbloodlines":           {"vampirebloodlines"},
+		"witcher":                 {"witcherlegacy"},
+		"witcher2":                {"witcherlegacy"},
+		"wolcen":                  {"wolcenlordsofmayhem"},
+	}
+
+	setupByID := map[string][]gameext.FeatureSummary{}
+	for _, summary := range gameext.NewRegistry(FirstParty()).ExtensionSummaries() {
+		if len(summary.Capabilities.GameSetups) == 0 {
+			continue
+		}
+		keys := []string{summary.ID, summary.VortexGameID}
+		keys = append(keys, summary.NexusDomains...)
+		for _, key := range keys {
+			if key == "" {
+				continue
+			}
+			setupByID[key] = append(setupByID[key], summary.Capabilities.GameSetups...)
+		}
+	}
+	for _, id := range required {
+		setups := setupByID[id]
+		for _, alias := range aliases[id] {
+			setups = append(setups, setupByID[alias]...)
+		}
+		if len(setups) == 0 {
+			t.Fatalf("missing DMM setup surface for Vortex game setup %q", id)
+		}
+		for _, setup := range setups {
+			if setup.Status != sdk.CapabilityStatusReady || len(setup.SetupActions) == 0 {
+				t.Fatalf("setup surface for %s is not ready: %+v", id, setup)
+			}
+		}
+	}
+}
+
 func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 	// Source inventory verified from Vortex registerAPI, registerTest,
 	// registerDialog, and registerTableAttribute calls. Repeated trigger

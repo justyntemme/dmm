@@ -46,6 +46,11 @@ func Register(r sdk.Registrar) {
 		RequiredFiles:      []string{"Binaries/ModManager.exe"},
 		Relative:           true,
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "ahatintime-ensure-mods-folder",
+		Name:    "Ensure A Hat in Time mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:ahatintime:mod",

@@ -50,6 +50,11 @@ func Register(r sdk.Registrar) {
 		Name:     "Torchlight II Documents Mods",
 		Resolver: documentsModsRoot,
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "torchlight2-ensure-documents-mods-folder",
+		Name:    "Ensure Torchlight II Documents mods folder exists",
+		Actions: sdk.EnsureTargetRootDirectories(documentsModsRootID, "."),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: modType, TargetRootID: documentsModsRootID})
 	r.RegisterLauncherRequirement(sdk.LauncherRequirementSpec{
 		ID:       "torchlight2-steam-launcher",

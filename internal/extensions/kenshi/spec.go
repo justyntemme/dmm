@@ -37,6 +37,11 @@ func Register(r sdk.Registrar) {
 			Actions:          sdk.StandardSteamWorkshopActions(),
 		},
 	})
+	r.RegisterGameSetup(sdk.GameSetupSpec{
+		ID:      "kenshi-ensure-mods-folder",
+		Name:    "Ensure Kenshi mods folder exists",
+		Actions: sdk.EnsureGameDirectories(modRoot),
+	})
 	r.RegisterModType(installplan.ModTypeSpec{ID: "kenshi-mod", TargetRoot: modRoot})
 	r.RegisterInstaller(installplan.InstallerSpec{
 		ID:                "vortex:kenshi:mod",
