@@ -45,6 +45,8 @@ func TestFirstPartyCoversVortexRegistrationSurfaces(t *testing.T) {
 		addFeatures(counts, "registerGameInfoProvider", caps.GameInfoProviders)
 		addFeatures(counts, "registerAttributeExtractor", caps.AttributeExtractors)
 		addFeatures(counts, "registerActionCheck", caps.ExtensionActionChecks)
+		addFeatures(counts, "registerDynDiv", caps.ExtensionDynamicDividers)
+		addFeatures(counts, "registerControlWrapper", caps.ExtensionControlWrappers)
 		addFeatures(counts, "registerHistoryStack", caps.HistoryStacks)
 		addFeatures(counts, "registerHealthCheck", caps.HealthChecks)
 		addFeatures(counts, "registerStartHook", caps.StartHooks)
@@ -78,6 +80,8 @@ func TestFirstPartyCoversVortexRegistrationSurfaces(t *testing.T) {
 		"registerGameInfoProvider",
 		"registerAttributeExtractor",
 		"registerActionCheck",
+		"registerDynDiv",
+		"registerControlWrapper",
 		"registerHistoryStack",
 		"registerHealthCheck",
 		"registerStartHook",
