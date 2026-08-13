@@ -33,7 +33,7 @@ MVP vertical slice in active testing:
 - Installed mod display names come from install-plan metadata when the selected installer declares manifest-derived naming, otherwise DMM falls back to the Nexus archive name.
 - Game diagnostics and the mobile Review tab surface extension-derived runtime requirements from enabled mod metadata. For example, Stardew SMAPI mods are reported separately from whether SMAPI itself is present to load them.
 - The Review tab can also report missing required Stardew framework/dependency mods derived from installed manifest metadata.
-- 7z/RAR extraction is supported through external helper tools.
+- ZIP, 7z, and RAR extraction run in-process through Go archive readers, so the MVP install path does not require external archive tools.
 - FOMOD archives pause as installer-choice actions; the phone/tablet UI and Decky modal flow can apply selected files through the normal profile install path.
 - Deployment uses a Vortex-style staging/manifest model with symlink deployment, conflict detection, profile-aware keep/add/replace/remove planning, verification, repair, purge, and apply-time rollback for DMM-owned files.
 - Steam Workshop is treated as Steam-owned platform content, not as a normal remote catalog. DMM can show installed/subscribed Workshop entries and queues supported enable, disable, unsubscribe, and load-order actions through the Decky/Steam API boundary where a game extension declares coexistence safe.

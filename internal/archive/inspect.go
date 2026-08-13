@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/bodgit/sevenzip"
+	"github.com/nwaples/rardecode/v2"
 )
 
 type Entry struct {
@@ -39,8 +41,10 @@ func Inspect(filePath string) (Inspection, error) {
 	switch format {
 	case ".zip":
 		return inspectZip(filePath)
-	case ".7z", ".rar":
-		return inspectWith7z(filePath, strings.TrimPrefix(format, "."))
+	case ".7z":
+		return inspect7z(filePath)
+	case ".rar":
+		return inspectRAR(filePath)
 	default:
 		return Inspection{}, errors.New("unsupported archive format")
 	}
@@ -174,26 +178,64 @@ func inspectZip(filePath string) (Inspection, error) {
 	return inspection, nil
 }
 
-func inspectWith7z(filePath, format string) (Inspection, error) {
+func inspect7z(filePath string) (Inspection, error) {
 	inspection := Inspection{
-		ArchivePath:      filePath,
-		Format:           format,
-		Entries:          []Entry{},
-		TopLevelDirs:     []string{},
-		Warnings:         []string{},
-		RequiresExternal: true,
+		ArchivePath:  filePath,
+		Format:       "7z",
+		Entries:      []Entry{},
+		TopLevelDirs: []string{},
+		Warnings:     []string{},
 	}
-	if _, err := exec.LookPath("7z"); err != nil {
-		inspection.Warnings = append(inspection.Warnings, missing7zMessage("inspect this archive before extraction"))
-		return inspection, nil
-	}
-	cmd := exec.Command("7z", "l", "-slt", "--", filePath)
-	cmd.Env = archiveHelperEnv(os.Environ())
-	out, err := cmd.CombinedOutput()
+	reader, err := sevenzip.OpenReader(filePath)
 	if err != nil {
-		return Inspection{}, helperCommandError("7z", "inspect archive", out)
+		return Inspection{}, err
 	}
-	return parse7zListing(inspection, string(out)), nil
+	defer reader.Close()
+	top := map[string]struct{}{}
+	for _, file := range reader.File {
+		info := file.FileInfo()
+		entry := Entry{
+			Path:  filepath.ToSlash(file.Name),
+			Size:  info.Size(),
+			IsDir: info.IsDir(),
+		}
+		addInspectionEntry(&inspection, top, entry)
+	}
+	finishTopLevelDirs(&inspection, top)
+	return inspection, nil
+}
+
+func inspectRAR(filePath string) (Inspection, error) {
+	inspection := Inspection{
+		ArchivePath:  filePath,
+		Format:       "rar",
+		Entries:      []Entry{},
+		TopLevelDirs: []string{},
+		Warnings:     []string{},
+	}
+	reader, err := rardecode.OpenReader(filePath)
+	if err != nil {
+		return Inspection{}, err
+	}
+	defer reader.Close()
+	top := map[string]struct{}{}
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return Inspection{}, err
+		}
+		entry := Entry{
+			Path:  filepath.ToSlash(header.Name),
+			Size:  header.UnPackedSize,
+			IsDir: header.IsDir,
+		}
+		addInspectionEntry(&inspection, top, entry)
+	}
+	finishTopLevelDirs(&inspection, top)
+	return inspection, nil
 }
 
 func parse7zListing(inspection Inspection, listing string) Inspection {
@@ -212,22 +254,7 @@ func parse7zListing(inspection Inspection, listing string) Inspection {
 		if size, ok := parseInt64(current["Size"]); ok {
 			entry.Size = size
 		}
-		inspection.Entries = append(inspection.Entries, entry)
-		if warning := validateArchivePath(entry.Path); warning != "" {
-			inspection.Warnings = append(inspection.Warnings, warning)
-			inspection.Unsafe = true
-		}
-		first := firstPathSegment(entry.Path)
-		if first != "" {
-			top[first] = struct{}{}
-		}
-		if isFOMODPath(entry.Path) {
-			inspection.InstallerKind = "fomod"
-			inspection.RequiresInstaller = true
-		} else if inspection.InstallerKind == "" && isNestedFOMODArchive(entry.Path, entry.IsDir) {
-			inspection.InstallerKind = "nested_fomod"
-			inspection.RequiresInstaller = true
-		}
+		addInspectionEntry(&inspection, top, entry)
 		current = map[string]string{}
 	}
 	for _, line := range strings.Split(listing, "\n") {
@@ -243,11 +270,34 @@ func parse7zListing(inspection Inspection, listing string) Inspection {
 		current[strings.TrimSpace(key)] = strings.TrimSpace(value)
 	}
 	flush()
+	finishTopLevelDirs(&inspection, top)
+	return inspection
+}
+
+func addInspectionEntry(inspection *Inspection, top map[string]struct{}, entry Entry) {
+	inspection.Entries = append(inspection.Entries, entry)
+	if warning := validateArchivePath(entry.Path); warning != "" {
+		inspection.Warnings = append(inspection.Warnings, warning)
+		inspection.Unsafe = true
+	}
+	first := firstPathSegment(entry.Path)
+	if first != "" {
+		top[first] = struct{}{}
+	}
+	if isFOMODPath(entry.Path) {
+		inspection.InstallerKind = "fomod"
+		inspection.RequiresInstaller = true
+	} else if inspection.InstallerKind == "" && isNestedFOMODArchive(entry.Path, entry.IsDir) {
+		inspection.InstallerKind = "nested_fomod"
+		inspection.RequiresInstaller = true
+	}
+}
+
+func finishTopLevelDirs(inspection *Inspection, top map[string]struct{}) {
 	for name := range top {
 		inspection.TopLevelDirs = append(inspection.TopLevelDirs, name)
 	}
 	sort.Strings(inspection.TopLevelDirs)
-	return inspection
 }
 
 func parseInt64(value string) (int64, bool) {
@@ -309,17 +359,18 @@ func extractWith7z(ctx context.Context, filePath, destDir string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("7z"); err != nil {
-		return errors.New(missing7zMessage("extract this archive"))
-	}
-	cmd := exec.CommandContext(ctx, "7z", "x", "-y", "-o"+destDir, filePath)
-	cmd.Env = archiveHelperEnv(os.Environ())
-	out, err := cmd.CombinedOutput()
+	reader, err := sevenzip.OpenReader(filePath)
 	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return ctx.Err()
+		return err
+	}
+	defer reader.Close()
+	for _, file := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return helperCommandError("7z", "extract archive", out)
+		if err := extractArchiveFile(ctx, destDir, file.Name, file.FileInfo().IsDir(), file.Open); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -328,75 +379,55 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("unrar"); err == nil {
-		cmd := exec.CommandContext(ctx, "unrar", "x", "-o+", filePath, destDir+string(filepath.Separator))
-		cmd.Env = archiveHelperEnv(os.Environ())
-		out, err := cmd.CombinedOutput()
+	reader, err := rardecode.OpenReader(filePath)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
 		if err != nil {
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return ctx.Err()
-			}
-			return helperCommandError("unrar", "extract RAR archive", out)
+			return err
 		}
-		return nil
+		name := header.Name
+		err = extractArchiveFile(ctx, destDir, name, header.IsDir, func() (io.ReadCloser, error) {
+			return io.NopCloser(reader), nil
+		})
+		if err != nil {
+			return err
+		}
 	}
-	if _, err := exec.LookPath("7z"); err != nil {
-		return errors.New("unrar or 7z is required to extract this RAR archive. Install an archive helper from the Decky plugin Dependencies view, then retry the install.")
-	}
-	return extractWith7z(ctx, filePath, destDir)
+	return nil
 }
 
-func missing7zMessage(action string) string {
-	return "7z is required to " + action + ". Install 7-Zip/p7zip from the Decky plugin Dependencies view, then retry the install."
-}
-
-func archiveHelperEnv(base []string) []string {
-	out := make([]string, 0, len(base)+1)
-	hasPath := false
-	for _, item := range base {
-		key, _, ok := strings.Cut(item, "=")
-		if !ok {
-			continue
-		}
-		if strings.EqualFold(key, "PATH") {
-			hasPath = true
-		}
-		if dropArchiveHelperEnvKey(key) {
-			continue
-		}
-		out = append(out, item)
+func extractArchiveFile(ctx context.Context, destDir, name string, isDir bool, open func() (io.ReadCloser, error)) error {
+	name = filepath.ToSlash(name)
+	if warning := validateArchivePath(name); warning != "" {
+		return errors.New(warning)
 	}
-	if !hasPath {
-		out = append(out, "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/bin")
+	target, err := safeExtractPath(destDir, name)
+	if err != nil {
+		return err
 	}
-	return out
-}
-
-func dropArchiveHelperEnvKey(key string) bool {
-	key = strings.ToUpper(strings.TrimSpace(key))
-	if strings.HasPrefix(key, "LD_") {
-		return true
+	if isDir {
+		return os.MkdirAll(target, 0o700)
 	}
-	if strings.HasPrefix(key, "STEAM_COMPAT_") || strings.HasPrefix(key, "STEAM_RUNTIME") {
-		return true
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
 	}
-	if strings.HasPrefix(key, "PRESSURE_VESSEL_") {
-		return true
+	in, err := open()
+	if err != nil {
+		return err
 	}
-	switch key {
-	case "SYSTEM_LD_LIBRARY_PATH":
-		return true
-	default:
-		return false
+	err = writeExtractedFile(ctx, target, in)
+	closeErr := in.Close()
+	if err != nil {
+		return err
 	}
-}
-
-func helperCommandError(tool, action string, out []byte) error {
-	detail := strings.TrimSpace(string(out))
-	if detail == "" {
-		return errors.New(tool + " failed to " + action + " and did not report details. Check that the archive is valid and the helper is installed correctly.")
-	}
-	return errors.New(tool + " failed to " + action + ": " + detail)
+	return closeErr
 }
 
 func writeExtractedFile(ctx context.Context, target string, in io.Reader) error {

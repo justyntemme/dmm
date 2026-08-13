@@ -1313,38 +1313,6 @@ class Plugin:
 
     async def dependencies(self):
         return [
-            self._dependency(
-                "7-Zip",
-                "7z",
-                "Extracts .7z and many Nexus archive formats.",
-                "p7zip",
-                "sudo pacman -S --needed p7zip",
-                "https://wiki.archlinux.org/title/P7zip",
-            ),
-            self._dependency(
-                "bsdtar",
-                "bsdtar",
-                "Extracts tar and zip archives.",
-                "libarchive",
-                "sudo pacman -S --needed libarchive",
-                "https://man.archlinux.org/man/bsdtar.1",
-            ),
-            self._dependency(
-                "unzip",
-                "unzip",
-                "Extracts .zip archives.",
-                "unzip",
-                "sudo pacman -S --needed unzip",
-                "https://man.archlinux.org/man/unzip.1.en",
-            ),
-            self._dependency(
-                "unrar",
-                "unrar",
-                "Extracts .rar archives when available.",
-                "unrar",
-                "sudo pacman -S --needed unrar",
-                "https://man.archlinux.org/man/unrar.1.en",
-            ),
         ]
 
     async def set_lan_only(self, lan_only):

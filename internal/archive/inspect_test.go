@@ -3,7 +3,6 @@ package archive
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -249,51 +248,5 @@ Size = 4
 `)
 	if !got.Unsafe || len(got.Warnings) == 0 {
 		t.Fatalf("inspection = %+v", got)
-	}
-}
-
-func TestArchiveHelperMessagesAreActionable(t *testing.T) {
-	missing := missing7zMessage("extract this archive")
-	if !strings.Contains(missing, "7z is required") || !strings.Contains(missing, "Decky plugin Dependencies") {
-		t.Fatalf("missing helper message = %q", missing)
-	}
-
-	err := helperCommandError("7z", "extract archive", nil)
-	if err == nil || !strings.Contains(err.Error(), "did not report details") {
-		t.Fatalf("empty helper error = %v", err)
-	}
-
-	err = helperCommandError("unrar", "extract RAR archive", []byte("bad archive"))
-	if err == nil || !strings.Contains(err.Error(), "unrar failed to extract RAR archive: bad archive") {
-		t.Fatalf("helper error = %v", err)
-	}
-}
-
-func TestArchiveHelperEnvDropsSteamRuntimeLoaderVariables(t *testing.T) {
-	got := archiveHelperEnv([]string{
-		"PATH=/usr/bin",
-		"HOME=/home/deck",
-		"LD_LIBRARY_PATH=/steam/runtime/lib",
-		"LD_PRELOAD=/steam/runtime/hook.so",
-		"STEAM_RUNTIME=1",
-		"STEAM_COMPAT_DATA_PATH=/compatdata",
-		"PRESSURE_VESSEL_FILESYSTEMS_RW=/tmp",
-		"SYSTEM_LD_LIBRARY_PATH=/steam/runtime/lib",
-	})
-	joined := "\n" + strings.Join(got, "\n") + "\n"
-	for _, key := range []string{
-		"LD_LIBRARY_PATH=",
-		"LD_PRELOAD=",
-		"STEAM_RUNTIME=",
-		"STEAM_COMPAT_DATA_PATH=",
-		"PRESSURE_VESSEL_FILESYSTEMS_RW=",
-		"SYSTEM_LD_LIBRARY_PATH=",
-	} {
-		if strings.Contains(joined, "\n"+key) {
-			t.Fatalf("helper env retained %s in %q", key, joined)
-		}
-	}
-	if !strings.Contains(joined, "\nPATH=/usr/bin\n") || !strings.Contains(joined, "\nHOME=/home/deck\n") {
-		t.Fatalf("helper env dropped normal variables: %q", joined)
 	}
 }

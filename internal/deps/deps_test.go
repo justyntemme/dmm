@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestArchiveToolsExposeInstallGuidance(t *testing.T) {
+func TestRuntimeHelpersExposeInstallGuidance(t *testing.T) {
 	tools := CheckArchiveTools()
-	if len(tools) != 5 {
-		t.Fatalf("tool count = %d, want 5", len(tools))
+	if len(tools) != 1 {
+		t.Fatalf("tool count = %d, want 1", len(tools))
 	}
 	foundSorter := false
 	for _, tool := range tools {
@@ -25,15 +25,7 @@ func TestArchiveToolsExposeInstallGuidance(t *testing.T) {
 			}
 			continue
 		}
-		if strings.TrimSpace(tool.PackageName) == "" {
-			t.Fatalf("%s missing package name", tool.Command)
-		}
-		if !strings.Contains(tool.InstallCommand, tool.PackageName) {
-			t.Fatalf("%s install command %q does not include package %q", tool.Command, tool.InstallCommand, tool.PackageName)
-		}
-		if !strings.HasPrefix(tool.DocsURL, "https://") {
-			t.Fatalf("%s docs URL = %q", tool.Command, tool.DocsURL)
-		}
+		t.Fatalf("unexpected external dependency after pure-Go archive extraction: %+v", tool)
 	}
 	if !foundSorter {
 		t.Fatal("dmm-loot-sorter helper was not reported")
