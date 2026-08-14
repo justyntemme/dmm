@@ -729,10 +729,50 @@
   };
 
   type GameDiagnostics = {
+	app_id: string;
+	profile_count: number;
+	default_profile?: string;
+	installed_mods: number;
+	enabled_mods: number;
+	blocked_candidates: number;
+	active_install_jobs: number;
+	active_deploy_jobs: number;
+	deployment: DeploymentStatus;
+	preview: DeployPreviewSummary;
     steam_workshop?: SteamWorkshop;
     runtime_requirements?: RuntimeRequirement[];
     launcher_requirements?: LauncherRequirement[];
+	game_setups?: GameSetupStatus[];
+	extension_tests?: DiagnosticTest[];
+	health_checks?: HealthCheck[];
     validation_warnings?: string[];
+  };
+
+  type GameSetupStatus = {
+	setup_id: string;
+	name: string;
+	status: string;
+	message?: string;
+  };
+
+  type DiagnosticTest = {
+	test_id: string;
+	test_name: string;
+	status: string;
+	severity: string;
+	message: string;
+	details?: string;
+	repair_available?: boolean;
+  };
+
+  type HealthCheck = {
+	check_id: string;
+	check_name: string;
+	mod_name: string;
+	status: string;
+	severity: string;
+	message: string;
+	details?: string;
   };
 
   type GameInfo = {
@@ -1081,6 +1121,16 @@
   $: hasDeployConflicts = (deployPlan?.conflicts.length ?? 0) > 0;
   $: hasPendingProfileChanges = Boolean(deployPlan && deployableActions.length > 0 && !hasDeployConflicts);
   $: visibleValidationWarnings = displayValidationWarnings(gameDiagnostics);
+	$: setupIssues = (gameDiagnostics?.game_setups ?? []).filter((item) => !diagnosticStatusHealthy(item.status));
+	$: extensionTestIssues = (gameDiagnostics?.extension_tests ?? []).filter((item) => !diagnosticStatusHealthy(item.status));
+	$: healthCheckIssues = (gameDiagnostics?.health_checks ?? []).filter((item) => !diagnosticStatusHealthy(item.status));
+	$: launcherIssues = (gameDiagnostics?.launcher_requirements ?? []).filter((item) => !item.satisfied);
+	$: runtimeIssues = (gameDiagnostics?.runtime_requirements ?? []).filter((item) => item.required && !diagnosticStatusHealthy(item.status));
+	$: healthySetups = (gameDiagnostics?.game_setups ?? []).filter((item) => diagnosticStatusHealthy(item.status));
+	$: healthyExtensionTests = (gameDiagnostics?.extension_tests ?? []).filter((item) => diagnosticStatusHealthy(item.status));
+	$: healthyHealthChecks = (gameDiagnostics?.health_checks ?? []).filter((item) => diagnosticStatusHealthy(item.status));
+	$: validatedCheckCount = healthySetups.length + healthyExtensionTests.length + healthyHealthChecks.length;
+	$: diagnosticIssueCount = visibleValidationWarnings.length + setupIssues.length + extensionTestIssues.length + healthCheckIssues.length + launcherIssues.length + runtimeIssues.length;
   $: launchSetupAvailable = Boolean(gameLaunchStatus?.required && !gameLaunchStatus.configured && gameLaunchStatus.can_configure && gameLaunchStatus.action);
 
   function initializeAPIAuth() {
@@ -4335,6 +4385,32 @@
     await refreshJobsAndSelectedGame("runtime-requirement-acquire", true);
   }
 
+	async function runGameSetup() {
+		if (!selectedGame) return;
+		error = "";
+		const response = await apiFetch(`/api/games/${selectedGame.app_id}/setup`, { method: "POST" });
+		if (!response.ok) {
+			error = await response.text();
+			return;
+		}
+		const result = await response.json() as { job?: Job };
+		if (result.job) upsertJob(result.job);
+		await refreshJobsAndSelectedGame("game-setup", true);
+	}
+
+	async function repairExtensionTest(test: DiagnosticTest) {
+		if (!selectedGame || !test.repair_available) return;
+		error = "";
+		const response = await apiFetch(`/api/games/${selectedGame.app_id}/extension-tests/${encodeURIComponent(test.test_id)}/repair`, { method: "POST" });
+		if (!response.ok) {
+			error = await response.text();
+			return;
+		}
+		const result = await response.json() as { job?: Job };
+		if (result.job) upsertJob(result.job);
+		await refreshJobsAndSelectedGame("extension-test-repair", true);
+	}
+
   async function recoverDownloads() {
     if (!selectedGame) return;
     error = "";
@@ -5169,6 +5245,10 @@
     });
   }
 
+	function diagnosticStatusHealthy(status: string) {
+		return ["ok", "ready", "passed", "pass", "satisfied", "configured", "not-applicable", "not_applicable", "disabled"].includes(status.trim().toLowerCase());
+	}
+
   function runtimeRequirementCanAcquire(requirement: RuntimeRequirement) {
     const acquisition = requirement.acquisition;
     if (!acquisition) return false;
@@ -5416,6 +5496,34 @@
             <article class="phone-static-row"><strong>Move or copy mods</strong><small>Create another profile and install mods before transferring profile membership.</small></article>
           {/if}
         </section>
+      {:else if activeGameModule === "review"}
+		<section class="phone-card"><header><h2>Game Health</h2><span>{diagnosticIssueCount} issue{diagnosticIssueCount === 1 ? "" : "s"}</span></header>
+			<div class="metric-grid"><div><strong>{gameDiagnostics?.enabled_mods ?? installedMods.filter((mod) => mod.enabled).length}</strong><span>Enabled</span></div><div><strong>{gameDiagnostics?.blocked_candidates ?? installCandidates.length}</strong><span>Blocked</span></div><div><strong>{gameDiagnostics?.active_install_jobs ?? 0}</strong><span>Installing</span></div><div><strong>{gameDiagnostics?.active_deploy_jobs ?? 0}</strong><span>Deploying</span></div></div>
+			<article class="phone-static-row"><strong>{deploymentStatus?.deployed ? "Deployment active" : "No active deployment"}</strong><small>{deploymentStatus?.deployed ? `${deploymentStatus.file_count} managed files · ${deploymentStatus.strategy || "default"} strategy` : "The active profile has no DMM-managed files in the game folder."}</small><span class="pills"><em class:ok={Boolean(deploymentStatus?.deployed)}>{deploymentStatus?.deployed ? "Deployed" : "Inactive"}</em><em>{deploymentStatus?.apply_rollback_on_failure ? "Rollback protected" : "Rollback unavailable"}</em></span></article>
+			{#if deploymentStatus?.recovery_summary}<article class="phone-static-row"><strong>Recovery</strong><small>{deploymentStatus.recovery_summary}</small></article>{/if}
+			{#if deploymentStatus?.restore_summary}<article class="phone-static-row"><strong>Restore point</strong><small>{deploymentStatus.restore_summary}</small></article>{/if}
+			{#if gameDiagnostics?.preview?.available}<article class="phone-static-row"><strong>Current profile delta</strong><small>{gameDiagnostics.preview.add} add · {gameDiagnostics.preview.replace} replace · {gameDiagnostics.preview.remove} remove · {gameDiagnostics.preview.conflicts} conflict{gameDiagnostics.preview.conflicts === 1 ? "" : "s"}</small></article>{/if}
+			<div class="action-grid"><button type="button" disabled={!deploymentStatus?.repair_available} on:click={repairDeployment}>Repair Managed Files</button><button type="button" disabled={!deploymentStatus?.purge_available} on:click={askPurgeDeployment}>Remove Applied Files</button><button type="button" on:click={askResetManagedMods}>Reset Managed Mods</button><button type="button" on:click={() => openGameModule("advanced")}>Rollback History</button></div>
+		</section>
+		{#if diagnosticIssueCount > 0}
+			<section class="phone-card"><header><h2>Needs Attention</h2><span>{diagnosticIssueCount}</span></header>
+				{#each visibleValidationWarnings as warning}<article class="phone-static-row warning-row"><strong>Validation warning</strong><small>{warning}</small></article>{/each}
+				{#each runtimeIssues as requirement}<article class="phone-static-row"><strong>{requirement.name}</strong><small>{requirement.message}</small>{#if runtimeRequirementCanAcquire(requirement)}<button type="button" on:click={() => acquireRuntimeRequirement(requirement)}>Acquire</button>{/if}</article>{/each}
+				{#each launcherIssues as requirement}<article class="phone-static-row"><strong>{requirement.name}</strong><small>{requirement.message || `${requirement.launcher} is not configured.`}</small>{#if launchSetupAvailable}<button type="button" on:click={applyLaunchSetup}>Configure Launch</button>{/if}</article>{/each}
+				{#each setupIssues as setup}<article class="phone-static-row"><strong>{setup.name}</strong><small>{setup.message || setup.status}</small><button type="button" on:click={runGameSetup}>Prepare Game</button></article>{/each}
+				{#each extensionTestIssues as test}<article class="phone-static-row"><strong>{test.test_name}</strong><small>{test.message}{#if test.details} · {test.details}{/if}</small>{#if test.repair_available}<button type="button" on:click={() => repairExtensionTest(test)}>Repair</button>{/if}</article>{/each}
+				{#each healthCheckIssues as check}<article class="phone-static-row"><strong>{check.check_name}</strong><small>{check.mod_name ? `${check.mod_name} · ` : ""}{check.message}{#if check.details} · {check.details}{/if}</small></article>{/each}
+			</section>
+		{:else}
+			<section class="phone-card"><article class="phone-static-row"><strong>Validation passed</strong><small>Deployment, extension, runtime, and managed-mod checks report no issues.</small><span class="pills"><em class="ok">Ready</em></span></article></section>
+		{/if}
+		{#if gameDiagnostics}
+			<section class="phone-card"><header><h2>Validated Checks</h2><span>{validatedCheckCount}</span></header>
+				{#each healthySetups as setup}<article class="phone-static-row"><strong>{setup.name}</strong><small>{setup.message || "Game setup is ready."}</small><span class="pills"><em class="ok">{setup.status}</em></span></article>{/each}
+				{#each healthyExtensionTests as test}<article class="phone-static-row"><strong>{test.test_name}</strong><small>{test.message}</small><span class="pills"><em class="ok">{test.status}</em></span></article>{/each}
+				{#each healthyHealthChecks as check}<article class="phone-static-row"><strong>{check.check_name}</strong><small>{check.mod_name ? `${check.mod_name} · ` : ""}{check.message}</small><span class="pills"><em class="ok">{check.status}</em></span></article>{/each}
+			</section>
+		{/if}
       {:else if activeGameModule === "advanced"}
         <section class="phone-card"><header><h2>Rollback</h2><span>{deploymentHistory.length} kept</span></header>{#each deploymentHistory as deployment}<button type="button" class="phone-row" disabled={restorePointPreviewBusy === deployment.id} on:click={() => previewRestoreDeploymentPoint(deployment)}><span><strong>{deploymentPointLabel(deployment)}</strong><small>{new Date(deployment.created_at).toLocaleString()} · {deployment.profile_name} · {deploymentPointDelta(deployment)}</small></span><b>›</b></button>{/each}</section>
         {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.plan.actions.length} changes</span></header>{#each restorePointPreview.plan.actions as action}<article class="phone-static-row"><strong>{action.operation || "change"}</strong><small>{action.target_path}</small></article>{/each}{#each restorePointPreview.plan.integrity_conflicts ?? [] as conflict}<article class="phone-static-row warning-row"><strong>Changed outside DMM</strong><small>{conflict.file.target_path} · {conflict.reason}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" disabled={deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)?.active} on:click={() => { const deployment = deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id); if (deployment) askRestoreDeploymentPoint(deployment); }}>Restore</button></div></section>{/if}

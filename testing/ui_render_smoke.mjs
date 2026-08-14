@@ -2,7 +2,6 @@
 
 import process from "node:process";
 import { createServer } from "../web/node_modules/vite/dist/node/index.js";
-import { render } from "../web/node_modules/svelte/src/server/index.js";
 
 function requireMarkup(body, pattern, message) {
   if (!pattern.test(body)) {
@@ -18,8 +17,11 @@ const vite = await createServer({
 });
 
 try {
-  const module = await vite.ssrLoadModule("/src/App.svelte");
-  const { body } = render(module.default);
+  const [module, svelteServer] = await Promise.all([
+    vite.ssrLoadModule("/src/App.svelte"),
+    vite.ssrLoadModule("svelte/server"),
+  ]);
+  const { body } = svelteServer.render(module.default);
 
   requireMarkup(body, /<main class="phone-shell">/, "phone application shell did not render");
   requireMarkup(body, /<header class="phone-topbar">/, "phone top bar did not render");
