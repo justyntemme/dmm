@@ -1042,6 +1042,11 @@ const deckyRuntimeStyles = `
   scrollbar-gutter: stable;
   scrollbar-width: auto;
 }
+.dmm-controller-scroll {
+  overscroll-behavior: contain;
+  scroll-padding-block: 16px 32px;
+  scrollbar-gutter: stable;
+}
 .dmm-installer-choice-scroll::-webkit-scrollbar {
   width: 12px;
 }
@@ -1957,6 +1962,44 @@ function focusDeckyRef(ref: { current: HTMLElement | null }, label: string, logD
     target.scrollIntoView({ block: "nearest", inline: "nearest" });
     void logFrontendEvent("decky focus ref applied", { label, ...logDetail });
   }, 80);
+}
+
+const deckyInteractiveSelector = ".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input:not([disabled]), textarea:not([disabled]), button:not([disabled]), select:not([disabled])";
+
+function keepDeckyScrollFocusVisible(
+  container: HTMLElement,
+  event: { target?: EventTarget | null } | undefined,
+  options: { label: string; topAnchor?: HTMLElement | null; topPadding?: number; bottomPadding?: number }
+) {
+  const target = event?.target instanceof HTMLElement ? event.target : null;
+  if (!target || !container.contains(target)) return;
+  requestAnimationFrame(() => {
+    const focused = target.closest<HTMLElement>(deckyInteractiveSelector);
+    if (!focused || !container.contains(focused)) return;
+    const focusables = Array.from(container.querySelectorAll<HTMLElement>(deckyInteractiveSelector))
+      .filter((element) => element.getClientRects().length > 0 && !element.hasAttribute("disabled"));
+    const firstFocusable = focusables[0];
+    if (firstFocusable && (focused === firstFocusable || firstFocusable.contains(focused))) {
+      const previousScrollTop = container.scrollTop;
+      container.scrollTop = 0;
+      options.topAnchor?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (previousScrollTop > 0) {
+        void logFrontendEvent("decky controller scroll restored", { surface: options.label, previous_scroll_top: Math.round(previousScrollTop) });
+      }
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const focusedRect = focused.getBoundingClientRect();
+    const topPadding = options.topPadding ?? 12;
+    const bottomPadding = options.bottomPadding ?? 24;
+    if (focusedRect.top < containerRect.top + topPadding) {
+      container.scrollTop = Math.max(0, container.scrollTop - ((containerRect.top + topPadding) - focusedRect.top));
+      return;
+    }
+    if (focusedRect.bottom > containerRect.bottom - bottomPadding) {
+      container.scrollTop += focusedRect.bottom - (containerRect.bottom - bottomPadding);
+    }
+  });
 }
 
 function unregisterSteamCallback(registration: unknown) {
@@ -3161,6 +3204,7 @@ async function syncOpenDirectoryActions() {
 }
 
 function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidate; profileID?: number; closeModal: () => void; onApplied: () => void }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const [candidate, setCandidate] = useState<InstallCandidate>(props.candidate);
   const installer = installerForCandidate(candidate);
   const [selections, setSelections] = useState<Record<string, string[]>>(() => storedFomodSelections(props.candidate) ?? {});
@@ -3344,7 +3388,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
           width: "100%"
         }}
       >
-        <div style={{ display: "grid", gap: "4px", minWidth: 0, width: "100%" }}>
+        <div ref={headerRef} style={{ display: "grid", gap: "4px", minWidth: 0, width: "100%" }}>
           <div style={{ color: "#f8fafc", fontSize: "16px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{candidate.name}</div>
           <div style={{ color: currentStepReady ? "#72e0a2" : "#fbbf24", fontSize: "11px", fontWeight: 800 }}>
             {steps.length > 0 ? `Step ${currentStepIndex + 1} of ${steps.length}` : "No visible choices"} · {currentStepReady ? "Ready" : "Needs selection"}
@@ -3352,9 +3396,10 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
         </div>
 
         <Focusable
-          className="dmm-installer-choice-scroll"
+          className="dmm-installer-choice-scroll dmm-controller-scroll"
           flow-children="down"
           navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+          onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "installer-choices", topAnchor: headerRef.current })}
           style={{
             alignContent: "start",
             boxSizing: "border-box",
@@ -3364,6 +3409,7 @@ function InstallerChoiceModal(props: { appID: string; candidate: InstallCandidat
             minHeight: 0,
             overflowX: "hidden",
             overflowY: "auto",
+            paddingTop: "8px",
             paddingLeft: "10px",
             paddingBottom: "36px",
             paddingRight: "4px",
@@ -3586,6 +3632,7 @@ async function openInstallerChoiceModalForCandidate(appID: string, candidate: In
 }
 
 function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain: string; profileID?: number; closeModal: () => void }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<NexusSearchSort>("updated");
   const [timeWindow, setTimeWindow] = useState<NexusTimeWindow>("all");
@@ -3785,7 +3832,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           width: "100%"
         }}
       >
-        <div style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "minmax(0, 1fr) 88px", width: "100%" }}>
+        <div ref={headerRef} style={{ alignItems: "start", display: "grid", gap: "10px", gridTemplateColumns: "minmax(0, 1fr) 88px", width: "100%" }}>
           <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
             <div style={{ color: "#f8fafc", fontSize: "16px", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{props.gameName}</div>
             <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.2 }}>
@@ -3797,8 +3844,10 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
           </Focusable>
         </div>
         <Focusable
+          className="dmm-controller-scroll"
           flow-children="down"
           navEntryPreferPosition={NavEntryPositionPreferences.FIRST}
+          onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "nexus-browser", topAnchor: headerRef.current })}
           style={{
             alignContent: "start",
             boxSizing: "border-box",
@@ -3808,6 +3857,7 @@ function NexusBrowserModal(props: { appID: string; gameName: string; gameDomain:
             minHeight: 0,
             overflowX: "hidden",
             overflowY: "auto",
+            paddingTop: "8px",
             paddingBottom: "36px",
             paddingRight: "6px",
             scrollPaddingBlock: "10px",
@@ -4517,6 +4567,7 @@ function deploymentRestoreDeltaLabel(preview?: DeploymentRestorePreview | null) 
 }
 
 function DeploymentRecoveryModal(props: { appID: string; gameName: string; status: DeploymentStatus | null; closeModal: () => void; onRestored: () => Promise<void> }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [selectedID, setSelectedID] = useState<number | null>(null);
   const [previewByID, setPreviewByID] = useState<Record<number, DeploymentRestorePreview>>({});
@@ -4594,8 +4645,9 @@ function DeploymentRecoveryModal(props: { appID: string; gameName: string; statu
   return (
     <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
       <Focusable
-        className="dmm-sidebar-surface"
+        className="dmm-sidebar-surface dmm-controller-scroll"
         focusClassName="dmm-sidebar-surface-focused"
+        onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "deployment-recovery", topAnchor: headerRef.current })}
         style={{
           ...deckySidebarSurfaceStyle,
           maxHeight: "calc(100vh - 96px)",
@@ -4604,7 +4656,7 @@ function DeploymentRecoveryModal(props: { appID: string; gameName: string; statu
           width: "100%"
         }}
       >
-        <div style={{ fontSize: "16px", fontWeight: 900 }}>Deployment Recovery</div>
+        <div ref={headerRef} style={{ fontSize: "16px", fontWeight: 900 }}>Deployment Recovery</div>
         <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
           Restore {props.gameName} to a previous DMM deployment point. DMM only touches files recorded in its deployment manifests.
         </div>
@@ -4773,6 +4825,7 @@ function pairingQRCodeDataURL(value: string) {
 }
 
 function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () => void }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const pairingURL = pairingURLFromStatus(props.status);
   const displayAddress = pairingDisplayAddress(props.status);
   const [showManualURL, setShowManualURL] = useState(false);
@@ -4789,8 +4842,9 @@ function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () =>
     <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
       <style>{deckyRuntimeStyles}</style>
       <Focusable
-        className="dmm-modal-scroll"
+        className="dmm-modal-scroll dmm-controller-scroll"
         flow-children="down"
+        onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "pair-phone", topAnchor: headerRef.current })}
         style={{
           color: "#f8fafc",
           display: "grid",
@@ -4802,7 +4856,7 @@ function PairPhoneModal(props: { status: BackendStatus | null; closeModal: () =>
           width: "100%"
         }}
       >
-        <div style={{ fontSize: "16px", fontWeight: 900 }}>Pair Phone</div>
+        <div ref={headerRef} style={{ fontSize: "16px", fontWeight: 900 }}>Pair Phone</div>
         <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
           Scan this QR code from your phone or tablet while connected to the same network.
         </div>
@@ -4845,6 +4899,7 @@ function FreshProfilePickerModal(props: {
   onChanged: () => Promise<void>;
   closeModal: () => void;
 }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const [profileName, setProfileName] = useState("");
   const [copyActive, setCopyActive] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -4880,8 +4935,13 @@ function FreshProfilePickerModal(props: {
     <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
       <style>{deckyRuntimeStyles}</style>
       <Focusable flow-children="down" style={{ color: "#f8fafc", display: "grid", gap: "10px", minWidth: 0, padding: "4px", width: "100%" }}>
-        <div style={{ fontSize: "16px", fontWeight: 900 }}>Profiles</div>
-        <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
+        <div ref={headerRef} style={{ fontSize: "16px", fontWeight: 900 }}>Profiles</div>
+        <Focusable
+          className="dmm-controller-scroll"
+          flow-children="down"
+          onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "profile-picker", topAnchor: headerRef.current })}
+          style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px", paddingTop: "6px" }}
+        >
           {props.profiles.map((profile) => (
             <Focusable
               key={profile.id}
@@ -4920,6 +4980,7 @@ function FreshLocalArchiveBrowser(props: {
   profileID: number;
   onImported: () => Promise<void>;
 }) {
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const [entries, setEntries] = useState<LocalArchiveBrowseEntry[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [parentPath, setParentPath] = useState("");
@@ -4985,7 +5046,7 @@ function FreshLocalArchiveBrowser(props: {
 
   return (
     <Focusable flow-children="down" style={{ ...freshSectionStyle, background: "#0b1220", gap: "10px" }}>
-      <div style={{ display: "grid", gap: "4px", minWidth: 0 }}>
+      <div ref={headerRef} style={{ display: "grid", gap: "4px", minWidth: 0 }}>
         <div style={{ color: "#f8fafc", fontSize: "13px", fontWeight: 900 }}>Import Mod Archive</div>
         <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
           {currentPath || "Deck Downloads"}
@@ -5003,7 +5064,12 @@ function FreshLocalArchiveBrowser(props: {
         <FreshActionButton onActivate={() => void browse(pathInput.trim())}>Open Path</FreshActionButton>
       </div>
       <TextField label="Path" value={pathInput} bShowClearAction onChange={(event) => setPathInput(event.currentTarget.value)} />
-      <Focusable flow-children="down" style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px" }}>
+      <Focusable
+        className="dmm-controller-scroll"
+        flow-children="down"
+        onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "archive-browser", topAnchor: headerRef.current })}
+        style={{ display: "grid", gap: "8px", maxHeight: "360px", overflowY: "auto", paddingRight: "4px", paddingTop: "6px" }}
+      >
         {entries.length === 0 && <div style={{ color: "#a1a1aa" }}>No folders or supported archives found here.</div>}
         {visibleEntries.map((entry) => {
           const isFile = entry.kind === "file";
@@ -6078,29 +6144,8 @@ function FreshDeckyModManagerRoute() {
 
   function keepFocusedElementVisible(event?: { target?: EventTarget | null }) {
     const body = bodyRef.current;
-    const target = event?.target instanceof HTMLElement ? event.target : null;
-    if (!body || !target || !body.contains(target)) return;
-    requestAnimationFrame(() => {
-      const focused = target.closest<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input, textarea, button, [tabindex]:not([tabindex='-1'])");
-      if (!focused || !body.contains(focused)) return;
-      const firstFocusable = Array.from(body.querySelectorAll<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex='-1'])"))
-        .find((element) => element.offsetParent !== null && !element.hasAttribute("disabled"));
-      if (firstFocusable && (focused === firstFocusable || firstFocusable.contains(focused))) {
-        body.scrollTop = 0;
-        return;
-      }
-      const bodyRect = body.getBoundingClientRect();
-      const focusedRect = focused.getBoundingClientRect();
-      const topPadding = 12;
-      const bottomPadding = 24;
-      if (focusedRect.top < bodyRect.top + topPadding) {
-        body.scrollTop = Math.max(0, body.scrollTop - ((bodyRect.top + topPadding) - focusedRect.top));
-        return;
-      }
-      if (focusedRect.bottom > bodyRect.bottom - bottomPadding) {
-        body.scrollTop += focusedRect.bottom - (bodyRect.bottom - bottomPadding);
-      }
-    });
+    if (!body) return;
+    keepDeckyScrollFocusVisible(body, event, { label: `main-${tab}-${selectedGameID ? "game" : "list"}` });
   }
 
   function handleRouteCancel(event: Pick<GamepadEvent, "preventDefault" | "stopPropagation">) {

@@ -36,7 +36,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build package
-        run: make package REQUIRE_LOOT_SORTER=1
+        run: make package REQUIRE_LOOT_SORTER=1 BUILD_CHANNEL="${GITHUB_REF_NAME}"
 
       - name: Smoke test package shape
         run: PACKAGE=dist/decky-mod-manager.tar.gz SHAPE_ONLY=1 REQUIRE_LOOT_SORTER=1 ./testing/deck_package_smoke.sh
