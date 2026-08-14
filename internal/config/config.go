@@ -35,13 +35,11 @@ type CatalogsConfig struct {
 }
 
 type ModIOConfig struct {
-	APIKey     string `json:"api_key"`
-	APIBaseURL string `json:"api_base_url,omitempty"`
+	APIKey string `json:"api_key"`
 }
 
 type CurseForgeConfig struct {
-	APIKey     string `json:"api_key"`
-	APIBaseURL string `json:"api_base_url,omitempty"`
+	APIKey string `json:"api_key"`
 }
 
 type InstallConfig struct {

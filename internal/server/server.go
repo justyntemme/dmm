@@ -321,12 +321,10 @@ func catalogResolversForConfig(cfg config.Config) []catalog.RemoteModCatalog {
 		modrinth.Resolver{},
 		gamebanana.Resolver{},
 		modio.Resolver{
-			APIKey:     cfg.Catalogs.ModIO.APIKey,
-			APIBaseURL: cfg.Catalogs.ModIO.APIBaseURL,
+			APIKey: cfg.Catalogs.ModIO.APIKey,
 		},
 		curseforge.Resolver{
-			APIKey:     cfg.Catalogs.CurseForge.APIKey,
-			APIBaseURL: cfg.Catalogs.CurseForge.APIBaseURL,
+			APIKey: cfg.Catalogs.CurseForge.APIKey,
 		},
 		direct.Resolver{},
 	}
@@ -4561,8 +4559,7 @@ type updateCatalogSettingsRequest struct {
 }
 
 type catalogCredentialsUpdate struct {
-	APIKey     *string `json:"api_key"`
-	APIBaseURL *string `json:"api_base_url"`
+	APIKey *string `json:"api_key"`
 }
 
 type patchUISettingsRequest struct {
@@ -4809,7 +4806,9 @@ func (s *Server) handleUpdateNexusSettings(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleUpdateCatalogSettings(w http.ResponseWriter, r *http.Request) {
 	var req updateCatalogSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -4818,16 +4817,10 @@ func (s *Server) handleUpdateCatalogSettings(w http.ResponseWriter, r *http.Requ
 		if req.ModIO.APIKey != nil {
 			s.cfg.Catalogs.ModIO.APIKey = strings.TrimSpace(*req.ModIO.APIKey)
 		}
-		if req.ModIO.APIBaseURL != nil {
-			s.cfg.Catalogs.ModIO.APIBaseURL = strings.TrimSpace(*req.ModIO.APIBaseURL)
-		}
 	}
 	if req.CurseForge != nil {
 		if req.CurseForge.APIKey != nil {
 			s.cfg.Catalogs.CurseForge.APIKey = strings.TrimSpace(*req.CurseForge.APIKey)
-		}
-		if req.CurseForge.APIBaseURL != nil {
-			s.cfg.Catalogs.CurseForge.APIBaseURL = strings.TrimSpace(*req.CurseForge.APIBaseURL)
 		}
 	}
 	cfg := s.cfg

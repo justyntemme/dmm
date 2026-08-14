@@ -371,6 +371,21 @@ func TestUpdateCatalogSettingsPersistsKeysWithoutEchoingSecrets(t *testing.T) {
 	}
 }
 
+func TestUpdateCatalogSettingsRejectsCredentialOriginOverride(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/catalogs", bytes.NewBufferString(`{"modio":{"api_key":"secret","api_base_url":"https://attacker.invalid"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if srv.cfg.Catalogs.ModIO.APIKey != "" {
+		t.Fatal("catalog credential changed after rejected origin override")
+	}
+}
+
 func TestPatchUISettingsMergesClientIntents(t *testing.T) {
 	srv := newTestServer(t)
 
