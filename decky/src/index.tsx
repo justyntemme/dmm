@@ -885,9 +885,11 @@ const deckyRuntimeStyles = `
   width: 100%;
 }
 .dmm-content-card {
+  align-content: start;
   box-sizing: border-box;
   display: grid;
   gap: 6px;
+  grid-auto-rows: max-content;
   height: auto !important;
   max-width: 100%;
   min-height: 64px !important;
@@ -896,11 +898,26 @@ const deckyRuntimeStyles = `
   overflow-y: visible !important;
   width: 100%;
 }
+.dmm-variable-card > *,
+.dmm-mod-card > * {
+  flex-shrink: 0;
+  min-width: 0;
+}
 .dmm-sidebar-surface .dmm-content-card,
 .dmm-sidebar-surface [class*="dmm-content-card"] {
   block-size: auto !important;
   contain: none !important;
   min-block-size: 64px !important;
+}
+.dmm-sidebar-surface .dmm-content-card.dmm-variable-card {
+  block-size: max-content !important;
+  height: max-content !important;
+  min-block-size: 96px !important;
+}
+.dmm-sidebar-surface .dmm-content-card.dmm-mod-card {
+  block-size: max-content !important;
+  height: max-content !important;
+  min-block-size: 112px !important;
 }
 .dmm-sidebar-surface .dmm-fresh-action-card,
 .dmm-sidebar-surface [class*="dmm-fresh-action-card"] {
@@ -1076,6 +1093,14 @@ const deckyTwoLineTextStyle: CSSProperties = {
   overflowWrap: "anywhere",
   WebkitBoxOrient: "vertical",
   WebkitLineClamp: 2,
+  wordBreak: "break-word"
+};
+
+const deckyWrappedTextStyle: CSSProperties = {
+  lineHeight: 1.18,
+  minWidth: 0,
+  overflowWrap: "anywhere",
+  whiteSpace: "normal",
   wordBreak: "break-word"
 };
 
@@ -6054,10 +6079,16 @@ function FreshDeckyModManagerRoute() {
   function keepFocusedElementVisible(event?: { target?: EventTarget | null }) {
     const body = bodyRef.current;
     const target = event?.target instanceof HTMLElement ? event.target : null;
-    if (!body || !target || body.scrollTop <= 0 || !body.contains(target)) return;
+    if (!body || !target || !body.contains(target)) return;
     requestAnimationFrame(() => {
       const focused = target.closest<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input, textarea, button, [tabindex]:not([tabindex='-1'])");
       if (!focused || !body.contains(focused)) return;
+      const firstFocusable = Array.from(body.querySelectorAll<HTMLElement>(".dmm-sidebar-row, .dmm-focus-card, .dmm-settings-row, input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex='-1'])"))
+        .find((element) => element.offsetParent !== null && !element.hasAttribute("disabled"));
+      if (firstFocusable && (focused === firstFocusable || firstFocusable.contains(focused))) {
+        body.scrollTop = 0;
+        return;
+      }
       const bodyRect = body.getBoundingClientRect();
       const focusedRect = focused.getBoundingClientRect();
       const topPadding = 12;
@@ -6329,7 +6360,7 @@ function FreshDeckyModManagerRoute() {
         )}
         {deploymentStatus?.restore_available && (
           <Focusable
-            className="dmm-sidebar-row dmm-content-card"
+            className="dmm-sidebar-row dmm-content-card dmm-variable-card"
             focusClassName="dmm-sidebar-row-focused"
             onActivate={askRestoreDeployment}
             onClick={askRestoreDeployment}
@@ -6348,7 +6379,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={requirement.id}
-              className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
+              className="dmm-focus-card dmm-content-card dmm-fresh-action-card dmm-variable-card"
               focusClassName="dmm-focus-card-focused"
               onActivate={() => {
                 if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
@@ -6369,19 +6400,19 @@ function FreshDeckyModManagerRoute() {
           );
         })}
         {launcherWarnings.map((requirement) => (
-          <div key={requirement.id} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#d97706" })}>
+          <div key={requirement.id} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#d97706" })}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message || "This game extension requires a launcher DMM cannot currently verify."}</div>
             {requirement.details?.length ? <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.details.join(" · ")}</div> : null}
           </div>
         ))}
         {validationWarnings.map((warning, index) => (
-          <div key={`${warning}:${index}`} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#d97706", color: "#fbbf24" })}>Warning: {warning}</div>
+          <div key={`${warning}:${index}`} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#d97706", color: "#fbbf24" })}>Warning: {warning}</div>
         ))}
         {gameActionJobs.map((job) => (
           <Focusable
             key={job.id}
-            className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
+            className="dmm-focus-card dmm-content-card dmm-fresh-action-card dmm-variable-card"
             focusClassName="dmm-focus-card-focused"
             onActivate={() => void activateActionJob(job)}
             onClick={() => void activateActionJob(job)}
@@ -6401,7 +6432,7 @@ function FreshDeckyModManagerRoute() {
           </Focusable>
         ))}
         {installCandidates.filter((candidate) => candidate.status === "blocked").map((candidate) => (
-          <div key={candidate.id} className="dmm-content-card" style={freshStaticCardStyle({ borderColor: "#7f1d1d" })}>
+          <div key={candidate.id} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#7f1d1d" })}>
             <div style={{ color: "#f87171", fontWeight: 900 }}>Warning: {candidate.name}</div>
             <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{candidate.reason}</div>
           </div>
@@ -6418,7 +6449,7 @@ function FreshDeckyModManagerRoute() {
           return (
             <Focusable
               key={mod.id}
-              className="dmm-sidebar-row dmm-content-card"
+              className="dmm-sidebar-row dmm-content-card dmm-mod-card"
               focusClassName="dmm-sidebar-row-focused"
               onActivate={() => void toggleMod(mod)}
               onClick={() => void toggleMod(mod)}
@@ -6444,7 +6475,7 @@ function FreshDeckyModManagerRoute() {
               style={freshModCardStyle(mod.enabled)}
             >
               <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
-                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{mod.name}</div>
+                <div style={{ ...deckyWrappedTextStyle, fontWeight: 900 }}>{mod.name}</div>
                 <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
               </div>
               <div style={{ color: mod.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
@@ -6472,7 +6503,7 @@ function FreshDeckyModManagerRoute() {
               const row = (
                 <>
                   <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
-                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{index + 1}. {plugin.name}</div>
+                    <div style={{ ...deckyWrappedTextStyle, fontWeight: 900 }}>{index + 1}. {plugin.name}</div>
                     <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
                   </div>
                   <div style={{ color: plugin.active ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
@@ -6488,12 +6519,12 @@ function FreshDeckyModManagerRoute() {
                 </>
               );
               if (!plugin.mutable) {
-                return <div key={key} className="dmm-content-card" style={freshModCardStyle(plugin.active)}>{row}</div>;
+                return <div key={key} className="dmm-content-card dmm-mod-card" style={freshModCardStyle(plugin.active)}>{row}</div>;
               }
               return (
                 <Focusable
                   key={key}
-                  className="dmm-sidebar-row dmm-content-card"
+                  className="dmm-sidebar-row dmm-content-card dmm-mod-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onActivate={() => void setPluginActivationEnabled(plugin, !plugin.active)}
                   onClick={() => void setPluginActivationEnabled(plugin, !plugin.active)}
@@ -6539,7 +6570,7 @@ function FreshDeckyModManagerRoute() {
               const row = (
                 <>
                   <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
-                    <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{index + 1}. {entry.name}</div>
+                    <div style={{ ...deckyWrappedTextStyle, fontWeight: 900 }}>{index + 1}. {entry.name}</div>
                     <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
                   </div>
                   <div style={{ color: entry.active ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
@@ -6558,12 +6589,12 @@ function FreshDeckyModManagerRoute() {
                 </>
               );
               if (!entry.mutable) {
-                return <div key={key} className="dmm-content-card" style={freshModCardStyle(entry.active)}>{row}</div>;
+                return <div key={key} className="dmm-content-card dmm-mod-card" style={freshModCardStyle(entry.active)}>{row}</div>;
               }
               return (
                 <Focusable
                   key={key}
-                  className="dmm-sidebar-row dmm-content-card"
+                  className="dmm-sidebar-row dmm-content-card dmm-mod-card"
                   focusClassName="dmm-sidebar-row-focused"
                   onSecondaryActionDescription="Move Up"
                   onSecondaryButton={(event) => {
@@ -6590,9 +6621,9 @@ function FreshDeckyModManagerRoute() {
         {workshopItems.map((item) => {
           const disabled = item.disabled_known && item.disabled_locally;
           return (
-            <div key={item.published_file_id} className="dmm-content-card" style={freshModCardStyle(!disabled)}>
+            <div key={item.published_file_id} className="dmm-content-card dmm-mod-card" style={freshModCardStyle(!disabled)}>
               <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
-                <div style={{ ...deckyTwoLineTextStyle, fontWeight: 900 }}>{item.title || item.published_file_id}</div>
+                <div style={{ ...deckyWrappedTextStyle, fontWeight: 900 }}>{item.title || item.published_file_id}</div>
                 <span style={deckySourcePillStyle(item.source_tag || "steam_workshop")}>{sourceLabel(item.source_tag || "steam_workshop")}</span>
               </div>
               <div style={{ color: disabled ? "#a1a1aa" : "#99f6e4", fontSize: "11px", fontWeight: 900 }}>{item.disabled_known ? disabled ? "Disabled" : "Enabled" : "Steam managed"}</div>

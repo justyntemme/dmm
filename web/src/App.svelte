@@ -1578,6 +1578,7 @@
   }
 
   async function selectGame(game: Game) {
+    logClientEvent("game selection started", { app_id: game.app_id, game_name: game.name });
     markGameRecent(game.app_id);
     selectedGame = game;
     surface = "game";
@@ -1620,8 +1621,19 @@
     lootUserlistMessage = "";
     installCandidates = [];
     installerChoicePresets = [];
-    await loadGameState(game);
-    await previewDeploy();
+    try {
+      await loadGameState(game);
+      await previewDeploy();
+      logClientEvent("game selection completed", {
+        app_id: game.app_id,
+        game_name: game.name,
+        mods: installedMods.length,
+        profiles: profiles.length
+      });
+    } catch (err) {
+      error = `Unable to load all ${game.name} details: ${compactLogValue(err)}`;
+      logClientEvent("game selection failed", { app_id: game.app_id, game_name: game.name, error: compactLogValue(err) });
+    }
   }
 
   function openGameModule(module: GameModule) {
@@ -5322,7 +5334,7 @@
     <section class="phone-content">
       <section class="phone-card game-hero">
         <div><img src={gameImage(selectedGame.app_id)} alt="" /><span><strong>{selectedGame.name}</strong><small>{selectedProfile?.name ?? "Default Profile"} · {installedMods.filter((mod) => mod.enabled).length} enabled / {installedMods.length} installed</small></span></div>
-        <div class="action-grid"><button type="button" on:click={applyLaunchSetup}>Launch Game</button><button type="button" on:click={() => openGameModule("profiles")}>Change Profile</button><button type="button" on:click={toggleDeckArchiveBrowser}>Import Archive</button><button type="button" on:click={searchCatalogMods}>Explore Mods</button></div>
+        <div class="action-grid"><button type="button" on:click={applyLaunchSetup}>Launch Game</button><button type="button" on:click={() => openGameModule("profiles")}>Change Profile</button><button type="button" on:click={toggleDeckArchiveBrowser}>Import Archive</button><button type="button" on:click={() => void searchNexusMods()}>Explore Mods</button></div>
       </section>
       {#if deckArchiveBrowserOpen}
         <section class="phone-card"><header><h2>Import Archive</h2><span>{deckArchiveBrowserEntries.length} entries</span></header>
