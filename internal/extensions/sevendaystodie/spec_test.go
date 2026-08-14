@@ -98,6 +98,9 @@ func TestModletInstallerUsesModInfoRoot(t *testing.T) {
 	if len(plan.Metadata) != 1 || plan.Metadata[0].Name != "Cool Mod" {
 		t.Fatalf("metadata = %+v", plan.Metadata)
 	}
+	if plan.Metadata[0].SourcePath != "Wrapper/CoolMod/ModInfo.xml" {
+		t.Fatalf("metadata source path = %q", plan.Metadata[0].SourcePath)
+	}
 }
 
 func TestRootModInstallerStripsToBepInExSegment(t *testing.T) {

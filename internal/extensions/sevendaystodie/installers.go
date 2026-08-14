@@ -15,16 +15,16 @@ var rootModCandidates = map[string]struct{}{
 }
 
 func matchModletArchive(root string) bool {
-	_, ok := modInfoRoot(root)
+	_, _, ok := modInfoRoot(root)
 	return ok
 }
 
 func buildModletArchive(input installplan.BuildInput) (installplan.Plan, error) {
-	contentRoot, ok := modInfoRoot(input.ExtractedRoot)
+	contentRoot, manifestPath, ok := modInfoRoot(input.ExtractedRoot)
 	if !ok {
 		return installplan.Plan{}, installplan.Unsupported("7 Days to Die modinfo.xml was not found")
 	}
-	detectionPath := filepath.ToSlash(mustRel(input.ExtractedRoot, filepath.Join(contentRoot, modInfoName)))
+	detectionPath := filepath.ToSlash(mustRel(input.ExtractedRoot, manifestPath))
 	plan, err := simplearchive.BuildCopyPlan(
 		input,
 		filepath.ToSlash(mustRel(input.ExtractedRoot, contentRoot)),
@@ -38,7 +38,7 @@ func buildModletArchive(input installplan.BuildInput) (installplan.Plan, error) 
 	if err != nil {
 		return installplan.Plan{}, err
 	}
-	if name := modletDisplayName(filepath.Join(contentRoot, modInfoName)); name != "" {
+	if name := modletDisplayName(manifestPath); name != "" {
 		plan.Metadata = append(plan.Metadata, installplan.ModMetadata{
 			Kind:       "7daystodie-modinfo",
 			SourcePath: detectionPath,
@@ -75,17 +75,18 @@ func buildRootModArchive(input installplan.BuildInput) (installplan.Plan, error)
 	)
 }
 
-func modInfoRoot(root string) (string, bool) {
+func modInfoRoot(root string) (string, string, bool) {
 	files, err := simplearchive.ListFiles(root)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	for _, file := range files {
 		if strings.EqualFold(filepath.Base(file), modInfoName) {
-			return filepath.Join(root, filepath.FromSlash(filepath.Dir(file))), true
+			manifestPath := filepath.Join(root, filepath.FromSlash(file))
+			return filepath.Dir(manifestPath), manifestPath, true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 func rootModContentRoot(root string) (string, bool) {
