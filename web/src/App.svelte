@@ -13,7 +13,7 @@
   type Status = {
     game_count: number;
     auth?: { enabled: boolean };
-    install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean };
+    install: { auto_install_captured_downloads: boolean; auto_enable_installed_mods: boolean; auto_show_fomod_installers?: boolean };
     download?: {
       max_concurrent_captured_downloads: number;
       max_concurrent_captured_downloads_per_game: number;
@@ -950,6 +950,9 @@
   let lootSortBusy = false;
   let modIOAPIKey = "";
   let curseForgeAPIKey = "";
+  let nexusAPIKey = "";
+  let nexusSettingsBusy = false;
+  let nexusSettingsMessage = "";
   let catalogSettingsBusy = "";
   let catalogSettingsMessage = "";
   let extensionSettingDrafts: Record<string, string> = {};
@@ -1917,6 +1920,40 @@
     await refreshSelectedGame({ refreshPreview: true });
   }
 
+  async function updateInstallSettings(patch: Partial<Status["install"]>) {
+    if (!status) return;
+    error = "";
+    const nextInstall = { ...status.install, ...patch };
+    const response = await apiFetch("/api/settings/install", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        auto_install_captured_downloads: Boolean(nextInstall.auto_install_captured_downloads),
+        auto_enable_installed_mods: Boolean(nextInstall.auto_enable_installed_mods),
+        auto_show_fomod_installers: Boolean(nextInstall.auto_show_fomod_installers ?? true)
+      })
+    });
+    if (!response.ok) {
+      error = await response.text();
+      return;
+    }
+    const nextStatus = await response.json() as Status;
+    status = nextStatus;
+    applyUIPreferences(nextStatus);
+  }
+
+  function updateAutoInstall(value: boolean) {
+    void updateInstallSettings({ auto_install_captured_downloads: value });
+  }
+
+  function updateAutoEnable(value: boolean) {
+    void updateInstallSettings({ auto_enable_installed_mods: value });
+  }
+
+  function updateAutoShowFOMOD(value: boolean) {
+    void updateInstallSettings({ auto_show_fomod_installers: value });
+  }
+
   async function updateDownloadConcurrency(maxDownloads: number) {
     error = "";
     const response = await apiFetch("/api/settings/downloads", {
@@ -1947,6 +1984,38 @@
     const nextStatus = await response.json() as Status;
     status = nextStatus;
     applyUIPreferences(nextStatus);
+  }
+
+  async function updateNexusAPIKey() {
+    const key = nexusAPIKey.trim();
+    if (!key) {
+      error = "Enter a Nexus API key before saving.";
+      return;
+    }
+    nexusSettingsBusy = true;
+    nexusSettingsMessage = "";
+    error = "";
+    try {
+      const response = await apiFetch("/api/settings/nexus", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: key })
+      });
+      if (!response.ok) {
+        error = await response.text();
+        return;
+      }
+      const nextStatus = await response.json() as Status;
+      status = nextStatus;
+      applyUIPreferences(nextStatus);
+      nexusAPIKey = "";
+      nexusSettingsMessage = "Nexus API key saved.";
+      catalogs = await getJSON<CatalogStatus[]>("/api/catalogs");
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      nexusSettingsBusy = false;
+    }
   }
 
   async function updateCatalogCredential(provider: "modio" | "curseforge", apiKey: string) {
@@ -5085,2206 +5154,223 @@
   });
 </script>
 
-<main class="app-shell">
-  <header class="app-header">
-    <button type="button" class="icon-button" aria-label="Open games" disabled={authRejected} on:click={() => (drawer = "games")}>☰</button>
-    <div class="title-block">
-      {#if surface === "game" && selectedGame}
-        <img src={gameImage(selectedGame.app_id)} alt="" />
-      {/if}
-      <div>
-        <p class="eyebrow">Decky Mod Manager</p>
-        <h1>{title}</h1>
-      </div>
+<main class="phone-shell" class:drawer-open={drawer !== null}>
+  <header class="phone-topbar">
+    <button type="button" class="plain-icon" aria-label="Open menu" disabled={authRejected} on:click={() => (drawer = "settings")}>☰</button>
+    <div class="phone-title">
+      <p>{selectedGame ? (surface === "game" ? selectedGame.name : title) : surface === "actions" ? "Running Now" : title}</p>
+      <h1>{surface === "game" && selectedProfile ? selectedProfile.name : selectedGame?.name ?? "Decky Mod Manager"}</h1>
     </div>
-    <button type="button" class="icon-button" aria-label="Open settings" disabled={authRejected} on:click={() => (drawer = "settings")}>⚙</button>
+    <button type="button" class="plain-icon" aria-label="Settings" disabled={authRejected} on:click={() => openSettings("overview")}>⚙</button>
   </header>
 
-  {#if drawer && !authRejected}
-    <button type="button" class="scrim" aria-label="Close menu" on:click={() => (drawer = null)}></button>
-    <aside class="drawer">
-      {#if drawer === "games"}
-        <div class="drawer-heading">
-          <h2>Games</h2>
-          <button type="button" class="icon-button small" aria-label="Refresh games" on:click={refresh}>R</button>
+  {#if drawer === "settings" && !authRejected}
+    <button type="button" class="phone-scrim" aria-label="Close menu" on:click={() => (drawer = null)}></button>
+    <aside class="phone-drawer">
+      <div class="drawer-brand">
+        <div class="drawer-mark">D</div>
+        <div>
+          <p>Decky Mod Manager</p>
+          <h2>Menu</h2>
         </div>
-        <input bind:value={gameQuery} aria-label="Search games" placeholder="Search games" />
-        <div class="game-drawer-controls">
-          <label>
-            <span>Sort</span>
-            <select aria-label="Sort games" value={gameSort} on:change={(event) => setGameSort(event.currentTarget.value as GameSort)}>
-              <option value="recent">Recent</option>
-              <option value="az">A-Z</option>
-              <option value="za">Z-A</option>
-            </select>
-          </label>
-          <label>
-            <span>Show</span>
-            <select aria-label="Show games" bind:value={gameVisibility}>
-              <option value="manageable">Manage Ready</option>
-              <option value="extensions">DMM Extensions</option>
-              <option value="all">All Installed</option>
-            </select>
-          </label>
-          <span>{manageableGameCount} ready · {extensionGameCount} extensions · {favoriteGameIDs.size} pinned</span>
-        </div>
-        <div class="drawer-list game-list">
-          {#each filteredGames as game}
-            <div
-              class="game-row"
-              class:selected={selectedGame?.app_id === game.app_id}
-              class:needs-review={game.state !== "clean_candidate"}
-            >
-              <button type="button" class="game-select" on:click={() => selectGame(game)}>
-                <img src={gameImage(game.app_id)} alt="" loading="lazy" />
-                <span>
-                  <strong>{game.name}</strong>
-                  <small>{game.app_id} · {stateLabel(game.state)}</small>
-                  <span class="game-capability-row">
-                    {#each gameCapabilityBadges(game) as badge}
-                      <em class={`capability-pill capability-${badge.className}`}>{badge.label}</em>
-                    {/each}
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                class="favorite-game"
-                class:favorited={isFavoriteGame(game.app_id)}
-                aria-label={isFavoriteGame(game.app_id) ? `Unfavorite ${game.name}` : `Favorite ${game.name}`}
-                on:click={() => toggleFavoriteGame(game.app_id)}
-              >
-                {isFavoriteGame(game.app_id) ? "★" : "☆"}
-              </button>
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <div class="drawer-heading">
-          <h2>Settings</h2>
-          <button type="button" class="icon-button small" aria-label="Close settings" on:click={() => (drawer = null)}>×</button>
-        </div>
-        <nav class="settings-nav" aria-label="Settings">
-          <button type="button" class:active={activeSettingsPage === "overview"} on:click={() => openSettings("overview")}>Overview</button>
-          <button type="button" on:click={openActionCenter}>Action Center</button>
-          <button type="button" class:active={activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
-          <button type="button" class:active={activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
-          <button type="button" class:active={activeSettingsPage === "sources"} on:click={() => openSettings("sources")}>Sources</button>
-          <button type="button" class:active={activeSettingsPage === "game-stores"} on:click={() => openSettings("game-stores")}>Game Stores</button>
-          <button type="button" class:active={activeSettingsPage === "extensions"} on:click={() => openSettings("extensions")}>Extension Settings</button>
-          <button type="button" class:active={activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
-        </nav>
+      </div>
+      <p class="drawer-group">Work</p>
+      <button type="button" class:active={surface === "actions"} on:click={openActionCenter}>Action Queue {#if globalActionCount > 0}<span>{globalActionCount}</span>{/if}</button>
+      <button type="button" on:click={() => (drawer = "games")}>Games</button>
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "jobs"} on:click={() => openSettings("jobs")}>Jobs</button>
+      <p class="drawer-group">Manage</p>
+      {#if selectedGame}
+        <button type="button" class:active={surface === "game" && activeGameModule === "plugins"} on:click={() => { surface = "game"; activeGameModule = "plugins"; drawer = null; }}>Profile Mods</button>
+        <button type="button" class:active={surface === "game" && activeGameModule === "profiles"} on:click={() => { surface = "game"; activeGameModule = "profiles"; drawer = null; }}>Profiles</button>
+        <button type="button" class:active={surface === "game" && activeGameModule === "advanced"} on:click={() => { surface = "game"; activeGameModule = "advanced"; drawer = null; }}>Rollback</button>
+        <button type="button" class:active={surface === "game" && activeGameModule === "actions"} on:click={() => { surface = "game"; activeGameModule = "actions"; drawer = null; }}>Game Actions</button>
+        <button type="button" class:active={surface === "game" && activeGameModule === "review"} on:click={() => { surface = "game"; activeGameModule = "review"; drawer = null; }}>Review</button>
       {/if}
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "sources"} on:click={() => openSettings("sources")}>Sources</button>
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "extensions"} on:click={() => openSettings("extensions")}>Extensions</button>
+      <p class="drawer-group">System</p>
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "install"} on:click={() => openSettings("install")}>Install Behavior</button>
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "game-stores"} on:click={() => openSettings("game-stores")}>Game Stores</button>
+      <button type="button" class:active={surface === "settings" && activeSettingsPage === "nexus"} on:click={() => openSettings("nexus")}>Nexus</button>
     </aside>
   {/if}
 
-  {#if !authRejected}
-    <section class="status-strip" aria-label="App status">
-      <button type="button" on:click={openActionCenter}>{globalActionCount > 0 ? `Action Center · ${globalActionCount}` : "Action Center"}</button>
-      <button type="button" on:click={() => (drawer = "games")}>{manageableGameCount} Ready</button>
-      <button type="button" on:click={() => openSettings("sources")}>{readySourceCatalogCount}/{sourceCatalogCount} Sources</button>
-    </section>
+  {#if drawer === "games" && !authRejected}
+    <button type="button" class="phone-scrim" aria-label="Close games" on:click={() => (drawer = null)}></button>
+    <aside class="phone-drawer game-menu">
+      <div class="drawer-brand">
+        <div class="drawer-mark">G</div>
+        <div><p>Library</p><h2>Games</h2></div>
+      </div>
+      <input class="phone-search" bind:value={gameQuery} aria-label="Search games" placeholder="Search games" />
+      <div class="phone-segments compact">
+        <button type="button" class:active={gameSort === "recent"} on:click={() => setGameSort("recent")}>Recent</button>
+        <button type="button" class:active={gameSort === "az"} on:click={() => setGameSort("az")}>A-Z</button>
+        <button type="button" class:active={gameSort === "za"} on:click={() => setGameSort("za")}>Z-A</button>
+      </div>
+      <label class="inline-select"><span>Show</span><select bind:value={gameVisibility}><option value="manageable">Manage Ready</option><option value="extensions">DMM Extensions</option><option value="all">All Installed</option></select></label>
+      <div class="drawer-scroll">
+        {#each filteredGames as game}
+          <button type="button" class="drawer-game-row" class:selected={selectedGame?.app_id === game.app_id} on:click={() => selectGame(game)}>
+            <img src={gameImage(game.app_id)} alt="" loading="lazy" />
+            <span><strong>{game.name}</strong><small>{game.extension?.coverage_label ?? stateLabel(game.state)}</small></span>
+            <em>{isFavoriteGame(game.app_id) ? "★" : "›"}</em>
+          </button>
+        {/each}
+      </div>
+    </aside>
   {/if}
 
-  {#if error && !authRejected}
-    <section class="alert">{error}</section>
-  {/if}
+  {#if error && !authRejected}<section class="phone-alert">{error}</section>{/if}
 
   {#if authRejected}
-    <section class="empty-state pairing-required">
-      <p class="eyebrow">Pairing Required</p>
-      <h2>Open the current Phone URL from Decky Mod Manager.</h2>
-      <p class="hint">This browser does not have the active DMM pairing token, or the token was reset from the Steam Deck.</p>
-      <div class="pairing-actions">
-        <button type="button" on:click={retryPairing}>Retry</button>
-        <button type="button" class="secondary-action" on:click={clearLocalPairingToken}>Clear Stored Pairing</button>
-      </div>
-    </section>
+    <section class="phone-empty"><p>Pairing Required</p><h2>Open the current Phone URL from Decky Mod Manager.</h2><button type="button" on:click={retryPairing}>Retry</button><button type="button" class="secondary" on:click={clearLocalPairingToken}>Clear Stored Pairing</button></section>
   {:else if loading}
-    <section class="empty-state">Loading...</section>
+    <section class="phone-empty"><h2>Loading...</h2></section>
   {:else if surface === "actions"}
-    <section class="settings-screen">
-      <article class="workspace-panel">
-        <div class="panel-heading">
-          <h2>Action Center</h2>
-          <span>{globalActionCount} open</span>
-        </div>
-        {#if actionSourceOptions.length > 1}
-          <div class="mod-list-controls compact-controls">
-            <label>
-              <span>Source</span>
-              <select bind:value={actionSourceFilter}>
-                <option value="all">All Sources</option>
-                {#each actionSourceOptions as [key, label]}
-                  <option value={key}>{label}</option>
-                {/each}
-              </select>
-            </label>
-          </div>
+    <section class="phone-content">
+      {#if selectedGame}
+        <button type="button" class="context-card" on:click={() => { surface = "game"; activeGameModule = "plugins"; }}>
+          <img src={gameImage(selectedGame.app_id)} alt="" />
+          <span><strong>{selectedProfile?.name ?? "Default Profile"}</strong><small>{installedMods.filter((mod) => mod.enabled).length} enabled, {installedMods.length} installed</small><span class="pills"><em class="ok">{deploymentStatus?.deployed ? "Deployed" : "Not deployed"}</em>{#if selectedGame.nexus_domains?.length}<em class="source">Nexus</em>{/if}</span></span>
+          <b>›</b>
+        </button>
+      {/if}
+      <section class="phone-card">
+        <header><h2>Action Queue</h2><span>{globalActionCount} open</span></header>
+        {#if visibleActionItems.length === 0 && visibleActionCenterCandidates.length === 0}
+          <button type="button" class="phone-row" on:click={() => (drawer = "games")}><span><strong>No actions needed</strong><small>Choose a game or capture a mod link to get started.</small></span><b>›</b></button>
         {/if}
-        {#if capturedInstallActions.length > 0}
-          <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Mod Installs</button>
-        {/if}
-        {#if globalActionCount === 0}
-          <div class="action-home">
-            <div class="empty-state inline-empty">
-              <h2>No Actions Needed</h2>
-              <p class="hint">Open a game to paste a mod URL, or capture an nxm:// link from the Deck browser flow.</p>
-            </div>
-            {#if homeQuickGames.length > 0}
-              <section class="home-game-panel" aria-label="Quick games">
-                <div class="panel-heading compact-heading">
-                  <h3>Quick Games</h3>
-                  <button type="button" class="secondary-action compact" on:click={() => (drawer = "games")}>All Games</button>
-                </div>
-                <div class="home-game-grid">
-                  {#each homeQuickGames as game}
-                    <button type="button" class="home-game-card" on:click={() => selectGame(game)}>
-                      <img src={gameImage(game.app_id)} alt="" loading="lazy" />
-                      <span>
-                        <strong>{game.name}</strong>
-                        <small>
-                          {#if isFavoriteGame(game.app_id)}Pinned · {/if}
-                          {game.extension?.coverage_label ?? stateLabel(game.state)}
-                        </small>
-                      </span>
-                    </button>
-                  {/each}
-                </div>
-              </section>
-            {:else}
-              <button type="button" on:click={() => (drawer = "games")}>Choose Game</button>
-            {/if}
-          </div>
-        {/if}
-        {#if globalActionCount > 0 && visibleActionItems.length === 0 && visibleActionCenterCandidates.length === 0}
-          <p class="hint">No open actions match the selected source.</p>
-        {/if}
-        {#if visibleActionItems.length > 0}
-          <div class="action-list">
-            {#each visibleActionItems as action}
-              {@const progress = jobDownloadProgress(action)}
-              {@const issueTitle = jobIssueTitle(action)}
-              {@const issueMessage = jobIssueMessage(action)}
-              {@const issueDetails = jobIssueDetails(action)}
-              {@const issueActions = jobIssueActions(action)}
-              <article class:failed-action={action.status === "failed"}>
-                <div>
-                  <div class="mod-title-line">
-                    <strong>{action.title}</strong>
-                    <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
-                  </div>
-	                    {#if action.message}<p>{action.message}</p>{/if}
-	                    {#if progress}
-	                      <div class="job-progress" aria-label="Download progress">
-	                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
-	                        <small>{progress.label}</small>
-	                      </div>
-	                    {/if}
-                    {#if issueTitle || issueDetails.length || issueActions.length}
-                      <div class="job-issue-review">
-                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
-                        {#if issueMessage && issueMessage !== action.message}<p>{issueMessage}</p>{/if}
-                        {#if issueDetails.length}
-                          <ul>
-                            {#each issueDetails as detail}
-                              <li>{detail}</li>
-                            {/each}
-                          </ul>
-                        {/if}
-                        {#if issueActions.length}
-                          <small>{issueActions.join(" ")}</small>
-                        {/if}
-                      </div>
-                    {/if}
-                    {#if (action.type === "extension-notice" || action.type === "extension-tool-action") && extensionNoticeTool(action)}
-                      <small>Tool: {extensionNoticeTool(action)}</small>
-                    {/if}
-                    {#if modUpdateActionDetail(action)}
-                      <small>{modUpdateActionDetail(action)}</small>
-                    {/if}
-	                    <p class="action-next-step">{actionNextStep(action)}</p>
-	                    <small>{new Date(action.updated_at).toLocaleString()}</small>
-	                  </div>
-	                  <div class="action-controls">
-	                    <span>{actionStatusLabel(action)}</span>
-	                    {#if action.type === "installer-choice"}
-	                      <button type="button" on:click={() => openActionItem(action)}>{gameForJob(action) ? "Open Choices" : "Choose Game"}</button>
-	                    {/if}
-	                    {#if action.status === "waiting"}
-	                      {#if action.type === "captured-install"}
-	                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : capturedInstallPrimaryLabel(action)}</button>
-	                      {/if}
-	                    {/if}
-	                    {#if action.type === "captured-install" && action.status === "failed"}
-	                      <button type="button" on:click={() => retryCapturedInstallAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
-	                    {/if}
-	                    {#if action.type === "steam-workshop-action" && action.status === "failed"}
-	                      <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
-	                    {/if}
-	                    {#if action.type === "extension-notice" && extensionNoticeHelpURL(action)}
-	                      <button type="button" class="secondary-action compact" on:click={() => openExtensionNoticeHelp(action)}>{extensionNoticeActionLabel(action) || "Open Help"}</button>
-	                    {/if}
-	                    {#if canCancelJob(action)}
-	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>
-	                    {/if}
-	                  </div>
-	                </article>
-            {/each}
-          </div>
-        {/if}
-        {#if visibleActionCenterCandidates.length > 0}
-          <section class="blocked-candidates" aria-label="Install review items">
-            <div class="panel-heading compact-heading">
-              <h3>Install Review</h3>
-              <span>{visibleActionCenterCandidates.length}</span>
-            </div>
-            <p class="hint">These downloaded archives need choices or review before they can be added to a profile.</p>
-            <div class="action-list">
-              {#each visibleActionCenterCandidates as candidate}
-                {@const candidateGame = gameForInstallCandidate(candidate)}
-                <article class:failed-action={candidate.status === "blocked"}>
-                  <div>
-                    <div class="mod-title-line">
-                      <strong>{candidate.name}</strong>
-                      <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
-                    </div>
-                    <p>{candidate.reason}</p>
-                    <small>{candidateGame?.name ?? `App ${candidate.steam_app_id}`} · {candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
-                  </div>
-                  <div class="action-controls">
-                    <span>{candidateStatusLabel(candidate)}</span>
-                    <button type="button" on:click={() => openInstallCandidate(candidate)}>{candidate.status === "needs_choices" ? "Open Choices" : "Review"}</button>
-                  </div>
-                </article>
-              {/each}
-            </div>
-          </section>
-        {/if}
-      </article>
+        {#each visibleActionItems as action}
+          <button type="button" class="phone-row" class:failed={action.status === "failed"} on:click={() => openActionItem(action)}>
+            <span><strong>{action.title}</strong><small>{action.message || actionNextStep(action)}</small><span class="pills"><em class="source">{sourceLabel(actionSource(action))}</em><em>{actionStatusLabel(action)}</em></span></span><b>›</b>
+          </button>
+        {/each}
+        {#each visibleActionCenterCandidates as candidate}
+          <button type="button" class="phone-row" on:click={() => openInstallCandidate(candidate)}>
+            <span><strong>{candidate.name}</strong><small>{candidate.reason}</small><span class="pills"><em class="source">{sourceLabel(sourceForCandidate(candidate))}</em><em>{candidateStatusLabel(candidate)}</em></span></span><b>›</b>
+          </button>
+        {/each}
+      </section>
+      <input class="phone-search" bind:value={gameQuery} aria-label="Search games" placeholder="Search games, extensions, providers" />
+      <div class="phone-segments"><button type="button" class:active={gameSort === "recent"} on:click={() => setGameSort("recent")}>Recent</button><button type="button" class:active={gameSort === "az"} on:click={() => setGameSort("az")}>A-Z</button><button type="button" class:active={gameSort === "za"} on:click={() => setGameSort("za")}>Z-A</button><button type="button" on:click={() => (gameVisibility = gameVisibility === "manageable" ? "all" : "manageable")}>{gameVisibility === "manageable" ? "Ready" : "All"}</button></div>
+      <section class="phone-card">
+        <header><h2>Recent Games</h2><span>{homeQuickGames.length} shown</span></header>
+        {#each homeQuickGames as game}
+          <button type="button" class="phone-row game" on:click={() => selectGame(game)}><img src={gameImage(game.app_id)} alt="" loading="lazy" /><span><strong>{game.name}</strong><small>{game.extension?.coverage_label ?? stateLabel(game.state)}</small></span><b>›</b></button>
+        {/each}
+      </section>
     </section>
   {:else if surface === "settings"}
-    <section class="settings-screen">
-      {#if activeSettingsPage === "overview"}
-        <article class="workspace-panel">
-          <h2>Overview</h2>
-          <dl class="settings-list">
-            <div><dt>Games</dt><dd>{status?.game_count ?? games.length}</dd></div>
-            <div><dt>Clean</dt><dd>{cleanCount}</dd></div>
-            <div><dt>Review</dt><dd>{reviewCount}</dd></div>
-            <div><dt>Nexus</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing API key"}</dd></div>
-            <div><dt>Downloaded mods</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
-            <div><dt>Auto enable</dt><dd>{status?.install.auto_enable_installed_mods ? "Enabled" : "Disabled"}</dd></div>
-            <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
-            <div><dt>Sources</dt><dd>{readySourceCatalogCount}/{sourceCatalogCount} ready</dd></div>
-            <div><dt>Extension settings</dt><dd>{readyExtensionSettingCount()}/{extensionSettings.length} editable</dd></div>
-          </dl>
-        </article>
-      {:else if activeSettingsPage === "jobs"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Jobs</h2>
-            <span>{jobs.length}</span>
-          </div>
-          {#if jobSourceOptions.length > 1}
-            <div class="mod-list-controls compact-controls">
-              <label>
-                <span>Source</span>
-                <select bind:value={jobSourceFilter}>
-                  <option value="all">All Sources</option>
-                  {#each jobSourceOptions as [key, label]}
-                    <option value={key}>{label}</option>
-                  {/each}
-                </select>
-              </label>
-            </div>
-          {/if}
-          {#if jobs.length === 0}
-            <p class="hint">No jobs yet.</p>
-          {:else if visibleJobs.length === 0}
-            <p class="hint">No jobs match the selected source.</p>
-          {:else}
-            <div class="jobs">
-              {#each visibleJobs as job}
-                {@const progress = jobDownloadProgress(job)}
-                {@const issueTitle = jobIssueTitle(job)}
-                {@const issueMessage = jobIssueMessage(job)}
-                {@const issueDetails = jobIssueDetails(job)}
-                {@const issueActions = jobIssueActions(job)}
-                <article class="job">
-	                  <div>
-	                    <div class="mod-title-line">
-	                      <strong>{job.title}</strong>
-	                      {#if hasSourceTag(actionSource(job))}
-	                        <span class={`source-pill ${sourceClass(actionSource(job))}`}>{sourceLabel(actionSource(job))}</span>
-	                      {/if}
-	                    </div>
-	                    {#if job.message}<p>{job.message}</p>{/if}
-	                    {#if progress}
-	                      <div class="job-progress" aria-label="Download progress">
-	                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
-	                        <small>{progress.label}</small>
-		                      </div>
-		                    {/if}
-		                    {#if issueTitle || issueDetails.length || issueActions.length}
-		                      <div class="job-issue-review">
-		                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
-		                        {#if issueMessage && issueMessage !== job.message}<p>{issueMessage}</p>{/if}
-		                        {#if issueDetails.length}
-		                          <ul>
-		                            {#each issueDetails as detail}
-		                              <li>{detail}</li>
-		                            {/each}
-		                          </ul>
-		                        {/if}
-		                        {#if issueActions.length}
-		                          <small>{issueActions.join(" ")}</small>
-		                        {/if}
-		                      </div>
-		                    {/if}
-		                  </div>
-	                  <div class="job-actions">
-	                    <span>{job.status}</span>
-	                    {#if canCancelJob(job)}
-	                      <button type="button" class="secondary-action compact" on:click={() => cancelJob(job)} disabled={isJobBusy(job)}>{jobCancelLabel(job)}</button>
-	                    {/if}
-	                  </div>
-	                </article>
-              {/each}
-            </div>
-          {/if}
-        </article>
-      {:else if activeSettingsPage === "install"}
-        <article class="workspace-panel">
-          <h2>Install Behavior</h2>
-          <dl class="settings-list">
-            <div><dt>Downloaded mods</dt><dd>{status?.install.auto_install_captured_downloads ? "Install automatically" : "Manual install"}</dd></div>
-            <div><dt>New mod state</dt><dd>{status?.install.auto_enable_installed_mods ? "Enable automatically" : "Install disabled"}</dd></div>
-            <div><dt>Downloads</dt><dd>{status?.download?.active_captured_downloads ?? 0}/{status?.download?.max_concurrent_captured_downloads ?? 2} active</dd></div>
-            <div><dt>Per game</dt><dd>{status?.download?.max_concurrent_captured_downloads_per_game ?? 1} active download{(status?.download?.max_concurrent_captured_downloads_per_game ?? 1) === 1 ? "" : "s"}</dd></div>
-          </dl>
-          <label class="settings-control">
-            <span>Concurrent downloads</span>
-            <select value={status?.download?.max_concurrent_captured_downloads ?? 2} on:change={(event) => updateDownloadConcurrency(Number(event.currentTarget.value))}>
-              <option value="1">1 download</option>
-              <option value="2">2 downloads</option>
-              <option value="3">3 downloads</option>
-              <option value="4">4 downloads</option>
-            </select>
-          </label>
-          <label class="settings-control">
-            <span>Per-game downloads</span>
-            <select value={status?.download?.max_concurrent_captured_downloads_per_game ?? 1} on:change={(event) => updatePerGameDownloadConcurrency(Number(event.currentTarget.value))}>
-              <option value="1">1 per game</option>
-              <option value="2" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 2}>2 per game</option>
-              <option value="3" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 3}>3 per game</option>
-              <option value="4" disabled={(status?.download?.max_concurrent_captured_downloads ?? 2) < 4}>4 per game</option>
-            </select>
-          </label>
-          <p class="hint">These Deck behavior switches are managed from the Decky sidebar settings.</p>
-        </article>
-      {:else if activeSettingsPage === "sources"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Sources</h2>
-            <span>{readyCatalogCount} ready</span>
-          </div>
-          <div class="catalog-key-grid">
-            <form class="provider-key-form" on:submit|preventDefault={() => updateCatalogCredential("modio", modIOAPIKey)}>
-              <label>
-                <span>mod.io API key</span>
-                <input type="password" bind:value={modIOAPIKey} autocomplete="off" placeholder="Paste key to enable mod.io imports" />
-              </label>
-              <button type="submit" disabled={catalogSettingsBusy === "modio" || modIOAPIKey.trim() === ""}>{catalogSettingsBusy === "modio" ? "Saving..." : "Save"}</button>
-            </form>
-            <form class="provider-key-form" on:submit|preventDefault={() => updateCatalogCredential("curseforge", curseForgeAPIKey)}>
-              <label>
-                <span>CurseForge API key</span>
-                <input type="password" bind:value={curseForgeAPIKey} autocomplete="off" placeholder="Paste key to enable CurseForge imports" />
-              </label>
-              <button type="submit" disabled={catalogSettingsBusy === "curseforge" || curseForgeAPIKey.trim() === ""}>{catalogSettingsBusy === "curseforge" ? "Saving..." : "Save"}</button>
-            </form>
-          </div>
-          {#if catalogSettingsMessage}<p class="hint">{catalogSettingsMessage}</p>{/if}
-          <div class="catalog-list">
-            {#each catalogs as catalog}
-              <article>
-                <div class="catalog-title">
-                  <div>
-                    <strong>{catalog.name}</strong>
-                    <p>{catalogDetail(catalog)}</p>
-                  </div>
-                  <span class={`catalog-status ${catalogStatusClass(catalog.status)}`}>{catalogStatusLabel(catalog.status)}</span>
+    <section class="phone-content">
+      <section class="phone-card"><header><h2>{settingsTitle(activeSettingsPage)}</h2><span>Settings</span></header>
+        {#if activeSettingsPage === "overview"}
+          <div class="metric-grid"><div><strong>{games.length}</strong><span>Games</span></div><div><strong>{globalActionCount}</strong><span>Actions</span></div><div><strong>{readySourceCatalogCount}/{sourceCatalogCount}</strong><span>Sources</span></div><div><strong>{readyExtensionSettingCount()}/{extensionSettings.length}</strong><span>Ext Settings</span></div></div>
+          <button type="button" class="phone-row" on:click={() => openSettings("sources")}><span><strong>Sources</strong><small>{readySourceCatalogCount} ready out of {sourceCatalogCount}; configure provider keys here.</small></span><b>›</b></button>
+          <button type="button" class="phone-row" on:click={() => openSettings("install")}><span><strong>Install Behavior</strong><small>Control automatic installs, profile enabling, and installer choice prompts.</small></span><b>›</b></button>
+          <button type="button" class="phone-row" on:click={() => openSettings("extensions")}><span><strong>Extension Settings</strong><small>{extensionSettings.length} global extension setting{extensionSettings.length === 1 ? "" : "s"} available.</small></span><b>›</b></button>
+        {:else if activeSettingsPage === "jobs"}
+          {#if visibleJobs.length === 0}<article class="phone-static-row"><strong>No jobs</strong><small>Downloads, installs, deployment, and provider work will appear here.</small></article>{/if}
+          {#each visibleJobs as job}<button type="button" class="phone-row" on:click={() => openActionItem(job)}><span><strong>{job.title}</strong><small>{job.status} · {job.message}</small><span class="pills"><em>{job.type}</em><em>{jobSourceLabel(job)}</em></span></span><b>›</b></button>{/each}
+        {:else if activeSettingsPage === "install"}
+          <label class="setting-row"><span><strong>Auto-install captured downloads</strong><small>Download links are cached immediately.</small></span><input type="checkbox" checked={status?.install.auto_install_captured_downloads} on:change={(event) => updateAutoInstall(event.currentTarget.checked)} /></label>
+          <label class="setting-row"><span><strong>Auto-enable installed mods</strong><small>Leave off unless you trust the current profile.</small></span><input type="checkbox" checked={status?.install.auto_enable_installed_mods} on:change={(event) => updateAutoEnable(event.currentTarget.checked)} /></label>
+          <label class="setting-row"><span><strong>Auto-display installer choices</strong><small>Show FOMOD and multi-choice installers as soon as they are ready.</small></span><input type="checkbox" checked={status?.install.auto_show_fomod_installers ?? true} on:change={(event) => updateAutoShowFOMOD(event.currentTarget.checked)} /></label>
+          <label class="setting-row"><span><strong>Global download slots</strong><small>Limit simultaneous captured downloads across all games.</small></span><select value={status?.download?.max_concurrent_captured_downloads ?? 1} on:change={(event) => updateDownloadConcurrency(Number(event.currentTarget.value))}>{#each [1, 2, 3, 4] as count}<option value={count}>{count}</option>{/each}</select></label>
+          <label class="setting-row"><span><strong>Per-game download slots</strong><small>Keep one large game from starving the rest of the queue.</small></span><select value={status?.download?.max_concurrent_captured_downloads_per_game ?? 1} on:change={(event) => updatePerGameDownloadConcurrency(Number(event.currentTarget.value))}>{#each [1, 2, 3, 4] as count}<option value={count}>{count}</option>{/each}</select></label>
+        {:else if activeSettingsPage === "sources"}
+          {#if catalogSettingsMessage}<p class="phone-hint success">{catalogSettingsMessage}</p>{/if}
+          {#each catalogs as catalog}
+            <article class="phone-static-row"><strong>{catalog.name}</strong><small>{catalog.configured ? "Configured" : catalog.credentials_required ? "Needs credentials" : catalog.status} · {catalogCapabilities(catalog).join(", ") || "No active capabilities"}</small><span class="pills"><em class:ok={catalog.status === "ready"}>{catalog.status}</em>{#if catalog.source_tag}<em class="source">{sourceLabel(catalog.source_tag)}</em>{/if}</span></article>
+          {/each}
+          <form class="inline-form-clean" on:submit|preventDefault={() => updateCatalogCredential("modio", modIOAPIKey)}><input bind:value={modIOAPIKey} placeholder="mod.io API key" /><button type="submit" disabled={catalogSettingsBusy === "modio" || !modIOAPIKey.trim()}>Save mod.io</button></form>
+          <form class="inline-form-clean" on:submit|preventDefault={() => updateCatalogCredential("curseforge", curseForgeAPIKey)}><input bind:value={curseForgeAPIKey} placeholder="CurseForge API key" /><button type="submit" disabled={catalogSettingsBusy === "curseforge" || !curseForgeAPIKey.trim()}>Save CurseForge</button></form>
+        {:else if activeSettingsPage === "nexus"}
+          {#if nexusSettingsMessage}<p class="phone-hint success">{nexusSettingsMessage}</p>{/if}
+          <article class="phone-static-row"><strong>Nexus Mods API</strong><small>{status?.nexus.api_key_configured ? "Configured. Paste a new key to replace it." : "Missing. Nexus browsing and API lookup need a key."}</small><span class="pills"><em class:ok={status?.nexus.api_key_configured}>{status?.nexus.api_key_configured ? "Ready" : "Required"}</em></span></article>
+          <form class="inline-form-clean" on:submit|preventDefault={updateNexusAPIKey}><input bind:value={nexusAPIKey} placeholder="Paste Nexus API key" /><button type="submit" disabled={nexusSettingsBusy || !nexusAPIKey.trim()}>{status?.nexus.api_key_configured ? "Replace Key" : "Save Key"}</button></form>
+        {:else if activeSettingsPage === "extensions"}
+          {#if extensionSettingsMessage}<p class="phone-hint success">{extensionSettingsMessage}</p>{/if}
+          {#if extensionSettings.length === 0}<article class="phone-static-row"><strong>No extension settings</strong><small>Installed game extensions do not expose global settings yet.</small></article>{/if}
+          {#each extensionSettingGroups() as group}
+            <article class="phone-static-row extension-group"><strong>{group.extensionID}</strong><small>{group.settings.length} setting{group.settings.length === 1 ? "" : "s"}</small>
+              {#each group.settings as setting}
+                <div class="setting-editor">
+                  <label><span><strong>{setting.name}</strong><small>{setting.message || setting.scope || setting.setting_id}</small></span>
+                    {#if extensionSettingValueType(setting) === "bool"}
+                      <input type="checkbox" checked={extensionSettingDraft(setting) === "true"} disabled={!extensionSettingReady(setting) || extensionSettingBusy === extensionSettingKey(setting)} on:change={(event) => updateExtensionSettingDraft(setting, event.currentTarget.checked ? "true" : "false")} />
+                    {:else if setting.options?.length}
+                      <select value={extensionSettingDraft(setting)} disabled={!extensionSettingReady(setting) || extensionSettingBusy === extensionSettingKey(setting)} on:change={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}>{#each setting.options as option}<option value={option.id} disabled={option.disabled}>{option.label}</option>{/each}</select>
+                    {:else}
+                      <input value={extensionSettingDraft(setting)} disabled={!extensionSettingReady(setting) || extensionSettingBusy === extensionSettingKey(setting)} placeholder={setting.placeholder || setting.setting_id} on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)} />
+                    {/if}
+                  </label>
+                  <button type="button" disabled={!extensionSettingReady(setting) || extensionSettingBusy === extensionSettingKey(setting)} on:click={() => saveExtensionSetting(setting)}>Save</button>
                 </div>
-                <div class="catalog-meta">
-                  <span class={`source-pill ${sourceClass(catalog.source_tag)}`}>{sourceLabel(catalog.source_tag)}</span>
-                  <span>{catalog.kind}</span>
-                  {#if catalog.credentials_required}
-                    <span>{catalog.configured ? "Credentials configured" : "Credentials needed"}</span>
-                  {/if}
-                </div>
-                {#if catalog.notes?.length}
-                  <ul class="provider-notes">
-                    {#each catalog.notes as note}
-                      <li>{note}</li>
-                    {/each}
-                  </ul>
-                {/if}
-              </article>
-            {/each}
-          </div>
-        </article>
-      {:else if activeSettingsPage === "game-stores"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Game Stores</h2>
-            <span>Manual path</span>
-          </div>
-          <p class="hint">Register a non-Steam install only when a DMM extension supports that store/app identity. DMM will manage files at the selected install path; native store-library discovery and client launching are tracked separately.</p>
-          <form class="manual-game-form" on:submit|preventDefault={registerManualStoreGame}>
-            <label>
-              <span>Store</span>
-              <select bind:value={manualGameStore}>
-                <option value="gog">GOG</option>
-                <option value="epic">Epic Games</option>
-                <option value="xbox">Xbox / Microsoft Store</option>
-                <option value="origin">Origin / EA</option>
-                <option value="uplay">Ubisoft Connect</option>
-              </select>
-            </label>
-            <label>
-              <span>Store App ID</span>
-              <input bind:value={manualGameStoreAppID} autocomplete="off" placeholder="Example: 1456460669" />
-            </label>
-            <label>
-              <span>Game Name</span>
-              <input bind:value={manualGameName} autocomplete="off" placeholder="Example: Baldur's Gate 3" />
-            </label>
-            <label>
-              <span>Install Path</span>
-              <input bind:value={manualGamePath} autocomplete="off" placeholder="/home/deck/Games/example" />
-            </label>
-            <button type="submit" disabled={manualGameBusy}>{manualGameBusy ? "Registering..." : "Register Game"}</button>
-          </form>
-          {#if manualGameMessage}<p class="hint">{manualGameMessage}</p>{/if}
-        </article>
-      {:else if activeSettingsPage === "extensions"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Extension Settings</h2>
-            <span>{readyExtensionSettingCount()} editable</span>
-          </div>
-          <p class="hint">Advanced settings declared by game/framework extensions. These values can affect target roots, launch arguments, setup actions, and extension-owned install behavior.</p>
-          {#if extensionSettingsMessage}<p class="hint success-copy">{extensionSettingsMessage}</p>{/if}
-          {#if extensionSettings.length === 0}
-            <p class="hint">No extension settings are registered.</p>
-          {:else}
-            <div class="extension-settings-list">
-              {#each extensionSettingGroups() as group}
-                <section class="extension-setting-group">
-                  <div class="panel-heading compact-heading">
-                    <h3>{group.extensionID}</h3>
-                    <span>{group.settings.length}</span>
-                  </div>
-                  {#each group.settings as setting}
-                    {@const valueType = extensionSettingValueType(setting)}
-                    {@const ready = extensionSettingReady(setting)}
-                    {@const busy = extensionSettingBusy === extensionSettingKey(setting)}
-                    <article class:disabled-setting={!ready}>
-                      <div class="extension-setting-title">
-                        <div>
-                          <strong>{setting.name || setting.setting_id}</strong>
-                          <p>{setting.scope || "global"} · {valueType}</p>
-                        </div>
-                        <span class={`catalog-status ${ready ? "catalog-status-ready" : "catalog-status-deferred"}`}>{ready ? "Ready" : setting.status}</span>
-                      </div>
-                      {#if setting.message}<p class="hint">{setting.message}</p>{/if}
-                      {#if valueType === "bool"}
-                        <label class="settings-control compact-setting-control">
-                          <span>Value</span>
-                          <select
-                            value={extensionSettingDraft(setting) || "false"}
-                            disabled={!ready || busy}
-                            on:change={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
-                          >
-                            <option value="true">On</option>
-                            <option value="false">Off</option>
-                          </select>
-                        </label>
-                      {:else if valueType === "json"}
-                        <label class="settings-control compact-setting-control">
-                          <span>JSON Value</span>
-                          <textarea
-                            rows="4"
-                            spellcheck="false"
-                            value={extensionSettingDraft(setting)}
-                            placeholder={setting.placeholder || "null"}
-                            disabled={!ready || busy}
-                            on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
-                          ></textarea>
-                        </label>
-                      {:else}
-                        <label class="settings-control compact-setting-control">
-                          <span>{valueType === "path" ? "Path" : valueType === "number" ? "Number" : "Value"}</span>
-                          <input
-                            type={valueType === "number" ? "number" : "text"}
-                            value={extensionSettingDraft(setting)}
-                            placeholder={setting.placeholder || (valueType === "path" ? "/absolute/path" : "")}
-                            disabled={!ready || busy}
-                            on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
-                          />
-                        </label>
-                      {/if}
-                      <div class="setting-actions">
-                        {#if setting.updated_at}<small>Updated {new Date(setting.updated_at).toLocaleString()}</small>{:else}<small>Not set</small>{/if}
-                        <button type="button" on:click={() => saveExtensionSetting(setting)} disabled={!ready || busy}>{busy ? "Saving..." : "Save"}</button>
-                      </div>
-                    </article>
-                  {/each}
-                </section>
               {/each}
-            </div>
-          {/if}
-        </article>
-      {:else}
-        <article class="workspace-panel">
-          <h2>Nexus</h2>
-          <dl class="settings-list">
-            <div><dt>API key</dt><dd>{status?.nexus.api_key_configured ? "Configured" : "Missing"}</dd></div>
-          </dl>
-        </article>
-      {/if}
+            </article>
+          {/each}
+        {:else if activeSettingsPage === "game-stores"}
+          <div class="metric-grid"><div><strong>{games.filter((game) => game.store === "steam").length}</strong><span>Steam</span></div><div><strong>{games.filter((game) => game.store && game.store !== "steam").length}</strong><span>Other</span></div><div><strong>{games.filter((game) => game.state === "managed").length}</strong><span>Managed</span></div><div><strong>{games.filter((game) => game.downloaded).length}</strong><span>Installed</span></div></div>
+          <label class="inline-select"><span>Game list</span><select bind:value={gameVisibility}><option value="manageable">Manage Ready</option><option value="extensions">DMM Extensions</option><option value="all">All Installed</option></select></label>
+        {:else}
+          <article class="phone-static-row"><strong>Settings page unavailable</strong><small>This section is not registered in the phone shell.</small></article>
+        {/if}
+      </section>
     </section>
   {:else if selectedGame}
-    <section class="game-workspace">
-      <article class="game-hero">
-        <img src={gameImage(selectedGame.app_id)} alt="" />
-        <div>
-          <h2>{selectedGame.name}</h2>
-          <span class:review-badge={selectedGame.state !== "clean_candidate"}>{stateLabel(selectedGame.state)}</span>
-        </div>
-      </article>
-
-      <nav class="module-tabs" aria-label="Game modules">
-        <button type="button" class:active={activeGameModule === "plugins"} on:click={() => openGameModule("plugins")}>Mods</button>
-        <button type="button" class:active={activeGameModule === "actions"} on:click={() => openGameModule("actions")}>Actions</button>
-        <button type="button" class:active={activeGameModule === "profiles"} on:click={() => openGameModule("profiles")}>Profiles</button>
-        <button type="button" class:active={activeGameModule === "review"} on:click={() => openGameModule("review")}>Review</button>
-        <button type="button" class:active={activeGameModule === "paths"} on:click={() => openGameModule("paths")}>Paths</button>
-      </nav>
-
-      {#if activeGameModule === "plugins"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>{selectedProfile?.name ?? "Default"} Profile</h2>
-            <span>{enabledMods.length} enabled · {disabledMods.length} disabled</span>
-          </div>
-          {#if selectedGameActivity.length > 0}
-            <section class="activity-strip" aria-label="Game activity">
-              {#each selectedGameActivity.slice(0, 3) as job}
-                {@const progress = jobDownloadProgress(job)}
-                {@const issueTitle = jobIssueTitle(job)}
-                {@const issueDetails = jobIssueDetails(job)}
-                <article class:failed-action={job.status === "failed"}>
-                  <div class="mod-title-line">
-                    <strong>{job.title}</strong>
-                    {#if hasSourceTag(actionSource(job))}
-                      <span class={`source-pill ${sourceClass(actionSource(job))}`}>{sourceLabel(actionSource(job))}</span>
-                    {/if}
-                  </div>
-                  <span>{job.status}</span>
-                  {#if job.message}<small>{job.message}</small>{/if}
-                  {#if progress}
-                    <div class="job-progress compact-progress" aria-label="Download progress">
-                      <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
-                      <small>{progress.label}</small>
-                    </div>
-                  {/if}
-                  {#if issueTitle || issueDetails.length}
-                    <div class="job-issue-review compact-issue-review">
-                      {#if issueTitle}<strong>{issueTitle}</strong>{/if}
-                      {#if issueDetails.length}<small>{issueDetails[0]}</small>{/if}
-                    </div>
-                  {/if}
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if deploymentStatus?.restore_available}
-            <section class="profile-recovery-banner" aria-label="Deployment recovery">
-              <div>
-                <strong>Recovery points available</strong>
-                <p>{deploymentStatus.restore_summary ?? "Open Advanced Profile Tools to preview and restore a specific DMM deployment point."}</p>
-              </div>
-            </section>
-          {/if}
-          <section class="management-grid">
-            <div class="management-card profile-card">
-              <div class="card-heading">
-                <h3>Selected Profile</h3>
-                <span>{selectedProfile?.name ?? "Default"}</span>
-              </div>
-              {#if profiles.length > 1}
-                <label class="target-profile-select active-profile-select">
-                  <span>Active Profile</span>
-                  <select value={String(selectedProfile?.id ?? "")} on:change={(event) => selectProfileByID(event.currentTarget.value)}>
-                    {#each profiles as profile}
-                      <option value={String(profile.id)}>{profileOptionLabel(profile, "current")}</option>
-                    {/each}
+    <section class="phone-content">
+      <section class="phone-card game-hero">
+        <div><img src={gameImage(selectedGame.app_id)} alt="" /><span><strong>{selectedGame.name}</strong><small>{selectedProfile?.name ?? "Default Profile"} · {installedMods.filter((mod) => mod.enabled).length} enabled / {installedMods.length} installed</small></span></div>
+        <div class="action-grid"><button type="button" on:click={applyLaunchSetup}>Launch Game</button><button type="button" on:click={() => openGameModule("profiles")}>Change Profile</button><button type="button" on:click={toggleDeckArchiveBrowser}>Import Archive</button><button type="button" on:click={searchCatalogMods}>Explore Mods</button></div>
+      </section>
+      {#if deckArchiveBrowserOpen}
+        <section class="phone-card"><header><h2>Import Archive</h2><span>{deckArchiveBrowserEntries.length} entries</span></header>
+          {#if deckLocalArchiveMessage}<p class="phone-hint">{deckLocalArchiveMessage}</p>{/if}
+          <div class="inline-form-clean"><input bind:value={deckArchivePathInput} placeholder="Deck path" /><button type="button" disabled={deckLocalArchiveBusy} on:click={() => browseDeckArchiveFolder(deckArchivePathInput)}>Open</button></div>
+          {#if deckArchiveBrowserParentPath}<button type="button" class="phone-row" on:click={() => browseDeckArchiveFolder(deckArchiveBrowserParentPath)}><span><strong>Up one folder</strong><small>{deckArchiveBrowserParentPath}</small></span><b>↥</b></button>{/if}
+          {#each deckArchiveBrowserEntries as entry}
+            {#if entry.kind === "directory"}
+              <button type="button" class="phone-row" on:click={() => browseDeckArchiveFolder(entry.path)}><span><strong>{entry.name}</strong><small>{entry.path}</small></span><b>›</b></button>
+            {:else}
+              <button type="button" class="phone-row" disabled={busyDeckLocalArchivePath === entry.path} on:click={() => importDeckLocalArchive(entry)}><span><strong>{entry.name}</strong><small>{formatBytes(entry.bytes ?? 0)} · {entry.path}</small></span><b>{busyDeckLocalArchivePath === entry.path ? "…" : "+"}</b></button>
+            {/if}
+          {/each}
+        </section>
+      {/if}
+      {#if activeGameModule === "profiles"}
+        <section class="phone-card"><header><h2>Profiles</h2><span>{profiles.length}</span></header>{#each profiles as profile}<button type="button" class="phone-row" class:selected={profile.is_default} on:click={() => setDefaultProfile(profile)}><span><strong>{profile.name}</strong><small>{profile.enabled_mod_count} enabled / {profile.mod_count} total</small><span class="pills">{#if profile.is_default}<em class="ok">Active</em>{/if}</span></span><b>›</b></button>{/each}</section>
+        <section class="phone-card"><header><h2>Profile Tools</h2></header>
+          <form class="inline-form-clean" on:submit|preventDefault={createProfile}><input bind:value={profileName} placeholder="New profile name" /><button type="submit" disabled={!profileName.trim()}>Create</button></form>
+          <label class="setting-row"><span><strong>Clone active profile</strong><small>New profiles can start with the active profile's enabled mods.</small></span><input type="checkbox" bind:checked={copyProfileFromActive} /></label>
+          {#if selectedProfile && profiles.length > 1 && installedMods.length > 0}
+            {#each installedMods as mod}
+              <article class="phone-static-row"><strong>{mod.name}</strong><small>{mod.enabled ? "Enabled" : "Disabled"} in {selectedProfile.name}</small>
+                <div class="inline-form-clean">
+                  <select value={String(transferTargetProfileID(mod))} on:change={(event) => (profileTransferTargets[mod.id] = event.currentTarget.value)}>
+                    {#each profiles.filter((profile) => profile.id !== selectedProfile.id) as targetProfile}<option value={targetProfile.id}>{targetProfile.name}</option>{/each}
                   </select>
-                </label>
-              {/if}
-              <div class="profile-summary">
-                <div><strong>{enabledMods.length}</strong><span>On</span></div>
-                <div><strong>{disabledMods.length}</strong><span>Off</span></div>
-                <button type="button" class="summary-action" on:click={() => openGameModule("actions")} aria-label={`Open Action Center for this game; ${selectedGameActionCount} open`}>
-                  <strong>Action Center</strong>
-                  <span>{selectedGameActionCount} {selectedGameActionCount === 1 ? "open item" : "open items"}</span>
-                  <em>{selectedGameActionCount === 0 ? "Open" : "Review"}</em>
-                </button>
-              </div>
-              {#if hasDeployConflicts}
-                <p class="deploy-message danger">This profile has conflicts that need review before it can be applied.</p>
-              {:else if hasPendingProfileChanges}
-                <p class="deploy-message">Enabled-mod changes are ready. Toggling a mod applies them automatically; Advanced Profile Tools can apply them now.</p>
-              {:else if deploymentStatus?.deployed}
-                <p class="deploy-message success">Enabled mods are applied to the game.</p>
-              {:else if enabledMods.length === 0}
-                <p class="deploy-message">No enabled mods are applied for this profile.</p>
-              {:else}
-                <p class="deploy-message">Enable or disable a mod to apply enabled mods.</p>
-              {/if}
-            </div>
-
-            <div class="management-card import-card">
-              <div class="card-heading">
-                <h3>Add Mod</h3>
-                <span>{selectedGameActionItems.length} open</span>
-              </div>
-              {#if profiles.length > 0}
-                <label class="target-profile-select">
-                  <span>Install to Profile</span>
-                  <select bind:value={installTargetProfileID}>
-                    {#each profiles as profile}
-                      <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
-                    {/each}
-                  </select>
-                </label>
-              {/if}
-              <form class="stacked-form" on:submit|preventDefault={resolveCapturedInstall}>
-                <textarea bind:value={captureURL} rows="4" aria-label="Mod URL" placeholder="Paste one link, or one link per line. Nexus pages open on the Deck for Mod Manager Download; nxm:// and other supported provider links can be captured directly."></textarea>
-                <button type="submit">Add URL(s)</button>
-              </form>
-              <section class="deck-archive-browser" aria-label="Deck archive files">
-                <button type="button" class="archive-accordion-trigger" on:click={toggleDeckArchiveBrowser}>
-                  <span>
-                    <strong>Import Mod Archive</strong>
-                    <small>Browse Deck Downloads first, or upload an archive from this device</small>
-                  </span>
-                  <em>{deckArchiveBrowserOpen ? "Hide" : "Open"}</em>
-                </button>
-                {#if deckArchiveBrowserOpen}
-                  <form class="stacked-form local-archive-form" on:submit|preventDefault={uploadLocalArchive}>
-                    <label class="local-archive-picker">
-                      <span>Upload from This Device</span>
-                      <input bind:this={localArchiveInput} type="file" accept=".zip,.7z,.rar,.fomod,.mgsv" on:change={handleLocalArchiveChange} />
-                    </label>
-                    {#if localArchiveFile}
-                      <p class="hint">{localArchiveFile.name} · {formatBytes(localArchiveFile.size)}</p>
-                    {/if}
-                    <button type="submit" class="secondary-action" disabled={!localArchiveFile || localArchiveBusy}>{localArchiveBusy ? "Uploading..." : "Upload Archive"}</button>
-                  </form>
-                  <div class="archive-browser-controls">
-                    <label>
-                      <span>Folder Path</span>
-                      <input bind:value={deckArchivePathInput} type="text" placeholder="/home/deck/Downloads" />
-                    </label>
-                    <div>
-                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(deckArchiveBrowserParentPath)} disabled={!deckArchiveBrowserParentPath || deckLocalArchiveBusy}>Up Directory</button>
-                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(deckArchivePathInput)} disabled={deckLocalArchiveBusy}>Enter Path</button>
-                      <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder()} disabled={deckLocalArchiveBusy}>{deckLocalArchiveBusy ? "Scanning..." : "Refresh"}</button>
-                    </div>
-                  </div>
-                  <p class="hint">
-                    {deckArchiveBrowserPath || deckLocalArchiveRoots[0] || "DMM opens the Deck Downloads folder first."}
-                  </p>
-                  {#if deckArchiveBrowserEntries.length === 0}
-                    <p class="hint">No folders or supported archive files found here.</p>
-                  {:else}
-                    <div class="deck-archive-list">
-                      {#each deckArchiveBrowserEntries.slice(0, 20) as archiveEntry}
-                        <article>
-                          <div>
-                            <strong>{archiveEntry.name}</strong>
-                            <small>{archiveEntry.kind === "directory" ? "Folder" : `${formatBytes(archiveEntry.bytes ?? 0)} · ${archiveEntry.extension || "archive"}`}</small>
-                          </div>
-                          {#if archiveEntry.kind === "directory"}
-                            <button type="button" class="secondary-action compact" on:click={() => browseDeckArchiveFolder(archiveEntry.path)} disabled={deckLocalArchiveBusy}>Open</button>
-                          {:else}
-                            <button type="button" class="secondary-action compact" on:click={() => importDeckLocalArchive(archiveEntry)} disabled={busyDeckLocalArchivePath === archiveEntry.path}>
-                              {busyDeckLocalArchivePath === archiveEntry.path ? "Importing..." : "Import"}
-                            </button>
-                          {/if}
-                        </article>
-                      {/each}
-                    </div>
-                  {/if}
-                  {#if deckLocalArchiveMessage}
-                    <p class="hint success-copy">{deckLocalArchiveMessage}</p>
-                  {/if}
-                  {#if localArchiveMessage}
-                    <p class="hint success-copy">{localArchiveMessage}</p>
-                  {/if}
-                {/if}
-              </section>
-              <section class="deck-archive-browser external-adoption-browser" aria-label="Unmanaged mod adoption">
-                <button type="button" class="archive-accordion-trigger" on:click={toggleExternalModAdoption}>
-                  <span>
-                    <strong>Adopt Unmanaged Mods</strong>
-                    <small>Move extension-recognized manual or leftover files into DMM-owned staging</small>
-                  </span>
-                  <em>{externalModAdoptionOpen ? "Hide" : "Open"}</em>
-                </button>
-                {#if externalModAdoptionOpen}
-                  <div class="archive-browser-controls">
-                    <div>
-                      <button type="button" class="secondary-action compact" on:click={refreshExternalModCandidates} disabled={externalModAdoptionBusy}>{externalModAdoptionBusy ? "Scanning..." : "Refresh"}</button>
-                    </div>
-                  </div>
-                  {#if externalModAdoptionGroups().length === 0}
-                    <p class="hint">No unmanaged mods matched this game's extension adoption rules.</p>
-                  {:else}
-                    <div class="external-adoption-list">
-                      {#each externalModAdoptionGroups() as group}
-                        <article class="external-adoption-group">
-                          <div class="external-adoption-heading">
-                            <div>
-                              <strong>{group.adoptionID}</strong>
-                              <small>{group.modType || "extension managed"} · {group.deleteOriginal ? "source files removed after import" : "source files kept after import"}</small>
-                              {#if group.rootPath}<small>{group.rootPath}</small>{/if}
-                            </div>
-                            <button type="button" class="secondary-action compact" on:click={() => adoptExternalMods(group.adoptionID)} disabled={externalModAdoptionBusy || selectedExternalCandidates(group.adoptionID).length === 0}>
-                              {externalModAdoptionBusy ? "Importing..." : `Import ${selectedExternalCandidates(group.adoptionID).length}`}
-                            </button>
-                          </div>
-                          <div class="external-adoption-candidates">
-                            {#each group.candidates as candidate}
-                              <label>
-                                <input type="checkbox" checked={Boolean(selectedExternalModPaths[externalModCandidateKey(candidate)])} on:change={(event) => toggleExternalModCandidate(candidate, event.currentTarget.checked)} />
-                                <span>
-                                  <strong>{candidate.name}</strong>
-                                  <small>{candidate.relative_path} · {formatBytes(candidate.size)}</small>
-                                </span>
-                              </label>
-                            {/each}
-                          </div>
-                        </article>
-                      {/each}
-                    </div>
-                  {/if}
-                  {#if externalModAdoptionMessage}
-                    <p class="hint success-copy">{externalModAdoptionMessage}</p>
-                  {/if}
-                {/if}
-              </section>
-              <p class="hint">Mods that need choices or review will appear in Action Center. Nexus page links finish on the Deck browser because Nexus generates the download key there.</p>
-              {#if exploreSourceOptions().length > 0}
-                <details class="nexus-browser" aria-label="Explore mods" open={nexusSearchResults.length > 0 || Boolean(nexusSearchMessage || nexusSearchError)}>
-                  <summary class="explore-heading">
-                    <div>
-                      <strong>Explore Mods</strong>
-                      <small>Search supported mod sources for this game</small>
-                    </div>
-                    {#if selectedExploreSource()}
-                      <span class={`source-pill ${sourceClass(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}`}>{sourceLabel(selectedExploreSource()?.source_tag || selectedExploreSource()?.id)}</span>
-                    {/if}
-                    <em>Browse</em>
-                  </summary>
-                  {#if exploreSourceOptions().length > 1}
-                    <label class="target-profile-select">
-                      <span>Source</span>
-                      <select bind:value={exploreSourceID}>
-                        {#each exploreSourceOptions() as catalog}
-                          <option value={catalog.id}>{catalog.name} · {catalog.status}</option>
-                        {/each}
-                      </select>
-                    </label>
-                  {/if}
-                  {#if selectedGameMetadataOnly()}
-                    <p class="hint">DMM has verified source references for this game, but no safe automated import or installer path yet. Paste URLs only when you are testing a source-specific extension path.</p>
-                  {:else if selectedExploreSourceBrowseReady()}
-                    {#if selectedNexusDomains().length > 1}
-                      <label class="target-profile-select">
-                        <span>Nexus Game</span>
-                        <select bind:value={nexusBrowseDomain} on:change={resetNexusSearchResults}>
-                          {#each selectedNexusDomains() as domain}
-                            <option value={domain}>{nexusDomainLabel(domain)}</option>
-                          {/each}
-                        </select>
-                      </label>
-                    {/if}
-                    <form class="nexus-search-form" on:submit|preventDefault={() => searchNexusMods()}>
-                      <input bind:value={nexusSearchQuery} aria-label="Search mods" placeholder={`Search ${selectedExploreSource()?.name ?? "mods"}`} />
-                      <button type="button" class="secondary-action compact" on:click={cycleNexusSort}>{nexusSortLabel(nexusSearchSort)}</button>
-                      <button type="button" class="secondary-action compact" on:click={cycleNexusTimeWindow}>{nexusTimeWindowLabel(nexusSearchTimeWindow)}</button>
-                      <button type="button" class="secondary-action compact" on:click={toggleNexusCompatibilityFilter}>{nexusSearchVortexOnly ? "Vortex Only" : "All Mods"}</button>
-                      <button type="submit" disabled={nexusSearchBusy}>{nexusSearchBusy ? "Searching..." : "Search"}</button>
-                    </form>
-                    {#if nexusSearchResults.length > 0}
-                      <p class="hint">Showing {nexusSearchResults.length} of {compactNumber(nexusSearchTotal)} {selectedExploreSource()?.name ?? "source"} results.</p>
-                      {#if selectedExploreSource()?.id === "nexus"}
-                        <p class="hint">Open a result on the Deck, then click Nexus Mod Manager Download on Nexus to send the generated download link to DMM.</p>
-                      {:else}
-                        <p class="hint">Add a result to download through DMM's normal install pipeline.</p>
-                      {/if}
-                      <div class="nexus-results">
-                        {#each nexusSearchResults as mod}
-                          <article>
-                            <div class="nexus-result-main">
-                              <span>
-                                <span class="mod-title-line">
-                                  <strong>{mod.name}</strong>
-                                  <span class={`source-pill ${sourceClass(catalogResultSource(mod))}`}>{sourceLabel(catalogResultSource(mod))}</span>
-                                </span>
-                                {#if mod.summary}<small>{mod.summary}</small>{/if}
-                                <em>{compactNumber(mod.downloads)} downloads · {compactNumber(mod.endorsements)} endorsements</em>
-                              </span>
-                              <button type="button" on:click={() => openCatalogMod(mod)} disabled={busyCatalogOpenModID === mod.mod_id}>
-                                {busyCatalogOpenModID === mod.mod_id ? "Working..." : catalogResultActionLabel(mod)}
-                              </button>
-                            </div>
-                          </article>
-                        {/each}
-                      </div>
-                    {/if}
-                    {#if nexusSearchMessage}
-                      <p class="hint success-copy">{nexusSearchMessage}</p>
-                    {/if}
-                    {#if nexusSearchError}
-                      <p class="hint warning-copy">{nexusSearchError}</p>
-                    {/if}
-                  {:else if selectedExploreSource()?.id === "nexus"}
-                    <p class="hint">{selectedGame.extension?.supported ? "This game's DMM extension does not include a Nexus domain yet." : "This game does not have a DMM extension yet."}</p>
-                    {#if selectedExtensionSourceNote()}
-                      <p class="hint">{selectedExtensionSourceNote()}</p>
-                    {/if}
-                  {:else if selectedExploreSource()?.id === "local"}
-                    <p class="hint">Local archives are added with the upload control above and then installed through the same Action Center flow.</p>
-                  {:else if selectedExploreSource()?.status === "deferred"}
-                    <p class="hint">{selectedExploreSource()?.notes?.[0] ?? `${selectedExploreSource()?.name ?? "This source"} is deferred until a supported official automated API or client path is verified.`}</p>
-                  {:else if selectedExploreSourceReady()}
-                    <p class="hint">{selectedExploreSource()?.name} supports URL imports in DMM right now. Paste a mod/package/release URL above to capture it for this game.</p>
-                  {:else if selectedExploreSource()?.credentials_required}
-                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} needs an API key before DMM can import URLs. Configure it in Settings > Sources, or use another source.</p>
-                  {:else}
-                    <p class="hint">{selectedExploreSource()?.name ?? "This source"} is not ready yet. Use another source or paste a direct archive URL if one is available.</p>
-                  {/if}
-                </details>
-              {/if}
-              {#if resolvedCapture}
-                <p class="hint">Resolved {resolvedCapture}</p>
-              {/if}
-              {#if bulkCaptureMessage}
-                <p class="hint success-copy">{bulkCaptureMessage}</p>
-              {/if}
-              {#if captureBrowserPrompt}
-                <div class="browser-handoff">
-                  <div>
-                    <strong>Finish on Steam Deck</strong>
-                    <p>{captureBrowserPrompt.message}</p>
-                  </div>
-                  <button type="button" class="secondary-action compact" on:click={() => openCapturePromptOnDeck(captureBrowserPrompt)} disabled={captureBrowserOpenBusy}>
-                    {captureBrowserOpenBusy ? "Opening..." : "Open on Deck"}
-                  </button>
+                  <button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => transferInstalledMod(mod, false)}>Copy</button>
+                  <button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => transferInstalledMod(mod, true)}>Move</button>
                 </div>
-              {/if}
-            </div>
-          </section>
-
-          {#if installedMods.length === 0 && !selectedWorkshop}
-            <p class="hint">No profile mods yet. Capture or paste a mod link to add a supported mod to this profile.</p>
-          {:else}
-            <section class="mod-section">
-              <div class="card-heading">
-                <h3>Mods</h3>
-                <div class="card-heading-actions">
-                  <span>{selectedProfile?.name ?? "Default"}</span>
-                  <button type="button" class="secondary-action compact" on:click={checkModUpdates} disabled={modUpdateBusy || installedMods.length === 0}>{modUpdateBusy ? "Checking..." : "Check Updates"}</button>
-                </div>
-              </div>
-              {#if modUpdateMessage}<p class="hint">{modUpdateMessage}</p>{/if}
-              {#if modUpdateBrowserPrompt}
-                <button type="button" class="secondary-action compact" on:click={() => openModUpdateOnDeck(modUpdateBrowserPrompt)} disabled={modUpdateBrowserOpenBusy}>
-                  {modUpdateBrowserOpenBusy ? "Opening..." : "Open Update on Deck"}
-                </button>
-              {/if}
-              <div class="mod-list-controls">
-                <label>
-                  <span>Source</span>
-                  <select bind:value={modSourceFilter}>
-                    <option value="all">All Sources</option>
-                    {#each modSourceOptions as [key, label]}
-                      <option value={key}>{label}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label>
-                  <span>Sort</span>
-                  <select bind:value={modListSort}>
-                    <option value="profile">{modListSortLabel("profile")}</option>
-                    <option value="source">{modListSortLabel("source")}</option>
-                    <option value="az">{modListSortLabel("az")}</option>
-                    <option value="enabled">{modListSortLabel("enabled")}</option>
-                  </select>
-                </label>
-              </div>
-              {#if !hasVisibleModRows}
-                <p class="hint">No mods match the selected source.</p>
-              {/if}
-              {#if visibleInstalledMods.length > 0}
-                <div class="mod-list">
-                {#each visibleInstalledMods as mod}
-                  {@const metadata = primaryModMetadata(mod)}
-                  {@const dependencyLabels = modDependencyLabels(mod)}
-                  {@const orderIndex = installedMods.findIndex((item) => item.id === mod.id)}
-                  <article>
-                    <div>
-                      <div class="mod-title-line">
-                        <strong>{mod.name}</strong>
-                        <span class={`source-pill ${sourceClass(sourceForMod(mod))}`}>{sourceLabel(sourceForMod(mod))}</span>
-                      </div>
-                      {#if metadata || mod.mod_type}
-                        <div class="mod-meta">
-                          {#if metadata?.unique_id}<span>{metadata.unique_id}</span>{/if}
-                          {#if metadata?.version}<span>v{metadata.version}</span>{/if}
-                          {#if mod.mod_type}<span>{mod.mod_type}</span>{/if}
-                        </div>
-                      {/if}
-                      {#if dependencyLabels.length}
-                        <div class="mod-requirements">
-                          {#each dependencyLabels.slice(0, 3) as dependency}
-                            <span>{dependency}</span>
-                          {/each}
-                          {#if dependencyLabels.length > 3}<span>{dependencyLabels.length - 3} more</span>{/if}
-                        </div>
-                      {/if}
-                      {#if showPrimaryModUpdate(mod.update)}
-                        <div class:available-update={mod.update?.status === "available"} class:failed-update={mod.update?.status === "error"} class="mod-update-status">
-                          <span>{modUpdateLabel(mod.update)}</span>
-                          <small>{modUpdateDetail(mod.update)}</small>
-                        </div>
-                      {/if}
-                      <small>{modProfileStateText(mod)}</small>
-                    </div>
-                    <div class="mod-actions">
-                      <span>{busyMods[mod.id] ? "Working" : modStatusText(mod)}</span>
-                      <label class="mod-toggle">
-                        <input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} />
-                        <em>{busyMods[mod.id] === "toggle" ? "Saving" : mod.enabled ? "On" : "Off"}</em>
-                      </label>
-                      {#if mod.update?.status === "available"}
-                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => updateInstalledMod(mod)}>
-                          {busyMods[mod.id] === "update" ? "Queueing..." : "Install Update"}
-                        </button>
-                      {/if}
-                    </div>
-                    <details class="mod-advanced">
-                      <summary>Advanced</summary>
-                      <p>{mod.source_game_domain}/mods/{mod.source_mod_id}/files/{mod.source_file_id} · Priority {mod.priority}</p>
-                      <p>Updates: {modUpdateLabel(mod.update)}. {modUpdateDetail(mod.update)}</p>
-                      <div class="mod-advanced-actions">
-                        <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, -1)} disabled={orderIndex <= 0}>Move Up</button>
-                        <button type="button" class="secondary-action compact" on:click={() => moveModInProfile(mod, 1)} disabled={orderIndex < 0 || orderIndex >= installedMods.length - 1}>Move Down</button>
-                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod)}>
-                          {busyMods[mod.id] === "reinstall" ? "Reinstalling..." : "Reinstall"}
-                        </button>
-                        <button type="button" class="secondary-action compact" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>
-                          {busyMods[mod.id] === "reconfigure" ? "Opening..." : "Reconfigure"}
-                        </button>
-                        <button type="button" class="secondary-action compact danger-action" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>
-                          {busyMods[mod.id] === "remove" ? "Uninstalling..." : "Uninstall"}
-                        </button>
-                      </div>
-                      {#if transferProfiles().length > 0}
-                        <div class="profile-transfer">
-                          <label class="target-profile-select compact-target">
-                            <span>Other Profile</span>
-                            <select
-                              value={String(transferTargetProfileID(mod))}
-                              on:change={(event) => (profileTransferTargets = { ...profileTransferTargets, [mod.id]: event.currentTarget.value })}
-                            >
-                              {#each transferProfiles() as profile}
-                                <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
-                              {/each}
-                            </select>
-                          </label>
-                          <div class="mod-advanced-actions">
-                            <button type="button" class="secondary-action compact" on:click={() => transferInstalledMod(mod, false)} disabled={Boolean(busyMods[mod.id])}>
-                              {busyMods[mod.id] === "copy" ? "Copying..." : "Copy to Profile"}
-                            </button>
-                            <button type="button" class="secondary-action compact" on:click={() => transferInstalledMod(mod, true)} disabled={Boolean(busyMods[mod.id])}>
-                              {busyMods[mod.id] === "move" ? "Moving..." : "Move to Profile"}
-                            </button>
-                          </div>
-                        </div>
-                      {/if}
-                    </details>
-                  </article>
-                {/each}
-                </div>
-              {/if}
-              {#if showWorkshopModRows}
-                <section class="platform-mod-panel" aria-label="Steam Workshop mods">
-                  <div class="panel-heading compact-heading">
-                    <h3>Steam Workshop</h3>
-                    <span>{workshopItems.length} item{workshopItems.length === 1 ? "" : "s"}</span>
-                  </div>
-                  <p class="hint">{selectedWorkshop?.message ?? "Steam owns these subscriptions; DMM queues supported Steam actions through Decky."}</p>
-                  {#if workshopState?.supported && workshopItems.length === 0}
-                    <div class="mod-list">
-                      <article>
-                        <div>
-                          <div class="mod-title-line">
-                            <strong>No synced Workshop items</strong>
-                            <span class={`source-pill ${sourceClass("steam_workshop")}`}>{sourceLabel("steam_workshop")}</span>
-                          </div>
-                          <p>Open DMM in the Decky sidebar while Steam is running to sync subscribed Workshop items.</p>
-                        </div>
-                        <div class="mod-actions">
-                          <span>Sync needed</span>
-                        </div>
-                      </article>
-                    </div>
-                  {:else if workshopItems.length > 0}
-                    <div class="mod-list">
-                      {#each workshopItems as item, index}
-                        {@const disabled = item.disabled_known && item.disabled_locally}
-                        {@const toggleKind = disabled ? "enable" : "disable"}
-                        {@const toggleSupported = Boolean(workshopState?.supported && item.disabled_known)}
-                        <article>
-                          <div>
-                            <div class="mod-title-line">
-                              <strong>{workshopItemName(item)}</strong>
-                              <span class={`source-pill ${sourceClass(item.source_tag ?? item.catalog ?? "steam_workshop")}`}>{sourceLabel(item.source_tag ?? item.catalog ?? "steam_workshop")}</span>
-                            </div>
-                            <p>{workshopItemDetail(item)}</p>
-                            <small>{workshopItemStatus(item)}</small>
-                          </div>
-                          <div class="mod-actions">
-                            <span>{workshopItemStatus(item)}</span>
-                            <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === 0} on:click={() => moveWorkshopItem(index, -1)}>
-                              Up
-                            </button>
-                            <button type="button" class="secondary-action compact" disabled={!workshopState?.supported || workshopOrderBusy || index === workshopItems.length - 1} on:click={() => moveWorkshopItem(index, 1)}>
-                              Down
-                            </button>
-                            <button type="button" class="secondary-action compact" disabled={!toggleSupported || isWorkshopActionBusy(item, toggleKind)} on:click={() => queueWorkshopAction(item, toggleKind)}>
-                              {isWorkshopActionBusy(item, toggleKind) ? "Queueing..." : !item.disabled_known ? "Sync Needed" : disabled ? "Enable" : "Disable"}
-                            </button>
-                            <button type="button" class="secondary-action compact danger-action" disabled={!workshopState?.supported || isWorkshopActionBusy(item, "unsubscribe")} on:click={() => askUnsubscribeWorkshopItem(item)}>
-                              {isWorkshopActionBusy(item, "unsubscribe") ? "Queueing..." : "Unsubscribe"}
-                            </button>
-                          </div>
-                        </article>
-                      {/each}
-                    </div>
-                  {/if}
-                </section>
-              {/if}
-            </section>
-          {/if}
-
-          <details class="deploy-preview">
-            <summary>
-              <span>Advanced Profile Tools</span>
-              <small>
-                {#if hasDeployConflicts}
-                  Conflicts
-                {:else if hasPendingProfileChanges}
-                  Pending
-                {:else if deploymentStatus?.deployed}
-                  Applied
-                {:else}
-                  Not applied
-                {/if}
-              </small>
-            </summary>
-            {#if deployPlan && (deployableActions.length > 0 || deployPlan.conflicts.length > 0)}
-              <div class="profile-change-summary" class:has-conflicts={deployPlan.conflicts.length > 0}>
-                <div><strong>{deployAdds}</strong><span>Add</span></div>
-                <div><strong>{deployReplaces}</strong><span>Update</span></div>
-                <div><strong>{deployRemoves}</strong><span>Remove</span></div>
-                <div><strong>{deployPlan.conflicts.length}</strong><span>Conflict</span></div>
-              </div>
-            {/if}
-            <div class="deployment-summary">
-              <div><strong>{enabledMods.length}</strong><span>Enabled</span></div>
-              <div><strong>{deploymentStatus?.file_count ?? 0}</strong><span>Applied</span></div>
-              <div><strong>{deployPlan?.conflicts.length ?? 0}</strong><span>Conflicts</span></div>
-            </div>
-            <section class="deployment-settings-card">
-              <div>
-                <strong>Deployment Strategy</strong>
-                <small>
-                  Profile: {deploymentSettings?.profile_name ?? selectedProfile?.name ?? "Default"} ·
-                  Effective: {deploymentSettings?.effective_strategy ?? deployPlan?.strategy ?? "symlink"}
-                </small>
-                <small>
-                  Source: {deploymentSettings?.source ?? "extension"} ·
-                  Game default: {deploymentSettings?.game_strategy ?? "extension"} ·
-                  Extension: {deploymentSettings?.extension_default ?? "symlink"}
-                </small>
-                {#if deploymentSettings?.recommended_strategy}
-                  <small>Recommended: {deploymentSettings.recommended_strategy}</small>
-                {/if}
-              </div>
-              <select aria-label="Deployment strategy" value={deploymentSettings?.strategy ?? "extension"} on:change={(event) => updateDeploymentStrategy(event.currentTarget.value)}>
-                <option value="extension">Inherit Default</option>
-                <option value="symlink">Symlink</option>
-                <option value="hardlink">Hardlink</option>
-                <option value="copy">Copy</option>
-              </select>
-              {#if deploymentSettings?.strategy_warnings?.length}
-                <div class="deployment-strategy-warnings">
-                  {#each deploymentSettings.strategy_warnings as warning}
-                    <p>{warning}</p>
-                  {/each}
-                </div>
-              {/if}
-              {#if deploymentSettings?.capabilities?.length}
-                <div class="deployment-capabilities" aria-label="Deployment strategy capabilities">
-                  {#each deploymentSettings.capabilities as capability}
-                    <article class:unsupported={!capability.supported} class:recommended={capability.recommended}>
-                      <strong>{capability.strategy}</strong>
-                      <span>{capability.supported ? "Supported" : "Not recommended"}{capability.recommended ? " · Recommended" : ""}</span>
-                      <small>{capability.reason}</small>
-                    </article>
-                  {/each}
-                </div>
-              {/if}
-            </section>
-            {#if conflictChoiceTargets.length > 0}
-              <section class="conflict-choice-card">
-                <div class="panel-heading compact-heading">
-                  <h3>File Winners</h3>
-                  <span>{conflictChoiceTargets.length}</span>
-                </div>
-                <p class="hint">When enabled mods write the same file, DMM can use profile order or a file-specific winner.</p>
-                <div class="conflict-choice-list">
-                  {#each conflictChoiceTargets as target}
-                    {@const currentCandidate = target.candidates.find((candidate) => candidate.current)}
-                    <article>
-                      <div>
-                        <strong>{target.target_relative}</strong>
-                        <small class="conflict-current-line">
-                          <span>Current: {target.current_winner_name}</span>
-                          {#if currentCandidate?.catalog}
-                            <span class={`source-pill ${sourceClass(currentCandidate.catalog)}`}>{sourceLabel(currentCandidate.catalog)}</span>
-                          {/if}
-                          <span>{target.reason}</span>
-                        </small>
-                      </div>
-                      <div class="conflict-choice-actions">
-                        {#each target.candidates as candidate}
-                          <button type="button" class="secondary-action compact" disabled={candidate.current} on:click={() => setFileConflictWinner(target, candidate.id)}>
-                            <span>{candidate.current ? "Using" : "Use"} {candidate.name}</span>
-                            {#if sourceForCandidate(candidate)}
-                              <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
-                            {/if}
-                          </button>
-                        {/each}
-                        <button type="button" class="secondary-action compact" on:click={() => clearFileConflictWinner(target)}>Use Profile Order</button>
-                      </div>
-                    </article>
-                  {/each}
-                </div>
-              </section>
-            {/if}
-            {#if pluginLoadOrder && (pluginLoadOrder.activation_id || pluginLoadOrder.plugins.length > 0)}
-              <section class="plugin-load-order-card">
-                <div class="panel-heading compact-heading">
-                  <h3>Plugin Load Order</h3>
-                  <span>{pluginLoadOrder.plugins.length} plugin{pluginLoadOrder.plugins.length === 1 ? "" : "s"}</span>
-                </div>
-                <p>{pluginLoadOrder.name ?? "Extension plugin activation"} writes {pluginLoadOrder.plugins_file ?? "plugins.txt"} and {pluginLoadOrder.load_order_file ?? "loadorder.txt"} for enabled DMM plugins.</p>
-                {#if pluginLoadOrder.target_root}
-                  <small>{pluginLoadOrder.target_root}</small>
-                {/if}
-                {#if pluginLoadOrder.warnings?.length}
-                  <div class="deployment-strategy-warnings">
-                    {#each pluginLoadOrder.warnings as warning}
-                      <p>{warning}</p>
-                    {/each}
-                  </div>
-                {/if}
-                {#if pluginLoadOrder.loot?.supported}
-                  <div class="loot-status-panel">
-                    <div>
-                      <strong>LOOT metadata</strong>
-                      <small>{pluginLoadOrder.loot.game_id} · {pluginLoadOrder.loot.revision ?? "unknown revision"}</small>
-                    </div>
-                    <button type="button" class="secondary-action compact" disabled={lootRefreshBusy} on:click={refreshLOOTMetadata}>
-                      {lootRefreshBusy ? "Updating" : "Download Metadata"}
-                    </button>
-                    <button type="button" class="secondary-action compact" disabled={lootSortBusy || !pluginLoadOrder.loot.sorter_available} on:click={sortWithLOOT}>
-                      {lootSortBusy ? "Sorting" : "Sort With LOOT"}
-                    </button>
-                    <div class="loot-file-grid">
-                      <article>
-                        <span>Masterlist</span>
-                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.masterlist)}</strong>
-                        {#if pluginLoadOrder.loot.masterlist?.url}
-                          <small>{pluginLoadOrder.loot.masterlist.url}</small>
-                        {/if}
-                        {#if pluginLoadOrder.loot.masterlist?.path}
-                          <small>{pluginLoadOrder.loot.masterlist.path}</small>
-                        {/if}
-                      </article>
-                      <article>
-                        <span>Userlist</span>
-                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.userlist)}</strong>
-                        {#if pluginLoadOrder.loot.userlist?.path}
-                          <small>{pluginLoadOrder.loot.userlist.path}</small>
-                        {/if}
-                      </article>
-                      <article>
-                        <span>Prelude</span>
-                        <strong>{lootFileStatusLabel(pluginLoadOrder.loot.prelude)}</strong>
-                        {#if pluginLoadOrder.loot.prelude?.url}
-                          <small>{pluginLoadOrder.loot.prelude.url}</small>
-                        {/if}
-                        {#if pluginLoadOrder.loot.prelude?.path}
-                          <small>{pluginLoadOrder.loot.prelude.path}</small>
-                        {/if}
-                      </article>
-                    </div>
-                    {#if pluginLoadOrder.loot.sorter_message}
-                      <p class="hint">{pluginLoadOrder.loot.sorter_message}</p>
-                    {/if}
-                    {#if pluginLoadOrder.loot.sorter_command}
-                      <p class="hint">Sorter: {pluginLoadOrder.loot.sorter_engine ?? "libloot"} via {pluginLoadOrder.loot.sorter_command} · {pluginLoadOrder.loot.sorter_status ?? "unknown"}</p>
-                    {/if}
-                    {#if pluginLoadOrder.loot.last_refresh_warning}
-                      <p class="error-text">{pluginLoadOrder.loot.last_refresh_warning}</p>
-                    {/if}
-                    {#if pluginLoadOrder.loot.userlist_warning}
-                      <p class="error-text">{pluginLoadOrder.loot.userlist_warning}</p>
-                    {/if}
-                    <div class="loot-userlist-panel">
-                      <div class="panel-heading compact-heading">
-                        <h4>User Rules</h4>
-                        <span>{selectedProfile?.name ?? "Active profile"} · {pluginLoadOrder.loot.userlist_rules?.rules ?? 0} rules · {pluginLoadOrder.loot.userlist_rules?.groups ?? 0} groups</span>
-                      </div>
-                      <p class="hint">Rules are persisted in DMM's profile-local LOOT userlist, mirroring Vortex's local LOOT rules profile feature. Sorting uses the real libloot helper when it is installed; DMM does not use simplified load-order sorting.</p>
-                      {#if lootUserlistMessage}
-                        <p class={lootUserlistMessage.toLowerCase().includes("required") ? "error-text" : "deploy-message"}>{lootUserlistMessage}</p>
-                      {/if}
-                      {#if lootUserlist}
-                        <div class="loot-rule-editor">
-                          <label>
-                            <span>Plugin</span>
-                            <input type="text" bind:value={lootRulePlugin} placeholder="Example.esp" />
-                          </label>
-                          <label>
-                            <span>Rule</span>
-                            <select bind:value={lootRuleType}>
-                              <option value="after">Load after</option>
-                              <option value="requires">Requires</option>
-                              <option value="incompatible">Incompatible</option>
-                            </select>
-                          </label>
-                          <label>
-                            <span>Reference</span>
-                            <input type="text" bind:value={lootRuleReference} placeholder="OtherPlugin.esp" />
-                          </label>
-                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={addLOOTPluginRule}>
-                            {lootUserlistBusy ? "Saving" : "Add Rule"}
-                          </button>
-                        </div>
-                        <div class="loot-rule-editor group-editor">
-                          <label>
-                            <span>Group</span>
-                            <input type="text" bind:value={lootGroupName} placeholder="Late Loaders" />
-                          </label>
-                          <label>
-                            <span>After Group</span>
-                            <input type="text" bind:value={lootGroupReference} placeholder="default" />
-                          </label>
-                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={addLOOTGroupRule}>
-                            {lootUserlistBusy ? "Saving" : "Add Group Rule"}
-                          </button>
-                        </div>
-                        <div class="loot-rule-editor group-editor">
-                          <label>
-                            <span>Plugin</span>
-                            <input type="text" bind:value={lootGroupPlugin} placeholder="Example.esp" />
-                          </label>
-                          <label>
-                            <span>Assign Group</span>
-                            <input type="text" bind:value={lootGroupAssignment} placeholder="Late Loaders" />
-                          </label>
-                          <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={assignLOOTPluginGroup}>
-                            {lootUserlistBusy ? "Saving" : "Set Group"}
-                          </button>
-                        </div>
-                        {#if lootUserlist.plugins.length > 0 || lootUserlist.groups.length > 0}
-                          <div class="loot-userlist-rules">
-                            {#each lootUserlist.plugins as plugin}
-                              <article>
-                                <div>
-                                  <strong>{plugin.name}</strong>
-                                  {#if plugin.group}
-                                    <small>Group: {plugin.group}</small>
-                                  {/if}
-                                  {#if plugin.after?.length}
-                                    <small>after: {plugin.after.join(", ")}</small>
-                                  {/if}
-                                  {#if plugin.requires?.length}
-                                    <small>requires: {plugin.requires.join(", ")}</small>
-                                  {/if}
-                                  {#if plugin.incompatible?.length}
-                                    <small>incompatible: {plugin.incompatible.join(", ")}</small>
-                                  {/if}
-                                </div>
-                                <div class="loot-userlist-actions">
-                                  {#if plugin.group}
-                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => clearLOOTPluginGroup(plugin)}>Clear Group</button>
-                                  {/if}
-                                  {#each plugin.after ?? [] as reference}
-                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "after", reference)}>Remove after {reference}</button>
-                                  {/each}
-                                  {#each plugin.requires ?? [] as reference}
-                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "requires", reference)}>Remove requires {reference}</button>
-                                  {/each}
-                                  {#each plugin.incompatible ?? [] as reference}
-                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTPluginRule(plugin, "incompatible", reference)}>Remove incompatible {reference}</button>
-                                  {/each}
-                                </div>
-                              </article>
-                            {/each}
-                            {#each lootUserlist.groups as group}
-                              <article>
-                                <div>
-                                  <strong>{group.name}</strong>
-                                  <small>{group.after?.length ? `After: ${group.after.join(", ")}` : "No group order rules"}</small>
-                                </div>
-                                <div class="loot-userlist-actions">
-                                  {#each group.after ?? [] as reference}
-                                    <button type="button" class="secondary-action compact" disabled={lootUserlistBusy} on:click={() => removeLOOTGroupRule(group, reference)}>Remove after {reference}</button>
-                                  {/each}
-                                  <button type="button" class="secondary-action compact danger-action" disabled={lootUserlistBusy} on:click={() => removeLOOTGroup(group)}>Remove Group</button>
-                                </div>
-                              </article>
-                            {/each}
-                          </div>
-                          <button type="button" class="secondary-action danger-action" disabled={lootUserlistBusy} on:click={askClearLOOTUserlist}>Clear LOOT Rules</button>
-                        {:else}
-                          <p class="hint">No user rules are stored yet.</p>
-                        {/if}
-                      {:else}
-                        <button type="button" class="secondary-action compact" on:click={() => selectedGame && pluginLoadOrder && loadLOOTUserlist(selectedGame, pluginLoadOrder)}>Load User Rules</button>
-                      {/if}
-                    </div>
-                  </div>
-                {/if}
-                {#if pluginLoadOrder.plugins.length > 0}
-                  <div class="plugin-load-order-list">
-                    {#each pluginLoadOrder.plugins as plugin, index}
-                      {@const mutableIndex = mutablePluginIndex(plugin)}
-                      {@const pluginBusy = busyPluginActivationRows[pluginActivationRowKey(plugin)]}
-                      <article class:inactive-plugin={!plugin.active}>
-                        <span>{index + 1}</span>
-                        <div>
-                          <div class="mod-title-line">
-                            <strong>{plugin.name}</strong>
-                            <span class={`source-pill ${sourceClass(plugin.catalog ?? plugin.source)}`}>{sourceLabel(plugin.catalog ?? plugin.source)}</span>
-                          </div>
-                          <small>{plugin.source === "native" ? "Game/native plugin" : `DMM mod ${plugin.mod_id ?? plugin.installed_mod_id ?? ""}`} · {plugin.active ? "Enabled" : "Disabled"} · Priority {plugin.priority}</small>
-                        </div>
-                        {#if plugin.mutable}
-                          <div class="plugin-row-actions">
-                            <label class="mod-toggle">
-                              <input type="checkbox" checked={plugin.active} disabled={Boolean(pluginBusy)} on:change={(event) => setPluginActivationEnabled(plugin, event.currentTarget.checked)} />
-                              <em>{pluginBusy ? "Saving" : plugin.active ? "On" : "Off"}</em>
-                            </label>
-                            <button type="button" class="secondary-action compact" on:click={() => movePluginActivation(plugin, -1)} disabled={Boolean(pluginBusy) || mutableIndex <= 0}>Up</button>
-                            <button type="button" class="secondary-action compact" on:click={() => movePluginActivation(plugin, 1)} disabled={Boolean(pluginBusy) || mutableIndex < 0 || mutableIndex >= mutablePluginRows().length - 1}>Down</button>
-                          </div>
-                        {/if}
-                      </article>
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="hint">No active plugin files are currently part of this profile.</p>
-                {/if}
-              </section>
-            {/if}
-            {#if pluginLoadOrder?.extension_orders?.length}
-              <section class="plugin-load-order-card">
-                <div class="panel-heading compact-heading">
-                  <h3>Extension Load Orders</h3>
-                  <span>{pluginLoadOrder.extension_orders.length} rule{pluginLoadOrder.extension_orders.length === 1 ? "" : "s"}</span>
-                </div>
-                <p>Game extensions derive these order files from the selected profile. Move mods in the profile list to change generated order where the extension supports it.</p>
-                <div class="plugin-load-order-list">
-                  {#each pluginLoadOrder.extension_orders as order}
-                    <article>
-                      <span>{order.entries.length}</span>
-                      <div>
-                        <strong>{order.name ?? order.id}</strong>
-                        {#if order.target_relative}
-                          <small>{order.target_relative}</small>
-                        {:else if order.target_root_id}
-                          <small>Target root: {order.target_root_id}</small>
-                        {:else if order.target_root}
-                          <small>{order.target_root}</small>
-                        {/if}
-                        {#if order.message}
-                          <small>{order.message}</small>
-                        {/if}
-                        {#if order.usage_instructions}
-                          <small>{order.usage_instructions}</small>
-                        {/if}
-                      </div>
-                    </article>
-                    {#each order.entries as entry, index}
-                      {@const mutableEntries = order.entries.filter((item) => item.mutable && item.installed_mod_id)}
-                      {@const mutableIndex = mutableEntries.findIndex((item) => item.installed_mod_id === entry.installed_mod_id)}
-                      <article class:inactive-plugin={!entry.active}>
-                        <span>{index + 1}</span>
-                        <div>
-                          <div class="mod-title-line">
-                            <strong>{entry.name}</strong>
-                            <span class={`source-pill ${sourceClass(entry.source_tag ?? entry.catalog ?? "dmm")}`}>{sourceLabel(entry.source_tag ?? entry.catalog ?? "dmm")}</span>
-                          </div>
-                          <small>{entry.active ? "Enabled" : "Disabled"} · Priority {entry.priority}{entry.mod_type ? ` · ${entry.mod_type}` : ""}</small>
-                          {#if entry.targets?.length}
-                            <small>{entry.targets.slice(0, 3).join(", ")}{entry.targets.length > 3 ? ` +${entry.targets.length - 3} more` : ""}</small>
-                          {/if}
-                        </div>
-                        {#if order.mutable && entry.mutable}
-                          <div class="plugin-row-actions">
-                            <button type="button" class="secondary-action compact" on:click={() => moveExtensionLoadOrderEntry(order, entry, -1)} disabled={mutableIndex <= 0}>Up</button>
-                            <button type="button" class="secondary-action compact" on:click={() => moveExtensionLoadOrderEntry(order, entry, 1)} disabled={mutableIndex < 0 || mutableIndex >= mutableEntries.length - 1}>Down</button>
-                          </div>
-                        {/if}
-                      </article>
-                    {/each}
-                  {/each}
-                </div>
-              </section>
-            {/if}
-            <section class="recovery-card">
-              <div class="panel-heading compact-heading">
-                <h3>Recovery</h3>
-                <span>{deploymentStatus?.apply_rollback_on_failure ? "Auto-rollback" : "Manual review"}</span>
-              </div>
-              <p>{deploymentStatus?.recovery_summary ?? "Failed applies are restored before DMM reports the job as failed."}</p>
-              {#if deploymentStatus?.sample_files?.length}
-                <div class="sample-file-list">
-                  {#each deploymentStatus.sample_files as file}
-                    <small>{file}</small>
-                  {/each}
-                </div>
-              {/if}
-              {#if deploymentHistory.length > 0}
-                <div class="deployment-history-list" aria-label="Deployment history">
-                  {#each deploymentHistory as deployment}
-                    <article class:active-deployment-point={deployment.active}>
-                      <div>
-                        <strong>{deploymentPointLabel(deployment)}</strong>
-                        <small>{deployment.profile_name} · {deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy}</small>
-                        <small>{deploymentPointDelta(deployment)}</small>
-                        {#if deployment.sources?.length}
-                          <div class="deployment-source-list" aria-label="Deployment sources">
-                            {#each deployment.sources as source}
-                              <span class={`source-pill ${sourceClass(source.source_tag ?? source.catalog)}`}>{sourceLabel(source.source_tag ?? source.catalog)} · {source.file_count}</span>
-                            {/each}
-                          </div>
-                        {/if}
-                        {#if restorePointPreview?.deployment_id === deployment.id}
-                          <div class="deployment-restore-preview" aria-label="Restore point preview">
-                            <div>
-                              <strong>Restore Delta</strong>
-                              <span>{restorePointPreview.current_file_count} current -> {restorePointPreview.target_file_count} restored</span>
-                            </div>
-                            <div class="deployment-restore-counts">
-                              <span>{restorePointPreview.summary.add} add</span>
-                              <span>{restorePointPreview.summary.replace} update</span>
-                              <span>{restorePointPreview.summary.remove} remove</span>
-                              <span>{restorePointPreview.summary.conflicts} conflict{restorePointPreview.summary.conflicts === 1 ? "" : "s"}</span>
-                            </div>
-                            {#if restorePointPreview.sample_files?.length}
-                              <div class="deployment-restore-samples">
-                                {#each restorePointPreview.sample_files as file}
-                                  <small>{file}</small>
-                                {/each}
-                              </div>
-                            {/if}
-                          </div>
-                        {/if}
-                      </div>
-                      <div class="deployment-history-actions">
-                        <time datetime={deployment.created_at}>{new Date(deployment.created_at).toLocaleString()}</time>
-                        {#if deployment.active}
-                          <span>Current</span>
-                        {:else}
-                          <button type="button" class="secondary-action compact" on:click={() => previewRestoreDeploymentPoint(deployment)} disabled={restorePointPreviewBusy === deployment.id}>{restorePointPreviewBusy === deployment.id ? "Previewing" : "Preview"}</button>
-                          <button type="button" class="secondary-action compact" on:click={() => askRestoreDeploymentPoint(deployment)}>Restore Point</button>
-                        {/if}
-                      </div>
-                    </article>
-                  {/each}
-                </div>
-              {/if}
-              <div class="deploy-actions utility-actions">
-                <button type="button" class="secondary-action" on:click={askApplyPendingProfileChanges} disabled={!deployPlan || deployableActions.length === 0 || hasDeployConflicts}>Apply Enabled Mods</button>
-                <button type="button" class="secondary-action" on:click={previewDeploy} disabled={installedMods.length === 0 && !deploymentStatus?.deployed}>Preview Managed Files</button>
-                <button type="button" class="secondary-action" on:click={repairDeployment} disabled={!deploymentStatus?.repair_available}>Repair Managed Files</button>
-                <button type="button" class="secondary-action" on:click={recoverDownloads}>Recover Downloads</button>
-                <button type="button" class="secondary-action danger-action" on:click={askPurgeDeployment} disabled={!deploymentStatus?.purge_available}>Remove DMM Files</button>
-                <button type="button" class="secondary-action danger-action" on:click={askResetManagedMods} disabled={installedMods.length === 0 && !deploymentStatus?.deployed && installCandidates.length === 0 && selectedGameActionItems.length === 0}>Reset Managed Mods</button>
-              </div>
-            </section>
-            {#if deployPlan}
-              <div class="panel-heading">
-                <h3>File Operations</h3>
-                <span>{deployPlan.actions.length} files · {deployPlan.conflicts.length} conflicts</span>
-              </div>
-              <div class="deploy-list">
-                {#each deployPlan.actions.slice(0, 24) as action}
-                  <article class:failed-action={action.conflict}>
-                    <strong>{action.target_relative}</strong>
-                    <small>{deployActionDetail(action)}</small>
-                  </article>
-                {/each}
-              </div>
-            {/if}
-          </details>
-        </article>
-      {:else if activeGameModule === "actions"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Action Center</h2>
-            <span>{selectedGameActionItems.length} open · {installCandidates.length} review</span>
-          </div>
-          {#if selectedGameCapturedInstallActions.length > 0}
-            <button type="button" class="secondary-action" on:click={clearCapturedInstallActions}>Clear Mod Installs</button>
-          {/if}
-          {#if selectedGameActionItems.length === 0 && installCandidates.length === 0}
-            <div class="empty-action-panel">
-              <div>
-                <h3>No Actions Needed</h3>
-                <p class="hint">Downloads, installer choices, Workshop tasks, and extension notices for this game will appear here.</p>
-              </div>
-              <div class="empty-action-buttons">
-                <button type="button" on:click={() => openGameModule("plugins")}>Add a Mod</button>
-                <button type="button" class="secondary-action compact" on:click={() => openGameModule("plugins")}>Profile Mods</button>
-              </div>
-            </div>
-          {/if}
-          {#if selectedGameActionItems.length > 0}
-            <div class="action-list">
-              {#each selectedGameActionItems as action}
-                {@const progress = jobDownloadProgress(action)}
-                {@const issueTitle = jobIssueTitle(action)}
-                {@const issueMessage = jobIssueMessage(action)}
-                {@const issueDetails = jobIssueDetails(action)}
-                {@const issueActions = jobIssueActions(action)}
-                <article class:failed-action={action.status === "failed"}>
-                  <div>
-                    <div class="mod-title-line">
-                      <strong>{action.title}</strong>
-                      <span class={`source-pill ${sourceClass(actionSource(action))}`}>{sourceLabel(actionSource(action))}</span>
-                    </div>
-                    {#if action.message}<p>{action.message}</p>{/if}
-                    {#if progress}
-                      <div class="job-progress" aria-label="Download progress">
-                        <div class:indeterminate={progress.indeterminate} class="job-progress-track"><span style={`width: ${progress.barWidth}%`}></span></div>
-                        <small>{progress.label}</small>
-                      </div>
-                    {/if}
-                    {#if issueTitle || issueDetails.length || issueActions.length}
-                      <div class="job-issue-review">
-                        {#if issueTitle}<strong>{issueTitle}</strong>{/if}
-                        {#if issueMessage && issueMessage !== action.message}<p>{issueMessage}</p>{/if}
-                        {#if issueDetails.length}
-                          <ul>
-                            {#each issueDetails as detail}
-                              <li>{detail}</li>
-                            {/each}
-                          </ul>
-                        {/if}
-                        {#if issueActions.length}
-                          <small>{issueActions.join(" ")}</small>
-                        {/if}
-                      </div>
-                    {/if}
-                    {#if (action.type === "extension-notice" || action.type === "extension-tool-action") && extensionNoticeTool(action)}
-                      <small>Tool: {extensionNoticeTool(action)}</small>
-                    {/if}
-                    {#if modUpdateActionDetail(action)}
-                      <small>{modUpdateActionDetail(action)}</small>
-                    {/if}
-                    <p class="action-next-step">{actionNextStep(action)}</p>
-                    <small>{new Date(action.updated_at).toLocaleString()}</small>
-                    {#if action.type === "captured-install" && action.status === "waiting" && profiles.length > 0}
-                      <label class="target-profile-select compact-target">
-                        <span>Install to</span>
-                        <select
-                          value={String(actionInstallProfileID(action))}
-                          on:change={(event) => (actionProfileTargets = { ...actionProfileTargets, [action.id]: event.currentTarget.value })}
-                        >
-                          {#each profiles as profile}
-                            <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
-                          {/each}
-                        </select>
-                      </label>
-                    {/if}
-                  </div>
-                    <div class="action-controls">
-                      <span>{actionStatusLabel(action)}</span>
-                      {#if action.type === "installer-choice"}
-                        <button type="button" on:click={() => openActionItem(action)}>Open Choices</button>
-                      {/if}
-                      {#if action.type === "captured-install" && action.status === "waiting"}
-                        <button type="button" on:click={() => installCapturedMod(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : capturedInstallPrimaryLabel(action)}</button>
-                      {/if}
-                      {#if action.type === "captured-install" && action.status === "failed"}
-                        <button type="button" on:click={() => retryCapturedInstallAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
-                      {/if}
-                      {#if action.type === "steam-workshop-action" && action.status === "failed"}
-                        <button type="button" on:click={() => retryWorkshopAction(action)} disabled={isJobBusy(action)}>{isJobBusy(action) ? "Working..." : "Retry"}</button>
-                      {/if}
-                      {#if action.type === "extension-notice" && extensionNoticeHelpURL(action)}
-                        <button type="button" class="secondary-action compact" on:click={() => openExtensionNoticeHelp(action)}>{extensionNoticeActionLabel(action) || "Open Help"}</button>
-                      {/if}
-                      {#if canCancelJob(action)}
-                        <button type="button" class="secondary-action compact" on:click={() => cancelJob(action)} disabled={isJobBusy(action)}>{jobCancelLabel(action)}</button>
-                      {/if}
-                  </div>
-                </article>
-              {/each}
-            </div>
-          {/if}
-          {#if installCandidates.length > 0}
-            <section class="blocked-candidates" aria-label="Install review items">
-              <div class="panel-heading compact-heading">
-                <h3>Install Review</h3>
-                <span>{installCandidates.length}</span>
-              </div>
-              <button type="button" class="secondary-action" on:click={clearBlockedInstallCandidates}>Clear Items</button>
-              <div class="action-list">
-                {#each installCandidates as candidate}
-                  {@const installer = installerForCandidate(candidate)}
-                  {@const selectedChoiceCount = selectionCount(candidateCurrentSelections(candidate))}
-                  <article class="failed-action">
-                    <div>
-                      <div class="mod-title-line">
-                        <strong>{candidate.name}</strong>
-                        <span class={`source-pill ${sourceClass(sourceForCandidate(candidate))}`}>{sourceLabel(sourceForCandidate(candidate))}</span>
-                      </div>
-                      <p>{candidate.reason}</p>
-                      <small>{candidate.source_game_domain}/mods/{candidate.source_mod_id}/files/{candidate.source_file_id}</small>
-                      {#if candidate.status === "blocked"}
-                        <p class="hint">DMM kept this archive cached, but it cannot be installed until the issue above is resolved.</p>
-                      {/if}
-                      {#if candidate.status !== "blocked" && profiles.length > 0}
-                        <label class="target-profile-select compact-target">
-                          <span>Install to</span>
-                          <select
-                            value={String(candidateInstallProfileID(candidate))}
-                            on:change={(event) => (candidateProfileTargets = { ...candidateProfileTargets, [candidate.id]: event.currentTarget.value })}
-                          >
-                            {#each profiles as profile}
-                              <option value={String(profile.id)}>{profileOptionLabel(profile)}</option>
-                            {/each}
-                          </select>
-                        </label>
-                      {/if}
-                      {#if candidate.status !== "blocked" && selectedChoiceCount > 0}
-                        <p class="preset-selection-note">{selectedChoiceCount} choice{selectedChoiceCount === 1 ? "" : "s"} preselected from DMM's saved/default installer state.</p>
-                      {/if}
-                      {#if installer && candidate.status !== "blocked"}
-                        {@const steps = visibleFomodSteps(installer)}
-                        {@const stepIndex = candidateStepIndex(candidate, steps)}
-                        {@const step = steps[stepIndex]}
-                        <div class="installer-wizard">
-                          <div class="installer-wizard-header">
-                            <div>
-                              <strong>{installer.name || "Installer Choices"}</strong>
-                              <small>{steps.length > 0 ? `Step ${stepIndex + 1} of ${steps.length}` : "No choices"}</small>
-                            </div>
-                            <span>{candidateStepValid(candidate, step) ? "Ready" : "Needs selection"}</span>
-                          </div>
-                          {#if step}
-                            <section class="installer-step">
-                              <h4>{step.name}</h4>
-                              {#each step.groups ?? [] as group}
-                                <fieldset class:invalid-group={!candidateGroupValid(candidate, group)}>
-                                  <legend>{group.name}</legend>
-                                  {#if group.description}
-                                    <p class="installer-field-hint">{group.description}</p>
-                                  {/if}
-                                  {#if fomodGroupIsText(group)}
-                                    <input
-                                      class="installer-text-input"
-                                      type="text"
-                                      value={candidateGroupTextValue(candidate, group)}
-                                      placeholder={group.placeholder ?? ""}
-                                      disabled={isInstallCandidateBusy(candidate)}
-                                      on:input={(event) => setCandidateTextSelection(candidate, group, event.currentTarget.value, false)}
-                                      on:change={(event) => setCandidateTextSelection(candidate, group, event.currentTarget.value, true)}
-                                    />
-                                  {:else}
-                                    {#if fomodGroupType(group) === "selectatmostone"}
-                                      <label class="installer-none-option">
-                                        <input
-                                          type="radio"
-                                          name={`candidate-${candidate.id}-${group.id}`}
-                                          checked={(candidateCurrentSelections(candidate)[group.id] ?? []).length === 0}
-                                          disabled={isInstallCandidateBusy(candidate)}
-                                          on:change={() => clearCandidateGroupSelection(candidate, group)}
-                                        />
-                                        <span>
-                                          <strong>None</strong>
-                                          <small>Do not install an option from this group.</small>
-                                        </span>
-                                      </label>
-                                    {/if}
-                                    {#each group.plugins ?? [] as plugin}
-                                      <label class:option-disabled={!fomodPluginSelectable(plugin)}>
-                                        <input
-                                          type={fomodGroupInputType(group)}
-                                          name={`candidate-${candidate.id}-${group.id}`}
-                                          checked={isCandidatePluginSelected(candidate, group, plugin)}
-                                          disabled={fomodPluginLocked(group, plugin) || isInstallCandidateBusy(candidate)}
-                                          on:change={(event) => setCandidatePluginSelection(candidate, group, plugin, event.currentTarget.checked)}
-                                        />
-                                        <span>
-                                          <strong>{plugin.name}</strong>
-                                          {#if fomodPluginType(plugin)}<small>{fomodPluginType(plugin)}</small>{/if}
-                                          {#if plugin.description}<em>{plugin.description}</em>{/if}
-                                        </span>
-                                      </label>
-                                    {/each}
-                                  {/if}
-                                  {#if !candidateGroupValid(candidate, group)}
-                                    <p class="installer-validation">This group needs a valid selection before continuing.</p>
-                                  {/if}
-                                </fieldset>
-                              {/each}
-                            </section>
-                            <div class="installer-wizard-actions">
-                              <button type="button" class="secondary-action compact" disabled={stepIndex === 0 || isInstallCandidateBusy(candidate)} on:click={() => setCandidateStepIndex(candidate, steps, stepIndex - 1)}>Back</button>
-                              <button type="button" class="secondary-action compact" disabled={stepIndex >= steps.length - 1 || !candidateStepValid(candidate, step) || isInstallCandidateBusy(candidate)} on:click={() => setCandidateStepIndex(candidate, steps, stepIndex + 1)}>Next</button>
-                            </div>
-                          {:else}
-                            <p class="hint">This installer has no visible choices. Apply it to add the mod to this profile.</p>
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="action-controls">
-                      <span>{candidateStatusLabel(candidate)}</span>
-                      {#if candidate.status === "blocked"}
-                        <button type="button" on:click={() => retryInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate)}>
-                          {isInstallCandidateBusy(candidate) ? "Retrying..." : "Retry Install"}
-                        </button>
-                      {:else if installer}
-                        <button type="button" on:click={() => applyInstallCandidate(candidate)} disabled={isInstallCandidateBusy(candidate) || !candidateInstallerValid(candidate, installer)}>
-                          {isInstallCandidateBusy(candidate) ? "Applying..." : "Apply Choices"}
-                        </button>
-                      {/if}
-                    </div>
-                  </article>
-                {/each}
-              </div>
-            </section>
-          {/if}
-          {#if installerChoicePresets.length > 0}
-            <section class="blocked-candidates" aria-label="Saved installer choices">
-              <div class="panel-heading compact-heading">
-                <h3>Saved Installer Choices</h3>
-                <span>{installerChoicePresets.length}</span>
-              </div>
-              <p class="hint">DMM reuses these choices only for the same exact mod file. Forget a preset if you want the installer to ask again.</p>
-              <div class="action-list">
-                {#each installerChoicePresets as preset}
-                  <article>
-                    <div>
-                      <div class="mod-title-line">
-                        <strong>{preset.installer_kind.toUpperCase()} choices</strong>
-                        <span class={`source-pill ${sourceClass(preset.catalog)}`}>{sourceLabel(preset.catalog)}</span>
-                      </div>
-                      <p>{preset.source_game_domain}/mods/{preset.source_mod_id}/files/{preset.source_file_id}</p>
-                      <small>{installerPresetScopeLabel(preset)} · Updated {new Date(preset.updated_at).toLocaleString()}</small>
-                    </div>
-                    <div class="action-controls">
-                      <span>Saved</span>
-                      <button type="button" class="secondary-action compact" on:click={() => deleteInstallerChoicePreset(preset)}>Forget</button>
-                    </div>
-                  </article>
-                {/each}
-              </div>
-            </section>
-          {/if}
-        </article>
-      {:else if activeGameModule === "profiles"}
-        <article class="workspace-panel">
-          <div class="panel-heading">
-            <h2>Profiles</h2>
-            <span>{selectedProfile?.name ?? "None"}</span>
-          </div>
-          <form class="inline-form" on:submit|preventDefault={createProfile}>
-            <input bind:value={profileName} aria-label="Profile name" placeholder="Profile name" />
-            <button type="submit">Create</button>
-          </form>
-          <label class="profile-copy-option">
-            <input type="checkbox" bind:checked={copyProfileFromActive} disabled={!selectedProfile} />
-            <span>Start with {selectedProfile?.name ?? "active profile"} mods in the same on/off state</span>
-          </label>
-          <div class="profile-list">
-            {#each profiles as profile}
-              <article class="profile-row" class:active-profile={profile.is_default}>
-                <button type="button" class="profile-select" on:click={() => setDefaultProfile(profile)}>
-                  <span class="profile-name-block">
-                    <span class="profile-name">{profile.name}</span>
-                    <small>{profile.enabled_mod_count} enabled / {profile.mod_count} total</small>
-                  </span>
-                  <strong>{profile.is_default ? "Active" : "Use Profile"}</strong>
-                </button>
-                <button type="button" class="profile-delete" disabled={profiles.length <= 1} on:click={() => askDeleteProfile(profile)}>
-                  Remove
-                </button>
               </article>
             {/each}
-          </div>
-          {#if selectedProfile}
-            <section class="profile-feature-panel" aria-label="Profile extension features">
-              <div class="panel-heading compact-heading">
-                <h3>Extension Profile Features</h3>
-                <span>{profileFeatures.filter((feature) => feature.enabled).length} on / {profileFeatures.length} total</span>
-              </div>
-              <p class="hint">Advanced profile-scoped behaviors declared by game extensions, such as local settings files or load-order rules.</p>
-              {#if profileFeatureMessage}<p class="deploy-message success">{profileFeatureMessage}</p>{/if}
-              {#if profileFeatures.length === 0}
-                <p class="hint">No extension profile features are registered for this game.</p>
-              {:else}
-                <div class="profile-feature-list">
-                  {#each profileFeatures as feature}
-                    <article class:requirement-missing={!profileFeatureReady(feature)}>
-                      <div>
-                        <div class="mod-title-line">
-                          <strong>{feature.name || feature.feature_id}</strong>
-                          {#if feature.extension}<span class="source-pill source-extension">{feature.extension}</span>{/if}
-                        </div>
-                        <p>{feature.message || (feature.enabled ? "Enabled for this profile." : "Available for this profile.")}</p>
-                        <small>{feature.feature_id}</small>
-                      </div>
-                      <label class="mod-toggle">
-                        <input
-                          type="checkbox"
-                          checked={feature.enabled}
-                          disabled={!profileFeatureReady(feature) || Boolean(busyProfileFeatures[profileFeatureKey(feature)])}
-                          on:change={(event) => setProfileFeatureEnabled(feature, event.currentTarget.checked)}
-                        />
-                        <em>{feature.enabled ? "On" : profileFeatureReady(feature) ? "Off" : feature.status}</em>
-                      </label>
-                    </article>
-                  {/each}
-                </div>
-              {/if}
-              {#if visibleProfileFiles.length > 0}
-                <details class="profile-files-panel">
-                  <summary>Managed profile files</summary>
-                  <div class="profile-file-list">
-                    {#each visibleProfileFiles as file}
-                      <article class:requirement-missing={file.status !== "ready"}>
-                        <div>
-                          <strong>{file.name || file.file_id}</strong>
-                          <p>{file.resolved_path || `${file.base ?? "base"}/${file.path ?? ""}`}</p>
-                          {#if file.message}<small>{file.message}</small>{/if}
-                        </div>
-                        <span>{file.optional ? "Optional" : "Required"}</span>
-                      </article>
-                    {/each}
-                  </div>
-                </details>
-              {/if}
-              {#if profileExtensionSettings.length > 0}
-                <section class="profile-feature-panel" aria-label="Profile extension settings">
-                  <div class="panel-heading compact-heading">
-                    <h3>Profile Extension Settings</h3>
-                    <span>{profileExtensionSettings.length}</span>
-                  </div>
-                  <p class="hint">Profile-specific extension choices such as FNIS patch selections. These settings are stored per profile.</p>
-                  <div class="extension-settings-list">
-                    {#each profileExtensionSettings as setting}
-                      {@const ready = extensionSettingReady(setting)}
-                      {@const busy = extensionSettingBusy === extensionSettingKey(setting)}
-                      {@const options = setting.options ?? []}
-                      <article class:disabled-setting={!ready}>
-                        <div class="extension-setting-title">
-                          <div>
-                            <strong>{setting.name || setting.setting_id}</strong>
-                            <p>{setting.extension_id} · {extensionSettingValueType(setting)}</p>
-                          </div>
-                          <span class={`catalog-status ${ready ? "catalog-status-ready" : "catalog-status-deferred"}`}>{ready ? "Ready" : setting.status}</span>
-                        </div>
-                        {#if setting.message}<p class="hint">{setting.message}</p>{/if}
-                        {#if setting.options_error}<p class="deploy-message warning">{setting.options_error}</p>{/if}
-                        {#if options.length > 0}
-                          <div class="profile-feature-list">
-                            {#each options as option}
-                              <label class="mod-toggle option-toggle">
-                                <span>
-                                  <strong>{option.label || option.id}</strong>
-                                  {#if option.description}<small>{option.description}</small>{/if}
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={extensionSettingSelectedIDs(setting).includes(option.id)}
-                                  disabled={!ready || busy || Boolean(option.disabled)}
-                                  on:change={(event) => toggleExtensionSettingOption(setting, option.id, event.currentTarget.checked)}
-                                />
-                              </label>
-                            {/each}
-                          </div>
-                        {:else}
-                          <label class="settings-control compact-setting-control">
-                            <span>JSON Value</span>
-                            <textarea
-                              rows="4"
-                              spellcheck="false"
-                              value={extensionSettingDraft(setting)}
-                              placeholder={setting.placeholder || "[]"}
-                              disabled={!ready || busy}
-                              on:input={(event) => updateExtensionSettingDraft(setting, event.currentTarget.value)}
-                            ></textarea>
-                          </label>
-                        {/if}
-                        <div class="setting-actions">
-                          {#if setting.updated_at}<small>Updated {new Date(setting.updated_at).toLocaleString()}</small>{:else}<small>Not set</small>{/if}
-                          <button type="button" on:click={() => saveProfileExtensionSetting(setting)} disabled={!ready || busy}>{busy ? "Saving..." : "Save"}</button>
-                        </div>
-                      </article>
-                    {/each}
-                  </div>
-                </section>
-              {/if}
-            </section>
+          {:else}
+            <article class="phone-static-row"><strong>Move or copy mods</strong><small>Create another profile and install mods before transferring profile membership.</small></article>
           {/if}
-        </article>
-      {:else if activeGameModule === "review"}
-        <article class="workspace-panel">
-          <h2>Review</h2>
-          {#if gameInfo?.details?.length}
-            <section class="requirement-list" aria-label="Game information">
-              <div class="panel-heading compact-heading">
-                <h3>Game Info</h3>
-                <span>{gameInfo.details.length}</span>
-              </div>
-              {#each gameInfo.details as detail}
-                {@const value = gameInfoValue(detail.value)}
-                {#if value}
-                  <article>
-                    <div>
-                      <strong>{detail.title || detail.id}</strong>
-                      <p>{value}</p>
-                      {#if detail.source}<small>{detail.source}</small>{/if}
-                    </div>
-                    <span>{detail.type || "Info"}</span>
-                  </article>
-                {/if}
-              {/each}
-            </section>
-          {/if}
-          {#if executableGameExtensionActions().length}
-            <section class="requirement-list" aria-label="Extension actions">
-              <div class="panel-heading compact-heading">
-                <h3>Extension Actions</h3>
-                <span>{executableGameExtensionActions().length}</span>
-              </div>
-              {#each executableGameExtensionActions() as action}
-                <article>
-                  <div>
-                    <strong>{action.name || action.id}</strong>
-                    <p>{action.kind === "open-directory" ? "Open a source-backed extension folder." : action.kind === "open-path" ? "Open a source-backed extension file or folder." : "Install or reacquire a source-backed extension tool."}</p>
-                    {#if action.message}<small>{action.message}</small>{/if}
-                    {#if action.source_extension}<small>{action.source_extension}</small>{/if}
-                  </div>
-                  <button type="button" on:click={() => runGameExtensionAction(action)}>Run</button>
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if extensionSurfaceActions().length}
-            <section class="requirement-list" aria-label="Extension surfaces">
-              <div class="panel-heading compact-heading">
-                <h3>Extension Surfaces</h3>
-                <span>{extensionSurfaceActions().length}</span>
-              </div>
-              {#if extensionSurfaceMessage}<p class="hint success-copy">{extensionSurfaceMessage}</p>{/if}
-              {#each extensionSurfaceActions() as action}
-                <article>
-                  <div>
-                    <strong>{action.name || action.id}</strong>
-                    <p>{extensionSurfaceDescription(action)}</p>
-                    {#if action.message}<small>{action.message}</small>{/if}
-                    {#if action.source_extension}<small>{action.source_extension}</small>{/if}
-                  </div>
-                  <button type="button" on:click={() => resolveGameExtensionSurface(action)} disabled={extensionSurfaceBusyID === action.id}>
-                    {extensionSurfaceBusyID === action.id ? "Resolving..." : extensionSurfaceLabel(action)}
-                  </button>
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if gameDiagnostics?.runtime_requirements?.length}
-            <section class="requirement-list" aria-label="Runtime requirements">
-              <div class="panel-heading compact-heading">
-                <h3>Runtime Requirements</h3>
-                <span>{gameDiagnostics.runtime_requirements.length}</span>
-              </div>
-              {#each gameDiagnostics.runtime_requirements as requirement}
-                <article class:requirement-missing={requirement.status !== "ok"}>
-                  <div>
-                    <strong>{requirement.name}</strong>
-                    <p>{requirement.message}</p>
-                    {#if requirement.details?.length}
-                      <ul class="requirement-details">
-                        {#each requirement.details as detail}
-                          <li>{detail}</li>
-                        {/each}
-                      </ul>
-                    {/if}
-                    {#if requirement.install_hint}<small>{requirement.install_hint}</small>{/if}
-                    {#if requirement.help_url}<a href={requirement.help_url} target="_blank" rel="noreferrer">Open help</a>{/if}
-                    {#if requirement.kind === "launch-tool" && requirement.status !== "ok" && launchSetupAvailable}
-                      <div class="requirement-actions">
-                        <button type="button" on:click={applyLaunchSetup}>Configure Launch Tool</button>
-                        {#if gameLaunchStatus?.action?.risk === "replaces-existing-launch-options"}
-                          <small>Existing Steam launch options will be replaced.</small>
-                        {/if}
-                      </div>
-                    {/if}
-                    {#if requirement.status !== "ok" && requirement.kind !== "launch-tool" && runtimeRequirementCanAcquire(requirement)}
-                      <div class="requirement-actions">
-                        <button type="button" on:click={() => acquireRuntimeRequirement(requirement)}>Install Requirement</button>
-                        {#if requirement.acquisition.message}<small>{requirement.acquisition.message}</small>{/if}
-                      </div>
-                    {/if}
-                  </div>
-                  <span>{requirement.status}</span>
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if gameDiagnostics?.launcher_requirements?.length}
-            <section class="requirement-list" aria-label="Launcher requirements">
-              <div class="panel-heading compact-heading">
-                <h3>Launcher Requirements</h3>
-                <span>{gameDiagnostics.launcher_requirements.length}</span>
-              </div>
-              {#each gameDiagnostics.launcher_requirements as requirement}
-                <article class:requirement-missing={requirement.required && !requirement.satisfied}>
-                  <div>
-                    <strong>{requirement.name}</strong>
-                    <p>{requirement.message}</p>
-                    {#if requirement.details?.length}
-                      <ul class="requirement-details">
-                        {#each requirement.details as detail}
-                          <li>{detail}</li>
-                        {/each}
-                      </ul>
-                    {/if}
-                    {#if requirement.parameters?.length}
-                      <ul class="requirement-details">
-                        {#each requirement.parameters as parameter}
-                          <li>{parameter.name}: {parameter.value}</li>
-                        {/each}
-                      </ul>
-                    {/if}
-                    {#if requirement.source_extension}<small>{requirement.source_extension}</small>{/if}
-                  </div>
-                  <span>{requirement.status}</span>
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if selectedWorkshop}
-            <section class="requirement-list" aria-label="Steam Workshop state">
-              <div class="panel-heading compact-heading">
-                <h3>Steam Workshop</h3>
-                <span>{selectedWorkshop.item_count} item{selectedWorkshop.item_count === 1 ? "" : "s"}</span>
-              </div>
-              <article class:requirement-missing={!selectedWorkshop.coexistence_allowed}>
-                <div>
-                  <strong>{selectedWorkshop.coexistence_allowed ? "Workshop content detected" : "Workshop content needs review"}</strong>
-                  <p>{selectedWorkshop.message ?? "Steam Workshop content is present for this game."}</p>
-                  <ul class="requirement-details">
-                    {#if selectedWorkshop.content_path}<li>{selectedWorkshop.content_path}</li>{/if}
-                    {#if selectedWorkshop.manifest_path}<li>{selectedWorkshop.manifest_path}</li>{/if}
-                    {#if selectedWorkshop.sample_item_ids?.length}<li>Sample items: {selectedWorkshop.sample_item_ids.join(", ")}</li>{/if}
-                  </ul>
-                  <small>{selectedWorkshop.management_supported ? "Workshop management is supported by this extension." : "DMM leaves Workshop subscription and enable state to Steam for now."}</small>
-                </div>
-                <span>{selectedWorkshop.coexistence_allowed ? "External" : "Review"}</span>
-              </article>
-              {#if workshopState?.supported}
-                <article>
-                  <div>
-                    <strong>Managed from Mods</strong>
-                    <p>Use the Mods view to reorder, enable, disable, or unsubscribe synced Workshop items alongside DMM-managed mods.</p>
-                  </div>
-                  <span>Mods</span>
-                </article>
-              {/if}
-            </section>
-          {/if}
-          {#if visibleValidationWarnings.length}
-            <section class="requirement-list" aria-label="Validation warnings">
-              <div class="panel-heading compact-heading">
-                <h3>Warnings</h3>
-                <span>{visibleValidationWarnings.length}</span>
-              </div>
-              {#each visibleValidationWarnings as warning}
-                <article class="requirement-missing">
-                  <div>
-                    <strong>Needs attention</strong>
-                    <p>{warning}</p>
-                  </div>
-                </article>
-              {/each}
-            </section>
-          {/if}
-          {#if selectedGame.markers?.length}
-            <div class="markers">
-              {#each selectedGame.markers as marker}
-                <span>{marker}</span>
-              {/each}
-            </div>
-          {:else if !gameInfo?.details?.length && executableGameExtensionActions().length === 0 && !selectedWorkshop && !gameDiagnostics?.runtime_requirements?.length && !visibleValidationWarnings.length}
-            <p class="hint">No review markers for this game.</p>
-          {/if}
-        </article>
+        </section>
+      {:else if activeGameModule === "advanced"}
+        <section class="phone-card"><header><h2>Rollback</h2><span>{deploymentHistory.length} kept</span></header>{#each deploymentHistory as deployment}<button type="button" class="phone-row" on:click={() => previewRestorePoint(deployment)}><span><strong>{deployment.reason || "Restore point"}</strong><small>{new Date(deployment.created_at).toLocaleString()} · {deployment.actions} changes</small></span><b>›</b></button>{/each}</section>
+        {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.actions?.length ?? 0} changes</span></header>{#each restorePointPreview.actions ?? [] as action}<article class="phone-static-row"><strong>{deployOperationLabel(action.operation)}</strong><small>{action.target_path}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" on:click={() => restoreDeployment(deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)!)}>Restore</button></div></section>{/if}
+      {:else if activeGameModule === "actions"}
+        <section class="phone-card"><header><h2>Game Actions</h2><span>{selectedGameActionItems.length + installCandidates.length}</span></header>{#each selectedGameActionItems as action}<button type="button" class="phone-row" on:click={() => openActionItem(action)}><span><strong>{action.title}</strong><small>{action.message || actionNextStep(action)}</small></span><b>›</b></button>{/each}{#each installCandidates as candidate}<button type="button" class="phone-row" on:click={() => openInstallCandidate(candidate)}><span><strong>{candidate.name}</strong><small>{candidate.reason}</small></span><b>›</b></button>{/each}</section>
       {:else}
-        <article class="workspace-panel path-panel">
-          <h2>Paths</h2>
-          <dl class="settings-list">
-            <div><dt>Install</dt><dd>{selectedGame.path}</dd></div>
-            <div><dt>Library</dt><dd>{selectedGame.library_path}</dd></div>
-          </dl>
-        </article>
+        <div class="phone-segments"><button type="button" class:active={modSourceFilter === "all"} on:click={() => (modSourceFilter = "all")}>All</button><button type="button" on:click={() => (modSourceFilter = "enabled")}>Enabled</button><button type="button" on:click={() => (modSourceFilter = "disabled")}>Disabled</button><button type="button" on:click={() => openGameModule("advanced")}>Rollback</button></div>
+        <section class="phone-card"><header><h2>Profile Mods</h2><span>{installedMods.length} total</span></header>{#each installedMods as mod}<article class="phone-mod-row"><span><strong>{mod.name}</strong><small>{sourceLabel(mod.source_tag || mod.catalog)} · {mod.mod_type ?? mod.status}</small><span class="pills"><em class:ok={mod.enabled}>{mod.enabled ? "Enabled" : "Disabled"}</em>{#if hasSourceTag(mod.source_tag || mod.catalog)}<em class="source">{sourceLabel(mod.source_tag || mod.catalog)}</em>{/if}</span></span><label><input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} /></label><div class="mod-row-actions"><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>Reinstall</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => updateInstalledMod(mod)}>Update</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>Delete</button></div></article>{/each}</section>
       {/if}
     </section>
   {:else}
-    <section class="empty-state select-game">
-      <h2>Select a Game</h2>
-      <p class="hint">Open the games menu to choose a Steam game before importing mods or managing profiles.</p>
-      <button type="button" on:click={() => (drawer = "games")}>Open Games</button>
-    </section>
+    <section class="phone-empty"><h2>Select a Game</h2><p>Open the menu to choose a game.</p><button type="button" on:click={() => (drawer = "games")}>Open Games</button></section>
   {/if}
 </main>
 
@@ -7292,18 +5378,10 @@
   <section class="confirm-layer" aria-label="Confirm action">
     <button type="button" class="confirm-scrim" aria-label="Cancel confirmation" on:click={() => (confirmation = null)}></button>
     <article class:danger-confirm={confirmation.danger} class="confirm-dialog">
-      <div>
-        <p class="eyebrow">Confirm</p>
-        <h2>{confirmation.title}</h2>
-      </div>
+      <div><p class="eyebrow">Confirm</p><h2>{confirmation.title}</h2></div>
       <p>{confirmation.message}</p>
-      {#if confirmation.detail}
-        <p class="confirm-detail">{confirmation.detail}</p>
-      {/if}
-      <div class="confirm-actions">
-        <button type="button" class="secondary-action" on:click={() => (confirmation = null)}>Cancel</button>
-        <button type="button" class:danger-action={confirmation.danger} on:click={confirmCurrentAction}>{confirmation.confirmLabel}</button>
-      </div>
+      {#if confirmation.detail}<p class="confirm-detail">{confirmation.detail}</p>{/if}
+      <div class="confirm-actions"><button type="button" class="secondary-action" on:click={() => (confirmation = null)}>Cancel</button><button type="button" class:danger-action={confirmation.danger} on:click={confirmCurrentAction}>{confirmation.confirmLabel}</button></div>
     </article>
   </section>
 {/if}
