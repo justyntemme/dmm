@@ -544,7 +544,8 @@ func (s *Server) purgeModsInPath(ctx context.Context, appID, modType, targetPath
 	}); err != nil {
 		return scopedPurgeResult{}, err
 	}
-	if err := deploy.Purge(purged); err != nil {
+	preparedPurge, _, err := deploy.PreparePurgeWithOptions(purged, deploy.PurgeOptions{})
+	if err != nil {
 		return scopedPurgeResult{}, err
 	}
 	strategy := deploymentPointStrategy(remaining)
@@ -556,8 +557,13 @@ func (s *Server) purgeModsInPath(ctx context.Context, appID, modType, targetPath
 	}
 	deploymentID, err := s.db.RecordDeployment(ctx, appID, strategy, remaining)
 	if err != nil {
+		rollbackErr := preparedPurge.Rollback()
+		if rollbackErr != nil {
+			return scopedPurgeResult{}, fmt.Errorf("record scoped purge deployment: %w; rollback failed: %v", err, rollbackErr)
+		}
 		return scopedPurgeResult{}, fmt.Errorf("record scoped purge deployment: %w", err)
 	}
+	preparedPurge.Commit()
 	if err := s.updateAddedFilesSnapshot(ctx, appID, 0, nil); err != nil {
 		s.logger.Warn("new-file snapshot update after scoped purge failed", "app_id", appID, "source", source, "purge_path", targetPath, "mod_type", modType, "error", err)
 	}

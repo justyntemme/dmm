@@ -8734,9 +8734,9 @@ func TestPurgeModsInPathRemovesOnlyMatchingManagedFiles(t *testing.T) {
 		}
 	}
 	if _, err := srv.db.RecordDeployment(context.Background(), "999000", deploy.StrategyCopy, []deploy.AppliedFile{
-		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
-		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetOtherTypeInLegacyPath, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
-		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05", InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetOtherTypeInLegacyPath, Strategy: deploy.StrategyCopy, ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05", InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05", InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -8852,8 +8852,8 @@ func TestExtensionMigrationRunsPurgeCommandOnce(t *testing.T) {
 		}
 	}
 	if _, err := srv.db.RecordDeployment(context.Background(), appID, deploy.StrategyCopy, []deploy.AppliedFile{
-		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
-		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
+		{SourcePath: filepath.Join(root, "staging", "legacy", "legacy.dll"), TargetPath: targetLegacy, Strategy: deploy.StrategyCopy, ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05", InstalledModID: legacyMod.ID, Catalog: "nexus", ModID: "legacy"},
+		{SourcePath: filepath.Join(root, "staging", "current", "current.dll"), TargetPath: targetCurrent, Strategy: deploy.StrategyCopy, ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05", InstalledModID: currentMod.ID, Catalog: "nexus", ModID: "current"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -9868,6 +9868,7 @@ func TestExtensionMigrationDeployProfileCommandAppliesRetaggedActiveProfile(t *t
 		SourcePath:     filepath.Join(stagingPath, "file.txt"),
 		TargetPath:     oldTarget,
 		Strategy:       deploy.StrategyCopy,
+		ChecksumSHA256: "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4",
 		InstalledModID: mod.ID,
 		Catalog:        "nexus",
 		ModID:          "old",
@@ -10988,9 +10989,10 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
-		SourcePath: newSource,
-		TargetPath: newTarget,
-		Strategy:   deploy.StrategyCopy,
+		SourcePath:     newSource,
+		TargetPath:     newTarget,
+		Strategy:       deploy.StrategyCopy,
+		ChecksumSHA256: "f9520011e923de8b1738775e7728ea54b2467ab9c20ca9a7813ee1a687110fcd",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -11050,6 +11052,114 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 	}
 	if len(history) == 0 || !history[0].Active || history[0].ID == oldID || history[0].FileCount != 1 {
 		t.Fatalf("history after restore = %+v", history)
+	}
+}
+
+func TestPurgeDeployRequiresExplicitForceForChangedTarget(t *testing.T) {
+	srv := newTestServer(t)
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.SyncGames(context.Background(), []steam.Game{{
+		AppID: "990001", Name: "Integrity Test", InstallDir: "Game", LibraryPath: root, Path: gamePath, State: "clean_candidate",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "staging", "managed.txt")
+	target := filepath.Join(gamePath, "managed.txt")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("external update"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.db.RecordDeployment(context.Background(), "990001", deploy.StrategyCopy, []deploy.AppliedFile{{
+		SourcePath: source, TargetPath: target, Strategy: deploy.StrategyCopy,
+		ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/games/990001/deploy", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !bytes.Contains(rec.Body.Bytes(), []byte(`"force_available":true`)) {
+		t.Fatalf("purge response = %d %s", rec.Code, rec.Body.String())
+	}
+	if body, err := os.ReadFile(target); err != nil || string(body) != "external update" {
+		t.Fatalf("target after blocked purge = %q, err = %v", body, err)
+	}
+	if files, err := srv.db.LatestDeploymentFilesForSteamApp(context.Background(), "990001"); err != nil || len(files) != 1 {
+		t.Fatalf("manifest after blocked purge = %+v, err = %v", files, err)
+	}
+
+	forceReq := httptest.NewRequest(http.MethodDelete, "/api/games/990001/deploy?force=true", nil)
+	forceReq.RemoteAddr = "127.0.0.1:1"
+	forceRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(forceRec, forceReq)
+	if forceRec.Code != http.StatusAccepted {
+		t.Fatalf("forced purge response = %d %s", forceRec.Code, forceRec.Body.String())
+	}
+	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("forced purge target err = %v", err)
+	}
+}
+
+func TestDeploymentPointRestorePlanProtectsChangedCurrentTarget(t *testing.T) {
+	root := t.TempDir()
+	gamePath := filepath.Join(root, "Game")
+	currentSource := filepath.Join(root, "staging", "current.txt")
+	currentTarget := filepath.Join(gamePath, "current.txt")
+	oldSource := filepath.Join(root, "staging", "old.txt")
+	oldTarget := filepath.Join(gamePath, "old.txt")
+	if err := os.MkdirAll(filepath.Dir(currentSource), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(gamePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{currentSource: "managed", currentTarget: "steam update", oldSource: "old"} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current := []deploy.AppliedFile{{
+		SourcePath: currentSource, TargetPath: currentTarget, Strategy: deploy.StrategyCopy,
+		ChecksumSHA256: "7fdfda5f50a433ae127a784fc143105fb6d93fedec7601ddeb3d1d584f83de05",
+	}}
+	target := []deploy.AppliedFile{{
+		SourcePath: oldSource, TargetPath: oldTarget, Strategy: deploy.StrategyCopy,
+		ChecksumSHA256: "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4",
+	}}
+	plan := deploymentPointRestorePlan(current, target, gamePath)
+	if len(plan.IntegrityConflicts) != 1 {
+		t.Fatalf("integrity conflicts = %+v", plan.IntegrityConflicts)
+	}
+	if _, err := deploy.ApplyPrepared(plan); err == nil {
+		t.Fatal("expected restore to refuse changed current target")
+	}
+	if _, err := os.Lstat(oldTarget); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old target was partially restored: %v", err)
+	}
+	if body, err := os.ReadFile(currentTarget); err != nil || string(body) != "steam update" {
+		t.Fatalf("current target = %q, err = %v", body, err)
+	}
+	deployment, err := deploy.ApplyPreparedWithOptions(plan, deploy.ApplyOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployment.Commit()
+	if _, err := os.Lstat(currentTarget); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("forced restore current target err = %v", err)
+	}
+	if body, err := os.ReadFile(oldTarget); err != nil || string(body) != "old" {
+		t.Fatalf("forced restore old target = %q, err = %v", body, err)
 	}
 }
 

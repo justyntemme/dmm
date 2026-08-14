@@ -34,6 +34,28 @@ type RepairResult struct {
 	Issues   []RepairIssue `json:"issues"`
 }
 
+type PurgeOptions struct {
+	Force bool
+}
+
+type PurgeResult struct {
+	Purged    []AppliedFile `json:"purged"`
+	Missing   []AppliedFile `json:"missing"`
+	Conflicts []RepairIssue `json:"conflicts"`
+}
+
+type ConflictError struct {
+	Issues []RepairIssue
+}
+
+func (e ConflictError) Error() string {
+	return fmt.Sprintf("destructive operation blocked by %d externally changed target%s", len(e.Issues), pluralSuffix(len(e.Issues)))
+}
+
+type ApplyOptions struct {
+	Force bool
+}
+
 type backupFile struct {
 	original string
 	backup   string
@@ -42,6 +64,12 @@ type backupFile struct {
 type AppliedDeployment struct {
 	Files   []AppliedFile
 	changed []AppliedFile
+	backups []backupFile
+	closed  bool
+}
+
+type PreparedPurge struct {
+	Result  PurgeResult
 	backups []backupFile
 	closed  bool
 }
@@ -58,10 +86,23 @@ func Apply(plan Plan) ([]AppliedFile, error) {
 }
 
 func ApplyPrepared(plan Plan) (*AppliedDeployment, error) {
-	return ApplyPreparedWithProgress(plan, nil)
+	return ApplyPreparedWithOptions(plan, ApplyOptions{})
 }
 
 func ApplyPreparedWithProgress(plan Plan, progress ProgressFunc) (*AppliedDeployment, error) {
+	return applyPrepared(plan, ApplyOptions{}, progress)
+}
+
+func ApplyPreparedWithOptions(plan Plan, options ApplyOptions) (*AppliedDeployment, error) {
+	return applyPrepared(plan, options, nil)
+}
+
+func applyPrepared(plan Plan, options ApplyOptions, progress ProgressFunc) (*AppliedDeployment, error) {
+	if !options.Force {
+		if issues := DestructiveConflicts(plan.Actions); len(issues) > 0 {
+			return nil, ConflictError{Issues: issues}
+		}
+	}
 	var applied []AppliedFile
 	var changed []AppliedFile
 	var backups []backupFile
@@ -108,6 +149,7 @@ func ApplyPreparedWithProgress(plan Plan, progress ProgressFunc) (*AppliedDeploy
 			TargetPath:     action.TargetPath,
 			Strategy:       action.Strategy,
 			ChecksumSHA256: action.ChecksumSHA256,
+			RestoreSHA256:  action.RestoreSHA256,
 			InstalledModID: action.InstalledModID,
 			Catalog:        action.Catalog,
 			ModID:          action.ModID,
@@ -213,18 +255,69 @@ func fileSHA256(path string) (string, error) {
 }
 
 func Purge(files []AppliedFile) error {
+	_, err := PurgeWithOptions(files, PurgeOptions{})
+	return err
+}
+
+func PurgeWithOptions(files []AppliedFile, options PurgeOptions) (PurgeResult, error) {
+	prepared, result, err := PreparePurgeWithOptions(files, options)
+	if err != nil {
+		return result, err
+	}
+	prepared.Commit()
+	return result, nil
+}
+
+func PreparePurgeWithOptions(files []AppliedFile, options PurgeOptions) (*PreparedPurge, PurgeResult, error) {
+	result := PurgeResult{Purged: []AppliedFile{}, Missing: []AppliedFile{}, Conflicts: []RepairIssue{}}
+	result.Conflicts, result.Missing = PurgeConflicts(files)
+	if len(result.Conflicts) > 0 && !options.Force {
+		return nil, result, ConflictError{Issues: result.Conflicts}
+	}
+	prepared := &PreparedPurge{Result: result}
 	for i := len(files) - 1; i >= 0; i-- {
-		if strings.TrimSpace(files[i].RestorePath) != "" {
-			if err := restoreAppliedOriginal(files[i]); err != nil {
-				return err
+		file := files[i]
+		backup, err := backupTarget(file.TargetPath)
+		if err != nil {
+			_ = prepared.Rollback()
+			return nil, result, err
+		}
+		if backup != nil {
+			prepared.backups = append(prepared.backups, *backup)
+		}
+		if strings.TrimSpace(file.RestorePath) != "" {
+			if err := copyFile(file.RestorePath, file.TargetPath); err != nil {
+				_ = prepared.Rollback()
+				return nil, result, err
 			}
+			result.Purged = append(result.Purged, file)
 			continue
 		}
-		if err := os.Remove(files[i].TargetPath); err != nil && !os.IsNotExist(err) {
-			return err
+		if backup == nil {
+			continue
 		}
+		result.Purged = append(result.Purged, file)
 	}
-	return nil
+	prepared.Result = result
+	return prepared, result, nil
+}
+
+func (p *PreparedPurge) Commit() {
+	if p == nil || p.closed {
+		return
+	}
+	removeBackups(p.backups)
+	p.closed = true
+}
+
+func (p *PreparedPurge) Rollback() error {
+	if p == nil || p.closed {
+		return nil
+	}
+	err := restoreBackups(p.backups)
+	removeBackups(p.backups)
+	p.closed = true
+	return err
 }
 
 func Repair(files []AppliedFile) (RepairResult, error) {
@@ -338,6 +431,166 @@ func verifyFile(file AppliedFile) error {
 	return nil
 }
 
+func IdentityForAppliedFile(file AppliedFile) TargetIdentity {
+	return TargetIdentity{
+		SourcePath:     filepath.Clean(file.SourcePath),
+		Strategy:       file.Strategy,
+		ChecksumSHA256: strings.TrimSpace(file.ChecksumSHA256),
+	}
+}
+
+func CaptureTargetIdentity(targetPath string) (TargetIdentity, error) {
+	st, err := os.Lstat(targetPath)
+	if err != nil {
+		return TargetIdentity{}, err
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(targetPath)
+		if err != nil {
+			return TargetIdentity{}, err
+		}
+		return TargetIdentity{SourcePath: target, Strategy: StrategySymlink}, nil
+	}
+	if !st.Mode().IsRegular() {
+		return TargetIdentity{}, errors.New("target is not a regular file or symlink")
+	}
+	sum, err := fileSHA256(targetPath)
+	if err != nil {
+		return TargetIdentity{}, err
+	}
+	return TargetIdentity{Strategy: StrategyCopy, ChecksumSHA256: sum}, nil
+}
+
+func VerifyManagedTarget(file AppliedFile) error {
+	return verifyTargetIdentity(file.TargetPath, IdentityForAppliedFile(file))
+}
+
+func verifyTargetIdentity(targetPath string, identity TargetIdentity) error {
+	st, err := os.Lstat(targetPath)
+	if err != nil {
+		return fmt.Errorf("verify managed target %s: %w", targetPath, err)
+	}
+	switch identity.Strategy {
+	case StrategySymlink:
+		if st.Mode()&os.ModeSymlink == 0 {
+			return errors.New("managed target is no longer a symlink")
+		}
+		target, err := os.Readlink(targetPath)
+		if err != nil {
+			return err
+		}
+		if target != identity.SourcePath {
+			return fmt.Errorf("managed symlink now points to %s instead of %s", target, identity.SourcePath)
+		}
+	case StrategyHardlink:
+		source, err := os.Stat(identity.SourcePath)
+		if err != nil {
+			return fmt.Errorf("managed hardlink source: %w", err)
+		}
+		target, err := os.Stat(targetPath)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(source, target) {
+			return errors.New("managed target is no longer hardlinked to its staging source")
+		}
+	case StrategyCopy:
+		if st.Mode()&os.ModeSymlink != 0 || !st.Mode().IsRegular() {
+			return errors.New("managed copy is no longer a regular file")
+		}
+		expected := strings.TrimSpace(identity.ChecksumSHA256)
+		if expected == "" {
+			return errors.New("managed copy identity checksum is missing")
+		}
+		actual, err := fileSHA256(targetPath)
+		if err != nil {
+			return err
+		}
+		if actual != expected {
+			return errors.New("managed copy checksum changed outside DMM")
+		}
+	default:
+		return fmt.Errorf("managed target strategy %q is unsupported", identity.Strategy)
+	}
+	return nil
+}
+
+func DestructiveConflicts(actions []Action) []RepairIssue {
+	var issues []RepairIssue
+	for _, action := range actions {
+		if action.Conflict || (action.Operation != "remove" && action.Operation != "replace") {
+			continue
+		}
+		if action.ExistingTarget == nil {
+			issues = append(issues, RepairIssue{File: appliedFileFromAction(action), Reason: "destructive action is missing the expected target identity"})
+			continue
+		}
+		if err := verifyTargetIdentity(action.TargetPath, *action.ExistingTarget); err != nil {
+			if action.Operation == "remove" && strings.TrimSpace(action.RestorePath) == "" && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			issues = append(issues, RepairIssue{File: appliedFileFromAction(action), Reason: err.Error()})
+			continue
+		}
+		if err := verifyRestoreAction(action); err != nil {
+			issues = append(issues, RepairIssue{File: appliedFileFromAction(action), Reason: err.Error()})
+		}
+	}
+	return issues
+}
+
+func PurgeConflicts(files []AppliedFile) (conflicts []RepairIssue, missing []AppliedFile) {
+	for _, file := range files {
+		err := VerifyManagedTarget(file)
+		if err == nil {
+			if restoreErr := verifyRestoreSource(file); restoreErr != nil {
+				conflicts = append(conflicts, RepairIssue{File: file, Reason: restoreErr.Error()})
+			}
+			continue
+		}
+		if errors.Is(err, os.ErrNotExist) && strings.TrimSpace(file.RestorePath) == "" {
+			missing = append(missing, file)
+			continue
+		}
+		conflicts = append(conflicts, RepairIssue{File: file, Reason: err.Error()})
+	}
+	return conflicts, missing
+}
+
+func appliedFileFromAction(action Action) AppliedFile {
+	return AppliedFile{
+		SourcePath: action.SourcePath, RestorePath: action.RestorePath, TargetPath: action.TargetPath,
+		Strategy: action.Strategy, ChecksumSHA256: action.ChecksumSHA256, RestoreSHA256: action.RestoreSHA256,
+		InstalledModID: action.InstalledModID, Catalog: action.Catalog, ModID: action.ModID,
+	}
+}
+
+func targetIdentityPointer(identity TargetIdentity) *TargetIdentity {
+	return &identity
+}
+
+func verifyRestoreSource(file AppliedFile) error {
+	if strings.TrimSpace(file.RestorePath) == "" {
+		return nil
+	}
+	expected := strings.TrimSpace(file.RestoreSHA256)
+	if expected == "" {
+		return errors.New("managed restore source checksum is missing")
+	}
+	actual, err := fileSHA256(file.RestorePath)
+	if err != nil {
+		return fmt.Errorf("verify restore source: %w", err)
+	}
+	if actual != expected {
+		return errors.New("managed restore source checksum changed")
+	}
+	return nil
+}
+
+func verifyRestoreAction(action Action) error {
+	return verifyRestoreSource(appliedFileFromAction(action))
+}
+
 func verifyCopy(sourcePath, targetPath string) error {
 	source, err := os.ReadFile(sourcePath)
 	if err != nil {
@@ -418,30 +671,11 @@ func restoreManagedOriginal(action Action) error {
 	return copyFile(action.RestorePath, action.TargetPath)
 }
 
-func restoreAppliedOriginal(file AppliedFile) error {
-	if strings.TrimSpace(file.RestorePath) == "" {
-		return nil
+func pluralSuffix(count int) string {
+	if count == 1 {
+		return ""
 	}
-	if err := verifyFile(file); err != nil {
-		return fmt.Errorf("refusing to restore original for %s: target changed since DMM deployment: %w", file.TargetPath, err)
-	}
-	backup, err := backupTarget(file.TargetPath)
-	if err != nil {
-		return err
-	}
-	if err := restoreManagedOriginal(Action{
-		RestorePath: file.RestorePath,
-		TargetPath:  file.TargetPath,
-	}); err != nil {
-		if backup != nil {
-			_ = restoreBackups([]backupFile{*backup})
-		}
-		return err
-	}
-	if backup != nil {
-		removeBackups([]backupFile{*backup})
-	}
-	return nil
+	return "s"
 }
 
 func copyFile(source, target string) error {

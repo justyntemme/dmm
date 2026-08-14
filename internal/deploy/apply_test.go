@@ -1,10 +1,156 @@
 package deploy
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestPurgeChangedTargetsIsAtomic(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	game := filepath.Join(root, "game")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"one.txt", "two.txt"} {
+		if err := os.WriteFile(filepath.Join(staging, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := BuildPlan(staging, game, StrategySymlink, []FileMapping{
+		{SourceRelative: "one.txt", TargetRelative: "one.txt"},
+		{SourceRelative: "two.txt", TargetRelative: "two.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := Apply(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := filepath.Join(game, "two.txt")
+	if err := os.Remove(changed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(changed, []byte("external"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err = Purge(files)
+	var conflict ConflictError
+	if !errors.As(err, &conflict) || len(conflict.Issues) != 1 {
+		t.Fatalf("purge error = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(game, "one.txt")); err != nil {
+		t.Fatalf("unchanged managed target was mutated: %v", err)
+	}
+	body, err := os.ReadFile(changed)
+	if err != nil || string(body) != "external" {
+		t.Fatalf("external target = %q, err = %v", body, err)
+	}
+}
+
+func TestForcePurgeRemovesChangedCopy(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.txt")
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(source, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := fileSHA256(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("external"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := PurgeWithOptions([]AppliedFile{{SourcePath: source, TargetPath: target, Strategy: StrategyCopy, ChecksumSHA256: sum}}, PurgeOptions{Force: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) != 1 || len(result.Purged) != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("forced purge target err = %v", err)
+	}
+}
+
+func TestPurgeRejectsChangedHardlink(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.txt")
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(source, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(source, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("steam update"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Purge([]AppliedFile{{SourcePath: source, TargetPath: target, Strategy: StrategyHardlink}})
+	var conflict ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("purge error = %v", err)
+	}
+}
+
+func TestPurgeRejectsChangedRestoreSource(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "patched.ini")
+	restore := filepath.Join(root, "original.ini")
+	target := filepath.Join(root, "game.ini")
+	for path, body := range map[string]string{source: "patched", restore: "original", target: "patched"} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sourceSum, _ := fileSHA256(source)
+	restoreSum, _ := fileSHA256(restore)
+	file := AppliedFile{SourcePath: source, RestorePath: restore, TargetPath: target, Strategy: StrategyCopy, ChecksumSHA256: sourceSum, RestoreSHA256: restoreSum}
+	if err := os.WriteFile(restore, []byte("changed backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Purge([]AppliedFile{file}); err == nil {
+		t.Fatal("expected changed restore source conflict")
+	}
+	body, err := os.ReadFile(target)
+	if err != nil || string(body) != "patched" {
+		t.Fatalf("target = %q, err = %v", body, err)
+	}
+}
+
+func TestPreparedPurgeRollbackRestoresManagedTarget(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.txt")
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(source, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, target); err != nil {
+		t.Fatal(err)
+	}
+	prepared, _, err := PreparePurgeWithOptions([]AppliedFile{{SourcePath: source, TargetPath: target, Strategy: StrategySymlink}}, PurgeOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("prepared target err = %v", err)
+	}
+	if err := prepared.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	link, err := os.Readlink(target)
+	if err != nil || link != source {
+		t.Fatalf("restored link = %q, err = %v", link, err)
+	}
+}
 
 func TestApplyAndPurgeSymlink(t *testing.T) {
 	root := t.TempDir()
@@ -289,11 +435,19 @@ func TestPreparedApplyRollbackRestoresUncommittedChanges(t *testing.T) {
 	if err := os.WriteFile(removeTarget, []byte("remove"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	replaceIdentity, err := CaptureTargetIdentity(replaceTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeIdentity, err := CaptureTargetIdentity(removeTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	deployment, err := ApplyPrepared(Plan{Actions: []Action{
-		{SourcePath: newSource, TargetPath: replaceTarget, Strategy: StrategySymlink, Operation: "replace"},
+		{SourcePath: newSource, TargetPath: replaceTarget, Strategy: StrategySymlink, Operation: "replace", ExistingTarget: &replaceIdentity},
 		{SourcePath: addSource, TargetPath: addTarget, Strategy: StrategySymlink, Operation: "add"},
-		{TargetPath: removeTarget, Operation: "remove"},
+		{TargetPath: removeTarget, Operation: "remove", ExistingTarget: &removeIdentity},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -328,6 +482,10 @@ func TestApplyPreparedWithProgressReportsDeployableActions(t *testing.T) {
 	if err := os.WriteFile(removeTarget, []byte("remove"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	removeIdentity, err := CaptureTargetIdentity(removeTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var updates []struct {
 		completed int
@@ -337,7 +495,7 @@ func TestApplyPreparedWithProgressReportsDeployableActions(t *testing.T) {
 	deployment, err := ApplyPreparedWithProgress(Plan{Actions: []Action{
 		{SourcePath: source, TargetPath: addTarget, Strategy: StrategySymlink, Operation: "add"},
 		{TargetPath: conflictTarget, Operation: "add", Conflict: true},
-		{TargetPath: removeTarget, Operation: "remove"},
+		{TargetPath: removeTarget, Operation: "remove", ExistingTarget: &removeIdentity},
 		{Operation: "skip"},
 	}}, func(completed, total int, action Action) {
 		updates = append(updates, struct {

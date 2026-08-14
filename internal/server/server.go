@@ -709,6 +709,13 @@ type deploymentRestorePreviewResponse struct {
 	Plan             deploy.Plan          `json:"plan"`
 }
 
+type destructiveConflictResponse struct {
+	Error          string               `json:"error"`
+	Operation      string               `json:"operation"`
+	Conflicts      []deploy.RepairIssue `json:"conflicts"`
+	ForceAvailable bool                 `json:"force_available"`
+}
+
 type gameDiagnosticsResponse struct {
 	AppID                string                           `json:"app_id"`
 	Game                 storage.Game                     `json:"game"`
@@ -3443,7 +3450,7 @@ func launchActionRisk(currentOptions string) string {
 func summarizeDeployPreview(plan deploy.Plan) deployPreviewSummary {
 	summary := deployPreviewSummary{
 		Available: true,
-		Conflicts: len(plan.Conflicts),
+		Conflicts: len(plan.Conflicts) + len(plan.IntegrityConflicts),
 	}
 	for _, action := range plan.Actions {
 		switch action.Operation {
@@ -11598,12 +11605,12 @@ func (s *Server) applyProfileChangesForUserAction(ctx context.Context, appID, so
 			Job:     &job,
 		}
 	}
-	if len(plan.Conflicts) > 0 {
-		s.logger.Info("profile apply blocked by conflicts", "app_id", appID, "source", source, "conflicts", len(plan.Conflicts))
+	if conflictCount := len(plan.Conflicts) + len(plan.IntegrityConflicts); conflictCount > 0 {
+		s.logger.Info("profile apply blocked by conflicts", "app_id", appID, "source", source, "conflicts", conflictCount)
 		job, _ = s.jobs.Complete(job.ID, "Profile has conflicts to review before applying")
 		return profileApplyResponse{
 			Status:  "blocked",
-			Message: "Profile was updated, but " + strconv.Itoa(len(plan.Conflicts)) + " conflict" + plural(len(plan.Conflicts)) + " need review before applying.",
+			Message: "Profile was updated, but " + strconv.Itoa(conflictCount) + " conflict" + plural(conflictCount) + " need review before applying.",
 			Job:     &job,
 			Plan:    &plan,
 		}
@@ -11740,6 +11747,12 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no deployed manifest is available to purge", http.StatusNotFound)
 		return
 	}
+	force := truthyQueryValue(r.URL.Query().Get("force"))
+	if conflicts, _ := deploy.PurgeConflicts(files); len(conflicts) > 0 && !force {
+		s.logger.Warn("purge blocked by changed managed files", "app_id", appID, "conflicts", len(conflicts))
+		writeDestructiveConflict(w, "purge", conflicts)
+		return
+	}
 	job := s.jobs.CreateWithPayload("purge", "Purge deployed mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Purging deployed files for "+appID)
 	s.logger.Info("purge confirmed", "job_id", job.ID, "app_id", appID, "files", len(files))
@@ -11754,18 +11767,24 @@ func (s *Server) handlePurgeDeploy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
-	if err := deploy.Purge(files); err != nil {
+	preparedPurge, _, err := deploy.PreparePurgeWithOptions(files, deploy.PurgeOptions{Force: force})
+	if err != nil {
 		s.logger.Warn("purge failed", "job_id", job.ID, "app_id", appID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
 	if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
+		rollbackErr := preparedPurge.Rollback()
 		s.logger.Warn("purge manifest update failed", "job_id", job.ID, "app_id", appID, "error", err)
+		if rollbackErr != nil {
+			s.logger.Warn("purge rollback failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
+		}
 		job, _ = s.jobs.Fail(job.ID, err.Error())
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job)})
 		return
 	}
+	preparedPurge.Commit()
 	s.logger.Info("purge completed", "job_id", job.ID, "app_id", appID, "files", len(files))
 	job, _ = s.jobs.Complete(job.ID, "Purged "+strconv.Itoa(len(files))+" deployed files")
 	s.publishGameEvent(events.TypeDeploymentChanged, appID, map[string]any{
@@ -11866,6 +11885,12 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 		return
 	}
 	plan := preview.Plan
+	force := truthyQueryValue(r.URL.Query().Get("force"))
+	if len(plan.IntegrityConflicts) > 0 && !force {
+		s.logger.Warn("deployment point restore blocked by changed managed files", "app_id", appID, "deployment_id", deploymentID, "conflicts", len(plan.IntegrityConflicts))
+		writeDestructiveConflict(w, "restore", plan.IntegrityConflicts)
+		return
+	}
 
 	payload := gameJobPayload(appID)
 	if payload == nil {
@@ -11882,7 +11907,7 @@ func (s *Server) handleRestoreDeployHistoryPoint(w http.ResponseWriter, r *http.
 		writeJSON(w, http.StatusAccepted, map[string]any{"job": jobAPIResponse(job), "plan": plan})
 		return
 	}
-	deployment, err := deploy.ApplyPrepared(plan)
+	deployment, err := deploy.ApplyPreparedWithOptions(plan, deploy.ApplyOptions{Force: force})
 	if err != nil {
 		s.logger.Warn("deployment point restore apply failed", "job_id", job.ID, "app_id", appID, "deployment_id", deploymentID, "error", err)
 		job, _ = s.jobs.Fail(job.ID, err.Error())
@@ -11971,6 +11996,14 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, 
 		}
 		targetByPath[target] = file
 	}
+	currentByPath := make(map[string]deploy.AppliedFile, len(currentFiles))
+	for _, file := range currentFiles {
+		target := filepath.Clean(file.TargetPath)
+		if target == "." || target == "" {
+			continue
+		}
+		currentByPath[target] = file
+	}
 	actions := make([]deploy.Action, 0, len(currentFiles)+len(targetFiles))
 	for _, file := range currentFiles {
 		target := filepath.Clean(file.TargetPath)
@@ -11980,6 +12013,7 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, 
 		targetRootLabel, targetRel := deploymentRestoreTargetLabel(cleanTargetRoot, target)
 		targetRoots[targetRootLabel] = targetRootForLabel(cleanTargetRoot, targetRootLabel, target)
 		actions = append(actions, deploy.Action{
+			SourcePath:     file.SourcePath,
 			RestorePath:    file.RestorePath,
 			TargetPath:     target,
 			TargetRoot:     targetRootLabel,
@@ -11987,6 +12021,8 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, 
 			Strategy:       file.Strategy,
 			Operation:      "remove",
 			ChecksumSHA256: file.ChecksumSHA256,
+			RestoreSHA256:  file.RestoreSHA256,
+			ExistingTarget: deploymentTargetIdentityPointer(deploy.IdentityForAppliedFile(file)),
 			InstalledModID: file.InstalledModID,
 			Catalog:        file.Catalog,
 			ModID:          file.ModID,
@@ -11998,8 +12034,26 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, 
 			continue
 		}
 		operation := "add"
-		if _, err := os.Lstat(target); err == nil {
-			operation = "replace"
+		var existingTarget *deploy.TargetIdentity
+		conflict := false
+		conflictReason := ""
+		if current, managed := currentByPath[target]; managed {
+			if deploy.VerifyManagedTarget(file) == nil {
+				operation = "keep"
+			} else {
+				operation = "replace"
+				existingTarget = deploymentTargetIdentityPointer(deploy.IdentityForAppliedFile(current))
+			}
+		} else if _, err := os.Lstat(target); err == nil {
+			if deploy.VerifyManagedTarget(file) == nil {
+				operation = "keep"
+			} else {
+				conflict = true
+				conflictReason = "target exists outside the current DMM deployment and differs from the selected restore point"
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			conflict = true
+			conflictReason = err.Error()
 		}
 		targetRootLabel, targetRel := deploymentRestoreTargetLabel(cleanTargetRoot, target)
 		targetRoots[targetRootLabel] = targetRootForLabel(cleanTargetRoot, targetRootLabel, target)
@@ -12012,17 +12066,28 @@ func deploymentPointRestorePlan(currentFiles, targetFiles []deploy.AppliedFile, 
 			Strategy:       file.Strategy,
 			Operation:      operation,
 			ChecksumSHA256: file.ChecksumSHA256,
+			RestoreSHA256:  file.RestoreSHA256,
+			ExistingTarget: existingTarget,
 			InstalledModID: file.InstalledModID,
 			Catalog:        file.Catalog,
 			ModID:          file.ModID,
+			Conflict:       conflict,
+			ConflictReason: conflictReason,
 		})
 	}
-	return deploy.Plan{
+	plan := deploy.Plan{
 		TargetRoot:  cleanTargetRoot,
 		TargetRoots: targetRoots,
 		Strategy:    deploymentPointStrategy(targetFiles),
 		Actions:     actions,
 	}
+	for _, action := range actions {
+		if action.Conflict {
+			plan.Conflicts = append(plan.Conflicts, action)
+		}
+	}
+	plan.IntegrityConflicts = deploy.DestructiveConflicts(actions)
+	return plan
 }
 
 func deploymentRestoreTargetLabel(targetRoot, target string) (string, string) {
@@ -12039,6 +12104,10 @@ func targetRootForLabel(targetRoot, label, target string) string {
 		return targetRoot
 	}
 	return filepath.Dir(target)
+}
+
+func deploymentTargetIdentityPointer(identity deploy.TargetIdentity) *deploy.TargetIdentity {
+	return &identity
 }
 
 func deploymentRestoreSampleFiles(plan deploy.Plan, limit int) []string {
@@ -12105,15 +12174,29 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	force := truthyQueryValue(r.URL.Query().Get("force"))
+	if conflicts, _ := deploy.PurgeConflicts(files); len(conflicts) > 0 && !force {
+		s.logger.Warn("game reset blocked by changed managed files", "app_id", appID, "conflicts", len(conflicts))
+		writeDestructiveConflict(w, "reset", conflicts)
+		return
+	}
 	job := s.jobs.CreateWithPayload("reset", "Reset DMM-managed mods", gameJobPayload(appID))
 	job, _ = s.jobs.Run(job.ID, "Resetting DMM-managed mods for "+appID)
 	result := resetGameModsResponse{Job: job}
-
-	files, err := s.db.LatestDeploymentFilesForSteamApp(r.Context(), appID)
-	if err != nil {
-		s.finishResetFailure(w, job.ID, result, err)
-		return
-	}
+	var preparedPurge *deploy.PreparedPurge
+	resetComplete := false
+	defer func() {
+		if preparedPurge != nil && !resetComplete {
+			if rollbackErr := preparedPurge.Rollback(); rollbackErr != nil {
+				s.logger.Warn("reset purge rollback failed", "job_id", job.ID, "app_id", appID, "error", rollbackErr)
+			}
+		}
+	}()
 	if len(files) > 0 {
 		s.logger.Info("reset purging deployed files", "job_id", job.ID, "app_id", appID, "files", len(files))
 		if err := s.runLifecycleEventHandlers(r.Context(), lifecycleEventRequest{
@@ -12125,11 +12208,8 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 			s.finishResetFailure(w, job.ID, result, err)
 			return
 		}
-		if err := deploy.Purge(files); err != nil {
-			s.finishResetFailure(w, job.ID, result, err)
-			return
-		}
-		if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
+		preparedPurge, _, err = deploy.PreparePurgeWithOptions(files, deploy.PurgeOptions{Force: force})
+		if err != nil {
 			s.finishResetFailure(w, job.ID, result, err)
 			return
 		}
@@ -12195,6 +12275,14 @@ func (s *Server) handleResetGameMods(w http.ResponseWriter, r *http.Request) {
 		s.publishInstallCandidatesChanged(appID, "reset", int(deletedCandidates))
 	}
 	result.CapturedInstallsCleared = s.clearCapturedInstallsForSteamApp(appID)
+	if preparedPurge != nil {
+		if err := s.db.MarkLatestDeploymentPurged(r.Context(), appID); err != nil {
+			s.finishResetFailure(w, job.ID, result, err)
+			return
+		}
+		preparedPurge.Commit()
+	}
+	resetComplete = true
 
 	message := "Reset DMM-managed mods: " + strconv.Itoa(result.InstalledModsRemoved) + " mod" + plural(result.InstalledModsRemoved) + " removed"
 	job, _ = s.jobs.Complete(job.ID, message)
@@ -12242,6 +12330,15 @@ func (s *Server) finishResetFailure(w http.ResponseWriter, jobID string, result 
 	job, _ := s.jobs.Fail(jobID, err.Error())
 	result.Job = job
 	writeJSON(w, http.StatusAccepted, result)
+}
+
+func writeDestructiveConflict(w http.ResponseWriter, operation string, conflicts []deploy.RepairIssue) {
+	writeJSON(w, http.StatusConflict, destructiveConflictResponse{
+		Error:          "DMM stopped because managed game files changed outside DMM",
+		Operation:      operation,
+		Conflicts:      conflicts,
+		ForceAvailable: true,
+	})
 }
 
 func (s *Server) clearCapturedInstallsForSteamApp(appID string) int {

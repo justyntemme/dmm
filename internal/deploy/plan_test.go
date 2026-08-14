@@ -826,11 +826,19 @@ func TestApplyHandlesReplaceKeepAndRemove(t *testing.T) {
 	if err := os.WriteFile(removedTarget, []byte("remove"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	replaceIdentity, err := CaptureTargetIdentity(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeIdentity, err := CaptureTargetIdentity(removedTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	applied, err := Apply(Plan{Actions: []Action{
-		{SourcePath: source, TargetPath: target, Strategy: StrategySymlink, Operation: "replace"},
+		{SourcePath: source, TargetPath: target, Strategy: StrategySymlink, Operation: "replace", ExistingTarget: &replaceIdentity},
 		{SourcePath: keptSource, TargetPath: keptTarget, Strategy: StrategySymlink, Operation: "keep"},
-		{TargetPath: removedTarget, Operation: "remove"},
+		{TargetPath: removedTarget, Operation: "remove", ExistingTarget: &removeIdentity},
 	}})
 	if err != nil {
 		t.Fatal(err)

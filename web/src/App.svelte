@@ -414,6 +414,21 @@
     strategy: string;
     actions: DeployAction[];
     conflicts: DeployAction[];
+    integrity_conflicts?: DestructiveConflict[];
+  };
+
+  type DestructiveConflict = {
+    file: {
+      target_path: string;
+    };
+    reason: string;
+  };
+
+  type DestructiveConflictResponse = {
+    error: string;
+    operation: string;
+    conflicts: DestructiveConflict[];
+    force_available: boolean;
   };
 
   type DeployPreviewSummary = {
@@ -4154,11 +4169,32 @@
     await refreshSelectedGame({ refreshPreview: true });
   }
 
-  async function purgeDeployment() {
+  async function offerForceAfterConflict(response: Response, title: string, runForce: () => Promise<void>): Promise<boolean> {
+    if (response.status !== 409) return false;
+    const conflict = (await response.json()) as DestructiveConflictResponse;
+    if (!conflict.force_available || conflict.conflicts.length === 0) {
+      error = conflict.error;
+      return true;
+    }
+    const paths = conflict.conflicts.slice(0, 3).map((item) => item.file.target_path).join("; ");
+    const remainder = conflict.conflicts.length > 3 ? `; and ${conflict.conflicts.length - 3} more` : "";
+    confirmation = {
+      title,
+      message: `${conflict.conflicts.length} managed file${conflict.conflicts.length === 1 ? " has" : "s have"} changed outside DMM.`,
+      detail: `${paths}${remainder}. Forcing this operation can discard those external changes.`,
+      confirmLabel: "Force Operation",
+      danger: true,
+      run: runForce
+    };
+    return true;
+  }
+
+  async function purgeDeployment(force = false) {
     if (!selectedGame || !deploymentStatus?.deployed) return;
     error = "";
-    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy`, { method: "DELETE" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy${force ? "?force=true" : ""}`, { method: "DELETE" });
     if (!response.ok) {
+      if (await offerForceAfterConflict(response, "Force removal of changed files", () => purgeDeployment(true))) return;
       error = await response.text();
       return;
     }
@@ -4168,11 +4204,12 @@
     await refreshSelectedGame();
   }
 
-  async function resetManagedMods() {
+  async function resetManagedMods(force = false) {
     if (!selectedGame) return;
     error = "";
-    const response = await apiFetch(`/api/games/${selectedGame.app_id}/reset`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/reset${force ? "?force=true" : ""}`, { method: "POST" });
     if (!response.ok) {
+      if (await offerForceAfterConflict(response, "Force reset of changed files", () => resetManagedMods(true))) return;
       error = await response.text();
       return;
     }
@@ -4235,11 +4272,12 @@
     }
   }
 
-  async function restoreDeploymentPoint(deployment: DeploymentHistoryItem) {
+  async function restoreDeploymentPoint(deployment: DeploymentHistoryItem, force = false) {
     if (!selectedGame || deployment.active) return;
     error = "";
-    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/history/${deployment.id}/restore`, { method: "POST" });
+    const response = await apiFetch(`/api/games/${selectedGame.app_id}/deploy/history/${deployment.id}/restore${force ? "?force=true" : ""}`, { method: "POST" });
     if (!response.ok) {
+      if (await offerForceAfterConflict(response, "Force restore over changed files", () => restoreDeploymentPoint(deployment, true))) return;
       error = await response.text();
       return;
     }
@@ -5380,7 +5418,7 @@
         </section>
       {:else if activeGameModule === "advanced"}
         <section class="phone-card"><header><h2>Rollback</h2><span>{deploymentHistory.length} kept</span></header>{#each deploymentHistory as deployment}<button type="button" class="phone-row" disabled={restorePointPreviewBusy === deployment.id} on:click={() => previewRestoreDeploymentPoint(deployment)}><span><strong>{deploymentPointLabel(deployment)}</strong><small>{new Date(deployment.created_at).toLocaleString()} · {deployment.profile_name} · {deploymentPointDelta(deployment)}</small></span><b>›</b></button>{/each}</section>
-        {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.plan.actions.length} changes</span></header>{#each restorePointPreview.plan.actions as action}<article class="phone-static-row"><strong>{action.operation || "change"}</strong><small>{action.target_path}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" disabled={deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)?.active} on:click={() => { const deployment = deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id); if (deployment) askRestoreDeploymentPoint(deployment); }}>Restore</button></div></section>{/if}
+        {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.plan.actions.length} changes</span></header>{#each restorePointPreview.plan.actions as action}<article class="phone-static-row"><strong>{action.operation || "change"}</strong><small>{action.target_path}</small></article>{/each}{#each restorePointPreview.plan.integrity_conflicts ?? [] as conflict}<article class="phone-static-row warning-row"><strong>Changed outside DMM</strong><small>{conflict.file.target_path} · {conflict.reason}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" disabled={deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)?.active} on:click={() => { const deployment = deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id); if (deployment) askRestoreDeploymentPoint(deployment); }}>Restore</button></div></section>{/if}
       {:else if activeGameModule === "actions"}
         <section class="phone-card"><header><h2>Game Actions</h2><span>{selectedGameActionItems.length + installCandidates.length}</span></header>{#each selectedGameActionItems as action}<button type="button" class="phone-row" on:click={() => openActionItem(action)}><span><strong>{action.title}</strong><small>{action.message || actionNextStep(action)}</small></span><b>›</b></button>{/each}{#each installCandidates as candidate}<button type="button" class="phone-row" on:click={() => openInstallCandidate(candidate)}><span><strong>{candidate.name}</strong><small>{candidate.reason}</small></span><b>›</b></button>{/each}</section>
       {:else}

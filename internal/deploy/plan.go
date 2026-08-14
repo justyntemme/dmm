@@ -33,23 +33,31 @@ type FileMapping struct {
 }
 
 type Action struct {
-	SourcePath     string   `json:"source_path"`
-	RestorePath    string   `json:"restore_path,omitempty"`
-	TargetPath     string   `json:"target_path"`
-	TargetRoot     string   `json:"target_root,omitempty"`
-	TargetRelative string   `json:"target_relative"`
+	SourcePath     string          `json:"source_path"`
+	RestorePath    string          `json:"restore_path,omitempty"`
+	TargetPath     string          `json:"target_path"`
+	TargetRoot     string          `json:"target_root,omitempty"`
+	TargetRelative string          `json:"target_relative"`
+	Strategy       Strategy        `json:"strategy"`
+	Operation      string          `json:"operation"`
+	ChecksumSHA256 string          `json:"checksum_sha256,omitempty"`
+	RestoreSHA256  string          `json:"restore_sha256,omitempty"`
+	ExistingTarget *TargetIdentity `json:"existing_target,omitempty"`
+	InstalledModID int64           `json:"installed_mod_id,omitempty"`
+	Catalog        string          `json:"catalog,omitempty"`
+	ModID          string          `json:"mod_id,omitempty"`
+	Priority       int             `json:"priority,omitempty"`
+	WinnerModID    int64           `json:"winner_installed_mod_id,omitempty"`
+	WinnerSourceID string          `json:"winner_mod_id,omitempty"`
+	WinnerPriority int             `json:"winner_priority,omitempty"`
+	Conflict       bool            `json:"conflict"`
+	ConflictReason string          `json:"conflict_reason,omitempty"`
+}
+
+type TargetIdentity struct {
+	SourcePath     string   `json:"source_path,omitempty"`
 	Strategy       Strategy `json:"strategy"`
-	Operation      string   `json:"operation"`
 	ChecksumSHA256 string   `json:"checksum_sha256,omitempty"`
-	InstalledModID int64    `json:"installed_mod_id,omitempty"`
-	Catalog        string   `json:"catalog,omitempty"`
-	ModID          string   `json:"mod_id,omitempty"`
-	Priority       int      `json:"priority,omitempty"`
-	WinnerModID    int64    `json:"winner_installed_mod_id,omitempty"`
-	WinnerSourceID string   `json:"winner_mod_id,omitempty"`
-	WinnerPriority int      `json:"winner_priority,omitempty"`
-	Conflict       bool     `json:"conflict"`
-	ConflictReason string   `json:"conflict_reason,omitempty"`
 }
 
 const (
@@ -59,12 +67,13 @@ const (
 )
 
 type Plan struct {
-	StagingRoot string            `json:"staging_root"`
-	TargetRoot  string            `json:"target_root"`
-	TargetRoots map[string]string `json:"target_roots,omitempty"`
-	Strategy    Strategy          `json:"strategy"`
-	Actions     []Action          `json:"actions"`
-	Conflicts   []Action          `json:"conflicts"`
+	StagingRoot        string            `json:"staging_root"`
+	TargetRoot         string            `json:"target_root"`
+	TargetRoots        map[string]string `json:"target_roots,omitempty"`
+	Strategy           Strategy          `json:"strategy"`
+	Actions            []Action          `json:"actions"`
+	Conflicts          []Action          `json:"conflicts"`
+	IntegrityConflicts []RepairIssue     `json:"integrity_conflicts,omitempty"`
 }
 
 type BuildOptions struct {
@@ -176,10 +185,21 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			ModID:          mapping.ModID,
 			Priority:       mapping.Priority,
 		}
+		if restorePath != "" {
+			restoreSHA256, err := fileSHA256(restorePath)
+			if err != nil {
+				return Plan{}, err
+			}
+			action.RestoreSHA256 = restoreSHA256
+		}
 		targetKey := filepath.Clean(action.TargetPath)
 		desiredTargets[targetKey] = struct{}{}
 		if st, err := os.Lstat(action.TargetPath); err == nil {
 			managedFile, managed := managedByTarget[targetKey]
+			if managed {
+				identity := IdentityForAppliedFile(managedFile)
+				action.ExistingTarget = &identity
+			}
 			if deploymentTargetMatches(action, st, managed, managedFile) {
 				action.Operation = "keep"
 				plan.Actions = append(plan.Actions, action)
@@ -198,6 +218,11 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 					plan.Actions = append(plan.Actions, action)
 					continue
 				}
+				identity, err := CaptureTargetIdentity(action.TargetPath)
+				if err != nil {
+					return Plan{}, err
+				}
+				action.ExistingTarget = &identity
 				action.Operation = "replace"
 				plan.Actions = append(plan.Actions, action)
 				continue
@@ -255,6 +280,8 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 			Strategy:       file.Strategy,
 			Operation:      "remove",
 			ChecksumSHA256: file.ChecksumSHA256,
+			RestoreSHA256:  file.RestoreSHA256,
+			ExistingTarget: targetIdentityPointer(IdentityForAppliedFile(file)),
 			InstalledModID: file.InstalledModID,
 			Catalog:        file.Catalog,
 			ModID:          file.ModID,
@@ -273,6 +300,7 @@ func BuildPlanWithOptions(stagingRoot, targetRoot string, strategy Strategy, map
 		}
 		return plan.Conflicts[i].TargetRelative < plan.Conflicts[j].TargetRelative
 	})
+	plan.IntegrityConflicts = DestructiveConflicts(plan.Actions)
 	return plan, nil
 }
 
