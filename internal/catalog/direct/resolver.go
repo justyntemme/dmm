@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 )
 
 var steamAppIDPattern = regexp.MustCompile(`^[0-9]+$`)
@@ -41,6 +42,9 @@ func (Resolver) ResolveURL(_ context.Context, req catalog.ResolveRequest) (catal
 	}
 	if strings.TrimSpace(u.Host) == "" {
 		return catalog.ResolvedDownload{}, errors.New("direct archive URL must include a host")
+	}
+	if err := netpolicy.Public().ValidateURLSyntax(u); err != nil {
+		return catalog.ResolvedDownload{}, fmt.Errorf("direct archive URL rejected: %w", err)
 	}
 	modID, fileID := stableIDs(raw)
 	fileName := cleanURLFileName(u)

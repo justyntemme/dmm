@@ -3,12 +3,17 @@ package download
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 )
 
 func TestFetchWritesDownload(t *testing.T) {
@@ -20,9 +25,10 @@ func TestFetchWritesDownload(t *testing.T) {
 
 	dir := t.TempDir()
 	got, err := Fetch(context.Background(), Options{
-		URL:      server.URL + "/files/mod.zip",
-		DestDir:  dir,
-		FileName: "../unsafe:name.zip",
+		URL:           server.URL + "/files/mod.zip",
+		DestDir:       dir,
+		FileName:      "../unsafe:name.zip",
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +57,9 @@ func TestFetchUsesContentDispositionFileName(t *testing.T) {
 
 	dir := t.TempDir()
 	got, err := Fetch(context.Background(), Options{
-		URL:     server.URL + "/files/dfb0c986-2260-47f9-ae8a-543f4eabe8d4",
-		DestDir: dir,
+		URL:           server.URL + "/files/dfb0c986-2260-47f9-ae8a-543f4eabe8d4",
+		DestDir:       dir,
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,9 +77,10 @@ func TestFetchRejectsOversizedDownload(t *testing.T) {
 
 	dir := t.TempDir()
 	if _, err := Fetch(context.Background(), Options{
-		URL:      server.URL + "/mod.zip",
-		DestDir:  dir,
-		MaxBytes: 3,
+		URL:           server.URL + "/mod.zip",
+		DestDir:       dir,
+		MaxBytes:      3,
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	}); err == nil {
 		t.Fatal("expected oversized download to fail")
 	}
@@ -106,11 +114,12 @@ func TestFetchResumesPartialDownload(t *testing.T) {
 	}
 	var progress []Progress
 	got, err := Fetch(context.Background(), Options{
-		URL:        server.URL + "/mod.zip",
-		DestDir:    dir,
-		FileName:   "mod.zip",
-		Resume:     true,
-		OnProgress: func(next Progress) { progress = append(progress, next) },
+		URL:           server.URL + "/mod.zip",
+		DestDir:       dir,
+		FileName:      "mod.zip",
+		Resume:        true,
+		OnProgress:    func(next Progress) { progress = append(progress, next) },
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -150,10 +159,11 @@ func TestFetchResumableRestartsWhenServerIgnoresRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := Fetch(context.Background(), Options{
-		URL:      server.URL + "/mod.zip",
-		DestDir:  dir,
-		FileName: "mod.zip",
-		Resume:   true,
+		URL:           server.URL + "/mod.zip",
+		DestDir:       dir,
+		FileName:      "mod.zip",
+		Resume:        true,
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -178,8 +188,9 @@ func TestFetchReturnsStatusError(t *testing.T) {
 	defer server.Close()
 
 	_, err := Fetch(context.Background(), Options{
-		URL:     server.URL + "/mod.zip",
-		DestDir: t.TempDir(),
+		URL:           server.URL + "/mod.zip",
+		DestDir:       t.TempDir(),
+		NetworkPolicy: netpolicy.AllowPrivate(),
 	})
 	if err == nil {
 		t.Fatal("expected status failure")
@@ -213,4 +224,62 @@ func TestFetchRejectsUnsupportedScheme(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected unsupported scheme to fail")
 	}
+}
+
+func TestFetchRejectsPrivateNetworkTarget(t *testing.T) {
+	_, err := Fetch(context.Background(), Options{
+		URL:     "http://127.0.0.1/mod.zip",
+		DestDir: t.TempDir(),
+	})
+	if !errors.Is(err, netpolicy.ErrDisallowedAddress) {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if IsRetryable(err) {
+		t.Fatal("blocked network target must not be retried")
+	}
+}
+
+func TestFetchRejectsRedirectToPrivateNetwork(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "public.test" {
+			t.Fatalf("unexpected request host %q", r.Host)
+		}
+		http.Redirect(w, r, "http://private.test/mod.zip", http.StatusFound)
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := netpolicy.Public()
+	policy.Resolver = downloadTestResolver{addresses: map[string][]netip.Addr{
+		"public.test":  {netip.MustParseAddr("93.184.216.34")},
+		"private.test": {netip.MustParseAddr("127.0.0.1")},
+	}}
+	policy.Dialer = downloadTestDialer{address: serverURL.Host}
+
+	_, err = Fetch(context.Background(), Options{
+		URL:           "http://public.test/mod.zip",
+		DestDir:       t.TempDir(),
+		NetworkPolicy: policy,
+	})
+	if !errors.Is(err, netpolicy.ErrDisallowedAddress) {
+		t.Fatalf("Fetch() redirect error = %v", err)
+	}
+}
+
+type downloadTestResolver struct {
+	addresses map[string][]netip.Addr
+}
+
+func (r downloadTestResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	return r.addresses[host], nil
+}
+
+type downloadTestDialer struct {
+	address string
+}
+
+func (d downloadTestDialer) DialContext(ctx context.Context, network, _ string) (net.Conn, error) {
+	return (&net.Dialer{}).DialContext(ctx, network, d.address)
 }

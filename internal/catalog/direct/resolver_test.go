@@ -2,9 +2,11 @@ package direct
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 )
 
 func TestResolveURLRequiresSelectedSteamGame(t *testing.T) {
@@ -13,6 +15,16 @@ func TestResolveURLRequiresSelectedSteamGame(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected selected-game error")
+	}
+}
+
+func TestResolveURLRejectsPrivateAddressLiteral(t *testing.T) {
+	_, err := (Resolver{}).ResolveURL(context.Background(), catalog.ResolveRequest{
+		URL:        "http://169.254.169.254/latest/meta-data",
+		SteamAppID: "413150",
+	})
+	if !errors.Is(err, netpolicy.ErrDisallowedAddress) {
+		t.Fatalf("ResolveURL() error = %v", err)
 	}
 }
 

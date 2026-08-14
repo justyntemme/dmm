@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 )
 
 type Result struct {
@@ -44,13 +46,14 @@ func (err *StatusError) Error() string {
 }
 
 type Options struct {
-	URL        string
-	DestDir    string
-	FileName   string
-	MaxBytes   int64
-	Client     *http.Client
-	Resume     bool
-	OnProgress func(Progress)
+	URL           string
+	DestDir       string
+	FileName      string
+	MaxBytes      int64
+	Client        *http.Client
+	NetworkPolicy netpolicy.Policy
+	Resume        bool
+	OnProgress    func(Progress)
 }
 
 func IsRetryable(err error) bool {
@@ -58,6 +61,9 @@ func IsRetryable(err error) bool {
 		return false
 	}
 	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, netpolicy.ErrDisallowedAddress) {
 		return false
 	}
 	var statusErr *StatusError
@@ -79,9 +85,6 @@ func IsRetryable(err error) bool {
 }
 
 func Fetch(ctx context.Context, opts Options) (Result, error) {
-	if opts.Client == nil {
-		opts.Client = &http.Client{Timeout: 30 * time.Minute}
-	}
 	if opts.MaxBytes <= 0 {
 		opts.MaxBytes = 10 << 30
 	}
@@ -96,6 +99,14 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	if u.Host == "" {
 		return Result{}, errors.New("download URL must include a host")
 	}
+	if err := opts.NetworkPolicy.ValidateURL(ctx, u); err != nil {
+		return Result{}, fmt.Errorf("download URL rejected: %w", err)
+	}
+	client, err := securedHTTPClient(opts.Client, opts.NetworkPolicy)
+	if err != nil {
+		return Result{}, err
+	}
+	opts.Client = client
 	if opts.DestDir == "" {
 		return Result{}, errors.New("destination directory is required")
 	}
@@ -167,6 +178,41 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		ContentType:  resp.Header.Get("Content-Type"),
 		SHA256:       hex.EncodeToString(hash.Sum(nil)),
 	}, nil
+}
+
+func securedHTTPClient(base *http.Client, policy netpolicy.Policy) (*http.Client, error) {
+	client := &http.Client{Timeout: 30 * time.Minute}
+	if base != nil {
+		*client = *base
+	}
+	var transport *http.Transport
+	switch current := client.Transport.(type) {
+	case nil:
+		transport = http.DefaultTransport.(*http.Transport).Clone()
+	case *http.Transport:
+		transport = current.Clone()
+	default:
+		return nil, errors.New("download HTTP client must use an http.Transport")
+	}
+	// A proxy could resolve or connect to a destination after DMM's address checks.
+	transport.Proxy = nil
+	transport.DialContext = policy.DialContext
+	transport.DialTLSContext = nil
+	client.Transport = transport
+	previousRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := policy.ValidateURL(req.Context(), req.URL); err != nil {
+			return fmt.Errorf("download redirect rejected: %w", err)
+		}
+		if previousRedirect != nil {
+			return previousRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return client, nil
 }
 
 func fetchResumable(ctx context.Context, opts Options, u *url.URL) (Result, error) {

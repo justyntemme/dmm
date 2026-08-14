@@ -51,6 +51,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
 	"github.com/justyntemme/decky-mod-manager/internal/modcontent"
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -84,11 +85,12 @@ type Server struct {
 	pendingMu        sync.Mutex
 	capturedInstalls map[string]capturedInstall
 
-	activeMu      sync.Mutex
-	activeCancels map[string]context.CancelFunc
-	downloadGate  *downloadSlotGate
-	retentionMu   sync.Mutex
-	retentionAt   time.Time
+	activeMu       sync.Mutex
+	activeCancels  map[string]context.CancelFunc
+	downloadGate   *downloadSlotGate
+	downloadPolicy netpolicy.Policy
+	retentionMu    sync.Mutex
+	retentionAt    time.Time
 }
 
 type capturedInstall struct {
@@ -269,6 +271,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			config.NormalizeMaxConcurrentCapturedDownloads(cfg.Download.MaxConcurrentCapturedDownloads),
 			config.NormalizeMaxConcurrentCapturedDownloadsPerGame(cfg.Download.MaxConcurrentCapturedDownloadsPerGame, cfg.Download.MaxConcurrentCapturedDownloads),
 		),
+		downloadPolicy: netpolicy.Public(),
 	}
 	for _, pending := range storedPending {
 		srv.capturedInstalls[pending.JobID] = capturedInstall{
@@ -16047,11 +16050,12 @@ func (s *Server) fetchCapturedInstallArchive(ctx context.Context, jobID string, 
 			message := fmt.Sprintf("Downloading archive from %s (%d/%d, try %d/%d)", pending.Resolved.GameDomain, index+1, total, linkAttempt, capturedDownloadMaxAttemptsPerLink)
 			s.jobs.Run(jobID, message)
 			result, err := download.Fetch(ctx, download.Options{
-				URL:        uri,
-				DestDir:    destDir,
-				FileName:   pending.ArchiveFileName,
-				Resume:     true,
-				OnProgress: s.capturedDownloadProgressReporter(jobID, pending, index+1, total),
+				URL:           uri,
+				DestDir:       destDir,
+				FileName:      pending.ArchiveFileName,
+				Resume:        true,
+				OnProgress:    s.capturedDownloadProgressReporter(jobID, pending, index+1, total),
+				NetworkPolicy: s.downloadPolicy,
 			})
 			if err == nil {
 				if attempts > 1 {

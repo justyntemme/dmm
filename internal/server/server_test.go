@@ -51,6 +51,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/integrity"
 	"github.com/justyntemme/decky-mod-manager/internal/jobs"
 	"github.com/justyntemme/decky-mod-manager/internal/lootmeta"
+	"github.com/justyntemme/decky-mod-manager/internal/netpolicy"
 	"github.com/justyntemme/decky-mod-manager/internal/steam"
 	"github.com/justyntemme/decky-mod-manager/internal/storage"
 )
@@ -3822,7 +3823,6 @@ func TestClearCapturedInstalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	create := httptest.NewRequest(http.MethodPost, "/api/captured-installs", bytes.NewBufferString(`{"url":"nxm://stardewvalley/mods/3753/files/135998?key=test&expires=1&mod_id=3753&file_id=135998","source":"test"}`))
 	create.Header.Set("Content-Type", "application/json")
 	create.RemoteAddr = "127.0.0.1:1"
@@ -17975,6 +17975,7 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.downloadPolicy = netpolicy.AllowPrivate()
 	t.Cleanup(func() {
 		_ = srv.db.Close()
 	})
