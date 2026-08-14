@@ -65,9 +65,24 @@ fi
 
 diagnostics_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/diagnostics")"
 deployment_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/deploy/status")"
+history_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/deploy/history?limit=10")"
 
 export DIAGNOSTICS_JSON="${diagnostics_json}"
 export DEPLOYMENT_JSON="${deployment_json}"
+export HISTORY_JSON="${history_json}"
+active_deployment_id="$(python3 - <<'PY'
+import json
+import os
+
+history = json.loads(os.environ["HISTORY_JSON"])
+active = next((item for item in history.get("deployments", []) if item.get("active")), None)
+if active is None:
+    raise SystemExit("active deployment point is missing")
+print(active["id"])
+PY
+)"
+preview_json="$(curl "${curl_args[@]}" "${BASE_URL}/api/games/${APP_ID}/deploy/history/${active_deployment_id}/preview")"
+export DEPLOYMENT_PREVIEW_JSON="${preview_json}"
 export DATA_DIR
 export GAME_PATH
 export REQUIRE_RUNTIME
@@ -93,6 +108,7 @@ def load_env_json(name):
 
 diag = load_env_json("DIAGNOSTICS_JSON")
 deployment = load_env_json("DEPLOYMENT_JSON")
+deployment_preview = load_env_json("DEPLOYMENT_PREVIEW_JSON")
 data_dir = pathlib.Path(os.environ["DATA_DIR"]).resolve()
 require_runtime = os.environ.get("REQUIRE_RUNTIME", "0") != "0"
 require_smapi_root = os.environ.get("REQUIRE_SMAPI_ROOT", "0") != "0"
@@ -166,14 +182,33 @@ smapi_root_markers = [
     game_path / "smapi-internal" / "SMAPI.Toolkit.CoreInterfaces.dll",
 ]
 smapi_root_links = []
+smapi_root_copies = []
 smapi_root_missing = []
 smapi_root_unmanaged = []
+managed_actions = {
+    pathlib.Path(action.get("target_path", "")): action
+    for action in (deployment_preview.get("plan") or {}).get("actions", [])
+    if action.get("target_path") and action.get("operation") == "keep"
+}
 for marker in smapi_root_markers:
     if not marker.exists() and not marker.is_symlink():
         smapi_root_missing.append(marker)
         continue
     if not marker.is_symlink():
-        smapi_root_unmanaged.append((marker, "marker is not a symlink"))
+        action = managed_actions.get(marker)
+        if action is None:
+            smapi_root_unmanaged.append((marker, "regular marker is absent from the active DMM deployment"))
+            continue
+        source = pathlib.Path(action.get("source_path", ""))
+        try:
+            source.resolve(strict=True).relative_to(data_dir)
+        except (FileNotFoundError, ValueError):
+            smapi_root_unmanaged.append((marker, f"managed copy source is outside DMM data: {source}"))
+            continue
+        if action.get("strategy") != "copy":
+            smapi_root_unmanaged.append((marker, f"regular marker has unexpected strategy {action.get('strategy')!r}"))
+            continue
+        smapi_root_copies.append((marker, source))
         continue
     try:
         target = marker.resolve(strict=True)
@@ -224,6 +259,7 @@ print(f"  deployment_files={deployment.get('file_count')}")
 print(f"  manifest_links_seen={len(manifest_links)}")
 print(f"  dmm_manifest_links={len(dmm_links)}")
 print(f"  dmm_smapi_root_links={len(smapi_root_links)}")
+print(f"  dmm_smapi_root_copies={len(smapi_root_copies)}")
 if runtime_requirements:
     print("  runtime_requirements=")
     for requirement in runtime_requirements:
@@ -232,6 +268,8 @@ for manifest, target in dmm_links[:8]:
     print(f"  dmm_mod={manifest.parent.name} -> {target}")
 for marker, target in smapi_root_links:
     print(f"  dmm_smapi_root={marker.name} -> {target}")
+for marker, source in smapi_root_copies:
+    print(f"  dmm_smapi_root_copy={marker.name} <- {source}")
 
 if regular_or_external:
     print("\nnon_dmm_or_unmanaged_manifests:")
