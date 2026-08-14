@@ -5527,6 +5527,96 @@ func TestImportLocalArchivePathRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestInspectArchiveAllowsApprovedDownload(t *testing.T) {
+	srv := newTestServer(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(home, "Downloads", "inspect.zip")
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.CreateTestZip(archivePath, map[string]string{
+		"Mod/manifest.json": `{"Name":"Inspect Test"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(inspectArchiveRequest{Path: archivePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/archives/inspect", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var inspection archive.Inspection
+	if err := json.Unmarshal(rec.Body.Bytes(), &inspection); err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Format != "zip" || inspection.EntryCount != 1 {
+		t.Fatalf("inspection = %+v", inspection)
+	}
+}
+
+func TestInspectArchiveRejectsPathOutsideApprovedDownloads(t *testing.T) {
+	srv := newTestServer(t)
+	archivePath := filepath.Join(t.TempDir(), "private.zip")
+	if err := archive.CreateTestZip(archivePath, map[string]string{"private.txt": "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(inspectArchiveRequest{Path: archivePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/archives/inspect", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "outside the allowed Deck download folders") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestInspectArchiveRejectsSymlinkEscape(t *testing.T) {
+	srv := newTestServer(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsidePath := filepath.Join(t.TempDir(), "private.zip")
+	if err := archive.CreateTestZip(outsidePath, map[string]string{"private.txt": "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(home, "Downloads", "escaped.zip")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsidePath, linkPath); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(inspectArchiveRequest{Path: linkPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/archives/inspect", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestExternalModAdoptionListsAndImportsUnmanagedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	gamePath := filepath.Join(t.TempDir(), "External Game")

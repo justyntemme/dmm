@@ -19352,20 +19352,24 @@ func (s *Server) deploymentAllowedForGame(game storage.Game) error {
 
 func (s *Server) handleInspectArchive(w http.ResponseWriter, r *http.Request) {
 	var req inspectArchiveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	req.Path = strings.TrimSpace(req.Path)
-	if req.Path == "" {
-		http.Error(w, "path is required", http.StatusBadRequest)
+	archivePath, _, err := s.validateLocalArchivePath(req.Path)
+	if err != nil {
+		s.logger.Warn("archive inspection rejected", "path", strings.TrimSpace(req.Path), "error", err)
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	result, err := archive.Inspect(req.Path)
+	result, err := archive.InspectContextWithLimits(r.Context(), archivePath, archive.DefaultLimits)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.logger.Info("local archive inspected", "path", archivePath, "format", result.Format, "entries", result.EntryCount, "expanded_bytes", result.ExpandedBytes)
 	writeJSON(w, http.StatusOK, result)
 }
 
