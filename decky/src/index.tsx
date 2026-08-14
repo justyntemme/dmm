@@ -5047,6 +5047,8 @@ function FreshDeckyModManagerRoute() {
   const [nxm, setNXM] = useState<NXMStatus | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [nexusAPIKey, setNexusAPIKey] = useState("");
+  const [nexusKeyBusy, setNexusKeyBusy] = useState(false);
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [busyPluginKey, setBusyPluginKey] = useState("");
   const [busyJobID, setBusyJobID] = useState("");
@@ -5929,6 +5931,31 @@ function FreshDeckyModManagerRoute() {
     await refreshFreshState();
   }
 
+  async function saveNexusAPIKey() {
+    const key = nexusAPIKey.trim();
+    if (!key) {
+      setError("Enter a Nexus API key before saving.");
+      return;
+    }
+    try {
+      setNexusKeyBusy(true);
+      setError("");
+      setMessage("");
+      const result = await call<[string], { ok: boolean; error?: string; status?: BackendStatus["backend"] }>("set_nexus_api_key", key);
+      if (!result.ok) {
+        setError(result.error || "Unable to save Nexus API key.");
+        return;
+      }
+      setNexusAPIKey("");
+      setMessage("Nexus API key saved.");
+      await refreshFreshState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNexusKeyBusy(false);
+    }
+  }
+
   async function refreshDebugState() {
     const [deps, nextNXM, logs] = await Promise.all([
       call<[], Dependency[]>("dependencies"),
@@ -6610,6 +6637,34 @@ function FreshDeckyModManagerRoute() {
           }}>
             Reset Phone Pairing
           </FreshActionButton>
+        </FreshSettingsSection>
+        <FreshSettingsSection title="Nexus Mods">
+          <div className="dmm-content-card" style={{ ...freshStaticCardStyle({ minHeight: "112px" }), display: "grid", gap: "8px" }}>
+            <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0 }}>
+              <div>
+                <div style={{ color: "#f8fafc", fontSize: "12px", fontWeight: 900 }}>API Key</div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>
+                  Status: {status?.backend?.nexus.api_key_configured ? "Configured" : "Missing"}
+                </div>
+              </div>
+              <span style={deckySourcePillStyle(status?.backend?.nexus.api_key_configured ? "dmm" : "error")}>
+                {status?.backend?.nexus.api_key_configured ? "Ready" : "Required"}
+              </span>
+            </div>
+            <TextField
+              label="Paste Nexus API Key"
+              value={nexusAPIKey}
+              bShowClearAction
+              disabled={!status?.running || nexusKeyBusy}
+              onChange={(event) => setNexusAPIKey(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void saveNexusAPIKey();
+              }}
+            />
+            <FreshActionButton settingsRow disabled={!status?.running || nexusKeyBusy || !nexusAPIKey.trim()} onActivate={() => void saveNexusAPIKey()}>
+              {nexusKeyBusy ? "Saving Nexus Key" : status?.backend?.nexus.api_key_configured ? "Replace Nexus Key" : "Save Nexus Key"}
+            </FreshActionButton>
+          </div>
         </FreshSettingsSection>
         <FreshSettingsSection title="Automation">
           <FreshToggleRow label="Auto-install downloaded mods" checked={status?.backend?.install.auto_install_captured_downloads ?? false} disabled={!status?.running} onChange={(value) => void setAutoInstallCapturedDownloads(value)} />

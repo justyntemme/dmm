@@ -1333,6 +1333,33 @@ class Plugin:
             "status": result,
         }
 
+    async def set_nexus_api_key(self, api_key):
+        if not self._backend_responds():
+            return {
+                "ok": False,
+                "error": "Server is not running.",
+            }
+        api_key = str(api_key or "").strip()
+        if not api_key:
+            return {
+                "ok": False,
+                "error": "Nexus API key is required.",
+            }
+        payload = json.dumps({"api_key": api_key}).encode("utf-8")
+        result, error = self._backend_json_result("PUT", "/api/settings/nexus", payload)
+        if result is None:
+            return {
+                "ok": False,
+                "error": error or "Unable to save Nexus API key.",
+            }
+        configured = bool(((result.get("nexus") or {}).get("api_key_configured")) if isinstance(result, dict) else False)
+        self._log(f"nexus api key updated configured={configured}")
+        return {
+            "ok": configured,
+            "status": result,
+            "error": None if configured else "Nexus API key was saved, but the backend still reports Nexus as unconfigured.",
+        }
+
     async def set_auto_install_captured_downloads(self, auto_install):
         if not self._backend_responds():
             return {
