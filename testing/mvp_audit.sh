@@ -37,6 +37,7 @@ section "Decky Python syntax"
   cd "${ROOT_DIR}"
   python3 -m py_compile decky/main.py
   python3 -m py_compile testing/dmm_test_auth.py
+  python3 -m unittest testing/test_decky_updater.py
   cleanup_python_cache
 )
 
@@ -71,7 +72,8 @@ section "Testing script syntax"
     testing/install_decky_plugin.sh \
     testing/install_decky_plugin_from_package.sh \
     testing/install_decky_privileged_wrapper.sh \
-    testing/install_decky_testing_sudoers.sh
+    testing/install_decky_testing_sudoers.sh \
+    testing/update_deck_from_dev_release.sh
 )
 
 section "MVP UI product audit"

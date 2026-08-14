@@ -71,6 +71,7 @@ jobs:
       - name: Check Python and shell syntax
         run: |
           python3 -m py_compile decky/main.py testing/dmm_test_auth.py
+          python3 -m unittest testing/test_decky_updater.py
           find testing -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
       - name: Run UI behavior audit
@@ -111,6 +112,10 @@ jobs:
       - name: Smoke test package shape
         run: PACKAGE=dist/decky-mod-manager.tar.gz SHAPE_ONLY=1 REQUIRE_LOOT_SORTER=1 ./testing/deck_package_smoke.sh
 
+      - name: Generate release checksums
+        working-directory: dist
+        run: sha256sum decky-mod-manager.tar.gz decky-mod-manager.zip > SHA256SUMS
+
       - name: Upload package artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -118,6 +123,7 @@ jobs:
           path: |
             dist/decky-mod-manager.tar.gz
             dist/decky-mod-manager.zip
+            dist/SHA256SUMS
           if-no-files-found: error
 
       - name: Publish release assets
@@ -136,4 +142,5 @@ jobs:
           gh release upload "${release_tag}" \
             dist/decky-mod-manager.tar.gz \
             dist/decky-mod-manager.zip \
+            dist/SHA256SUMS \
             --clobber

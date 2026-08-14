@@ -115,7 +115,7 @@ The Decky Debug tab includes an `Install Latest Update` button for developer bui
 decky-mod-manager.tar.gz
 ```
 
-Then it validates the package layout, stages it at:
+It downloads the release's `SHA256SUMS`, verifies the package digest, validates the package layout, and stages it at:
 
 ```text
 /home/deck/.testing/decky-mod-manager.tar.gz
@@ -129,7 +129,7 @@ and starts the existing root-owned test installer wrapper:
 
 That wrapper is intentionally narrow: it only installs the staged DMM package without rebooting by default. If the wrapper is missing, run `testing/install_decky_testing_sudoers.sh` once from Konsole or SSH on the Deck.
 
-GitHub Actions builds and publishes package artifacts only for version tags such as `v0.1.0`. Use `DMM_UPDATE_RELEASE=<tag>` or `DMM_UPDATE_PACKAGE_URL=<url>` to force the Decky updater or `testing/update_deck_from_dev_release.sh` to install a specific build.
+GitHub Actions builds and publishes package artifacts only for version tags such as `v0.1.0`. The updater accepts only versioned release assets from `justyntemme/dmm`; set `DMM_UPDATE_RELEASE=<tag>` to select a specific release.
 
 ## Logs
 

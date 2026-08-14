@@ -1,6 +1,7 @@
 import asyncio
 import configparser
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -26,7 +27,10 @@ class Plugin:
     nxm_schemes = ["x-scheme-handler/nxm", "x-scheme-handler/nxm-protocol"]
     sensitive_query_pattern = re.compile(r"(?i)(key|expires|md5)=([^&\"'\s]+)")
     update_package_name = "decky-mod-manager.tar.gz"
+    update_checksum_name = "SHA256SUMS"
+    update_repo = "justyntemme/dmm"
     update_max_package_bytes = 512 * 1024 * 1024
+    update_max_checksum_bytes = 64 * 1024
     update_required_files = [
         "plugin.json",
         "package.json",
@@ -1516,15 +1520,12 @@ class Plugin:
         }
 
     async def install_latest_update(self):
-        repo = os.environ.get("DMM_UPDATE_REPO", "justyntemme/dmm").strip() or "justyntemme/dmm"
-        package_url = os.environ.get("DMM_UPDATE_PACKAGE_URL", "").strip()
         release = os.environ.get("DMM_UPDATE_RELEASE", "").strip()
         try:
-            if not package_url:
-                package_url, release = await asyncio.to_thread(self._resolve_update_package, repo, release)
+            package_url, checksum_url, release = await asyncio.to_thread(self._resolve_update_package, release)
         except Exception as exc:
             error = self._redact_url(str(exc))
-            self._log(f"latest update resolve failed repo={repo} release={release or 'latest'} error={error}")
+            self._log(f"latest update resolve failed repo={self.update_repo} release={release or 'latest'} error={error}")
             return {
                 "ok": False,
                 "error": error,
@@ -1534,6 +1535,7 @@ class Plugin:
         testing_dir = Path(os.environ.get("DMM_UPDATE_STAGING_DIR", "/home/deck/.testing")).expanduser()
         package_path = testing_dir / self.update_package_name
         tmp_path = testing_dir / f".{self.update_package_name}.download"
+        checksum_tmp_path = testing_dir / f".{self.update_checksum_name}.download"
         wrapper = Path(os.environ.get("DMM_UPDATE_WRAPPER", "/opt/decky-mod-manager-testing/bin/decky-mod-manager-test-install"))
         update_log = self.log_dir / "update-install.log"
 
@@ -1561,12 +1563,21 @@ class Plugin:
             }
 
         try:
-            downloaded = await asyncio.to_thread(self._download_update_package, package_url, tmp_path, package_path)
+            downloaded = await asyncio.to_thread(
+                self._download_update_package,
+                package_url,
+                checksum_url,
+                release,
+                tmp_path,
+                checksum_tmp_path,
+                package_path,
+            )
         except Exception as exc:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            for partial_path in (tmp_path, checksum_tmp_path):
+                try:
+                    partial_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
             error = self._redact_url(str(exc))
             self._log(f"latest update download failed: {error}")
             return {
@@ -1630,18 +1641,22 @@ class Plugin:
                 "log": str(update_log),
             }
 
-    def _resolve_update_package(self, repo, release):
-        repo = str(repo or "").strip()
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
-            raise RuntimeError("DMM_UPDATE_REPO must look like owner/repo")
+    def _resolve_update_package(self, release):
         release = str(release or "").strip()
         if release:
-            return f"https://github.com/{repo}/releases/download/{urllib.parse.quote(release)}/{self.update_package_name}", release
+            self._validate_update_release(release)
+            return (
+                self._expected_release_asset_url(release, self.update_package_name),
+                self._expected_release_asset_url(release, self.update_checksum_name),
+                release,
+            )
 
-        endpoint = f"https://api.github.com/repos/{repo}/releases/latest"
+        endpoint = f"https://api.github.com/repos/{self.update_repo}/releases/latest"
         request = urllib.request.Request(endpoint, headers={"User-Agent": "Decky-Mod-Manager-Updater"})
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
+                if response.geturl() != endpoint:
+                    raise RuntimeError("GitHub latest release lookup left the pinned API origin")
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"GitHub latest release lookup failed with HTTP {exc.code}") from exc
@@ -1652,24 +1667,88 @@ class Plugin:
         assets = payload.get("assets") if isinstance(payload, dict) else None
         if not tag or not isinstance(assets, list):
             raise RuntimeError("GitHub latest release response did not include a tag and assets")
+        self._validate_update_release(tag)
+        asset_urls = {}
         for asset in assets:
             if not isinstance(asset, dict):
                 continue
-            if str(asset.get("name") or "") != self.update_package_name:
+            name = str(asset.get("name") or "").strip()
+            if name not in (self.update_package_name, self.update_checksum_name):
                 continue
-            url = str(asset.get("browser_download_url") or "").strip()
-            if not url:
-                break
-            return url, tag
-        raise RuntimeError(f"latest release {tag} does not include {self.update_package_name}")
+            asset_url = str(asset.get("browser_download_url") or "").strip()
+            self._validate_update_asset_url(asset_url, tag, name)
+            asset_urls[name] = asset_url
+        missing = [name for name in (self.update_package_name, self.update_checksum_name) if name not in asset_urls]
+        if missing:
+            raise RuntimeError(f"latest release {tag} does not include {', '.join(missing)}")
+        return asset_urls[self.update_package_name], asset_urls[self.update_checksum_name], tag
 
-    def _download_update_package(self, package_url, tmp_path, package_path):
+    def _validate_update_release(self, release):
+        if not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+", str(release or "")):
+            raise RuntimeError("DMM update release must be a version tag such as v0.0.2")
+
+    def _expected_release_asset_url(self, release, asset_name):
+        self._validate_update_release(release)
+        return f"https://github.com/{self.update_repo}/releases/download/{release}/{asset_name}"
+
+    def _validate_update_asset_url(self, asset_url, release, asset_name):
+        expected = self._expected_release_asset_url(release, asset_name)
+        parsed = urllib.parse.urlsplit(str(asset_url or ""))
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc != "github.com"
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or str(asset_url) != expected
+        ):
+            raise RuntimeError(f"update asset URL is not the pinned DMM release origin for {asset_name}")
+
+    def _download_update_package(self, package_url, checksum_url, release, tmp_path, checksum_tmp_path, package_path):
+        self._validate_update_asset_url(package_url, release, self.update_package_name)
+        self._validate_update_asset_url(checksum_url, release, self.update_checksum_name)
         tmp_path.parent.mkdir(parents=True, exist_ok=True)
-        downloaded = self._download_file(package_url, tmp_path, self.update_max_package_bytes)
-        self._validate_update_package(tmp_path)
-        tmp_path.replace(package_path)
-        package_path.chmod(0o644)
-        return downloaded
+        try:
+            self._download_file(checksum_url, checksum_tmp_path, self.update_max_checksum_bytes)
+            expected_digest = self._read_update_digest(checksum_tmp_path)
+            downloaded = self._download_file(package_url, tmp_path, self.update_max_package_bytes)
+            actual_digest = self._sha256_file(tmp_path)
+            if not secrets.compare_digest(actual_digest, expected_digest):
+                raise RuntimeError(
+                    f"release package SHA-256 mismatch: expected {expected_digest}, got {actual_digest}"
+                )
+            self._log(f"release package digest verified release={release} sha256={actual_digest}")
+            self._validate_update_package(tmp_path)
+            tmp_path.replace(package_path)
+            package_path.chmod(0o644)
+            return downloaded
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
+        finally:
+            checksum_tmp_path.unlink(missing_ok=True)
+
+    def _read_update_digest(self, checksum_path):
+        matches = []
+        for line in checksum_path.read_text(encoding="utf-8").splitlines():
+            fields = line.strip().split()
+            if len(fields) != 2:
+                continue
+            digest, name = fields
+            name = name.removeprefix("*")
+            if name == self.update_package_name and re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+                matches.append(digest.lower())
+        if len(matches) != 1:
+            raise RuntimeError(f"{self.update_checksum_name} must contain exactly one digest for {self.update_package_name}")
+        return matches[0]
+
+    def _sha256_file(self, path):
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def _download_file(self, url, target, max_bytes):
         curl = shutil.which("curl")
