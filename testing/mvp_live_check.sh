@@ -126,13 +126,13 @@ if isinstance(job_items, list):
     structured_app_jobs = []
     active = [
         job for job in job_items
-        if job.get("status") not in ("completed", "canceled", "failed")
+        if job.get("status") in ("queued", "running")
     ]
     for job in job_items:
         payload = job.get("payload") or {}
         if payload.get("app_id"):
             structured_app_jobs.append(job)
-        if job.get("type") in ("captured-install", "deploy", "purge", "repair", "recover-downloads") and job.get("status") not in ("completed", "canceled", "failed"):
+        if job.get("type") in ("captured-install", "deploy", "purge", "repair", "recover-downloads") and job.get("status") in ("queued", "running", "waiting"):
             if not payload.get("app_id"):
                 failures.append(f"active {job.get('type')} job {job.get('id')} is missing structured app_id payload")
             if job.get("type") == "captured-install":
@@ -141,7 +141,7 @@ if isinstance(job_items, list):
                     failures.append(f"active captured install {job.get('id')} is missing payload fields: {', '.join(missing)}")
     if active:
         labels = ", ".join(f"{job.get('type', 'job')}:{job.get('status', 'unknown')}" for job in active[:5])
-        failures.append(f"job list still has active work: {labels}")
+        failures.append(f"job list still has executing work: {labels}")
     if require_job_payload and not structured_app_jobs:
         failures.append("job list does not contain any structured app_id payloads")
 

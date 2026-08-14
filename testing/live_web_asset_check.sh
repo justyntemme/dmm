@@ -59,21 +59,18 @@ done
 js_checked=0
 for target in "${tmp_dir}"/*.js; do
   [[ -f "${target}" ]] || continue
-  if grep -qF "Selected Profile" "${target}"; then
+  if grep -qF "Decky Mod Manager" "${target}"; then
     js_checked=1
     for needle in \
-      "Installed, disabled in this profile" \
-      "Add Mod" \
-      "Install to Profile" \
-      "mods in the same on/off state" \
-      "Explore Nexus Mods" \
-      "Quick Games" \
-      "Open on Deck" \
-      "Advanced Profile Tools" \
-      "These Deck behavior switches are managed from the Decky sidebar settings."
+      "Action Center" \
+      "Select a Game" \
+      "Explore Mods" \
+      "Profile Mods" \
+      "Game Health" \
+      "Sources"
     do
       if ! grep -qF "${needle}" "${target}"; then
-        echo "web UI asset is missing MVP UI text: ${needle}" >&2
+        echo "web UI asset is missing current navigation/power-user contract text: ${needle}" >&2
         exit 1
       fi
     done
@@ -81,7 +78,7 @@ for target in "${tmp_dir}"/*.js; do
 done
 
 if [[ "${js_checked}" -eq 0 ]]; then
-  echo "web UI assets did not contain the expected profile-first MVP UI" >&2
+  echo "web UI assets did not contain the current Decky Mod Manager application bundle" >&2
   exit 1
 fi
 

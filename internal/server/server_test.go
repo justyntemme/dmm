@@ -11106,7 +11106,7 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 	if err := os.WriteFile(newTarget, []byte(`{"Name":"New Mod"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	oldID, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategyCopy, []deploy.AppliedFile{{
+	oldID, err := srv.db.RecordDeployment(context.Background(), "413150", deploy.StrategySymlink, []deploy.AppliedFile{{
 		SourcePath: oldSource,
 		TargetPath: oldTarget,
 		Strategy:   deploy.StrategyCopy,
@@ -11154,6 +11154,9 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 	if len(previewBody.Plan.Actions) != 2 || len(previewBody.SampleFiles) == 0 {
 		t.Fatalf("preview plan/sample = %+v", previewBody)
 	}
+	if previewBody.Plan.Strategy != deploy.StrategySymlink {
+		t.Fatalf("preview strategy = %q, want recorded deployment strategy %q", previewBody.Plan.Strategy, deploy.StrategySymlink)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/games/413150/deploy/history/"+strconv.FormatInt(oldID, 10)+"/restore", nil)
 	req.RemoteAddr = "127.0.0.1:1"
@@ -11178,6 +11181,9 @@ func TestRestoreDeployHistoryPointReconcilesCurrentManifest(t *testing.T) {
 	}
 	if len(history) == 0 || !history[0].Active || history[0].ID == oldID || history[0].FileCount != 1 {
 		t.Fatalf("history after restore = %+v", history)
+	}
+	if history[0].Strategy != string(deploy.StrategySymlink) {
+		t.Fatalf("restored deployment strategy = %q, want %q", history[0].Strategy, deploy.StrategySymlink)
 	}
 }
 

@@ -3386,6 +3386,26 @@ ORDER BY df.target_path DESC
 	`, deploymentID)
 }
 
+func (db *DB) DeploymentStrategyForSteamAppDeployment(ctx context.Context, appID string, deploymentID int64) (deploy.Strategy, bool, error) {
+	if deploymentID <= 0 {
+		return "", false, errors.New("deploymentID must be positive")
+	}
+	var strategy string
+	err := db.conn.QueryRowContext(ctx, `
+SELECT d.strategy
+FROM deployments d
+JOIN games g ON g.id = d.game_id
+WHERE g.steam_app_id = ? AND d.id = ?
+`, appID, deploymentID).Scan(&strategy)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return deploy.Strategy(strategy), true, nil
+}
+
 func (db *DB) deploymentFilesForSteamApp(ctx context.Context, appID, query string, args ...any) ([]deploy.AppliedFile, error) {
 	queryArgs := make([]any, 0, 1+len(args))
 	queryArgs = append(queryArgs, appID)

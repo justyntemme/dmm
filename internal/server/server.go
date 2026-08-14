@@ -11968,6 +11968,13 @@ func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string
 	if err != nil {
 		return deploymentRestorePreviewResponse{}, err
 	}
+	strategy, found, err := s.db.DeploymentStrategyForSteamAppDeployment(ctx, appID, deploymentID)
+	if err != nil {
+		return deploymentRestorePreviewResponse{}, err
+	}
+	if !found {
+		return deploymentRestorePreviewResponse{}, errDeploymentPointNotFound
+	}
 	targetFiles, err := s.db.DeploymentFilesForSteamAppDeployment(ctx, appID, deploymentID)
 	if err != nil {
 		return deploymentRestorePreviewResponse{}, err
@@ -11980,6 +11987,7 @@ func (s *Server) deploymentPointRestorePreview(ctx context.Context, appID string
 		return deploymentRestorePreviewResponse{}, err
 	}
 	plan := deploymentPointRestorePlan(currentFiles, targetFiles, game.GamePath)
+	plan.Strategy = strategy
 	preview := deploymentRestorePreviewResponse{
 		DeploymentID:     deploymentID,
 		CurrentFileCount: len(currentFiles),
