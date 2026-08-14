@@ -242,8 +242,19 @@ type DependencyRule struct {
 }
 
 type SourceRef struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name         string                     `json:"name"`
+	URL          string                     `json:"url"`
+	Dispositions []SourceSurfaceDisposition `json:"dispositions,omitempty"`
+}
+
+// SourceSurfaceDisposition records a source-verified reason why a Vortex
+// registration surface does not belong in DMM's Steam Deck runtime. It is not
+// a runtime capability and must only be used for behavior that cannot apply to
+// DMM's supported product boundary.
+type SourceSurfaceDisposition struct {
+	Surface string `json:"surface"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
 }
 
 type InstallerChoiceSpec struct {

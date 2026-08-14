@@ -142,6 +142,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Half-Life Nexus valve-root mod-folder instructions", URL: "https://www.nexusmods.com/halflife/mods/496"},
 		{Name: "Half-Life Nexus valve maps instructions", URL: "https://www.nexusmods.com/halflife/mods/493"},
 		{Name: "Live Steam Deck native executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no Half-Life game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Half-Life game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
 	}
 }

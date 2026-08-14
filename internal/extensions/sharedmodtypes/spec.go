@@ -389,15 +389,15 @@ func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex modtype-dinput source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-dinput/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-dinput/src/index.ts",
 		},
 		{
 			Name: "Vortex modtype-enb source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-enb/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-enb/src/index.ts",
 		},
 		{
 			Name: "Vortex modtype-gedosato source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-gedosato/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-gedosato/src/index.ts",
 		},
 	}
 }

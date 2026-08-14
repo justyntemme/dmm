@@ -325,23 +325,23 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex Fallout 4 game registration",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-fallout4/src/index.js",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-fallout4/src/index.js",
 		},
 		{
 			Name: "Vortex Gamebryo plugin activation support",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-plugin-management/src/util/gameSupport.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-plugin-management/src/util/gameSupport.ts",
 		},
 		{
 			Name: "Vortex Gamebryo archive invalidation support",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamebryo-archive-invalidation/src/util/gameSupport.ts",
 		},
 		{
 			Name: "Vortex local game settings support",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/local-gamesettings/src",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/local-gamesettings/src",
 		},
 		{
 			Name: "Vortex script extender installer",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/script-extender-installer/src/installer.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-installer/src/installer.ts",
 		},
 	}
 }

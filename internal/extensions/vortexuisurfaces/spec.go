@@ -32,6 +32,27 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's open-directory extension with source-backed extension action targets. Game extensions declare safe game/download/staging/target-root folders or files, the Go backend resolves and validates those paths, and the Decky bridge opens them from the Deck UI.",
 	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "mod-content",
+		Name:    "Detected mod content",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM exposes the staged-file content classifier result on installed mod records and uses it for source-backed filtering and diagnostics.",
+	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "mod-notes",
+		Name:    "Mod notes",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM maps Vortex's per-mod notes attribute to installed-mod metadata exposed by the mod detail API.",
+	})
+	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
+		ID:      "mod-highlight",
+		Name:    "Mod highlight",
+		Target:  "mods",
+		Status:  sdk.CapabilityStatusReady,
+		Message: "DMM maps Vortex's mod highlight attribute to source-backed mod grouping and filter metadata in Decky and phone clients.",
+	})
 	r.RegisterExtensionAPI(sdk.ExtensionAPISpec{
 		ID:      "mod-content-classifier",
 		Name:    "Installed mod content classifier",
@@ -222,19 +243,26 @@ func registerDashletAndIssueSurfaces(r sdk.Registrar) {
 
 func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
-		{Name: "Vortex changelog dashlet source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/changelog-dashlet/src/index.ts"},
-		{Name: "Vortex documentation source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/documentation/src/index.tsx"},
-		{Name: "Vortex extension dashlet source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/extension-dashlet/src/index.ts"},
-		{Name: "Vortex feedback source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/feedback/src/index.tsx"},
-		{Name: "Vortex issue tracker source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/issue-tracker/src/index.ts"},
-		{Name: "Vortex meta editor source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/meta-editor/src/index.ts"},
-		{Name: "Vortex mod content source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/mod-content/src/index.tsx"},
-		{Name: "Vortex mod highlight source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/mod-highlight/src/index.tsx"},
-		{Name: "Vortex mod report source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/mod-report/src/index.ts"},
-		{Name: "Vortex open directory source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/open-directory/src/index.ts"},
-		{Name: "Vortex theme switcher source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/theme-switcher/src/index.ts"},
-		{Name: "Vortex titlebar launcher source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/titlebar-launcher/src/index.tsx"},
-		{Name: "Vortex MO import source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/mo-import/src/index.ts"},
-		{Name: "Vortex NMM import source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/nmm-import-tool/src/index.ts"},
+		{Name: "Vortex changelog dashlet source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/changelog-dashlet/src/index.ts"},
+		{Name: "Vortex documentation source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/documentation/src/index.tsx", Dispositions: []sdk.SourceSurfaceDisposition{
+			{Surface: "registerMainPage", Status: sdk.CapabilityStatusNotApplicable, Reason: "Vortex registers its own desktop knowledge-base page; DMM ships product documentation and opens help links from its Decky and phone settings surfaces instead of embedding Vortex's Electron page."},
+			{Surface: "registerToDo", Status: sdk.CapabilityStatusNotApplicable, Reason: "Vortex's introduction-video dashboard tile is Vortex product onboarding, not game-mod runtime behavior and not content DMM can present as its own onboarding."},
+		}},
+		{Name: "Vortex extension dashlet source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/extension-dashlet/src/index.ts"},
+		{Name: "Vortex feedback source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/feedback/src/index.tsx", Dispositions: []sdk.SourceSurfaceDisposition{
+			{Surface: "registerMainPage", Status: sdk.CapabilityStatusNotApplicable, Reason: "The source page submits feedback to the Vortex team and Vortex issue tracker; DMM exposes its own logs and diagnostics and must not submit reports as Vortex."},
+		}},
+		{Name: "Vortex issue tracker source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/issue-tracker/src/index.ts"},
+		{Name: "Vortex meta editor source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/meta-editor/src/index.ts"},
+		{Name: "Vortex mod content source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/mod-content/src/index.tsx"},
+		{Name: "Vortex mod highlight source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/mod-highlight/src/index.tsx"},
+		{Name: "Vortex mod report source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/mod-report/src/index.ts"},
+		{Name: "Vortex open directory source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/open-directory/src/index.ts"},
+		{Name: "Vortex theme switcher source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/theme-switcher/src/index.ts"},
+		{Name: "Vortex titlebar launcher source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/titlebar-launcher/src/index.tsx"},
+		{Name: "Vortex MO import source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/mo-import/src/index.ts"},
+		{Name: "Vortex NMM import source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/nmm-import-tool/src/index.ts", Dispositions: []sdk.SourceSurfaceDisposition{
+			{Surface: "registerToDo", Status: sdk.CapabilityStatusNotApplicable, Reason: "The upstream extension returns false outside win32 and discovers a Windows NMM installation; DMM's Steam Deck MVP has no applicable NMM runtime to advertise in Action Center."},
+		}},
 	}
 }

@@ -44,19 +44,19 @@ func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex gamestore-gog source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamestore-gog/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamestore-gog/src/index.ts",
 		},
 		{
 			Name: "Vortex gamestore-origin source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamestore-origin/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamestore-origin/src/index.ts",
 		},
 		{
 			Name: "Vortex gamestore-uplay source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamestore-uplay/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamestore-uplay/src/index.ts",
 		},
 		{
 			Name: "Vortex gamestore-xbox source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gamestore-xbox/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gamestore-xbox/src/index.ts",
 		},
 	}
 }

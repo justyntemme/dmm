@@ -1,0 +1,3863 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/Nexus-Mods/Vortex",
+  "source_commit": "c57894eb71af8234b58a6bd15ae5ab543eccac3a",
+  "components": [
+    {
+      "id": "changelog-dashlet",
+      "surfaces": [
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "changelog-dashlet/src/index.ts",
+              "line": 65
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "changelog-dashlet/src/index.ts",
+              "line": 63
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "common-interpreters",
+      "surfaces": [
+        {
+          "name": "registerInterpreter",
+          "calls": [
+            {
+              "file": "common-interpreters/src/index.ts",
+              "line": 33
+            },
+            {
+              "file": "common-interpreters/src/index.ts",
+              "line": 47
+            },
+            {
+              "file": "common-interpreters/src/index.ts",
+              "line": 55
+            },
+            {
+              "file": "common-interpreters/src/index.ts",
+              "line": 70
+            },
+            {
+              "file": "common-interpreters/src/index.ts",
+              "line": 78
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "documentation/src/index.tsx",
+              "line": 80
+            },
+            {
+              "file": "documentation/src/index.tsx",
+              "line": 84
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "documentation/src/index.tsx",
+              "line": 39
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "documentation/src/index.tsx",
+              "line": 37
+            }
+          ]
+        },
+        {
+          "name": "registerToDo",
+          "calls": [
+            {
+              "file": "documentation/src/index.tsx",
+              "line": 52
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "extension-dashlet",
+      "surfaces": [
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "extension-dashlet/src/index.ts",
+              "line": 8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feedback",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "feedback/src/index.tsx",
+              "line": 371
+            },
+            {
+              "file": "feedback/src/index.tsx",
+              "line": 380
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "feedback/src/index.tsx",
+              "line": 357
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "feedback/src/index.tsx",
+              "line": 352
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fnis-integration",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "fnis-integration/src/index.ts",
+              "line": 103
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "fnis-integration/src/index.ts",
+              "line": 66
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "fnis-integration/src/index.ts",
+              "line": 67
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "fnis-integration/src/index.ts",
+              "line": 165
+            }
+          ]
+        },
+        {
+          "name": "registerToDo",
+          "calls": [
+            {
+              "file": "fnis-integration/src/index.ts",
+              "line": 78
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-archive-check",
+      "surfaces": [
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "gamebryo-archive-check/src/index.ts",
+              "line": 79
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-archive-invalidation",
+      "surfaces": [
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "gamebryo-archive-invalidation/src/index.ts",
+              "line": 95
+            }
+          ]
+        },
+        {
+          "name": "registerToDo",
+          "calls": [
+            {
+              "file": "gamebryo-archive-invalidation/src/index.ts",
+              "line": 101
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-archive-support",
+      "surfaces": [
+        {
+          "name": "registerArchiveType",
+          "calls": [
+            {
+              "file": "gamebryo-archive-support/src/index.ts",
+              "line": 210
+            },
+            {
+              "file": "gamebryo-archive-support/src/index.ts",
+              "line": 211
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-bsa-support",
+      "surfaces": [
+        {
+          "name": "registerArchiveType",
+          "calls": [
+            {
+              "file": "gamebryo-bsa-support/src/index.ts",
+              "line": 186
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-plugin-indexlock",
+      "surfaces": [
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-indexlock/src/index.tsx",
+              "line": 141
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-indexlock/src/index.tsx",
+              "line": 143
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-plugin-management",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 561
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 565
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 569
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 573
+            }
+          ]
+        },
+        {
+          "name": "registerActionCheck",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 604
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 626
+            }
+          ]
+        },
+        {
+          "name": "registerAPI",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 512
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 652
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 699
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 700
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 701
+            }
+          ]
+        },
+        {
+          "name": "registerHistoryStack",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 1800
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 452
+            }
+          ]
+        },
+        {
+          "name": "registerPersistor",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 727
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 728
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 729
+            }
+          ]
+        },
+        {
+          "name": "registerProfileFeature",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 497
+            }
+          ]
+        },
+        {
+          "name": "registerProfileFile",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 489
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 492
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 360
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 361
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 362
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 363
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 367
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 368
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 506
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 672
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 675
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 678
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 681
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 684
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 687
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 690
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 693
+            },
+            {
+              "file": "gamebryo-plugin-management/src/index.ts",
+              "line": 696
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-savegame-management",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 605
+            },
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 609
+            },
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 653
+            },
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 669
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 626
+            }
+          ]
+        },
+        {
+          "name": "registerProfileFeature",
+          "calls": [
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 644
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 602
+            },
+            {
+              "file": "gamebryo-savegame-management/src/index.ts",
+              "line": 603
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamebryo-test-settings",
+      "surfaces": [
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "gamebryo-test-settings/src/index.ts",
+              "line": 203
+            },
+            {
+              "file": "gamebryo-test-settings/src/index.ts",
+              "line": 204
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gameinfo-steam",
+      "surfaces": [
+        {
+          "name": "registerGameInfoProvider",
+          "calls": [
+            {
+              "file": "gameinfo-steam/src/index.ts",
+              "line": 118
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-7daystodie",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 328
+            },
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 344
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 278
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 366
+            },
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 368
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 299
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 383
+            },
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 384
+            },
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 385
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 369
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 276
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "games/game-7daystodie/src/index.tsx",
+              "line": 315
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-ahatintime",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-ahatintime/src/index.js",
+              "line": 67
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-ahatintime/src/index.js",
+              "line": 86
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-baldursgate3",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 295
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 399
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 410
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 421
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 432
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 443
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 454
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 264
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 328
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 329
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 330
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 336
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 337
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 375
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 339
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 348
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 357
+            },
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 366
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 262
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "games/game-baldursgate3/src/index.tsx",
+              "line": 469
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-battletech",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-battletech/src/index.js",
+              "line": 44
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-bladeandsorcery",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 539
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 449
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 477
+            },
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 485
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrderPage",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 512
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 471
+            },
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 472
+            },
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 473
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 493
+            },
+            {
+              "file": "games/game-bladeandsorcery/src/index.js",
+              "line": 502
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-bloodstainedritualofthenight",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-bloodstainedritualofthenight/src/index.ts",
+              "line": 167
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-bloodstainedritualofthenight/src/index.ts",
+              "line": 206
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-bloodstainedritualofthenight/src/index.ts",
+              "line": 195
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-bloodstainedritualofthenight/src/index.ts",
+              "line": 213
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-breakingwheel",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-breakingwheel/src/index.js",
+              "line": 10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-codevein",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-codevein/src/index.ts",
+              "line": 173
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-codevein/src/index.ts",
+              "line": 207
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-codevein/src/index.ts",
+              "line": 196
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-codevein/src/index.ts",
+              "line": 214
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-conanexiles",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-conanexiles/src/index.js",
+              "line": 55
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrderPage",
+          "calls": [
+            {
+              "file": "games/game-conanexiles/src/index.js",
+              "line": 82
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-cyberpunk2077",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-cyberpunk2077/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-daggerfallunity",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-daggerfallunity/src/index.js",
+              "line": 105
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-daggerfallunity/src/index.js",
+              "line": 121
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-darkestdungeon",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-darkestdungeon/src/index.js",
+              "line": 404
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-darkestdungeon/src/index.js",
+              "line": 424
+            },
+            {
+              "file": "games/game-darkestdungeon/src/index.js",
+              "line": 425
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-darksouls",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-darksouls/src/index.js",
+              "line": 74
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-darksouls2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-darksouls2/src/index.js",
+              "line": 43
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-dawnofman",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-dawnofman/src/index.js",
+              "line": 173
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-dawnofman/src/index.js",
+              "line": 200
+            },
+            {
+              "file": "games/game-dawnofman/src/index.js",
+              "line": 201
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-dawnofman/src/index.js",
+              "line": 192
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-divinityoriginalsin2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-divinityoriginalsin2/src/index.js",
+              "line": 67
+            },
+            {
+              "file": "games/game-divinityoriginalsin2/src/index.js",
+              "line": 87
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-dmc5",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-dmc5/src/index.js",
+              "line": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-dragonage",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-dragonage/src/index.js",
+              "line": 184
+            }
+          ]
+        },
+        {
+          "name": "registerMerge",
+          "calls": [
+            {
+              "file": "games/game-dragonage/src/index.js",
+              "line": 202
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-dragonage2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-dragonage2/src/index.js",
+              "line": 49
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-dragons-dogma",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-dragons-dogma/src/index.js",
+              "line": 240
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-dragons-dogma/src/index.js",
+              "line": 263
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-dragons-dogma/src/index.js",
+              "line": 262
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-elex",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-elex/src/index.js",
+              "line": 66
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-elex/src/index.js",
+              "line": 85
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-enderal",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-enderal/src/index.js",
+              "line": 56
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-factorio",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-factorio/src/index.js",
+              "line": 24
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-fallout3",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-fallout3/src/index.js",
+              "line": 174
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-fallout4",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-fallout4/src/index.js",
+              "line": 99
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-fallout4vr",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-fallout4vr/src/index.js",
+              "line": 134
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-fallout4vr/src/index.js",
+              "line": 158
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-falloutnv",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-falloutnv/src/index.ts",
+              "line": 263
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-falloutnv/src/index.ts",
+              "line": 287
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-galciv3",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-galciv3/src/index.js",
+              "line": 83
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-galciv3/src/index.js",
+              "line": 108
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-galciv3/src/index.js",
+              "line": 109
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-gardenpaws",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-gardenpaws/src/index.js",
+              "line": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-greedfall",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-greedfall/src/index.js",
+              "line": 90
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-greedfall/src/index.js",
+              "line": 91
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-grimdawn",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-grimdawn/src/index.js",
+              "line": 28
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-grimrock",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-grimrock/src/index.js",
+              "line": 24
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-kenshi",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-kenshi/src/index.js",
+              "line": 109
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-kenshi/src/index.js",
+              "line": 130
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-kerbalspaceprogram",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-kerbalspaceprogram/src/index.js",
+              "line": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-kingdomcome-deliverance",
+      "surfaces": [
+        {
+          "name": "registerCollectionFeature",
+          "calls": [
+            {
+              "file": "games/game-kingdomcome-deliverance/src/index.ts",
+              "line": 443
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-kingdomcome-deliverance/src/index.ts",
+              "line": 407
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "games/game-kingdomcome-deliverance/src/index.ts",
+              "line": 432
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-masterchiefcollection",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 141
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 166
+            },
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 173
+            },
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 180
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 152
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 188
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "games/game-masterchiefcollection/src/index.ts",
+              "line": 182
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-microsoftflightsimulator",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 726
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 749
+            },
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 756
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrderPage",
+          "calls": [
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 760
+            }
+          ]
+        },
+        {
+          "name": "registerMerge",
+          "calls": [
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 758
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-microsoftflightsimulator/src/index.js",
+              "line": 781
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-monster-hunter-world",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-monster-hunter-world/src/index.js",
+              "line": 170
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-monster-hunter-world/src/index.js",
+              "line": 226
+            },
+            {
+              "file": "games/game-monster-hunter-world/src/index.js",
+              "line": 227
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-monster-hunter-world/src/index.js",
+              "line": 218
+            },
+            {
+              "file": "games/game-monster-hunter-world/src/index.js",
+              "line": 225
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-morrowind",
+      "surfaces": [
+        {
+          "name": "registerCollectionFeature",
+          "calls": [
+            {
+              "file": "games/game-morrowind/src/index.ts",
+              "line": 180
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-morrowind/src/index.ts",
+              "line": 148
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-morrowind/src/index.ts",
+              "line": 169
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-morrowind/src/index.ts",
+              "line": 191
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-mount-and-blade",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-mount-and-blade/src/index.js",
+              "line": 122
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-mount-and-blade/src/index.js",
+              "line": 142
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-mount-and-blade2",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-mount-and-blade2/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-nehrim",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-nehrim/src/index.js",
+              "line": 31
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-neverwinter-nights",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-neverwinter-nights/src/index.js",
+              "line": 174
+            },
+            {
+              "file": "games/game-neverwinter-nights/src/index.js",
+              "line": 189
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-neverwinter-nights/src/index.js",
+              "line": 208
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-neverwinter-nights2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-neverwinter-nights2/src/index.js",
+              "line": 82
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-neverwinter-nights2/src/index.js",
+              "line": 95
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-neverwinter-nights2/src/index.js",
+              "line": 97
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-nomanssky",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-nomanssky/src/index.ts",
+              "line": 127
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-nomanssky/src/index.ts",
+              "line": 165
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-nomanssky/src/index.ts",
+              "line": 147
+            },
+            {
+              "file": "games/game-nomanssky/src/index.ts",
+              "line": 156
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-oblivion",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-oblivion/src/index.js",
+              "line": 165
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-oni",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-oni/src/index.js",
+              "line": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-palworld",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-palworld/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-pathfinderkingmaker",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-pathfinderkingmaker/src/index.js",
+              "line": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-pathfinderwrathoftherighteous",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-pathfinderwrathoftherighteous/src/index.ts",
+              "line": 32
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-pillarsofeternity2",
+      "surfaces": [
+        {
+          "name": "registerAttributeExtractor",
+          "calls": [
+            {
+              "file": "games/game-pillarsofeternity2/src/index.ts",
+              "line": 163
+            }
+          ]
+        },
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "games/game-pillarsofeternity2/src/index.ts",
+              "line": 144
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-prisonarchitect",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-prisonarchitect/src/index.js",
+              "line": 66
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-re2remake",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-re2remake/src/index.js",
+              "line": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-re3remake",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-re3remake/src/index.js",
+              "line": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-rimworld",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-rimworld/src/index.js",
+              "line": 113
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-rimworld/src/index.js",
+              "line": 132
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-sekiro",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-sekiro/src/index.js",
+              "line": 120
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-sekiro/src/index.js",
+              "line": 138
+            },
+            {
+              "file": "games/game-sekiro/src/index.js",
+              "line": 139
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-shadowrunreturns",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-shadowrunreturns/src/index.js",
+              "line": 27
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-sims3",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-sims3/src/index.js",
+              "line": 68
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-sims4",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-sims4/src/index.js",
+              "line": 351
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-sims4/src/index.js",
+              "line": 380
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-sims4/src/index.js",
+              "line": 381
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-sims4/src/index.js",
+              "line": 373
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-skyrim",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-skyrim/src/index.js",
+              "line": 81
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-skyrimse",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-skyrimse/src/index.js",
+              "line": 142
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-skyrimvr",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-skyrimvr/src/index.js",
+              "line": 141
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-skyrimvr/src/index.js",
+              "line": 164
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-spyroreignitedtrilogy",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-spyroreignitedtrilogy/src/index.ts",
+              "line": 154
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-spyroreignitedtrilogy/src/index.ts",
+              "line": 185
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-spyroreignitedtrilogy/src/index.ts",
+              "line": 174
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-spyroreignitedtrilogy/src/index.ts",
+              "line": 192
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-starbound",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-starbound/src/index.js",
+              "line": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-stardewvalley",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/configMod/index.ts",
+              "line": 20
+            },
+            {
+              "file": "games/game-stardewvalley/src/registration/registerUi.ts",
+              "line": 44
+            }
+          ]
+        },
+        {
+          "name": "registerAttributeExtractor",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/index.ts",
+              "line": 57
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/index.ts",
+              "line": 46
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/registration/registerInstallers.ts",
+              "line": 30
+            },
+            {
+              "file": "games/game-stardewvalley/src/registration/registerInstallers.ts",
+              "line": 37
+            },
+            {
+              "file": "games/game-stardewvalley/src/registration/registerInstallers.ts",
+              "line": 44
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/registration/registerModTypes.ts",
+              "line": 40
+            },
+            {
+              "file": "games/game-stardewvalley/src/registration/registerModTypes.ts",
+              "line": 48
+            },
+            {
+              "file": "games/game-stardewvalley/src/registration/registerModTypes.ts",
+              "line": 56
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/index.ts",
+              "line": 47
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/registration/registerUi.ts",
+              "line": 24
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/registration/registerUi.ts",
+              "line": 60
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "games/game-stardewvalley/src/registration/registerTests.ts",
+              "line": 16
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-starfield",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-starfield/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-stateofdecay",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-stateofdecay/src/index.js",
+              "line": 16
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-subnautica",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-subnautica/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-subnauticabelowzero",
+      "surfaces": [
+        {
+          "name": "registerGameStub",
+          "calls": [
+            {
+              "file": "games/game-subnauticabelowzero/src/index.js",
+              "line": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-survivingmars",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-survivingmars/src/index.js",
+              "line": 114
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-survivingmars/src/index.js",
+              "line": 133
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-sw-kotor",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 108
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 142
+            },
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 145
+            },
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 148
+            },
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 149
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-sw-kotor/src/index.js",
+              "line": 128
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-teamfortress2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-teamfortress2/src/index.js",
+              "line": 76
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-teamfortress2/src/index.js",
+              "line": 97
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-teso",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-teso/src/index.js",
+              "line": 28
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-torchlight2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-torchlight2/src/index.js",
+              "line": 85
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-torchlight2/src/index.js",
+              "line": 104
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-totalwarthreekingdoms",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-totalwarthreekingdoms/src/index.js",
+              "line": 110
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-totalwarthreekingdoms/src/index.js",
+              "line": 131
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-untitledgoose",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-untitledgoose/src/index.ts",
+              "line": 51
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-untitledgoose/src/index.ts",
+              "line": 65
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-vtmbloodlines",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-vtmbloodlines/src/index.js",
+              "line": 81
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-vtmbloodlines/src/index.js",
+              "line": 104
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-warthunder",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-warthunder/src/index.js",
+              "line": 44
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-warthunder/src/index.js",
+              "line": 68
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-witcher",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-witcher/src/index.js",
+              "line": 46
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-witcher/src/index.js",
+              "line": 71
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-witcher2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-witcher2/src/index.js",
+              "line": 40
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-witcher2/src/index.js",
+              "line": 64
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-witcher3",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/iconbarActions.ts",
+              "line": 35
+            },
+            {
+              "file": "games/game-witcher3/src/iconbarActions.ts",
+              "line": 55
+            },
+            {
+              "file": "games/game-witcher3/src/iconbarActions.ts",
+              "line": 84
+            },
+            {
+              "file": "games/game-witcher3/src/iconbarActions.ts",
+              "line": 94
+            },
+            {
+              "file": "games/game-witcher3/src/iconbarActions.ts",
+              "line": 104
+            }
+          ]
+        },
+        {
+          "name": "registerCollectionFeature",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 248
+            }
+          ]
+        },
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 156
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 178
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 184
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 190
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 191
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 192
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 198
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 297
+            }
+          ]
+        },
+        {
+          "name": "registerMerge",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 237
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 244
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 200
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 207
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 214
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 221
+            },
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 229
+            }
+          ]
+        },
+        {
+          "name": "registerProfileFeature",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 260
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "games/game-witcher3/src/index.ts",
+              "line": 155
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-wolcen",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-wolcen/src/index.js",
+              "line": 142
+            }
+          ]
+        },
+        {
+          "name": "registerMerge",
+          "calls": [
+            {
+              "file": "games/game-wolcen/src/index.js",
+              "line": 161
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-worldoftanks",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-worldoftanks/src/index.js",
+              "line": 65
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-x4foundations",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-x4foundations/src/index.js",
+              "line": 319
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-x4foundations/src/index.js",
+              "line": 337
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "games/game-x4foundations/src/index.js",
+              "line": 346
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "games/game-x4foundations/src/index.js",
+              "line": 338
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-xcom2",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-xcom2/src/index.js",
+              "line": 94
+            },
+            {
+              "file": "games/game-xcom2/src/index.js",
+              "line": 125
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-xcom2/src/index.js",
+              "line": 158
+            }
+          ]
+        },
+        {
+          "name": "registerLoadOrder",
+          "calls": [
+            {
+              "file": "games/game-xcom2/src/index.js",
+              "line": 161
+            },
+            {
+              "file": "games/game-xcom2/src/index.js",
+              "line": 170
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "games/game-xrebirth",
+      "surfaces": [
+        {
+          "name": "registerGame",
+          "calls": [
+            {
+              "file": "games/game-xrebirth/src/index.js",
+              "line": 93
+            },
+            {
+              "file": "games/game-xrebirth/src/index.ts",
+              "line": 15
+            }
+          ]
+        },
+        {
+          "name": "registerHealthCheck",
+          "calls": [
+            {
+              "file": "games/game-xrebirth/src/index.ts",
+              "line": 39
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "games/game-xrebirth/src/index.js",
+              "line": 110
+            },
+            {
+              "file": "games/game-xrebirth/src/index.ts",
+              "line": 28
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamestore-gog",
+      "surfaces": [
+        {
+          "name": "registerGameStore",
+          "calls": [
+            {
+              "file": "gamestore-gog/src/index.ts",
+              "line": 199
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamestore-origin",
+      "surfaces": [
+        {
+          "name": "registerGameStore",
+          "calls": [
+            {
+              "file": "gamestore-origin/src/index.ts",
+              "line": 256
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamestore-uplay",
+      "surfaces": [
+        {
+          "name": "registerGameStore",
+          "calls": [
+            {
+              "file": "gamestore-uplay/src/index.ts",
+              "line": 165
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gamestore-xbox",
+      "surfaces": [
+        {
+          "name": "registerGameStore",
+          "calls": [
+            {
+              "file": "gamestore-xbox/src/index.ts",
+              "line": 447
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gameversion-hash",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "gameversion-hash/src/index.ts",
+              "line": 217
+            },
+            {
+              "file": "gameversion-hash/src/index.ts",
+              "line": 287
+            }
+          ]
+        },
+        {
+          "name": "registerAPI",
+          "calls": [
+            {
+              "file": "gameversion-hash/src/index.ts",
+              "line": 200
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "issue-tracker",
+      "surfaces": [
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "issue-tracker/src/index.ts",
+              "line": 14
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "issue-tracker/src/index.ts",
+              "line": 26
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "issue-tracker/src/index.ts",
+              "line": 11
+            },
+            {
+              "file": "issue-tracker/src/index.ts",
+              "line": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local-gamesettings",
+      "surfaces": [
+        {
+          "name": "registerProfileFeature",
+          "calls": [
+            {
+              "file": "local-gamesettings/src/index.ts",
+              "line": 290
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "local-gamesettings/src/index.ts",
+              "line": 299
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "meta-editor",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "meta-editor/src/index.ts",
+              "line": 100
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "meta-editor/src/index.ts",
+              "line": 94
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "meta-editor/src/index.ts",
+              "line": 90
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mo-import",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "mo-import/src/index.ts",
+              "line": 35
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "mo-import/src/index.ts",
+              "line": 33
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-content",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "mod-content/src/index.tsx",
+              "line": 165
+            },
+            {
+              "file": "mod-content/src/index.tsx",
+              "line": 174
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "mod-content/src/index.tsx",
+              "line": 109
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-dependency-manager",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1589
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1643
+            }
+          ]
+        },
+        {
+          "name": "registerControlWrapper",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1666
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1596
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1597
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1598
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1601
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1611
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1585
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1586
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1673
+            }
+          ]
+        },
+        {
+          "name": "registerStartHook",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1692
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1587
+            },
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1588
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "mod-dependency-manager/src/index.tsx",
+              "line": 1667
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-highlight",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "mod-highlight/src/index.tsx",
+              "line": 56
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "mod-highlight/src/index.tsx",
+              "line": 13
+            }
+          ]
+        },
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "mod-highlight/src/index.tsx",
+              "line": 14
+            },
+            {
+              "file": "mod-highlight/src/index.tsx",
+              "line": 30
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod-report",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "mod-report/src/index.ts",
+              "line": 444
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-bepinex",
+      "surfaces": [
+        {
+          "name": "registerAPI",
+          "calls": [
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 185
+            }
+          ]
+        },
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 174
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 251
+            },
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 258
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 200
+            },
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 209
+            },
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 222
+            },
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 234
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 265
+            },
+            {
+              "file": "modtype-bepinex/src/index.ts",
+              "line": 276
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-dazip",
+      "surfaces": [
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "modtype-dazip/src/index.ts",
+              "line": 181
+            },
+            {
+              "file": "modtype-dazip/src/index.ts",
+              "line": 182
+            }
+          ]
+        },
+        {
+          "name": "registerMigration",
+          "calls": [
+            {
+              "file": "modtype-dazip/src/index.ts",
+              "line": 184
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-dazip/src/index.ts",
+              "line": 178
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-dinput",
+      "surfaces": [
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "modtype-dinput/src/index.ts",
+              "line": 95
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-dinput/src/index.ts",
+              "line": 91
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-enb",
+      "surfaces": [
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-enb/src/index.ts",
+              "line": 99
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-gedosato",
+      "surfaces": [
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "modtype-gedosato/src/index.ts",
+              "line": 100
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-gedosato/src/index.ts",
+              "line": 99
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "modtype-umm",
+      "surfaces": [
+        {
+          "name": "registerAPI",
+          "calls": [
+            {
+              "file": "modtype-umm/src/index.ts",
+              "line": 128
+            }
+          ]
+        },
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "modtype-umm/src/index.ts",
+              "line": 148
+            }
+          ]
+        },
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "modtype-umm/src/index.ts",
+              "line": 115
+            }
+          ]
+        },
+        {
+          "name": "registerModType",
+          "calls": [
+            {
+              "file": "modtype-umm/src/index.ts",
+              "line": 122
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "morrowind-plugin-management",
+      "surfaces": [
+        {
+          "name": "registerMainPage",
+          "calls": [
+            {
+              "file": "morrowind-plugin-management/src/index.ts",
+              "line": 104
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mtframework-arc-support",
+      "surfaces": [
+        {
+          "name": "registerArchiveType",
+          "calls": [
+            {
+              "file": "mtframework-arc-support/src/index.ts",
+              "line": 77
+            }
+          ]
+        },
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "mtframework-arc-support/src/index.ts",
+              "line": 81
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nmm-import-tool",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "nmm-import-tool/src/index.ts",
+              "line": 75
+            }
+          ]
+        },
+        {
+          "name": "registerDialog",
+          "calls": [
+            {
+              "file": "nmm-import-tool/src/index.ts",
+              "line": 73
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "nmm-import-tool/src/index.ts",
+              "line": 68
+            }
+          ]
+        },
+        {
+          "name": "registerToDo",
+          "calls": [
+            {
+              "file": "nmm-import-tool/src/index.ts",
+              "line": 87
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "open-directory",
+      "surfaces": [
+        {
+          "name": "registerAction",
+          "calls": [
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 10
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 15
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 27
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 33
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 61
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 84
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 107
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 128
+            },
+            {
+              "file": "open-directory/src/index.ts",
+              "line": 168
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quickbms-support",
+      "surfaces": [
+        {
+          "name": "registerAPI",
+          "calls": [
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 228
+            },
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 236
+            },
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 239
+            },
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 242
+            },
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 245
+            }
+          ]
+        },
+        {
+          "name": "registerDashlet",
+          "calls": [
+            {
+              "file": "quickbms-support/src/index.ts",
+              "line": 217
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "script-extender-error-check",
+      "surfaces": [
+        {
+          "name": "registerTableAttribute",
+          "calls": [
+            {
+              "file": "script-extender-error-check/src/index.ts",
+              "line": 316
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "script-extender-installer",
+      "surfaces": [
+        {
+          "name": "registerInstaller",
+          "calls": [
+            {
+              "file": "script-extender-installer/src/index.ts",
+              "line": 320
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "script-extender-installer/src/index.ts",
+              "line": 327
+            },
+            {
+              "file": "script-extender-installer/src/index.ts",
+              "line": 330
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "test-gameversion",
+      "surfaces": [
+        {
+          "name": "registerGameInfoProvider",
+          "calls": [
+            {
+              "file": "test-gameversion/src/index.ts",
+              "line": 136
+            }
+          ]
+        },
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "test-gameversion/src/index.ts",
+              "line": 127
+            }
+          ]
+        },
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "test-gameversion/src/index.ts",
+              "line": 129
+            },
+            {
+              "file": "test-gameversion/src/index.ts",
+              "line": 132
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "test-setup",
+      "surfaces": [
+        {
+          "name": "registerTest",
+          "calls": [
+            {
+              "file": "test-setup/src/index.ts",
+              "line": 86
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "theme-switcher",
+      "surfaces": [
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "theme-switcher/src/index.ts",
+              "line": 74
+            }
+          ]
+        },
+        {
+          "name": "registerSettings",
+          "calls": [
+            {
+              "file": "theme-switcher/src/index.ts",
+              "line": 84
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "titlebar-launcher",
+      "surfaces": [
+        {
+          "name": "registerReducer",
+          "calls": [
+            {
+              "file": "titlebar-launcher/src/index.tsx",
+              "line": 40
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

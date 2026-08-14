@@ -27,7 +27,7 @@ func Extension() sdk.Extension {
 			},
 			{
 				Name: "Checked bundled Vortex game extension source; no PlanetSide 2 game extension ships upstream",
-				URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
+				URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games",
 			},
 		},
 	})

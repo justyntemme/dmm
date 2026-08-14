@@ -119,7 +119,7 @@ func sources() []sdk.SourceRef {
 		},
 		{
 			Name: "Vortex Total War: Three Kingdoms pack installer source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games/game-totalwarthreekingdoms/src/index.js",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-totalwarthreekingdoms/src/index.js",
 		},
 		{
 			Name: "Total War official Workshop pack-location note",

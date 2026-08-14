@@ -27,7 +27,7 @@ func Extension() sdk.Extension {
 		},
 		RuntimeInstallHint: "Install the Windows x64 BepInEx runtime for Potion Craft, then enable and deploy it from DMM before enabling Potion Craft BepInEx plugin mods.",
 		Sources: []sdk.SourceRef{
-			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
+			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-bepinex"},
 			{Name: "Potion Craft Nexus BepInEx plugin archive path verification", URL: "https://www.nexusmods.com/potioncraftalchemistsimulator"},
 			{Name: "Live Steam Deck Windows/Proton executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		},

@@ -225,7 +225,7 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{Name: "Vortex central extension manifest entry site-mod-1643-file-7265", URL: "https://raw.githubusercontent.com/Nexus-Mods/Vortex-Backend/main/out/extensions-manifest.json"},
 		{Name: "Disco Elysium Vortex extension package v0.1.4", URL: "https://www.nexusmods.com/site/mods/1643?tab=files"},
-		{Name: "Vortex modtype-bepinex shared source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
+		{Name: "Vortex modtype-bepinex shared source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-bepinex"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 	}
 }

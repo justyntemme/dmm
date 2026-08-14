@@ -338,23 +338,23 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex Witcher 3 game registration",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-witcher3/src/index.ts",
 		},
 		{
 			Name: "Vortex Witcher 3 installers",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/installers.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-witcher3/src/installers.ts",
 		},
 		{
 			Name: "Vortex Witcher 3 common merge/load-order constants",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/common.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-witcher3/src/common.ts",
 		},
 		{
 			Name: "Vortex Witcher 3 lifecycle and load-order hooks",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/eventHandlers.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-witcher3/src/eventHandlers.ts",
 		},
 		{
 			Name: "Vortex Witcher 3 Script Merger setup",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-witcher3/src/scriptmerger.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-witcher3/src/scriptmerger.ts",
 		},
 	}
 }

@@ -83,7 +83,7 @@ func ModDBSources(appID, gameName, gameSlug string) []sdk.SourceRef {
 		},
 		{
 			Name: "No bundled Vortex game extension exists; DMM uses an explicit simple external-source archive-root profile for " + strings.TrimSpace(gameName),
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games",
 		},
 	}
 }

@@ -25,7 +25,7 @@ func Extension() sdk.Extension {
 		},
 		RuntimeInstallHint: "Install the Windows x64 BepInEx 5 runtime for Mr. Prepper, then enable and deploy it from DMM before enabling Mr. Prepper BepInEx plugin mods.",
 		Sources: []sdk.SourceRef{
-			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/modtype-bepinex"},
+			{Name: "Vortex shared BepInEx extension source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-bepinex"},
 			{Name: "Mr. Prepper Nexus BepInEx plugin instructions", URL: "https://www.nexusmods.com/mrprepper/mods/1?tab=description"},
 			{Name: "Live Steam Deck Windows/Proton executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
 		},

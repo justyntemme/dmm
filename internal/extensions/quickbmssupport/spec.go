@@ -145,11 +145,11 @@ func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex quickbms-support source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/quickbms-support/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/quickbms-support/src/index.ts",
 		},
 		{
 			Name: "Vortex quickbms process wrapper source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/quickbms-support/src/quickbms.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/quickbms-support/src/quickbms.ts",
 		},
 	}
 }

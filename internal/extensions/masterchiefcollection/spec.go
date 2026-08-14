@@ -472,7 +472,7 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex Halo: The Master Chief Collection game extension",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-masterchiefcollection/src",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-masterchiefcollection/src",
 		},
 	}
 }

@@ -278,8 +278,9 @@ func (r *Registrar) RegisterSource(ref sdk.SourceRef) {
 		return
 	}
 	r.extension.Sources = append(r.extension.Sources, sdk.SourceRef{
-		Name: strings.TrimSpace(ref.Name),
-		URL:  strings.TrimSpace(ref.URL),
+		Name:         strings.TrimSpace(ref.Name),
+		URL:          strings.TrimSpace(ref.URL),
+		Dispositions: append([]sdk.SourceSurfaceDisposition(nil), ref.Dispositions...),
 	})
 }
 

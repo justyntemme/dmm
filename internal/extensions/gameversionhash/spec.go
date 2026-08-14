@@ -259,7 +259,12 @@ func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex gameversion-hash source",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/gameversion-hash/src/index.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/gameversion-hash/src/index.ts",
+			Dispositions: []sdk.SourceSurfaceDisposition{{
+				Surface: "registerAction",
+				Status:  sdk.CapabilityStatusNotApplicable,
+				Reason:  "Both upstream actions are guarded by Vortex DEBUG_MODE and edit the Vortex-Backend developer hash map; DMM consumes the published hash map but does not expose upstream-maintainer tooling to users.",
+			}},
 		},
 		{
 			Name: "Vortex game version hash map",

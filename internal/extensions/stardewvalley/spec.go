@@ -484,19 +484,19 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex Stardew game registration",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/game/StardewValleyGame.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-stardewvalley/src/game/StardewValleyGame.ts",
 		},
 		{
 			Name: "Vortex Stardew installers",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/installers",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-stardewvalley/src/installers",
 		},
 		{
 			Name: "Vortex Stardew config mod feature",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/configMod",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-stardewvalley/src/configMod",
 		},
 		{
 			Name: "Vortex Stardew SMAPI.io compatibility lookup",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-stardewvalley/src/compatibility/updateConflictInfo.ts",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-stardewvalley/src/compatibility/updateConflictInfo.ts",
 		},
 		{
 			Name: "SMAPI.io mod compatibility API",

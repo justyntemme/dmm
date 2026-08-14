@@ -5,7 +5,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-const verifiedSupportModCommit = "2349a17900a37c2120e90733045dc6b303135b89"
+const verifiedSupportModCommit = "c57894eb71af8234b58a6bd15ae5ab543eccac3a"
 
 type RootSupportModSpec struct {
 	GameID       string

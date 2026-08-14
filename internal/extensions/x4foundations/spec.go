@@ -185,7 +185,7 @@ func sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{
 			Name: "Vortex X4: Foundations game extension",
-			URL:  "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/games/game-x4foundations/src/index.js",
+			URL:  "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games/game-x4foundations/src/index.js",
 		},
 	}
 }

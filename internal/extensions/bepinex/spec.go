@@ -144,6 +144,6 @@ func hasBepInExRuntimeMod(mods []sdk.DeploymentMod) bool {
 
 func Sources() []sdk.SourceRef {
 	return []sdk.SourceRef{
-		{Name: "Vortex modtype-bepinex source", URL: "https://github.com/Nexus-Mods/Vortex/tree/master/extensions/modtype-bepinex/src/index.ts"},
+		{Name: "Vortex modtype-bepinex source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/modtype-bepinex/src/index.ts"},
 	}
 }

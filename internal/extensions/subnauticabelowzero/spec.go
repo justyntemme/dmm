@@ -5,7 +5,7 @@ import (
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
 )
 
-const verifiedVortexCommit = "2349a17900a37c2120e90733045dc6b303135b89"
+const verifiedVortexCommit = "c57894eb71af8234b58a6bd15ae5ab543eccac3a"
 
 const (
 	SteamAppID   = "848450"

@@ -14,11 +14,11 @@ func TestNexusBrowseOnlyExtensionsExposeVerifiedDomains(t *testing.T) {
 		domain string
 		source string
 	}{
-		{appID: "291550", id: "brawlhalla", domain: "brawlhalla", source: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
-		{appID: "1687950", id: "persona5royal", domain: "persona5royal", source: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
-		{appID: "2290180", id: "ridersrepublic", domain: "ridersrepublic", source: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
-		{appID: "2221490", id: "thedivision2", domain: "tomclancysthedivision2", source: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
-		{appID: "2753900", id: "thekingiswatching", domain: "thekingiswatching", source: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{appID: "291550", id: "brawlhalla", domain: "brawlhalla", source: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
+		{appID: "1687950", id: "persona5royal", domain: "persona5royal", source: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
+		{appID: "2290180", id: "ridersrepublic", domain: "ridersrepublic", source: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
+		{appID: "2221490", id: "thedivision2", domain: "tomclancysthedivision2", source: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
+		{appID: "2753900", id: "thekingiswatching", domain: "thekingiswatching", source: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.id, func(t *testing.T) {

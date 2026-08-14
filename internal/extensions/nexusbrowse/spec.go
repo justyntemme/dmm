@@ -110,7 +110,7 @@ func BrowseSources(appID, name, domain string) []sdk.SourceRef {
 	return []sdk.SourceRef{
 		{Name: name + " Nexus API game-domain verification", URL: "https://api.nexusmods.com/v1/games.json"},
 		{Name: "Steam Deck installed app manifest snapshot for " + strings.TrimSpace(appID), URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no " + strings.TrimSpace(domain) + " game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no " + strings.TrimSpace(domain) + " game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
 	}
 }
 

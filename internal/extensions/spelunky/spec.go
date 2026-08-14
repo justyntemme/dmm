@@ -109,6 +109,6 @@ func sources() []sdk.SourceRef {
 		{Name: "Spelunky Nexus Localization/Textures Data-folder instructions", URL: "https://www.nexusmods.com/spelunky/mods/7"},
 		{Name: "Spelunky community Data-folder modding note", URL: "https://www.reddit.com/r/spelunky/comments/1u4lh4/just_got_spelunky_on_steam_and_how_do_i_install/"},
 		{Name: "Live Steam Deck executable/path verification", URL: "extensionTargets.md#installed-games-snapshot"},
-		{Name: "Checked bundled Vortex game extension source; no Spelunky game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/main/extensions/games"},
+		{Name: "Checked bundled Vortex game extension source; no Spelunky game extension ships upstream", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/games"},
 	}
 }
