@@ -10966,7 +10966,7 @@ func (s *Server) applyInstallerCandidate(ctx context.Context, jobID string, cand
 	}()
 	inspection, err := archive.ExtractContext(ctx, candidate.ArchivePath, extractPath)
 	if err != nil {
-		return storage.InstalledMod{}, err
+		return storage.InstalledMod{}, classifyArchiveExtractionError(err)
 	}
 	extractPath, inspection, err = s.prepareFOMODWorkspace(ctx, jobID, extractPath, inspection)
 	if err != nil {
@@ -11104,7 +11104,7 @@ func (s *Server) prepareFOMODWorkspace(ctx context.Context, jobID, extractPath s
 		)
 		nestedInspection, err := archive.ExtractContext(ctx, nestedArchive, nestedExtractPath)
 		if err != nil {
-			return "", archive.Inspection{}, err
+			return "", archive.Inspection{}, classifyArchiveExtractionError(err)
 		}
 		s.logger.Info(
 			"nested fomod archive extracted",
@@ -16668,7 +16668,7 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 	)
 	inspection, err := archive.ExtractContext(ctx, archivePath, extractPath)
 	if err != nil {
-		return storage.InstalledMod{}, err
+		return storage.InstalledMod{}, classifyArchiveExtractionError(err)
 	}
 	extractPath, inspection, err = s.prepareFOMODWorkspace(ctx, jobID, extractPath, inspection)
 	if err != nil {
@@ -16809,6 +16809,13 @@ func (s *Server) stageCapturedInstall(ctx context.Context, jobID string, pending
 		"default_enabled_reason", defaultEnabledReason,
 	)
 	return staged, nil
+}
+
+func classifyArchiveExtractionError(err error) error {
+	if archive.IsLimitExceeded(err) {
+		return installplan.Unsupported(err.Error())
+	}
+	return err
 }
 
 type installPlanStageRequest struct {

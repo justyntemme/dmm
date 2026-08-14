@@ -1,8 +1,13 @@
 package archive
 
 import (
+	"archive/zip"
+	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -192,6 +197,125 @@ func TestExtractZipRejectsTraversal(t *testing.T) {
 	}
 	if _, err := Extract(archivePath, filepath.Join(dir, "staging")); err == nil {
 		t.Fatal("expected traversal archive to fail extraction")
+	}
+}
+
+func TestExtractContextWithLimitsRejectsEntryCountAndCleansDestination(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "entries.zip")
+	if err := CreateTestZip(archivePath, map[string]string{"one.txt": "1", "two.txt": "2"}); err != nil {
+		t.Fatal(err)
+	}
+	limits := DefaultLimits
+	limits.MaxEntries = 1
+	dest := filepath.Join(dir, "staging")
+	_, err := ExtractContextWithLimits(context.Background(), archivePath, dest, limits)
+	if !IsLimitExceeded(err) {
+		t.Fatalf("error = %v", err)
+	}
+	if _, statErr := os.Lstat(dest); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("partial destination remains: %v", statErr)
+	}
+}
+
+func TestExtractContextWithLimitsRejectsEntryAndExpandedSizes(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "sizes.zip")
+	if err := CreateTestZip(archivePath, map[string]string{"one.txt": "1234", "two.txt": "5678"}); err != nil {
+		t.Fatal(err)
+	}
+
+	entryLimits := DefaultLimits
+	entryLimits.MaxEntryBytes = 3
+	if _, err := ExtractContextWithLimits(context.Background(), archivePath, filepath.Join(dir, "entry"), entryLimits); !IsLimitExceeded(err) {
+		t.Fatalf("entry size error = %v", err)
+	}
+
+	totalLimits := DefaultLimits
+	totalLimits.MaxExpandedBytes = 7
+	if _, err := ExtractContextWithLimits(context.Background(), archivePath, filepath.Join(dir, "total"), totalLimits); !IsLimitExceeded(err) {
+		t.Fatalf("expanded size error = %v", err)
+	}
+}
+
+func TestInspectContextWithLimitsRejectsCompressionRatio(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "ratio.zip")
+	out, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(out)
+	entry, err := zw.CreateHeader(&zip.FileHeader{Name: "zeros.txt", Method: zip.Deflate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(entry, strings.Repeat("0", 64<<10)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	limits := DefaultLimits
+	limits.MaxCompressionRatio = 2
+	if _, err := InspectContextWithLimits(context.Background(), archivePath, limits); !IsLimitExceeded(err) {
+		t.Fatalf("compression ratio error = %v", err)
+	}
+}
+
+func TestExtractContextWithLimitsRejectsPathDepth(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "depth.zip")
+	if err := CreateTestZip(archivePath, map[string]string{"one/two/three/file.txt": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	limits := DefaultLimits
+	limits.MaxPathDepth = 3
+	if _, err := ExtractContextWithLimits(context.Background(), archivePath, filepath.Join(dir, "staging"), limits); !IsLimitExceeded(err) {
+		t.Fatalf("path depth error = %v", err)
+	}
+}
+
+func TestExtractContextWithLimitsPreservesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "mod.zip")
+	if err := CreateTestZip(archivePath, map[string]string{"file.txt": "new"}); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "staging")
+	if err := os.MkdirAll(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(dest, "existing.txt")
+	if err := os.WriteFile(existing, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Extract(archivePath, dest); err == nil || !strings.Contains(err.Error(), "not empty") {
+		t.Fatalf("error = %v", err)
+	}
+	body, err := os.ReadFile(existing)
+	if err != nil || string(body) != "keep" {
+		t.Fatalf("existing destination changed: body=%q err=%v", body, err)
+	}
+}
+
+func TestExtractContextWithLimitsHonorsCanceledContextWithoutOutput(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "mod.zip")
+	if err := CreateTestZip(archivePath, map[string]string{"file.txt": "content"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	dest := filepath.Join(dir, "staging")
+	if _, err := ExtractContextWithLimits(ctx, archivePath, dest, DefaultLimits); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Lstat(dest); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("destination exists after cancellation: %v", err)
 	}
 }
 

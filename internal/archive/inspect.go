@@ -26,6 +26,8 @@ type Inspection struct {
 	Format            string   `json:"format"`
 	InstallerKind     string   `json:"installer_kind,omitempty"`
 	Entries           []Entry  `json:"entries"`
+	EntryCount        int      `json:"entry_count"`
+	ExpandedBytes     int64    `json:"expanded_bytes"`
 	TopLevelDirs      []string `json:"top_level_dirs"`
 	Warnings          []string `json:"warnings"`
 	Unsafe            bool     `json:"unsafe"`
@@ -34,17 +36,24 @@ type Inspection struct {
 }
 
 func Inspect(filePath string) (Inspection, error) {
+	return InspectContextWithLimits(context.Background(), filePath, DefaultLimits)
+}
+
+func InspectContextWithLimits(ctx context.Context, filePath string, limits Limits) (Inspection, error) {
+	if err := ctx.Err(); err != nil {
+		return Inspection{}, err
+	}
 	format, err := detectArchiveFormat(filePath)
 	if err != nil {
 		return Inspection{}, err
 	}
 	switch format {
 	case ".zip":
-		return inspectZip(filePath)
+		return inspectZip(ctx, filePath, limits)
 	case ".7z":
-		return inspect7z(filePath)
+		return inspect7z(ctx, filePath, limits)
 	case ".rar":
-		return inspectRAR(filePath)
+		return inspectRAR(ctx, filePath, limits)
 	default:
 		return Inspection{}, errors.New("unsupported archive format")
 	}
@@ -88,10 +97,15 @@ func Extract(filePath, destDir string) (Inspection, error) {
 }
 
 func ExtractContext(ctx context.Context, filePath, destDir string) (Inspection, error) {
+	return ExtractContextWithLimits(ctx, filePath, destDir, DefaultLimits)
+}
+
+func ExtractContextWithLimits(ctx context.Context, filePath, destDir string, limits Limits) (inspection Inspection, err error) {
 	if err := ctx.Err(); err != nil {
 		return Inspection{}, err
 	}
-	inspection, err := Inspect(filePath)
+	limits = normalizeLimits(limits)
+	inspection, err = InspectContextWithLimits(ctx, filePath, limits)
 	if err != nil {
 		return Inspection{}, err
 	}
@@ -101,39 +115,58 @@ func ExtractContext(ctx context.Context, filePath, destDir string) (Inspection, 
 	if destDir == "" {
 		return Inspection{}, errors.New("destination directory is required")
 	}
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
+	absDest, err := filepath.Abs(destDir)
+	if err != nil {
 		return Inspection{}, err
 	}
+	if err := os.MkdirAll(filepath.Dir(absDest), 0o700); err != nil {
+		return Inspection{}, err
+	}
+	workDir, err := os.MkdirTemp(filepath.Dir(absDest), ".dmm-extract-*")
+	if err != nil {
+		return Inspection{}, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.RemoveAll(workDir)
+		}
+	}()
+	budget := newExtractionBudget(limits)
 
 	switch inspection.Format {
 	case "zip":
-		if err := extractZip(ctx, filePath, destDir); err != nil {
+		if err := extractZip(ctx, filePath, workDir, budget); err != nil {
 			return Inspection{}, err
 		}
 	case "7z":
-		if err := extractWith7z(ctx, filePath, destDir); err != nil {
+		if err := extractWith7z(ctx, filePath, workDir, budget); err != nil {
 			return Inspection{}, err
 		}
 	case "rar":
-		if err := extractRAR(ctx, filePath, destDir); err != nil {
+		if err := extractRAR(ctx, filePath, workDir, budget); err != nil {
 			return Inspection{}, err
 		}
 	default:
 		return Inspection{}, errors.New("unsupported archive format")
 	}
-	if err := validateExtractedTree(ctx, destDir); err != nil {
+	if err := validateExtractedTree(ctx, workDir); err != nil {
 		return Inspection{}, err
 	}
 	if inspection.InstallerKind == "" {
-		inspection.InstallerKind = detectExtractedInstaller(destDir)
+		inspection.InstallerKind = detectExtractedInstaller(workDir)
 	}
 	if inspection.InstallerKind != "" {
 		inspection.RequiresInstaller = true
 	}
+	if err := replaceEmptyDestination(absDest, workDir); err != nil {
+		return Inspection{}, err
+	}
+	committed = true
 	return inspection, nil
 }
 
-func inspectZip(filePath string) (Inspection, error) {
+func inspectZip(ctx context.Context, filePath string, limits Limits) (Inspection, error) {
 	reader, err := zip.OpenReader(filePath)
 	if err != nil {
 		return Inspection{}, err
@@ -148,11 +181,18 @@ func inspectZip(filePath string) (Inspection, error) {
 		Warnings:     []string{},
 	}
 	top := map[string]struct{}{}
+	budget := newExtractionBudget(limits)
 	for _, file := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return Inspection{}, err
+		}
 		entry := Entry{
 			Path:  filepath.ToSlash(file.Name),
 			Size:  int64(file.UncompressedSize64),
 			IsDir: file.FileInfo().IsDir(),
+		}
+		if err := budget.addEntry(entry.Path, entry.IsDir, entry.Size, int64(file.CompressedSize64), true); err != nil {
+			return Inspection{}, err
 		}
 		inspection.Entries = append(inspection.Entries, entry)
 		if warning := validateArchivePath(entry.Path); warning != "" {
@@ -171,14 +211,21 @@ func inspectZip(filePath string) (Inspection, error) {
 			inspection.RequiresInstaller = true
 		}
 	}
+	inspection.EntryCount = len(inspection.Entries)
+	inspection.ExpandedBytes = budget.declaredBytes
 	for name := range top {
 		inspection.TopLevelDirs = append(inspection.TopLevelDirs, name)
+	}
+	if info, err := os.Stat(filePath); err != nil {
+		return Inspection{}, err
+	} else if err := budget.checkArchiveRatio(info.Size()); err != nil {
+		return Inspection{}, err
 	}
 	sort.Strings(inspection.TopLevelDirs)
 	return inspection, nil
 }
 
-func inspect7z(filePath string) (Inspection, error) {
+func inspect7z(ctx context.Context, filePath string, limits Limits) (Inspection, error) {
 	inspection := Inspection{
 		ArchivePath:  filePath,
 		Format:       "7z",
@@ -192,20 +239,34 @@ func inspect7z(filePath string) (Inspection, error) {
 	}
 	defer reader.Close()
 	top := map[string]struct{}{}
+	budget := newExtractionBudget(limits)
 	for _, file := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return Inspection{}, err
+		}
 		info := file.FileInfo()
 		entry := Entry{
 			Path:  filepath.ToSlash(file.Name),
 			Size:  info.Size(),
 			IsDir: info.IsDir(),
 		}
+		if err := budget.addEntry(entry.Path, entry.IsDir, entry.Size, -1, true); err != nil {
+			return Inspection{}, err
+		}
 		addInspectionEntry(&inspection, top, entry)
 	}
+	if info, err := os.Stat(filePath); err != nil {
+		return Inspection{}, err
+	} else if err := budget.checkArchiveRatio(info.Size()); err != nil {
+		return Inspection{}, err
+	}
+	inspection.EntryCount = len(inspection.Entries)
+	inspection.ExpandedBytes = budget.declaredBytes
 	finishTopLevelDirs(&inspection, top)
 	return inspection, nil
 }
 
-func inspectRAR(filePath string) (Inspection, error) {
+func inspectRAR(ctx context.Context, filePath string, limits Limits) (Inspection, error) {
 	inspection := Inspection{
 		ArchivePath:  filePath,
 		Format:       "rar",
@@ -219,7 +280,11 @@ func inspectRAR(filePath string) (Inspection, error) {
 	}
 	defer reader.Close()
 	top := map[string]struct{}{}
+	budget := newExtractionBudget(limits)
 	for {
+		if err := ctx.Err(); err != nil {
+			return Inspection{}, err
+		}
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
 			break
@@ -232,8 +297,18 @@ func inspectRAR(filePath string) (Inspection, error) {
 			Size:  header.UnPackedSize,
 			IsDir: header.IsDir,
 		}
+		if err := budget.addEntry(entry.Path, entry.IsDir, entry.Size, header.PackedSize, !header.UnKnownSize); err != nil {
+			return Inspection{}, err
+		}
 		addInspectionEntry(&inspection, top, entry)
 	}
+	if info, err := os.Stat(filePath); err != nil {
+		return Inspection{}, err
+	} else if err := budget.checkArchiveRatio(info.Size()); err != nil {
+		return Inspection{}, err
+	}
+	inspection.EntryCount = len(inspection.Entries)
+	inspection.ExpandedBytes = budget.declaredBytes
 	finishTopLevelDirs(&inspection, top)
 	return inspection, nil
 }
@@ -311,7 +386,7 @@ func parseInt64(value string) (int64, bool) {
 	return out, strings.TrimSpace(value) != ""
 }
 
-func extractZip(ctx context.Context, filePath, destDir string) error {
+func extractZip(ctx context.Context, filePath, destDir string, budget *extractionBudget) error {
 	reader, err := zip.OpenReader(filePath)
 	if err != nil {
 		return err
@@ -323,6 +398,10 @@ func extractZip(ctx context.Context, filePath, destDir string) error {
 			return err
 		}
 		name := filepath.ToSlash(file.Name)
+		isDir := file.FileInfo().IsDir()
+		if err := budget.addEntry(name, isDir, int64(file.UncompressedSize64), int64(file.CompressedSize64), true); err != nil {
+			return err
+		}
 		if warning := validateArchivePath(name); warning != "" {
 			return errors.New(warning)
 		}
@@ -330,7 +409,7 @@ func extractZip(ctx context.Context, filePath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		if file.FileInfo().IsDir() {
+		if isDir {
 			if err := os.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
@@ -343,7 +422,7 @@ func extractZip(ctx context.Context, filePath, destDir string) error {
 		if err != nil {
 			return err
 		}
-		err = writeExtractedFile(ctx, target, in)
+		err = writeExtractedFile(ctx, target, name, in, budget)
 		closeErr := in.Close()
 		if err != nil {
 			return err
@@ -355,7 +434,7 @@ func extractZip(ctx context.Context, filePath, destDir string) error {
 	return nil
 }
 
-func extractWith7z(ctx context.Context, filePath, destDir string) error {
+func extractWith7z(ctx context.Context, filePath, destDir string, budget *extractionBudget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -368,14 +447,15 @@ func extractWith7z(ctx context.Context, filePath, destDir string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := extractArchiveFile(ctx, destDir, file.Name, file.FileInfo().IsDir(), file.Open); err != nil {
+		info := file.FileInfo()
+		if err := extractArchiveFile(ctx, destDir, file.Name, info.IsDir(), info.Size(), -1, true, file.Open, budget); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractRAR(ctx context.Context, filePath, destDir string) error {
+func extractRAR(ctx context.Context, filePath, destDir string, budget *extractionBudget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -393,9 +473,9 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 			return err
 		}
 		name := header.Name
-		err = extractArchiveFile(ctx, destDir, name, header.IsDir, func() (io.ReadCloser, error) {
+		err = extractArchiveFile(ctx, destDir, name, header.IsDir, header.UnPackedSize, header.PackedSize, !header.UnKnownSize, func() (io.ReadCloser, error) {
 			return io.NopCloser(reader), nil
-		})
+		}, budget)
 		if err != nil {
 			return err
 		}
@@ -403,8 +483,11 @@ func extractRAR(ctx context.Context, filePath, destDir string) error {
 	return nil
 }
 
-func extractArchiveFile(ctx context.Context, destDir, name string, isDir bool, open func() (io.ReadCloser, error)) error {
+func extractArchiveFile(ctx context.Context, destDir, name string, isDir bool, size, compressed int64, sizeKnown bool, open func() (io.ReadCloser, error), budget *extractionBudget) error {
 	name = filepath.ToSlash(name)
+	if err := budget.addEntry(name, isDir, size, compressed, sizeKnown); err != nil {
+		return err
+	}
 	if warning := validateArchivePath(name); warning != "" {
 		return errors.New(warning)
 	}
@@ -422,7 +505,7 @@ func extractArchiveFile(ctx context.Context, destDir, name string, isDir bool, o
 	if err != nil {
 		return err
 	}
-	err = writeExtractedFile(ctx, target, in)
+	err = writeExtractedFile(ctx, target, name, in, budget)
 	closeErr := in.Close()
 	if err != nil {
 		return err
@@ -430,16 +513,38 @@ func extractArchiveFile(ctx context.Context, destDir, name string, isDir bool, o
 	return closeErr
 }
 
-func writeExtractedFile(ctx context.Context, target string, in io.Reader) error {
+func writeExtractedFile(ctx context.Context, target, name string, in io.Reader, budget *extractionBudget) error {
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
-	if _, err := io.Copy(out, contextReader{ctx: ctx, reader: in}); err != nil {
+	if _, err := io.Copy(budget.writer(name, out), contextReader{ctx: ctx, reader: in}); err != nil {
 		return err
 	}
 	return out.Sync()
+}
+
+func replaceEmptyDestination(destDir, workDir string) error {
+	info, err := os.Lstat(destDir)
+	if err == nil {
+		if !info.IsDir() {
+			return errors.New("extraction destination already exists and is not a directory")
+		}
+		entries, readErr := os.ReadDir(destDir)
+		if readErr != nil {
+			return readErr
+		}
+		if len(entries) != 0 {
+			return errors.New("extraction destination already exists and is not empty")
+		}
+		if err := os.Remove(destDir); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(workDir, destDir)
 }
 
 func safeExtractPath(destDir, name string) (string, error) {

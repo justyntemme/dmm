@@ -17670,6 +17670,18 @@ func TestModNameFromStagingCanUseArchiveNameFromInstallPlanMetadata(t *testing.T
 	}
 }
 
+func TestClassifyArchiveExtractionLimitAsBlockedInstall(t *testing.T) {
+	err := classifyArchiveExtractionError(archive.LimitError{Limit: "entry count", Value: 2, Max: 1})
+	var unsupported installplan.UnsupportedError
+	if !errors.As(err, &unsupported) || !strings.Contains(err.Error(), "entry count") {
+		t.Fatalf("error = %T %v", err, err)
+	}
+	ordinary := errors.New("archive read failed")
+	if got := classifyArchiveExtractionError(ordinary); !errors.Is(got, ordinary) {
+		t.Fatalf("ordinary error = %v", got)
+	}
+}
+
 func waitForJobStatus(t *testing.T, srv *Server, jobID string, status jobs.Status) jobs.Job {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
