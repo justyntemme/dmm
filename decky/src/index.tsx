@@ -396,93 +396,6 @@ type ModUpdate = {
   checked_at?: string;
 };
 
-type RuntimeRequirement = {
-  id: string;
-  name: string;
-  kind: string;
-  required: boolean;
-  status: string;
-  message: string;
-  details?: string[];
-  help_url?: string;
-  install_hint?: string;
-  acquisition?: RuntimeAcquisition;
-};
-
-type RuntimeAcquisition = {
-  id?: string;
-  name?: string;
-  catalog?: string;
-  url?: string;
-  archive_name?: string;
-  required?: boolean;
-  auto_acquire?: boolean;
-  source_mod_id?: string;
-  source_file_id?: string;
-  source_game?: string;
-  source_provider?: string;
-  latest_asset_pattern?: string;
-  version_constraint?: string;
-  message?: string;
-};
-
-type LauncherRequirement = {
-  id: string;
-  name: string;
-  launcher: string;
-  store?: string;
-  app_id?: string;
-  status: string;
-  required: boolean;
-  satisfied: boolean;
-  message?: string;
-  details?: string[];
-  source_extension: string;
-};
-
-type GameDiagnostics = {
-  runtime_requirements?: RuntimeRequirement[];
-  launcher_requirements?: LauncherRequirement[];
-  validation_warnings?: string[];
-};
-
-type GameInfo = {
-  app_id: string;
-  name: string;
-  ran: boolean;
-  details: GameInfoDetail[];
-};
-
-type GameInfoDetail = {
-  id: string;
-  title: string;
-  type?: string;
-  value: unknown;
-  source?: string;
-};
-
-type GameExtensionAction = {
-  id: string;
-  name?: string;
-  scope?: string;
-  kind?: string;
-  status?: string;
-  message?: string;
-  source_extension?: string;
-  action_target?: GameExtensionActionTarget;
-};
-
-type GameExtensionActionTarget = {
-  type?: string;
-  base?: string;
-  target_root_id?: string;
-  relative_path?: string;
-  fallback_base?: string;
-  fallback_root_id?: string;
-  fallback_relative?: string;
-  tool_id?: string;
-};
-
 type NexusSearchSort = "downloads" | "unique_downloads" | "popular" | "updated" | "name" | "relevance";
 type NexusTimeWindow = "all" | "one_week" | "three_weeks" | "one_month" | "three_months" | "one_year";
 type NexusModResult = {
@@ -521,38 +434,6 @@ type ProfileModUpdateResult = {
   apply?: ProfileApplyResult;
 };
 
-type DeploymentStatus = {
-  deployed: boolean;
-  file_count: number;
-  strategy?: string;
-  sample_files?: string[];
-  apply_rollback_on_failure: boolean;
-  repair_available: boolean;
-  restore_available: boolean;
-  purge_available: boolean;
-  recovery_summary?: string;
-  restore_summary?: string;
-};
-
-type DeploymentSourceSummary = {
-  catalog?: string;
-  source_tag?: string;
-  file_count: number;
-};
-
-type DeploymentSummary = {
-  id: number;
-  profile_id: number;
-  profile_name: string;
-  status: string;
-  active: boolean;
-  strategy: string;
-  file_count: number;
-  sources?: DeploymentSourceSummary[];
-  created_at: string;
-  updated_at: string;
-};
-
 type DeployAction = {
   target_path?: string;
   target_relative?: string;
@@ -572,26 +453,6 @@ type DeployPlan = {
   actions: DeployAction[];
   conflicts: DeployAction[];
   strategy?: string;
-};
-
-type DeployPreviewSummary = {
-  available?: boolean;
-  add?: number;
-  replace?: number;
-  remove?: number;
-  keep?: number;
-  skip?: number;
-  conflicts?: number;
-  error?: string;
-};
-
-type DeploymentRestorePreview = {
-  deployment_id: number;
-  current_file_count: number;
-  target_file_count: number;
-  summary?: DeployPreviewSummary;
-  sample_files?: string[];
-  plan?: DeployPlan;
 };
 
 type ConflictChoiceTarget = {
@@ -1547,43 +1408,9 @@ function extensionNoticeHelpURL(job: Job) {
   return safeHTTPURL(job.payload?.help_url);
 }
 
-function runtimeRequirementHelpURL(requirement: RuntimeRequirement) {
-  return safeHTTPURL(requirement.help_url);
-}
-
-function runtimeRequirementAcquisitionURL(requirement: RuntimeRequirement) {
-  return safeHTTPURL(requirement.acquisition?.url);
-}
-
-function runtimeRequirementCanAcquire(requirement: RuntimeRequirement) {
-  const acquisition = requirement.acquisition;
-  if (!acquisition) return false;
-  return Boolean(
-    acquisition.url ||
-    acquisition.source_mod_id ||
-    acquisition.source_file_id ||
-    acquisition.source_game ||
-    acquisition.source_provider ||
-    acquisition.latest_asset_pattern ||
-    acquisition.version_constraint ||
-    acquisition.catalog
-  );
-}
-
 function safeHTTPURL(value: unknown) {
   const url = String(value || "").trim();
   return /^https?:\/\//i.test(url) ? url : "";
-}
-
-function deckyInfoValue(value: unknown) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
 
 function deckyJobPrimaryActionLabel(job: Job) {
@@ -1619,11 +1446,6 @@ function eventShouldSyncExtensionToolActions(event: DomainEvent) {
 function eventShouldSyncOpenDirectoryActions(event: DomainEvent) {
   if (event.type === "jobs.snapshot") return true;
   return event.type === "job.updated" && isJob(event.payload) && event.payload.type === "open-directory-action";
-}
-
-function deckyModStateLabel(mod: ManagedMod) {
-  if (mod.status === "installed") return mod.enabled ? "Enabled" : "Installed";
-  return mod.status || (mod.enabled ? "Enabled" : "Installed");
 }
 
 function deckyModUpdateLabel(update?: ModUpdate) {
@@ -4540,189 +4362,6 @@ function FreshActionButton(props: { children: ReactNode; disabled?: boolean; kin
   );
 }
 
-function formatDeckyTimestamp(value?: string) {
-  if (!value) return "Unknown time";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function deploymentSourceSummaryLabel(sources?: DeploymentSourceSummary[]) {
-  if (!sources || sources.length === 0) return "No source breakdown recorded";
-  return sources
-    .map((source) => `${sourceLabel(source.source_tag || source.catalog)} ${source.file_count}`)
-    .join(" · ");
-}
-
-function deploymentRestoreDeltaLabel(preview?: DeploymentRestorePreview | null) {
-  if (!preview?.summary) return "";
-  const summary = preview.summary;
-  const parts = [
-    summary.add ? `${summary.add} add` : "",
-    summary.replace ? `${summary.replace} replace` : "",
-    summary.remove ? `${summary.remove} remove` : "",
-    summary.conflicts ? `${summary.conflicts} conflict${summary.conflicts === 1 ? "" : "s"}` : ""
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "No file changes required";
-}
-
-function DeploymentRecoveryModal(props: { appID: string; gameName: string; status: DeploymentStatus | null; closeModal: () => void; onRestored: () => Promise<void> }) {
-  const headerRef = useRef<HTMLDivElement | null>(null);
-  const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
-  const [selectedID, setSelectedID] = useState<number | null>(null);
-  const [previewByID, setPreviewByID] = useState<Record<number, DeploymentRestorePreview>>({});
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadHistory() {
-      try {
-        setMessage("");
-        const result = await call<[string, number], { ok: boolean; error?: string; deployments: DeploymentSummary[] }>("game_deploy_history", props.appID, 12);
-        if (cancelled) return;
-        if (!result.ok) {
-          setMessage(result.error || "Unable to load deployment history.");
-          return;
-        }
-        setDeployments(result.deployments ?? []);
-        setSelectedID((current) => current ?? result.deployments?.find((deployment) => deployment.active)?.id ?? result.deployments?.[0]?.id ?? null);
-      } catch (err) {
-        if (!cancelled) setMessage(err instanceof Error ? err.message : String(err));
-      }
-    }
-    void loadHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [props.appID]);
-
-  useEffect(() => {
-    if (!selectedID || previewByID[selectedID]) return;
-    const deploymentID = selectedID;
-    let cancelled = false;
-    async function loadPreview() {
-      try {
-        const result = await call<[string, number], { ok: boolean; error?: string; preview?: DeploymentRestorePreview | null }>("preview_game_deployment_restore", props.appID, deploymentID);
-        if (cancelled) return;
-        if (!result.ok || !result.preview) {
-          setMessage(result.error || "Unable to preview restore point.");
-          return;
-        }
-        setPreviewByID((current) => ({ ...current, [deploymentID]: result.preview as DeploymentRestorePreview }));
-      } catch (err) {
-        if (!cancelled) setMessage(err instanceof Error ? err.message : String(err));
-      }
-    }
-    void loadPreview();
-    return () => {
-      cancelled = true;
-    };
-  }, [props.appID, previewByID, selectedID]);
-
-  async function restoreSelectedPoint() {
-    if (!selectedID || busy) return;
-    try {
-      setBusy(true);
-      setMessage("");
-      const result = await call<[string, number], { ok: boolean; error?: string; job?: Job }>("restore_game_deployment_point", props.appID, selectedID);
-      if (!result.ok) {
-        setMessage(result.error || "Unable to restore selected point.");
-        return;
-      }
-      await maybeShowDeckyActionToast(result.job, "decky-restore-point");
-      await props.onRestored();
-      props.closeModal();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const selectedPreview = selectedID ? previewByID[selectedID] : null;
-
-  return (
-    <ModalRoot onCancel={props.closeModal} bAllowFullSize bHideCloseIcon>
-      <Focusable
-        className="dmm-sidebar-surface dmm-controller-scroll"
-        focusClassName="dmm-sidebar-surface-focused"
-        onFocusCapture={(event) => keepDeckyScrollFocusVisible(event.currentTarget, event, { label: "deployment-recovery", topAnchor: headerRef.current })}
-        style={{
-          ...deckySidebarSurfaceStyle,
-          maxHeight: "calc(100vh - 96px)",
-          overflowY: "auto",
-          padding: "4px 2px 18px",
-          width: "100%"
-        }}
-      >
-        <div ref={headerRef} style={{ fontSize: "16px", fontWeight: 900 }}>Deployment Recovery</div>
-        <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.35 }}>
-          Restore {props.gameName} to a previous DMM deployment point. DMM only touches files recorded in its deployment manifests.
-        </div>
-        {props.status?.restore_summary && (
-          <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
-            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>Active Deployment</div>
-            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.3 }}>{props.status.restore_summary}</div>
-            <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{props.status.file_count} managed file{props.status.file_count === 1 ? "" : "s"} · {props.status.strategy || "default"} strategy</div>
-          </div>
-        )}
-        {deployments.length === 0 ? (
-          <div style={freshSectionStyle}>
-            <div style={{ fontWeight: 900 }}>No restore points</div>
-            <div style={{ color: "#a1a1aa", fontSize: "12px" }}>Apply a profile once to create a DMM deployment history point.</div>
-          </div>
-        ) : (
-          deployments.map((deployment) => {
-            const selected = selectedID === deployment.id;
-            const preview = previewByID[deployment.id];
-            return (
-              <Focusable
-                key={deployment.id}
-                className="dmm-sidebar-row dmm-content-card"
-                focusClassName="dmm-sidebar-row-focused"
-                onActivate={() => setSelectedID(deployment.id)}
-                onClick={() => setSelectedID(deployment.id)}
-                style={{ ...freshCardStyle(selected), borderColor: selected ? "#7dd3fc" : deployment.active ? "#0f766e" : "#334155" }}
-              >
-                <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: "#f8fafc", fontWeight: 900 }}>{deployment.active ? "Current deployment" : `Restore point ${deployment.id}`}</div>
-                    <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>{formatDeckyTimestamp(deployment.created_at)} · {deployment.profile_name || "Profile"}</div>
-                  </div>
-                  <div style={{ color: deployment.active ? "#99f6e4" : "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{deployment.active ? "Active" : deployment.status}</div>
-                </div>
-                <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25 }}>{deployment.file_count} file{deployment.file_count === 1 ? "" : "s"} · {deployment.strategy || "default"}</div>
-                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{deploymentSourceSummaryLabel(deployment.sources)}</div>
-                {selected && (
-                  <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900, lineHeight: 1.25 }}>
-                    {preview ? deploymentRestoreDeltaLabel(preview) : "Loading restore preview"}
-                  </div>
-                )}
-              </Focusable>
-            );
-          })
-        )}
-        {selectedPreview?.sample_files?.length ? (
-          <div style={{ ...freshSectionStyle, background: "#0b1220" }}>
-            <div style={{ color: "#a1a1aa", fontSize: "11px", fontWeight: 900, textTransform: "uppercase" }}>Preview</div>
-            {selectedPreview.sample_files.map((file) => (
-              <div key={file} style={{ color: "#d4d4d8", fontFamily: "monospace", fontSize: "10px", lineHeight: 1.3, overflowWrap: "anywhere" }}>{file}</div>
-            ))}
-          </div>
-        ) : null}
-        {message && <div style={{ color: "#fbbf24", fontSize: "12px", fontWeight: 800, lineHeight: 1.3 }}>{message}</div>}
-        <div style={freshActionRowStyle}>
-          <FreshActionButton disabled={!selectedID || busy} kind="primary" onActivate={restoreSelectedPoint}>
-            {busy ? "Restoring" : "Restore Point"}
-          </FreshActionButton>
-          <FreshActionButton onActivate={props.closeModal}>Close</FreshActionButton>
-        </div>
-      </Focusable>
-    </ModalRoot>
-  );
-}
-
 function freshSettingsToggleCardStyle(disabled = false): CSSProperties {
   return {
     ...deckyFocusableCardBase,
@@ -5121,12 +4760,7 @@ function FreshDeckyModManagerRoute() {
   const [runningGame, setRunningGame] = useState<RunningGame | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [mods, setMods] = useState<ManagedMod[]>([]);
-  const [diagnostics, setGameDiagnostics] = useState<GameDiagnostics | null>(null);
-  const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
-  const [extensionActions, setExtensionActions] = useState<GameExtensionAction[]>([]);
-  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null);
   const [pluginLoadOrder, setPluginLoadOrder] = useState<PluginLoadOrder | null>(null);
-  const [installCandidates, setInstallCandidates] = useState<InstallCandidate[]>([]);
   const [workshopItems, setWorkshopItems] = useState<WorkshopItem[]>([]);
   const [favoriteGameIDs, setFavoriteGameIDs] = useState<Set<string>>(new Set());
   const [gameRecent, setGameRecent] = useState<Record<string, number>>({});
@@ -5156,10 +4790,6 @@ function FreshDeckyModManagerRoute() {
   const selectedProfile = profiles.find((profile) => profile.is_default) ?? profiles[0] ?? null;
   const selectedNexusDomain = (selectedGame?.nexus_domains ?? [])[0]?.trim().toLowerCase() ?? "";
   const actionJobs = jobs.filter(isDeckyActionCenterJob);
-  const gameActionJobs = selectedGameID ? actionJobs.filter((job) => deckyJobBelongsToAppID(job, selectedGameID)) : [];
-  const runtimeWarnings = (diagnostics?.runtime_requirements ?? []).filter((requirement) => requirement.status !== "ok");
-  const launcherWarnings = (diagnostics?.launcher_requirements ?? []).filter((requirement) => requirement.required && !requirement.satisfied);
-  const validationWarnings = diagnostics?.validation_warnings ?? [];
   const installedCount = mods.length + workshopItems.length;
   const enabledCount = mods.filter((mod) => mod.enabled).length + workshopItems.filter((item) => item.disabled_known ? !item.disabled_locally : item.subscribed).length;
 
@@ -5232,16 +4862,11 @@ function FreshDeckyModManagerRoute() {
     if (!appID) {
       setProfiles([]);
       setMods([]);
-      setGameDiagnostics(null);
-      setGameInfo(null);
-      setExtensionActions([]);
-      setDeploymentStatus(null);
       setPluginLoadOrder(null);
-      setInstallCandidates([]);
       setWorkshopItems([]);
       return;
     }
-    const [profilesResult, modsResult, diagnosticsResult, infoResult, actionsResult, deploymentResult, loadOrderResult, candidatesResult, workshopResult] = await Promise.all([
+    const [profilesResult, modsResult, loadOrderResult, workshopResult] = await Promise.all([
       call<[string], { ok: boolean; error?: string; profiles: Profile[] }>("game_profiles", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
@@ -5252,35 +4877,10 @@ function FreshDeckyModManagerRoute() {
         error: err instanceof Error ? err.message : String(err),
         mods: []
       })),
-      call<[string], { ok: boolean; error?: string; diagnostics?: GameDiagnostics | null }>("game_diagnostics", appID).catch((err) => ({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        diagnostics: null
-      })),
-      call<[string], { ok: boolean; error?: string; info?: GameInfo | null }>("game_info", appID).catch((err) => ({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        info: null
-      })),
-      call<[string], { ok: boolean; error?: string; actions: GameExtensionAction[] }>("game_extension_actions", appID).catch((err) => ({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        actions: []
-      })),
-      call<[string], { ok: boolean; error?: string; status?: DeploymentStatus | null }>("game_deploy_status", appID).catch((err) => ({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        status: null
-      })),
       call<[string], { ok: boolean; error?: string; load_order?: PluginLoadOrder }>("game_load_order", appID).catch((err) => ({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
         load_order: undefined
-      })),
-      call<[string], { ok: boolean; error?: string; candidates: InstallCandidate[] }>("game_install_candidates", appID).catch((err) => ({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        candidates: []
       })),
       call<[string], { ok: boolean; error?: string; items: WorkshopItem[]; state?: WorkshopState }>("game_workshop", appID).catch((err) => ({
         ok: false,
@@ -5301,22 +4901,12 @@ function FreshDeckyModManagerRoute() {
     else setError(profilesResult.error || "Unable to load profiles.");
     if (modsResult.ok) setMods(modsResult.mods);
     else setError(modsResult.error || "Unable to load mods.");
-    setGameDiagnostics(diagnosticsResult.ok ? diagnosticsResult.diagnostics ?? null : null);
-    setGameInfo(infoResult.ok ? infoResult.info ?? null : null);
-    setExtensionActions(actionsResult.ok ? actionsResult.actions : []);
-    setDeploymentStatus(deploymentResult.ok ? deploymentResult.status ?? null : null);
     setPluginLoadOrder(loadOrderResult.ok ? loadOrderResult.load_order ?? null : null);
-    setInstallCandidates(candidatesResult.ok ? candidatesResult.candidates : []);
     setWorkshopItems(workshopResult.ok ? workshopResult.items : []);
     const failedSlices: string[] = [];
     if (!profilesResult.ok) failedSlices.push(`profiles:${profilesResult.error || ""}`);
     if (!modsResult.ok) failedSlices.push(`mods:${modsResult.error || ""}`);
-    if (!diagnosticsResult.ok) failedSlices.push(`diagnostics:${diagnosticsResult.error || ""}`);
-    if (!infoResult.ok) failedSlices.push(`info:${infoResult.error || ""}`);
-    if (!actionsResult.ok) failedSlices.push(`extension_actions:${actionsResult.error || ""}`);
-    if (!deploymentResult.ok) failedSlices.push(`deployment:${deploymentResult.error || ""}`);
     if (!loadOrderResult.ok) failedSlices.push(`load_order:${loadOrderResult.error || ""}`);
-    if (!candidatesResult.ok) failedSlices.push(`install_candidates:${candidatesResult.error || ""}`);
     if (!workshopResult.ok) failedSlices.push(`workshop:${workshopResult.error || ""}`);
     if (failedSlices.length > 0) {
       await logFrontendEvent("fresh selected game partial load failure", {
@@ -5498,46 +5088,6 @@ function FreshDeckyModManagerRoute() {
     }
   }
 
-  function askRestoreDeployment() {
-    if (!selectedGameID || !deploymentStatus?.restore_available) return;
-    let modal: { Close: () => void } | null = null;
-    const closeModal = () => modal?.Close();
-    modal = showModal(
-      <DeploymentRecoveryModal
-        appID={selectedGameID}
-        gameName={selectedGame?.name || selectedGameID}
-        status={deploymentStatus}
-        closeModal={closeModal}
-        onRestored={() => loadSelectedGameState(selectedGameID)}
-      />,
-      window,
-      { strTitle: "Deployment Recovery", bNeverPopOut: true, bHideActionIcons: true, popupWidth: 520, popupHeight: 720 }
-    );
-  }
-
-  async function acquireRuntimeRequirement(requirement: RuntimeRequirement) {
-    if (!selectedGameID) return;
-    try {
-      setError("");
-      setMessage("");
-      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job }; job?: Job }>(
-        "acquire_runtime_requirement",
-        selectedGameID,
-        requirement.id,
-        selectedProfile?.id ?? 0
-      );
-      if (!result.ok) {
-        setError(result.error || "Unable to install this requirement.");
-        return;
-      }
-      await maybeShowDeckyActionToast(result.job ?? result.result?.job, "fresh-runtime-requirement-acquire");
-      await loadSelectedGameState(selectedGameID);
-      setMessage(result.job?.message || result.result?.job?.message || `${requirement.name} install started.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   async function checkModUpdates() {
     if (!selectedGameID || modUpdateBusy) return;
     try {
@@ -5555,43 +5105,6 @@ function FreshDeckyModManagerRoute() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setModUpdateBusy(false);
-    }
-  }
-
-  function executableExtensionActions() {
-    return extensionActions.filter((action) => {
-      const status = String(action.status || "ready").trim();
-      const kind = String(action.kind || "").trim();
-      return status === "ready" && (kind === "open-directory" || kind === "open-path" || kind === "acquire-tool" || kind === "set-extension-setting");
-    });
-  }
-
-  async function runSelectedGameExtensionAction(action: GameExtensionAction) {
-    if (!selectedGameID || busyJobID) return;
-    try {
-      setBusyJobID(`extension-action:${action.id}`);
-      setError("");
-      setMessage("");
-      const result = await call<[string, string, number], { ok: boolean; error?: string; result?: { job?: Job; duplicate?: boolean; result?: { job?: Job } } }>(
-        "run_game_extension_action",
-        selectedGameID,
-        action.id,
-        selectedProfile?.id ?? 0
-      );
-      if (!result.ok) {
-        setError(result.error || "Unable to run extension action.");
-        return;
-      }
-      const job = result.result?.job ?? result.result?.result?.job;
-      if (job) {
-        await maybeShowDeckyActionToast(job, "fresh-extension-action");
-      }
-      await loadSelectedGameState(selectedGameID);
-      setMessage(`${action.name || action.id} started.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyJobID("");
     }
   }
 
@@ -6129,9 +5642,7 @@ function FreshDeckyModManagerRoute() {
     setSuppressRunningAutoOpen(true);
     setProfiles([]);
     setMods([]);
-    setGameDiagnostics(null);
-    setDeploymentStatus(null);
-    setInstallCandidates([]);
+    setPluginLoadOrder(null);
     setWorkshopItems([]);
   }
 
@@ -6356,132 +5867,6 @@ function FreshDeckyModManagerRoute() {
         <FreshActionButton disabled={modUpdateBusy || mods.length === 0} onActivate={checkModUpdates}>
           {modUpdateBusy ? "Checking Updates" : "Check Updates"}
         </FreshActionButton>
-        {gameInfo?.details?.some((detail) => Boolean(deckyInfoValue(detail.value))) ? (
-          <>
-            <div className="dmm-content-card" style={freshStaticCardStyle()}>
-              <div style={{ color: "#f8fafc", fontWeight: 900 }}>Game Info</div>
-              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Extension-provided status for this game.</div>
-            </div>
-            {gameInfo.details.map((detail) => {
-              const value = deckyInfoValue(detail.value);
-              if (!value) return null;
-              return (
-                <div key={detail.id} className="dmm-content-card" style={freshStaticCardStyle()}>
-                  <div style={{ color: "#a1a1aa", fontSize: "10px", fontWeight: 900, textTransform: "uppercase" }}>{detail.title || detail.id}</div>
-                  <div style={{ color: "#d4d4d8", fontSize: "12px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{value}</div>
-                  {detail.source && <div style={{ color: "#64748b", fontSize: "10px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{detail.source}</div>}
-                </div>
-              );
-            })}
-          </>
-        ) : null}
-        {executableExtensionActions().length > 0 && (
-          <div style={{ display: "grid", gap: "8px", minWidth: 0, width: "100%" }}>
-            <div className="dmm-content-card" style={freshStaticCardStyle({ padding: "8px 10px" })}>
-              <div style={{ color: "#f8fafc", fontWeight: 900 }}>Extension Actions</div>
-              <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>Source-backed tools and folders from the game extension.</div>
-            </div>
-            {executableExtensionActions().map((action) => {
-              const busy = busyJobID === `extension-action:${action.id}`;
-              return (
-                <Focusable
-                  key={action.id}
-                  className="dmm-focus-card dmm-content-card dmm-fresh-action-card"
-                  focusClassName="dmm-focus-card-focused"
-                  onActivate={() => void runSelectedGameExtensionAction(action)}
-                  onClick={() => void runSelectedGameExtensionAction(action)}
-                  style={freshActionCardStyle(busy)}
-                >
-                  <div style={{ color: "#f8fafc", fontWeight: 900 }}>{action.name || action.id}</div>
-                  <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>
-                    {action.kind === "open-directory" ? "Open folder" : action.kind === "open-path" ? "Open path" : "Acquire tool"}{action.source_extension ? ` · ${action.source_extension}` : ""}
-                  </div>
-                  {action.message && <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{action.message}</div>}
-                  <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {busy ? "Working" : "Run"}</div>
-                </Focusable>
-              );
-            })}
-          </div>
-        )}
-        {deploymentStatus?.restore_available && (
-          <Focusable
-            className="dmm-sidebar-row dmm-content-card dmm-variable-card"
-            focusClassName="dmm-sidebar-row-focused"
-            onActivate={askRestoreDeployment}
-            onClick={askRestoreDeployment}
-            style={{ ...freshCardStyle(false), borderColor: "#0f766e" }}
-          >
-            <div style={{ color: "#99f6e4", fontWeight: 900 }}>Deployment Recovery</div>
-            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{deploymentStatus.restore_summary || deploymentStatus.recovery_summary || "Restore the last DMM-applied state for this game."}</div>
-            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A View Restore Points</div>
-          </Focusable>
-        )}
-        {runtimeWarnings.map((requirement) => {
-          const helpURL = runtimeRequirementHelpURL(requirement);
-          const acquisitionURL = runtimeRequirementAcquisitionURL(requirement);
-          const canAcquire = runtimeRequirementCanAcquire(requirement);
-          const actionLabel = requirement.kind === "launch-tool" ? "Retry Launch Setup" : canAcquire ? "Install Requirement" : helpURL ? "Open Help" : "";
-          return (
-            <Focusable
-              key={requirement.id}
-              className="dmm-focus-card dmm-content-card dmm-fresh-action-card dmm-variable-card"
-              focusClassName="dmm-focus-card-focused"
-              onActivate={() => {
-                if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
-                else if (canAcquire) void acquireRuntimeRequirement(requirement);
-                else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
-              }}
-              onClick={() => {
-                if (requirement.kind === "launch-tool") void syncLaunchActions({ force: true });
-                else if (canAcquire) void acquireRuntimeRequirement(requirement);
-                else if (helpURL) void openDMMBrowserViewCapture(helpURL, { appID: selectedGameID, profileID: selectedProfile?.id ?? 0, source: "fresh-runtime-help", title: requirement.name });
-              }}
-              style={{ ...freshActionCardStyle(false), borderColor: "#d97706" }}
-            >
-              <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
-              <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message}</div>
-              {actionLabel && <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {actionLabel}</div>}
-            </Focusable>
-          );
-        })}
-        {launcherWarnings.map((requirement) => (
-          <div key={requirement.id} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#d97706" })}>
-            <div style={{ color: "#fbbf24", fontWeight: 900 }}>Warning: {requirement.name}</div>
-            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.message || "This game extension requires a launcher DMM cannot currently verify."}</div>
-            {requirement.details?.length ? <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{requirement.details.join(" · ")}</div> : null}
-          </div>
-        ))}
-        {validationWarnings.map((warning, index) => (
-          <div key={`${warning}:${index}`} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#d97706", color: "#fbbf24" })}>Warning: {warning}</div>
-        ))}
-        {gameActionJobs.map((job) => (
-          <Focusable
-            key={job.id}
-            className="dmm-focus-card dmm-content-card dmm-fresh-action-card dmm-variable-card"
-            focusClassName="dmm-focus-card-focused"
-            onActivate={() => void activateActionJob(job)}
-            onClick={() => void activateActionJob(job)}
-            style={{ ...freshActionCardStyle(false), background: job.status === "waiting" || job.status === "running" ? "rgba(15, 118, 110, 0.22)" : "rgba(17, 24, 39, 0.78)", borderColor: job.status === "failed" ? "#7f1d1d" : "#334155" }}
-          >
-            <div style={{ color: job.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: 900 }}>{job.title}</div>
-            {job.message && <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{job.message}</div>}
-            {(job.type === "extension-notice" || job.type === "extension-tool-action") && extensionNoticeRunToolError(job) && (
-              <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{extensionNoticeRunToolError(job)}</div>
-            )}
-            {job.type === "open-directory-action" && openDirectoryActionError(job) && (
-              <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 800, lineHeight: 1.25, overflowWrap: "anywhere" }}>{openDirectoryActionError(job)}</div>
-            )}
-            <DeckyJobProgress job={job} />
-            <DeckyJobIssueReview job={job} />
-            <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {deckyJobPrimaryActionLabel(job) || "Open"}</div>
-          </Focusable>
-        ))}
-        {installCandidates.filter((candidate) => candidate.status === "blocked").map((candidate) => (
-          <div key={candidate.id} className="dmm-content-card dmm-variable-card" style={freshStaticCardStyle({ borderColor: "#7f1d1d" })}>
-            <div style={{ color: "#f87171", fontWeight: 900 }}>Warning: {candidate.name}</div>
-            <div style={{ color: "#d4d4d8", fontSize: "12px", lineHeight: 1.25, overflowWrap: "anywhere" }}>{candidate.reason}</div>
-          </div>
-        ))}
         {mods.length === 0 && workshopItems.length === 0 && (
           <div className="dmm-content-card" style={freshStaticCardStyle()}>
             <div style={{ fontWeight: 900 }}>No installed mods</div>
@@ -6519,12 +5904,17 @@ function FreshDeckyModManagerRoute() {
               }}
               style={freshModCardStyle(mod.enabled)}
             >
-              <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0, width: "100%" }}>
+              <div style={{ alignItems: "center", display: "grid", gap: "8px", gridTemplateColumns: "minmax(0, 1fr) 46px", minWidth: 0, width: "100%" }}>
                 <div style={{ ...deckyWrappedTextStyle, fontWeight: 900 }}>{mod.name}</div>
-                <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
+                <span aria-label={mod.enabled ? "Enabled" : "Disabled"} style={freshToggleSwitchStyle(mod.enabled, busy)}>
+                  <span style={freshToggleKnobStyle} />
+                </span>
               </div>
-              <div style={{ color: mod.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
-                {busy ? "Working" : mod.enabled ? "Enabled" : "Disabled"} · {deckyModStateLabel(mod)}
+              <div style={{ alignItems: "center", display: "flex", gap: "6px", justifyContent: "space-between", minWidth: 0, width: "100%" }}>
+                <span style={{ color: mod.enabled ? "#99f6e4" : "#a1a1aa", fontSize: "11px", fontWeight: 900 }}>
+                  {busy ? "Working" : mod.enabled ? "Enabled in profile" : "Disabled in profile"}
+                </span>
+                <span style={deckySourcePillStyle(source)}>{sourceLabel(source)}</span>
               </div>
               {mod.update?.status === "available" && <div style={{ color: "#fbbf24", fontSize: "11px", fontWeight: 900 }}>Update available{mod.update.latest_version ? ` · ${mod.update.latest_version}` : ""}</div>}
               <div style={{ color: "#99f6e4", fontSize: "11px", fontWeight: 900 }}>A {mod.enabled ? "Disable" : "Enable"} · Y {mod.update?.status === "available" ? "Update" : "Reinstall"} · Options Uninstall · Menu Reconfigure</div>

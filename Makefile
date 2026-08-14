@@ -39,7 +39,7 @@ loot-sorter-linux:
 	cp helpers/loot-sorter/target/x86_64-unknown-linux-gnu/release/dmm-loot-sorter bin/dmm-loot-sorter-linux-amd64
 
 web:
-	cd web && $(NPM) install && $(NPM) run build
+	cd web && $(NPM) install && $(NPM) run check && $(NPM) run build
 
 decky:
 	cd decky && $(NPM) install && $(NPM) run build
@@ -59,7 +59,7 @@ package:
 	elif [ ! -x bin/dmm-loot-sorter-linux-amd64 ]; then \
 		echo "==> Skipping Linux LOOT sorter helper; set REQUIRE_LOOT_SORTER=1 in a Linux build environment to require it."; \
 	fi
-	cd web && $(NPM) install && $(NPM) run build
+	cd web && $(NPM) install && $(NPM) run check && $(NPM) run build
 	cd decky && $(NPM) install && $(NPM) run build
 	rm -rf dist/decky-mod-manager dist/decky-mod-manager.tar.gz dist/decky-mod-manager.zip
 	mkdir -p dist/decky-mod-manager/bin dist/decky-mod-manager/web dist/decky-mod-manager/dist

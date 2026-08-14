@@ -826,7 +826,7 @@
 
   type Drawer = "games" | "settings" | null;
   type Surface = "actions" | "game" | "settings";
-  type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths";
+  type GameModule = "plugins" | "actions" | "profiles" | "review" | "paths" | "advanced";
   type SettingsPage = "overview" | "jobs" | "install" | "sources" | "game-stores" | "extensions" | "nexus";
   type GameSort = "recent" | "az" | "za";
   type GameVisibility = "manageable" | "extensions" | "all";
@@ -940,11 +940,12 @@
   let profileFeatureMessage = "";
   let lootRefreshBusy = false;
   let workshopOrderBusy = false;
-  type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move";
+  type ModBusyAction = "toggle" | "remove" | "reinstall" | "reconfigure" | "update" | "copy" | "move" | "order";
 
   let busyMods: Record<number, ModBusyAction> = {};
   let modUpdateBusy = false;
   let modUpdateMessage = "";
+  let modActionMessage = "";
   let modUpdateBrowserPrompt: ModUpdateBrowserPrompt | null = null;
   let modUpdateBrowserOpenBusy = false;
   let lootSortBusy = false;
@@ -1331,7 +1332,7 @@
 
   function connectEvents() {
     if (authRejected) return;
-    if (eventSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(eventSocket.readyState)) return;
+    if (eventSocket && (eventSocket.readyState === WebSocket.CONNECTING || eventSocket.readyState === WebSocket.OPEN)) return;
     if (eventReconnectTimer !== null) {
       window.clearTimeout(eventReconnectTimer);
       eventReconnectTimer = null;
@@ -2347,6 +2348,7 @@
   async function setModEnabled(mod: InstalledMod, enabled: boolean) {
     if (!selectedProfile) return;
     error = "";
+    modActionMessage = "";
     setBusyMod(mod.id, "toggle");
     try {
       const response = await apiFetch(`/api/profiles/${selectedProfile.id}/mods/${mod.id}`, {
@@ -2367,7 +2369,9 @@
       for (const cascadeMod of result.cascade ?? []) updatedMods.set(cascadeMod.id, cascadeMod);
       installedMods = installedMods.map((item) => updatedMods.get(item.id) ?? item);
       if ((result.cascade?.length ?? 0) > 0) {
-        actionMessage = `${enabled ? "Enabled" : "Disabled"} ${mod.name} and ${result.cascade?.length} required dependenc${result.cascade?.length === 1 ? "y" : "ies"}.`;
+        modActionMessage = `${enabled ? "Enabled" : "Disabled"} ${mod.name} and ${result.cascade?.length} required dependenc${result.cascade?.length === 1 ? "y" : "ies"}.`;
+      } else {
+        modActionMessage = `${enabled ? "Enabled" : "Disabled"} ${mod.name}.`;
       }
       if ((result.cascade_notes?.length ?? 0) > 0) {
         error = result.cascade_notes?.join(" ") ?? "";
@@ -3701,14 +3705,15 @@
 
   async function clearBlockedInstallCandidates() {
     if (!selectedGame) return;
+    const appID = selectedGame.app_id;
     error = "";
-    const response = await apiFetch(`/api/games/${selectedGame.app_id}/install-candidates`, { method: "DELETE" });
+    const response = await apiFetch(`/api/games/${appID}/install-candidates`, { method: "DELETE" });
     if (!response.ok) {
       error = await response.text();
       return;
     }
     installCandidates = [];
-    globalInstallCandidates = globalInstallCandidates.filter((candidate) => candidate.steam_app_id !== selectedGame.app_id);
+    globalInstallCandidates = globalInstallCandidates.filter((candidate) => candidate.steam_app_id !== appID);
     candidateSelections = {};
     await refreshSelectedGame({ refreshPreview: deployPlan !== null });
   }
@@ -4570,7 +4575,8 @@
     return capability.replace(/[_-]+/g, " ");
   }
 
-  function actionMatchesGame(job: Job, game: Game) {
+  function actionMatchesGame(job: Job, game: Game | null) {
+    if (!game) return false;
     if (jobMatchesGame(job, game)) return true;
     const haystack = `${job.title} ${job.message}`.toLowerCase().replace(/[^a-z0-9]/g, "");
     const gameName = game.name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -4657,7 +4663,8 @@
     openGameModule("actions");
   }
 
-  function jobMatchesGame(job: Job, game: Game) {
+  function jobMatchesGame(job: Job, game: Game | null) {
+    if (!game) return false;
     const appID = jobAppID(job);
     if (appID && appID === game.app_id) return true;
     const domain = job.payload?.game_domain?.toLowerCase();
@@ -5283,7 +5290,7 @@
           <button type="button" class="phone-row" on:click={() => openSettings("extensions")}><span><strong>Extension Settings</strong><small>{extensionSettings.length} global extension setting{extensionSettings.length === 1 ? "" : "s"} available.</small></span><b>›</b></button>
         {:else if activeSettingsPage === "jobs"}
           {#if visibleJobs.length === 0}<article class="phone-static-row"><strong>No jobs</strong><small>Downloads, installs, deployment, and provider work will appear here.</small></article>{/if}
-          {#each visibleJobs as job}<button type="button" class="phone-row" on:click={() => openActionItem(job)}><span><strong>{job.title}</strong><small>{job.status} · {job.message}</small><span class="pills"><em>{job.type}</em><em>{jobSourceLabel(job)}</em></span></span><b>›</b></button>{/each}
+          {#each visibleJobs as job}<button type="button" class="phone-row" on:click={() => openActionItem(job)}><span><strong>{job.title}</strong><small>{job.status} · {job.message}</small><span class="pills"><em>{job.type}</em><em>{sourceLabel(actionSource(job))}</em></span></span><b>›</b></button>{/each}
         {:else if activeSettingsPage === "install"}
           <label class="setting-row"><span><strong>Auto-install captured downloads</strong><small>Download links are cached immediately.</small></span><input type="checkbox" checked={status?.install.auto_install_captured_downloads} on:change={(event) => updateAutoInstall(event.currentTarget.checked)} /></label>
           <label class="setting-row"><span><strong>Auto-enable installed mods</strong><small>Leave off unless you trust the current profile.</small></span><input type="checkbox" checked={status?.install.auto_enable_installed_mods} on:change={(event) => updateAutoEnable(event.currentTarget.checked)} /></label>
@@ -5293,7 +5300,7 @@
         {:else if activeSettingsPage === "sources"}
           {#if catalogSettingsMessage}<p class="phone-hint success">{catalogSettingsMessage}</p>{/if}
           {#each catalogs as catalog}
-            <article class="phone-static-row"><strong>{catalog.name}</strong><small>{catalog.configured ? "Configured" : catalog.credentials_required ? "Needs credentials" : catalog.status} · {catalogCapabilities(catalog).join(", ") || "No active capabilities"}</small><span class="pills"><em class:ok={catalog.status === "ready"}>{catalog.status}</em>{#if catalog.source_tag}<em class="source">{sourceLabel(catalog.source_tag)}</em>{/if}</span></article>
+            <article class="phone-static-row"><strong>{catalog.name}</strong><small>{catalog.configured ? "Configured" : catalog.credentials_required ? "Needs credentials" : catalog.status} · {catalogDetail(catalog)}</small><span class="pills"><em class:ok={catalog.status === "ready"}>{catalog.status}</em>{#if catalog.source_tag}<em class="source">{sourceLabel(catalog.source_tag)}</em>{/if}</span></article>
           {/each}
           <form class="inline-form-clean" on:submit|preventDefault={() => updateCatalogCredential("modio", modIOAPIKey)}><input bind:value={modIOAPIKey} placeholder="mod.io API key" /><button type="submit" disabled={catalogSettingsBusy === "modio" || !modIOAPIKey.trim()}>Save mod.io</button></form>
           <form class="inline-form-clean" on:submit|preventDefault={() => updateCatalogCredential("curseforge", curseForgeAPIKey)}><input bind:value={curseForgeAPIKey} placeholder="CurseForge API key" /><button type="submit" disabled={catalogSettingsBusy === "curseforge" || !curseForgeAPIKey.trim()}>Save CurseForge</button></form>
@@ -5323,7 +5330,7 @@
             </article>
           {/each}
         {:else if activeSettingsPage === "game-stores"}
-          <div class="metric-grid"><div><strong>{games.filter((game) => game.store === "steam").length}</strong><span>Steam</span></div><div><strong>{games.filter((game) => game.store && game.store !== "steam").length}</strong><span>Other</span></div><div><strong>{games.filter((game) => game.state === "managed").length}</strong><span>Managed</span></div><div><strong>{games.filter((game) => game.downloaded).length}</strong><span>Installed</span></div></div>
+          <div class="metric-grid"><div><strong>{games.filter((game) => game.store === "steam").length}</strong><span>Steam</span></div><div><strong>{games.filter((game) => game.store && game.store !== "steam").length}</strong><span>Other</span></div><div><strong>{games.filter((game) => game.state === "managed").length}</strong><span>Managed</span></div><div><strong>{games.filter((game) => game.path.trim() !== "").length}</strong><span>Installed</span></div></div>
           <label class="inline-select"><span>Game list</span><select bind:value={gameVisibility}><option value="manageable">Manage Ready</option><option value="extensions">DMM Extensions</option><option value="all">All Installed</option></select></label>
         {:else}
           <article class="phone-static-row"><strong>Settings page unavailable</strong><small>This section is not registered in the phone shell.</small></article>
@@ -5372,13 +5379,13 @@
           {/if}
         </section>
       {:else if activeGameModule === "advanced"}
-        <section class="phone-card"><header><h2>Rollback</h2><span>{deploymentHistory.length} kept</span></header>{#each deploymentHistory as deployment}<button type="button" class="phone-row" on:click={() => previewRestorePoint(deployment)}><span><strong>{deployment.reason || "Restore point"}</strong><small>{new Date(deployment.created_at).toLocaleString()} · {deployment.actions} changes</small></span><b>›</b></button>{/each}</section>
-        {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.actions?.length ?? 0} changes</span></header>{#each restorePointPreview.actions ?? [] as action}<article class="phone-static-row"><strong>{deployOperationLabel(action.operation)}</strong><small>{action.target_path}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" on:click={() => restoreDeployment(deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)!)}>Restore</button></div></section>{/if}
+        <section class="phone-card"><header><h2>Rollback</h2><span>{deploymentHistory.length} kept</span></header>{#each deploymentHistory as deployment}<button type="button" class="phone-row" disabled={restorePointPreviewBusy === deployment.id} on:click={() => previewRestoreDeploymentPoint(deployment)}><span><strong>{deploymentPointLabel(deployment)}</strong><small>{new Date(deployment.created_at).toLocaleString()} · {deployment.profile_name} · {deploymentPointDelta(deployment)}</small></span><b>›</b></button>{/each}</section>
+        {#if restorePointPreview}<section class="phone-card"><header><h2>Inspect Delta</h2><span>{restorePointPreview.plan.actions.length} changes</span></header>{#each restorePointPreview.plan.actions as action}<article class="phone-static-row"><strong>{action.operation || "change"}</strong><small>{action.target_path}</small></article>{/each}<div class="action-grid"><button type="button" on:click={() => (restorePointPreview = null)}>Back</button><button type="button" disabled={deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id)?.active} on:click={() => { const deployment = deploymentHistory.find((item) => item.id === restorePointPreview?.deployment_id); if (deployment) askRestoreDeploymentPoint(deployment); }}>Restore</button></div></section>{/if}
       {:else if activeGameModule === "actions"}
         <section class="phone-card"><header><h2>Game Actions</h2><span>{selectedGameActionItems.length + installCandidates.length}</span></header>{#each selectedGameActionItems as action}<button type="button" class="phone-row" on:click={() => openActionItem(action)}><span><strong>{action.title}</strong><small>{action.message || actionNextStep(action)}</small></span><b>›</b></button>{/each}{#each installCandidates as candidate}<button type="button" class="phone-row" on:click={() => openInstallCandidate(candidate)}><span><strong>{candidate.name}</strong><small>{candidate.reason}</small></span><b>›</b></button>{/each}</section>
       {:else}
         <div class="phone-segments"><button type="button" class:active={modSourceFilter === "all"} on:click={() => (modSourceFilter = "all")}>All</button><button type="button" on:click={() => (modSourceFilter = "enabled")}>Enabled</button><button type="button" on:click={() => (modSourceFilter = "disabled")}>Disabled</button><button type="button" on:click={() => openGameModule("advanced")}>Rollback</button></div>
-        <section class="phone-card"><header><h2>Profile Mods</h2><span>{installedMods.length} total</span></header>{#each installedMods as mod}<article class="phone-mod-row"><span><strong>{mod.name}</strong><small>{sourceLabel(mod.source_tag || mod.catalog)} · {mod.mod_type ?? mod.status}</small><span class="pills"><em class:ok={mod.enabled}>{mod.enabled ? "Enabled" : "Disabled"}</em>{#if hasSourceTag(mod.source_tag || mod.catalog)}<em class="source">{sourceLabel(mod.source_tag || mod.catalog)}</em>{/if}</span></span><label><input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} /></label><div class="mod-row-actions"><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>Reinstall</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => updateInstalledMod(mod)}>Update</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>Delete</button></div></article>{/each}</section>
+        <section class="phone-card"><header><h2>Profile Mods</h2><span>{installedMods.length} total</span></header>{#if modActionMessage}<p class="phone-hint success">{modActionMessage}</p>{/if}{#each installedMods as mod}<article class="phone-mod-row"><span><strong>{mod.name}</strong><small>{sourceLabel(mod.source_tag || mod.catalog)} · {mod.mod_type ?? mod.status}</small><span class="pills"><em class:ok={mod.enabled}>{mod.enabled ? "Enabled" : "Disabled"}</em>{#if hasSourceTag(mod.source_tag || mod.catalog)}<em class="source">{sourceLabel(mod.source_tag || mod.catalog)}</em>{/if}</span></span><label><input type="checkbox" checked={mod.enabled} disabled={Boolean(busyMods[mod.id])} on:change={(event) => setModEnabled(mod, event.currentTarget.checked)} /></label><div class="mod-row-actions"><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => reinstallInstalledMod(mod, true)}>Reinstall</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => updateInstalledMod(mod)}>Update</button><button type="button" disabled={Boolean(busyMods[mod.id])} on:click={() => askRemoveInstalledMod(mod)}>Delete</button></div></article>{/each}</section>
       {/if}
     </section>
   {:else}
