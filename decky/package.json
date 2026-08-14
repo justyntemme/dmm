@@ -1,6 +1,6 @@
 {
   "name": "decky-mod-manager-plugin",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Decky plugin wrapper for Decky Mod Manager",
   "type": "module",
   "scripts": {
