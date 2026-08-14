@@ -93,3 +93,20 @@ func TestLastIDReportsHighWaterMark(t *testing.T) {
 		t.Fatalf("last id after publish = %d, want %d", got, next.ID)
 	}
 }
+
+func TestSubscriberCursorAdvancesAndIsRemovedOnClose(t *testing.T) {
+	bus := NewBus(4)
+	bus.Publish(Event{Type: TypeGameChanged})
+	sub := bus.Subscribe(1)
+	if cursor, ok := bus.MinSubscriberCursor(); !ok || cursor != 1 {
+		t.Fatalf("cursor = %d, ok = %v", cursor, ok)
+	}
+	sub.Advance(5)
+	if cursor, ok := bus.MinSubscriberCursor(); !ok || cursor != 5 {
+		t.Fatalf("advanced cursor = %d, ok = %v", cursor, ok)
+	}
+	sub.Close()
+	if _, ok := bus.MinSubscriberCursor(); ok {
+		t.Fatal("closed subscriber remained in cursor set")
+	}
+}

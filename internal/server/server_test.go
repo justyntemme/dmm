@@ -6452,6 +6452,27 @@ func TestJobsEndpointCancelsOrphanedInstallerChoiceJobs(t *testing.T) {
 	}
 }
 
+func TestJobsEndpointPaginatesHistory(t *testing.T) {
+	srv := newTestServer(t)
+	for i := 0; i < 5; i++ {
+		srv.jobs.Create("test", fmt.Sprintf("Job %d", i))
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs?limit=2&offset=1", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var page []jobResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 2 || rec.Header().Get("X-Total-Count") != "5" || rec.Header().Get("X-Next-Offset") != "3" {
+		t.Fatalf("page = %+v, total = %q, next = %q", page, rec.Header().Get("X-Total-Count"), rec.Header().Get("X-Next-Offset"))
+	}
+}
+
 func TestApplyFOMODInstallCandidateStagesSelectedFiles(t *testing.T) {
 	srv := newTestServer(t)
 	if err := srv.db.SyncGames(context.Background(), []steam.Game{{

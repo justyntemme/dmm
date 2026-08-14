@@ -37,13 +37,14 @@ type Bus struct {
 	nextID      int64
 	maxHistory  int
 	history     []Event
-	subscribers map[chan Event]struct{}
+	subscribers map[chan Event]int64
 }
 
 type Subscription struct {
-	C     <-chan Event
-	once  sync.Once
-	close func()
+	C       <-chan Event
+	once    sync.Once
+	close   func()
+	advance func(int64)
 }
 
 func NewBus(maxHistory int) *Bus {
@@ -52,7 +53,7 @@ func NewBus(maxHistory int) *Bus {
 	}
 	return &Bus{
 		maxHistory:  maxHistory,
-		subscribers: map[chan Event]struct{}{},
+		subscribers: map[chan Event]int64{},
 	}
 }
 
@@ -107,10 +108,17 @@ func (b *Bus) Subscribe(afterID int64) *Subscription {
 			ch <- event
 		}
 	}
-	b.subscribers[ch] = struct{}{}
+	b.subscribers[ch] = afterID
 	b.mu.Unlock()
 	return &Subscription{
 		C: ch,
+		advance: func(eventID int64) {
+			b.mu.Lock()
+			if current, ok := b.subscribers[ch]; ok && eventID > current {
+				b.subscribers[ch] = eventID
+			}
+			b.mu.Unlock()
+		},
 		close: func() {
 			b.mu.Lock()
 			delete(b.subscribers, ch)
@@ -126,11 +134,30 @@ func (b *Bus) LastID() int64 {
 	return b.nextID
 }
 
+func (b *Bus) MinSubscriberCursor() (int64, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var minimum int64
+	for _, cursor := range b.subscribers {
+		if minimum == 0 || cursor < minimum {
+			minimum = cursor
+		}
+	}
+	return minimum, len(b.subscribers) > 0
+}
+
 func (s *Subscription) Close() {
 	if s == nil || s.close == nil {
 		return
 	}
 	s.once.Do(s.close)
+}
+
+func (s *Subscription) Advance(eventID int64) {
+	if s == nil || s.advance == nil || eventID <= 0 {
+		return
+	}
+	s.advance(eventID)
 }
 
 func MustPayload(value any) json.RawMessage {

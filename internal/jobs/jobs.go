@@ -31,12 +31,28 @@ type Job struct {
 
 type JobPayload map[string]string
 
+type RetentionPolicy struct {
+	MaxTerminal     int
+	MaxRecentFailed int
+	TerminalMaxAge  time.Duration
+	FailedMaxAge    time.Duration
+}
+
+var DefaultRetentionPolicy = RetentionPolicy{
+	MaxTerminal:     500,
+	MaxRecentFailed: 100,
+	TerminalMaxAge:  30 * 24 * time.Hour,
+	FailedMaxAge:    90 * 24 * time.Hour,
+}
+
 type Manager struct {
-	mu       sync.Mutex
-	seq      int
-	jobs     map[string]Job
-	onSave   func(Job)
-	onDelete func(Job)
+	mu        sync.Mutex
+	seq       int
+	jobs      map[string]Job
+	onSave    func(Job)
+	onDelete  func(Job)
+	onPrune   func(Job)
+	retention RetentionPolicy
 }
 
 func NewManager() *Manager {
@@ -66,6 +82,14 @@ func (m *Manager) SetCallbacks(onSave func(Job), onDelete func(Job)) {
 	m.onDelete = onDelete
 }
 
+func (m *Manager) SetRetention(policy RetentionPolicy, onPrune func(Job)) []Job {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.retention = normalizeRetentionPolicy(policy)
+	m.onPrune = onPrune
+	return m.pruneLocked(time.Now().UTC())
+}
+
 func (m *Manager) Snapshot(job Job) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -83,6 +107,7 @@ func (m *Manager) CreateWithID(job Job) Job {
 	}
 	m.jobs[job.ID] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job
 }
 
@@ -109,6 +134,7 @@ func (m *Manager) CreateWithPayload(jobType, title string, payload JobPayload) J
 	}
 	m.jobs[job.ID] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job
 }
 
@@ -124,6 +150,7 @@ func (m *Manager) SetPayload(id string, payload JobPayload) (Job, bool) {
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job, true
 }
 
@@ -174,6 +201,7 @@ func (m *Manager) TransitionIf(id string, allowed []Status, next Status, message
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job, true
 }
 
@@ -190,6 +218,7 @@ func (m *Manager) update(id string, status Status, message string) (Job, bool) {
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job, true
 }
 
@@ -207,6 +236,7 @@ func (m *Manager) updateWithPayload(id string, status Status, message string, pa
 	job.UpdatedAt = time.Now().UTC()
 	m.jobs[id] = job
 	m.persistLocked(job)
+	m.pruneLocked(time.Now().UTC())
 	return job, true
 }
 
@@ -222,6 +252,24 @@ func (m *Manager) List() []Job {
 		return out[i].UpdatedAt.After(out[j].UpdatedAt)
 	})
 	return out
+}
+
+func (m *Manager) ListPage(offset, limit int) ([]Job, int) {
+	list := m.List()
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset >= len(list) {
+		return []Job{}, len(list)
+	}
+	end := min(offset+limit, len(list))
+	return list[offset:end], len(list)
 }
 
 func (m *Manager) Get(id string) (Job, bool) {
@@ -268,6 +316,74 @@ func (m *Manager) deleteLocked(job Job) {
 	if m.onDelete != nil {
 		m.onDelete(job)
 	}
+}
+
+func (m *Manager) pruneLocked(now time.Time) []Job {
+	policy := normalizeRetentionPolicy(m.retention)
+	if policy.MaxTerminal == 0 {
+		return nil
+	}
+	terminal := make([]Job, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		if isTerminal(job.Status) {
+			terminal = append(terminal, job)
+		}
+	}
+	sort.Slice(terminal, func(i, j int) bool {
+		return terminal[i].UpdatedAt.After(terminal[j].UpdatedAt)
+	})
+	keep := make(map[string]struct{}, policy.MaxTerminal+policy.MaxRecentFailed)
+	terminalKept := 0
+	for _, job := range terminal {
+		maxAge := policy.TerminalMaxAge
+		if job.Status == StatusFailed {
+			maxAge = policy.FailedMaxAge
+		}
+		if maxAge > 0 && now.Sub(job.UpdatedAt) > maxAge {
+			continue
+		}
+		if terminalKept < policy.MaxTerminal {
+			keep[job.ID] = struct{}{}
+			terminalKept++
+		}
+	}
+	failedKept := 0
+	for _, job := range terminal {
+		if job.Status != StatusFailed || failedKept >= policy.MaxRecentFailed {
+			continue
+		}
+		if policy.FailedMaxAge > 0 && now.Sub(job.UpdatedAt) > policy.FailedMaxAge {
+			continue
+		}
+		keep[job.ID] = struct{}{}
+		failedKept++
+	}
+	removed := make([]Job, 0)
+	for _, job := range terminal {
+		if _, ok := keep[job.ID]; ok {
+			continue
+		}
+		delete(m.jobs, job.ID)
+		removed = append(removed, job)
+		if m.onPrune != nil {
+			m.onPrune(job)
+		}
+	}
+	return removed
+}
+
+func normalizeRetentionPolicy(policy RetentionPolicy) RetentionPolicy {
+	if policy.MaxTerminal < 0 {
+		policy.MaxTerminal = 0
+	}
+	if policy.MaxRecentFailed < 0 {
+		policy.MaxRecentFailed = 0
+	}
+	return policy
+}
+
+func isTerminal(status Status) bool {
+	return status == StatusCompleted || status == StatusFailed || status == StatusCanceled
 }
 
 func clonePayload(payload JobPayload) JobPayload {

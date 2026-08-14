@@ -536,6 +536,66 @@ func TestDomainEventsPersistInIDOrder(t *testing.T) {
 	}
 }
 
+func TestDomainEventRetentionKeepsNewestAndProtectedCursor(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Now().UTC()
+	for i := 0; i < 5; i++ {
+		if _, err := db.AppendDomainEvent(context.Background(), events.Event{
+			Type: events.TypeJobUpdated, CreatedAt: now.Add(time.Duration(i) * time.Second), Payload: events.MustPayload(i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := db.PruneDomainEvents(context.Background(), now.Add(time.Hour), 2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 3 {
+		t.Fatalf("removed = %d, want 3", removed)
+	}
+	remaining, err := db.ListRecentDomainEvents(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 || remaining[0].ID != 4 || remaining[1].ID != 5 {
+		t.Fatalf("remaining = %+v", remaining)
+	}
+}
+
+func TestDomainEventRetentionPreservesUnconsumedSubscriberRange(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Now().UTC().Add(-24 * time.Hour)
+	for i := 0; i < 5; i++ {
+		if _, err := db.AppendDomainEvent(context.Background(), events.Event{
+			Type: events.TypeGameChanged, CreatedAt: now.Add(time.Duration(i) * time.Second), Payload: events.MustPayload(i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := db.PruneDomainEvents(context.Background(), time.Now().UTC(), 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed = %d, want only events before protected id", removed)
+	}
+	remaining, err := db.ListDomainEventsAfter(context.Background(), 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 3 || remaining[0].ID != 3 {
+		t.Fatalf("remaining = %+v", remaining)
+	}
+}
+
 func TestSyncGamesCreatesDefaultProfile(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "dmm.sqlite"))
 	if err != nil {

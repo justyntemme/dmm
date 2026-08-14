@@ -88,6 +88,8 @@ type Server struct {
 	activeMu      sync.Mutex
 	activeCancels map[string]context.CancelFunc
 	downloadGate  *downloadSlotGate
+	retentionMu   sync.Mutex
+	retentionAt   time.Time
 }
 
 type capturedInstall struct {
@@ -133,6 +135,10 @@ const (
 	gameDiscoveryCacheTTL      = 10 * time.Second
 	downloadProgressInterval   = 1 * time.Second
 	downloadProgressByteStep   = int64(2 << 20)
+	jobSnapshotLimit           = 100
+	domainEventRetentionLimit  = 10000
+	domainEventRetentionAge    = 14 * 24 * time.Hour
+	retentionCheckInterval     = 5 * time.Minute
 )
 
 type installerChoiceRequiredError struct {
@@ -234,7 +240,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 			return nil, err
 		}
 	}
-	storedEvents, err := db.ListDomainEventsAfter(context.Background(), 0, 512)
+	storedEvents, err := db.ListRecentDomainEvents(context.Background(), 512)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -294,8 +300,17 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 		}
 		srv.publishJobEvent(job)
 	})
+	prunedJobs := srv.jobs.SetRetention(jobs.DefaultRetentionPolicy, func(job jobs.Job) {
+		if err := db.DeleteCapturedInstall(context.Background(), job.ID); err != nil {
+			logger.Warn("prune captured install failed", "job_id", job.ID, "error", err)
+		}
+		if err := db.DeleteJob(context.Background(), job.ID); err != nil {
+			logger.Warn("prune job failed", "job_id", job.ID, "error", err)
+		}
+	})
 	srv.cleanupOrphanedInstallerChoiceJobs(context.Background(), "state-restore")
-	logger.Info("state restored", "jobs", len(storedJobs), "captured_installs", len(storedPending))
+	srv.pruneDomainEvents(context.Background(), true)
+	logger.Info("state restored", "jobs", len(storedJobs)-len(prunedJobs), "jobs_pruned", len(prunedJobs), "captured_installs", len(storedPending))
 	return srv, nil
 }
 
@@ -4199,6 +4214,29 @@ func (s *Server) publishEvent(event events.Event) {
 		return
 	}
 	s.events.Publish(stored)
+	s.pruneDomainEvents(context.Background(), false)
+}
+
+func (s *Server) pruneDomainEvents(ctx context.Context, force bool) {
+	s.retentionMu.Lock()
+	if !force && time.Since(s.retentionAt) < retentionCheckInterval {
+		s.retentionMu.Unlock()
+		return
+	}
+	s.retentionAt = time.Now()
+	s.retentionMu.Unlock()
+	protectedAfterID := int64(0)
+	if cursor, ok := s.events.MinSubscriberCursor(); ok {
+		protectedAfterID = cursor + 1
+	}
+	removed, err := s.db.PruneDomainEvents(ctx, time.Now().UTC().Add(-domainEventRetentionAge), domainEventRetentionLimit, protectedAfterID)
+	if err != nil {
+		s.logger.Warn("domain event retention failed", "error", err)
+		return
+	}
+	if removed > 0 {
+		s.logger.Info("domain event retention completed", "removed", removed)
+	}
 }
 
 func (s *Server) publishInstallCandidatesChanged(appID, action string, count int) {
@@ -14032,7 +14070,28 @@ func conflictWinnerCandidates(plan deploy.Plan, targetPath string) map[int64]str
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	s.cleanupOrphanedInstallerChoiceJobs(r.Context(), "jobs-list")
-	writeJSON(w, http.StatusOK, jobAPIResponses(s.jobs.List()))
+	limit := boundedQueryInt(r.URL.Query().Get("limit"), jobSnapshotLimit, 1, 500)
+	offset := boundedQueryInt(r.URL.Query().Get("offset"), 0, 0, 1000000)
+	page, total := s.jobs.ListPage(offset, limit)
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
+	if offset+len(page) < total {
+		w.Header().Set("X-Next-Offset", strconv.Itoa(offset+len(page)))
+	}
+	writeJSON(w, http.StatusOK, jobAPIResponses(page))
+}
+
+func boundedQueryInt(raw string, fallback, minimum, maximum int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
 }
 
 func jobAPIResponses(list []jobs.Job) []jobResponse {
@@ -14214,7 +14273,7 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	snapshot := events.Event{
 		Type:      events.TypeJobsSnapshot,
-		Payload:   events.MustPayload(jobAPIResponses(s.jobs.List())),
+		Payload:   events.MustPayload(jobAPIResponses(jobSnapshot(s.jobs))),
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := writeWebSocketEvent(ctx, conn, snapshot); err != nil {
@@ -14228,6 +14287,7 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("event websocket replay failed", "remote", r.RemoteAddr, "after_id", afterID, "error", err)
 			return
 		}
+		subscription.Advance(replayedThrough)
 	}
 
 	for {
@@ -14245,8 +14305,14 @@ func (s *Server) handleEventsWebSocket(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn("event websocket write failed", "remote", r.RemoteAddr, "event_id", event.ID, "type", event.Type, "error", err)
 				return
 			}
+			subscription.Advance(event.ID)
 		}
 	}
+}
+
+func jobSnapshot(manager *jobs.Manager) []jobs.Job {
+	page, _ := manager.ListPage(0, jobSnapshotLimit)
+	return page
 }
 
 func (s *Server) replayStoredEvents(ctx context.Context, conn *websocket.Conn, afterID int64) (int64, error) {

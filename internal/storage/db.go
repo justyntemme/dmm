@@ -1112,23 +1112,104 @@ LIMIT ?
 	defer rows.Close()
 	var out []events.Event
 	for rows.Next() {
-		var event events.Event
-		var eventType, payload, createdAt string
-		if err := rows.Scan(&event.ID, &eventType, &event.AppID, &event.JobID, &payload, &createdAt); err != nil {
+		event, err := scanDomainEvent(rows)
+		if err != nil {
 			return nil, err
 		}
-		event.Type = events.Type(strings.TrimSpace(eventType))
-		if strings.TrimSpace(payload) == "" {
-			payload = "null"
-		}
-		event.Payload = json.RawMessage(payload)
-		if !json.Valid(event.Payload) {
-			return nil, errors.New("stored event payload is invalid JSON")
-		}
-		event.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 		out = append(out, event)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) ListRecentDomainEvents(ctx context.Context, limit int) ([]events.Event, error) {
+	if limit <= 0 {
+		limit = 512
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	rows, err := db.conn.QueryContext(ctx, `
+SELECT id, type, app_id, job_id, payload_json, created_at
+FROM domain_events
+ORDER BY id DESC
+LIMIT ?
+`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var reversed []events.Event
+	for rows.Next() {
+		event, err := scanDomainEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		reversed = append(reversed, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]events.Event, len(reversed))
+	for i := range reversed {
+		out[len(reversed)-1-i] = reversed[i]
+	}
+	return out, nil
+}
+
+func (db *DB) PruneDomainEvents(ctx context.Context, olderThan time.Time, keepNewest int, protectedAfterID int64) (int64, error) {
+	if keepNewest < 1 {
+		return 0, errors.New("keepNewest must be positive")
+	}
+	if protectedAfterID <= 0 {
+		protectedAfterID = int64(^uint64(0) >> 1)
+	}
+	var countThreshold int64
+	err := db.conn.QueryRowContext(ctx, `
+SELECT COALESCE((SELECT id FROM domain_events ORDER BY id DESC LIMIT 1 OFFSET ?), 0)
+`, keepNewest-1).Scan(&countThreshold)
+	if err != nil {
+		return 0, err
+	}
+	var result sql.Result
+	if countThreshold > 0 {
+		result, err = db.conn.ExecContext(ctx, `
+DELETE FROM domain_events
+WHERE id < ?
+  AND (created_at < ? OR id < ?)
+`, protectedAfterID, olderThan.UTC().Format(time.RFC3339Nano), countThreshold)
+	} else {
+		result, err = db.conn.ExecContext(ctx, `
+DELETE FROM domain_events
+WHERE id < ?
+  AND created_at < ?
+`, protectedAfterID, olderThan.UTC().Format(time.RFC3339Nano))
+	}
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+type domainEventScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanDomainEvent(scanner domainEventScanner) (events.Event, error) {
+	var event events.Event
+	var eventType, payload, createdAt string
+	if err := scanner.Scan(&event.ID, &eventType, &event.AppID, &event.JobID, &payload, &createdAt); err != nil {
+		return events.Event{}, err
+	}
+	event.Type = events.Type(strings.TrimSpace(eventType))
+	if strings.TrimSpace(payload) == "" {
+		payload = "null"
+	}
+	event.Payload = json.RawMessage(payload)
+	if !json.Valid(event.Payload) {
+		return events.Event{}, errors.New("stored domain event payload is invalid")
+	}
+	event.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+	return event, nil
 }
 
 func (db *DB) SaveCapturedInstall(ctx context.Context, pending CapturedInstall) error {
