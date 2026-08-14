@@ -7,10 +7,17 @@ BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_CHANNEL ?= dev-latest
 REQUIRE_LOOT_SORTER ?= 0
 
-.PHONY: test build loot-sorter loot-sorter-linux web decky package mvp-audit deck-transfer mvp-release clean
+.PHONY: test test-race vortex-parity build loot-sorter loot-sorter-linux web decky package mvp-audit deck-transfer mvp-release clean
 
 test:
 	$(GO) test ./...
+
+test-race:
+	$(GO) test -race ./...
+
+vortex-parity:
+	node testing/vortex_parity_inventory.mjs --check
+	$(GO) test ./internal/extensions -run 'TestFirstPartyParityMatchesPinnedVortexSourceInventory|TestFirstPartyCoversVortex' -count=1
 
 build:
 	$(GO) build -o bin/dmm-server ./cmd/dmm-server
@@ -39,10 +46,10 @@ loot-sorter-linux:
 	cp helpers/loot-sorter/target/x86_64-unknown-linux-gnu/release/dmm-loot-sorter bin/dmm-loot-sorter-linux-amd64
 
 web:
-	cd web && $(NPM) install && $(NPM) run check && $(NPM) run build
+	cd web && $(NPM) ci && $(NPM) run check && $(NPM) run build
 
 decky:
-	cd decky && $(NPM) install && $(NPM) run build
+	cd decky && $(NPM) ci && $(NPM) run build
 	mkdir -p dist/decky-mod-manager/bin dist/decky-mod-manager/web
 	cp bin/dmm-server dist/decky-mod-manager/bin/dmm-server
 	cp decky/plugin.json decky/package.json decky/main.py dist/decky-mod-manager/
@@ -59,8 +66,8 @@ package:
 	elif [ ! -x bin/dmm-loot-sorter-linux-amd64 ]; then \
 		echo "==> Skipping Linux LOOT sorter helper; set REQUIRE_LOOT_SORTER=1 in a Linux build environment to require it."; \
 	fi
-	cd web && $(NPM) install && $(NPM) run check && $(NPM) run build
-	cd decky && $(NPM) install && $(NPM) run build
+	cd web && $(NPM) ci && $(NPM) run check && $(NPM) run build
+	cd decky && $(NPM) ci && $(NPM) run build
 	rm -rf dist/decky-mod-manager dist/decky-mod-manager.tar.gz dist/decky-mod-manager.zip
 	mkdir -p dist/decky-mod-manager/bin dist/decky-mod-manager/web dist/decky-mod-manager/dist
 	cp bin/dmm-server-linux-amd64 dist/decky-mod-manager/bin/dmm-server

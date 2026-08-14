@@ -3839,8 +3839,8 @@ func TestClearCapturedInstalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restarted.db.Close()
-	if len(restarted.capturedInstalls) != 0 {
-		t.Fatalf("captured installs restored after clear = %+v", restarted.capturedInstalls)
+	if captured := capturedInstallSnapshot(restarted); len(captured) != 0 {
+		t.Fatalf("captured installs restored after clear = %+v", captured)
 	}
 	if jobs := restarted.jobs.List(); len(jobs) != 0 {
 		t.Fatalf("jobs restored after clear = %+v", jobs)
@@ -3882,8 +3882,8 @@ func TestClearCapturedInstallsPreservesCompletedHistory(t *testing.T) {
 	if list[0].ID != completed.ID || list[0].Status != jobs.StatusCompleted {
 		t.Fatalf("completed history was not preserved: %+v", list)
 	}
-	if len(srv.capturedInstalls) != 0 {
-		t.Fatalf("captured installs after clear = %+v", srv.capturedInstalls)
+	if captured := capturedInstallSnapshot(srv); len(captured) != 0 {
+		t.Fatalf("captured installs after clear = %+v", captured)
 	}
 }
 
@@ -3917,7 +3917,7 @@ func TestCancelCapturedInstallRemovesStoredRequest(t *testing.T) {
 	if !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"status":"canceled"`)) {
 		t.Fatalf("expected canceled job, body = %s", cancelRec.Body.String())
 	}
-	if _, ok := srv.capturedInstalls[created.Job.ID]; ok {
+	if _, ok := srv.capturedInstall(created.Job.ID); ok {
 		t.Fatalf("captured install %s was not removed", created.Job.ID)
 	}
 }
@@ -3955,7 +3955,7 @@ func TestCancelFailedCapturedInstallDismissesStoredRequest(t *testing.T) {
 	if !bytes.Contains(cancelRec.Body.Bytes(), []byte(`"status":"canceled"`)) {
 		t.Fatalf("expected canceled job, body = %s", cancelRec.Body.String())
 	}
-	if _, ok := srv.capturedInstalls[created.Job.ID]; ok {
+	if _, ok := srv.capturedInstall(created.Job.ID); ok {
 		t.Fatalf("failed captured install %s was not removed", created.Job.ID)
 	}
 }
@@ -4094,7 +4094,7 @@ func TestInstallCapturedInstallInstallsCachedArchive(t *testing.T) {
 	if manifest.PlannerID != "vortex:stardewvalley:stardew-valley-installer" || len(manifest.DetectedFrom) != 1 || manifest.DetectedFrom[0].Path != "LookupAnything/manifest.json" {
 		t.Fatalf("stored install-plan metadata = %+v", manifest)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
+	if _, ok := srv.capturedInstall(job.ID); ok {
 		t.Fatalf("captured install %s was not forgotten after staging", job.ID)
 	}
 }
@@ -4239,7 +4239,7 @@ func TestInstallCapturedInstallAutoEnablesAndDeploysInstalledMod(t *testing.T) {
 	if len(files) != 2 {
 		t.Fatalf("deployment files = %+v", files)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
+	if _, ok := srv.capturedInstall(job.ID); ok {
 		t.Fatalf("captured install %s was not forgotten after auto-enable deploy", job.ID)
 	}
 }
@@ -4314,9 +4314,7 @@ func TestCapturedInstallDownloadRetriesTransientFailure(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("download attempts = %d", attempts)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
-		t.Fatalf("captured install %s was not forgotten after retry success", job.ID)
-	}
+	waitForCapturedInstallPresent(t, srv, job.ID, false)
 }
 
 func TestCapturedInstallDownloadFailureIsRetainedAfterRetryExhaustion(t *testing.T) {
@@ -4360,7 +4358,7 @@ func TestCapturedInstallDownloadFailureIsRetainedAfterRetryExhaustion(t *testing
 	if attempts != capturedDownloadMaxAttemptsPerLink {
 		t.Fatalf("download attempts = %d", attempts)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; !ok {
+	if _, ok := srv.capturedInstall(job.ID); !ok {
 		t.Fatalf("captured install %s was not retained for retry", job.ID)
 	}
 }
@@ -4430,9 +4428,7 @@ func TestUnsupportedCapturedInstallCreatesBlockedReviewCandidate(t *testing.T) {
 	if !strings.Contains(completed.Message, "install needs review") {
 		t.Fatalf("completed job = %+v", completed)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
-		t.Fatalf("unsupported captured install %s was retained after review candidate handoff", job.ID)
-	}
+	waitForCapturedInstallPresent(t, srv, job.ID, false)
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
@@ -4540,9 +4536,7 @@ func TestFOMODCapturedInstallCreatesInstallerChoiceJob(t *testing.T) {
 	if !strings.Contains(completed.Message, "installer choices required") {
 		t.Fatalf("completed job = %+v", completed)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
-		t.Fatalf("captured install %s was not forgotten after installer choice capture", job.ID)
-	}
+	waitForCapturedInstallPresent(t, srv, job.ID, false)
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
@@ -5113,9 +5107,7 @@ func TestFOMODCapturedInstallReusesExactFilePresetWithoutPrompt(t *testing.T) {
 	if !strings.Contains(completed.Message, "Installed Choice Mod disabled") {
 		t.Fatalf("completed job = %+v", completed)
 	}
-	if _, ok := srv.capturedInstalls[job.ID]; ok {
-		t.Fatalf("captured install %s was not forgotten after preset install", job.ID)
-	}
+	waitForCapturedInstallPresent(t, srv, job.ID, false)
 	candidates, err := srv.db.InstallCandidatesForSteamApp(context.Background(), "377160")
 	if err != nil {
 		t.Fatal(err)
@@ -5864,9 +5856,7 @@ func TestCapturedInstallDownloadsImmediatelyAndAutoInstallsArchive(t *testing.T)
 	if !strings.Contains(completed.Message, "Installed Lookup Anything disabled") {
 		t.Fatalf("job message = %q", completed.Message)
 	}
-	if _, ok := srv.capturedInstalls[body.Job.ID]; ok {
-		t.Fatalf("captured install %s was not forgotten", body.Job.ID)
-	}
+	waitForCapturedInstallPresent(t, srv, body.Job.ID, false)
 	mods, err := srv.db.InstalledModsForSteamApp(context.Background(), "413150")
 	if err != nil {
 		t.Fatal(err)
@@ -10435,7 +10425,7 @@ func TestCapturedInstallPersistsAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restarted.db.Close()
-	if _, ok := restarted.capturedInstalls[created.Job.ID]; !ok {
+	if _, ok := restarted.capturedInstall(created.Job.ID); !ok {
 		t.Fatalf("captured install %s was not restored", created.Job.ID)
 	}
 	jobs := restarted.jobs.List()
@@ -10542,7 +10532,7 @@ func TestRunningCapturedInstallRestoresAsWaitingAfterRestart(t *testing.T) {
 	if jobs[0].Payload["app_id"] != "413150" || jobs[0].Payload["mod_id"] != "541" || jobs[0].Payload["file_id"] != "160470" {
 		t.Fatalf("restored job payload = %+v", jobs[0].Payload)
 	}
-	if _, ok := restarted.capturedInstalls[job.ID]; !ok {
+	if _, ok := restarted.capturedInstall(job.ID); !ok {
 		t.Fatalf("captured install %s was not restored", job.ID)
 	}
 	if err := restarted.db.Close(); err != nil {
@@ -17699,6 +17689,30 @@ func waitForJobStatus(t *testing.T, srv *Server, jobID string, status jobs.Statu
 	job, _ := srv.jobs.Get(jobID)
 	t.Fatalf("job %s did not reach status %s: %+v", jobID, status, job)
 	return jobs.Job{}
+}
+
+func capturedInstallSnapshot(srv *Server) map[string]capturedInstall {
+	srv.pendingMu.Lock()
+	defer srv.pendingMu.Unlock()
+	snapshot := make(map[string]capturedInstall, len(srv.capturedInstalls))
+	for id, pending := range srv.capturedInstalls {
+		snapshot[id] = pending
+	}
+	return snapshot
+}
+
+func waitForCapturedInstallPresent(t *testing.T, srv *Server, jobID string, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		_, present := srv.capturedInstall(jobID)
+		if present == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_, present := srv.capturedInstall(jobID)
+	t.Fatalf("captured install %s presence = %v, want %v", jobID, present, want)
 }
 
 func setCapturedDownloadRetryDelay(t *testing.T, delay time.Duration) {
