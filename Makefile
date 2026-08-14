@@ -6,6 +6,7 @@ BUILD_COMMIT_SHORT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || print
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_CHANNEL ?= dev-latest
 REQUIRE_LOOT_SORTER ?= 0
+DMM_VERSION_LDFLAGS = -X github.com/justyntemme/decky-mod-manager/internal/buildinfo.Version=$(BUILD_CHANNEL)
 
 .PHONY: test test-race vortex-parity build loot-sorter loot-sorter-linux web decky package mvp-audit deck-transfer mvp-release clean
 
@@ -20,7 +21,7 @@ vortex-parity:
 	$(GO) test ./internal/extensions -run 'TestFirstPartyParityMatchesPinnedVortexSourceInventory|TestFirstPartyCoversVortex' -count=1
 
 build:
-	$(GO) build -o bin/dmm-server ./cmd/dmm-server
+	$(GO) build -ldflags "$(DMM_VERSION_LDFLAGS)" -o bin/dmm-server ./cmd/dmm-server
 	$(GO) build -o bin/dmm-nxm-handler ./cmd/dmm-nxm-handler
 	$(MAKE) loot-sorter
 
@@ -59,7 +60,7 @@ decky:
 	printf '%s\n' '{' '  "commit": "$(BUILD_COMMIT)",' '  "short_commit": "$(BUILD_COMMIT_SHORT)",' '  "built_at": "$(BUILD_TIME)",' '  "channel": "$(BUILD_CHANNEL)"' '}' > dist/decky-mod-manager/build-info.json
 
 package:
-	GOOS=linux GOARCH=amd64 $(GO) build -o bin/dmm-server-linux-amd64 ./cmd/dmm-server
+	GOOS=linux GOARCH=amd64 $(GO) build -ldflags "$(DMM_VERSION_LDFLAGS)" -o bin/dmm-server-linux-amd64 ./cmd/dmm-server
 	GOOS=linux GOARCH=amd64 $(GO) build -o bin/dmm-nxm-handler-linux-amd64 ./cmd/dmm-nxm-handler
 	@if [ "$(REQUIRE_LOOT_SORTER)" = "1" ]; then \
 		$(MAKE) loot-sorter-linux; \

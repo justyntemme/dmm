@@ -180,6 +180,8 @@ section "Checking API and web assets"
 health="$(curl -fsS "${BASE_URL}/api/health")"
 echo "${health}"
 require_contains "${health}" '"ok":true' "health"
+build_channel="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["channel"])' "${PACKAGE_DIR}/decky-mod-manager/build-info.json")"
+require_contains "${health}" "\"version\":\"${build_channel}\"" "health build version"
 
 status="$(curl -fsS "${BASE_URL}/api/status")"
 require_contains "${status}" '"lan_only":false' "status lan_only"

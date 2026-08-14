@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/justyntemme/decky-mod-manager/internal/archive"
+	"github.com/justyntemme/decky-mod-manager/internal/buildinfo"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/curseforge"
 	"github.com/justyntemme/decky-mod-manager/internal/catalog/direct"
@@ -571,7 +572,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
-		"version": "dev",
+		"version": buildinfo.Version,
 	})
 }
 
