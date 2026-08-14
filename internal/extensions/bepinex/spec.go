@@ -50,20 +50,6 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM exposes Vortex's BepInEx support dashlet as extension diagnostics for games that register BepInEx runtime requirements and source-backed BepInEx installers.",
 	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "bepinex-config-test",
-		Name:    "BepInEx configuration validation",
-		Trigger: sdk.EventGamemodeActivated,
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex modtype-bepinex bepinex-config-test by allowing BepInEx game extensions to validate generated BepInEx configuration during game diagnostics.",
-	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "doorstop-config-test",
-		Name:    "Doorstop configuration validation",
-		Trigger: sdk.EventGamemodeActivated,
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex modtype-bepinex doorstop-config-test by allowing BepInEx game extensions to validate Doorstop loader configuration during game diagnostics.",
-	})
 	r.RegisterEventHandler(sdk.EventHandlerSpec{
 		Event:   sdk.EventDidInstallMod,
 		Name:    "Refresh BepInEx runtime metadata after install",

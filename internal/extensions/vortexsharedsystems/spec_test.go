@@ -36,15 +36,12 @@ func TestExtensionRegistersVortexSharedSystemRuntimeSurfaces(t *testing.T) {
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-gamemode")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "game-version-mod-installed")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "local-game-settings-global-files")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "test-setup-uninstall-entry")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-invalid-userlist")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-missing-groups")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-plugins-locked")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-missing-masters")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-blueprint-master")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-exceeded-plugin-limit")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "script-extender-missing")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "misconfigured-script-extender")
 	assertReadyWithMessage(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "gamebryo-plugin-index-lock")
 	assertReadyWithMessage(t, "table attribute", summary.Capabilities.ExtensionTableAttrs, "script-extender-errors")
 	assertReadyWithMessage(t, "extension action", summary.Capabilities.ExtensionActions, "gamebryo-plugin-manage-rules")
@@ -71,13 +68,32 @@ func TestExtensionRegistersVortexSharedSystemRuntimeSurfaces(t *testing.T) {
 	assertReadyWithMessage(t, "extension main page", summary.Capabilities.ExtensionMainPages, "morrowind-plugins")
 	assertReadyWithMessage(t, "state reducer", summary.Capabilities.StateReducers, "test-gameversion-state")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "oblivion-fonts")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "skyrim-fonts")
 	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "dependency-unsolved-conflicts")
 	assertReadyWithMessage(t, "game info provider", summary.Capabilities.GameInfoProviders, "game-version")
 	assertStatusWithMessage(t, "start hook", summary.Capabilities.StartHooks, "dependency-check-unsolved-conflicts", sdk.CapabilityStatusReady)
 	assertReadyWithMessage(t, "history stack", summary.Capabilities.HistoryStacks, "plugins")
 	assertReadyWithMessage(t, "game info provider", summary.Capabilities.GameInfoProviders, "steam")
+	assertFeatureKind(t, summary.Capabilities.ExtensionTests, "game-version-gamemode", sdk.ExtensionTestRuntimeGameVersion)
+	assertFeatureKind(t, summary.Capabilities.ExtensionTests, "game-version-mod-installed", sdk.ExtensionTestRuntimeGameVersion)
+	assertFeatureKind(t, summary.Capabilities.ExtensionTests, "local-game-settings-global-files", sdk.ExtensionTestRuntimeLocalGameSettings)
+	assertFeatureKind(t, summary.Capabilities.ExtensionTests, "gamebryo-incompatible-mod-archives", sdk.ExtensionTestRuntimeGamebryoArchives)
+	assertFeatureKind(t, summary.Capabilities.ExtensionTests, "gamebryo-plugins-locked", sdk.ExtensionTestRuntimeGamebryoPlugins)
+	if len(summary.Capabilities.StateChangeWatchers) != 0 {
+		t.Fatalf("state change watchers = %+v", summary.Capabilities.StateChangeWatchers)
+	}
+}
+
+func assertFeatureKind(t *testing.T, features []gameext.FeatureSummary, id, kind string) {
+	t.Helper()
+	for _, feature := range features {
+		if feature.ID == id {
+			if feature.Kind != kind {
+				t.Fatalf("%s kind = %q, want %q", id, feature.Kind, kind)
+			}
+			return
+		}
+	}
+	t.Fatalf("feature %s missing from %+v", id, features)
 }
 
 func TestSteamGameInfoProviderReadsSteamAppDetails(t *testing.T) {

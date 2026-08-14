@@ -22,8 +22,25 @@ func TestExtensionRegistersSourceBackedBepInExFrameworkSurface(t *testing.T) {
 	assertReadyWithMessage(t, "mod type", summary.Capabilities.ModTypes, "bepinex-patcher")
 	assertReadyWithMessage(t, "extension API", summary.Capabilities.ExtensionAPIs, "register-bepinex-unity-game")
 	assertReadyWithMessage(t, "extension dashlet", summary.Capabilities.ExtensionDashlets, "bepinex-support")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "bepinex-config-test")
-	assertReadyWithMessage(t, "extension test", summary.Capabilities.ExtensionTests, "doorstop-config-test")
+	if len(summary.Capabilities.ExtensionTests) != 0 {
+		t.Fatalf("framework must not advertise per-game BepInEx tests without validators: %+v", summary.Capabilities.ExtensionTests)
+	}
+	for _, event := range []string{sdk.EventDidInstallMod, sdk.EventProfileWillChange, sdk.EventGamemodeActivated, sdk.EventWillDeploy, sdk.EventCheckModsVersion} {
+		assertReadyTrigger(t, summary.Capabilities.EventHandlers, event)
+	}
+}
+
+func assertReadyTrigger(t *testing.T, kind []gameext.FeatureSummary, trigger string) {
+	t.Helper()
+	for _, feature := range kind {
+		if feature.Trigger == trigger {
+			if feature.Status != sdk.CapabilityStatusReady || feature.Message == "" {
+				t.Fatalf("event %s = %+v", trigger, feature)
+			}
+			return
+		}
+	}
+	t.Fatalf("event %s missing from %+v", trigger, kind)
 }
 
 func assertReadyWithMessage(t *testing.T, kind string, features []gameext.FeatureSummary, id string) {

@@ -877,11 +877,19 @@ type ExtensionTestSpec struct {
 	ID      string
 	Name    string
 	Trigger string
+	Runtime string
 	Status  string
 	Message string
 	Check   ExtensionTestFunc
 	Repair  ExtensionTestRepairFunc
 }
+
+const (
+	ExtensionTestRuntimeGamebryoArchives  = "gamebryo-archives"
+	ExtensionTestRuntimeGamebryoPlugins   = "gamebryo-plugins"
+	ExtensionTestRuntimeGameVersion       = "game-version"
+	ExtensionTestRuntimeLocalGameSettings = "local-game-settings"
+)
 
 type ExtensionTestFunc func(context.Context, ExtensionTestInput) (ExtensionTestResult, error)
 type ExtensionTestRepairFunc func(context.Context, ExtensionTestInput) (ExtensionTestRepairResult, error)

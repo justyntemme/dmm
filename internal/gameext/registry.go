@@ -1392,6 +1392,28 @@ func (r Registry) RunExtensionTests(ctx context.Context, appID, trigger string, 
 	return results, ran
 }
 
+func (r Registry) HasExtensionTestRuntimeForSteamApp(appID, runtimeID string) bool {
+	runtimeID = canonical(runtimeID)
+	if runtimeID == "" {
+		return false
+	}
+	for _, extension := range r.extensions {
+		if extension.Kind != sdk.ExtensionKindFramework && !extensionMatchesSteamApp(extension, appID) {
+			continue
+		}
+		for _, test := range extension.ExtensionTests {
+			status := strings.TrimSpace(test.Status)
+			if status == "" {
+				status = sdk.CapabilityStatusReady
+			}
+			if status == sdk.CapabilityStatusReady && canonical(test.Runtime) == runtimeID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (r Registry) RepairExtensionTest(ctx context.Context, appID, testID string, input sdk.ExtensionTestInput) (sdk.ExtensionTestRepairResult, bool, error) {
 	extensions := r.ExtensionsForSteamApp(appID)
 	if len(extensions) == 0 {
@@ -2163,6 +2185,7 @@ func summarizeExtension(extension Extension) ExtensionSummary {
 		summary.Capabilities.ExtensionTests = append(summary.Capabilities.ExtensionTests, FeatureSummary{
 			ID:      test.ID,
 			Name:    test.Name,
+			Kind:    test.Runtime,
 			Trigger: test.Trigger,
 			Status:  defaultString(test.Status, sdk.CapabilityStatusReady),
 			Message: test.Message,

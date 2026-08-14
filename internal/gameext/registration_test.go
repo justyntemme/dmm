@@ -214,7 +214,14 @@ func TestCompileExtensionRegistersVortexStyleDomains(t *testing.T) {
 			})
 			r.RegisterExtensionAction(sdk.ExtensionActionSpec{ID: "manage-rules", Name: "Manage Rules", Scope: "profile", Kind: "dialog"})
 			r.RegisterExtensionSetting(sdk.ExtensionSettingSpec{ID: "rules", Name: "Rules", Scope: "game"})
-			r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "loader-missing", Name: "Loader missing", Trigger: "gamemode-activated"})
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{
+				ID:      "loader-missing",
+				Name:    "Loader missing",
+				Trigger: "gamemode-activated",
+				Check: func(_ context.Context, _ sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
+					return sdk.ExtensionTestResult{Status: sdk.HealthCheckStatusPassed}, nil
+				},
+			})
 			r.RegisterExtensionToDo(sdk.ExtensionToDoSpec{ID: "archive-invalidation", Name: "Archive invalidation", Trigger: "gamemode-activated"})
 			r.RegisterExtensionDynamicDivider(sdk.ExtensionDynamicDividerSpec{ID: "mod-state-divider", Name: "Mod state divider", Target: "mods", Priority: 100})
 			r.RegisterExtensionAPI(sdk.ExtensionAPISpec{ID: "lootSortAsync", Name: "LOOT sort"})
@@ -917,6 +924,80 @@ func TestCompileExtensionRejectsReadyStateMigrationWithoutCommands(t *testing.T)
 	}
 	if !strings.Contains(err.Error(), "state migration empty-ready-migration is ready but has no executable commands") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCompileExtensionRejectsInertReadyRuntimeRegistrations(t *testing.T) {
+	tests := []struct {
+		name     string
+		register func(sdk.Registrar)
+		want     string
+	}{
+		{
+			name: "extension test",
+			register: func(r sdk.Registrar) {
+				r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "inert-test", Name: "Inert test", Trigger: "startup"})
+			},
+			want: "extension test inert-test check hook or runtime evaluator is required",
+		},
+		{
+			name: "unknown evaluator",
+			register: func(r sdk.Registrar) {
+				r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "unknown-test", Name: "Unknown test", Trigger: "startup", Runtime: "unknown"})
+			},
+			want: "extension test unknown-test runtime evaluator is invalid",
+		},
+		{
+			name: "event handler",
+			register: func(r sdk.Registrar) {
+				r.RegisterEventHandler(sdk.EventHandlerSpec{ID: "inert-event", Name: "Inert event", Event: sdk.EventWillDeploy})
+			},
+			want: "event handler inert-event handler is required",
+		},
+		{
+			name: "state watcher",
+			register: func(r sdk.Registrar) {
+				r.RegisterStateChangeWatcher(sdk.StateChangeWatcherSpec{ID: "inert-watcher", Name: "Inert watcher", Path: []string{"state"}})
+			},
+			want: "state change watcher inert-watcher handler is required",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := CompileExtension(sdk.Extension{
+				ID: "invalid-" + strings.ReplaceAll(tt.name, " ", "-"), Name: "Invalid", Version: "0.1.0", BuildID: "test",
+				Register: tt.register,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtensionTestRuntimeIncludesFrameworkAndSelectedGame(t *testing.T) {
+	framework := MustCompileExtension(sdk.Extension{
+		ID: "framework", Name: "Framework", Kind: sdk.ExtensionKindFramework, Version: "1.0.0", BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "framework-test", Name: "Framework test", Trigger: "startup", Runtime: sdk.ExtensionTestRuntimeGameVersion})
+		},
+	})
+	game := MustCompileExtension(sdk.Extension{
+		ID: "game", Name: "Game", Version: "1.0.0", BuildID: "test",
+		Register: func(r sdk.Registrar) {
+			r.RegisterGame(sdk.GameRegistration{SteamAppIDs: []string{"100"}, NexusDomains: []string{"game"}})
+			r.RegisterExtensionTest(sdk.ExtensionTestSpec{ID: "game-test", Name: "Game test", Trigger: "startup", Runtime: sdk.ExtensionTestRuntimeLocalGameSettings})
+		},
+	})
+	registry := NewRegistry([]Extension{framework, game})
+	if !registry.HasExtensionTestRuntimeForSteamApp("100", sdk.ExtensionTestRuntimeGameVersion) {
+		t.Fatal("framework runtime was not visible to the selected game")
+	}
+	if !registry.HasExtensionTestRuntimeForSteamApp("100", sdk.ExtensionTestRuntimeLocalGameSettings) {
+		t.Fatal("selected game runtime was not visible")
+	}
+	if registry.HasExtensionTestRuntimeForSteamApp("200", sdk.ExtensionTestRuntimeLocalGameSettings) {
+		t.Fatal("unrelated game runtime was visible")
 	}
 }
 

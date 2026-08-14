@@ -139,7 +139,9 @@ func sourceSurfaceCount(surface string, summaries []gameext.ExtensionSummary) in
 		case "registerAction":
 			count += len(caps.ExtensionActions)
 		case "registerTest":
-			count += len(caps.ExtensionTests)
+			// DMM uses executable extension tests, mod health checks, and
+			// declarative runtime requirements for Vortex diagnostic tests.
+			count += len(caps.ExtensionTests) + len(caps.HealthChecks) + len(caps.RuntimeRequirements)
 		case "registerReducer":
 			count += len(caps.StateReducers)
 		case "registerMigration":

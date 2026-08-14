@@ -110,13 +110,6 @@ func Register(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex's settings.SDV reducer through DMM extension settings and profile-scoped settings, including generated config preservation and SMAPI launch-tool state.",
 	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "sdv-incompatible-mods",
-		Name:    "Stardew incompatible mods check",
-		Trigger: sdk.EventGamemodeActivated,
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex Stardew diagnostics through DMM runtime requirements, SMAPI launch-tool checks, and SMAPI.io compatibility events.",
-	})
 	r.RegisterLaunchTool(sdk.LaunchToolSpec{
 		ID:                 "smapi",
 		Name:               "SMAPI",

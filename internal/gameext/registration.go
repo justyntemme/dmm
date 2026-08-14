@@ -581,6 +581,7 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateStatusedTriggered("extension test", extension.ExtensionTests, func(spec sdk.ExtensionTestSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Trigger, spec.Status, spec.Message
 	})...)
+	errs = append(errs, validateExtensionTests(extension.ExtensionTests)...)
 	errs = append(errs, validateStatusedTriggered("extension todo", extension.ExtensionToDos, func(spec sdk.ExtensionToDoSpec) (string, string, string, string, string) {
 		return spec.ID, spec.Name, spec.Trigger, spec.Status, spec.Message
 	})...)
@@ -631,12 +632,69 @@ func validateExtension(extension Extension) error {
 	errs = append(errs, validateHealthChecks(extension.HealthChecks)...)
 	errs = append(errs, validateAttributeExtractors(extension.AttributeExtractors)...)
 	errs = append(errs, validateStartHooks(extension.StartHooks)...)
-	for _, handler := range extension.EventHandlers {
-		if strings.TrimSpace(handler.Event) == "" {
-			errs = append(errs, errors.New("event handler event is required"))
+	errs = append(errs, validateEventHandlers(extension.EventHandlers)...)
+	errs = append(errs, validateStateChangeWatchers(extension.StateChangeWatchers)...)
+	return errors.Join(errs...)
+}
+
+func validateExtensionTests(specs []sdk.ExtensionTestSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status != sdk.CapabilityStatusReady {
+			continue
+		}
+		runtimeID := strings.TrimSpace(spec.Runtime)
+		if spec.Check == nil && runtimeID == "" {
+			errs = append(errs, errors.New("extension test "+strings.TrimSpace(spec.ID)+" check hook or runtime evaluator is required"))
+			continue
+		}
+		if spec.Check != nil && runtimeID != "" {
+			errs = append(errs, errors.New("extension test "+strings.TrimSpace(spec.ID)+" must declare either a check hook or runtime evaluator, not both"))
+			continue
+		}
+		switch runtimeID {
+		case "", sdk.ExtensionTestRuntimeGamebryoArchives, sdk.ExtensionTestRuntimeGamebryoPlugins, sdk.ExtensionTestRuntimeGameVersion, sdk.ExtensionTestRuntimeLocalGameSettings:
+		default:
+			errs = append(errs, errors.New("extension test "+strings.TrimSpace(spec.ID)+" runtime evaluator is invalid"))
 		}
 	}
-	return errors.Join(errs...)
+	return errs
+}
+
+func validateEventHandlers(specs []sdk.EventHandlerSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		id := strings.TrimSpace(spec.ID)
+		if strings.TrimSpace(spec.Event) == "" {
+			errs = append(errs, errors.New("event handler "+id+" event is required"))
+		}
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status == sdk.CapabilityStatusReady && spec.Handler == nil {
+			errs = append(errs, errors.New("event handler "+id+" handler is required"))
+		}
+	}
+	return errs
+}
+
+func validateStateChangeWatchers(specs []sdk.StateChangeWatcherSpec) []error {
+	var errs []error
+	for _, spec := range specs {
+		status := strings.TrimSpace(spec.Status)
+		if status == "" {
+			status = sdk.CapabilityStatusReady
+		}
+		if status == sdk.CapabilityStatusReady && spec.Handler == nil {
+			errs = append(errs, errors.New("state change watcher "+strings.TrimSpace(spec.ID)+" handler is required"))
+		}
+	}
+	return errs
 }
 
 func defaultExtensionKind(extension Extension) string {

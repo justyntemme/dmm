@@ -126,6 +126,7 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		ID:      "gamebryo-incompatible-mod-archives",
 		Name:    "Gamebryo incompatible archive check",
 		Trigger: "plugins-changed",
+		Runtime: sdk.ExtensionTestRuntimeGamebryoArchives,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Mirrors Vortex gamebryo-archive-check by validating extension-declared BSA/BA2 archive compatibility against the active Gamebryo game version and plugin state.",
 	})
@@ -137,25 +138,11 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		{ID: "dependency-unsolved-conflicts", Name: "Unsolved dependency conflicts check", Trigger: "loot-info-updated"},
 		{ID: "gamebryo-exceeded-plugin-limit", Name: "Gamebryo exceeded plugin limit check", Trigger: "plugins-changed"},
 	} {
+		test.Runtime = sdk.ExtensionTestRuntimeGamebryoPlugins
 		test.Status = sdk.CapabilityStatusReady
 		test.Message = pluginDiagnosticsMessage
 		r.RegisterExtensionTest(test)
 	}
-	scriptExtenderInstallerMessage := "Mirrors Vortex script-extender-installer tests by validating extension-declared script extender runtime requirements, primary launch-tool wiring, and managed script extender installation state for each supported Gamebryo game."
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "script-extender-missing",
-		Name:    "Script extender missing check",
-		Trigger: "gamemode-activated",
-		Status:  sdk.CapabilityStatusReady,
-		Message: scriptExtenderInstallerMessage,
-	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "misconfigured-script-extender",
-		Name:    "Script extender launch configuration check",
-		Trigger: "gamemode-activated",
-		Status:  sdk.CapabilityStatusReady,
-		Message: scriptExtenderInstallerMessage,
-	})
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "script-extender-errors",
 		Name:    "Script extender load errors",
@@ -164,16 +151,10 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Message: "Mirrors Vortex script-extender-error-check table attribute by attaching parsed script-extender plugin load errors to managed mod details and diagnostics output.",
 	})
 	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "oblivion-fonts",
-		Name:    "Oblivion font settings check",
-		Trigger: "gamemode-activated",
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex gamebryo-test-settings by checking and repairing missing Oblivion font INI entries through the shared Gamebryo font settings runtime.",
-	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
 		ID:      "gamebryo-invalid-userlist",
 		Name:    "Gamebryo invalid LOOT userlist check",
 		Trigger: "gamemode-activated",
+		Runtime: sdk.ExtensionTestRuntimeGamebryoPlugins,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM surfaces Vortex's invalid-userlist test through profile-scoped LOOT userlist parsing in game diagnostics.",
 	})
@@ -181,6 +162,7 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		ID:      "gamebryo-missing-groups",
 		Name:    "Gamebryo missing LOOT groups check",
 		Trigger: "gamemode-activated",
+		Runtime: sdk.ExtensionTestRuntimeGamebryoPlugins,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM surfaces Vortex's missing-groups test through profile-scoped LOOT masterlist/userlist group validation in game diagnostics.",
 	})
@@ -191,22 +173,6 @@ func registerGamebryoSystems(r sdk.Registrar) {
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM mirrors Vortex's locked plugin index reducer with profile plugin activation rows that persist locked load-order indices and feed generated Gamebryo plugin output.",
 	})
-	gamebryoStateMessage := "Mirrors Vortex Gamebryo onStateChange handlers by refreshing plugin activation, LOOT metadata, locked-index state, and profile-local generated files when shared Gamebryo state changes."
-	for _, watcher := range []sdk.StateChangeWatcherSpec{
-		{ID: "gamebryo-index-lock-load-order", Name: "Apply locked indices after load-order changes", Path: []string{"loadOrder"}},
-		{ID: "gamebryo-index-lock-plugin-info", Name: "Apply locked indices after plugin metadata changes", Path: []string{"session", "plugins", "pluginInfo"}},
-		{ID: "gamebryo-index-lock-persistent-indices", Name: "Persist locked plugin indices", Path: []string{"persistent", "plugins", "lockedIndices"}},
-		{ID: "gamebryo-plugin-management-load-order", Name: "Synchronize Gamebryo plugin management after load-order changes", Path: []string{"loadOrder"}},
-		{ID: "gamebryo-plugin-management-discovery", Name: "Synchronize Gamebryo plugin management after discovery changes", Path: []string{"settings", "gameMode", "discovered"}},
-		{ID: "gamebryo-plugin-management-main-page", Name: "Refresh Gamebryo plugin page state", Path: []string{"session", "base", "mainPage"}},
-		{ID: "gamebryo-plugin-management-profiles", Name: "Synchronize Gamebryo plugin state after profile changes", Path: []string{"persistent", "profiles"}},
-		{ID: "gamebryo-savegame-profile-feature", Name: "Synchronize Gamebryo savegame profile feature state", Path: []string{"persistent", "profiles"}},
-		{ID: "gamebryo-savegame-discovery", Name: "Refresh Gamebryo savegame paths after discovery changes", Path: []string{"settings", "gameMode", "discovered"}},
-	} {
-		watcher.Status = sdk.CapabilityStatusReady
-		watcher.Message = gamebryoStateMessage
-		r.RegisterStateChangeWatcher(watcher)
-	}
 	r.RegisterExtensionTableAttribute(sdk.ExtensionTableAttributeSpec{
 		ID:      "gamebryo-plugin-index-lock",
 		Name:    "Gamebryo plugin index lock table attribute",
@@ -292,13 +258,6 @@ func registerGamebryoSystems(r sdk.Registrar) {
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{ID: "gamebryo-savegames", Name: "Save games", Scope: "profile-savegames", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterProfileFeature(sdk.ProfileFeatureSpec{ID: "gamebryo-savegames", Name: "Gamebryo savegame profile feature", Status: sdk.CapabilityStatusReady, Message: savegameMessage})
 	r.RegisterExtensionAPI(readyAPI("oblivion-font-repair", "Oblivion font settings automatic repair"))
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "skyrim-fonts",
-		Name:    "Skyrim font settings check",
-		Trigger: "gamemode-activated",
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Mirrors Vortex gamebryo-test-settings by checking Skyrim font files referenced from the default INI through the shared Gamebryo font settings runtime.",
-	})
 	r.RegisterExtensionMainPage(sdk.ExtensionMainPageSpec{
 		ID:      "morrowind-plugins",
 		Name:    "Morrowind plugins",
@@ -372,6 +331,7 @@ func registerLocalGameSettings(r sdk.Registrar) {
 		ID:      "local-game-settings-global-files",
 		Name:    "Global local game settings check",
 		Trigger: sdk.EventGamemodeActivated,
+		Runtime: sdk.ExtensionTestRuntimeLocalGameSettings,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM reports missing required profile-local settings files from extension-declared profile-file metadata in game diagnostics.",
 	})
@@ -399,6 +359,7 @@ func registerVortexTests(r sdk.Registrar) {
 		ID:      "game-version-gamemode",
 		Name:    "Game version check on game mode activation",
 		Trigger: sdk.EventGamemodeActivated,
+		Runtime: sdk.ExtensionTestRuntimeGameVersion,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM reports installed mods whose extension-extracted min/max game-version metadata is incompatible with the detected game version.",
 	})
@@ -406,6 +367,7 @@ func registerVortexTests(r sdk.Registrar) {
 		ID:      "game-version-mod-installed",
 		Name:    "Game version check after mod install",
 		Trigger: "mod-installed",
+		Runtime: sdk.ExtensionTestRuntimeGameVersion,
 		Status:  sdk.CapabilityStatusReady,
 		Message: "DMM queues an Action Center notice after mod install when extension-extracted min/max game-version metadata is incompatible with the detected game version.",
 	})
@@ -428,13 +390,6 @@ func registerVortexTests(r sdk.Registrar) {
 				Source: "game-version",
 			}}}, nil
 		},
-	})
-	r.RegisterExtensionTest(sdk.ExtensionTestSpec{
-		ID:      "test-setup-uninstall-entry",
-		Name:    "Vortex setup uninstall-entry test",
-		Trigger: "startup",
-		Status:  sdk.CapabilityStatusReady,
-		Message: "Verified non-applicable: Vortex registers this test only for Windows installer registry state. DMM is delivered as a Decky plugin on SteamOS and has no Windows uninstall registry entry to validate.",
 	})
 }
 
@@ -630,7 +585,11 @@ func Sources() []sdk.SourceRef {
 		{Name: "Vortex Morrowind plugin management source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/morrowind-plugin-management/src/index.ts"},
 		{Name: "Vortex new-file monitor source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/new-file-monitor/src/index.ts"},
 		{Name: "Vortex game-version test source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/test-gameversion/src/index.ts"},
-		{Name: "Vortex setup test source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/test-setup/src/index.ts"},
+		{Name: "Vortex setup test source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/test-setup/src/index.ts", Dispositions: []sdk.SourceSurfaceDisposition{{
+			Surface: "registerTest",
+			Status:  sdk.CapabilityStatusNotApplicable,
+			Reason:  "The upstream test checks Vortex's Windows installer uninstall-registry entry; DMM is installed as a Decky plugin on SteamOS and has no Windows uninstall entry to validate.",
+		}}},
 		{Name: "Vortex script extender error check source", URL: "https://github.com/Nexus-Mods/Vortex/tree/c57894eb71af8234b58a6bd15ae5ab543eccac3a/extensions/script-extender-error-check/src"},
 	}
 }

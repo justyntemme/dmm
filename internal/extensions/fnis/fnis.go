@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/justyntemme/decky-mod-manager/internal/deploy"
 	"github.com/justyntemme/decky-mod-manager/internal/extensions/sdk"
 	"github.com/justyntemme/decky-mod-manager/internal/gamehandler"
 	"github.com/justyntemme/decky-mod-manager/internal/installplan"
@@ -79,6 +80,7 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 		ID:      "fnis-will-deploy",
 		Event:   sdk.EventWillDeploy,
 		Name:    "FNIS animation checksum pre-deploy hook",
+		Handler: willDeploy(opts),
 		Status:  sdk.CapabilityStatusReady,
 		Message: "Vortex disables the generated FNIS Data profile mod and hashes animation-related deployed files before deploy. DMM uses the active deploy input to detect animation-relevant changes and queues generated-tool output through the did-deploy hook without mutating profile state during predeploy.",
 	})
@@ -90,6 +92,43 @@ func RegisterSupport(r sdk.Registrar, opts SupportOptions) {
 	})
 	for _, ref := range Sources() {
 		r.RegisterSource(ref)
+	}
+}
+
+func willDeploy(opts SupportOptions) sdk.EventHandlerFunc {
+	return func(ctx context.Context, input sdk.EventHandlerInput) (sdk.EventHandlerResult, error) {
+		if err := ctx.Err(); err != nil {
+			return sdk.EventHandlerResult{}, err
+		}
+		if !settingBool(input.ExtensionSettings, opts.GameID, SettingAutoRun) || !deploymentHasAnimationRelevantFiles(input, opts) {
+			return sdk.EventHandlerResult{}, nil
+		}
+		generatedIDs := map[int64]struct{}{}
+		for _, mod := range input.Mods {
+			if mod.ID > 0 && strings.EqualFold(strings.TrimSpace(mod.ModType), GeneratedModType(opts)) {
+				generatedIDs[mod.ID] = struct{}{}
+			}
+		}
+		if len(generatedIDs) == 0 {
+			return sdk.EventHandlerResult{}, nil
+		}
+		mappings := make([]deploy.FileMapping, 0, len(input.Mappings))
+		removed := 0
+		for _, mapping := range input.Mappings {
+			if _, generated := generatedIDs[mapping.InstalledModID]; generated {
+				removed++
+				continue
+			}
+			mappings = append(mappings, mapping)
+		}
+		if removed == 0 {
+			return sdk.EventHandlerResult{}, nil
+		}
+		return sdk.EventHandlerResult{
+			ReplaceMappings: true,
+			Mappings:        mappings,
+			Messages:        []string{"Removed stale FNIS generated output from this deployment before regeneration."},
+		}, nil
 	}
 }
 

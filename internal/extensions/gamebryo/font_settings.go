@@ -49,6 +49,7 @@ func OblivionFontSettingsTest(opts OblivionFontSettingsOptions) sdk.ExtensionTes
 		ID:      id,
 		Name:    name,
 		Trigger: sdk.EventGamemodeActivated,
+		Message: "Checks and repairs Oblivion INI font references using the extension-declared defaults and deployed game files.",
 		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
 			return checkOblivionFontSettings(ctx, opts, input, id, name)
 		},
@@ -75,6 +76,7 @@ func SkyrimFontSettingsTest(opts SkyrimFontSettingsOptions) sdk.ExtensionTestSpe
 		ID:      id,
 		Name:    name,
 		Trigger: sdk.EventGamemodeActivated,
+		Message: "Checks Skyrim font configuration references against the extension-declared interface archive and deployed game files.",
 		Check: func(ctx context.Context, input sdk.ExtensionTestInput) (sdk.ExtensionTestResult, error) {
 			return checkSkyrimFontSettings(ctx, opts, input, id, name)
 		},

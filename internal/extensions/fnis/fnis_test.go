@@ -198,3 +198,26 @@ func TestDidDeployQueuesAutomaticGeneratedToolNotice(t *testing.T) {
 		t.Fatalf("tool input files = %+v", notice.ToolInputFiles)
 	}
 }
+
+func TestWillDeployRemovesStaleGeneratedMappingsBeforeRegeneration(t *testing.T) {
+	opts := SupportOptions{GameID: "skyrimse"}
+	result, err := willDeploy(opts)(context.Background(), sdk.EventHandlerInput{
+		ExtensionSettings: map[string]map[string]json.RawMessage{
+			"skyrimse": {SettingAutoRun: []byte("true")},
+		},
+		Mods: []sdk.DeploymentMod{
+			{ID: 1, ModType: GeneratedModType(opts)},
+			{ID: 2, ModType: "skyrimse-mod"},
+		},
+		Mappings: []deploy.FileMapping{
+			{InstalledModID: 1, TargetRelative: "Data/meshes/actors/character/behaviors/generated.hkx"},
+			{InstalledModID: 2, TargetRelative: "Data/meshes/actors/character/animations/example.hkx"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.ReplaceMappings || len(result.Mappings) != 1 || result.Mappings[0].InstalledModID != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+}

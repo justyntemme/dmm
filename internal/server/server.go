@@ -1426,17 +1426,25 @@ func (s *Server) gameDiagnostics(ctx context.Context, appID string) (gameDiagnos
 	resp.LauncherRequirements = s.launcherRequirementStatuses(game)
 	resp.GameSetups = s.gameSetupStatuses(ctx, game)
 	resp.ExtensionTests = s.extensionTests(ctx, game, mods)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
-	gameVersionTests := gameVersionCompatibilityDiagnostics(game, mods, sdk.EventGamemodeActivated)
-	resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginFileWritableDiagnostics(game)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTUserlistDiagnostics(ctx, game, mods)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTRuleDiagnostics(ctx, game, mods)...)
-	resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
+	if s.games.HasExtensionTestRuntimeForSteamApp(appID, sdk.ExtensionTestRuntimeLocalGameSettings) {
+		resp.ExtensionTests = append(resp.ExtensionTests, s.localGameSettingsGlobalFileDiagnostics(ctx, game)...)
+	}
+	if s.games.HasExtensionTestRuntimeForSteamApp(appID, sdk.ExtensionTestRuntimeGameVersion) {
+		gameVersionTests := gameVersionCompatibilityDiagnostics(game, mods, sdk.EventGamemodeActivated)
+		resp.ExtensionTests = append(resp.ExtensionTests, gameVersionTests...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gameVersionChangeDiagnostics(ctx, game, len(gameVersionTests) > 0, sdk.EventGamemodeActivated)...)
+	}
+	if s.games.HasExtensionTestRuntimeForSteamApp(appID, sdk.ExtensionTestRuntimeGamebryoArchives) {
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoArchiveCompatibilityTests(ctx, game, mods)...)
+	}
+	if s.games.HasExtensionTestRuntimeForSteamApp(appID, sdk.ExtensionTestRuntimeGamebryoPlugins) {
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginFileWritableDiagnostics(game)...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoMissingMasterDiagnostics(ctx, game, mods)...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoBlueprintMasterDiagnostics(ctx, game, mods)...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTUserlistDiagnostics(ctx, game, mods)...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoLOOTRuleDiagnostics(ctx, game, mods)...)
+		resp.ExtensionTests = append(resp.ExtensionTests, s.gamebryoPluginLimitDiagnostics(ctx, game, mods)...)
+	}
 	resp.ExtensionTests = append(resp.ExtensionTests, s.profileModRuleConflictDiagnostics(ctx, game, mods)...)
 	resp.HealthChecks = s.extensionHealthChecks(ctx, game, mods)
 	for _, job := range s.jobs.List() {
@@ -17254,6 +17262,9 @@ func runtimeMetadataFromStagedManifest(manifest stagedManifest) []gamehandler.Mo
 }
 
 func (s *Server) queueGameVersionModInstalledNotices(ctx context.Context, appID, source string) {
+	if !s.games.HasExtensionTestRuntimeForSteamApp(appID, sdk.ExtensionTestRuntimeGameVersion) {
+		return
+	}
 	game, err := s.db.GameBySteamApp(ctx, appID)
 	if err != nil {
 		s.logger.Warn("post-install game-version diagnostics skipped because game could not be loaded", "app_id", appID, "source", source, "error", err)

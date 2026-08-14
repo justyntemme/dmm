@@ -592,40 +592,31 @@ func TestFirstPartyCoversVortexLifecycleEventInventory(t *testing.T) {
 }
 
 func TestFirstPartyCoversVortexStateChangeInventory(t *testing.T) {
-	// Source inventory verified from Nexus-Mods/Vortex context.api.onStateChange calls
-	// in game-witcher3, game-baldursgate3, gamebryo-plugin-indexlock,
-	// gamebryo-plugin-management, and gamebryo-savegame-management.
+	// Vortex observes Redux state because its desktop process owns a long-lived
+	// client-side store. DMM reads the same state at operation boundaries. These
+	// executable surfaces are the adapted counterparts for the source-backed
+	// onStateChange registrations; metadata-only watcher labels are forbidden.
 	summaries := gameext.NewRegistry(FirstParty()).ExtensionSummaries()
-	watchersByID := map[string]gameext.FeatureSummary{}
+	byID := map[string]gameext.ExtensionSummary{}
 	for _, summary := range summaries {
-		for _, watcher := range summary.Capabilities.StateChangeWatchers {
-			watchersByID[watcher.ID] = watcher
+		byID[summary.ID] = summary
+		if len(summary.Capabilities.StateChangeWatchers) != 0 {
+			t.Fatalf("%s exposes state-change watchers without a DMM state event runtime: %+v", summary.ID, summary.Capabilities.StateChangeWatchers)
 		}
 	}
-	for _, required := range []struct {
-		id   string
-		path string
-	}{
-		{"witcher3-settings-change", "settings.witcher3"},
-		{"bg3-tools-running-load-order-refresh", "session.base.toolsRunning"},
-		{"gamebryo-index-lock-load-order", "loadOrder"},
-		{"gamebryo-index-lock-plugin-info", "session.plugins.pluginInfo"},
-		{"gamebryo-index-lock-persistent-indices", "persistent.plugins.lockedIndices"},
-		{"gamebryo-plugin-management-load-order", "loadOrder"},
-		{"gamebryo-plugin-management-discovery", "settings.gameMode.discovered"},
-		{"gamebryo-plugin-management-main-page", "session.base.mainPage"},
-		{"gamebryo-plugin-management-profiles", "persistent.profiles"},
-		{"gamebryo-savegame-profile-feature", "persistent.profiles"},
-		{"gamebryo-savegame-discovery", "settings.gameMode.discovered"},
-	} {
-		watcher, ok := watchersByID[required.id]
-		if !ok {
-			t.Fatalf("missing DMM state-change watcher for Vortex onStateChange surface %q", required.id)
-		}
-		if watcher.Trigger != required.path || watcher.Status != sdk.CapabilityStatusReady || watcher.Message == "" {
-			t.Fatalf("state-change watcher %s = %+v", required.id, watcher)
-		}
-	}
+
+	requireReadyFeature(t, byID["witcher3"].Capabilities.EventHandlers, sdk.EventWillDeploy)
+	requireReadyFeature(t, byID["witcher3"].Capabilities.EventHandlers, sdk.EventProfileWillChange)
+	requireReadyFeature(t, byID["witcher3"].Capabilities.EventHandlers, sdk.EventModsEnabled)
+	requireReadyFeature(t, byID["witcher3"].Capabilities.ProfileFeatures, "local_merges")
+	requireReadyFeature(t, byID["baldursgate3"].Capabilities.LoadOrders, "bg3-pak-load-order")
+	requireReadyFeature(t, byID["baldursgate3"].Capabilities.EventHandlers, sdk.EventWillDeploy)
+
+	shared := byID["vortex-shared-systems"].Capabilities
+	requireReadyFeature(t, shared.StateReducers, "gamebryo-plugin-index-lock")
+	requireReadyFeature(t, shared.ExtensionAPIs, "set-plugin-list")
+	requireReadyFeature(t, shared.ExtensionActions, "gamebryo-save-transfer")
+	requireReadyFeature(t, shared.ProfileFeatures, "gamebryo-savegames")
 }
 
 func TestFirstPartyCoversVortexSupportLifecycleEventInventory(t *testing.T) {
@@ -1009,16 +1000,10 @@ func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 			"gamebryo-exceeded-plugin-limit",
 			"oblivion-fonts",
 			"skyrim-fonts",
-			"bepinex-config-test",
-			"doorstop-config-test",
-			"script-extender-missing",
-			"misconfigured-script-extender",
 			"fnis-integration",
 			"local-game-settings-global-files",
 			"game-version-gamemode",
 			"game-version-mod-installed",
-			"test-setup-uninstall-entry",
-			"sdv-incompatible-mods",
 			"mcc-ce-mp-test",
 		},
 		"extension dialog": {
@@ -1056,6 +1041,20 @@ func TestFirstPartyCoversVortexAPITestDialogAndTableInventory(t *testing.T) {
 			}
 		}
 	}
+}
+
+func requireReadyFeature(t *testing.T, features []gameext.FeatureSummary, id string) {
+	t.Helper()
+	for _, feature := range features {
+		if feature.ID != id {
+			continue
+		}
+		if feature.Status != sdk.CapabilityStatusReady {
+			t.Fatalf("feature %s = %+v", id, feature)
+		}
+		return
+	}
+	t.Fatalf("missing ready feature %q in %+v", id, features)
 }
 
 func TestFirstPartyCoversVortexInstallerIDInventory(t *testing.T) {
