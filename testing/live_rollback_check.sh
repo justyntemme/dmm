@@ -86,12 +86,14 @@ if not after.get("deployed"):
     raise RuntimeError(f"deployment missing after rollback: {after}")
 if after.get("file_count") != status.get("file_count"):
     raise RuntimeError(f"rollback changed the active deployment file count: before={status} after={after}")
+if after.get("strategy") != status.get("strategy"):
+    raise RuntimeError(f"rollback changed the active deployment strategy: before={status} after={after}")
 
 print("summary:")
 print(f"  strategy={after.get('strategy')}")
 print(f"  files={after.get('file_count')}")
 print(f"  restored_point={deployment_id}")
-print(f"  changes={len((preview.get('plan') or {}).get('actions') or [])}")
+print(f"  delta={preview.get('summary')}")
 print(f"  job={job.get('id')}")
 print("\nRollback check passed")
 PY
