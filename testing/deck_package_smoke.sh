@@ -64,6 +64,16 @@ require_file_contains() {
   fi
 }
 
+require_tree_contains() {
+  local directory="$1"
+  local needle="$2"
+  local label="$3"
+  if ! grep -RqF "${needle}" "${directory}"; then
+    echo "package smoke failed for ${label}: expected ${needle} under ${directory}" >&2
+    exit 1
+  fi
+}
+
 assert_web_assets_served() {
   local index_file="$1"
   python3 - "${index_file}" <<'PY'
@@ -128,17 +138,17 @@ require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "Debug To
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/dist/index.js" "dmm-fresh-body" "Decky shared body row layout"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/build-info.json" "short_commit" "build metadata"
 require_file_contains "${PACKAGE_DIR}/decky-mod-manager/web/dist/index.html" "Decky Mod Manager" "web index title"
-for asset_file in "${PACKAGE_DIR}/decky-mod-manager"/web/dist/assets/*.js; do
-  require_file_contains "${asset_file}" "Selected Profile" "web profile-first UI"
-  require_file_contains "${asset_file}" "Installed, disabled in this profile" "web profile-scoped mod state"
-  require_file_contains "${asset_file}" "All Installed" "web supported game filter"
-  require_file_contains "${asset_file}" "Explore Mods" "web in-game source browsing"
-  require_file_contains "${asset_file}" "Open a result on the Deck" "web in-game Nexus source explanation"
-  require_file_contains "${asset_file}" "Open on Deck" "web browser-first Nexus result action"
-  require_file_contains "${asset_file}" "Advanced Profile Tools" "web advanced profile disclosure"
-  require_file_contains "${asset_file}" "Extension Surfaces" "web extension surface review UI"
-  require_file_contains "${asset_file}" "These Deck behavior switches are managed from the Decky sidebar settings." "web install settings Decky ownership note"
-done
+WEB_ASSETS="${PACKAGE_DIR}/decky-mod-manager/web/dist/assets"
+require_tree_contains "${WEB_ASSETS}" "Action Queue" "web action queue"
+require_tree_contains "${WEB_ASSETS}" "Profile Mods" "web profile-scoped mod management"
+require_tree_contains "${WEB_ASSETS}" "Auto-enable installed mods" "web profile-scoped install behavior"
+require_tree_contains "${WEB_ASSETS}" "Move or copy mods" "web profile transfer tools"
+require_tree_contains "${WEB_ASSETS}" "All Installed" "web supported game filter"
+require_tree_contains "${WEB_ASSETS}" "Explore Mods" "web in-game source browsing"
+require_tree_contains "${WEB_ASSETS}" "Launch Game" "web game launch action"
+require_tree_contains "${WEB_ASSETS}" "Rollback" "web deployment recovery"
+require_tree_contains "${WEB_ASSETS}" "Inspect Delta" "web restore-point inspection"
+require_tree_contains "${WEB_ASSETS}" "Install Behavior" "web install settings"
 
 if [[ -n "${SHAPE_ONLY}" ]]; then
   section "Package shape passed"
