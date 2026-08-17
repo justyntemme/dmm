@@ -200,7 +200,7 @@ make build
 ./bin/dmm-server
 ```
 
-The phone UI is then available at `http://127.0.0.1:17942`. Tagged pushes such as `v0.0.2` run the full release gate, build the Linux Decky package, smoke-test the packaged backend, publish ZIP/tar assets, and attach checksums.
+The phone UI is then available at `http://127.0.0.1:17942`. Tagged pushes such as `v0.2.1` run the full release gate, build the Linux Decky package, smoke-test the packaged backend, publish ZIP/tar assets, and attach checksums.
 
 For the test matrix, Steam Deck deployment scripts, live acceptance checks, and log commands, see [testing/README.md](testing/README.md).
 
