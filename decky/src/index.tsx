@@ -278,6 +278,12 @@ type NXMStatus = {
   registered: boolean;
 };
 
+type NXMRegistrationResult = {
+  ok: boolean;
+  error?: string;
+  status: NXMStatus;
+};
+
 type Diagnostics = {
   logs: Record<string, { path: string; tail: string }>;
 };
@@ -4774,6 +4780,7 @@ function FreshDeckyModManagerRoute() {
   const [error, setError] = useState("");
   const [nexusAPIKey, setNexusAPIKey] = useState("");
   const [nexusKeyBusy, setNexusKeyBusy] = useState(false);
+  const [nxmBusy, setNXMBusy] = useState(false);
   const [busyModID, setBusyModID] = useState<number | null>(null);
   const [busyPluginKey, setBusyPluginKey] = useState("");
   const [busyJobID, setBusyJobID] = useState("");
@@ -5560,6 +5567,33 @@ function FreshDeckyModManagerRoute() {
     }
   }
 
+  async function refreshNXMStatus() {
+    try {
+      setNXM(await call<[], NXMStatus>("nxm_status"));
+    } catch (err) {
+      await logFrontendEvent("nxm status refresh failed", { error: errorLogValue(err) });
+    }
+  }
+
+  async function registerNXMHandler() {
+    try {
+      setNXMBusy(true);
+      setError("");
+      setMessage("");
+      const result = await call<[], NXMRegistrationResult>("register_nxm_handler");
+      setNXM(result.status);
+      if (!result.ok) {
+        setError(result.error || "Unable to register the Nexus download handler.");
+        return;
+      }
+      setMessage("Nexus Mod Manager Download links will open in DMM.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNXMBusy(false);
+    }
+  }
+
   async function refreshDebugState() {
     const [deps, nextNXM, logs] = await Promise.all([
       call<[], Dependency[]>("dependencies"),
@@ -5584,6 +5618,7 @@ function FreshDeckyModManagerRoute() {
 
   useEffect(() => {
     void refreshFreshState();
+    void refreshNXMStatus();
     const timer = window.setInterval(() => void refreshFreshState(), 5000);
     return () => window.clearInterval(timer);
   }, []);
@@ -6129,6 +6164,22 @@ function FreshDeckyModManagerRoute() {
             />
             <FreshActionButton settingsRow disabled={!status?.running || nexusKeyBusy || !nexusAPIKey.trim()} onActivate={() => void saveNexusAPIKey()}>
               {nexusKeyBusy ? "Saving Nexus Key" : status?.backend?.nexus.api_key_configured ? "Replace Nexus Key" : "Save Nexus Key"}
+            </FreshActionButton>
+          </div>
+          <div className="dmm-content-card" style={{ ...freshStaticCardStyle({ minHeight: "104px" }), display: "grid", gap: "8px" }}>
+            <div style={{ alignItems: "start", display: "grid", gap: "6px", gridTemplateColumns: "minmax(0, 1fr) auto", minWidth: 0 }}>
+              <div>
+                <div style={{ color: "#f8fafc", fontSize: "12px", fontWeight: 900 }}>Mod Manager Download Links</div>
+                <div style={{ color: "#a1a1aa", fontSize: "11px", lineHeight: 1.25 }}>
+                  Register DMM for Nexus <code>nxm://</code> links opened outside the built-in browser.
+                </div>
+              </div>
+              <span style={deckySourcePillStyle(nxm?.registered ? "dmm" : "error")}>
+                {nxm?.registered ? "Registered" : nxm ? "Required" : "Checking"}
+              </span>
+            </div>
+            <FreshActionButton settingsRow disabled={nxmBusy} onActivate={() => void registerNXMHandler()}>
+              {nxmBusy ? "Registering Download Handler" : nxm?.registered ? "Re-register Download Handler" : "Register Download Handler"}
             </FreshActionButton>
           </div>
         </FreshSettingsSection>
